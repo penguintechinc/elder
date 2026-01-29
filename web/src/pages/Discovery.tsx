@@ -1,12 +1,11 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Compass, Play, Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import { getStatusColor } from '@/lib/colorHelpers'
 import { confirmDelete } from '@/lib/confirmActions'
 
@@ -105,100 +104,94 @@ export default function Discovery() {
   }
 
 
-  // Form configs
-  const integrationFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'AWS Production Discovery',
-      },
-      {
-        name: 'provider_type',
-        label: 'Integration Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select integration type' },
-          ...INTEGRATION_DISCOVERY_TYPES,
-        ],
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
-        ],
-      },
-      {
-        name: 'schedule',
-        label: 'Schedule (Cron, optional)',
-        type: 'text',
-        placeholder: '0 2 * * *',
-      },
-      {
-        name: 'config',
-        label: 'Configuration (JSON)',
-        type: 'textarea',
-        rows: 8,
-        placeholder: '{"region": "us-east-1", "services": ["ec2", "rds", "s3"]}',
-        defaultValue: '{}',
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  // Form fields
+  const integrationFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'AWS Production Discovery',
+    },
+    {
+      name: 'provider_type',
+      label: 'Integration Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select integration type' },
+        ...INTEGRATION_DISCOVERY_TYPES,
+      ],
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+      ],
+    },
+    {
+      name: 'schedule',
+      label: 'Schedule (Cron, optional)',
+      type: 'text',
+      placeholder: '0 2 * * *',
+    },
+    {
+      name: 'config',
+      label: 'Configuration (JSON)',
+      type: 'textarea',
+      rows: 8,
+      placeholder: '{"region": "us-east-1", "services": ["ec2", "rds", "s3"]}',
+      defaultValue: '{}',
+    },
+  ], [orgs?.items])
 
-  const scanFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Local Network Scan',
-      },
-      {
-        name: 'provider_type',
-        label: 'Scan Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select scan type' },
-          ...SCAN_TYPES,
-        ],
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
-        ],
-      },
-      {
-        name: 'schedule',
-        label: 'Schedule (Cron, optional)',
-        type: 'text',
-        placeholder: '0 2 * * *',
-      },
-      {
-        name: 'config',
-        label: 'Configuration (JSON)',
-        type: 'textarea',
-        rows: 6,
-        placeholder: '{"targets": ["192.168.1.0/24"]}',
-        defaultValue: '{}',
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  const scanFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Local Network Scan',
+    },
+    {
+      name: 'provider_type',
+      label: 'Scan Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select scan type' },
+        ...SCAN_TYPES,
+      ],
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+      ],
+    },
+    {
+      name: 'schedule',
+      label: 'Schedule (Cron, optional)',
+      type: 'text',
+      placeholder: '0 2 * * *',
+    },
+    {
+      name: 'config',
+      label: 'Configuration (JSON)',
+      type: 'textarea',
+      rows: 6,
+      placeholder: '{"targets": ["192.168.1.0/24"]}',
+      defaultValue: '{}',
+    },
+  ], [orgs?.items])
 
   const handleIntegrationSubmit = (data: Record<string, any>) => {
     try {
@@ -383,22 +376,22 @@ export default function Discovery() {
         </div>
       </div>
 
-      <ModalFormBuilder
+      <FormModalBuilder
         isOpen={showIntegrationModal}
         onClose={() => setShowIntegrationModal(false)}
         title="Create Integration Discovery"
-        config={integrationFormConfig}
+        fields={integrationFields}
         onSubmit={handleIntegrationSubmit}
-        isLoading={createJobMutation.isPending}
+        submitButtonText="Create"
       />
 
-      <ModalFormBuilder
+      <FormModalBuilder
         isOpen={showScanModal}
         onClose={() => setShowScanModal(false)}
         title="Create Scan"
-        config={scanFormConfig}
+        fields={scanFields}
         onSubmit={handleScanSubmit}
-        isLoading={createJobMutation.isPending}
+        submitButtonText="Create"
       />
     </div>
   )

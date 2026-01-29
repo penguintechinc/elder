@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Link, useLocation, Outlet } from 'react-router-dom'
+import { useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
@@ -37,10 +36,11 @@ import {
   Layers,
   Clock,
 } from 'lucide-react'
+import { SidebarMenu, MenuCategory, MenuItem } from '@penguin/react_libs/components'
 import api from '@/lib/api'
 
 // Navigation organized by categories
-const navigationCategories = [
+const navigationCategories: MenuCategory[] = [
   {
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -110,7 +110,7 @@ const navigationCategories = [
 ]
 
 // Admin navigation - shown based on user role
-const adminNavigation = [
+const adminNavigation: MenuItem[] = [
   { name: 'Audit Logs', href: '/admin/audit-logs', icon: FileText, roles: ['admin', 'support', 'tenant_admin'] },
   { name: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
   { name: 'SSO Config', href: '/admin/sso', icon: Shield, roles: ['admin', 'tenant_admin'] },
@@ -119,11 +119,15 @@ const adminNavigation = [
   { name: 'Tenants', href: '/admin/tenants', icon: Users, roles: ['admin'] },
 ]
 
+// Footer items for profile and logout
+const footerItems: MenuItem[] = [
+  { name: 'Profile', href: '/profile', icon: User },
+  { name: 'Logout', href: '#logout', icon: LogOut },
+]
+
 export default function Layout() {
   const location = useLocation()
-
-  // Track collapsed state for each category
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({})
+  const navigate = useNavigate()
 
   // Fetch user profile for role-based navigation
   const { data: userProfile } = useQuery({
@@ -139,18 +143,25 @@ export default function Layout() {
 
   // Filter admin navigation based on user roles
   const visibleAdminNav = adminNavigation.filter(item => {
-    if (globalRole === 'admin') return item.roles.includes('admin')
-    if (globalRole === 'support') return item.roles.includes('support')
-    if (tenantRole === 'admin') return item.roles.includes('tenant_admin')
+    if (globalRole === 'admin') return item.roles?.includes('admin')
+    if (globalRole === 'support') return item.roles?.includes('support')
+    if (tenantRole === 'admin') return item.roles?.includes('tenant_admin')
     return false
   })
 
-  const toggleCategory = (header: string) => {
-    setCollapsedCategories(prev => ({
-      ...prev,
-      [header]: !prev[header]
-    }))
-  }
+  // Build all categories including admin if visible
+  const allCategories: MenuCategory[] = [
+    ...navigationCategories,
+    ...(visibleAdminNav.length > 0
+      ? [
+          {
+            header: 'Administration',
+            collapsible: true,
+            items: visibleAdminNav,
+          },
+        ]
+      : []),
+  ]
 
   const handleLogout = () => {
     localStorage.removeItem('elder_token')
@@ -158,129 +169,27 @@ export default function Layout() {
     window.location.href = '/login'
   }
 
+  const handleNavigate = (href: string) => {
+    if (href === '#logout') {
+      handleLogout()
+    } else {
+      navigate(href)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Sidebar */}
-      <div className="fixed inset-y-0 left-0 w-64 bg-slate-800 border-r border-slate-700">
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="flex items-center justify-center h-16 px-6 border-b border-slate-700">
-            <img src="/elder-logo.png" alt="Elder Logo" className="h-12 w-auto" />
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 px-4 py-6 overflow-y-auto">
-            {navigationCategories.map((category, categoryIndex) => {
-              const isCollapsed = category.header ? collapsedCategories[category.header] : false
-
-              return (
-                <div key={categoryIndex} className={category.header ? 'mt-4' : ''}>
-                  {category.header && (
-                    <button
-                      onClick={() => toggleCategory(category.header!)}
-                      className="w-full flex items-center justify-between px-4 pb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-400 transition-colors"
-                    >
-                      <span>{category.header}</span>
-                      {isCollapsed ? (
-                        <ChevronRight className="w-3 h-3" />
-                      ) : (
-                        <ChevronDown className="w-3 h-3" />
-                      )}
-                    </button>
-                  )}
-                  {!isCollapsed && (
-                    <div className="space-y-1">
-                      {category.items.map((item) => {
-                        const Icon = item.icon
-                        const isActive = location.pathname === item.href ||
-                          (item.href !== '/' && location.pathname.startsWith(item.href))
-
-                        return (
-                          <Link
-                            key={item.name}
-                            to={item.href}
-                            className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                              isActive
-                                ? 'bg-primary-600 text-white'
-                                : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-                            }`}
-                          >
-                            <Icon className="w-5 h-5 mr-3" />
-                            {item.name}
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-
-            {/* Admin Navigation - Role-based */}
-            {visibleAdminNav.length > 0 && (
-              <div className="mt-4">
-                <button
-                  onClick={() => toggleCategory('Administration')}
-                  className="w-full flex items-center justify-between px-4 pb-2 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-400 transition-colors"
-                >
-                  <span>Administration</span>
-                  {collapsedCategories['Administration'] ? (
-                    <ChevronRight className="w-3 h-3" />
-                  ) : (
-                    <ChevronDown className="w-3 h-3" />
-                  )}
-                </button>
-                {!collapsedCategories['Administration'] && (
-                  <div className="space-y-1">
-                    {visibleAdminNav.map((item) => {
-                      const Icon = item.icon
-                      const isActive = location.pathname === item.href ||
-                        location.pathname.startsWith(item.href)
-
-                      return (
-                        <Link
-                          key={item.name}
-                          to={item.href}
-                          className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                            isActive
-                              ? 'bg-yellow-600/20 text-yellow-500 border border-yellow-600/30'
-                              : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-                          }`}
-                        >
-                          <Icon className="w-5 h-5 mr-3" />
-                          {item.name}
-                        </Link>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </nav>
-
-          {/* User section */}
-          <div className="p-4 border-t border-slate-700 space-y-1">
-            <Link
-              to="/profile"
-              className={`flex items-center w-full px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-                location.pathname === '/profile'
-                  ? 'bg-primary-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
-            >
-              <User className="w-5 h-5 mr-3" />
-              Profile
-            </Link>
-            <button
-              onClick={handleLogout}
-              className="flex items-center w-full px-4 py-3 text-sm font-medium text-slate-300 rounded-lg hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              <LogOut className="w-5 h-5 mr-3" />
-              Logout
-            </button>
-          </div>
-        </div>
-      </div>
+      <SidebarMenu
+        logo={<img src="/elder-logo.png" alt="Elder Logo" className="h-12 w-auto" />}
+        categories={allCategories}
+        currentPath={location.pathname}
+        onNavigate={handleNavigate}
+        footerItems={footerItems}
+        userRole={globalRole || tenantRole}
+        collapseIcon={ChevronDown}
+        expandIcon={ChevronRight}
+      />
 
       {/* Main content */}
       <div className="pl-64">

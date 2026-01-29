@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
@@ -7,63 +7,56 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
 import Card, { CardContent } from '@/components/Card'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import type { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import type { Tenant } from '@/types'
 
-const tenantFormConfig: FormConfig = {
-  fields: [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Tenant name',
-    },
-    {
-      name: 'slug',
-      label: 'Slug',
-      type: 'slug',
-      required: true,
-      placeholder: 'tenant-slug',
-    },
-    {
-      name: 'domain',
-      label: 'Domain (optional)',
-      type: 'domain',
-      placeholder: 'tenant.example.com',
-    },
-    {
-      name: 'subscription_tier',
-      label: 'Subscription Tier',
-      type: 'select',
-      options: [
-        { value: 'community', label: 'Community' },
-        { value: 'professional', label: 'Professional' },
-        { value: 'enterprise', label: 'Enterprise' },
-      ],
-      defaultValue: 'community',
-    },
-    {
-      name: 'data_retention_days',
-      label: 'Data Retention (days)',
-      type: 'number',
-      defaultValue: 90,
-    },
-    {
-      name: 'storage_quota_gb',
-      label: 'Storage Quota (GB)',
-      type: 'number',
-      defaultValue: 10,
-    },
-  ],
-  submitLabel: 'Create Tenant',
-}
-
-const editFormConfig: FormConfig = {
-  ...tenantFormConfig,
-  submitLabel: 'Save Changes',
-}
+// Form fields for tenant creation
+const tenantFields: FormField[] = [
+  {
+    name: 'name',
+    label: 'Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Tenant name',
+  },
+  {
+    name: 'slug',
+    label: 'Slug',
+    type: 'text',
+    required: true,
+    placeholder: 'tenant-slug',
+    helpText: 'Lowercase letters, numbers, and hyphens only',
+  },
+  {
+    name: 'domain',
+    label: 'Domain (optional)',
+    type: 'text',
+    placeholder: 'tenant.example.com',
+  },
+  {
+    name: 'subscription_tier',
+    label: 'Subscription Tier',
+    type: 'select',
+    options: [
+      { value: 'community', label: 'Community' },
+      { value: 'professional', label: 'Professional' },
+      { value: 'enterprise', label: 'Enterprise' },
+    ],
+    defaultValue: 'community',
+  },
+  {
+    name: 'data_retention_days',
+    label: 'Data Retention (days)',
+    type: 'number',
+    defaultValue: 90,
+  },
+  {
+    name: 'storage_quota_gb',
+    label: 'Storage Quota (GB)',
+    type: 'number',
+    defaultValue: 10,
+  },
+]
 
 export default function Tenants() {
   const [search, setSearch] = useState('')
@@ -144,6 +137,60 @@ export default function Tenants() {
     t.name.toLowerCase().includes(search.toLowerCase()) ||
     t.slug.toLowerCase().includes(search.toLowerCase())
   ) || []
+
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingTenant) return tenantFields
+    return [
+      {
+        name: 'name',
+        label: 'Name',
+        type: 'text',
+        required: true,
+        placeholder: 'Tenant name',
+        defaultValue: editingTenant.name,
+      },
+      {
+        name: 'slug',
+        label: 'Slug',
+        type: 'text',
+        required: true,
+        placeholder: 'tenant-slug',
+        helpText: 'Lowercase letters, numbers, and hyphens only',
+        defaultValue: editingTenant.slug,
+      },
+      {
+        name: 'domain',
+        label: 'Domain (optional)',
+        type: 'text',
+        placeholder: 'tenant.example.com',
+        defaultValue: editingTenant.domain || '',
+      },
+      {
+        name: 'subscription_tier',
+        label: 'Subscription Tier',
+        type: 'select',
+        options: [
+          { value: 'community', label: 'Community' },
+          { value: 'professional', label: 'Professional' },
+          { value: 'enterprise', label: 'Enterprise' },
+        ],
+        defaultValue: editingTenant.subscription_tier,
+      },
+      {
+        name: 'data_retention_days',
+        label: 'Data Retention (days)',
+        type: 'number',
+        defaultValue: editingTenant.data_retention_days,
+      },
+      {
+        name: 'storage_quota_gb',
+        label: 'Storage Quota (GB)',
+        type: 'number',
+        defaultValue: editingTenant.storage_quota_gb,
+      },
+    ]
+  }, [editingTenant])
 
   const getTierColor = (tier: string) => {
     switch (tier) {
@@ -258,32 +305,28 @@ export default function Tenants() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Tenant"
-        config={tenantFormConfig}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          title="Create Tenant"
+          fields={tenantFields}
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreate}
+          submitButtonText="Create Tenant"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingTenant}
-        onClose={() => setEditingTenant(null)}
-        title="Edit Tenant"
-        config={editFormConfig}
-        initialValues={editingTenant ? {
-          name: editingTenant.name,
-          slug: editingTenant.slug,
-          domain: editingTenant.domain || '',
-          subscription_tier: editingTenant.subscription_tier,
-          data_retention_days: editingTenant.data_retention_days,
-          storage_quota_gb: editingTenant.storage_quota_gb,
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingTenant && (
+        <FormModalBuilder
+          title="Edit Tenant"
+          fields={editFields}
+          isOpen={!!editingTenant}
+          onClose={() => setEditingTenant(null)}
+          onSubmit={handleUpdate}
+          submitButtonText="Save Changes"
+        />
+      )}
     </div>
   )
 }

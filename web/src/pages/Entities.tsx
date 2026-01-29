@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
@@ -11,8 +11,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import VillageIdBadge from '@/components/VillageIdBadge'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import type { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 export default function Entities() {
   const [search, setSearch] = useState('')
@@ -161,69 +160,60 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
     },
   })
 
-  const formConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
+  const fields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+    },
+    {
+      name: 'entity_type',
+      label: 'Category',
+      type: 'select',
+      required: true,
+      options: categoryOptions,
+    },
+    {
+      name: 'entity_sub_type',
+      label: 'Sub-Type',
+      type: 'select',
+      // Options are dynamically computed based on selected category
+      // Since FormBuilder doesn't support dynamic options, we include all possible options
+      // and use showWhen for visibility
+      options: [
+        // Flatten all subtypes from all categories
+        ...(entityTypesData?.entity_types?.flatMap((et: any) =>
+          (et.subtypes || []).map((subtype: string) => ({
+            value: subtype,
+            label: subtype.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+          }))
+        ) || [])
+      ],
+      showWhen: (values) => {
+        const category = values.entity_type
+        const categoryData = entityTypesData?.entity_types?.find((et: any) => et.type === category)
+        return categoryData?.subtypes?.length > 0
       },
-      {
-        name: 'entity_type',
-        label: 'Category',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select category' },
-          ...categoryOptions
-        ],
-      },
-      {
-        name: 'entity_sub_type',
-        label: 'Sub-Type',
-        type: 'select',
-        // Options are dynamically computed based on selected category
-        // Since FormBuilder doesn't support dynamic options, we include all possible options
-        // and use showWhen for visibility
-        options: [
-          { value: '', label: 'None' },
-          // Flatten all subtypes from all categories
-          ...(entityTypesData?.entity_types?.flatMap((et: any) =>
-            (et.subtypes || []).map((subtype: string) => ({
-              value: subtype,
-              label: subtype.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-            }))
-          ) || [])
-        ],
-        showWhen: (values) => {
-          const category = values.entity_type
-          const categoryData = entityTypesData?.entity_types?.find((et: any) => et.type === category)
-          return categoryData?.subtypes?.length > 0
-        },
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({
-            value: o.id,
-            label: o.name,
-          })),
-        ],
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        rows: 3,
-      },
-    ],
-    submitLabel: 'Create',
-  }
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      defaultValue: initialOrganizationId || '',
+      options: (orgs?.items || []).map((o: any) => ({
+        value: o.id,
+        label: o.name,
+      })),
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      rows: 3,
+    },
+  ], [categoryOptions, orgs, entityTypesData, initialOrganizationId])
 
   const handleSubmit = (data: Record<string, any>) => {
     createMutation.mutate({
@@ -236,16 +226,13 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
   }
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
       isOpen={true}
       onClose={onClose}
       title="Create Entity"
-      config={formConfig}
-      initialValues={{
-        organization_id: initialOrganizationId || '',
-      }}
+      fields={fields}
       onSubmit={handleSubmit}
-      isLoading={createMutation.isPending}
+      submitButtonText="Create"
     />
   )
 }

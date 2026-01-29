@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Shield, Key, Plus, Trash2, Edit, Copy } from 'lucide-react'
@@ -6,83 +6,78 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import type { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import type { IdPConfiguration } from '@/types'
 
-const idpFormConfig: FormConfig = {
-  fields: [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Okta, Azure AD, etc.',
-    },
-    {
-      name: 'idp_type',
-      label: 'Type',
-      type: 'select',
-      required: true,
-      options: [
-        { value: 'saml', label: 'SAML 2.0' },
-        { value: 'oidc', label: 'OpenID Connect' },
-      ],
-      defaultValue: 'saml',
-    },
-    {
-      name: 'entity_id',
-      label: 'Entity ID',
-      type: 'text',
-      placeholder: 'https://idp.example.com/...',
-    },
-    {
-      name: 'metadata_url',
-      label: 'Metadata URL',
-      type: 'url',
-      placeholder: 'https://idp.example.com/metadata',
-    },
-    {
-      name: 'sso_url',
-      label: 'SSO URL',
-      type: 'url',
-      placeholder: 'https://idp.example.com/sso',
-    },
-    {
-      name: 'slo_url',
-      label: 'SLO URL',
-      type: 'url',
-      placeholder: 'https://idp.example.com/slo',
-    },
-    {
-      name: 'certificate',
-      label: 'Certificate',
-      type: 'textarea',
-      placeholder: 'Paste certificate here...',
-      rows: 4,
-    },
-    {
-      name: 'default_role',
-      label: 'Default Role',
-      type: 'select',
-      required: true,
-      options: [
-        { value: 'reader', label: 'Reader' },
-        { value: 'editor', label: 'Editor' },
-        { value: 'admin', label: 'Admin' },
-      ],
-      defaultValue: 'reader',
-    },
-    {
-      name: 'jit_provisioning_enabled',
-      label: 'Enable JIT (Just-in-Time) Provisioning',
-      type: 'checkbox',
-      defaultValue: true,
-    },
-  ],
-  submitLabel: 'Save',
-  cancelLabel: 'Cancel',
-}
+const idpFields: FormField[] = [
+  {
+    name: 'name',
+    label: 'Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Okta, Azure AD, etc.',
+  },
+  {
+    name: 'idp_type',
+    label: 'Type',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'saml', label: 'SAML 2.0' },
+      { value: 'oidc', label: 'OpenID Connect' },
+    ],
+    defaultValue: 'saml',
+  },
+  {
+    name: 'entity_id',
+    label: 'Entity ID',
+    type: 'text',
+    placeholder: 'https://idp.example.com/...',
+  },
+  {
+    name: 'metadata_url',
+    label: 'Metadata URL',
+    type: 'url',
+    placeholder: 'https://idp.example.com/metadata',
+  },
+  {
+    name: 'sso_url',
+    label: 'SSO URL',
+    type: 'url',
+    placeholder: 'https://idp.example.com/sso',
+  },
+  {
+    name: 'slo_url',
+    label: 'SLO URL',
+    type: 'url',
+    placeholder: 'https://idp.example.com/slo',
+  },
+  {
+    name: 'certificate',
+    label: 'Certificate',
+    type: 'textarea',
+    placeholder: 'Paste certificate here...',
+    rows: 4,
+  },
+  {
+    name: 'default_role',
+    label: 'Default Role',
+    type: 'select',
+    required: true,
+    options: [
+      { value: 'reader', label: 'Reader' },
+      { value: 'editor', label: 'Editor' },
+      { value: 'admin', label: 'Admin' },
+    ],
+    defaultValue: 'reader',
+  },
+  {
+    name: 'jit_provisioning_enabled',
+    label: 'Enable JIT (Just-in-Time) Provisioning',
+    type: 'checkbox',
+    defaultValue: true,
+  },
+]
 
 export default function SSOConfiguration() {
   const [activeTab, setActiveTab] = useState<'idp' | 'scim'>('idp')
@@ -159,17 +154,17 @@ export default function SSOConfiguration() {
     toast.success('Copied to clipboard')
   }
 
-  const getEditInitialValues = (config: IdPConfiguration) => ({
-    name: config.name,
-    idp_type: config.idp_type,
-    entity_id: config.entity_id || '',
-    metadata_url: config.metadata_url || '',
-    sso_url: config.sso_url || '',
-    slo_url: config.slo_url || '',
-    certificate: config.certificate || '',
-    jit_provisioning_enabled: config.jit_provisioning_enabled,
-    default_role: config.default_role,
-  })
+  // Create edit fields with default values from the editing IdP
+  const editIdpFields = useMemo((): FormField[] => {
+    if (!editingIdP) return idpFields
+    return idpFields.map((field) => {
+      const value = editingIdP[field.name as keyof IdPConfiguration]
+      return {
+        ...field,
+        defaultValue: value !== undefined && value !== null ? value : field.defaultValue,
+      }
+    })
+  }, [editingIdP])
 
   return (
     <div className="p-6">
@@ -300,25 +295,26 @@ export default function SSOConfiguration() {
       )}
 
       {/* Create IdP Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateIdP}
-        onClose={() => setShowCreateIdP(false)}
-        title="Add IdP Configuration"
-        config={idpFormConfig}
-        onSubmit={handleCreateIdP}
-        isLoading={createIdPMutation.isPending}
-      />
+      {showCreateIdP && (
+        <FormModalBuilder
+          isOpen={showCreateIdP}
+          onClose={() => setShowCreateIdP(false)}
+          title="Add IdP Configuration"
+          fields={idpFields}
+          onSubmit={handleCreateIdP}
+          submitButtonText="Save"
+        />
+      )}
 
       {/* Edit IdP Modal */}
       {editingIdP && (
-        <ModalFormBuilder
+        <FormModalBuilder
           isOpen={true}
           onClose={() => setEditingIdP(null)}
           title="Edit IdP Configuration"
-          config={idpFormConfig}
-          initialValues={getEditInitialValues(editingIdP)}
+          fields={editIdpFields}
           onSubmit={handleUpdateIdP}
-          isLoading={updateIdPMutation.isPending}
+          submitButtonText="Save"
         />
       )}
     </div>

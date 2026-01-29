@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Key, TestTube, Trash2, Lock, Unlock, Copy, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,8 +7,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const PROVIDER_TYPES = [
   { value: 'aws_kms', label: 'AWS KMS' },
@@ -277,25 +276,22 @@ function EncryptModal({ providerId, onClose }: any) {
   const [ciphertext, setCiphertext] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const encryptFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'key_id',
-        label: 'Key ID (optional)',
-        type: 'text',
-        placeholder: 'key-12345',
-      },
-      {
-        name: 'plaintext',
-        label: 'Plaintext',
-        type: 'textarea',
-        required: true,
-        placeholder: 'Enter data to encrypt...',
-        rows: 4,
-      },
-    ],
-    submitLabel: 'Encrypt',
-  }
+  const encryptFields: FormField[] = useMemo(() => [
+    {
+      name: 'key_id',
+      label: 'Key ID (optional)',
+      type: 'text',
+      placeholder: 'key-12345',
+    },
+    {
+      name: 'plaintext',
+      label: 'Plaintext',
+      type: 'textarea',
+      required: true,
+      placeholder: 'Enter data to encrypt...',
+      rows: 4,
+    },
+  ], [])
 
   const encryptMutation = useMutation({
     mutationFn: (data: any) => api.encryptData(
@@ -325,13 +321,13 @@ function EncryptModal({ providerId, onClose }: any) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <ModalFormBuilder
+            <FormModalBuilder
               isOpen={true}
               onClose={onClose}
               title=""
-              config={encryptFormConfig}
+              fields={encryptFields}
               onSubmit={(data: any) => encryptMutation.mutate(data)}
-              isLoading={encryptMutation.isPending}
+              submitButtonText="Encrypt"
             />
             {ciphertext && (
               <div className="space-y-1">
@@ -365,25 +361,22 @@ function DecryptModal({ providerId, onClose }: any) {
   const [plaintext, setPlaintext] = useState('')
   const [copied, setCopied] = useState(false)
 
-  const decryptFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'key_id',
-        label: 'Key ID (optional)',
-        type: 'text',
-        placeholder: 'key-12345',
-      },
-      {
-        name: 'ciphertext',
-        label: 'Ciphertext',
-        type: 'textarea',
-        required: true,
-        placeholder: 'Enter encrypted data...',
-        rows: 4,
-      },
-    ],
-    submitLabel: 'Decrypt',
-  }
+  const decryptFields: FormField[] = useMemo(() => [
+    {
+      name: 'key_id',
+      label: 'Key ID (optional)',
+      type: 'text',
+      placeholder: 'key-12345',
+    },
+    {
+      name: 'ciphertext',
+      label: 'Ciphertext',
+      type: 'textarea',
+      required: true,
+      placeholder: 'Enter encrypted data...',
+      rows: 4,
+    },
+  ], [])
 
   const decryptMutation = useMutation({
     mutationFn: (data: any) => api.decryptData(
@@ -413,13 +406,13 @@ function DecryptModal({ providerId, onClose }: any) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <ModalFormBuilder
+            <FormModalBuilder
               isOpen={true}
               onClose={onClose}
               title=""
-              config={decryptFormConfig}
+              fields={decryptFields}
               onSubmit={(data: any) => decryptMutation.mutate(data)}
-              isLoading={decryptMutation.isPending}
+              submitButtonText="Decrypt"
             />
             {plaintext && (
               <div className="space-y-1">

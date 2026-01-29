@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Flag, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,8 +7,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const MILESTONE_STATUSES = [
   { value: 'open', label: 'Open' },
@@ -134,15 +133,75 @@ export default function Milestones() {
     return new Date(dueDate) < new Date()
   }
 
-  // Build form config with dynamic options
-  const getFormConfig = (): FormConfig => ({
-    fields: [
+  // Form fields for milestone creation
+  const milestoneFields: FormField[] = useMemo(() => [
+    {
+      name: 'title',
+      label: 'Title',
+      type: 'text',
+      required: true,
+      placeholder: 'Beta Release',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Milestone description (optional)',
+      rows: 3,
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
+        ...(organizations?.items?.map((org: any) => ({
+          value: org.id.toString(),
+          label: org.name,
+        })) || []),
+      ],
+    },
+    {
+      name: 'project_id',
+      label: 'Project (Optional)',
+      type: 'select',
+      options: [
+        { value: '', label: 'No project' },
+        ...(projects?.items?.map((project: any) => ({
+          value: project.id.toString(),
+          label: project.name,
+        })) || []),
+      ],
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      defaultValue: 'open',
+      options: MILESTONE_STATUSES.map(s => ({
+        value: s.value,
+        label: s.label,
+      })),
+    },
+    {
+      name: 'due_date',
+      label: 'Due Date',
+      type: 'date',
+    },
+  ], [organizations?.items, projects?.items])
+
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingMilestone) return milestoneFields
+    return [
       {
         name: 'title',
         label: 'Title',
         type: 'text',
         required: true,
         placeholder: 'Beta Release',
+        defaultValue: editingMilestone.title || '',
       },
       {
         name: 'description',
@@ -150,12 +209,14 @@ export default function Milestones() {
         type: 'textarea',
         placeholder: 'Milestone description (optional)',
         rows: 3,
+        defaultValue: editingMilestone.description || '',
       },
       {
         name: 'organization_id',
         label: 'Organization',
         type: 'select',
         required: true,
+        defaultValue: editingMilestone.organization_id?.toString() || '',
         options: [
           { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
           ...(organizations?.items?.map((org: any) => ({
@@ -168,6 +229,7 @@ export default function Milestones() {
         name: 'project_id',
         label: 'Project (Optional)',
         type: 'select',
+        defaultValue: editingMilestone.project_id?.toString() || '',
         options: [
           { value: '', label: 'No project' },
           ...(projects?.items?.map((project: any) => ({
@@ -180,7 +242,7 @@ export default function Milestones() {
         name: 'status',
         label: 'Status',
         type: 'select',
-        defaultValue: 'open',
+        defaultValue: editingMilestone.status || 'open',
         options: MILESTONE_STATUSES.map(s => ({
           value: s.value,
           label: s.label,
@@ -190,10 +252,10 @@ export default function Milestones() {
         name: 'due_date',
         label: 'Due Date',
         type: 'date',
+        defaultValue: editingMilestone.due_date || '',
       },
-    ],
-    submitLabel: editingMilestone ? 'Update' : 'Create',
-  })
+    ]
+  }, [editingMilestone, organizations?.items, projects?.items, milestoneFields])
 
   return (
     <div className="p-8">
@@ -335,32 +397,28 @@ export default function Milestones() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Milestone"
-        config={getFormConfig()}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          title="Create Milestone"
+          fields={milestoneFields}
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreate}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingMilestone}
-        onClose={() => setEditingMilestone(null)}
-        title="Edit Milestone"
-        config={getFormConfig()}
-        initialValues={editingMilestone ? {
-          title: editingMilestone.title || '',
-          description: editingMilestone.description || '',
-          status: editingMilestone.status || 'open',
-          organization_id: editingMilestone.organization_id?.toString() || '',
-          project_id: editingMilestone.project_id?.toString() || '',
-          due_date: editingMilestone.due_date || '',
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingMilestone && (
+        <FormModalBuilder
+          title="Edit Milestone"
+          fields={editFields}
+          isOpen={!!editingMilestone}
+          onClose={() => setEditingMilestone(null)}
+          onSubmit={handleUpdate}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

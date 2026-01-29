@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 interface CreateOnCallRotationModalProps {
   isOpen: boolean
@@ -26,7 +25,7 @@ const TIMEZONE_OPTIONS = [
   { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
   { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
   { value: 'Australia/Sydney', label: 'Australia/Sydney (AEDT/AEST)' },
-  { value: 'India/Kolkata', label: 'India/Kolkata (IST)' },
+  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
 ]
 
 export default function CreateOnCallRotationModal({
@@ -35,10 +34,6 @@ export default function CreateOnCallRotationModal({
   rotation,
   onSuccess,
 }: CreateOnCallRotationModalProps) {
-  // scopeType is controlled by form values, not separate state
-  const _unusedScopeType = rotation?.scope_type || 'organization'
-  void _unusedScopeType // Suppress unused variable warning - form handles scope_type
-
   // Fetch organizations and services
   const { data: organizations } = useQuery({
     queryKey: ['organizations-dropdown'],
@@ -94,123 +89,117 @@ export default function CreateOnCallRotationModal({
     [services]
   )
 
-  // Form configuration with conditional fields
-  const getFormConfig = (): FormConfig => ({
-    fields: [
-      {
-        name: 'name',
-        label: 'Rotation Name',
-        type: 'text',
-        required: true,
-        placeholder: 'e.g., Backend API On-Call',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Optional description of this rotation',
-        rows: 2,
-      },
-      {
-        name: 'scope_type',
-        label: 'Scope',
-        type: 'select',
-        required: true,
-        options: [
-          { value: 'organization', label: 'Organization-level' },
-          { value: 'service', label: 'Service-level' },
-        ],
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        showWhen: (values) => values.scope_type === 'organization',
-        options: [
-          { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
-          ...organizationOptions,
-        ],
-      },
-      {
-        name: 'service_id',
-        label: 'Service',
-        type: 'select',
-        required: true,
-        showWhen: (values) => values.scope_type === 'service',
-        options: [
-          { value: '', label: serviceOptions.length ? 'Select service' : 'No services found' },
-          ...serviceOptions,
-        ],
-      },
-      {
-        name: 'schedule_type',
-        label: 'Schedule Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: 'weekly', label: 'Weekly Rotation' },
-          { value: 'cron', label: 'Custom Schedule (Cron)' },
-          { value: 'manual', label: 'Manual Assignment' },
-          { value: 'follow_the_sun', label: 'Follow-the-Sun (24/7)' },
-        ],
-      },
+  // Form fields using shared FormModalBuilder format
+  const fields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Rotation Name',
+      type: 'text' as const,
+      required: true,
+      placeholder: 'e.g., Backend API On-Call',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea' as const,
+      placeholder: 'Optional description of this rotation',
+      rows: 2,
+    },
+    {
+      name: 'scope_type',
+      label: 'Scope',
+      type: 'radio' as const,
+      required: true,
+      defaultValue: 'organization',
+      options: [
+        { value: 'organization', label: 'Organization-level' },
+        { value: 'service', label: 'Service-level' },
+      ],
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select' as const,
+      required: true,
+      showWhen: (values) => values.scope_type === 'organization',
+      options: organizationOptions.length > 0 ? organizationOptions : [{ value: '', label: 'No organizations found' }],
+    },
+    {
+      name: 'service_id',
+      label: 'Service',
+      type: 'select' as const,
+      required: true,
+      showWhen: (values) => values.scope_type === 'service',
+      options: serviceOptions.length > 0 ? serviceOptions : [{ value: '', label: 'No services found' }],
+    },
+    {
+      name: 'schedule_type',
+      label: 'Schedule Type',
+      type: 'select' as const,
+      required: true,
+      defaultValue: 'weekly',
+      options: [
+        { value: 'weekly', label: 'Weekly Rotation' },
+        { value: 'cron', label: 'Custom Schedule (Cron)' },
+        { value: 'manual', label: 'Manual Assignment' },
+        { value: 'follow_the_sun', label: 'Follow-the-Sun (24/7)' },
+      ],
+    },
+    // Weekly fields
+    {
+      name: 'rotation_length_days',
+      label: 'Rotation Length (days)',
+      type: 'number' as const,
+      required: true,
+      defaultValue: 7,
+      placeholder: '7',
+      showWhen: (values) => values.schedule_type === 'weekly',
+    },
+    {
+      name: 'rotation_start_date',
+      label: 'Rotation Start Date',
+      type: 'date' as const,
+      required: true,
+      showWhen: (values) => values.schedule_type === 'weekly',
+    },
+    // Cron field
+    {
+      name: 'schedule_cron',
+      label: 'Cron Expression',
+      type: 'text' as const,
+      required: true,
+      placeholder: '0 0 * * *',
+      helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 9 * * MON" for Mondays at 9 AM',
+      showWhen: (values) => values.schedule_type === 'cron',
+    },
+    // Follow-the-sun fields
+    {
+      name: 'handoff_timezone',
+      label: 'Handoff Timezone',
+      type: 'select' as const,
+      required: true,
+      defaultValue: 'UTC',
+      showWhen: (values) => values.schedule_type === 'follow_the_sun',
+      options: TIMEZONE_OPTIONS,
+    },
+    {
+      name: 'shift_split',
+      label: 'Split into multiple shifts per day',
+      type: 'checkbox' as const,
+      defaultValue: false,
+      showWhen: (values) => values.schedule_type === 'follow_the_sun',
+    },
+    // Status
+    {
+      name: 'is_active',
+      label: 'Enable this rotation',
+      type: 'checkbox' as const,
+      defaultValue: true,
+    },
+  ], [organizationOptions, serviceOptions])
 
-      // Weekly fields
-      {
-        name: 'rotation_length_days',
-        label: 'Rotation Length (days)',
-        type: 'number',
-        defaultValue: 7,
-        placeholder: '7',
-        showWhen: (values) => values.schedule_type === 'weekly',
-      },
-      {
-        name: 'rotation_start_date',
-        label: 'Rotation Start Date',
-        type: 'date',
-        showWhen: (values) => values.schedule_type === 'weekly',
-      },
-
-      // Cron field
-      {
-        name: 'schedule_cron',
-        label: 'Cron Expression',
-        type: 'cron',
-        placeholder: '0 0 * * *',
-        helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 9 * * MON" for Mondays at 9 AM',
-        showWhen: (values) => values.schedule_type === 'cron',
-      },
-
-      // Follow-the-sun fields
-      {
-        name: 'handoff_timezone',
-        label: 'Handoff Timezone',
-        type: 'select',
-        showWhen: (values) => values.schedule_type === 'follow_the_sun',
-        options: TIMEZONE_OPTIONS,
-      },
-      {
-        name: 'shift_split',
-        label: 'Split into multiple shifts per day',
-        type: 'checkbox',
-        defaultValue: false,
-        showWhen: (values) => values.schedule_type === 'follow_the_sun',
-      },
-
-      // Status
-      {
-        name: 'is_active',
-        label: 'Enable this rotation',
-        type: 'checkbox',
-        defaultValue: true,
-      },
-    ],
-    submitLabel: rotation ? 'Update' : 'Create',
-  })
-
-  // Get initial values for edit
-  const getInitialValues = () => {
+  // Get initial values for edit mode
+  const initialValues = useMemo(() => {
     if (!rotation) return undefined
     return {
       name: rotation.name || '',
@@ -226,9 +215,11 @@ export default function CreateOnCallRotationModal({
       shift_split: rotation.shift_split || false,
       is_active: rotation.is_active !== false,
     }
-  }
+  }, [rotation])
 
   const handleSubmit = (data: Record<string, any>) => {
+    console.log('[CreateOnCallRotationModal] Form submitted with data:', data)
+
     // Clean up data based on schedule type
     const cleanedData: any = {
       name: data.name,
@@ -252,9 +243,17 @@ export default function CreateOnCallRotationModal({
     } else if (data.schedule_type === 'cron') {
       cleanedData.schedule_cron = data.schedule_cron
     } else if (data.schedule_type === 'follow_the_sun') {
-      cleanedData.handoff_timezone = data.handoff_timezone
+      cleanedData.handoff_timezone = data.handoff_timezone || 'UTC'
       cleanedData.shift_split = data.shift_split !== false
+      // Default shift config for follow-the-sun (can be customized later)
+      cleanedData.shift_config = {
+        shifts: [
+          { name: 'Day Shift', start_hour: 8, end_hour: 20, timezone: data.handoff_timezone || 'UTC' }
+        ]
+      }
     }
+
+    console.log('[CreateOnCallRotationModal] Cleaned data for API:', cleanedData)
 
     if (rotation) {
       updateMutation.mutate(cleanedData)
@@ -266,14 +265,15 @@ export default function CreateOnCallRotationModal({
   if (!isOpen) return null
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
+      title={rotation ? 'Edit Rotation' : 'Create On-Call Rotation'}
+      fields={fields}
+      initialValues={initialValues}
       isOpen={isOpen}
       onClose={onClose}
-      title={rotation ? 'Edit Rotation' : 'Create On-Call Rotation'}
-      config={getFormConfig()}
-      initialValues={getInitialValues()}
       onSubmit={handleSubmit}
       isLoading={createMutation.isPending || updateMutation.isPending}
+      submitLabel={rotation ? 'Update' : 'Create'}
     />
   )
 }

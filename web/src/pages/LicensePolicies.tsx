@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Shield } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -6,48 +6,44 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
-const licensePolicyFormConfig: FormConfig = {
-  fields: [
-    {
-      name: 'name',
-      label: 'Policy Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Enter policy name',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Enter description (optional)',
-      rows: 3,
-    },
-    {
-      name: 'allowed_patterns',
-      label: 'Allowed Patterns',
-      type: 'textarea',
-      placeholder: 'Enter allowed patterns (comma-separated or line-separated)',
-      rows: 3,
-    },
-    {
-      name: 'denied_patterns',
-      label: 'Denied Patterns',
-      type: 'textarea',
-      placeholder: 'Enter denied patterns (comma-separated or line-separated)',
-      rows: 3,
-    },
-    {
-      name: 'is_active',
-      label: 'Active',
-      type: 'checkbox',
-      defaultValue: true,
-    },
-  ],
-  submitLabel: 'Create',
-}
+const licensePolicyFields: FormField[] = [
+  {
+    name: 'name',
+    label: 'Policy Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter policy name',
+  },
+  {
+    name: 'description',
+    label: 'Description',
+    type: 'textarea',
+    placeholder: 'Enter description (optional)',
+    rows: 3,
+  },
+  {
+    name: 'allowed_patterns',
+    label: 'Allowed Patterns',
+    type: 'textarea',
+    placeholder: 'Enter allowed patterns (comma-separated or line-separated)',
+    rows: 3,
+  },
+  {
+    name: 'denied_patterns',
+    label: 'Denied Patterns',
+    type: 'textarea',
+    placeholder: 'Enter denied patterns (comma-separated or line-separated)',
+    rows: 3,
+  },
+  {
+    name: 'is_active',
+    label: 'Active',
+    type: 'checkbox',
+    defaultValue: true,
+  },
+]
 
 export default function LicensePolicies() {
   const [search, setSearch] = useState('')
@@ -130,10 +126,18 @@ export default function LicensePolicies() {
            policy.description?.toLowerCase().includes(search.toLowerCase())
   })
 
-  const editFormConfig: FormConfig = {
-    ...licensePolicyFormConfig,
-    submitLabel: 'Update',
-  }
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingPolicy) return licensePolicyFields
+    return licensePolicyFields.map((field) => ({
+      ...field,
+      defaultValue: field.name === 'name' ? editingPolicy.name :
+                    field.name === 'description' ? (editingPolicy.description || '') :
+                    field.name === 'allowed_patterns' ? (editingPolicy.allowed_patterns || '') :
+                    field.name === 'denied_patterns' ? (editingPolicy.denied_patterns || '') :
+                    field.name === 'is_active' ? (editingPolicy.is_active || false) :
+                    field.defaultValue,
+    }))
+  }, [editingPolicy])
 
   const parsePatterns = (patterns: string): string[] => {
     if (!patterns) return []
@@ -267,31 +271,28 @@ export default function LicensePolicies() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create License Policy"
-        config={licensePolicyFormConfig}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          title="Create License Policy"
+          fields={licensePolicyFields}
+          onSubmit={handleCreate}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingPolicy}
-        onClose={() => setEditingPolicy(null)}
-        title="Edit License Policy"
-        config={editFormConfig}
-        initialValues={editingPolicy ? {
-          name: editingPolicy.name,
-          description: editingPolicy.description || '',
-          allowed_patterns: editingPolicy.allowed_patterns || '',
-          denied_patterns: editingPolicy.denied_patterns || '',
-          is_active: editingPolicy.is_active || false,
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingPolicy && (
+        <FormModalBuilder
+          isOpen={!!editingPolicy}
+          onClose={() => setEditingPolicy(null)}
+          title="Edit License Policy"
+          fields={editFields}
+          onSubmit={handleUpdate}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

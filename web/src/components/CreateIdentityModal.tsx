@@ -2,8 +2,7 @@ import { useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const IDENTITY_TYPES = [
   { value: 'employee', label: 'Employee' },
@@ -80,119 +79,111 @@ export default function CreateIdentityModal({
     }))
   }, [organizations])
 
-  // Form configuration
-  const formConfig: FormConfig = useMemo(() => ({
-    fields: [
-      {
-        name: 'username',
-        label: 'Username',
-        type: 'username',
-        required: true,
-        placeholder: 'Enter username',
-      },
-      {
-        name: 'email',
-        label: 'Email',
-        type: 'email',
-        required: true,
-        placeholder: 'Enter email',
-      },
-      {
-        name: 'full_name',
-        label: 'Full Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Enter full name',
-      },
-      {
-        name: 'identity_type',
-        label: 'Identity Type',
-        type: 'select',
-        required: true,
-        options: IDENTITY_TYPES,
-      },
-      {
-        name: 'auth_provider',
-        label: 'Authentication Provider',
-        type: 'select',
-        required: true,
-        options: [
-          { value: 'local', label: 'Local App' },
-          { value: 'ldap', label: 'LDAP' },
-          { value: 'saml', label: 'SAML' },
-          { value: 'oauth2', label: 'OAuth2' },
-        ],
-      },
-      {
-        name: 'password',
-        label: 'Password',
-        type: 'password_generate',
-        required: true,
-        placeholder: 'Enter or generate password',
-        showWhen: (values) => values.auth_provider === 'local',
-      },
-      ...(defaultOrganizationId ? [] : [{
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select' as const,
-        required: true,
-        options: [{ value: '', label: 'Select organization' }, ...organizationOptions],
-      }]),
-      {
-        name: 'is_portal_user',
-        label: 'Create as Portal User',
-        type: 'checkbox',
-        helpText: 'Portal users can log in to the Elder web interface',
-      },
-      {
-        name: 'portal_role',
-        label: 'Portal Role',
-        type: 'select',
-        required: true,
-        triggerField: 'is_portal_user',
-        options: [
-          { value: 'viewer', label: 'Viewer - Read-only access' },
-          { value: 'editor', label: 'Editor - Can modify data' },
-          { value: 'admin', label: 'Admin - Full access' },
-        ],
-      },
-      {
-        name: 'permission_scope',
-        label: 'Permission Scope',
-        type: 'select',
-        required: true,
-        triggerField: 'is_portal_user',
-        options: [
-          { value: 'global', label: 'Global - System-wide access' },
-          { value: 'tenant', label: 'Tenant - Access within this tenant' },
-          { value: 'organization', label: 'Organization - Access within this organization' },
-        ],
-      },
-      {
-        name: 'must_change_password',
-        label: 'Require password change on first login',
-        type: 'checkbox',
-        triggerField: 'is_portal_user',
-        defaultValue: true,
-      },
-    ],
-    submitLabel: 'Create Identity',
-  }), [organizationOptions, defaultOrganizationId])
-
-  // Initial form values
-  const initialValues = useMemo(() => ({
-    username: '',
-    email: '',
-    full_name: '',
-    identity_type: defaultIdentityType,
-    auth_provider: 'local',
-    password: '',
-    organization_id: defaultOrganizationId || '',
-    is_portal_user: defaultIsPortalUser,
-    portal_role: defaultPortalRole,
-    permission_scope: defaultPermissionScope,
-    must_change_password: true,
-  }), [defaultOrganizationId, defaultIsPortalUser, defaultPortalRole, defaultIdentityType, defaultPermissionScope])
+  // Form fields configuration
+  const fields: FormField[] = useMemo(() => [
+    {
+      name: 'username',
+      label: 'Username',
+      type: 'text',
+      required: true,
+      placeholder: 'Enter username',
+      defaultValue: '',
+    },
+    {
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      required: true,
+      placeholder: 'Enter email',
+      defaultValue: '',
+    },
+    {
+      name: 'full_name',
+      label: 'Full Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Enter full name',
+      defaultValue: '',
+    },
+    {
+      name: 'identity_type',
+      label: 'Identity Type',
+      type: 'select',
+      required: true,
+      options: IDENTITY_TYPES,
+      defaultValue: defaultIdentityType,
+    },
+    {
+      name: 'auth_provider',
+      label: 'Authentication Provider',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'local', label: 'Local App' },
+        { value: 'ldap', label: 'LDAP' },
+        { value: 'saml', label: 'SAML' },
+        { value: 'oauth2', label: 'OAuth2' },
+      ],
+      defaultValue: 'local',
+    },
+    {
+      name: 'password',
+      label: 'Password',
+      type: 'password_generate',
+      required: true,
+      placeholder: 'Enter or generate password',
+      showWhen: (values) => values.auth_provider === 'local',
+      defaultValue: '',
+    },
+    ...(defaultOrganizationId ? [] : [{
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select' as const,
+      required: true,
+      options: [{ value: '', label: 'Select organization' }, ...organizationOptions],
+      defaultValue: '',
+    }]),
+    {
+      name: 'is_portal_user',
+      label: 'Create as Portal User',
+      type: 'checkbox',
+      helpText: 'Portal users can log in to the Elder web interface',
+      defaultValue: defaultIsPortalUser,
+    },
+    {
+      name: 'portal_role',
+      label: 'Portal Role',
+      type: 'select',
+      required: true,
+      triggerField: 'is_portal_user',
+      options: [
+        { value: 'viewer', label: 'Viewer - Read-only access' },
+        { value: 'editor', label: 'Editor - Can modify data' },
+        { value: 'admin', label: 'Admin - Full access' },
+      ],
+      defaultValue: defaultPortalRole,
+    },
+    {
+      name: 'permission_scope',
+      label: 'Permission Scope',
+      type: 'select',
+      required: true,
+      triggerField: 'is_portal_user',
+      options: [
+        { value: 'global', label: 'Global - System-wide access' },
+        { value: 'tenant', label: 'Tenant - Access within this tenant' },
+        { value: 'organization', label: 'Organization - Access within this organization' },
+      ],
+      defaultValue: defaultPermissionScope,
+    },
+    {
+      name: 'must_change_password',
+      label: 'Require password change on first login',
+      type: 'checkbox',
+      triggerField: 'is_portal_user',
+      defaultValue: true,
+    },
+  ], [organizationOptions, defaultOrganizationId, defaultIdentityType, defaultIsPortalUser, defaultPortalRole, defaultPermissionScope])
 
   const handleSubmit = (data: Record<string, any>) => {
     const identityData: any = {
@@ -237,14 +228,13 @@ export default function CreateIdentityModal({
   }
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
       isOpen={isOpen}
       onClose={onClose}
       title="Create Identity"
-      config={formConfig}
-      initialValues={initialValues}
+      fields={fields}
       onSubmit={handleSubmit}
-      isLoading={createMutation.isPending}
+      submitButtonText="Create Identity"
     />
   )
 }

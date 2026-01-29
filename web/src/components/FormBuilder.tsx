@@ -63,14 +63,18 @@ export default function FormBuilder({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
+    console.log('[FormBuilder] Submit triggered, current values:', values)
+
     // Validate all fields
     const validationErrors = validateForm(values, config.fields)
     if (Object.keys(validationErrors).length > 0) {
+      console.warn('[FormBuilder] Validation errors:', validationErrors)
       setErrors(validationErrors)
       return
     }
 
     const processedData = processFormData(values, config.fields)
+    console.log('[FormBuilder] Validation passed, submitting:', processedData)
     onSubmit(processedData)
   }
 
