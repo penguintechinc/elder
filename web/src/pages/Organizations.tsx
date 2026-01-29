@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Trash2, Edit } from 'lucide-react'
@@ -11,8 +11,25 @@ import type { Organization } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+
+// Form fields for organization creation
+const orgFields: FormField[] = [
+  {
+    name: 'name',
+    label: 'Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter organization name'
+  },
+  {
+    name: 'description',
+    label: 'Description',
+    type: 'textarea',
+    placeholder: 'Enter description (optional)',
+    rows: 3
+  }
+]
 
 export default function Organizations() {
   const [search, setSearch] = useState('')
@@ -80,46 +97,28 @@ export default function Organizations() {
     confirmDelete(name, () => deleteMutation.mutate(id))
   }
 
-  // Form configurations
-  const createFormConfig: FormConfig = {
-    fields: [
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingOrg) return orgFields
+    return [
       {
         name: 'name',
         label: 'Name',
         type: 'text',
         required: true,
-        placeholder: 'Enter organization name'
+        placeholder: 'Enter organization name',
+        defaultValue: editingOrg.name,
       },
       {
         name: 'description',
         label: 'Description',
         type: 'textarea',
         placeholder: 'Enter description (optional)',
-        rows: 3
+        rows: 3,
+        defaultValue: editingOrg.description || '',
       }
-    ],
-    submitLabel: 'Create'
-  }
-
-  const editFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Enter organization name'
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-        rows: 3
-      }
-    ],
-    submitLabel: 'Update'
-  }
+    ]
+  }, [editingOrg])
 
   const handleCreate = (formData: Record<string, any>) => {
     const data: { name: string; description?: string; parent_id?: number } = {
@@ -223,33 +222,33 @@ export default function Organizations() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => {
-          setShowCreateModal(false)
-          if (initialParentId) {
-            navigate('/organizations', { replace: true })
-          }
-        }}
-        title="Create Organization Unit"
-        config={createFormConfig}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          title="Create Organization Unit"
+          fields={orgFields}
+          isOpen={showCreateModal}
+          onClose={() => {
+            setShowCreateModal(false)
+            if (initialParentId) {
+              navigate('/organizations', { replace: true })
+            }
+          }}
+          onSubmit={handleCreate}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingOrg}
-        onClose={() => setEditingOrg(null)}
-        title="Edit Organization Unit"
-        config={editFormConfig}
-        initialValues={editingOrg ? {
-          name: editingOrg.name,
-          description: editingOrg.description || ''
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingOrg && (
+        <FormModalBuilder
+          title="Edit Organization Unit"
+          fields={editFields}
+          isOpen={!!editingOrg}
+          onClose={() => setEditingOrg(null)}
+          onSubmit={handleUpdate}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

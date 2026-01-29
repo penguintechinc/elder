@@ -5,9 +5,8 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-import FormBuilder from '@/components/FormBuilder'
 import Input from '@/components/Input'
-import { FormConfig } from '@/types/form'
+import { FormBuilder, FieldConfig as FormField } from '@penguin/react_libs/components/FormBuilder'
 
 export default function Profile() {
   const [isEditing, setIsEditing] = useState(false)
@@ -57,36 +56,32 @@ export default function Profile() {
     },
   })
 
-  const profileFormConfig: FormConfig = useMemo(() => ({
-    fields: [
-      {
-        name: 'email',
-        label: 'Email',
-        type: 'email',
-        placeholder: 'your.email@example.com',
-      },
-      {
-        name: 'full_name',
-        label: 'Full Name',
-        type: 'text',
-        placeholder: 'John Doe',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        options: [
-          { value: '', label: 'No Organization' },
-          ...(orgsData?.items?.map((org: any) => ({
-            value: org.id.toString(),
-            label: org.name,
-          })) || []),
-        ],
-      },
-    ],
-    submitLabel: 'Save Changes',
-    cancelLabel: 'Cancel',
-  }), [orgsData])
+  const profileFields: FormField[] = useMemo(() => [
+    {
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      placeholder: 'your.email@example.com',
+    },
+    {
+      name: 'full_name',
+      label: 'Full Name',
+      type: 'text',
+      placeholder: 'John Doe',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      options: [
+        { value: '', label: 'No Organization' },
+        ...(orgsData?.items?.map((org: any) => ({
+          value: org.id.toString(),
+          label: org.name,
+        })) || []),
+      ],
+    },
+  ], [orgsData])
 
   const handleEdit = () => {
     setIsEditing(true)
@@ -182,11 +177,14 @@ export default function Profile() {
               </div>
 
               <FormBuilder
-                config={profileFormConfig}
-                initialValues={initialValues}
+                mode="inline"
+                fields={profileFields}
+                initialData={initialValues}
                 onSubmit={handleSubmit}
                 onCancel={handleCancel}
-                isLoading={updateMutation.isPending}
+                loading={updateMutation.isPending}
+                submitLabel="Save Changes"
+                cancelLabel="Cancel"
               />
             </div>
           ) : (

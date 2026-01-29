@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, FileKey, Trash2, Edit2, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,8 +7,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 // Input is used in form configs only, not directly imported for this component
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const CERT_CREATORS = [
   { value: 'digicert', label: 'DigiCert' },
@@ -323,84 +322,81 @@ function CreateCertificateModal({ onClose, onSuccess }: any) {
     },
   })
 
-  const formConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Certificate Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Production SSL Certificate',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
-        ],
-      },
-      {
-        name: 'creator',
-        label: 'Certificate Creator',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select creator' },
-          ...CERT_CREATORS,
-        ],
-      },
-      {
-        name: 'cert_type',
-        label: 'Certificate Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select type' },
-          ...CERT_TYPES,
-        ],
-      },
-      {
-        name: 'common_name',
-        label: 'Common Name (CN)',
-        type: 'text',
-        placeholder: 'example.com',
-      },
-      {
-        name: 'issue_date',
-        label: 'Issue Date',
-        type: 'date',
-        required: true,
-      },
-      {
-        name: 'expiration_date',
-        label: 'Expiration Date',
-        type: 'date',
-        required: true,
-      },
-      {
-        name: 'auto_renew',
-        label: 'Auto-Renew',
-        type: 'checkbox',
-      },
-      {
-        name: 'certificate_pem',
-        label: 'Certificate PEM (optional)',
-        type: 'textarea',
-        rows: 6,
-        placeholder: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        rows: 3,
-      },
-    ],
-    submitLabel: 'Create Certificate',
-  }
+  const fields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Certificate Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Production SSL Certificate',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
+      ],
+    },
+    {
+      name: 'creator',
+      label: 'Certificate Creator',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select creator' },
+        ...CERT_CREATORS,
+      ],
+    },
+    {
+      name: 'cert_type',
+      label: 'Certificate Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select type' },
+        ...CERT_TYPES,
+      ],
+    },
+    {
+      name: 'common_name',
+      label: 'Common Name (CN)',
+      type: 'text',
+      placeholder: 'example.com',
+    },
+    {
+      name: 'issue_date',
+      label: 'Issue Date',
+      type: 'date',
+      required: true,
+    },
+    {
+      name: 'expiration_date',
+      label: 'Expiration Date',
+      type: 'date',
+      required: true,
+    },
+    {
+      name: 'auto_renew',
+      label: 'Auto-Renew',
+      type: 'checkbox',
+    },
+    {
+      name: 'certificate_pem',
+      label: 'Certificate PEM (optional)',
+      type: 'textarea',
+      rows: 6,
+      placeholder: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      rows: 3,
+    },
+  ], [orgs?.items])
 
   const handleSubmit = (data: Record<string, any>) => {
     createMutation.mutate({
@@ -418,13 +414,13 @@ function CreateCertificateModal({ onClose, onSuccess }: any) {
   }
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
       isOpen={true}
       onClose={onClose}
       title="Create Certificate"
-      config={formConfig}
+      fields={fields}
       onSubmit={handleSubmit}
-      isLoading={createMutation.isPending}
+      submitButtonText={createMutation.isPending ? 'Creating...' : 'Create Certificate'}
     />
   )
 }
@@ -446,81 +442,88 @@ function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
     },
   })
 
-  const formConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Certificate Name',
-        type: 'text',
-        required: true,
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
-        ],
-      },
-      {
-        name: 'creator',
-        label: 'Certificate Creator',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select creator' },
-          ...CERT_CREATORS,
-        ],
-      },
-      {
-        name: 'cert_type',
-        label: 'Certificate Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select type' },
-          ...CERT_TYPES,
-        ],
-      },
-      {
-        name: 'common_name',
-        label: 'Common Name (CN)',
-        type: 'text',
-      },
-      {
-        name: 'issue_date',
-        label: 'Issue Date',
-        type: 'date',
-        required: true,
-      },
-      {
-        name: 'expiration_date',
-        label: 'Expiration Date',
-        type: 'date',
-        required: true,
-      },
-      {
-        name: 'auto_renew',
-        label: 'Auto-Renew',
-        type: 'checkbox',
-      },
-      {
-        name: 'certificate_pem',
-        label: 'Certificate PEM (optional)',
-        type: 'textarea',
-        rows: 6,
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        rows: 3,
-      },
-    ],
-    submitLabel: 'Update Certificate',
-  }
+  const editFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Certificate Name',
+      type: 'text',
+      required: true,
+      defaultValue: certificate.name,
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      defaultValue: String(certificate.organization_id),
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
+      ],
+    },
+    {
+      name: 'creator',
+      label: 'Certificate Creator',
+      type: 'select',
+      required: true,
+      defaultValue: certificate.creator,
+      options: [
+        { value: '', label: 'Select creator' },
+        ...CERT_CREATORS,
+      ],
+    },
+    {
+      name: 'cert_type',
+      label: 'Certificate Type',
+      type: 'select',
+      required: true,
+      defaultValue: certificate.cert_type,
+      options: [
+        { value: '', label: 'Select type' },
+        ...CERT_TYPES,
+      ],
+    },
+    {
+      name: 'common_name',
+      label: 'Common Name (CN)',
+      type: 'text',
+      defaultValue: certificate.common_name || '',
+    },
+    {
+      name: 'issue_date',
+      label: 'Issue Date',
+      type: 'date',
+      required: true,
+      defaultValue: certificate.issue_date,
+    },
+    {
+      name: 'expiration_date',
+      label: 'Expiration Date',
+      type: 'date',
+      required: true,
+      defaultValue: certificate.expiration_date,
+    },
+    {
+      name: 'auto_renew',
+      label: 'Auto-Renew',
+      type: 'checkbox',
+      defaultValue: certificate.auto_renew || false,
+    },
+    {
+      name: 'certificate_pem',
+      label: 'Certificate PEM (optional)',
+      type: 'textarea',
+      rows: 6,
+      defaultValue: certificate.certificate_pem || '',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      rows: 3,
+      defaultValue: certificate.description || '',
+    },
+  ], [orgs?.items, certificate])
 
   const handleSubmit = (data: Record<string, any>) => {
     updateMutation.mutate({
@@ -538,25 +541,13 @@ function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
   }
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
       isOpen={true}
       onClose={onClose}
       title="Edit Certificate"
-      config={formConfig}
-      initialValues={{
-        name: certificate.name,
-        organization_id: String(certificate.organization_id),
-        creator: certificate.creator,
-        cert_type: certificate.cert_type,
-        common_name: certificate.common_name || '',
-        issue_date: certificate.issue_date,
-        expiration_date: certificate.expiration_date,
-        auto_renew: certificate.auto_renew || false,
-        certificate_pem: certificate.certificate_pem || '',
-        description: certificate.description || '',
-      }}
+      fields={editFields}
       onSubmit={handleSubmit}
-      isLoading={updateMutation.isPending}
+      submitButtonText={updateMutation.isPending ? 'Updating...' : 'Update Certificate'}
     />
   )
 }

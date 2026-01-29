@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Trash2, Edit, ChevronRight, ChevronDown, Network, Globe, Wifi } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,8 +7,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 // Types
 interface IpamPrefix {
@@ -224,222 +223,220 @@ export default function IPAM() {
     }
   }
 
-  // Form configs
-  const organizationOptions = organizations?.items?.map((org: any) => ({
-    value: org.id,
-    label: org.name,
-  })) || []
+  // Organization options for forms
+  const organizationOptions = useMemo(() =>
+    organizations?.items?.map((org: any) => ({
+      value: org.id,
+      label: org.name,
+    })) || [],
+    [organizations]
+  )
 
-  const createPrefixConfig: FormConfig = {
-    fields: [
-      {
-        name: 'prefix',
-        label: 'Prefix (CIDR)',
-        type: 'ip',
-        required: true,
-        placeholder: 'e.g., 192.168.1.0/24',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        defaultValue: 'active',
-        options: prefixStatusOptions,
-      },
-      {
-        name: 'is_pool',
-        label: 'Is Pool (can allocate from this prefix)',
-        type: 'checkbox',
-        defaultValue: false,
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  // Form field configurations using useMemo
+  const createPrefixFields: FormField[] = useMemo(() => [
+    {
+      name: 'prefix',
+      label: 'Prefix (CIDR)',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., 192.168.1.0/24',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      defaultValue: 'active',
+      options: prefixStatusOptions,
+    },
+    {
+      name: 'is_pool',
+      label: 'Is Pool (can allocate from this prefix)',
+      type: 'checkbox',
+      defaultValue: false,
+    },
+  ], [organizationOptions])
 
-  const editPrefixConfig: FormConfig = {
-    fields: [
-      {
-        name: 'prefix',
-        label: 'Prefix (CIDR)',
-        type: 'ip',
-        required: true,
-        placeholder: 'e.g., 192.168.1.0/24',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        options: prefixStatusOptions,
-      },
-      {
-        name: 'is_pool',
-        label: 'Is Pool',
-        type: 'checkbox',
-      },
-    ],
-    submitLabel: 'Update',
-  }
+  const editPrefixFields: FormField[] = useMemo(() => [
+    {
+      name: 'prefix',
+      label: 'Prefix (CIDR)',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., 192.168.1.0/24',
+      defaultValue: editingPrefix?.prefix || '',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+      defaultValue: editingPrefix?.description || '',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: prefixStatusOptions,
+      defaultValue: editingPrefix?.status || 'active',
+    },
+    {
+      name: 'is_pool',
+      label: 'Is Pool',
+      type: 'checkbox',
+      defaultValue: editingPrefix?.is_pool || false,
+    },
+  ], [editingPrefix])
 
-  const createAddressConfig: FormConfig = {
-    fields: [
-      {
-        name: 'address',
-        label: 'IP Address',
-        type: 'ip',
-        required: true,
-        placeholder: 'e.g., 192.168.1.1/32',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
-      },
-      {
-        name: 'dns_name',
-        label: 'DNS Name',
-        type: 'domain',
-        placeholder: 'e.g., server1.example.com',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        defaultValue: 'active',
-        options: addressStatusOptions,
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  const createAddressFields: FormField[] = useMemo(() => [
+    {
+      name: 'address',
+      label: 'IP Address',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., 192.168.1.1/32',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
+    },
+    {
+      name: 'dns_name',
+      label: 'DNS Name',
+      type: 'text',
+      placeholder: 'e.g., server1.example.com',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      defaultValue: 'active',
+      options: addressStatusOptions,
+    },
+  ], [organizationOptions])
 
-  const editAddressConfig: FormConfig = {
-    fields: [
-      {
-        name: 'address',
-        label: 'IP Address',
-        type: 'ip',
-        required: true,
-        placeholder: 'e.g., 192.168.1.1/32',
-      },
-      {
-        name: 'dns_name',
-        label: 'DNS Name',
-        type: 'domain',
-        placeholder: 'e.g., server1.example.com',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        options: addressStatusOptions,
-      },
-    ],
-    submitLabel: 'Update',
-  }
+  const editAddressFields: FormField[] = useMemo(() => [
+    {
+      name: 'address',
+      label: 'IP Address',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., 192.168.1.1/32',
+      defaultValue: editingAddress?.address || '',
+    },
+    {
+      name: 'dns_name',
+      label: 'DNS Name',
+      type: 'text',
+      placeholder: 'e.g., server1.example.com',
+      defaultValue: editingAddress?.dns_name || '',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+      defaultValue: editingAddress?.description || '',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: addressStatusOptions,
+      defaultValue: editingAddress?.status || 'active',
+    },
+  ], [editingAddress])
 
-  const createVlanConfig: FormConfig = {
-    fields: [
-      {
-        name: 'vid',
-        label: 'VLAN ID',
-        type: 'number',
-        required: true,
-        placeholder: 'e.g., 100',
-      },
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'e.g., Production',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        defaultValue: 'active',
-        options: vlanStatusOptions,
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  const createVlanFields: FormField[] = useMemo(() => [
+    {
+      name: 'vid',
+      label: 'VLAN ID',
+      type: 'number',
+      required: true,
+      placeholder: 'e.g., 100',
+    },
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., Production',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [{ value: '', label: 'Select organization...' }, ...organizationOptions],
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      defaultValue: 'active',
+      options: vlanStatusOptions,
+    },
+  ], [organizationOptions])
 
-  const editVlanConfig: FormConfig = {
-    fields: [
-      {
-        name: 'vid',
-        label: 'VLAN ID',
-        type: 'number',
-        required: true,
-        placeholder: 'e.g., 100',
-      },
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'e.g., Production',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Enter description (optional)',
-      },
-      {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        options: vlanStatusOptions,
-      },
-    ],
-    submitLabel: 'Update',
-  }
+  const editVlanFields: FormField[] = useMemo(() => [
+    {
+      name: 'vid',
+      label: 'VLAN ID',
+      type: 'number',
+      required: true,
+      placeholder: 'e.g., 100',
+      defaultValue: editingVlan?.vid,
+    },
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'e.g., Production',
+      defaultValue: editingVlan?.name || '',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Enter description (optional)',
+      defaultValue: editingVlan?.description || '',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: vlanStatusOptions,
+      defaultValue: editingVlan?.status || 'active',
+    },
+  ], [editingVlan])
 
   const tabs = [
     { id: 'prefixes' as TabType, label: 'Prefixes', icon: Network },
@@ -556,77 +553,71 @@ export default function IPAM() {
       )}
 
       {/* Modals */}
-      <ModalFormBuilder
-        isOpen={showCreatePrefixModal}
-        onClose={() => setShowCreatePrefixModal(false)}
-        title="Create Prefix"
-        config={createPrefixConfig}
-        onSubmit={(data) => createPrefixMutation.mutate(data)}
-        isLoading={createPrefixMutation.isPending}
-      />
+      {showCreatePrefixModal && (
+        <FormModalBuilder
+          isOpen={showCreatePrefixModal}
+          onClose={() => setShowCreatePrefixModal(false)}
+          title="Create Prefix"
+          fields={createPrefixFields}
+          onSubmit={(data) => createPrefixMutation.mutate(data)}
+          submitButtonText="Create"
+        />
+      )}
 
-      <ModalFormBuilder
-        isOpen={showCreateAddressModal}
-        onClose={() => setShowCreateAddressModal(false)}
-        title="Create Address"
-        config={createAddressConfig}
-        onSubmit={(data) => createAddressMutation.mutate(data)}
-        isLoading={createAddressMutation.isPending}
-      />
+      {showCreateAddressModal && (
+        <FormModalBuilder
+          isOpen={showCreateAddressModal}
+          onClose={() => setShowCreateAddressModal(false)}
+          title="Create Address"
+          fields={createAddressFields}
+          onSubmit={(data) => createAddressMutation.mutate(data)}
+          submitButtonText="Create"
+        />
+      )}
 
-      <ModalFormBuilder
-        isOpen={showCreateVlanModal}
-        onClose={() => setShowCreateVlanModal(false)}
-        title="Create VLAN"
-        config={createVlanConfig}
-        onSubmit={(data) => createVlanMutation.mutate(data)}
-        isLoading={createVlanMutation.isPending}
-      />
+      {showCreateVlanModal && (
+        <FormModalBuilder
+          isOpen={showCreateVlanModal}
+          onClose={() => setShowCreateVlanModal(false)}
+          title="Create VLAN"
+          fields={createVlanFields}
+          onSubmit={(data) => createVlanMutation.mutate(data)}
+          submitButtonText="Create"
+        />
+      )}
 
-      <ModalFormBuilder
-        isOpen={!!editingPrefix}
-        onClose={() => setEditingPrefix(null)}
-        title="Edit Prefix"
-        config={editPrefixConfig}
-        initialValues={editingPrefix ? {
-          prefix: editingPrefix.prefix,
-          description: editingPrefix.description || '',
-          status: editingPrefix.status,
-          is_pool: editingPrefix.is_pool,
-        } : undefined}
-        onSubmit={(data) => updatePrefixMutation.mutate(data)}
-        isLoading={updatePrefixMutation.isPending}
-      />
+      {editingPrefix && (
+        <FormModalBuilder
+          isOpen={!!editingPrefix}
+          onClose={() => setEditingPrefix(null)}
+          title="Edit Prefix"
+          fields={editPrefixFields}
+          onSubmit={(data) => updatePrefixMutation.mutate(data)}
+          submitButtonText="Update"
+        />
+      )}
 
-      <ModalFormBuilder
-        isOpen={!!editingAddress}
-        onClose={() => setEditingAddress(null)}
-        title="Edit Address"
-        config={editAddressConfig}
-        initialValues={editingAddress ? {
-          address: editingAddress.address,
-          dns_name: editingAddress.dns_name || '',
-          description: editingAddress.description || '',
-          status: editingAddress.status,
-        } : undefined}
-        onSubmit={(data) => updateAddressMutation.mutate(data)}
-        isLoading={updateAddressMutation.isPending}
-      />
+      {editingAddress && (
+        <FormModalBuilder
+          isOpen={!!editingAddress}
+          onClose={() => setEditingAddress(null)}
+          title="Edit Address"
+          fields={editAddressFields}
+          onSubmit={(data) => updateAddressMutation.mutate(data)}
+          submitButtonText="Update"
+        />
+      )}
 
-      <ModalFormBuilder
-        isOpen={!!editingVlan}
-        onClose={() => setEditingVlan(null)}
-        title="Edit VLAN"
-        config={editVlanConfig}
-        initialValues={editingVlan ? {
-          vid: editingVlan.vid,
-          name: editingVlan.name,
-          description: editingVlan.description || '',
-          status: editingVlan.status,
-        } : undefined}
-        onSubmit={(data) => updateVlanMutation.mutate(data)}
-        isLoading={updateVlanMutation.isPending}
-      />
+      {editingVlan && (
+        <FormModalBuilder
+          isOpen={!!editingVlan}
+          onClose={() => setEditingVlan(null)}
+          title="Edit VLAN"
+          fields={editVlanFields}
+          onSubmit={(data) => updateVlanMutation.mutate(data)}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

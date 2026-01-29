@@ -3,13 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Trash2, ArrowRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-// DependencyType imported from @/types is not used
-import type { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
 
 // Resource types supported by dependencies
 const RESOURCE_TYPES = [
@@ -335,67 +333,63 @@ function CreateDependencyModal({
     }
   }
 
-  // Build form config with all resource options for all types
-  // The FormBuilder will handle state internally
-  const formConfig: FormConfig = useMemo(() => ({
-    fields: [
-      {
-        name: 'source_type',
-        label: 'Source Type',
-        type: 'select',
-        required: true,
-        options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
-        defaultValue: 'entity',
-      },
-      {
-        name: 'source_id',
-        label: 'Source',
-        type: 'select',
-        required: true,
-        // Include all items from all types - user selects after choosing type
-        options: [
-          ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
-          ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
-          ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
-          ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
-          ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
-          ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
-        ],
-      },
-      {
-        name: 'dependency_type',
-        label: 'Relationship Type',
-        type: 'select',
-        required: true,
-        options: DEPENDENCY_TYPE_OPTIONS,
-        defaultValue: 'depends',
-      },
-      {
-        name: 'target_type',
-        label: 'Target Type',
-        type: 'select',
-        required: true,
-        options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
-        defaultValue: 'entity',
-      },
-      {
-        name: 'target_id',
-        label: 'Target',
-        type: 'select',
-        required: true,
-        // Include all items from all types
-        options: [
-          ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
-          ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
-          ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
-          ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
-          ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
-          ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
-        ],
-      },
-    ],
-    submitLabel: 'Create',
-  }), [entities, identities, projects, milestones, issues, organizations])
+  // Build form fields with all resource options for all types
+  const dependencyFields: FormField[] = useMemo(() => [
+    {
+      name: 'source_type',
+      label: 'Source Type',
+      type: 'select',
+      required: true,
+      options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
+      defaultValue: 'entity',
+    },
+    {
+      name: 'source_id',
+      label: 'Source',
+      type: 'select',
+      required: true,
+      // Include all items from all types - user selects after choosing type
+      options: [
+        ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
+        ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
+        ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
+        ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
+        ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
+        ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
+      ],
+    },
+    {
+      name: 'dependency_type',
+      label: 'Relationship Type',
+      type: 'select',
+      required: true,
+      options: DEPENDENCY_TYPE_OPTIONS,
+      defaultValue: 'depends',
+    },
+    {
+      name: 'target_type',
+      label: 'Target Type',
+      type: 'select',
+      required: true,
+      options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
+      defaultValue: 'entity',
+    },
+    {
+      name: 'target_id',
+      label: 'Target',
+      type: 'select',
+      required: true,
+      // Include all items from all types
+      options: [
+        ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
+        ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
+        ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
+        ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
+        ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
+        ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
+      ],
+    },
+  ], [entities, identities, projects, milestones, issues, organizations])
 
   const createMutation = useMutation({
     mutationFn: (data: {
@@ -436,13 +430,13 @@ function CreateDependencyModal({
   }
 
   return (
-    <ModalFormBuilder
+    <FormModalBuilder
       isOpen={true}
       onClose={onClose}
       title="Create Dependency"
-      config={formConfig}
+      fields={dependencyFields}
       onSubmit={handleSubmit}
-      isLoading={createMutation.isPending}
+      submitButtonText="Create"
     />
   )
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Shield, Users, User, Bot, Cloud, RefreshCw, Search, Link2, Trash2, Building2, Box, Server, Check, X, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -7,9 +7,8 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import GroupMembershipManager from '@/components/GroupMembershipManager'
-import { FormConfig } from '@/types/form'
 import { getStatusColor } from '@/lib/colorHelpers'
 
 const TABS = ['All Identities', 'Providers', 'Groups & Roles', 'Pending Approvals', 'Relationships'] as const
@@ -175,6 +174,51 @@ function IdentityRelationshipsTab() {
   const [selectedType, setSelectedType] = useState<string>('')
   const [showAddModal, setShowAddModal] = useState(false)
   const queryClient = useQueryClient()
+
+  // Form fields for Add Relationship modal
+  const addRelationshipFields: FormField[] = useMemo(() => [
+    {
+      name: 'source_type',
+      label: 'Source Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'identity', label: 'Identity' },
+        { value: 'entity', label: 'Entity' },
+        { value: 'organization', label: 'Organization' },
+        { value: 'project', label: 'Project' },
+      ]
+    },
+    { name: 'source_id', label: 'Source ID', type: 'number', required: true },
+    {
+      name: 'target_type',
+      label: 'Target Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'identity', label: 'Identity' },
+        { value: 'entity', label: 'Entity' },
+        { value: 'organization', label: 'Organization' },
+        { value: 'project', label: 'Project' },
+      ]
+    },
+    { name: 'target_id', label: 'Target ID', type: 'number', required: true },
+    {
+      name: 'dependency_type',
+      label: 'Relationship Type',
+      type: 'select',
+      required: true,
+      options: [
+        { value: 'owns', label: 'Owns' },
+        { value: 'manages', label: 'Manages' },
+        { value: 'administers', label: 'Administers' },
+        { value: 'accesses', label: 'Has Access To' },
+        { value: 'member_of', label: 'Member Of' },
+        { value: 'related', label: 'Related To' },
+      ]
+    },
+    { name: 'description', label: 'Description', type: 'textarea' },
+  ], [])
 
   // Fetch identity relationships (dependencies where source or target is identity)
   const { data: relationships, isLoading } = useQuery({
@@ -387,63 +431,22 @@ function IdentityRelationshipsTab() {
         </CardContent>
       </Card>
 
-      {/* Add Relationship Modal - using ModalFormBuilder */}
-      <ModalFormBuilder
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
-        title="Add Identity Relationship"
-        config={{
-          fields: [
-            {
-              name: 'source_type',
-              label: 'Source Type',
-              type: 'select',
-              required: true,
-              options: [
-                { value: 'identity', label: 'Identity' },
-                { value: 'entity', label: 'Entity' },
-                { value: 'organization', label: 'Organization' },
-                { value: 'project', label: 'Project' },
-              ]
-            },
-            { name: 'source_id', label: 'Source ID', type: 'number', required: true },
-            {
-              name: 'target_type',
-              label: 'Target Type',
-              type: 'select',
-              required: true,
-              options: [
-                { value: 'identity', label: 'Identity' },
-                { value: 'entity', label: 'Entity' },
-                { value: 'organization', label: 'Organization' },
-                { value: 'project', label: 'Project' },
-              ]
-            },
-            { name: 'target_id', label: 'Target ID', type: 'number', required: true },
-            {
-              name: 'dependency_type',
-              label: 'Relationship Type',
-              type: 'select',
-              required: true,
-              options: [
-                { value: 'owns', label: 'Owns' },
-                { value: 'manages', label: 'Manages' },
-                { value: 'administers', label: 'Administers' },
-                { value: 'accesses', label: 'Has Access To' },
-                { value: 'member_of', label: 'Member Of' },
-                { value: 'related', label: 'Related To' },
-              ]
-            },
-            { name: 'description', label: 'Description', type: 'textarea' },
-          ]
-        }}
-        onSubmit={async (data) => {
-          await api.createDependency(data as Parameters<typeof api.createDependency>[0])
-          queryClient.invalidateQueries({ queryKey: ['identity-relationships'] })
-          setShowAddModal(false)
-          toast.success('Relationship created')
-        }}
-      />
+      {/* Add Relationship Modal - using FormModalBuilder */}
+      {showAddModal && (
+        <FormModalBuilder
+          isOpen={showAddModal}
+          onClose={() => setShowAddModal(false)}
+          title="Add Identity Relationship"
+          fields={addRelationshipFields}
+          submitButtonText="Add Relationship"
+          onSubmit={async (data) => {
+            await api.createDependency(data as Parameters<typeof api.createDependency>[0])
+            queryClient.invalidateQueries({ queryKey: ['identity-relationships'] })
+            setShowAddModal(false)
+            toast.success('Relationship created')
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -522,152 +525,150 @@ export default function IAM() {
     queryFn: () => api.getGoogleWorkspaceProviders(),
   })
 
-  // Form configs for identity creation
-  const createIdentityFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'username',
-        label: 'Username',
-        type: 'username',
-        required: true,
-        placeholder: 'Enter username',
-      },
-      {
-        name: 'email',
-        label: 'Email',
-        type: 'email',
-        required: true,
-        placeholder: 'Enter email',
-      },
-      {
-        name: 'full_name',
-        label: 'Full Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Enter full name',
-      },
-      {
-        name: 'identity_type',
-        label: 'Identity Type',
-        type: 'select',
-        required: true,
-        defaultValue: 'employee',
-        options: IDENTITY_TYPES.map(t => ({ value: t.value, label: t.label })),
-      },
-      {
-        name: 'auth_provider',
-        label: 'Authentication Provider',
-        type: 'select',
-        required: true,
-        defaultValue: 'local',
-        options: [
-          { value: 'local', label: 'Local App' },
-          { value: 'ldap', label: 'LDAP' },
-          { value: 'saml', label: 'SAML' },
-          { value: 'oauth2', label: 'OAuth2' },
-        ],
-      },
-      {
-        name: 'password',
-        label: 'Password',
-        type: 'password_generate',
-        required: true,
-        placeholder: 'Enter or generate password',
-        showWhen: (values) => values.auth_provider === 'local',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(organizations?.items?.map((org: any) => ({
-            value: org.id,
-            label: org.name,
-          })) || []),
-        ],
-      },
-      {
-        name: 'is_portal_user',
-        label: 'Create as Portal User',
-        type: 'checkbox',
-        defaultValue: false,
-        helpText: 'Portal users can log in to the Elder web interface',
-      },
-      {
-        name: 'portal_role',
-        label: 'Portal Role',
-        type: 'select',
-        required: true,
-        defaultValue: 'viewer',
-        showWhen: (values) => values.is_portal_user === true,
-        options: [
-          { value: 'viewer', label: 'Viewer - Read-only access' },
-          { value: 'editor', label: 'Editor - Can modify data' },
-          { value: 'admin', label: 'Admin - Full access' },
-        ],
-      },
-      {
-        name: 'must_change_password',
-        label: 'Require password change on first login',
-        type: 'checkbox',
-        defaultValue: true,
-        showWhen: (values) => values.is_portal_user === true,
-      },
-    ],
-    submitLabel: 'Create Identity',
-  }
+  // Form fields for identity creation
+  const createIdentityFields: FormField[] = useMemo(() => [
+    {
+      name: 'username',
+      label: 'Username',
+      type: 'text',
+      required: true,
+      placeholder: 'Enter username',
+    },
+    {
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      required: true,
+      placeholder: 'Enter email',
+    },
+    {
+      name: 'full_name',
+      label: 'Full Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Enter full name',
+    },
+    {
+      name: 'identity_type',
+      label: 'Identity Type',
+      type: 'select',
+      required: true,
+      defaultValue: 'employee',
+      options: IDENTITY_TYPES.map(t => ({ value: t.value, label: t.label })),
+    },
+    {
+      name: 'auth_provider',
+      label: 'Authentication Provider',
+      type: 'select',
+      required: true,
+      defaultValue: 'local',
+      options: [
+        { value: 'local', label: 'Local App' },
+        { value: 'ldap', label: 'LDAP' },
+        { value: 'saml', label: 'SAML' },
+        { value: 'oauth2', label: 'OAuth2' },
+      ],
+    },
+    {
+      name: 'password',
+      label: 'Password',
+      type: 'password_generate',
+      required: true,
+      placeholder: 'Enter or generate password',
+      showWhen: (values) => values.auth_provider === 'local',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(organizations?.items?.map((org: any) => ({
+          value: org.id,
+          label: org.name,
+        })) || []),
+      ],
+    },
+    {
+      name: 'is_portal_user',
+      label: 'Create as Portal User',
+      type: 'checkbox',
+      defaultValue: false,
+      helpText: 'Portal users can log in to the Elder web interface',
+    },
+    {
+      name: 'portal_role',
+      label: 'Portal Role',
+      type: 'select',
+      required: true,
+      defaultValue: 'viewer',
+      showWhen: (values) => values.is_portal_user === true,
+      options: [
+        { value: 'viewer', label: 'Viewer - Read-only access' },
+        { value: 'editor', label: 'Editor - Can modify data' },
+        { value: 'admin', label: 'Admin - Full access' },
+      ],
+    },
+    {
+      name: 'must_change_password',
+      label: 'Require password change on first login',
+      type: 'checkbox',
+      defaultValue: true,
+      showWhen: (values) => values.is_portal_user === true,
+    },
+  ], [organizations?.items])
 
-  // Form config for editing identity
-  const editIdentityFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'email',
-        label: 'Email',
-        type: 'email',
-        placeholder: 'user@example.com',
-      },
-      {
-        name: 'full_name',
-        label: 'Full Name',
-        type: 'text',
-        placeholder: 'John Doe',
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(organizations?.items?.map((org: any) => ({
-            value: org.id,
-            label: org.name,
-          })) || []),
-        ],
-      },
-      {
-        name: 'password',
-        label: 'New Password (leave blank to keep current)',
-        type: 'password_generate',
-        placeholder: 'Enter or generate new password',
-      },
-      {
-        name: 'is_active',
-        label: 'Active',
-        type: 'checkbox',
-        defaultValue: true,
-      },
-      {
-        name: 'mfa_enabled',
-        label: 'MFA Enabled',
-        type: 'checkbox',
-        defaultValue: false,
-      },
-    ],
-    submitLabel: 'Update Identity',
-  }
+  // Form fields for editing identity (with defaultValue set from selectedIdentity)
+  const editIdentityFields: FormField[] = useMemo(() => [
+    {
+      name: 'email',
+      label: 'Email',
+      type: 'email',
+      placeholder: 'user@example.com',
+      defaultValue: selectedIdentity?.email || '',
+    },
+    {
+      name: 'full_name',
+      label: 'Full Name',
+      type: 'text',
+      placeholder: 'John Doe',
+      defaultValue: selectedIdentity?.displayName || selectedIdentity?.full_name || '',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      defaultValue: selectedIdentity?.organization_id || '',
+      options: [
+        { value: '', label: 'Select organization' },
+        ...(organizations?.items?.map((org: any) => ({
+          value: org.id,
+          label: org.name,
+        })) || []),
+      ],
+    },
+    {
+      name: 'password',
+      label: 'New Password (leave blank to keep current)',
+      type: 'password_generate',
+      placeholder: 'Enter or generate new password',
+      defaultValue: '',
+    },
+    {
+      name: 'is_active',
+      label: 'Active',
+      type: 'checkbox',
+      defaultValue: selectedIdentity?.is_active !== false,
+    },
+    {
+      name: 'mfa_enabled',
+      label: 'MFA Enabled',
+      type: 'checkbox',
+      defaultValue: selectedIdentity?.mfa_enabled || false,
+    },
+  ], [organizations?.items, selectedIdentity])
 
   // Create identity mutation
   const createIdentityMutation = useMutation({
@@ -1291,35 +1292,31 @@ export default function IAM() {
       )}
 
       {/* Create Identity Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal && modalType === 'identity'}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Identity"
-        config={createIdentityFormConfig}
-        onSubmit={handleCreateIdentity}
-        isLoading={createIdentityMutation.isPending}
-      />
+      {showCreateModal && modalType === 'identity' && (
+        <FormModalBuilder
+          isOpen={showCreateModal && modalType === 'identity'}
+          onClose={() => setShowCreateModal(false)}
+          title="Create Identity"
+          fields={createIdentityFields}
+          submitButtonText="Create Identity"
+          onSubmit={handleCreateIdentity}
+        />
+      )}
 
       {/* Edit Identity Modal */}
-      <ModalFormBuilder
-        isOpen={showEditModal && selectedIdentity !== null}
-        onClose={() => {
-          setShowEditModal(false)
-          setSelectedIdentity(null)
-        }}
-        title="Edit Identity"
-        config={editIdentityFormConfig}
-        initialValues={selectedIdentity ? {
-          email: selectedIdentity.email || '',
-          full_name: selectedIdentity.displayName || selectedIdentity.full_name || '',
-          organization_id: selectedIdentity.organization_id || '',
-          password: '',
-          is_active: selectedIdentity.is_active !== false,
-          mfa_enabled: selectedIdentity.mfa_enabled || false,
-        } : undefined}
-        onSubmit={handleUpdateIdentity}
-        isLoading={updateIdentityMutation.isPending}
-      />
+      {showEditModal && selectedIdentity !== null && (
+        <FormModalBuilder
+          isOpen={showEditModal && selectedIdentity !== null}
+          onClose={() => {
+            setShowEditModal(false)
+            setSelectedIdentity(null)
+          }}
+          title="Edit Identity"
+          fields={editIdentityFields}
+          submitButtonText="Update Identity"
+          onSubmit={handleUpdateIdentity}
+        />
+      )}
 
       {/* Create Provider Modal */}
       {showCreateModal && modalType === 'provider' && (

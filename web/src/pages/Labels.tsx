@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -6,34 +6,33 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
-const labelFormConfig: FormConfig = {
-  fields: [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Enter label name',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Enter description (optional)',
-      rows: 3,
-    },
-    {
-      name: 'color',
-      label: 'Color',
-      type: 'color',
-      defaultValue: '#3b82f6',
-    },
-  ],
-  submitLabel: 'Create',
-}
+// Form fields for label creation/edit
+const labelFields: FormField[] = [
+  {
+    name: 'name',
+    label: 'Name',
+    type: 'text',
+    required: true,
+    placeholder: 'Enter label name',
+  },
+  {
+    name: 'description',
+    label: 'Description',
+    type: 'textarea',
+    placeholder: 'Enter description (optional)',
+    rows: 3,
+  },
+  {
+    name: 'color',
+    label: 'Color',
+    type: 'text',
+    defaultValue: '#3b82f6',
+    placeholder: '#3b82f6',
+    helpText: 'Enter a hex color code (e.g., #3b82f6)',
+  },
+]
 
 export default function Labels() {
   const [search, setSearch] = useState('')
@@ -117,10 +116,36 @@ export default function Labels() {
            label.description?.toLowerCase().includes(search.toLowerCase())
   })
 
-  const editFormConfig: FormConfig = {
-    ...labelFormConfig,
-    submitLabel: 'Update',
-  }
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingLabel) return labelFields
+    return [
+      {
+        name: 'name',
+        label: 'Name',
+        type: 'text',
+        required: true,
+        placeholder: 'Enter label name',
+        defaultValue: editingLabel.name,
+      },
+      {
+        name: 'description',
+        label: 'Description',
+        type: 'textarea',
+        placeholder: 'Enter description (optional)',
+        rows: 3,
+        defaultValue: editingLabel.description || '',
+      },
+      {
+        name: 'color',
+        label: 'Color',
+        type: 'text',
+        placeholder: '#3b82f6',
+        helpText: 'Enter a hex color code (e.g., #3b82f6)',
+        defaultValue: editingLabel.color || '#3b82f6',
+      },
+    ]
+  }, [editingLabel])
 
   return (
     <div className="p-8">
@@ -223,29 +248,28 @@ export default function Labels() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Label"
-        config={labelFormConfig}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          title="Create Label"
+          fields={labelFields}
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreate}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingLabel}
-        onClose={() => setEditingLabel(null)}
-        title="Edit Label"
-        config={editFormConfig}
-        initialValues={editingLabel ? {
-          name: editingLabel.name,
-          description: editingLabel.description || '',
-          color: editingLabel.color || '#3b82f6',
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingLabel && (
+        <FormModalBuilder
+          title="Edit Label"
+          fields={editFields}
+          isOpen={!!editingLabel}
+          onClose={() => setEditingLabel(null)}
+          onSubmit={handleUpdate}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

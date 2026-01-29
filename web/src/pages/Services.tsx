@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Server, Globe, Lock, ExternalLink, Clock, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -11,9 +11,8 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 import OnCallBadge from '@/components/OnCallBadge'
-import { FormConfig } from '@/types/form'
 
 const SERVICE_STATUSES = [
   { value: 'active', label: 'Active' },
@@ -138,15 +137,92 @@ export default function Services() {
     label: org.name,
   })) || []
 
-  // Form configuration for create/edit
-  const getServiceFormConfig = (): FormConfig => ({
-    fields: [
+  // Form fields for create modal
+  const serviceFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'api-gateway',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Service description (optional)',
+      rows: 2,
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
+        ...organizationOptions,
+      ],
+    },
+    {
+      name: 'language',
+      label: 'Language',
+      type: 'select',
+      options: LANGUAGES,
+      defaultValue: 'python',
+    },
+    {
+      name: 'deployment_method',
+      label: 'Deployment Method',
+      type: 'select',
+      options: DEPLOYMENT_METHODS,
+      defaultValue: 'kubernetes',
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      options: SERVICE_STATUSES,
+      defaultValue: 'active',
+    },
+    {
+      name: 'port',
+      label: 'Port',
+      type: 'number',
+      placeholder: '8080',
+    },
+    {
+      name: 'is_public',
+      label: 'Public service (accessible from internet)',
+      type: 'checkbox',
+      defaultValue: false,
+    },
+    {
+      name: 'domains',
+      label: 'Domains (one per line)',
+      type: 'multiline',
+      placeholder: 'api.example.com\napi-v2.example.com',
+      rows: 2,
+    },
+    {
+      name: 'paths',
+      label: 'Paths (one per line)',
+      type: 'multiline',
+      placeholder: '/api/v1\n/api/v2',
+      rows: 3,
+    },
+  ], [organizationOptions])
+
+  // Form fields for edit modal with defaultValues from editingService
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingService) return []
+    return [
       {
         name: 'name',
         label: 'Name',
         type: 'text',
         required: true,
         placeholder: 'api-gateway',
+        defaultValue: editingService.name || '',
       },
       {
         name: 'description',
@@ -154,6 +230,7 @@ export default function Services() {
         type: 'textarea',
         placeholder: 'Service description (optional)',
         rows: 2,
+        defaultValue: editingService.description || '',
       },
       {
         name: 'organization_id',
@@ -164,39 +241,41 @@ export default function Services() {
           { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
           ...organizationOptions,
         ],
+        defaultValue: editingService.organization_id?.toString() || '',
       },
       {
         name: 'language',
         label: 'Language',
         type: 'select',
         options: LANGUAGES,
-        defaultValue: 'python',
+        defaultValue: editingService.language || 'python',
       },
       {
         name: 'deployment_method',
         label: 'Deployment Method',
         type: 'select',
         options: DEPLOYMENT_METHODS,
-        defaultValue: 'kubernetes',
+        defaultValue: editingService.deployment_method || 'kubernetes',
       },
       {
         name: 'status',
         label: 'Status',
         type: 'select',
         options: SERVICE_STATUSES,
-        defaultValue: 'active',
+        defaultValue: editingService.status || 'active',
       },
       {
         name: 'port',
         label: 'Port',
         type: 'number',
         placeholder: '8080',
+        defaultValue: editingService.port?.toString() || '',
       },
       {
         name: 'is_public',
         label: 'Public service (accessible from internet)',
         type: 'checkbox',
-        defaultValue: false,
+        defaultValue: editingService.is_public || false,
       },
       {
         name: 'domains',
@@ -204,6 +283,7 @@ export default function Services() {
         type: 'multiline',
         placeholder: 'api.example.com\napi-v2.example.com',
         rows: 2,
+        defaultValue: editingService.domains?.join('\n') || '',
       },
       {
         name: 'paths',
@@ -211,10 +291,10 @@ export default function Services() {
         type: 'multiline',
         placeholder: '/api/v1\n/api/v2',
         rows: 3,
+        defaultValue: editingService.paths?.join('\n') || '',
       },
-    ],
-    submitLabel: editingService ? 'Update' : 'Create',
-  })
+    ]
+  }, [editingService, organizationOptions])
 
   const handleCreateSubmit = (data: Record<string, any>) => {
     createMutation.mutate({
@@ -229,20 +309,6 @@ export default function Services() {
       organization_id: parseInt(data.organization_id),
     })
   }
-
-  // Get initial values for edit form
-  const getEditInitialValues = (service: any) => ({
-    name: service.name || '',
-    description: service.description || '',
-    organization_id: service.organization_id?.toString() || '',
-    language: service.language || 'python',
-    deployment_method: service.deployment_method || 'kubernetes',
-    status: service.status || 'active',
-    port: service.port?.toString() || '',
-    is_public: service.is_public || false,
-    domains: service.domains?.join('\n') || '',
-    paths: service.paths?.join('\n') || '',
-  })
 
   return (
     <div className="p-8">
@@ -431,24 +497,23 @@ export default function Services() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
+      <FormModalBuilder
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         title="Create Service"
-        config={getServiceFormConfig()}
+        fields={serviceFields}
         onSubmit={handleCreateSubmit}
-        isLoading={createMutation.isPending}
+        submitButtonText="Create"
       />
 
       {/* Edit Modal */}
-      <ModalFormBuilder
+      <FormModalBuilder
         isOpen={!!editingService}
         onClose={() => setEditingService(null)}
         title="Edit Service"
-        config={getServiceFormConfig()}
-        initialValues={editingService ? getEditInitialValues(editingService) : undefined}
+        fields={editFields}
         onSubmit={handleEditSubmit}
-        isLoading={updateMutation.isPending}
+        submitButtonText="Update"
       />
 
       {/* View Details Modal */}
@@ -659,24 +724,23 @@ function ServiceSchedulesTab({ service }: { service: any }) {
     onError: () => toast.error('Failed to start SBOM scan'),
   })
 
-  const scheduleFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'schedule_cron',
-        label: 'Cron Expression',
-        type: 'cron',
-        required: true,
-        placeholder: '0 0 * * *',
-        helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
-      },
-      {
-        name: 'is_active',
-        label: 'Enable schedule',
-        type: 'checkbox',
-        defaultValue: true,
-      },
-    ],
-  }
+  // Schedule form fields using useMemo
+  const scheduleFields: FormField[] = useMemo(() => [
+    {
+      name: 'schedule_cron',
+      label: 'Cron Expression',
+      type: 'text',
+      required: true,
+      placeholder: '0 0 * * *',
+      helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
+    },
+    {
+      name: 'is_active',
+      label: 'Enable schedule',
+      type: 'checkbox',
+      defaultValue: true,
+    },
+  ], [])
 
   if (isLoading) {
     return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>
@@ -781,13 +845,13 @@ function ServiceSchedulesTab({ service }: { service: any }) {
         )}
       </div>
 
-      <ModalFormBuilder
+      <FormModalBuilder
         isOpen={showCreateSchedule}
         title="Create SBOM Schedule"
-        config={scheduleFormConfig}
+        fields={scheduleFields}
         onSubmit={(data) => createScheduleMutation.mutate(data)}
         onClose={() => setShowCreateSchedule(false)}
-        isLoading={createScheduleMutation.isPending}
+        submitButtonText="Create"
       />
     </div>
   )

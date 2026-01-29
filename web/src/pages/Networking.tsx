@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
@@ -27,8 +27,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
 import NetworkTopologyGraph from '@/components/NetworkTopologyGraph'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 // Icon mapping for network types
 const NETWORK_TYPE_ICONS: Record<string, LucideIcon> = {
@@ -152,131 +151,111 @@ export default function Networking() {
     },
   })
 
-  // Form config for creating networks
-  const networkFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
-        ],
+  // Form fields for creating networks
+  const networkFields: FormField[] = useMemo(() => [
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      defaultValue: selectedOrg?.toString() || '',
+      options: (orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+    },
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Production VPC',
+    },
+    {
+      name: 'network_type',
+      label: 'Network Type',
+      type: 'select',
+      required: true,
+      options: NETWORK_TYPES,
+    },
+    {
+      name: 'cidr',
+      label: 'CIDR Block',
+      type: 'text',
+      required: true,
+      placeholder: '10.0.0.0/16',
+      helpText: 'IPv4 CIDR notation (e.g., 10.0.1.0/24, 172.16.0.0/12)',
+      showWhen: (values) => {
+        const networkType = values.network_type
+        // Show CIDR for network types that have IP addressing
+        return ['vpc', 'subnet', 'vlan', 'vxlan', 'namespace'].includes(networkType)
       },
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Production VPC',
-      },
-      {
-        name: 'network_type',
-        label: 'Network Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select network type' },
-          ...NETWORK_TYPES,
-        ],
-      },
-      {
-        name: 'cidr',
-        label: 'CIDR Block',
-        type: 'cidr',
-        required: true,
-        placeholder: '10.0.0.0/16',
-        helpText: 'IPv4 CIDR notation (e.g., 10.0.1.0/24, 172.16.0.0/12)',
-        showWhen: (values) => {
-          const networkType = values.network_type
-          // Show CIDR for network types that have IP addressing
-          return ['vpc', 'subnet', 'vlan', 'vxlan', 'namespace'].includes(networkType)
-        },
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Main production network',
-      },
-      {
-        name: 'region',
-        label: 'Region',
-        type: 'text',
-        placeholder: 'us-east-1',
-      },
-      {
-        name: 'location',
-        label: 'Location',
-        type: 'text',
-        placeholder: 'AWS Virginia',
-      },
-    ],
-    submitLabel: 'Create',
-  }
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Main production network',
+    },
+    {
+      name: 'region',
+      label: 'Region',
+      type: 'text',
+      placeholder: 'us-east-1',
+    },
+    {
+      name: 'location',
+      label: 'Location',
+      type: 'text',
+      placeholder: 'AWS Virginia',
+    },
+  ], [orgs?.items, selectedOrg])
 
-  // Form config for creating connections
-  const connectionFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'source_network_id',
-        label: 'Source Network',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select source network' },
-          ...(allNetworks?.networks || []).map((n: any) => ({
-            value: n.id,
-            label: `${n.name} (${n.network_type})`
-          })),
-        ],
-      },
-      {
-        name: 'target_network_id',
-        label: 'Target Network',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select target network' },
-          ...(allNetworks?.networks || []).map((n: any) => ({
-            value: n.id,
-            label: `${n.name} (${n.network_type})`
-          })),
-        ],
-      },
-      {
-        name: 'connection_type',
-        label: 'Connection Type',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: 'Select connection type' },
-          ...CONNECTION_TYPES,
-        ],
-      },
-      {
-        name: 'bandwidth',
-        label: 'Bandwidth',
-        type: 'text',
-        placeholder: '1 Gbps',
-      },
-      {
-        name: 'latency',
-        label: 'Latency (ms)',
-        type: 'number',
-        placeholder: '5',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'VPC peering between prod and staging',
-      },
-    ],
-    submitLabel: 'Create',
-  }
+  // Form fields for creating connections
+  const connectionFields: FormField[] = useMemo(() => [
+    {
+      name: 'source_network_id',
+      label: 'Source Network',
+      type: 'select',
+      required: true,
+      options: (allNetworks?.networks || []).map((n: any) => ({
+        value: n.id,
+        label: `${n.name} (${n.network_type})`
+      })),
+    },
+    {
+      name: 'target_network_id',
+      label: 'Target Network',
+      type: 'select',
+      required: true,
+      options: (allNetworks?.networks || []).map((n: any) => ({
+        value: n.id,
+        label: `${n.name} (${n.network_type})`
+      })),
+    },
+    {
+      name: 'connection_type',
+      label: 'Connection Type',
+      type: 'select',
+      required: true,
+      options: CONNECTION_TYPES,
+    },
+    {
+      name: 'bandwidth',
+      label: 'Bandwidth',
+      type: 'text',
+      placeholder: '1 Gbps',
+    },
+    {
+      name: 'latency',
+      label: 'Latency (ms)',
+      type: 'number',
+      placeholder: '5',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'VPC peering between prod and staging',
+    },
+  ], [allNetworks?.networks])
 
   const handleCreateNetwork = (data: Record<string, any>) => {
     if (!data.organization_id) {
@@ -522,15 +501,16 @@ export default function Networking() {
         </div>
       )}
 
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Add Network Resource"
-        config={networkFormConfig}
-        initialValues={{ organization_id: selectedOrg?.toString() || '' }}
-        onSubmit={handleCreateNetwork}
-        isLoading={createNetworkMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          title="Add Network Resource"
+          fields={networkFields}
+          onSubmit={handleCreateNetwork}
+          submitButtonText="Create"
+        />
+      )}
 
       {showTopologyModal && selectedOrg && (
         <TopologyModal
@@ -539,14 +519,16 @@ export default function Networking() {
         />
       )}
 
-      <ModalFormBuilder
-        isOpen={showCreateConnectionModal}
-        onClose={() => setShowCreateConnectionModal(false)}
-        title="Create Network Connection"
-        config={connectionFormConfig}
-        onSubmit={handleCreateConnection}
-        isLoading={createConnectionMutation.isPending}
-      />
+      {showCreateConnectionModal && (
+        <FormModalBuilder
+          isOpen={showCreateConnectionModal}
+          onClose={() => setShowCreateConnectionModal(false)}
+          title="Create Network Connection"
+          fields={connectionFields}
+          onSubmit={handleCreateConnection}
+          submitButtonText="Create"
+        />
+      )}
     </div>
   )
 }

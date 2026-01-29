@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, FolderKanban, Calendar } from 'lucide-react'
@@ -10,8 +10,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const PROJECT_STATUSES = [
   { value: 'active', label: 'Active' },
@@ -106,15 +105,73 @@ export default function Projects() {
     })
   }
 
+  // Build organization options
+  const orgOptions = useMemo(() => {
+    if (orgsLoading) {
+      return [{ value: '', label: 'Loading...' }]
+    }
+    if (!organizations?.items?.length) {
+      return [{ value: '', label: 'No organizations found - create one first' }]
+    }
+    return organizations.items.map((org: any) => ({
+      value: org.id.toString(),
+      label: org.name,
+    }))
+  }, [organizations, orgsLoading])
 
-  const projectFormConfig: FormConfig = {
-    fields: [
+  // Form fields for project creation
+  const projectFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Q1 2024 Infrastructure Upgrade',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Project description (optional)',
+      rows: 3,
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: orgOptions,
+    },
+    {
+      name: 'status',
+      label: 'Status',
+      type: 'select',
+      defaultValue: 'active',
+      options: PROJECT_STATUSES,
+    },
+    {
+      name: 'start_date',
+      label: 'Start Date',
+      type: 'date',
+    },
+    {
+      name: 'end_date',
+      label: 'End Date',
+      type: 'date',
+    },
+  ], [orgOptions])
+
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingProject) return projectFields
+    return [
       {
         name: 'name',
         label: 'Name',
         type: 'text',
         required: true,
         placeholder: 'Q1 2024 Infrastructure Upgrade',
+        defaultValue: editingProject.name,
       },
       {
         name: 'description',
@@ -122,44 +179,37 @@ export default function Projects() {
         type: 'textarea',
         placeholder: 'Project description (optional)',
         rows: 3,
+        defaultValue: editingProject.description || '',
       },
       {
         name: 'organization_id',
         label: 'Organization',
         type: 'select',
         required: true,
-        options: orgsLoading
-          ? [{ value: '', label: 'Loading...' }]
-          : organizations?.items?.length
-          ? [
-              { value: '', label: 'Select organization' },
-              ...organizations.items.map((org: any) => ({
-                value: org.id.toString(),
-                label: org.name,
-              })),
-            ]
-          : [{ value: '', label: 'No organizations found - create one first' }],
+        options: orgOptions,
+        defaultValue: editingProject.organization_id?.toString() || '',
       },
       {
         name: 'status',
         label: 'Status',
         type: 'select',
-        defaultValue: 'active',
         options: PROJECT_STATUSES,
+        defaultValue: editingProject.status,
       },
       {
         name: 'start_date',
         label: 'Start Date',
         type: 'date',
+        defaultValue: editingProject.start_date || '',
       },
       {
         name: 'end_date',
         label: 'End Date',
         type: 'date',
+        defaultValue: editingProject.end_date || '',
       },
-    ],
-    submitLabel: editingProject ? 'Update' : 'Create',
-  }
+    ]
+  }, [editingProject, orgOptions, projectFields])
 
   return (
     <div className="p-8">
@@ -284,32 +334,28 @@ export default function Projects() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Project"
-        config={projectFormConfig}
-        onSubmit={handleCreate}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          title="Create Project"
+          fields={projectFields}
+          isOpen={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          onSubmit={handleCreate}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingProject}
-        onClose={() => setEditingProject(null)}
-        title="Edit Project"
-        config={projectFormConfig}
-        initialValues={editingProject ? {
-          name: editingProject.name,
-          description: editingProject.description || '',
-          status: editingProject.status,
-          organization_id: editingProject.organization_id?.toString() || '',
-          start_date: editingProject.start_date || '',
-          end_date: editingProject.end_date || '',
-        } : undefined}
-        onSubmit={handleUpdate}
-        isLoading={updateMutation.isPending}
-      />
+      {editingProject && (
+        <FormModalBuilder
+          title="Edit Project"
+          fields={editFields}
+          isOpen={!!editingProject}
+          onClose={() => setEditingProject(null)}
+          onSubmit={handleUpdate}
+          submitButtonText="Update"
+        />
+      )}
     </div>
   )
 }

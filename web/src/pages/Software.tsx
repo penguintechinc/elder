@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Package, Calendar, DollarSign, ExternalLink, Clock, Play } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -10,8 +10,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const SOFTWARE_TYPES = [
   { value: 'saas', label: 'SaaS' },
@@ -105,20 +104,85 @@ export default function Software() {
     label: org.name,
   })) || []
 
-  const createFormConfig: FormConfig = {
-    fields: [
+  // Form fields for software creation
+  const createFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Microsoft 365',
+    },
+    {
+      name: 'vendor',
+      label: 'Vendor',
+      type: 'text',
+      placeholder: 'Microsoft',
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: organizationOptions,
+      placeholder: organizationOptions.length ? 'Select organization' : 'No organizations found',
+    },
+    {
+      name: 'software_type',
+      label: 'Software Type',
+      type: 'select',
+      options: SOFTWARE_TYPES.map(t => ({ value: t.value, label: t.label })),
+      defaultValue: 'saas',
+    },
+    {
+      name: 'version',
+      label: 'Version',
+      type: 'text',
+      placeholder: '2024.1',
+    },
+    {
+      name: 'seats',
+      label: 'Seats',
+      type: 'number',
+      placeholder: '50',
+    },
+    {
+      name: 'cost_monthly',
+      label: 'Monthly Cost',
+      type: 'number',
+      placeholder: '500.00',
+    },
+    {
+      name: 'renewal_date',
+      label: 'Renewal Date',
+      type: 'date',
+    },
+    {
+      name: 'license_url',
+      label: 'License URL',
+      type: 'url',
+      placeholder: 'https://portal.vendor.com/license',
+    },
+  ], [organizationOptions])
+
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingSoftware) return createFields
+    return [
       {
         name: 'name',
         label: 'Name',
         type: 'text',
         required: true,
         placeholder: 'Microsoft 365',
+        defaultValue: editingSoftware.name,
       },
       {
         name: 'vendor',
         label: 'Vendor',
         type: 'text',
         placeholder: 'Microsoft',
+        defaultValue: editingSoftware.vendor || '',
       },
       {
         name: 'organization_id',
@@ -127,54 +191,51 @@ export default function Software() {
         required: true,
         options: organizationOptions,
         placeholder: organizationOptions.length ? 'Select organization' : 'No organizations found',
+        defaultValue: editingSoftware.organization_id?.toString(),
       },
       {
         name: 'software_type',
         label: 'Software Type',
         type: 'select',
         options: SOFTWARE_TYPES.map(t => ({ value: t.value, label: t.label })),
-        defaultValue: 'saas',
+        defaultValue: editingSoftware.software_type || 'saas',
       },
       {
         name: 'version',
         label: 'Version',
         type: 'text',
         placeholder: '2024.1',
+        defaultValue: editingSoftware.version || '',
       },
       {
         name: 'seats',
         label: 'Seats',
         type: 'number',
         placeholder: '50',
+        defaultValue: editingSoftware.seats || '',
       },
       {
         name: 'cost_monthly',
         label: 'Monthly Cost',
         type: 'number',
         placeholder: '500.00',
+        defaultValue: editingSoftware.cost_monthly || '',
       },
       {
         name: 'renewal_date',
         label: 'Renewal Date',
         type: 'date',
+        defaultValue: editingSoftware.renewal_date || '',
       },
       {
         name: 'license_url',
         label: 'License URL',
         type: 'url',
         placeholder: 'https://portal.vendor.com/license',
+        defaultValue: editingSoftware.license_url || '',
       },
-    ],
-  }
-
-  const editFormConfig: FormConfig = {
-    fields: createFormConfig.fields.map(field => ({
-      ...field,
-      defaultValue: field.name === 'organization_id'
-        ? editingSoftware?.organization_id?.toString()
-        : editingSoftware?.[field.name],
-    })),
-  }
+    ]
+  }, [editingSoftware, organizationOptions, createFields])
 
   const handleCreateSubmit = (data: Record<string, any>) => {
     createMutation.mutate({
@@ -354,28 +415,24 @@ export default function Software() {
       )}
 
       {/* Create Modal */}
-      {showCreateModal && (
-        <ModalFormBuilder
-          title="Add Software"
-          config={createFormConfig}
-          onSubmit={handleCreateSubmit}
-          onClose={() => setShowCreateModal(false)}
-          isLoading={createMutation.isPending}
-          submitLabel="Add"
-        />
-      )}
+      <FormModalBuilder
+        title="Add Software"
+        fields={createFields}
+        isOpen={showCreateModal}
+        onSubmit={handleCreateSubmit}
+        onClose={() => setShowCreateModal(false)}
+        submitButtonText="Add"
+      />
 
       {/* Edit Modal */}
-      {editingSoftware && (
-        <ModalFormBuilder
-          title="Edit Software"
-          config={editFormConfig}
-          onSubmit={handleEditSubmit}
-          onClose={() => setEditingSoftware(null)}
-          isLoading={updateMutation.isPending}
-          submitLabel="Update"
-        />
-      )}
+      <FormModalBuilder
+        title="Edit Software"
+        fields={editFields}
+        isOpen={!!editingSoftware}
+        onSubmit={handleEditSubmit}
+        onClose={() => setEditingSoftware(null)}
+        submitButtonText="Update"
+      />
 
       {/* View Details Modal */}
       {viewingSoftware && (
@@ -565,24 +622,23 @@ function SoftwareSchedulesTab({ software }: { software: any }) {
     onError: () => toast.error('Failed to start SBOM scan'),
   })
 
-  const scheduleFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'schedule_cron',
-        label: 'Cron Expression',
-        type: 'cron',
-        required: true,
-        placeholder: '0 0 * * *',
-        helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
-      },
-      {
-        name: 'is_active',
-        label: 'Enable schedule',
-        type: 'checkbox',
-        defaultValue: true,
-      },
-    ],
-  }
+  // Schedule form fields
+  const scheduleFields: FormField[] = useMemo(() => [
+    {
+      name: 'schedule_cron',
+      label: 'Cron Expression',
+      type: 'text',
+      required: true,
+      placeholder: '0 0 * * *',
+      helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
+    },
+    {
+      name: 'is_active',
+      label: 'Enable schedule',
+      type: 'checkbox',
+      defaultValue: true,
+    },
+  ], [])
 
   if (isLoading) {
     return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>
@@ -687,13 +743,13 @@ function SoftwareSchedulesTab({ software }: { software: any }) {
         )}
       </div>
 
-      <ModalFormBuilder
-        isOpen={showCreateSchedule}
+      <FormModalBuilder
         title="Create SBOM Schedule"
-        config={scheduleFormConfig}
+        fields={scheduleFields}
+        isOpen={showCreateSchedule}
         onSubmit={(data) => createScheduleMutation.mutate(data)}
         onClose={() => setShowCreateSchedule(false)}
-        isLoading={createScheduleMutation.isPending}
+        submitButtonText="Create"
       />
     </div>
   )

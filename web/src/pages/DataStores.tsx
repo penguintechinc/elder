@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Database, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -10,8 +10,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import ModalFormBuilder from '@/components/ModalFormBuilder'
-import { FormConfig } from '@/types/form'
+import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
 
 const DATA_CLASSIFICATIONS = [
   { value: 'public', label: 'Public', color: 'bg-green-500/20 text-green-400' },
@@ -148,107 +147,103 @@ export default function DataStores() {
     label: identity.full_name || identity.username,
   })) || []
 
-  const createFormConfig: FormConfig = {
-    fields: [
-      {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
-        required: true,
-        placeholder: 'Production Customer Database',
-      },
-      {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Brief description of the data store',
-        rows: 2,
-      },
-      {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
-        required: true,
-        options: [
-          { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
-          ...organizationOptions,
-        ],
-      },
-      {
-        name: 'data_classification',
-        label: 'Data Classification',
-        type: 'select',
-        required: true,
-        options: DATA_CLASSIFICATIONS.map(c => ({ value: c.value, label: c.label })),
-        defaultValue: 'internal',
-      },
-      {
-        name: 'storage_type',
-        label: 'Storage Type',
-        type: 'select',
-        required: true,
-        options: STORAGE_TYPES,
-        defaultValue: 'database',
-      },
-      {
-        name: 'location_region',
-        label: 'Location/Region',
-        type: 'select',
-        options: REGIONS,
-        defaultValue: 'us-east-1',
-      },
-      {
-        name: 'location_region_other',
-        label: 'Custom Region/Location',
-        type: 'text',
-        placeholder: 'Enter custom location or region',
-        showWhen: (values: Record<string, any>) => values.location_region === 'other',
-      },
-      {
-        name: 'contains_pii',
-        label: 'Contains Personally Identifiable Information (PII)',
-        type: 'checkbox',
-        defaultValue: false,
-      },
-      {
-        name: 'contains_phi',
-        label: 'Contains Protected Health Information (PHI)',
-        type: 'checkbox',
-        defaultValue: false,
-      },
-      {
-        name: 'contains_pci',
-        label: 'Contains Payment Card Industry (PCI) Data',
-        type: 'checkbox',
-        defaultValue: false,
-      },
-      {
-        name: 'compliance_framework',
-        label: 'Compliance Framework',
-        type: 'select',
-        options: COMPLIANCE_FRAMEWORKS,
-        defaultValue: 'none',
-      },
-      {
-        name: 'poc_identity_id',
-        label: 'Point of Contact',
-        type: 'select',
-        options: [
-          { value: '', label: pocOptions.length ? 'Select contact (optional)' : 'No identities found' },
-          ...pocOptions,
-        ],
-      },
-    ],
-  }
+  const dataStoreFields: FormField[] = useMemo(() => [
+    {
+      name: 'name',
+      label: 'Name',
+      type: 'text',
+      required: true,
+      placeholder: 'Production Customer Database',
+    },
+    {
+      name: 'description',
+      label: 'Description',
+      type: 'textarea',
+      placeholder: 'Brief description of the data store',
+      rows: 2,
+    },
+    {
+      name: 'organization_id',
+      label: 'Organization',
+      type: 'select',
+      required: true,
+      options: [
+        { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
+        ...organizationOptions,
+      ],
+    },
+    {
+      name: 'data_classification',
+      label: 'Data Classification',
+      type: 'select',
+      required: true,
+      options: DATA_CLASSIFICATIONS.map(c => ({ value: c.value, label: c.label })),
+      defaultValue: 'internal',
+    },
+    {
+      name: 'storage_type',
+      label: 'Storage Type',
+      type: 'select',
+      required: true,
+      options: STORAGE_TYPES,
+      defaultValue: 'database',
+    },
+    {
+      name: 'location_region',
+      label: 'Location/Region',
+      type: 'select',
+      options: REGIONS,
+      defaultValue: 'us-east-1',
+    },
+    {
+      name: 'location_region_other',
+      label: 'Custom Region/Location',
+      type: 'text',
+      placeholder: 'Enter custom location or region',
+      showWhen: (values: Record<string, any>) => values.location_region === 'other',
+    },
+    {
+      name: 'contains_pii',
+      label: 'Contains Personally Identifiable Information (PII)',
+      type: 'checkbox',
+      defaultValue: false,
+    },
+    {
+      name: 'contains_phi',
+      label: 'Contains Protected Health Information (PHI)',
+      type: 'checkbox',
+      defaultValue: false,
+    },
+    {
+      name: 'contains_pci',
+      label: 'Contains Payment Card Industry (PCI) Data',
+      type: 'checkbox',
+      defaultValue: false,
+    },
+    {
+      name: 'compliance_framework',
+      label: 'Compliance Framework',
+      type: 'select',
+      options: COMPLIANCE_FRAMEWORKS,
+      defaultValue: 'none',
+    },
+    {
+      name: 'poc_identity_id',
+      label: 'Point of Contact',
+      type: 'select',
+      options: [
+        { value: '', label: pocOptions.length ? 'Select contact (optional)' : 'No identities found' },
+        ...pocOptions,
+      ],
+    },
+  ], [organizationOptions, pocOptions])
 
-  const editFormConfig: FormConfig = {
-    fields: createFormConfig.fields.map(field => ({
-      ...field,
-      defaultValue: field.name === 'organization_id' || field.name === 'poc_identity_id'
-        ? editingDataStore?.[field.name]?.toString()
-        : editingDataStore?.[field.name],
-    })),
-  }
+  const editFields: FormField[] = useMemo(() => dataStoreFields.map(field => ({
+    ...field,
+    defaultValue: field.name === 'organization_id' || field.name === 'poc_identity_id'
+      ? editingDataStore?.[field.name]?.toString()
+      : editingDataStore?.[field.name],
+  })), [dataStoreFields, editingDataStore])
 
   const handleCreateSubmit = (data: Record<string, any>) => {
     // Use custom region if "other" is selected
@@ -478,24 +473,28 @@ export default function DataStores() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        title="Add Data Store"
-        config={createFormConfig}
-        onSubmit={handleCreateSubmit}
-        onClose={() => setShowCreateModal(false)}
-        isLoading={createMutation.isPending}
-      />
+      {showCreateModal && (
+        <FormModalBuilder
+          isOpen={showCreateModal}
+          title="Add Data Store"
+          fields={dataStoreFields}
+          onSubmit={handleCreateSubmit}
+          onClose={() => setShowCreateModal(false)}
+          submitButtonText="Create"
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingDataStore}
-        title="Edit Data Store"
-        config={editFormConfig}
-        onSubmit={handleEditSubmit}
-        onClose={() => setEditingDataStore(null)}
-        isLoading={updateMutation.isPending}
-      />
+      {!!editingDataStore && (
+        <FormModalBuilder
+          isOpen={!!editingDataStore}
+          title="Edit Data Store"
+          fields={editFields}
+          onSubmit={handleEditSubmit}
+          onClose={() => setEditingDataStore(null)}
+          submitButtonText="Save"
+        />
+      )}
 
       {/* View Details Modal */}
       {viewingDataStore && (

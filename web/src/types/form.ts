@@ -238,6 +238,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
 /**
  * Validate all form fields
  * Returns object with field names as keys and error messages as values
+ * Skips validation for hidden fields (showWhen returns false)
  */
 export function validateForm(
   values: Record<string, any>,
@@ -246,6 +247,11 @@ export function validateForm(
   const errors: Record<string, string> = {}
 
   for (const field of fields) {
+    // Skip validation for hidden fields
+    if (field.hidden) continue
+    if (field.triggerField && !values[field.triggerField]) continue
+    if (field.showWhen && !field.showWhen(values)) continue
+
     const error = validateFieldValue(values[field.name], field)
     if (error) {
       errors[field.name] = error
