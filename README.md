@@ -3,7 +3,7 @@
 [![Continuous Integration](https://github.com/penguintechinc/elder/actions/workflows/ci.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml)
 [![Test Coverage](https://codecov.io/gh/penguintechinc/elder/branch/main/graph/badge.svg)](https://codecov.io/gh/penguintechinc/elder)
-[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/penguintechinc/elder/releases)
+[![Version](https://img.shields.io/badge/version-3.0.8-green.svg)](https://github.com/penguintechinc/elder/releases)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: Limited AGPL v3](https://img.shields.io/badge/License-Limited_AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)*
@@ -66,6 +66,9 @@ Entities use a flexible schema for infrastructure components:
 - **Metadata Fields**: Custom properties for extensibility
 - **Dependencies**: Relationship mapping between items
 - **Comments**: Collaboration and audit trail
+- **Milestones**: Timeline tracking tied to projects and goals
+- **On-Call Rotations**: Schedule duty rotations with automatic participant cycling
+- **License Policies**: License key and feature entitlement management
 
 ### Core Capabilities
 - **Dependency Mapping**: Visualize relationships between entities
@@ -76,6 +79,13 @@ Entities use a flexible schema for infrastructure components:
 - **Network Topology**: Track VPCs, subnets, peering, VPN connections
 - **Project Sync**: Bi-directional sync with GitHub, GitLab, Jira, Trello, OpenProject
 - **Enterprise Features**: Audit logging, RBAC, MFA, SSO, multi-tenant, license management
+- **Backups**: S3/cloud backup jobs with scheduling and point-in-time restore
+- **Webhooks**: Event-driven notifications for entity and issue lifecycle events
+- **SBOM Dashboard**: Software Bill of Materials inventory with vulnerability tracking
+- **Multi-Tenancy**: Tenant isolation and management for enterprise deployments
+- **Global Search**: Full-text search across all resource types and entities
+- **Audit Logging**: Comprehensive action logging with admin filtering
+- **Network Topology Map**: Interactive visualization of infrastructure relationships
 
 ## Screenshots
 
@@ -229,13 +239,20 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 
-### v3.0.0 Highlights (Latest)
+### v3.0 Highlights (Latest)
 - **OpenID Connect (OIDC)**: Full OIDC support alongside SAML for SSO integration
 - **Data Stores Tracking**: Track S3, GCS, Azure Blob, NAS, SAN, databases, and data lakes with compliance metadata (PII, PHI, PCI flags)
 - **Group Membership Management**: Approval workflows, access requests, owner reviews, and multi-provider write-back (LDAP + Okta)
 - **Okta Connector**: Full Okta identity provider with bidirectional sync and group management
 - **SCIM 2.0 Provisioning**: Complete SCIM user provisioning with JIT provisioning support
 - **Enhanced Key Management**: Improved crypto key schema with provider ARN, key types, and state tracking
+- **On-Call Rotation Management**: Schedule and manage on-call duty rotations with history tracking
+- **Milestones**: Project milestone tracking and progress management
+- **License Policy Management**: Enterprise license key and feature entitlement management
+- **Webhooks System**: Event-driven notifications with test and retry capabilities
+- **Network Topology Visualization**: Interactive map of infrastructure relationships
+- **Sub-task Support**: Hierarchical issue tracking with parent-child task relationships
+- **Shared Component Library**: Unified react_libs for consistent UI across all forms and modals
 
 ### v2.x Highlights
 - **Unified Identity Center**: Single page for all identity types (Users, Groups, Service Accounts, API Keys)
@@ -545,4 +562,4 @@ For local development and testing, Elder creates a default admin user:
 
 **Elder** - Know Your Infrastructure, Understand Your Dependencies
 
-© 2025 Penguin Tech Inc. All rights reserved.
+© 2025-2026 Penguin Tech Inc. All rights reserved.
