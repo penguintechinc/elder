@@ -160,6 +160,16 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
                 )
                 result.entities_created += 1
 
+                # TODO: When identity sync is fully implemented:
+                # 1. Create/update identity in Elder via elder_client
+                # 2. Get the identity's village_id from the response
+                # 3. Update Okta profile URL to link back to Elder:
+                #
+                # identity_response = await self.elder_client.create_or_update_identity(identity_data)
+                # village_id = identity_response.get("village_id")
+                # if village_id and settings.okta_sync_profile_url:
+                #     await self.update_user_profile_url(user["id"], village_id)
+
             except Exception as e:
                 error_msg = f"Failed to sync Okta user {user.get('id')}: {str(e)}"
                 self.logger.warning(error_msg)
@@ -461,3 +471,90 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
                 error=str(e),
             )
             return []
+
+    async def update_user_profile_url(
+        self,
+        user_id: str,
+        village_id: str,
+    ) -> bool:
+        """
+        Update Okta user's profileUrl to link to Elder profile.
+
+        Sets the user's profileUrl in Okta to point to their Elder profile
+        page using their village_id for easy cross-referencing.
+
+        Args:
+            user_id: Okta user ID
+            village_id: Elder identity village_id
+
+        Returns:
+            True if successful, False otherwise
+
+        Example:
+            profileUrl: "https://elder.example.com/profile/abc123def456"
+        """
+        try:
+            if not self._http_client:
+                self.logger.warning("Okta update_user_profile_url: client not connected")
+                return False
+
+            if not settings.okta_sync_profile_url:
+                self.logger.debug("Okta profile URL sync disabled")
+                return False
+
+            # Construct Elder profile URL using village_id
+            profile_url = f"{settings.elder_web_url}/profile/{village_id}"
+
+            # POST /api/v1/users/{userId} to update profile
+            url = f"{self.base_url}/api/v1/users/{user_id}"
+            payload = {
+                "profile": {
+                    "profileUrl": profile_url
+                }
+            }
+
+            resp = await self._http_client.post(url, json=payload)
+
+            success = resp.status_code in [200, 204]
+
+            if not success:
+                try:
+                    error_data = resp.json()
+                    error = error_data.get("errorSummary", resp.text)
+                except Exception:
+                    error = f"HTTP {resp.status_code}: {resp.text}"
+
+                self.logger.warning(
+                    "Okta update_user_profile_url failed",
+                    user_id=user_id,
+                    village_id=village_id,
+                    profile_url=profile_url,
+                    error=error,
+                )
+                return False
+
+            self.logger.info(
+                "Okta update_user_profile_url success",
+                user_id=user_id,
+                village_id=village_id,
+                profile_url=profile_url,
+            )
+
+            return True
+
+        except httpx.HTTPError as e:
+            self.logger.error(
+                "Okta update_user_profile_url HTTP error",
+                user_id=user_id,
+                village_id=village_id,
+                error=str(e),
+            )
+            return False
+        except Exception as e:
+            self.logger.error(
+                "Okta update_user_profile_url unexpected error",
+                user_id=user_id,
+                village_id=village_id,
+                error=str(e),
+            )
+            return False
