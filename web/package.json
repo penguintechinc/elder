@@ -1,6 +1,6 @@
 {
   "name": "project-template-web",
-  "version": "3.0.8",
+  "version": "3.1.0",
   "description": "Frontend web application",
   "type": "module",
   "scripts": {

@@ -432,6 +432,66 @@ class ApiClient {
     return response.data
   }
 
+  // ===== Access Reviews (v3.1.0) =====
+
+  // List access reviews
+  async getAccessReviews(params?: {
+    status?: string
+    group_id?: number
+    limit?: number
+    offset?: number
+  }) {
+    const response = await this.client.get('/access-reviews', { params })
+    return response.data
+  }
+
+  // Get review details
+  async getAccessReview(reviewId: number) {
+    const response = await this.client.get(`/access-reviews/${reviewId}`)
+    return response.data
+  }
+
+  // Get review items (members to review)
+  async getAccessReviewItems(reviewId: number) {
+    const response = await this.client.get(`/access-reviews/${reviewId}/items`)
+    return response.data
+  }
+
+  // Submit review decision
+  async submitReviewDecision(reviewId: number, data: {
+    membership_id: number
+    decision: 'keep' | 'remove' | 'extend'
+    justification?: string
+    new_expiration?: string
+  }) {
+    const response = await this.client.post(`/access-reviews/${reviewId}/decisions`, data)
+    return response.data
+  }
+
+  // Complete access review
+  async completeAccessReview(reviewId: number) {
+    const response = await this.client.post(`/access-reviews/${reviewId}/complete`)
+    return response.data
+  }
+
+  // Get reviews assigned to current user
+  async getMyAccessReviews(params?: { status?: string }) {
+    const response = await this.client.get('/access-reviews/my-reviews', { params })
+    return response.data
+  }
+
+  // Create ad-hoc review (admin only)
+  async createAccessReview(data: {
+    group_id: number
+    period_start: string
+    period_end: string
+    due_date: string
+    auto_apply?: boolean
+  }) {
+    const response = await this.client.post('/access-reviews', data)
+    return response.data
+  }
+
   // Remove member from group
   async removeGroupMember(groupId: number, identityId: number) {
     const response = await this.client.delete(`/group-membership/groups/${groupId}/members/${identityId}`)
