@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Clock, Check, X, AlertCircle, Calendar, Users, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tantml:react-query'
+import { Clock, Check, X, AlertCircle, Calendar, Users, CheckCircle, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
-import Card, { CardHeader, CardContent } from '@/components/Card'
+import Card, { CardContent } from '@/components/Card'
 import Select from '@/components/Select'
 
 interface AccessReviewManagerProps {
@@ -39,7 +39,7 @@ interface ReviewItem {
   membership_id: number
 }
 
-export default function AccessReviewManager({ organizationId }: AccessReviewManagerProps) {
+export default function AccessReviewManager({ organizationId: _organizationId }: AccessReviewManagerProps) {
   const [selectedReview, setSelectedReview] = useState<Review | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('in_progress')
   const queryClient = useQueryClient()
@@ -103,7 +103,7 @@ export default function AccessReviewManager({ organizationId }: AccessReviewMana
   const handleCompleteReview = () => {
     if (!selectedReview) return
 
-    const unreviewed = reviewItems.filter(item => !item.decision).length
+    const unreviewed = reviewItems.filter((item: ReviewItem) => !item.decision).length
     if (unreviewed > 0) {
       toast.error(`Cannot complete: ${unreviewed} members not reviewed`)
       return
@@ -203,7 +203,7 @@ export default function AccessReviewManager({ organizationId }: AccessReviewMana
 
         {/* Member Review List */}
         <div className="space-y-2">
-          {reviewItems.map((item) => (
+          {reviewItems.map((item: ReviewItem) => (
             <Card key={item.id}>
               <CardContent>
                 <div className="flex items-center justify-between">

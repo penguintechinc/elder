@@ -198,9 +198,7 @@ def complete_review(review_id):
     try:
         service = get_service()
 
-        review = service.complete_review(
-            review_id=review_id, completed_by=g.user.id
-        )
+        review = service.complete_review(review_id=review_id, completed_by=g.user.id)
 
         return jsonify(review), 200
 
@@ -272,12 +270,15 @@ def create_review():
         auto_apply = data.get("auto_apply", True)
 
         if not all([group_id, period_start_str, period_end_str, due_date_str]):
-            return jsonify(
-                {
-                    "error": "group_id, period_start, period_end, "
-                    "and due_date required"
-                }
-            ), 400
+            return (
+                jsonify(
+                    {
+                        "error": "group_id, period_start, period_end, "
+                        "and due_date required"
+                    }
+                ),
+                400,
+            )
 
         # Parse dates
         try:

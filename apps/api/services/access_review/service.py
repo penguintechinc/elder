@@ -50,17 +50,21 @@ class AccessReviewService:
             "id": review.id,
             "tenant_id": review.tenant_id,
             "group_id": review.group_id,
-            "review_period_start": review.review_period_start.isoformat()
-            if review.review_period_start
-            else None,
-            "review_period_end": review.review_period_end.isoformat()
-            if review.review_period_end
-            else None,
+            "review_period_start": (
+                review.review_period_start.isoformat()
+                if review.review_period_start
+                else None
+            ),
+            "review_period_end": (
+                review.review_period_end.isoformat()
+                if review.review_period_end
+                else None
+            ),
             "due_date": review.due_date.isoformat() if review.due_date else None,
             "status": review.status,
-            "completed_at": review.completed_at.isoformat()
-            if review.completed_at
-            else None,
+            "completed_at": (
+                review.completed_at.isoformat() if review.completed_at else None
+            ),
             "completed_by_id": review.completed_by_id,
             "total_members": review.total_members,
             "members_reviewed": review.members_reviewed,
@@ -81,9 +85,9 @@ class AccessReviewService:
             "identity_id": item.identity_id,
             "decision": item.decision,
             "justification": item.justification,
-            "new_expiration": item.new_expiration.isoformat()
-            if item.new_expiration
-            else None,
+            "new_expiration": (
+                item.new_expiration.isoformat() if item.new_expiration else None
+            ),
             "reviewed_by_id": item.reviewed_by_id,
             "reviewed_at": item.reviewed_at.isoformat() if item.reviewed_at else None,
             "created_at": item.created_at.isoformat() if item.created_at else None,
@@ -136,9 +140,7 @@ class AccessReviewService:
         )
 
         # Get all current members
-        memberships = db(
-            db.identity_group_memberships.group_id == group_id
-        ).select()
+        memberships = db(db.identity_group_memberships.group_id == group_id).select()
 
         # Create review items for each member
         for membership in memberships:
@@ -150,18 +152,14 @@ class AccessReviewService:
             )
 
         # Update total_members count
-        db(db.access_reviews.id == review_id).update(
-            total_members=len(memberships)
-        )
+        db(db.access_reviews.id == review_id).update(total_members=len(memberships))
 
         # Assign reviewers based on assignment mode
         self._assign_reviewers(review_id, group)
 
         # Update review status to in_progress if there are members
         if len(memberships) > 0:
-            db(db.access_reviews.id == review_id).update(
-                status=self.STATUS_IN_PROGRESS
-            )
+            db(db.access_reviews.id == review_id).update(status=self.STATUS_IN_PROGRESS)
 
         db.commit()
 
@@ -188,7 +186,9 @@ class AccessReviewService:
         """Assign reviewers to a review based on group settings."""
         db = self.db
 
-        assignment_mode = group.review_assignment_mode or self.ASSIGNMENT_MODE_ALL_OWNERS
+        assignment_mode = (
+            group.review_assignment_mode or self.ASSIGNMENT_MODE_ALL_OWNERS
+        )
 
         reviewers = []
 
@@ -244,9 +244,7 @@ class AccessReviewService:
             review_data["group_description"] = group.description
 
         # Get assignees
-        assignments = db(
-            db.access_review_assignments.review_id == review_id
-        ).select()
+        assignments = db(db.access_review_assignments.review_id == review_id).select()
 
         review_data["reviewers"] = []
         for assignment in assignments:
@@ -258,9 +256,11 @@ class AccessReviewService:
                         "username": identity.username,
                         "email": identity.email,
                         "completed": assignment.completed,
-                        "completed_at": assignment.completed_at.isoformat()
-                        if assignment.completed_at
-                        else None,
+                        "completed_at": (
+                            assignment.completed_at.isoformat()
+                            if assignment.completed_at
+                            else None
+                        ),
                     }
                 )
 
@@ -397,7 +397,11 @@ class AccessReviewService:
         db = self.db
 
         # Validate decision
-        if decision not in [self.DECISION_KEEP, self.DECISION_REMOVE, self.DECISION_EXTEND]:
+        if decision not in [
+            self.DECISION_KEEP,
+            self.DECISION_REMOVE,
+            self.DECISION_EXTEND,
+        ]:
             raise ValueError(f"Invalid decision: {decision}")
 
         # Validate extend has expiration
@@ -405,10 +409,14 @@ class AccessReviewService:
             raise ValueError("new_expiration required for extend decision")
 
         # Find the review item
-        item = db(
-            (db.access_review_items.review_id == review_id)
-            & (db.access_review_items.membership_id == membership_id)
-        ).select().first()
+        item = (
+            db(
+                (db.access_review_items.review_id == review_id)
+                & (db.access_review_items.membership_id == membership_id)
+            )
+            .select()
+            .first()
+        )
 
         if not item:
             raise ValueError(
@@ -454,9 +462,7 @@ class AccessReviewService:
         items = db(db.access_review_items.review_id == review_id).select()
 
         members_reviewed = sum(1 for item in items if item.decision)
-        members_kept = sum(
-            1 for item in items if item.decision == self.DECISION_KEEP
-        )
+        members_kept = sum(1 for item in items if item.decision == self.DECISION_KEEP)
         members_removed = sum(
             1 for item in items if item.decision == self.DECISION_REMOVE
         )
@@ -469,9 +475,7 @@ class AccessReviewService:
 
         db.commit()
 
-    def complete_review(
-        self, review_id: int, completed_by: int
-    ) -> Dict[str, Any]:
+    def complete_review(self, review_id: int, completed_by: int) -> Dict[str, Any]:
         """Complete a review and optionally apply decisions.
 
         Args:
@@ -572,9 +576,7 @@ class AccessReviewService:
                         f"{review.group_id} (review decision)"
                     )
                 except Exception as e:
-                    logger.error(
-                        f"Failed to remove identity {item.identity_id}: {e}"
-                    )
+                    logger.error(f"Failed to remove identity {item.identity_id}: {e}")
 
             elif item.decision == self.DECISION_EXTEND and item.new_expiration:
                 # Update expiration
@@ -633,12 +635,8 @@ class AccessReviewService:
         """
         db = self.db
 
-        query = (
-            db.access_review_assignments.reviewer_identity_id == owner_identity_id
-        )
-        query &= (
-            db.access_review_assignments.review_id == db.access_reviews.id
-        )
+        query = db.access_review_assignments.reviewer_identity_id == owner_identity_id
+        query &= db.access_review_assignments.review_id == db.access_reviews.id
 
         if status:
             query &= db.access_reviews.status == status
@@ -674,17 +672,16 @@ class AccessReviewService:
 
         # Find reviews that are past due but not completed
         query = (
-            (db.access_reviews.status.belongs([self.STATUS_SCHEDULED, self.STATUS_IN_PROGRESS]))
-            & (db.access_reviews.due_date < now)
-        )
+            db.access_reviews.status.belongs(
+                [self.STATUS_SCHEDULED, self.STATUS_IN_PROGRESS]
+            )
+        ) & (db.access_reviews.due_date < now)
 
         overdue_reviews = db(query).select()
 
         overdue_ids = []
         for review in overdue_reviews:
-            db(db.access_reviews.id == review.id).update(
-                status=self.STATUS_OVERDUE
-            )
+            db(db.access_reviews.id == review.id).update(status=self.STATUS_OVERDUE)
             overdue_ids.append(review.id)
 
             logger.warning(
