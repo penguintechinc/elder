@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tantml:react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Clock, Check, X, AlertCircle, Calendar, Users, CheckCircle, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
