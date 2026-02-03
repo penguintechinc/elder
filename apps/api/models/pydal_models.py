@@ -287,7 +287,9 @@ def define_all_tables(db):
         Field("sync_enabled", "boolean", default=False),
         # Access review configuration (Enterprise feature)
         Field("review_enabled", "boolean", default=False, notnull=True),
-        Field("review_interval_days", "integer", default=90),  # 90=quarterly, 365=yearly
+        Field(
+            "review_interval_days", "integer", default=90
+        ),  # 90=quarterly, 365=yearly
         Field("last_review_date", "datetime"),
         Field("next_review_date", "datetime"),
         Field("review_assignment_mode", "string", length=20, default="all_owners"),
@@ -666,7 +668,9 @@ def define_all_tables(db):
         Field("members_kept", "integer", default=0),
         Field("members_removed", "integer", default=0),
         Field("auto_apply_decisions", "boolean", default=True, notnull=True),
-        Field("village_id", "string", length=32, unique=True, default=generate_village_id),
+        Field(
+            "village_id", "string", length=32, unique=True, default=generate_village_id
+        ),
         Field(
             "created_at",
             "datetime",

@@ -495,7 +495,9 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
         """
         try:
             if not self._http_client:
-                self.logger.warning("Okta update_user_profile_url: client not connected")
+                self.logger.warning(
+                    "Okta update_user_profile_url: client not connected"
+                )
                 return False
 
             if not settings.okta_sync_profile_url:
@@ -507,11 +509,7 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
 
             # POST /api/v1/users/{userId} to update profile
             url = f"{self.base_url}/api/v1/users/{user_id}"
-            payload = {
-                "profile": {
-                    "profileUrl": profile_url
-                }
-            }
+            payload = {"profile": {"profileUrl": profile_url}}
 
             resp = await self._http_client.post(url, json=payload)
 
