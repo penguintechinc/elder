@@ -6,11 +6,9 @@ to validate licenses and check feature entitlements.
 """
 
 import os
-import json
 import time
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from functools import wraps
 
 import requests
