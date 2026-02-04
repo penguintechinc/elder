@@ -2258,6 +2258,17 @@ class ApiClient {
     const response = await this.client.delete(`/on-call/escalation-policies/${id}`)
     return response.data
   }
+
+  // Cost tracking
+  async getResourceCosts(resourceType: string, resourceId: number) {
+    const response = await this.client.get(`/costs/${resourceType}/${resourceId}`)
+    return response.data
+  }
+
+  async updateResourceCosts(resourceType: string, resourceId: number, data: Record<string, unknown>) {
+    const response = await this.client.post(`/costs/${resourceType}/${resourceId}`, data)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()

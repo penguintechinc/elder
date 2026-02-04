@@ -424,6 +424,25 @@ async def refresh_token_endpoint():
     )
 
 
+@bp.route("/captcha-challenge", methods=["GET"])
+def captcha_challenge():
+    """Generate ALTCHA proof-of-work challenge."""
+    import hashlib
+    import time
+
+    salt = os.urandom(16).hex()
+    timestamp = str(int(time.time()))
+    secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
+    challenge = hashlib.sha256(f"{salt}{timestamp}{secret}".encode()).hexdigest()
+
+    return jsonify({
+        "algorithm": "SHA-256",
+        "challenge": challenge,
+        "salt": salt,
+        "difficulty": 10000,
+    })
+
+
 def _create_audit_log_sync(
     db,
     identity_id: int,

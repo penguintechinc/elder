@@ -218,6 +218,7 @@ def _register_blueprints(app: Flask) -> None:
     from apps.api.api.v1 import backup  # Phase 10: Backup & Data Management
     from apps.api.api.v1 import builtin_secrets  # v2.0.0: Built-in Secrets Storage
     from apps.api.api.v1 import certificates  # v2.4.0: Certificate Management
+    from apps.api.api.v1 import costs  # Cost tracking
     from apps.api.api.v1 import data_stores  # v3.0.0: Data Store Tracking
     from apps.api.api.v1 import discovery  # Phase 5: Cloud Auto-Discovery
     from apps.api.api.v1 import group_membership  # v3.x: Group Membership Management
@@ -367,6 +368,9 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(
         certificates.bp, url_prefix=f"{api_prefix}/certificates"
     )  # Certificate management
+    app.register_blueprint(
+        costs.bp, url_prefix=f"{api_prefix}/costs"
+    )  # Cost tracking
 
     # v3.x Feature blueprints
     app.register_blueprint(

@@ -592,6 +592,7 @@ class DiscoveryService:
             "rds_instance": ("database", "AWS"),
             "gcs_bucket": ("gcs", "GCP"),
             "k8s_persistent_volume": ("disk", "Kubernetes"),
+            "k8s_pvc": ("disk", "Kubernetes"),
         }
 
         if resource_type not in type_map:
@@ -761,6 +762,222 @@ class DiscoveryService:
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
 
+    def _store_k8s_ingress(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+        """Store a K8s Ingress in the networking_resources table."""
+        metadata = resource.get("metadata", {})
+        namespace = metadata.get("namespace", "default")
+        parent_id = networking_lookup.get(f"namespace:{namespace}")
+
+        ingress_id = self._upsert_networking_resource(
+            organization_id=organization_id,
+            name=resource.get("name", ""),
+            network_type="ingress",
+            region=resource.get("region"),
+            parent_id=parent_id,
+            attributes={
+                "ingress_class": metadata.get("ingress_class"),
+                "paths": metadata.get("paths", []),
+                "tls_enabled": metadata.get("tls_enabled", False),
+                "tls_hosts": metadata.get("tls_hosts", []),
+                "backend_services": metadata.get("backend_services", []),
+            },
+            tags=["kubernetes", "ingress", "discovered"],
+        )
+
+        # Link ingress to backend services via dependencies
+        if ingress_id:
+            for svc_name in metadata.get("backend_services", []):
+                try:
+                    svc = (
+                        self.db(
+                            (self.db.services.organization_id == organization_id)
+                            & (self.db.services.name == svc_name)
+                        )
+                        .select()
+                        .first()
+                    )
+                    if svc:
+                        self._create_dependency_link(
+                            "networking_resource", ingress_id,
+                            "service", svc.id,
+                            "routes_to",
+                            {"ingress": resource.get("name", "")},
+                        )
+                        # Append ingress paths to service.paths for ServiceEndpoints page
+                        for path_entry in metadata.get("paths", []):
+                            if path_entry.get("service") == svc_name:
+                                endpoint = f"GET {path_entry.get('host', '*')}{path_entry.get('path', '/')}"
+                                existing_paths = svc.paths or []
+                                if endpoint not in existing_paths:
+                                    existing_paths.append(endpoint)
+                                    self.db(self.db.services.id == svc.id).update(
+                                        paths=existing_paths,
+                                        updated_at=datetime.utcnow(),
+                                    )
+                except Exception as e:
+                    logger.warning("Failed to link ingress to service %s: %s", svc_name, e)
+
+        return ingress_id
+
+    def _store_k8s_pvc_as_data_store(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+        """Store a K8s PVC in data_stores and link to PV via dependencies."""
+        pvc_id = self._store_as_data_store(organization_id, resource, provider)
+
+        if pvc_id:
+            metadata = resource.get("metadata", {})
+            volume_name = metadata.get("volume_name")
+            if volume_name:
+                # Find the PV and create dependency link
+                try:
+                    pv = (
+                        self.db(
+                            (self.db.data_stores.organization_id == organization_id)
+                            & (self.db.data_stores.name == volume_name)
+                            & (self.db.data_stores.storage_type == "disk")
+                            & (self.db.data_stores.storage_provider == "Kubernetes")
+                        )
+                        .select()
+                        .first()
+                    )
+                    if pv:
+                        self._create_dependency_link(
+                            "data_store", pvc_id,
+                            "data_store", pv.id,
+                            "bound_to",
+                            {"pvc": resource.get("name", ""), "pv": volume_name},
+                        )
+                except Exception as e:
+                    logger.warning("Failed to link PVC to PV %s: %s", volume_name, e)
+
+        return pvc_id
+
+    def _store_k8s_secret(self, organization_id: int, resource: Dict[str, Any]) -> Optional[int]:
+        """Store a K8s Secret in builtin_secrets (metadata only, NEVER values)."""
+        name = resource.get("name", "Unnamed")
+        metadata = resource.get("metadata", {})
+        namespace = metadata.get("namespace", "default")
+
+        full_name = f"k8s:{namespace}:{name}"
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.builtin_secrets.organization_id == organization_id)
+                    & (self.db.builtin_secrets.name == full_name)
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.builtin_secrets.id == existing.id).update(
+                    secret_json={
+                        "namespace": namespace,
+                        "k8s_type": metadata.get("type", "Opaque"),
+                        "keys": metadata.get("keys", []),
+                        "cluster": "kubernetes",
+                        "annotations": metadata.get("annotations", {}),
+                    },
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            secret_id = self.db.builtin_secrets.insert(
+                name=full_name,
+                organization_id=organization_id,
+                secret_type="other",
+                secret_value=None,
+                secret_json={
+                    "namespace": namespace,
+                    "k8s_type": metadata.get("type", "Opaque"),
+                    "keys": metadata.get("keys", []),
+                    "cluster": "kubernetes",
+                    "annotations": metadata.get("annotations", {}),
+                },
+                tags=["kubernetes", "k8s-secret", "discovered"],
+                created_at=datetime.utcnow(),
+            )
+            return secret_id
+        except Exception as e:
+            logger.warning("Failed to store K8s secret %s: %s", full_name, e)
+            return None
+
+    def _store_cert_manager_certificate(self, organization_id: int, resource: Dict[str, Any]) -> Optional[int]:
+        """Store a cert-manager Certificate in the certificates table."""
+        name = resource.get("name", "Unnamed")
+        metadata = resource.get("metadata", {})
+
+        common_name = metadata.get("common_name", name)
+        dns_names = metadata.get("dns_names", [])
+        issuer_ref = metadata.get("issuer_ref", {})
+        not_after = metadata.get("not_after")
+
+        # Parse expiration date
+        expiration = None
+        if not_after:
+            try:
+                expiration = datetime.fromisoformat(not_after.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.certificates.organization_id == organization_id)
+                    & (self.db.certificates.name == name)
+                    & (self.db.certificates.creator == "cert_manager")
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.certificates.id == existing.id).update(
+                    common_name=common_name,
+                    subject_alternative_names=dns_names,
+                    expiration_date=expiration,
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            cert_id = self.db.certificates.insert(
+                tenant_id=1,
+                name=name,
+                organization_id=organization_id,
+                creator="cert_manager",
+                cert_type="server_cert",
+                common_name=common_name,
+                subject_alternative_names=dns_names,
+                issuer_common_name=issuer_ref.get("name"),
+                issuer_organization=issuer_ref.get("kind", "ClusterIssuer"),
+                expiration_date=expiration,
+                is_revoked=False,
+                auto_renew=True,
+                tags=["kubernetes", "cert-manager", "discovered"],
+                created_at=datetime.utcnow(),
+            )
+            return cert_id
+        except Exception as e:
+            logger.warning("Failed to store cert-manager cert %s: %s", name, e)
+            return None
+
+    def _store_cni_as_networking(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+        """Store CNI plugin info in networking_resources."""
+        metadata = resource.get("metadata", {})
+
+        return self._upsert_networking_resource(
+            organization_id=organization_id,
+            name=resource.get("name", "Unknown CNI"),
+            network_type="cni",
+            region=resource.get("region"),
+            parent_id=None,
+            attributes={
+                "cni_type": metadata.get("cni_type"),
+                "version": metadata.get("version"),
+            },
+            tags=["kubernetes", "cni", "discovered"],
+        )
+
     # Resource type routing
 
     def _resource_type_to_domain(self, resource_type: str) -> str:
@@ -769,8 +986,13 @@ class DiscoveryService:
             "k8s_service": "service",
             "k8s_service_account": "identity",
             "k8s_persistent_volume": "data_store",
+            "k8s_pvc": "data_store",
             "k8s_node": "entity",
             "k8s_pod": "entity",
+            "k8s_ingress": "networking",
+            "k8s_cni": "networking",
+            "k8s_secret": "builtin_secret",
+            "cert_manager_certificate": "certificate",
             "vpc": "networking",
             "subnet": "networking",
             "load_balancer": "networking",
@@ -848,13 +1070,30 @@ class DiscoveryService:
                         self._create_dependency_link("service", svc_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
 
                 elif domain == "data_store":
-                    ds_id = self._store_as_data_store(organization_id, resource, provider)
+                    if resource_type == "k8s_pvc":
+                        ds_id = self._store_k8s_pvc_as_data_store(organization_id, resource, provider)
+                    else:
+                        ds_id = self._store_as_data_store(organization_id, resource, provider)
                     if ds_id and root_entity_id:
                         self._create_dependency_link("data_store", ds_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+
+                elif domain == "builtin_secret":
+                    secret_id = self._store_k8s_secret(organization_id, resource)
+                    if secret_id and root_entity_id:
+                        self._create_dependency_link("builtin_secret", secret_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+
+                elif domain == "certificate":
+                    cert_id = self._store_cert_manager_certificate(organization_id, resource)
+                    if cert_id and root_entity_id:
+                        self._create_dependency_link("certificate", cert_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
 
                 elif domain == "networking":
                     if resource_type == "load_balancer":
                         self._store_as_networking_resource(organization_id, resource, networking_lookup)
+                    elif resource_type == "k8s_ingress":
+                        self._store_k8s_ingress(organization_id, resource, networking_lookup)
+                    elif resource_type == "k8s_cni":
+                        self._store_cni_as_networking(organization_id, resource, networking_lookup)
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
                 else:
