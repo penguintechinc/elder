@@ -28,7 +28,7 @@ def app():
         Flask app configured for testing
     """
     from apps.api.main import create_app
-    from shared.database import db
+    from apps.api.database import db
 
     app = create_app("testing")
 
@@ -77,7 +77,7 @@ def db_session(app):
     Yields:
         PyDAL db instance
     """
-    from shared.database import db
+    from apps.api.database import db
 
     with app.app_context():
         # Start a savepoint for test isolation

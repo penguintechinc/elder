@@ -152,6 +152,7 @@ class ApiClient {
     per_page?: number
     organization_id?: number
     entity_type?: string
+    sub_type?: string
     search?: string
   }) {
     const response = await this.client.get('/entities', { params })
@@ -2060,6 +2061,15 @@ class ApiClient {
 
   async updateVulnerabilityStatus(id: number, data: Partial<{ status: string }>) {
     const response = await this.client.patch(`/vulnerabilities/${id}`, data)
+    return response.data
+  }
+
+  async assignVulnerability(vulnId: number, data: {
+    parent_type: 'service' | 'software'
+    parent_id: number
+    notes?: string
+  }) {
+    const response = await this.client.post(`/vulnerabilities/${vulnId}/assign`, data)
     return response.data
   }
 

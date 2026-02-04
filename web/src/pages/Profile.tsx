@@ -6,7 +6,7 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
-import { FormBuilder, FieldConfig as FormField } from '@penguin/react_libs/components/FormBuilder'
+import { FormBuilder, FieldConfig as FormField } from '@penguintechinc/react-libs/components/FormBuilder'
 
 export default function Profile() {
   const [isEditing, setIsEditing] = useState(false)

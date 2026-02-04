@@ -46,7 +46,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
     def get_supported_services(self) -> List[str]:
         """Get supported Kubernetes resources."""
-        return ["nodes", "pods", "services", "deployments", "persistent_volumes"]
+        return ["nodes", "pods", "services", "deployments", "persistent_volumes", "service_accounts"]
 
     def discover_all(self) -> Dict[str, Any]:
         """Discover all Kubernetes resources."""
@@ -56,6 +56,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
             "compute": self.discover_compute(),
             "storage": self.discover_storage(),
             "network": self.discover_network(),
+            "iam": self._discover_service_accounts(),
             "database": [],
             "serverless": [],
         }
@@ -133,6 +134,17 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                             if pod.spec and pod.spec.containers
                             else 0
                         ),
+                        "containers": (
+                            [
+                                {
+                                    "name": c.name,
+                                    "image": c.image,
+                                }
+                                for c in pod.spec.containers
+                            ]
+                            if pod.spec and pod.spec.containers
+                            else []
+                        ),
                     },
                     region="N/A",
                     tags=pod.metadata.labels or {},
@@ -204,6 +216,39 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                 )
                 resources.append(resource)
         except:
+            pass
+
+        return resources
+
+    def _discover_service_accounts(self) -> List[Dict[str, Any]]:
+        """Discover Kubernetes service accounts."""
+        resources = []
+
+        try:
+            service_accounts = self.core_v1.list_service_account_for_all_namespaces()
+            for sa in service_accounts.items:
+                resource = self.format_resource(
+                    resource_id=sa.metadata.uid,
+                    resource_type="k8s_service_account",
+                    name=sa.metadata.name,
+                    metadata={
+                        "namespace": sa.metadata.namespace,
+                        "automount_token": (
+                            sa.automount_service_account_token
+                            if hasattr(sa, "automount_service_account_token")
+                            else None
+                        ),
+                        "secrets": (
+                            [s.name for s in sa.secrets]
+                            if sa.secrets
+                            else []
+                        ),
+                    },
+                    region="N/A",
+                    tags=sa.metadata.labels or {},
+                )
+                resources.append(resource)
+        except Exception:
             pass
 
         return resources

@@ -21,7 +21,7 @@ from apps.api.utils.validation_helpers import (
     validate_required_fields,
     validate_resource_exists,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sbom", __name__)
 

@@ -8,12 +8,12 @@ from datetime import datetime
 from typing import Optional, Union
 
 from flask import Blueprint, current_app, jsonify
-from py_libs.pydantic import RequestModel
-from py_libs.pydantic.flask_integration import validated_request
+from penguin_libs.pydantic import RequestModel
+from penguin_libs.pydantic.flask_integration import validated_request
 
 from apps.api.auth.decorators import login_required, resource_role_required
-from shared.async_utils import run_in_threadpool
-from shared.licensing import license_required
+from apps.api.utils.async_utils import run_in_threadpool
+from penguin_licensing import license_required
 
 bp = Blueprint("metadata", __name__)
 

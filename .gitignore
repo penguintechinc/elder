@@ -453,3 +453,4 @@ vagrant/.TODO
 
 # Allow web/public for Vite static assets
 !web/public/
+.FUTURE

@@ -179,7 +179,7 @@ def get_or_404(model: Any, id: int, error_message: str = None):
     Raises:
         404 error if not found
     """
-    from shared.database import db
+    from apps.api.database import db
 
     instance = db.session.get(model, id)
 

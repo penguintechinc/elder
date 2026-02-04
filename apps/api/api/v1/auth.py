@@ -15,7 +15,7 @@ from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("auth", __name__)
 

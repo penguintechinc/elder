@@ -2,9 +2,11 @@
 
 # flake8: noqa: E501
 
-
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 from apps.api.services.discovery.aws_discovery import AWSDiscoveryClient
 from apps.api.services.discovery.azure_discovery import AzureDiscoveryClient
@@ -313,60 +315,581 @@ class DiscoveryService:
 
     # Helper Methods
 
+    # Provider detection
+
+    def _detect_provider_type(self, discovery_results: Dict[str, Any]) -> str:
+        """Detect cloud provider from discovery results."""
+        for category in ["compute", "storage", "network", "iam"]:
+            resources = discovery_results.get(category, [])
+            if not resources:
+                continue
+            rt = resources[0].get("resource_type", "")
+            if rt.startswith("k8s_"):
+                return "kubernetes"
+            if rt.startswith("gce_") or rt.startswith("gcs_"):
+                return "gcp"
+            prov = resources[0].get("provider", "")
+            if prov == "aws":
+                return "aws"
+            if prov == "gcp":
+                return "gcp"
+        return "unknown"
+
+    # Provider root entity
+
+    def _ensure_provider_root_entity(
+        self, organization_id: int, provider: str, config: Dict[str, Any]
+    ) -> Optional[int]:
+        """Create or update a provider root entity (cluster/account/project)."""
+        sub_type_map = {
+            "kubernetes": "kubernetes_cluster",
+            "aws": "aws_account",
+            "gcp": "gcp_project",
+        }
+        sub_type = sub_type_map.get(provider)
+        if not sub_type:
+            return None
+
+        name = config.get("name", config.get("cluster_name", config.get("project_id", config.get("account_id", f"{provider} root"))))
+
+        existing = (
+            self.db(
+                (self.db.entities.organization_id == organization_id)
+                & (self.db.entities.sub_type == sub_type)
+                & (self.db.entities.name == name)
+            )
+            .select()
+            .first()
+        )
+
+        if existing:
+            self.db(self.db.entities.id == existing.id).update(
+                updated_at=datetime.utcnow(),
+            )
+            return existing.id
+
+        entity_id = self.db.entities.insert(
+            name=name,
+            entity_type="compute",
+            sub_type=sub_type,
+            organization_id=organization_id,
+            attributes={"provider": provider, "discovered_at": datetime.utcnow().isoformat()},
+            created_at=datetime.utcnow(),
+        )
+        return entity_id
+
+    # Intermediate networking
+
+    def _ensure_intermediate_networking(
+        self, organization_id: int, provider: str, root_entity_id: Optional[int], discovery_results: Dict[str, Any]
+    ) -> Dict[str, int]:
+        """Create intermediate networking resources (VPCs, Namespaces) and return lookup maps."""
+        networking_lookup = {}
+
+        if provider == "kubernetes":
+            # Extract unique namespaces from pods and services
+            namespaces = set()
+            for category in ["compute", "network", "iam"]:
+                for resource in discovery_results.get(category, []):
+                    ns = resource.get("metadata", {}).get("namespace")
+                    if ns:
+                        namespaces.add(ns)
+
+            for ns_name in namespaces:
+                net_id = self._upsert_networking_resource(
+                    organization_id=organization_id,
+                    name=ns_name,
+                    network_type="namespace",
+                    region=None,
+                    attributes={"provider": "kubernetes"},
+                    tags=["kubernetes", "namespace", "discovered"],
+                )
+                if net_id and root_entity_id:
+                    self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                networking_lookup[f"namespace:{ns_name}"] = net_id
+
+        elif provider == "aws":
+            # Extract VPCs and subnets from network category
+            vpc_lookup = {}
+            for resource in discovery_results.get("network", []):
+                rt = resource.get("resource_type", "")
+                if rt == "vpc":
+                    meta = resource.get("metadata", {})
+                    vpc_id_str = meta.get("vpc_id", resource.get("resource_id", ""))
+                    net_id = self._upsert_networking_resource(
+                        organization_id=organization_id,
+                        name=resource.get("name", vpc_id_str),
+                        network_type="other",
+                        region=resource.get("region"),
+                        attributes={"cidr_block": meta.get("cidr_block"), "vpc_id": vpc_id_str, "is_default": meta.get("is_default")},
+                        tags=["aws", "vpc", "discovered"],
+                    )
+                    if net_id and root_entity_id:
+                        self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                    vpc_lookup[vpc_id_str] = net_id
+                    networking_lookup[f"vpc:{vpc_id_str}"] = net_id
+
+            for resource in discovery_results.get("network", []):
+                rt = resource.get("resource_type", "")
+                if rt == "subnet":
+                    meta = resource.get("metadata", {})
+                    parent_vpc = meta.get("vpc_id")
+                    parent_id = vpc_lookup.get(parent_vpc) if parent_vpc else None
+                    net_id = self._upsert_networking_resource(
+                        organization_id=organization_id,
+                        name=resource.get("name", ""),
+                        network_type="subnet",
+                        region=resource.get("region"),
+                        parent_id=parent_id,
+                        attributes={"cidr_block": meta.get("cidr_block"), "availability_zone": meta.get("availability_zone"), "available_ips": meta.get("available_ips")},
+                        tags=["aws", "subnet", "discovered"],
+                    )
+                    subnet_id_str = meta.get("subnet_id", resource.get("resource_id", ""))
+                    networking_lookup[f"subnet:{subnet_id_str}"] = net_id
+
+        elif provider == "gcp":
+            for resource in discovery_results.get("network", []):
+                rt = resource.get("resource_type", "")
+                if rt == "vpc":
+                    net_id = self._upsert_networking_resource(
+                        organization_id=organization_id,
+                        name=resource.get("name", ""),
+                        network_type="other",
+                        region="global",
+                        attributes={"auto_create_subnets": resource.get("metadata", {}).get("auto_create_subnets")},
+                        tags=["gcp", "vpc", "discovered"],
+                    )
+                    if net_id and root_entity_id:
+                        self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                    networking_lookup[f"vpc:{resource.get('resource_id', '')}"] = net_id
+
+        return networking_lookup
+
+    def _upsert_networking_resource(
+        self, organization_id: int, name: str, network_type: str, region: Optional[str] = None,
+        parent_id: Optional[int] = None, attributes: Optional[Dict] = None, tags: Optional[List[str]] = None,
+    ) -> Optional[int]:
+        """Create or update a networking_resources record."""
+        try:
+            existing = (
+                self.db(
+                    (self.db.networking_resources.organization_id == organization_id)
+                    & (self.db.networking_resources.name == name)
+                    & (self.db.networking_resources.network_type == network_type)
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.networking_resources.id == existing.id).update(
+                    attributes=attributes or {},
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            net_id = self.db.networking_resources.insert(
+                name=name,
+                network_type=network_type,
+                organization_id=organization_id,
+                region=region,
+                parent_id=parent_id,
+                attributes=attributes or {},
+                tags=tags or [],
+                created_at=datetime.utcnow(),
+            )
+            return net_id
+        except Exception as e:
+            logger.warning("Failed to upsert networking_resource %s: %s", name, e)
+            return None
+
+    def _upsert_network_entity_mapping(
+        self, network_id: int, entity_id: int, relationship_type: str = "attached"
+    ) -> None:
+        """Link a networking_resource to an entity via network_entity_mappings."""
+        try:
+            existing = (
+                self.db(
+                    (self.db.network_entity_mappings.networking_resource_id == network_id)
+                    & (self.db.network_entity_mappings.entity_id == entity_id)
+                )
+                .select()
+                .first()
+            )
+            if not existing:
+                self.db.network_entity_mappings.insert(
+                    networking_resource_id=network_id,
+                    entity_id=entity_id,
+                    relationship_type=relationship_type,
+                    created_at=datetime.utcnow(),
+                )
+        except Exception as e:
+            logger.warning("Failed to upsert network_entity_mapping: %s", e)
+
+    # Domain table helpers
+
+    def _store_as_service(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+        """Store a K8s Service or Lambda function in the services table."""
+        name = resource.get("name", "Unnamed")
+        metadata = resource.get("metadata", {})
+        resource_type = resource.get("resource_type", "")
+
+        if resource_type == "k8s_service":
+            deployment_method = "kubernetes"
+            ports = metadata.get("ports", [])
+            port = ports[0]["port"] if ports else None
+            status = "active"
+        elif resource_type == "lambda_function":
+            deployment_method = "serverless"
+            port = None
+            runtime = metadata.get("runtime", "")
+            lang_map = {"python": "python", "nodejs": "nodejs", "java": "java", "go": "go", "ruby": "ruby", "dotnet": "dotnet"}
+            status = "active" if metadata.get("state") == "Active" else "active"
+        else:
+            return None
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.services.organization_id == organization_id)
+                    & (self.db.services.name == name)
+                    & (self.db.services.deployment_method == deployment_method)
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.services.id == existing.id).update(
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            svc_id = self.db.services.insert(
+                name=name,
+                organization_id=organization_id,
+                deployment_method=deployment_method,
+                port=port,
+                status=status,
+                tags=[provider, "discovered"],
+                notes=f"Discovered from {provider} discovery",
+                created_at=datetime.utcnow(),
+            )
+            return svc_id
+        except Exception as e:
+            logger.warning("Failed to store service %s: %s", name, e)
+            return None
+
+    def _store_as_data_store(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+        """Store S3/EBS/GCS/RDS/PV in the data_stores table."""
+        name = resource.get("name", "Unnamed")
+        metadata = resource.get("metadata", {})
+        resource_type = resource.get("resource_type", "")
+
+        type_map = {
+            "s3_bucket": ("s3", "AWS"),
+            "ebs_volume": ("disk", "AWS"),
+            "rds_instance": ("database", "AWS"),
+            "gcs_bucket": ("gcs", "GCP"),
+            "k8s_persistent_volume": ("disk", "Kubernetes"),
+        }
+
+        if resource_type not in type_map:
+            return None
+
+        storage_type, storage_provider = type_map[resource_type]
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.data_stores.organization_id == organization_id)
+                    & (self.db.data_stores.name == name)
+                    & (self.db.data_stores.storage_type == storage_type)
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.data_stores.id == existing.id).update(
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            ds_id = self.db.data_stores.insert(
+                name=name,
+                organization_id=organization_id,
+                storage_type=storage_type,
+                storage_provider=storage_provider,
+                location_region=resource.get("region"),
+                tags=[provider, storage_type, "discovered"],
+                metadata=metadata,
+                created_at=datetime.utcnow(),
+            )
+            return ds_id
+        except Exception as e:
+            logger.warning("Failed to store data_store %s: %s", name, e)
+            return None
+
+    def _store_as_networking_resource(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+        """Store load balancers in the networking_resources table."""
+        resource_type = resource.get("resource_type", "")
+        if resource_type != "load_balancer":
+            return None
+
+        metadata = resource.get("metadata", {})
+        vpc_id = metadata.get("vpc_id")
+        parent_id = networking_lookup.get(f"vpc:{vpc_id}") if vpc_id else None
+
+        return self._upsert_networking_resource(
+            organization_id=organization_id,
+            name=resource.get("name", ""),
+            network_type="proxy",
+            region=resource.get("region"),
+            parent_id=parent_id,
+            attributes={"dns_name": metadata.get("dns_name"), "scheme": metadata.get("scheme"), "lb_type": metadata.get("type"), "state": metadata.get("state")},
+            tags=["aws", "load-balancer", "discovered"],
+        )
+
+    def _store_k8s_service_account_as_identity(self, organization_id: int, resource: Dict[str, Any], cluster_name: str) -> Optional[int]:
+        """Store a K8s ServiceAccount in the identities table."""
+        name = resource.get("name", "Unnamed")
+        metadata = resource.get("metadata", {})
+        namespace = metadata.get("namespace", "default")
+
+        username = f"k8s:{cluster_name}:{namespace}:{name}"
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.identities.username == username)
+                    & (self.db.identities.auth_provider == "kubernetes")
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                self.db(self.db.identities.id == existing.id).update(
+                    updated_at=datetime.utcnow(),
+                )
+                return existing.id
+
+            identity_id = self.db.identities.insert(
+                tenant_id=1,
+                identity_type="serviceAccount",
+                username=username,
+                full_name=f"{namespace}/{name}",
+                organization_id=organization_id,
+                auth_provider="kubernetes",
+                portal_role="observer",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                created_at=datetime.utcnow(),
+            )
+            return identity_id
+        except Exception as e:
+            logger.warning("Failed to store K8s SA %s: %s", name, e)
+            return None
+
+    def _store_container_image_as_software(self, organization_id: int, image: str) -> Optional[int]:
+        """Store a container image in the software table."""
+        # Parse image:tag
+        if ":" in image and not image.startswith("sha256:"):
+            parts = image.rsplit(":", 1)
+            image_name = parts[0]
+            version = parts[1]
+        else:
+            image_name = image
+            version = "latest"
+
+        # Extract vendor from registry
+        vendor = image_name.split("/")[0] if "/" in image_name else "docker.io"
+
+        try:
+            existing = (
+                self.db(
+                    (self.db.software.organization_id == organization_id)
+                    & (self.db.software.name == image_name)
+                    & (self.db.software.version == version)
+                )
+                .select()
+                .first()
+            )
+
+            if existing:
+                return existing.id
+
+            sw_id = self.db.software.insert(
+                name=image_name,
+                version=version,
+                organization_id=organization_id,
+                software_type="container",
+                vendor=vendor,
+                tags=["kubernetes", "container-image", "discovered"],
+                created_at=datetime.utcnow(),
+            )
+            return sw_id
+        except Exception as e:
+            logger.warning("Failed to store software %s: %s", image_name, e)
+            return None
+
+    def _create_dependency_link(self, source_type: str, source_id: int, target_type: str, target_id: int, dep_type: str = "discovered_from", meta: Optional[Dict] = None) -> None:
+        """Create a dependencies record linking domain table entries."""
+        try:
+            existing = (
+                self.db(
+                    (self.db.dependencies.source_type == source_type)
+                    & (self.db.dependencies.source_id == source_id)
+                    & (self.db.dependencies.target_type == target_type)
+                    & (self.db.dependencies.target_id == target_id)
+                )
+                .select()
+                .first()
+            )
+            if not existing:
+                self.db.dependencies.insert(
+                    source_type=source_type,
+                    source_id=source_id,
+                    target_type=target_type,
+                    target_id=target_id,
+                    dependency_type=dep_type,
+                    metadata=meta or {},
+                    created_at=datetime.utcnow(),
+                )
+        except Exception as e:
+            logger.warning("Failed to create dependency link: %s", e)
+
+    # Resource type routing
+
+    def _resource_type_to_domain(self, resource_type: str) -> str:
+        """Map a resource_type to its domain table."""
+        domain_map = {
+            "k8s_service": "service",
+            "k8s_service_account": "identity",
+            "k8s_persistent_volume": "data_store",
+            "k8s_node": "entity",
+            "k8s_pod": "entity",
+            "vpc": "networking",
+            "subnet": "networking",
+            "load_balancer": "networking",
+            "ec2_instance": "entity",
+            "s3_bucket": "data_store",
+            "ebs_volume": "data_store",
+            "rds_instance": "data_store",
+            "lambda_function": "service",
+            "iam_user": "identity",
+            "iam_role": "identity",
+            "gce_instance": "entity",
+            "gcs_bucket": "data_store",
+        }
+        return domain_map.get(resource_type, "entity")
+
+    # Main storage orchestrator
+
     def _store_discovered_resources(
         self, organization_id: int, discovery_results: Dict[str, Any]
     ) -> None:
         """
-        Store discovered resources in Elder.
+        Store discovered resources with hierarchy and domain table mapping.
 
-        Resources are stored in their proper Resource tables first (e.g., IAM users
-        go to the identities table), and fall back to the generic entities table
-        for resource types that don't have dedicated tables.
-
-        Args:
-            organization_id: Organization ID for the resources
-            discovery_results: Discovery results from provider
+        Creates provider root entities, intermediate networking, and routes
+        resources to their proper domain tables (services, data_stores,
+        networking_resources, identities, software, entities).
         """
-        # Map discovery categories to entity types (fallback for entities table)
-        type_mapping = {
+        provider = self._detect_provider_type(discovery_results)
+
+        # Get config for root entity naming
+        root_config = {"name": f"{provider} discovery"}
+        root_entity_id = self._ensure_provider_root_entity(organization_id, provider, root_config)
+
+        # Create intermediate networking (VPCs, Namespaces, Subnets)
+        networking_lookup = self._ensure_intermediate_networking(
+            organization_id, provider, root_entity_id, discovery_results
+        )
+
+        # Track container images for software extraction
+        seen_images = set()
+
+        # Map discovery categories to entity types (fallback)
+        category_to_entity_type = {
             "compute": "compute",
             "storage": "storage",
             "network": "network",
-            "database": "storage",  # Map databases to storage type
-            "serverless": "compute",  # Map serverless to compute type
-        }
-
-        # Resource types that map to specific Resource tables
-        # Format: resource_type -> (table_name, store_method)
-        resource_mappings = {
-            "iam_user": "identity",
-            "iam_role": "identity",
+            "database": "storage",
+            "serverless": "compute",
         }
 
         for category, resources in discovery_results.items():
             if category in ["resources_count", "discovery_time", "duration_seconds"]:
                 continue
-
             if not resources:
                 continue
 
             for resource in resources:
                 resource_type = resource.get("resource_type", "")
+                domain = self._resource_type_to_domain(resource_type)
 
-                # Check if this resource type maps to a specific Resource table
-                if resource_type in resource_mappings:
-                    resource_table = resource_mappings[resource_type]
-
-                    if resource_table == "identity":
+                if domain == "identity":
+                    if resource_type in ("iam_user", "iam_role"):
                         self._store_iam_as_identity(organization_id, resource)
-                    # Add more resource table mappings here as needed
-                    # elif resource_table == "software": ...
-                    # elif resource_table == "services": ...
+                    elif resource_type == "k8s_service_account":
+                        cluster_name = root_config.get("name", "unknown")
+                        sa_id = self._store_k8s_service_account_as_identity(
+                            organization_id, resource, cluster_name
+                        )
+                        if sa_id and root_entity_id:
+                            self._create_dependency_link("identity", sa_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+
+                elif domain == "service":
+                    svc_id = self._store_as_service(organization_id, resource, provider)
+                    if svc_id and root_entity_id:
+                        self._create_dependency_link("service", svc_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+
+                elif domain == "data_store":
+                    ds_id = self._store_as_data_store(organization_id, resource, provider)
+                    if ds_id and root_entity_id:
+                        self._create_dependency_link("data_store", ds_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+
+                elif domain == "networking":
+                    if resource_type == "load_balancer":
+                        self._store_as_networking_resource(organization_id, resource, networking_lookup)
+                    # VPCs and subnets already handled in _ensure_intermediate_networking
+
                 else:
-                    # Fall back to generic entities table
-                    entity_type = type_mapping.get(category)
-                    if entity_type:
-                        self._store_as_entity(organization_id, resource, entity_type)
+                    # Default: store as entity with parent_id
+                    entity_type = category_to_entity_type.get(category, "compute")
+                    entity_id = self._store_as_entity(
+                        organization_id, resource, entity_type,
+                        parent_id=root_entity_id,
+                        networking_lookup=networking_lookup,
+                    )
+
+                    # Link entity to networking resource if applicable
+                    metadata = resource.get("metadata", {})
+                    if entity_id:
+                        vpc_id = metadata.get("vpc_id")
+                        if vpc_id and f"vpc:{vpc_id}" in networking_lookup:
+                            self._upsert_network_entity_mapping(
+                                networking_lookup[f"vpc:{vpc_id}"], entity_id, "connected_to"
+                            )
+                        ns = metadata.get("namespace")
+                        if ns and f"namespace:{ns}" in networking_lookup:
+                            self._upsert_network_entity_mapping(
+                                networking_lookup[f"namespace:{ns}"], entity_id, "connected_to"
+                            )
+
+                # Extract container images from K8s pods
+                if resource_type == "k8s_pod":
+                    containers = resource.get("metadata", {}).get("containers", [])
+                    for container in containers:
+                        image = container.get("image", "")
+                        if image and image not in seen_images:
+                            seen_images.add(image)
+                            sw_id = self._store_container_image_as_software(organization_id, image)
+                            if sw_id and root_entity_id:
+                                self._create_dependency_link("software", sw_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
 
         self.db.commit()
 
@@ -445,7 +968,9 @@ class DiscoveryService:
         organization_id: int,
         resource: Dict[str, Any],
         entity_type: str,
-    ) -> None:
+        parent_id: Optional[int] = None,
+        networking_lookup: Optional[Dict[str, int]] = None,
+    ) -> Optional[int]:
         """
         Store a discovered resource in the generic entities table.
 
@@ -453,6 +978,11 @@ class DiscoveryService:
             organization_id: Organization ID
             resource: Discovered resource data
             entity_type: Entity type (compute, storage, network, etc.)
+            parent_id: Parent entity ID (provider root)
+            networking_lookup: Map of networking resource keys to IDs
+
+        Returns:
+            Entity ID or None
         """
         name = resource.get("name", "Unnamed")
         resource_type = resource.get("resource_type", "")
@@ -480,21 +1010,28 @@ class DiscoveryService:
 
         if existing:
             # Update existing entity
-            self.db(self.db.entities.id == existing.id).update(
-                name=name,
-                attributes=resource_attrs,
-                updated_at=datetime.utcnow(),
-            )
+            update_data = {
+                "name": name,
+                "attributes": resource_attrs,
+                "updated_at": datetime.utcnow(),
+            }
+            if parent_id is not None:
+                update_data["parent_id"] = parent_id
+            self.db(self.db.entities.id == existing.id).update(**update_data)
+            return existing.id
         else:
             # Create new entity
-            self.db.entities.insert(
-                name=name,
-                entity_type=entity_type,
-                sub_type=resource_type,
-                organization_id=organization_id,
-                attributes=resource_attrs,
-                created_at=datetime.utcnow(),
-            )
+            insert_data = {
+                "name": name,
+                "entity_type": entity_type,
+                "sub_type": resource_type,
+                "organization_id": organization_id,
+                "attributes": resource_attrs,
+                "created_at": datetime.utcnow(),
+            }
+            if parent_id is not None:
+                insert_data["parent_id"] = parent_id
+            return self.db.entities.insert(**insert_data)
 
     def _sanitize_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
         """Remove sensitive fields from job data."""

@@ -11,7 +11,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 type IssueStatus = 'open' | 'in_progress' | 'closed'
 type IssuePriority = 'low' | 'medium' | 'high' | 'critical'

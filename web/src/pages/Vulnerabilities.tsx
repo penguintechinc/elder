@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Search, Calendar } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { AlertTriangle, Search, Calendar, Plus } from 'lucide-react'
 import { queryKeys } from '@/lib/queryKeys'
-// api import reserved for future SBOM vulnerability integration
+import api from '@/lib/api'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
+
 
 const SEVERITY_LEVELS = [
   { value: 'all', label: 'All', color: 'bg-slate-500/20 text-slate-400' },
@@ -26,6 +27,35 @@ export default function Vulnerabilities() {
   const [search, setSearch] = useState('')
   const [severityFilter, setSeverityFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [assignModalOpen, setAssignModalOpen] = useState(false)
+  const [selectedVulnerability, setSelectedVulnerability] = useState<any>(null)
+  const [assignParentType, setAssignParentType] = useState<string>('service')
+  const queryClient = useQueryClient()
+
+  // Fetch services and software for assignment dropdowns
+  const { data: servicesData } = useQuery({
+    queryKey: queryKeys.services.all,
+    queryFn: () => api.getServices({ per_page: 200 }),
+  })
+
+  const { data: softwareData } = useQuery({
+    queryKey: queryKeys.software.all,
+    queryFn: () => api.getSoftware({ per_page: 200 }),
+  })
+
+  const assignMutation = useMutation({
+    mutationFn: (data: { vulnId: number; parent_type: 'service' | 'software'; parent_id: number; notes?: string }) =>
+      api.assignVulnerability(data.vulnId, {
+        parent_type: data.parent_type,
+        parent_id: data.parent_id,
+        notes: data.notes,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.all })
+      setAssignModalOpen(false)
+      setSelectedVulnerability(null)
+    },
+  })
 
   // Mock data - replace with actual API calls when backend is ready
   const mockVulnerabilities = [
@@ -38,6 +68,7 @@ export default function Vulnerabilities() {
       published_date: '2024-01-15',
       description: 'Critical vulnerability in cryptographic operations',
       affected_versions: ['1.1.1', '3.0.0'],
+      affected_entities: [{ parent_type: 'service', parent_name: 'Auth Service', source_file: 'requirements.txt' }],
     },
     {
       id: 2,
@@ -48,6 +79,7 @@ export default function Vulnerabilities() {
       published_date: '2024-02-10',
       description: 'Remote code execution in logging library',
       affected_versions: ['2.14.0', '2.15.0'],
+      affected_entities: [{ parent_type: 'software', parent_name: 'Logging Platform', source_file: 'pom.xml' }],
     },
     {
       id: 3,
@@ -58,6 +90,7 @@ export default function Vulnerabilities() {
       published_date: '2024-03-05',
       description: 'SQL injection in query processing',
       affected_versions: ['3.2.0', '4.0.0'],
+      affected_entities: [{ parent_type: 'service', parent_name: 'Web API', source_file: 'requirements.txt' }],
     },
     {
       id: 4,
@@ -68,25 +101,23 @@ export default function Vulnerabilities() {
       published_date: '2024-01-20',
       description: 'Information disclosure in stdlib',
       affected_versions: ['3.11.0'],
+      affected_entities: [],
     },
   ]
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.vulnerabilities.list({ search, severity: severityFilter, status: statusFilter }),
-    queryFn: async () => {
-      // API call would go here when backend is ready
-      // return api.getVulnerabilities({ search, severity: severityFilter !== 'all' ? severityFilter : undefined })
-      return {
-        items: mockVulnerabilities.filter(v => {
-          const matchesSearch = v.cve_id.toLowerCase().includes(search.toLowerCase()) ||
-            v.component.toLowerCase().includes(search.toLowerCase()) ||
-            v.description.toLowerCase().includes(search.toLowerCase())
-          const matchesSeverity = severityFilter === 'all' || v.severity === severityFilter
-          const matchesStatus = statusFilter === 'all' || v.status === statusFilter
-          return matchesSearch && matchesSeverity && matchesStatus
-        }),
-        total: mockVulnerabilities.length,
-      }
+    queryFn: () => api.getVulnerabilities({
+      search: search || undefined,
+      severity: severityFilter !== 'all' ? severityFilter : undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+    }),
+    placeholderData: {
+      items: mockVulnerabilities,
+      total: mockVulnerabilities.length,
+      page: 1,
+      per_page: 50,
+      pages: 1,
     },
   })
 
@@ -232,8 +263,11 @@ export default function Vulnerabilities() {
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">CVE ID</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Severity</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Component</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Service / Software</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Source File</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Status</th>
                     <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Published</th>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-slate-400 uppercase">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -263,6 +297,27 @@ export default function Vulnerabilities() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
+                        <div className="flex flex-wrap gap-1">
+                          {vuln.affected_entities?.map((entity: any, i: number) => (
+                            <span
+                              key={i}
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                entity.parent_type === 'service'
+                                  ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                                  : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                              }`}
+                            >
+                              {entity.parent_name}
+                            </span>
+                          )) || <span className="text-slate-500 text-xs">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-slate-400 text-xs font-mono">
+                          {vuln.affected_entities?.map((e: any) => e.source_file).filter(Boolean).join(', ') || '—'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(vuln.status)}`}>
                           {vuln.status.replace('_', ' ').charAt(0).toUpperCase() + vuln.status.replace('_', ' ').slice(1)}
                         </span>
@@ -273,6 +328,18 @@ export default function Vulnerabilities() {
                           {formatDate(vuln.published_date)}
                         </div>
                       </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => {
+                            setSelectedVulnerability(vuln)
+                            setAssignModalOpen(true)
+                          }}
+                          className="px-3 py-1 text-xs font-medium rounded bg-primary-600/20 text-primary-400 hover:bg-primary-600/30 transition-colors flex items-center gap-1"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Assign
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -280,6 +347,97 @@ export default function Vulnerabilities() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Assign Vulnerability Modal */}
+      {assignModalOpen && selectedVulnerability && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-white mb-4">
+              Assign {selectedVulnerability.cve_id}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const formData = new FormData(e.currentTarget)
+                const parentType = formData.get('parent_type') as 'service' | 'software'
+                const parentId = Number(formData.get('parent_id'))
+                const notes = formData.get('notes') as string
+                if (parentId) {
+                  assignMutation.mutate({
+                    vulnId: selectedVulnerability.id,
+                    parent_type: parentType,
+                    parent_id: parentId,
+                    notes: notes || undefined,
+                  })
+                }
+              }}
+            >
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Type</label>
+                  <select
+                    name="parent_type"
+                    value={assignParentType}
+                    onChange={(e) => setAssignParentType(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                  >
+                    <option value="service">Service</option>
+                    <option value="software">Software</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    {assignParentType === 'service' ? 'Service' : 'Software'}
+                  </label>
+                  <select
+                    name="parent_id"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200"
+                    required
+                  >
+                    <option value="">Select...</option>
+                    {assignParentType === 'service'
+                      ? servicesData?.items?.map((s: any) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))
+                      : softwareData?.items?.map((s: any) => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">Notes (optional)</label>
+                  <textarea
+                    name="notes"
+                    rows={3}
+                    maxLength={5000}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 resize-none"
+                    placeholder="Why is this vulnerability being assigned?"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignModalOpen(false)
+                    setSelectedVulnerability(null)
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-slate-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignMutation.isPending}
+                  className="px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
+                >
+                  {assignMutation.isPending ? 'Assigning...' : 'Assign'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   )

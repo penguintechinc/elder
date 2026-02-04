@@ -7,8 +7,8 @@ import asyncio
 from dataclasses import asdict
 
 from flask import Blueprint, current_app, g, jsonify, request
-from py_libs.pydantic.flask_integration import validated_request
-from py_libs.pydantic.models.identity import (
+from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.models.pydantic.identity import (
     CreateIdentityGroupRequest,
     CreateIdentityRequest,
     IdentityGroupDTO,
@@ -24,7 +24,7 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("identities", __name__)
 

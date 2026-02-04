@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 interface CreateOnCallRotationModalProps {
   isOpen: boolean

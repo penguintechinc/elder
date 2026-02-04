@@ -11,7 +11,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import VillageIdBadge from '@/components/VillageIdBadge'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 export default function Entities() {
   const [search, setSearch] = useState('')

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import { getStatusColor } from '@/lib/colorHelpers'
 import { confirmDelete } from '@/lib/confirmActions'
 

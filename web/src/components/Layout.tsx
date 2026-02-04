@@ -35,8 +35,10 @@ import {
   Route,
   Layers,
   Clock,
+  Ship,
+  Container,
 } from 'lucide-react'
-import { SidebarMenu, MenuCategory, MenuItem } from '@penguin/react_libs/components'
+import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import api from '@/lib/api'
 
 // Navigation organized by categories
@@ -97,6 +99,8 @@ const navigationCategories: MenuCategory[] = [
       { name: 'Discovery', href: '/discovery', icon: Compass },
       { name: 'Networking', href: '/networking', icon: Network },
       { name: 'IPAM', href: '/ipam', icon: Globe },
+      { name: 'Kubernetes', href: '/kubernetes', icon: Ship },
+      { name: 'LXD', href: '/lxd', icon: Container },
     ],
   },
   {
@@ -192,7 +196,7 @@ export default function Layout() {
       />
 
       {/* Main content */}
-      <div className="pl-64">
+      <div className="lg:pl-64 pl-0">
         <main className="min-h-screen">
           <Outlet />
         </main>

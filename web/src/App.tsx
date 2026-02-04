@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
 import Organizations from './pages/Organizations'
@@ -46,8 +46,12 @@ import LicensePolicies from './pages/LicensePolicies'
 import SBOMDashboard from '@/pages/SBOMDashboard'
 import ServiceEndpoints from '@/pages/ServiceEndpoints'
 import OnCallRotations from '@/pages/OnCallRotations'
+// v3.1.0 Pages
+import Kubernetes from './pages/Kubernetes'
+import LXD from './pages/LXD'
 // Village ID Redirect
 import VillageIdRedirect from './components/VillageIdRedirect'
+import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
 
 // Protected route wrapper component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -60,21 +64,36 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-export default function App() {
+// Route catch-all: logs unmatched paths and redirects appropriately
+function RouteNotFound() {
+  const location = useLocation()
+  const hasToken = localStorage.getItem('elder_token')
+
   useEffect(() => {
-    const buildTime = import.meta.env.VITE_BUILD_TIME || Math.floor(Date.now() / 1000)
-    const apiUrl = import.meta.env.VITE_API_URL || '(relative - using nginx proxy)'
-    const buildDate = new Date(parseInt(buildTime) * 1000).toISOString()
+    console.warn('[Elder] Route not found:', location.pathname)
+  }, [location.pathname])
 
-    console.log('%c🏛️ Elder - Entity Relationship Tracking System', 'font-size: 16px; font-weight: bold; color: #f59e0b')
-    console.log(`%cBuild Epoch: ${buildTime}`, 'color: #64748b')
-    console.log(`%cBuild Date: ${buildDate}`, 'color: #64748b')
-    console.log(`%cAPI URL: ${apiUrl}`, 'color: #64748b')
-    console.log(`%cEnvironment: ${import.meta.env.MODE}`, 'color: #64748b')
-  }, [])
+  if (hasToken) {
+    return <Navigate to="/" replace />
+  }
 
+  return <Navigate to="/login" replace />
+}
+
+export default function App() {
   return (
-    <Routes>
+    <>
+      <AppConsoleVersion
+        appName="Elder"
+        webuiVersion={import.meta.env.VITE_VERSION || '0.0.0'}
+        webuiBuildEpoch={Number(import.meta.env.VITE_BUILD_TIME) || 0}
+        environment={import.meta.env.MODE}
+        emoji="🏛️"
+        metadata={{
+          'API URL': import.meta.env.VITE_API_URL || '(relative - using nginx proxy)',
+        }}
+      />
+      <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/id/:villageId" element={<ProtectedRoute><VillageIdRedirect /></ProtectedRoute>} />
@@ -112,6 +131,9 @@ export default function App() {
         <Route path="sbom" element={<SBOMDashboard />} />
         <Route path="service-endpoints" element={<ServiceEndpoints />} />
         <Route path="on-call-rotations" element={<OnCallRotations />} />
+        {/* v3.1.0 Routes */}
+        <Route path="kubernetes" element={<Kubernetes />} />
+        <Route path="lxd" element={<LXD />} />
         {/* v2.2.0 Enterprise Admin Routes */}
         <Route path="admin/tenants" element={<Tenants />} />
         <Route path="admin/tenants/:id" element={<TenantDetail />} />
@@ -121,7 +143,8 @@ export default function App() {
         <Route path="admin/sync-config" element={<SyncConfig />} />
         <Route path="admin/license-policies" element={<LicensePolicies />} />
       </Route>
-      <Route path="*" element={<Navigate to="/login" replace />} />
-    </Routes>
+      <Route path="*" element={<RouteNotFound />} />
+      </Routes>
+    </>
   )
 }

@@ -11,7 +11,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.access_review import AccessReviewService
-from shared.licensing import license_required
+from penguin_licensing import license_required
 
 logger = logging.getLogger(__name__)
 

@@ -27,7 +27,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
 import NetworkTopologyGraph from '@/components/NetworkTopologyGraph'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 // Icon mapping for network types
 const NETWORK_TYPE_ICONS: Record<string, LucideIcon> = {

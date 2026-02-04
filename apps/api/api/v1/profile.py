@@ -6,7 +6,7 @@
 from flask import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("profile", __name__)
 

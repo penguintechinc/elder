@@ -15,7 +15,7 @@ from grpc_reflection.v1alpha import reflection
 
 from apps.api.grpc.generated import elder_pb2, elder_pb2_grpc
 from apps.api.grpc.servicers.elder_servicer import ElderServicer
-from shared.licensing import get_license_client
+from penguin_licensing import get_license_client
 
 logger = structlog.get_logger(__name__)
 

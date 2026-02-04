@@ -7,7 +7,7 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 // Input is used in form configs only, not directly imported for this component
 import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 const CERT_CREATORS = [
   { value: 'digicert', label: 'DigiCert' },

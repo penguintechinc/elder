@@ -12,7 +12,7 @@ from dataclasses import asdict
 from flask import Blueprint, current_app, jsonify, request
 
 from apps.api.models.dataclasses import EntityDTO, from_pydal_row
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("lookup", __name__)
 

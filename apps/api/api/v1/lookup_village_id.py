@@ -9,7 +9,7 @@ type, ID, and redirect URL for navigation.
 
 from flask import Blueprint, current_app, jsonify
 
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("lookup_village_id", __name__)
 
