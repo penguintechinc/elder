@@ -145,13 +145,13 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
+    - name: Build react_libs (required for web TypeScript)
+      run: cd shared/react_libs && npm ci --prefer-offline && npm run build
+
     - name: Install dependencies
       run: |
         npm ci --prefer-offline
         cd web && npm ci --prefer-offline
-
-    - name: Build react_libs
-      run: cd shared/react_libs && npm ci --prefer-offline && npm run build
 
     - name: Type check
       run: |
