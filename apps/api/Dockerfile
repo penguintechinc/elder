@@ -28,9 +28,11 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copy and install py_libs package
-COPY shared/py_libs /build/py_libs
-RUN pip install --user --no-cache-dir /build/py_libs
+# Copy and install penguin-libs package (symlinked from ~/code/penguin-libs/packages/python-libs)
+# For local builds: ln -s ~/code/penguin-libs/packages/python-libs libs/penguin-libs
+# When published to PyPI: replace with pip install penguin-libs==<version>
+COPY libs/penguin-libs /build/penguin-libs
+RUN pip install --user --no-cache-dir /build/penguin-libs
 
 # Runtime stage
 FROM python:3.12-slim

@@ -35,8 +35,6 @@ import {
   Route,
   Layers,
   Clock,
-  Ship,
-  Container,
 } from 'lucide-react'
 import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import api from '@/lib/api'
@@ -54,6 +52,7 @@ const navigationCategories: MenuCategory[] = [
     header: 'Assets',
     collapsible: true,
     items: [
+      { name: 'Compute', href: '/compute', icon: Server },
       { name: 'Entities', href: '/entities', icon: Box },
       { name: 'Organizations', href: '/organizations', icon: Building2 },
     ],
@@ -99,8 +98,6 @@ const navigationCategories: MenuCategory[] = [
       { name: 'Discovery', href: '/discovery', icon: Compass },
       { name: 'Networking', href: '/networking', icon: Network },
       { name: 'IPAM', href: '/ipam', icon: Globe },
-      { name: 'Kubernetes', href: '/kubernetes', icon: Ship },
-      { name: 'LXD', href: '/lxd', icon: Container },
     ],
   },
   {

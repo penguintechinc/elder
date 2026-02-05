@@ -586,6 +586,12 @@ class ApiClient {
     return response.data
   }
 
+  // Issue Subtasks
+  async getIssueSubtasks(issueId: number) {
+    const response = await this.client.get(`/issues/${issueId}/subtasks`)
+    return response.data
+  }
+
   // Issue Entity Links
   async getIssueEntities(issueId: number) {
     const response = await this.client.get(`/issues/${issueId}/entities`)

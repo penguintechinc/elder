@@ -321,7 +321,7 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       type: 'checkbox_multi' as const,
       label: 'Entities',
       helpText: 'Select one or more entities to assign this issue',
-      defaultValue: defaultEntityId ? [defaultEntityId.toString()] : [],
+      defaultValue: defaultEntityId ? defaultEntityId.toString() : '',
       options: entities?.items?.map((entity: any) => ({
         value: entity.id.toString(),
         label: entity.name,

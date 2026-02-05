@@ -47,8 +47,7 @@ import SBOMDashboard from '@/pages/SBOMDashboard'
 import ServiceEndpoints from '@/pages/ServiceEndpoints'
 import OnCallRotations from '@/pages/OnCallRotations'
 // v3.1.0 Pages
-import Kubernetes from './pages/Kubernetes'
-import LXD from './pages/LXD'
+import Compute from './pages/Compute'
 // Village ID Redirect
 import VillageIdRedirect from './components/VillageIdRedirect'
 import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
@@ -88,7 +87,7 @@ export default function App() {
         webuiVersion={import.meta.env.VITE_VERSION || '0.0.0'}
         webuiBuildEpoch={Number(import.meta.env.VITE_BUILD_TIME) || 0}
         environment={import.meta.env.MODE}
-        emoji="🏛️"
+        webuiEmoji="🏛️"
         metadata={{
           'API URL': import.meta.env.VITE_API_URL || '(relative - using nginx proxy)',
         }}
@@ -132,8 +131,9 @@ export default function App() {
         <Route path="service-endpoints" element={<ServiceEndpoints />} />
         <Route path="on-call-rotations" element={<OnCallRotations />} />
         {/* v3.1.0 Routes */}
-        <Route path="kubernetes" element={<Kubernetes />} />
-        <Route path="lxd" element={<LXD />} />
+        <Route path="compute" element={<Compute />} />
+        <Route path="kubernetes" element={<Navigate to="/compute?tab=Kubernetes" replace />} />
+        <Route path="lxd" element={<Navigate to="/compute?tab=LXD%2FLXC" replace />} />
         {/* v2.2.0 Enterprise Admin Routes */}
         <Route path="admin/tenants" element={<Tenants />} />
         <Route path="admin/tenants/:id" element={<TenantDetail />} />

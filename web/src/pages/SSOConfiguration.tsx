@@ -159,9 +159,11 @@ export default function SSOConfiguration() {
     if (!editingIdP) return idpFields
     return idpFields.map((field) => {
       const value = editingIdP[field.name as keyof IdPConfiguration]
+      // Only use scalar values as defaultValue (skip objects like attribute_mappings)
+      const isScalar = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
       return {
         ...field,
-        defaultValue: value !== undefined && value !== null ? value : field.defaultValue,
+        defaultValue: isScalar ? value : field.defaultValue,
       }
     })
   }, [editingIdP])

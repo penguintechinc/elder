@@ -1289,7 +1289,7 @@ export default function IAM() {
 
       {/* Access Reviews Tab */}
       {activeTab === 'Access Reviews' && (
-        <AccessReviewManager organizationId={organizationId} />
+        <AccessReviewManager />
       )}
 
       {/* Relationships Tab */}

@@ -111,7 +111,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
         }
         break
 
-      case 'text':
+      case 'text': {
         // Only allow alphanumeric, spaces, and limited special chars: - ! @ . $
         if (!/^[a-zA-Z0-9\s\-!@.$]*$/.test(value)) {
           return 'Only letters, numbers, spaces, and - ! @ . $ are allowed'
@@ -120,8 +120,9 @@ export function validateFieldValue(value: any, field: FormField): string | undef
         const textDanger = containsDangerousPattern(value)
         if (textDanger) return textDanger
         break
+      }
 
-      case 'textarea':
+      case 'textarea': {
         // Only allow alphanumeric, spaces, newlines, and limited special chars: - ! @ . $
         if (!/^[a-zA-Z0-9\s\-!@.$\n\r]*$/.test(value)) {
           return 'Only letters, numbers, spaces, and - ! @ . $ are allowed'
@@ -130,6 +131,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
         const textareaDanger = containsDangerousPattern(value)
         if (textareaDanger) return textareaDanger
         break
+      }
 
       case 'password':
       case 'password_generate':
@@ -157,7 +159,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
         }
         break
 
-      case 'ip':
+      case 'ip': {
         const ip = value.replace(/\s+/g, '')
         // IPv4 or IPv6 basic validation
         const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
@@ -166,15 +168,17 @@ export function validateFieldValue(value: any, field: FormField): string | undef
           return 'Invalid IP address format'
         }
         break
+      }
 
-      case 'domain':
+      case 'domain': {
         const domain = value.replace(/\s+/g, '')
         if (!/^[a-zA-Z0-9][a-zA-Z0-9-_.]+[a-zA-Z0-9]$/.test(domain)) {
           return 'Invalid domain format'
         }
         break
+      }
 
-      case 'cidr':
+      case 'cidr': {
         const cidrValue = value.replace(/\s+/g, '')
         // Basic CIDR validation: IP address followed by /prefix
         const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/
@@ -193,8 +197,9 @@ export function validateFieldValue(value: any, field: FormField): string | undef
           return 'Prefix must be between 0 and 32'
         }
         break
+      }
 
-      case 'cron':
+      case 'cron': {
         // Basic cron expression validation (5 or 6 fields)
         // Allow: numbers, *, /, -, , and spaces between fields
         const cronParts = value.trim().split(/\s+/)
@@ -202,20 +207,22 @@ export function validateFieldValue(value: any, field: FormField): string | undef
           return 'Cron expression must have 5 or 6 fields (minute hour day month weekday [year])'
         }
         // Each part should only contain valid cron characters
-        const cronFieldRegex = /^[0-9*\/\-,?LW#]+$/
+        const cronFieldRegex = /^[0-9*\-,?LW#]+$/
         for (const part of cronParts) {
           if (!cronFieldRegex.test(part)) {
             return 'Invalid cron expression format'
           }
         }
         break
+      }
 
-      case 'color':
+      case 'color': {
         const color = value.replace(/\s+/g, '')
         if (!/^#[0-9A-Fa-f]{6}$/.test(color) && !/^#[0-9A-Fa-f]{3}$/.test(color)) {
           return 'Invalid color format (use #RRGGBB)'
         }
         break
+      }
     }
   }
 
