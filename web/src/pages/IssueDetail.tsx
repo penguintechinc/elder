@@ -53,9 +53,10 @@ export default function IssueDetail() {
     enabled: !!id,
   })
 
+  // Subtasks feature not yet implemented - using empty array for now
   const { data: subtasks } = useQuery({
     queryKey: ['issue-subtasks', id],
-    queryFn: () => api.getIssueSubtasks(parseInt(id!)),
+    queryFn: async () => [],
     enabled: !!id,
   })
 

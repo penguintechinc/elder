@@ -159,9 +159,10 @@ export default function SSOConfiguration() {
     if (!editingIdP) return idpFields
     return idpFields.map((field) => {
       const value = editingIdP[field.name as keyof IdPConfiguration]
+      const isValidValue = value !== undefined && value !== null && typeof value !== 'object'
       return {
         ...field,
-        defaultValue: value !== undefined && value !== null ? value : field.defaultValue,
+        defaultValue: isValidValue ? (value as string | number | boolean) : field.defaultValue,
       }
     })
   }, [editingIdP])

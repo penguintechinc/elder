@@ -268,12 +268,10 @@ export default function CreateOnCallRotationModal({
     <FormModalBuilder
       title={rotation ? 'Edit Rotation' : 'Create On-Call Rotation'}
       fields={fields}
-      initialValues={initialValues}
       isOpen={isOpen}
       onClose={onClose}
       onSubmit={handleSubmit}
-      isLoading={createMutation.isPending || updateMutation.isPending}
-      submitLabel={rotation ? 'Update' : 'Create'}
+      submitButtonText={rotation ? 'Update' : 'Create'}
     />
   )
 }
