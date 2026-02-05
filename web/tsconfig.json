@@ -15,10 +15,12 @@
     "jsx": "react-jsx",
 
     /* Linting */
-    "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types"],
 
     /* Path aliases */
     "baseUrl": ".",

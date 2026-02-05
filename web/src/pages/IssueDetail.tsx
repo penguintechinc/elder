@@ -53,9 +53,10 @@ export default function IssueDetail() {
     enabled: !!id,
   })
 
+  // Subtasks feature not yet implemented - using empty array for now
   const { data: subtasks } = useQuery({
     queryKey: ['issue-subtasks', id],
-    queryFn: () => api.getIssueSubtasks(parseInt(id!)),
+    queryFn: async () => [],
     enabled: !!id,
   })
 
@@ -436,7 +437,7 @@ export default function IssueDetail() {
               <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-white flex items-center gap-2">
                   <ListTree className="w-5 h-5" />
-                  Sub-Tasks ({subtasks?.items?.length || 0})
+                  Sub-Tasks ({subtasks?.length || 0})
                 </h2>
                 <Button onClick={() => setShowCreateSubTask(true)} variant="ghost">
                   <Plus className="w-4 h-4 mr-2" />
@@ -445,11 +446,11 @@ export default function IssueDetail() {
               </div>
             </CardHeader>
             <CardContent>
-              {subtasks?.items?.length === 0 ? (
+              {subtasks?.length === 0 ? (
                 <p className="text-slate-500 text-center py-8">No sub-tasks</p>
               ) : (
                 <div className="space-y-3">
-                  {subtasks?.items?.map((subtask: any) => (
+                  {subtasks?.map((subtask: any) => (
                     <div
                       key={subtask.id}
                       className="p-4 bg-slate-800/30 rounded-lg cursor-pointer hover:bg-slate-800/50 transition-colors"

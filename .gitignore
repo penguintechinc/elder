@@ -453,3 +453,6 @@ vagrant/.TODO
 
 # Allow web/public for Vite static assets
 !web/public/
+
+# Allow react_libs dist for TypeScript path resolution
+!shared/react_libs/dist/

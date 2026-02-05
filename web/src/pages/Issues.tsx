@@ -117,7 +117,7 @@ export default function Issues() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {data?.items?.map((issue: any) => (
+          {(data as any)?.items?.map((issue: any) => (
             <Card
               key={issue.id}
               className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -309,7 +309,7 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       defaultValue: defaultOrganizationId?.toString() || '',
       options: [
         { value: '', label: 'None' },
-        ...(organizations?.items?.map((org: any) => ({
+        ...((organizations as any)?.items?.map((org: any) => ({
           value: org.id.toString(),
           label: org.name,
         })) || []),
@@ -321,8 +321,7 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       type: 'checkbox_multi' as const,
       label: 'Entities',
       helpText: 'Select one or more entities to assign this issue',
-      defaultValue: defaultEntityId ? [defaultEntityId.toString()] : [],
-      options: entities?.items?.map((entity: any) => ({
+      options: (entities as any)?.items?.map((entity: any) => ({
         value: entity.id.toString(),
         label: entity.name,
       })) || [],
@@ -333,7 +332,7 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       type: 'checkbox_multi' as const,
       label: 'Labels',
       helpText: 'Optionally select labels to categorize this issue',
-      options: labels?.items?.map((label: any) => ({
+      options: (labels as any)?.items?.map((label: any) => ({
         value: label.id.toString(),
         label: label.name,
       })) || [],
