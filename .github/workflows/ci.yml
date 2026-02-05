@@ -150,6 +150,9 @@ jobs:
         npm ci --prefer-offline
         cd web && npm ci --prefer-offline
 
+    - name: Build react_libs
+      run: cd shared/react_libs && npm ci --prefer-offline && npm run build
+
     - name: Type check
       run: |
         cd web && npm run typecheck || echo "TypeScript errors - continuing"
