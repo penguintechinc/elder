@@ -6,8 +6,8 @@
 from dataclasses import asdict
 
 from flask import Blueprint, current_app, jsonify, request
-from py_libs.pydantic.flask_integration import ValidationErrorResponse
-from py_libs.pydantic.models import (
+from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
+from apps.api.models.pydantic import (
     CreateIPAMAddressRequest,
     CreateIPAMPrefixRequest,
     CreateIPAMVlanRequest,
@@ -18,7 +18,7 @@ from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import PaginatedResponse
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("ipam", __name__)
 

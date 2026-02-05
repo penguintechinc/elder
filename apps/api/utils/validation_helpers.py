@@ -15,7 +15,7 @@ import pytz
 from croniter import croniter
 from flask import current_app
 
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 from .api_responses import ApiResponse
 

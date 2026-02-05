@@ -36,7 +36,7 @@ import {
   Layers,
   Clock,
 } from 'lucide-react'
-import { SidebarMenu, MenuCategory, MenuItem } from '@penguin/react_libs/components'
+import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import api from '@/lib/api'
 
 // Navigation organized by categories
@@ -52,6 +52,7 @@ const navigationCategories: MenuCategory[] = [
     header: 'Assets',
     collapsible: true,
     items: [
+      { name: 'Compute', href: '/compute', icon: Server },
       { name: 'Entities', href: '/entities', icon: Box },
       { name: 'Organizations', href: '/organizations', icon: Building2 },
     ],
@@ -192,7 +193,7 @@ export default function Layout() {
       />
 
       {/* Main content */}
-      <div className="pl-64">
+      <div className="lg:pl-64 pl-0">
         <main className="min-h-screen">
           <Outlet />
         </main>

@@ -89,6 +89,9 @@ def create_app(config_name: str = None) -> Flask:
     # Initialize license client
     _init_license_client(app)
 
+    # Initialize access review scheduler (v3.1.0)
+    _init_access_review_scheduler(app)
+
     # Register blueprints
     _register_blueprints(app)
 
@@ -164,7 +167,7 @@ def _init_license_client(app: Flask) -> None:
     Args:
         app: Flask application
     """
-    from shared.licensing import get_license_client
+    from penguin_licensing import get_license_client
 
     try:
         client = get_license_client()
@@ -182,6 +185,25 @@ def _init_license_client(app: Flask) -> None:
         )
 
 
+def _init_access_review_scheduler(app: Flask) -> None:
+    """
+    Initialize access review scheduler for periodic reviews.
+
+    Args:
+        app: Flask application
+    """
+    from apps.api.services.access_review.scheduler import init_scheduler
+
+    try:
+        init_scheduler(app.db)
+        logger.info("access_review_scheduler_initialized")
+    except Exception as e:
+        logger.warning(
+            "access_review_scheduler_init_failed",
+            error=str(e),
+        )
+
+
 def _register_blueprints(app: Flask) -> None:
     """
     Register Flask blueprints (async and sync).
@@ -190,11 +212,13 @@ def _register_blueprints(app: Flask) -> None:
         app: Flask application
     """
     # Import blueprints (async versions where available)
+    from apps.api.api.v1 import access_reviews  # v3.1.0: Access Review System
     from apps.api.api.v1 import audit  # Phase 8: Audit System Enhancement
     from apps.api.api.v1 import audit_enterprise  # v2.2.0: Enhanced Audit & Compliance
     from apps.api.api.v1 import backup  # Phase 10: Backup & Data Management
     from apps.api.api.v1 import builtin_secrets  # v2.0.0: Built-in Secrets Storage
     from apps.api.api.v1 import certificates  # v2.4.0: Certificate Management
+    from apps.api.api.v1 import costs  # Cost tracking
     from apps.api.api.v1 import data_stores  # v3.0.0: Data Store Tracking
     from apps.api.api.v1 import discovery  # Phase 5: Cloud Auto-Discovery
     from apps.api.api.v1 import group_membership  # v3.x: Group Membership Management
@@ -271,6 +295,9 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(
         group_membership.bp, url_prefix=f"{api_prefix}/group-membership"
     )  # v3.x: Group Membership Management
+    app.register_blueprint(
+        access_reviews.bp, url_prefix=f"{api_prefix}"
+    )  # v3.1.0: Access Review System
 
     # v1.2.0 Feature blueprints
     app.register_blueprint(secrets.bp, url_prefix=f"{api_prefix}/secrets")  # Phase 2
@@ -341,6 +368,9 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(
         certificates.bp, url_prefix=f"{api_prefix}/certificates"
     )  # Certificate management
+    app.register_blueprint(
+        costs.bp, url_prefix=f"{api_prefix}/costs"
+    )  # Cost tracking
 
     # v3.x Feature blueprints
     app.register_blueprint(

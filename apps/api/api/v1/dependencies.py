@@ -9,7 +9,7 @@ from dataclasses import asdict
 from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, request
-from py_libs.pydantic import RequestModel, validated_request
+from penguin_libs.pydantic import RequestModel, validated_request
 from pydantic import Field
 
 from apps.api.auth.decorators import login_required
@@ -20,7 +20,7 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 

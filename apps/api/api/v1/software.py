@@ -6,8 +6,8 @@
 from dataclasses import asdict
 
 from flask import Blueprint, Response, current_app, jsonify, request
-from py_libs.pydantic.flask_integration import validated_request
-from py_libs.pydantic.models.software import (
+from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.models.pydantic.software import (
     CreateSoftwareRequest,
     UpdateSoftwareRequest,
 )
@@ -25,7 +25,7 @@ from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
     validate_resource_exists,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("software", __name__)
 

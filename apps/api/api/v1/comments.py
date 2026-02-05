@@ -7,13 +7,13 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, g, jsonify
 from models.dataclasses import IssueCommentDTO
-from py_libs.pydantic import Description1000, RequestModel
-from py_libs.pydantic.flask_integration import validated_request
+from penguin_libs.pydantic import Description1000, RequestModel
+from penguin_libs.pydantic.flask_integration import validated_request
 from utils.async_utils import run_in_threadpool
 
-from shared.auth.decorators import login_required
-from shared.database.pydal_utils import from_pydal_row, from_pydal_rows
-from shared.licensing.decorators import license_required
+from apps.api.auth.decorators import login_required
+from apps.api.models.dataclasses import from_pydal_row, from_pydal_rows
+from penguin_licensing.decorators import license_required
 
 bp = Blueprint("comments", __name__)
 

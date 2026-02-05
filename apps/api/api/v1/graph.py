@@ -9,7 +9,7 @@ import networkx as nx
 from flask import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("graph", __name__)
 

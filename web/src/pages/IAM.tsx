@@ -7,11 +7,12 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import GroupMembershipManager from '@/components/GroupMembershipManager'
+import AccessReviewManager from '@/components/AccessReviewManager'
 import { getStatusColor } from '@/lib/colorHelpers'
 
-const TABS = ['All Identities', 'Providers', 'Groups & Roles', 'Pending Approvals', 'Relationships'] as const
+const TABS = ['All Identities', 'Providers', 'Groups & Roles', 'Pending Approvals', 'Access Reviews', 'Relationships'] as const
 type Tab = typeof TABS[number]
 
 const PROVIDER_TYPES = [
@@ -1284,6 +1285,11 @@ export default function IAM() {
       {/* Pending Approvals Tab */}
       {activeTab === 'Pending Approvals' && (
         <PendingApprovalsTab />
+      )}
+
+      {/* Access Reviews Tab */}
+      {activeTab === 'Access Reviews' && (
+        <AccessReviewManager />
       )}
 
       {/* Relationships Tab */}

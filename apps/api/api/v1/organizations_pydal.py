@@ -7,8 +7,8 @@ import logging
 from dataclasses import asdict
 
 from flask import Blueprint, current_app, g, jsonify, request
-from py_libs.pydantic.flask_integration import validated_request
-from py_libs.pydantic.models.organization import (
+from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.models.pydantic.organization import (
     CreateOrganizationRequest,
     UpdateOrganizationRequest,
 )
@@ -28,7 +28,7 @@ from apps.api.utils.pydal_helpers import (
     get_by_id,
     insert_record,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 

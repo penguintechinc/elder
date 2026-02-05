@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from flask import current_app, jsonify, request
 
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 from .api_responses import ApiResponse
 from .pydal_helpers import PaginationParams, get_by_id

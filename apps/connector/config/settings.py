@@ -28,6 +28,10 @@ class Settings(BaseSettings):
         default=None,
         description="Elder API authentication key (if required)",
     )
+    elder_web_url: str = Field(
+        default="https://elder.example.com",
+        description="Elder Web UI base URL for profile links",
+    )
 
     # AWS Configuration
     aws_enabled: bool = Field(default=False, description="Enable AWS connector")
@@ -154,6 +158,10 @@ class Settings(BaseSettings):
     okta_write_back_enabled: bool = Field(
         default=False,
         description="Enable write-back of group membership changes to Okta",
+    )
+    okta_sync_profile_url: bool = Field(
+        default=True,
+        description="Update Okta user profile URL to link to Elder profile (village_id)",
     )
 
     # Authentik Configuration (Enterprise)

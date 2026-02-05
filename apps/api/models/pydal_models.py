@@ -285,6 +285,16 @@ def define_all_tables(db):
         ),  # internal, ldap, okta
         Field("provider_group_id", "string", length=512),  # Provider-specific group ID
         Field("sync_enabled", "boolean", default=False),
+        # Access review configuration (Enterprise feature)
+        Field("review_enabled", "boolean", default=False, notnull=True),
+        Field(
+            "review_interval_days", "integer", default=90
+        ),  # 90=quarterly, 365=yearly
+        Field("last_review_date", "datetime"),
+        Field("next_review_date", "datetime"),
+        Field("review_assignment_mode", "string", length=20, default="all_owners"),
+        Field("review_due_days", "integer", default=14),  # Days to complete review
+        Field("review_auto_apply", "boolean", default=True, notnull=True),
         Field(
             "created_at",
             "datetime",
@@ -631,6 +641,108 @@ def define_all_tables(db):
         migrate=False,
     )
 
+    # Access Reviews table (Enterprise feature - periodic membership reviews)
+    db.define_table(
+        "access_reviews",
+        Field("tenant_id", "integer", default=1, notnull=True),
+        Field(
+            "group_id",
+            "reference identity_groups",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field("review_period_start", "datetime", notnull=True),
+        Field("review_period_end", "datetime", notnull=True),
+        Field("due_date", "datetime", notnull=True),
+        Field(
+            "status",
+            "string",
+            length=20,
+            default="scheduled",
+            requires=IS_IN_SET(["scheduled", "in_progress", "completed", "overdue"]),
+        ),
+        Field("completed_at", "datetime"),
+        Field("completed_by_id", "integer"),
+        Field("total_members", "integer", default=0),
+        Field("members_reviewed", "integer", default=0),
+        Field("members_kept", "integer", default=0),
+        Field("members_removed", "integer", default=0),
+        Field("auto_apply_decisions", "boolean", default=True, notnull=True),
+        Field(
+            "village_id", "string", length=32, unique=True, default=generate_village_id
+        ),
+        Field(
+            "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        Field(
+            "updated_at",
+            "datetime",
+            update=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        migrate=False,
+    )
+
+    # Access Review Items table (tracks individual member reviews)
+    db.define_table(
+        "access_review_items",
+        Field("tenant_id", "integer", default=1, notnull=True),
+        Field(
+            "review_id",
+            "reference access_reviews",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field(
+            "membership_id",
+            "reference identity_group_memberships",
+            notnull=True,
+        ),
+        Field("identity_id", "reference identities", notnull=True),
+        Field(
+            "decision",
+            "string",
+            length=20,
+            requires=IS_EMPTY_OR(IS_IN_SET(["keep", "remove", "extend"])),
+        ),
+        Field("justification", "text"),
+        Field("new_expiration", "datetime"),
+        Field("reviewed_by_id", "integer"),
+        Field("reviewed_at", "datetime"),
+        Field(
+            "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        migrate=False,
+    )
+
+    # Access Review Assignments table (tracks who is assigned to review)
+    db.define_table(
+        "access_review_assignments",
+        Field("tenant_id", "integer", default=1, notnull=True),
+        Field(
+            "review_id",
+            "reference access_reviews",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field(
+            "reviewer_identity_id",
+            "reference identities",
+            notnull=True,
+        ),
+        Field(
+            "assigned_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        Field("completed", "boolean", default=False, notnull=True),
+        Field("completed_at", "datetime"),
+        migrate=False,
+    )
+
     # Role Permissions table (depends on: roles, permissions)
     db.define_table(
         "role_permissions",
@@ -932,6 +1044,9 @@ def define_all_tables(db):
                     "vxlan",
                     "vlan",
                     "namespace",
+                    "ingress",
+                    "cni",
+                    "load_balancer",
                     "other",
                 ]
             ),
@@ -2251,6 +2366,7 @@ def define_all_tables(db):
                     "geotrust",
                     "rapidssl",
                     "internal_ca",
+                    "cert_manager",
                     "other",
                 ]
             ),
@@ -3036,6 +3152,100 @@ def define_all_tables(db):
         ),
         Field("error_message", "text"),
         Field("sent_at", "datetime"),
+        Field(
+            "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        migrate=False,
+    )
+
+    # ==========================================
+    # COST TRACKING TABLES - v3.1.0
+    # ==========================================
+
+    # Resource costs table - tracks costs per resource across all domain tables
+    db.define_table(
+        "resource_costs",
+        Field("resource_type", "string", length=50, notnull=True, requires=IS_IN_SET(
+            ["entity", "service", "data_store", "networking_resource", "certificate"]
+        )),
+        Field("resource_id", "integer", notnull=True),
+        Field(
+            "organization_id",
+            "reference organizations",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field("cost_to_date", "decimal(12,2)", default=0),
+        Field("cost_ytd", "decimal(12,2)", default=0),
+        Field("cost_mtd", "decimal(12,2)", default=0),
+        Field("estimated_monthly_cost", "decimal(12,2)"),
+        Field("currency", "string", length=3, default="USD"),
+        Field("cost_provider", "string", length=50, requires=IS_IN_SET(
+            ["aws_cost_explorer", "gcp_billing", "azure_cost", "manual"]
+        )),
+        Field("recommendations", "json"),
+        Field(
+            "created_by_identity_id",
+            "reference identities",
+            ondelete="SET NULL",
+        ),
+        Field("resource_created_at", "datetime"),
+        Field("last_synced_at", "datetime"),
+        Field(
+            "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        Field(
+            "updated_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+            update=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        migrate=False,
+    )
+
+    # Cost history - daily cost snapshots for trending
+    db.define_table(
+        "cost_history",
+        Field(
+            "resource_cost_id",
+            "reference resource_costs",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field("snapshot_date", "date", notnull=True),
+        Field("cost_amount", "decimal(12,2)", notnull=True),
+        Field("usage_quantity", "decimal(12,4)"),
+        Field("usage_unit", "string", length=50),
+        Field(
+            "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        migrate=False,
+    )
+
+    # Cost sync jobs - scheduled provider syncs
+    db.define_table(
+        "cost_sync_jobs",
+        Field("name", "string", length=255, notnull=True, requires=IS_NOT_EMPTY()),
+        Field("provider", "string", length=50, notnull=True, requires=IS_IN_SET(
+            ["aws_cost_explorer", "gcp_billing", "azure_cost"]
+        )),
+        Field(
+            "organization_id",
+            "reference organizations",
+            notnull=True,
+            ondelete="CASCADE",
+        ),
+        Field("config_json", "json", notnull=True),
+        Field("schedule_interval", "integer", default=86400),
+        Field("enabled", "boolean", default=True),
+        Field("last_run_at", "datetime"),
+        Field("next_run_at", "datetime"),
         Field(
             "created_at",
             "datetime",

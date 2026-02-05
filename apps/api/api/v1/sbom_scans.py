@@ -21,12 +21,12 @@ from apps.api.services.sbom.parsers import SBOMParser
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.validation_helpers import validate_resource_exists
-from shared.async_utils import run_in_threadpool
-from shared.py_libs.py_libs.pydantic.flask_integration import (
+from apps.api.utils.async_utils import run_in_threadpool
+from penguin_libs.pydantic.flask_integration import (
     ValidationErrorResponse,
     validate_body,
 )
-from shared.py_libs.py_libs.pydantic.models.sbom import (
+from apps.api.models.pydantic.sbom import (
     CreateSBOMScanRequest,
     SubmitSBOMResultsRequest,
     UploadSBOMRequest,

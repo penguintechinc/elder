@@ -12,7 +12,7 @@ from typing import Any, List, Optional
 
 from flask import request
 
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 
 async def get_by_id(table: Any, resource_id: int) -> Optional[Any]:

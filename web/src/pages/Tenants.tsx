@@ -7,7 +7,7 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
 import Card, { CardContent } from '@/components/Card'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import type { Tenant } from '@/types'
 
 // Form fields for tenant creation

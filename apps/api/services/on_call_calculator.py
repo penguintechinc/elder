@@ -21,7 +21,7 @@ import pytz
 from croniter import croniter
 
 from apps.api.models.dataclasses import CurrentOnCallDTO
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 
 @dataclass(slots=True)
