@@ -15,7 +15,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@penguin/react_libs": "file:../shared/react_libs",
     "@tanstack/react-query": "^5.62.2",
     "@xyflow/react": "^12.3.5",
     "axios": "^1.7.7",
