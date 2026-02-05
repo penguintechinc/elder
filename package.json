@@ -1,6 +1,6 @@
 {
   "name": "project-template",
-  "version": "3.0.8",
+  "version": "3.0.9",
   "description": "PenguinTech project template with multi-language support",
   "main": "web/src/index.js",
   "type": "module",
