@@ -5,11 +5,11 @@ This module provides a Python client for integrating with the PenguinTech Licens
 to validate licenses and check feature entitlements.
 """
 
+import logging
 import os
 import time
-import logging
-from typing import Dict, List, Optional, Any
 from functools import wraps
+from typing import Any, Dict, List, Optional
 
 import requests
 
