@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from apps.api.auth.decorators import login_required
 from apps.api.models.dataclasses import ResourceRoleDTO, from_pydal_rows
 from apps.api.utils.async_utils import run_in_threadpool
-from penguin_licensing import license_required
+from apps.api.licensing_fallback import license_required
 
 bp = Blueprint("resource_roles", __name__)
 

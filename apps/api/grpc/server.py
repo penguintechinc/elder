@@ -15,7 +15,7 @@ from grpc_reflection.v1alpha import reflection
 
 from apps.api.grpc.generated import elder_pb2, elder_pb2_grpc
 from apps.api.grpc.servicers.elder_servicer import ElderServicer
-from penguin_licensing import get_license_client
+from apps.api.licensing_fallback import get_license_client
 
 logger = structlog.get_logger(__name__)
 
@@ -37,30 +37,36 @@ def serve(
     """
     # Validate license if required
     if require_license:
-        try:
-            license_client = get_license_client()
-            validation = license_client.validate()
-
-            if not validation.get("valid"):
-                logger.error(
-                    "grpc_server_license_invalid", message=validation.get("message")
-                )
-                sys.exit(1)
-
-            if validation.get("tier") != "enterprise":
-                logger.error(
-                    "grpc_server_requires_enterprise", tier=validation.get("tier")
-                )
-                sys.exit(1)
-
-            logger.info(
-                "grpc_server_license_validated",
-                tier=validation.get("tier"),
-                customer=validation.get("customer"),
+        if get_license_client is None:
+            logger.warning(
+                "grpc_server_no_licensing_module",
+                message="penguin_licensing not available, skipping license check"
             )
-        except Exception as e:
-            logger.error("grpc_server_license_error", error=str(e))
-            sys.exit(1)
+        else:
+            try:
+                license_client = get_license_client()
+                validation = license_client.validate()
+
+                if not validation.get("valid"):
+                    logger.error(
+                        "grpc_server_license_invalid", message=validation.get("message")
+                    )
+                    sys.exit(1)
+
+                if validation.get("tier") != "enterprise":
+                    logger.error(
+                        "grpc_server_requires_enterprise", tier=validation.get("tier")
+                    )
+                    sys.exit(1)
+
+                logger.info(
+                    "grpc_server_license_validated",
+                    tier=validation.get("tier"),
+                    customer=validation.get("customer"),
+                )
+            except Exception as e:
+                logger.error("grpc_server_license_error", error=str(e))
+                sys.exit(1)
 
     # Create gRPC server
     server = grpc.server(

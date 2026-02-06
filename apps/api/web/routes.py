@@ -8,7 +8,7 @@ import os
 from flask import Blueprint, flash, redirect, render_template, url_for
 from flask_login import current_user, login_required, logout_user
 
-from penguin_licensing import get_license_client
+from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
 

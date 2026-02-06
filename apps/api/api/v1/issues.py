@@ -23,7 +23,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
-from penguin_licensing import license_required
+from apps.api.licensing_fallback import license_required
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
