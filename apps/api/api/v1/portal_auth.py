@@ -7,7 +7,7 @@ MFA management, and password operations with tenant context.
 # flake8: noqa: E501
 
 
-import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 import jwt
@@ -36,7 +36,9 @@ def portal_token_required(f):
             return jsonify({"error": "Token is missing"}), 401
 
         try:
-            secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+            secret_key = current_app.config.get(
+                "JWT_SECRET_KEY"
+            ) or current_app.config.get("SECRET_KEY")
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
 
             if payload.get("type") != "portal_user":
@@ -55,21 +57,29 @@ def portal_token_required(f):
 
 def generate_tokens(user: dict) -> dict:
     """Generate access and refresh tokens for a portal user."""
-    secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+    secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
+        "SECRET_KEY"
+    )
 
-    # Access token (1 hour)
+    # Access token expiration from config
+    access_token_expires = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
+    refresh_token_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
+
+    now = datetime.now(timezone.utc)
+
+    # Access token
     access_payload = PortalAuthService.generate_jwt_claims(user)
-    access_payload["exp"] = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-    access_payload["iat"] = datetime.datetime.utcnow()
+    access_payload["exp"] = now + access_token_expires
+    access_payload["iat"] = now
     access_token = jwt.encode(access_payload, secret_key, algorithm="HS256")
 
-    # Refresh token (7 days)
+    # Refresh token
     refresh_payload = {
         "sub": str(user["id"]),
         "tenant_id": user["tenant_id"],
         "type": "portal_refresh",
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7),
-        "iat": datetime.datetime.utcnow(),
+        "exp": now + refresh_token_expires,
+        "iat": now,
     }
     refresh_token = jwt.encode(refresh_payload, secret_key, algorithm="HS256")
 
@@ -77,7 +87,7 @@ def generate_tokens(user: dict) -> dict:
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "Bearer",
-        "expires_in": 3600,
+        "expires_in": int(access_token_expires.total_seconds()),
     }
 
 
@@ -382,7 +392,9 @@ def refresh_token():
         return jsonify({"error": "refresh_token is required"}), 400
 
     try:
-        secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+        secret_key = current_app.config.get(
+            "JWT_SECRET_KEY"
+        ) or current_app.config.get("SECRET_KEY")
         payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":
@@ -395,7 +407,7 @@ def refresh_token():
         if not user or not user.is_active:
             return jsonify({"error": "User not found or inactive"}), 401
 
-        # Generate new tokens
+        # Generate new tokens (with refresh token rotation for security)
         user_dict = {
             "id": user.id,
             "email": user.email,

@@ -134,6 +134,7 @@ class UpdateEntityRequest(RequestModel):
         description: Detailed description (optional)
         entity_type: Type classification (optional)
         sub_type: Sub-type classification (optional)
+        organization_id: Organization ID reassignment (optional)
         parent_id: Parent entity ID (optional)
         attributes: Custom attributes (optional)
         tags: Classification tags (optional)
@@ -156,6 +157,11 @@ class UpdateEntityRequest(RequestModel):
     sub_type: Optional[str] = Field(
         default=None,
         description="Sub-type classification",
+    )
+    organization_id: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Organization ID reassignment (must be positive)",
     )
     parent_id: Optional[int] = Field(
         default=None,

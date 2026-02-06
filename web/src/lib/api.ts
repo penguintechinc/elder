@@ -7,6 +7,12 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
 class ApiClient {
   private client: AxiosInstance
+  private isRefreshing = false
+  private failedQueue: Array<{
+    resolve: (value?: unknown) => void
+    reject: (reason?: unknown) => void
+  }> = []
+  private refreshTimer: number | null = null
 
   constructor() {
     this.client = axios.create({
@@ -29,24 +35,151 @@ class ApiClient {
       (error) => Promise.reject(error)
     )
 
-    // Response interceptor for error handling
+    // Response interceptor for error handling with automatic token refresh
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        // Redirect to login on 401 Unauthorized, but only if we had a token
-        // (Don't redirect if we're already on login page or if request was anonymous)
-        if (error.response?.status === 401) {
+      async (error: AxiosError) => {
+        const originalRequest = error.config as any
+
+        // Redirect to login on 401 Unauthorized, but try refresh first
+        if (error.response?.status === 401 && !originalRequest._retry) {
           const hadToken = !!localStorage.getItem('elder_token')
+          const refreshToken = localStorage.getItem('elder_refresh_token')
           const isLoginPage = window.location.pathname === '/login'
 
+          // Only attempt refresh if we had tokens and not on login page
+          if (hadToken && refreshToken && !isLoginPage) {
+            if (this.isRefreshing) {
+              // Queue this request to be retried after refresh completes
+              return new Promise((resolve, reject) => {
+                this.failedQueue.push({ resolve, reject })
+              })
+                .then(() => {
+                  originalRequest._retry = true
+                  return this.client(originalRequest)
+                })
+                .catch((err) => Promise.reject(err))
+            }
+
+            originalRequest._retry = true
+            this.isRefreshing = true
+
+            try {
+              // Attempt to refresh the token
+              const response = await this.client.post('/portal-auth/refresh', {
+                refresh_token: refreshToken,
+              })
+
+              if (response.data.access_token) {
+                localStorage.setItem('elder_token', response.data.access_token)
+
+                // Store new refresh token if provided (token rotation)
+                if (response.data.refresh_token) {
+                  localStorage.setItem('elder_refresh_token', response.data.refresh_token)
+                }
+
+                // Schedule next proactive refresh
+                this.scheduleTokenRefresh(response.data.expires_in)
+
+                // Retry all queued requests with new token
+                this.processQueue(null)
+
+                // Retry the original request
+                return this.client(originalRequest)
+              }
+            } catch (refreshError) {
+              // Refresh failed - clear tokens and redirect to login
+              this.processQueue(refreshError)
+              localStorage.removeItem('elder_token')
+              localStorage.removeItem('elder_refresh_token')
+              this.clearRefreshTimer()
+              window.location.href = '/login'
+              return Promise.reject(refreshError)
+            } finally {
+              this.isRefreshing = false
+            }
+          }
+
+          // No tokens or on login page - just clear and redirect
           if (hadToken && !isLoginPage) {
             localStorage.removeItem('elder_token')
+            localStorage.removeItem('elder_refresh_token')
+            this.clearRefreshTimer()
             window.location.href = '/login'
           }
         }
         return Promise.reject(error)
       }
     )
+  }
+
+  /**
+   * Process queued requests after token refresh
+   */
+  private processQueue(error: unknown) {
+    this.failedQueue.forEach((promise) => {
+      if (error) {
+        promise.reject(error)
+      } else {
+        promise.resolve()
+      }
+    })
+    this.failedQueue = []
+  }
+
+  /**
+   * Schedule proactive token refresh before expiration
+   */
+  private scheduleTokenRefresh(expiresIn: number) {
+    this.clearRefreshTimer()
+
+    // Refresh 5 minutes before expiration (or at 75% of lifetime, whichever is sooner)
+    const refreshDelay = Math.min(expiresIn * 0.75, expiresIn - 300) * 1000
+
+    if (refreshDelay > 0) {
+      this.refreshTimer = window.setTimeout(() => {
+        this.proactiveRefreshToken()
+      }, refreshDelay)
+    }
+  }
+
+  /**
+   * Clear scheduled refresh timer
+   */
+  private clearRefreshTimer() {
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer)
+      this.refreshTimer = null
+    }
+  }
+
+  /**
+   * Proactively refresh token before expiration
+   */
+  private async proactiveRefreshToken() {
+    const refreshToken = localStorage.getItem('elder_refresh_token')
+    if (!refreshToken) return
+
+    try {
+      const response = await this.client.post('/portal-auth/refresh', {
+        refresh_token: refreshToken,
+      })
+
+      if (response.data.access_token) {
+        localStorage.setItem('elder_token', response.data.access_token)
+
+        // Store new refresh token if provided (token rotation)
+        if (response.data.refresh_token) {
+          localStorage.setItem('elder_refresh_token', response.data.refresh_token)
+        }
+
+        // Schedule next refresh
+        this.scheduleTokenRefresh(response.data.expires_in)
+      }
+    } catch (error) {
+      console.error('[Elder] Proactive token refresh failed:', error)
+      // Don't redirect here - let the next 401 handle it
+    }
   }
 
   // Public API access for specific endpoints
@@ -82,6 +215,8 @@ class ApiClient {
 
   async logout() {
     localStorage.removeItem('elder_token')
+    localStorage.removeItem('elder_refresh_token')
+    this.clearRefreshTimer()
   }
 
   // Profile (Portal Users)
@@ -1341,6 +1476,10 @@ class ApiClient {
       if (response.data.refresh_token) {
         localStorage.setItem('elder_refresh_token', response.data.refresh_token)
       }
+      // Schedule proactive token refresh
+      if (response.data.expires_in) {
+        this.scheduleTokenRefresh(response.data.expires_in)
+      }
     }
     return response.data
   }
@@ -1378,6 +1517,14 @@ class ApiClient {
     const response = await this.client.post('/portal-auth/refresh', { refresh_token: refreshToken })
     if (response.data.access_token) {
       localStorage.setItem('elder_token', response.data.access_token)
+      // Store new refresh token if provided (token rotation)
+      if (response.data.refresh_token) {
+        localStorage.setItem('elder_refresh_token', response.data.refresh_token)
+      }
+      // Schedule next proactive refresh
+      if (response.data.expires_in) {
+        this.scheduleTokenRefresh(response.data.expires_in)
+      }
     }
     return response.data
   }

@@ -167,9 +167,9 @@ def _init_license_client(app: Flask) -> None:
     Args:
         app: Flask application
     """
-    from penguin_licensing import get_license_client
-
     try:
+        from penguin_licensing import get_license_client
+
         client = get_license_client()
         validation = client.validate()
         logger.info(
