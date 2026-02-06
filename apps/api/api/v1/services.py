@@ -6,7 +6,7 @@
 from dataclasses import asdict
 
 from flask import Blueprint, Response, current_app, jsonify, request
-from penguin_libs.pydantic import CreateServiceRequest, UpdateServiceRequest
+from apps.api.models.pydantic.service import CreateServiceRequest, UpdateServiceRequest
 from penguin_libs.pydantic.flask_integration import validated_request
 
 from apps.api.auth.decorators import login_required, resource_role_required
