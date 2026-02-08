@@ -6,7 +6,6 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
-import { FormBuilder, FieldConfig as FormField } from '@penguintechinc/react-libs/components/FormBuilder'
 
 export default function Profile() {
   const [isEditing, setIsEditing] = useState(false)
@@ -56,45 +55,41 @@ export default function Profile() {
     },
   })
 
-  const profileFields: FormField[] = useMemo(() => [
-    {
-      name: 'email',
-      label: 'Email',
-      type: 'email',
-      placeholder: 'your.email@example.com',
-    },
-    {
-      name: 'full_name',
-      label: 'Full Name',
-      type: 'text',
-      placeholder: 'John Doe',
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      options: [
-        { value: '', label: 'No Organization' },
-        ...(orgsData?.items?.map((org: any) => ({
-          value: org.id.toString(),
-          label: org.name,
-        })) || []),
-      ],
-    },
-  ], [orgsData])
+  const [formData, setFormData] = useState({
+    email: '',
+    full_name: '',
+    organization_id: '',
+  })
+
+  // Initialize form data when profile loads
+  useMemo(() => {
+    if (profile && isEditing) {
+      setFormData({
+        email: profile.email || '',
+        full_name: profile.full_name || '',
+        organization_id: profile.organization_id?.toString() || '',
+      })
+    }
+  }, [profile, isEditing])
 
   const handleEdit = () => {
     setIsEditing(true)
+    setFormData({
+      email: profile?.email || '',
+      full_name: profile?.full_name || '',
+      organization_id: profile?.organization_id?.toString() || '',
+    })
   }
 
   const handleCancel = () => {
     setIsEditing(false)
   }
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
     updateMutation.mutate({
-      ...data,
-      organization_id: data.organization_id ? parseInt(data.organization_id) : null,
+      ...formData,
+      organization_id: formData.organization_id ? parseInt(formData.organization_id) : null,
     })
   }
 
@@ -113,15 +108,6 @@ export default function Profile() {
       new_password: newPassword,
     })
   }
-
-  const initialValues = useMemo(() => {
-    if (!profile) return {}
-    return {
-      email: profile.email || '',
-      full_name: profile.full_name || '',
-      organization_id: profile.organization_id?.toString() || '',
-    }
-  }, [profile])
 
   if (profileLoading) {
     return (
@@ -163,7 +149,7 @@ export default function Profile() {
         </CardHeader>
         <CardContent>
           {isEditing ? (
-            <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username (read-only) */}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -176,17 +162,57 @@ export default function Profile() {
                 </div>
               </div>
 
-              <FormBuilder
-                mode="inline"
-                fields={profileFields}
-                initialData={initialValues}
-                onSubmit={handleSubmit}
-                onCancel={handleCancel}
-                loading={updateMutation.isPending}
-                submitLabel="Save Changes"
-                cancelLabel="Cancel"
+              <Input
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="your.email@example.com"
               />
-            </div>
+
+              <Input
+                label="Full Name"
+                type="text"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                placeholder="John Doe"
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Organization
+                </label>
+                <select
+                  className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  value={formData.organization_id}
+                  onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
+                >
+                  <option value="">No Organization</option>
+                  {orgsData?.items?.map((org: any) => (
+                    <option key={org.id} value={org.id.toString()}>
+                      {org.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  type="submit"
+                  isLoading={updateMutation.isPending}
+                >
+                  Save Changes
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleCancel}
+                  disabled={updateMutation.isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
           ) : (
             <div className="space-y-6">
               {/* Username */}
