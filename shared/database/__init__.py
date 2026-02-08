@@ -16,6 +16,9 @@ def init_db(app):
     if not database_url:
         raise ValueError("DATABASE_URL not configured")
 
+    # PyDAL expects 'postgres://' not 'postgresql://'
+    database_url = database_url.replace("postgresql://", "postgres://")
+
     # Create PyDAL DAL instance
     db = DAL(
         database_url,
@@ -70,6 +73,9 @@ def ensure_database_ready(app):
         database_url = app.config.get("DATABASE_URL") or os.getenv("DATABASE_URL")
         if not database_url:
             return {"connected": False, "error": "DATABASE_URL not configured"}
+
+        # PyDAL expects 'postgres://' not 'postgresql://'
+        database_url = database_url.replace("postgresql://", "postgres://")
 
         # Try to connect with a test DAL instance
         test_db = DAL(database_url, migrate=False, pool_size=1)
