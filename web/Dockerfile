@@ -9,21 +9,24 @@ ARG VITE_BUILD_TIME
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_BUILD_TIME=$VITE_BUILD_TIME
 
+# GitHub token for private package access
+ARG GITHUB_TOKEN
+RUN test -n "$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN build arg is required" && exit 1)
+
 WORKDIR /app
 
-# Copy package.json only (not lock file) for multi-arch compatibility
-# This works around npm bug https://github.com/npm/cli/issues/4828 where
-# optional platform-specific packages (rollup, esbuild, lightningcss) fail
-# when package-lock.json was generated on a different architecture
-COPY web/package.json ./
+# Copy package.json and .npmrc for dependency installation
+COPY web/package.json web/.npmrc ./
+
+# Configure npm authentication for GitHub Packages
+# Token is passed as build arg and not persisted in image layers
+RUN echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
 
 # Install dependencies fresh for current architecture
+# @penguintechinc/react-libs installed from GitHub Packages
 RUN npm install --ignore-scripts && \
-    npm rebuild esbuild
-
-# Copy pre-built shared react_libs (migrated to penguin-libs)
-# The dist folder contains the built components from penguin-libs
-COPY shared/react_libs ../shared/react_libs
+    npm rebuild esbuild && \
+    rm -f .npmrc
 
 # Copy source code
 COPY web/ .

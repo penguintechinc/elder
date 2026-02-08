@@ -136,11 +136,27 @@ build_and_push_image() {
     local image_name="elder-${name}"
 
     log_info "Building ${image_name}..."
-    docker build \
-        --file "$dockerfile" \
-        --tag "${REGISTRY}/${image_name}:${VERSION}" \
-        --tag "${REGISTRY}/${image_name}:latest" \
-        "$context"
+
+    # Prepare build args
+    local build_args=(
+        --file "$dockerfile"
+        --tag "${REGISTRY}/${image_name}:${VERSION}"
+        --tag "${REGISTRY}/${image_name}:latest"
+    )
+
+    # Add GitHub token for web builds (needed for @penguintechinc packages)
+    if [ "$name" = "web" ]; then
+        if [ -f "$HOME/code/.gh-token" ]; then
+            GITHUB_TOKEN=$(cat "$HOME/code/.gh-token" | grep -v '^#' | head -1)
+            build_args+=(--build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}")
+            log_info "Using GitHub token for package authentication"
+        else
+            log_error "GitHub token not found at ~/code/.gh-token (required for web build)"
+            return 1
+        fi
+    fi
+
+    docker build "${build_args[@]}" "$context"
 
     log_success "Built ${image_name}"
 

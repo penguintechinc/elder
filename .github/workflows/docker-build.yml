@@ -99,6 +99,7 @@ jobs:
           BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           VCS_REF=${{ github.sha }}
           VERSION=${{ steps.version.outputs.version }}
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
     - name: Output image digest
       run: |

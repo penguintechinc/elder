@@ -458,3 +458,4 @@ shared/react_libs
 # Allow web/public for Vite static assets
 !web/public/
 .FUTURE
+.gh-token
