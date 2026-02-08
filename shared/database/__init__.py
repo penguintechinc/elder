@@ -10,14 +10,66 @@ from pydal import DAL
 logger = logging.getLogger(__name__)
 
 
+def _normalize_database_url_for_pydal(database_url: str, db_type: str = None) -> str:
+    """
+    Normalize database URL for PyDAL compatibility.
+
+    PyDAL uses different URI schemes than SQLAlchemy:
+    - SQLAlchemy: postgresql://  ->  PyDAL: postgres://
+    - SQLAlchemy: mysql://       ->  PyDAL: mysql://     (same)
+    - SQLAlchemy: sqlite://      ->  PyDAL: sqlite://    (same)
+
+    Args:
+        database_url: Database connection URL (may be SQLAlchemy format)
+        db_type: Optional DB_TYPE override (postgresql, mysql, mariadb, sqlite)
+
+    Returns:
+        PyDAL-compatible database URL
+    """
+    if not database_url:
+        return database_url
+
+    # Normalize postgresql -> postgres for PyDAL
+    if database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgres://", 1)
+
+    # Handle DB_TYPE override if provided
+    if db_type:
+        db_type = db_type.lower()
+        if db_type in ["mariadb", "mysql"]:
+            # MariaDB uses MySQL driver in PyDAL
+            if not database_url.startswith("mysql://"):
+                logger.warning(
+                    f"DB_TYPE={db_type} but URL doesn't start with mysql://, "
+                    "this may cause connection issues"
+                )
+        elif db_type == "postgresql":
+            # Ensure postgres:// scheme for PyDAL
+            if database_url.startswith("postgresql://"):
+                database_url = database_url.replace("postgresql://", "postgres://", 1)
+        elif db_type == "sqlite":
+            if not database_url.startswith("sqlite://"):
+                logger.warning(
+                    f"DB_TYPE={db_type} but URL doesn't start with sqlite://, "
+                    "this may cause connection issues"
+                )
+
+    return database_url
+
+
 def init_db(app):
     """Initialize database. PyDAL handles table creation via migrate=True."""
     database_url = app.config.get("DATABASE_URL") or os.getenv("DATABASE_URL")
     if not database_url:
         raise ValueError("DATABASE_URL not configured")
 
-    # PyDAL expects 'postgres://' not 'postgresql://'
-    database_url = database_url.replace("postgresql://", "postgres://")
+    # Get optional DB_TYPE for validation
+    db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
+
+    # Normalize URL for PyDAL (handles postgresql -> postgres conversion)
+    database_url = _normalize_database_url_for_pydal(database_url, db_type)
+
+    logger.info(f"Initializing database: {database_url.split('@')[0].split('://')[0]}://***")
 
     # Create PyDAL DAL instance
     db = DAL(
@@ -74,8 +126,11 @@ def ensure_database_ready(app):
         if not database_url:
             return {"connected": False, "error": "DATABASE_URL not configured"}
 
-        # PyDAL expects 'postgres://' not 'postgresql://'
-        database_url = database_url.replace("postgresql://", "postgres://")
+        # Get optional DB_TYPE for validation
+        db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
+
+        # Normalize URL for PyDAL (handles postgresql -> postgres conversion)
+        database_url = _normalize_database_url_for_pydal(database_url, db_type)
 
         # Try to connect with a test DAL instance
         test_db = DAL(database_url, migrate=False, pool_size=1)
@@ -84,6 +139,7 @@ def ensure_database_ready(app):
         return {
             "connected": True,
             "version": "1.0.0",
+            "db_type": db_type or "auto-detected",
         }
     except Exception as e:
         logger.error(f"Database connection check failed: {e}")
