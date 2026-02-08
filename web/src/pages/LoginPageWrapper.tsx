@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
-import { LoginPageBuilder, ELDER_LOGIN_THEME } from '@penguintechinc/react-libs/components/LoginPageBuilder'
-import type { LoginResponse } from '@penguintechinc/react-libs/components/LoginPageBuilder'
+import { LoginPageBuilder, ELDER_LOGIN_THEME } from '@penguintechinc/react-libs/components'
+import type { LoginResponse } from '@penguintechinc/react-libs/components'
 
 export default function LoginPageWrapper() {
   const navigate = useNavigate()
