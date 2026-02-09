@@ -8,7 +8,7 @@ export default function LoginPageWrapper() {
   return (
     <LoginPageBuilder
       api={{
-        loginUrl: '/api/v1/auth/portal-login',
+        loginUrl: '/api/v1/portal-auth/login',
       }}
       branding={{
         appName: 'Elder',
