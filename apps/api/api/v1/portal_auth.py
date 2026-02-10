@@ -14,7 +14,6 @@ import jwt
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
-import shared.database.connection as database
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService
 
@@ -133,7 +132,7 @@ def register():
     # Resolve tenant_id from slug if not provided
     if not tenant_id and tenant_slug:
         tenant_record = (
-            database.db(database.db.tenants.slug == tenant_slug).select().first()
+            current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
         )
         if tenant_record:
             tenant_id = tenant_record.id
@@ -142,7 +141,7 @@ def register():
         return jsonify({"error": "Valid tenant is required"}), 400
 
     # Verify tenant exists
-    tenant = database.db.tenants[tenant_id]
+    tenant = current_app.db.tenants[tenant_id]
     if not tenant or not tenant.is_active:
         return jsonify({"error": "Invalid tenant"}), 400
 
@@ -211,13 +210,13 @@ def login():
 
     # Resolve tenant_id from slug if not provided
     if not tenant_id and tenant_slug:
-        tenant = database.db(database.db.tenants.slug == tenant_slug).select().first()
+        tenant = current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
         if tenant:
             tenant_id = tenant.id
 
     # Fall back to default tenant for single-tenant deployments
     if not tenant_id:
-        default_tenant = database.db(database.db.tenants.slug == "default").select().first()
+        default_tenant = current_app.db(current_app.db.tenants.slug == "default").select().first()
         if default_tenant:
             tenant_id = default_tenant.id
 
@@ -408,7 +407,7 @@ def refresh_token():
 
         # Get user
         user_id = int(payload["sub"])
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
 
         if not user or not user.is_active:
             return jsonify({"error": "User not found or inactive"}), 401
@@ -440,7 +439,7 @@ def get_current_user():
         User info and permissions
     """
     user_id = int(request.portal_user["sub"])
-    user = database.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]
 
     if not user:
         return jsonify({"error": "User not found"}), 404
