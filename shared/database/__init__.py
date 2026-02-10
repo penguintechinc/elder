@@ -173,15 +173,11 @@ def _create_default_admin(app, db):
         "ADMIN_PASSWORD", "admin123"
     )
 
-    # Check if admin user exists in portal_users
-    existing_user = db(db.portal_users.email == admin_email).select().first()
-    if not existing_user:
-        from werkzeug.security import generate_password_hash
-
-        # Get default tenant (should exist from migrations)
-        default_tenant = db(db.tenants).select().first()
+    # Ensure default tenant exists (needed for single-tenant deployments)
+    try:
+        default_tenant = db(db.tenants.slug == "default").select().first()
         if not default_tenant:
-            logger.warning("No tenant found, creating default tenant")
+            logger.warning("No default tenant found, creating one")
             default_tenant_id = db.tenants.insert(
                 name="Default",
                 slug="default",
@@ -191,6 +187,15 @@ def _create_default_admin(app, db):
             db.commit()
         else:
             default_tenant_id = default_tenant.id
+    except Exception as e:
+        logger.error(f"Failed to ensure default tenant: {e}")
+        db.rollback()
+        return
+
+    # Check if admin user exists in portal_users
+    existing_user = db(db.portal_users.email == admin_email).select().first()
+    if not existing_user:
+        from werkzeug.security import generate_password_hash
 
         db.portal_users.insert(
             tenant_id=default_tenant_id,
