@@ -215,6 +215,12 @@ def login():
         if tenant:
             tenant_id = tenant.id
 
+    # Fall back to default tenant for single-tenant deployments
+    if not tenant_id:
+        default_tenant = database.db(database.db.tenants.slug == "default").select().first()
+        if default_tenant:
+            tenant_id = default_tenant.id
+
     if not tenant_id:
         return jsonify({"error": "Valid tenant is required"}), 400
 
