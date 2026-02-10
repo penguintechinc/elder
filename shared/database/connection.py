@@ -180,7 +180,7 @@ def init_db(app: Flask) -> None:
             # Use pool_size=1 instead of 0 to enable migration properly
             # pool_size=0 can cause migration issues as tables aren't created
             # With pool_size=1, we get proper migration while maintaining thread safety
-            db = DAL(
+            temp_db = DAL(
                 database_url,
                 folder=(
                     app.instance_path if hasattr(app, "instance_path") else "databases"
@@ -192,8 +192,9 @@ def init_db(app: Flask) -> None:
                 adapter_args={"attempts": 1},  # Don't retry failed connections
             )
             # Test the connection
-            db.executesql("SELECT 1")
+            temp_db.executesql("SELECT 1")
             logger.info("Database connection established successfully")
+            db = temp_db
             break
         except Exception as e:
             if attempt < max_retries - 1:
