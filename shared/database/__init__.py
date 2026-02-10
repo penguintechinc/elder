@@ -173,11 +173,15 @@ def _create_default_admin(app, db):
         "ADMIN_PASSWORD", "admin123"
     )
 
-    # Ensure default tenant exists (needed for single-tenant deployments)
+    # Ensure system tenant exists (needed for single-tenant deployments)
+    # Try "system" first (created by _init_default_data), then fallback to "default"
     try:
-        default_tenant = db(db.tenants.slug == "default").select().first()
+        default_tenant = db(db.tenants.slug == "system").select().first()
         if not default_tenant:
-            logger.warning("No default tenant found, creating one")
+            default_tenant = db(db.tenants.slug == "default").select().first()
+
+        if not default_tenant:
+            logger.warning("No system tenant found, creating one with slug 'default'")
             default_tenant_id = db.tenants.insert(
                 name="Default",
                 slug="default",

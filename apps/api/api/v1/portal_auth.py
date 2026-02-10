@@ -214,9 +214,12 @@ def login():
         if tenant:
             tenant_id = tenant.id
 
-    # Fall back to default tenant for single-tenant deployments
+    # Fall back to system/default tenant for single-tenant deployments
     if not tenant_id:
-        default_tenant = current_app.db(current_app.db.tenants.slug == "default").select().first()
+        # Try "system" first (common in Elder v3.x), then "default"
+        default_tenant = current_app.db(current_app.db.tenants.slug == "system").select().first()
+        if not default_tenant:
+            default_tenant = current_app.db(current_app.db.tenants.slug == "default").select().first()
         if default_tenant:
             tenant_id = default_tenant.id
 
