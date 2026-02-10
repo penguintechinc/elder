@@ -284,6 +284,67 @@ def can_modify_entity(entity_id):
 
 ---
 
+## Deployment & Testing
+
+### Beta Cluster Access
+
+The Elder beta cluster (`dal2-beta`) is deployed on the private PenguinTech data center at `dal2.penguintech.io`. Due to Cloudflare proxying, direct access requires using a bypass URL with Host header:
+
+**Bypass URL with Host Header**:
+```bash
+curl -k -X GET "https://dal2.penguintech.io/api/v1/healthz" \
+  -H "Host: elder.penguintech.io"
+```
+
+This approach:
+- Uses the load balancer origin URL (`dal2.penguintech.io`)
+- Sets the proper Host header for ingress routing (`elder.penguintech.io`)
+- Bypasses Cloudflare proxying issues
+- Works with kubectl port-forward and curl testing
+
+**Deployment**:
+```bash
+# Deploy API and Web to beta cluster
+./scripts/deploy-to-beta.sh all
+
+# Deploy only API
+./scripts/deploy-to-beta.sh api
+
+# Rollout only (no rebuild)
+./scripts/deploy-to-beta.sh -r all
+```
+
+**Smoke Tests**:
+```bash
+# Run smoke tests against beta cluster
+./scripts/smoke-test.sh --beta
+
+# Verbose output
+./scripts/smoke-test.sh --beta -v
+```
+
+The smoke-test.sh script automatically uses the bypass URL and Host header for beta testing.
+
+### Single-Tenant Deployment
+
+Elder supports single-tenant deployments via automatic fallback to "default" tenant:
+
+- During login, if no tenant is specified, the system falls back to a "default" tenant
+- Default tenant is created automatically during initialization if it doesn't exist
+- Portal authentication endpoint: `POST /api/v1/portal-auth/login`
+
+**Login Request**:
+```json
+{
+  "email": "admin@localhost.local",
+  "password": "admin123"
+}
+```
+
+The default admin user is created during initialization if `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables are set.
+
+---
+
 ## Related Documentation
 
 - **[Security Standards](standards/SECURITY.md)** - RBAC concepts, scope patterns, implementation details
@@ -292,5 +353,5 @@ def can_modify_entity(entity_id):
 
 ---
 
-**Last Updated**: 2026-01-14
-**Version**: 3.0.3
+**Last Updated**: 2026-02-10
+**Version**: 3.1.0
