@@ -1,3 +1,16 @@
+# ==========================================================================
+# DEPRECATED: Docker Compose support has been deprecated.
+# Kubernetes (microk8s) with Helm v3 is now the standard deployment method.
+#
+# Use instead:
+#   Alpha:  make k8s-alpha-deploy
+#   Beta:   make k8s-beta-deploy
+#   Prod:   make k8s-prod-deploy
+#
+# See k8s/helm/<project>/ for Helm charts and values files.
+# This file is retained for reference only and will be removed in a future release.
+# ==========================================================================
+
 #version: '3.8'
 
 services:
