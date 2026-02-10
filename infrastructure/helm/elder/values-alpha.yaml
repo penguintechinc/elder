@@ -1,0 +1,58 @@
+namespace: elder-alpha
+
+api:
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "200m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+web:
+  replicas: 1
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+scanner:
+  replicas: 1
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+autoscaling:
+  enabled: false
+
+monitoring:
+  prometheus:
+    enabled: false
+  grafana:
+    enabled: false
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: false
+
+redis:
+  enabled: true
+  master:
+    persistence:
+      enabled: false
+
+image:
+  pullPolicy: Never
+
+config:
+  logLevel: debug
