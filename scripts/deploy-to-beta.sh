@@ -43,6 +43,7 @@ usage() {
     echo "  -h, --help       Show this help message"
     echo "  -b, --build-only Build and push images without k8s rollout"
     echo "  -r, --rollout-only Trigger k8s rollout without building (use existing images)"
+    echo "  --restart        Force pod restart after rollout (ensures new images load)"
     echo "  -n, --namespace  Kubernetes namespace (default: elder)"
     echo "  -c, --context    Kubernetes context (default: dal2-beta)"
     echo ""
@@ -62,6 +63,7 @@ K8S_NAMESPACE="elder"
 K8S_CONTEXT="dal2-beta"
 BUILD_ONLY=false
 ROLLOUT_ONLY=false
+FORCE_RESTART=false
 TARGET_IMAGE="all"
 
 # Parse arguments
@@ -76,6 +78,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--rollout-only)
             ROLLOUT_ONLY=true
+            shift
+            ;;
+        --restart)
+            FORCE_RESTART=true
             shift
             ;;
         -n|--namespace)
@@ -198,6 +204,20 @@ rollout_deployment() {
         "deployment/${deployment_name}" \
         -n "$K8S_NAMESPACE" \
         --timeout=300s
+
+    # Force restart if requested (ensures image cache is cleared)
+    if [ "$FORCE_RESTART" = true ]; then
+        log_info "Force restarting deployment ${deployment_name}..."
+        kubectl --context="$K8S_CONTEXT" rollout restart \
+            "deployment/${deployment_name}" \
+            -n "$K8S_NAMESPACE"
+
+        log_info "Waiting for restart to complete..."
+        kubectl --context="$K8S_CONTEXT" rollout status \
+            "deployment/${deployment_name}" \
+            -n "$K8S_NAMESPACE" \
+            --timeout=300s
+    fi
 
     log_success "Deployment ${deployment_name} rolled out successfully"
 }
