@@ -239,13 +239,15 @@ def login():
     # Generate tokens
     tokens = generate_tokens(result)
 
+    # Add 'token' field for compatibility with react-libs LoginPageBuilder
+    response_data = {
+        "user": result,
+        **tokens,
+        "token": tokens.get("access_token"),  # Alias for react-libs compatibility
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         200,
     )
 
