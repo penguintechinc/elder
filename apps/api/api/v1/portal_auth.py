@@ -138,12 +138,20 @@ def register():
             tenant_id = tenant_record.id
 
     if not tenant_id:
-        return jsonify({"error": "Valid tenant is required"}), 400
+        return jsonify({
+            "success": False,
+            "error": "Valid tenant is required",
+            "errorCode": "INVALID_TENANT"
+        }), 400
 
     # Verify tenant exists
     tenant = current_app.db.tenants[tenant_id]
     if not tenant or not tenant.is_active:
-        return jsonify({"error": "Invalid tenant"}), 400
+        return jsonify({
+            "success": False,
+            "error": "Invalid tenant",
+            "errorCode": "INVALID_TENANT"
+        }), 400
 
     result = PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
@@ -154,18 +162,33 @@ def register():
     )
 
     if "error" in result:
-        return jsonify(result), 400
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "REGISTRATION_FAILED"
+        }), 400
 
     # Generate tokens
     tokens = generate_tokens(result)
 
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": ["reader"],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         201,
     )
 
@@ -231,19 +254,40 @@ def login():
     )
 
     if "error" in result:
-        return jsonify(result), 401
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "INVALID_CREDENTIALS"
+        }), 401
 
     if result.get("mfa_required"):
-        return jsonify(result), 200
+        return jsonify({
+            "success": False,
+            "mfaRequired": True,
+            "user": {
+                "id": str(result.get("user_id")),
+                "email": result.get("email"),
+            }
+        }), 200
 
     # Generate tokens
     tokens = generate_tokens(result)
 
-    # Add 'token' field for compatibility with react-libs LoginPageBuilder
+    # Format response for react-libs LoginPageBuilder compatibility
     response_data = {
-        "user": result,
-        **tokens,
-        "token": tokens.get("access_token"),  # Alias for react-libs compatibility
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
     }
 
     return (
@@ -276,18 +320,33 @@ def verify_mfa():
     result = PortalAuthService.verify_mfa(user_id, totp_code)
 
     if "error" in result:
-        return jsonify(result), 401
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "INVALID_MFA_CODE"
+        }), 401
 
     # Generate tokens
     tokens = generate_tokens(result)
 
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         200,
     )
 
