@@ -428,6 +428,7 @@ async def refresh_token_endpoint():
 def captcha_challenge():
     """Generate ALTCHA proof-of-work challenge."""
     import hashlib
+    import hmac
     import time
 
     salt = os.urandom(16).hex()
@@ -435,11 +436,20 @@ def captcha_challenge():
     secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
     challenge = hashlib.sha256(f"{salt}{timestamp}{secret}".encode()).hexdigest()
 
+    # Generate signature for ALTCHA verification
+    signature_data = f"{challenge}{salt}{timestamp}".encode()
+    signature = hmac.new(
+        secret.encode(),
+        signature_data,
+        hashlib.sha256
+    ).hexdigest()
+
     return jsonify({
         "algorithm": "SHA-256",
         "challenge": challenge,
         "salt": salt,
         "difficulty": 10000,
+        "signature": signature,
     })
 
 
