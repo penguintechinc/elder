@@ -158,6 +158,21 @@ test-coverage: ## Testing - Generate coverage report
 	@pytest tests/ --cov=apps --cov-report=html
 	@echo "$(GREEN)Coverage report generated in htmlcov/$(RESET)"
 
+test-ui: ## Testing - Run Playwright web UI tests (headless)
+	@echo "$(BLUE)Running Playwright web UI tests...$(RESET)"
+	@cd web && npm run test:e2e
+	@echo "$(GREEN)Web UI tests complete!$(RESET)"
+
+test-ui-headed: ## Testing - Run Playwright web UI tests with UI
+	@echo "$(BLUE)Running Playwright web UI tests (headed mode)...$(RESET)"
+	@cd web && npm run test:e2e:ui
+	@echo "$(GREEN)Web UI tests complete! View results in playwright report.$(RESET)"
+
+test-ui-debug: ## Testing - Run Playwright with debug mode
+	@echo "$(BLUE)Running Playwright in debug mode...$(RESET)"
+	@cd web && npm run test:e2e:debug
+	@echo "$(GREEN)Debug session ended$(RESET)"
+
 # Code Quality Commands
 lint: ## Testing - Run linting checks
 	@echo "$(BLUE)Running linters...$(RESET)"
