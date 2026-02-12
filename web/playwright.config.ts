@@ -31,6 +31,8 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     /* Video on failure */
     video: 'retain-on-failure',
+    /* Ignore SSL certificate errors for self-signed certs in beta deployments */
+    ignoreHTTPSErrors: true,
   },
 
   /* Configure projects for major browsers */
@@ -40,15 +42,21 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
 
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
+    // Firefox and WebKit can be enabled on systems with all dependencies
+    // For CI/K8s environments, chromium-only is recommended
+    ...(process.env.PLAYWRIGHT_BROWSERS === 'all'
+      ? [
+          {
+            name: 'firefox',
+            use: { ...devices['Desktop Firefox'] },
+          },
 
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
+          {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
+          },
+        ]
+      : []),
 
     /* Test against mobile viewports. */
     // {
