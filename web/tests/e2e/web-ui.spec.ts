@@ -548,3 +548,144 @@ test.describe('Elder Web UI - Performance', () => {
     expect(criticalErrors.length).toBeLessThan(5);
   });
 });
+
+/**
+ * Create Modal Content Tests
+ *
+ * Catches the "blank modal" bug class: a Create/Add button exists,
+ * the modal container opens, but no form fields render inside it.
+ * This happened when /api/v1/status returned 404 and blocked FormModalBuilder.
+ */
+
+const PAGES_WITH_CREATE_MODAL = [
+  { route: '/entities', name: 'Entities', buttonText: 'Create' },
+  { route: '/software', name: 'Software', buttonText: 'Add Software' },
+  { route: '/services', name: 'Services', buttonText: 'Create' },
+  { route: '/certificates', name: 'Certificates', buttonText: 'Add Certificate' },
+  { route: '/issues', name: 'Issues', buttonText: 'Create' },
+  { route: '/projects', name: 'Projects', buttonText: 'Create' },
+  { route: '/milestones', name: 'Milestones', buttonText: 'Create' },
+  { route: '/labels', name: 'Labels', buttonText: 'Create' },
+  { route: '/data-stores', name: 'Data Stores', buttonText: 'Create' },
+  { route: '/dependencies', name: 'Dependencies', buttonText: 'Create' },
+  { route: '/organizations', name: 'Organizations', buttonText: 'Create' },
+  { route: '/keys', name: 'Keys', buttonText: 'Add Provider' },
+  { route: '/secrets', name: 'Secrets', buttonText: 'Add Provider' },
+  { route: '/webhooks', name: 'Webhooks', buttonText: 'Create' },
+  { route: '/on-call-rotations', name: 'On-Call Rotations', buttonText: 'Create' },
+  { route: '/networking', name: 'Networking', buttonText: 'Add Network' },
+  { route: '/iam', name: 'IAM', buttonText: 'Add Identity' },
+  { route: '/ipam', name: 'IPAM', buttonText: 'Create' },
+  { route: '/backups', name: 'Backups', buttonText: 'Create' },
+  { route: '/admin/sso', name: 'SSO Configuration', buttonText: 'Add' },
+  { route: '/admin/license-policies', name: 'License Policies', buttonText: 'Create' },
+  { route: '/admin/tenants', name: 'Tenants', buttonText: 'Create' },
+];
+
+// Helper: login and set token in localStorage
+async function loginAndSetToken(page: Page): Promise<boolean> {
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  const token = await page.evaluate(async (creds) => {
+    try {
+      const res = await fetch('/api/v1/portal-auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(creds),
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.token) localStorage.setItem('elder_token', data.token);
+      return data.token || null;
+    } catch {
+      return null;
+    }
+  }, {
+    email: process.env.ELDER_TEST_EMAIL || 'admin@localhost.local',
+    password: process.env.ELDER_TEST_PASSWORD || 'admin123',
+  });
+  return !!token;
+}
+
+test.describe('Elder Web UI - Create Modal Content', () => {
+  for (const pageConfig of PAGES_WITH_CREATE_MODAL) {
+    test(`${pageConfig.name} - create modal renders content without errors`, async ({ page }) => {
+      test.setTimeout(45000);
+
+      // Login
+      const loggedIn = await loginAndSetToken(page);
+      if (!loggedIn) {
+        test.skip(true, 'Login failed — cannot test authenticated pages');
+        return;
+      }
+
+      // Collect console errors
+      const errors: string[] = [];
+      page.on('console', (msg) => {
+        if (msg.type() === 'error') errors.push(msg.text());
+      });
+      page.on('pageerror', (error) => {
+        errors.push(`Uncaught: ${error.message}`);
+      });
+
+      // Navigate to the page
+      const response = await page.goto(pageConfig.route, { waitUntil: 'domcontentloaded' }).catch(() => null);
+      if (!response || response.status() === 404) {
+        test.skip(true, `${pageConfig.name} page not available (404)`);
+        return;
+      }
+
+      const baselineErrorCount = errors.length;
+
+      // Find the Create/Add button — wait for it to appear
+      const createButton = page.locator(`button:has-text("${pageConfig.buttonText}")`).first();
+      try {
+        await createButton.waitFor({ state: 'visible', timeout: 15000 });
+      } catch {
+        test.skip(true, `${pageConfig.name} has no "${pageConfig.buttonText}" button`);
+        return;
+      }
+
+      // Click the Create button
+      await createButton.click();
+
+      // Wait for modal to appear — try role="dialog" first, then fall back to any new form container
+      const dialog = page.locator('[role="dialog"]').first();
+      let modalContainer: typeof dialog;
+
+      try {
+        await dialog.waitFor({ state: 'visible', timeout: 5000 });
+        modalContainer = dialog;
+      } catch {
+        // Custom modal without role="dialog" — wait for new heading + form fields to appear
+        // (e.g. Secrets, Webhooks use custom CreateXxxModal components)
+        const customModal = page.locator('h2:has-text("Add"), h2:has-text("Create"), h3:has-text("Add"), h3:has-text("Create")').last();
+        await customModal.waitFor({ state: 'visible', timeout: 5000 });
+        // Use the heading's parent container as the modal scope
+        modalContainer = customModal.locator('..').locator('..');
+      }
+
+      // CRITICAL: Assert modal is NOT blank — must have form fields
+      const formFields = modalContainer.locator('input, select, textarea, [role="combobox"]');
+      const fieldCount = await formFields.count();
+      expect(fieldCount, `${pageConfig.name} modal is BLANK — opened but contains 0 form fields`).toBeGreaterThan(0);
+
+      // Check for new console errors that appeared AFTER clicking Create
+      // Filter out network/resource errors (API 4xx/5xx) — focus on JS/React errors
+      const newErrors = errors.slice(baselineErrorCount).filter(
+        (e) =>
+          !e.includes('404') &&
+          !e.includes('net::ERR') &&
+          !e.includes('Failed to fetch') &&
+          !e.includes('Failed to load resource') &&
+          !e.includes('status of 5')
+      );
+      expect(
+        newErrors,
+        `${pageConfig.name} modal triggered console errors: ${newErrors.join(', ')}`
+      ).toHaveLength(0);
+
+      // Close the modal
+      await page.keyboard.press('Escape');
+    });
+  }
+});
