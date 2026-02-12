@@ -105,6 +105,17 @@ def create_app(config_name: str = None) -> Flask:
         """Health check endpoint."""
         return jsonify({"status": "healthy", "service": "elder"}), 200
 
+    # API status endpoint (for console version check and monitoring)
+    @app.route("/api/v1/status")
+    def api_status():
+        """API status endpoint for console version checks."""
+        return jsonify({
+            "status": "operational",
+            "service": "elder",
+            "version": app.config.get("APP_VERSION", "0.0.0"),
+            "environment": app.config.get("ENV", "production"),
+        }), 200
+
     logger.info(
         "elder_app_created",
         config=config_name,
