@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "../../node_modules/@penguintechinc/react-libs/dist";
 
 /* Custom theme colors - migrated from tailwind.config.js */
 @theme {
