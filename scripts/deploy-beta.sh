@@ -1,117 +1,259 @@
 #!/bin/bash
-# Deploy to Beta - elder
-set -euo pipefail
+# Deploy Elder to registry-dal2.penguintech.io and update beta k8s cluster
+# Builds amd64-only images, pushes to private registry, and triggers rollout
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+set -e
 
-KUBE_CONTEXT="${KUBE_CONTEXT:-dal2-beta}"
-NAMESPACE="${NAMESPACE:-elder-beta}"
-RELEASE_NAME="elder"
-CHART_PATH="$PROJECT_ROOT/k8s/helm/elder"
-VALUES_FILE="$CHART_PATH/values-beta.yaml"
-IMAGE_REGISTRY="registry-dal2.penguintech.io"
-APP_HOST="elder.penguintech.io"
-
-DRY_RUN=0
-ROLLBACK=0
-BUILD_IMAGES=1
-SERVICE=""
-IMAGE_TAG=""
-
+# Color codes
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_section() { echo ""; echo -e "${BLUE}========================================${NC}"; echo -e "${BLUE}$1${NC}"; echo -e "${BLUE}========================================${NC}"; echo ""; }
-
-check_prerequisites() {
-    log_section "Checking Prerequisites"
-    for cmd in docker kubectl helm; do
-        if ! command -v "$cmd" &>/dev/null; then
-            log_error "$cmd is not installed"
-            return 1
-        fi
-        log_info "$cmd: found"
-    done
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-build_and_push_images() {
-    log_section "Building and Pushing Docker Images"
-    local EPOCH
-    EPOCH=$(date +%s)
-    if [ -z "$IMAGE_TAG" ] || [ "$IMAGE_TAG" = "beta" ]; then
-        IMAGE_TAG="beta-${EPOCH}"
-    fi
-    local SERVICES=("flask-backend")
-    for svc in "${SERVICES[@]}"; do
-        if [ -n "$SERVICE" ] && [ "$SERVICE" != "$svc" ]; then continue; fi
-        log_info "Building $svc..."
-        docker build -t "$IMAGE_REGISTRY/elder-$svc:$IMAGE_TAG" -t "$IMAGE_REGISTRY/elder-$svc:beta" -f "$PROJECT_ROOT/services/$svc/Dockerfile" "$PROJECT_ROOT"
-        docker push "$IMAGE_REGISTRY/elder-$svc:$IMAGE_TAG"
-        docker push "$IMAGE_REGISTRY/elder-$svc:beta"
-        log_info "✓ $svc pushed successfully"
-    done
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
 }
 
-do_deploy() {
-    log_section "Deploying with Helm"
-    local helm_args=("upgrade" "--install" "$RELEASE_NAME" "$CHART_PATH" "--kube-context=$KUBE_CONTEXT" "--namespace=$NAMESPACE" "--values=$VALUES_FILE" "--set=image.tag=$IMAGE_TAG" "--wait" "--timeout=10m")
-    if ! kubectl --context="$KUBE_CONTEXT" get namespace "$NAMESPACE" &>/dev/null; then
-        helm_args+=("--create-namespace")
-    fi
-    if [ "$DRY_RUN" -eq 1 ]; then
-        helm_args+=("--dry-run")
-        log_warn "DRY RUN MODE"
-    fi
-    helm "${helm_args[@]}"
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
 }
 
-do_rollback() {
-    log_section "Rolling Back"
-    helm rollback "$RELEASE_NAME" --kube-context="$KUBE_CONTEXT" -n "$NAMESPACE"
-    log_info "Rollback completed"
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-verify_deployment() {
-    if [ "$DRY_RUN" -eq 1 ]; then return 0; fi
-    log_section "Verifying Deployment"
-    kubectl --context="$KUBE_CONTEXT" -n "$NAMESPACE" rollout status deployment/"$RELEASE_NAME" --timeout=300s || true
-    kubectl --context="$KUBE_CONTEXT" -n "$NAMESPACE" get pods
+usage() {
+    echo "Usage: $0 [OPTIONS] [IMAGE]"
+    echo ""
+    echo "Deploy Elder images to beta cluster (registry-dal2.penguintech.io)"
+    echo ""
+    echo "IMAGE:"
+    echo "  all       Build and deploy all images (default)"
+    echo "  api       Build and deploy only elder-api"
+    echo "  web       Build and deploy only elder-web"
+    echo "  scanner   Build and deploy only elder-scanner"
+    echo "  connector Build and deploy only elder-connector"
+    echo ""
+    echo "OPTIONS:"
+    echo "  -h, --help       Show this help message"
+    echo "  -b, --build-only Build and push images without k8s rollout"
+    echo "  -r, --rollout-only Trigger k8s rollout without building (use existing images)"
+    echo "  --restart        Force pod restart after rollout (ensures new images load)"
+    echo "  -n, --namespace  Kubernetes namespace (default: elder)"
+    echo "  -c, --context    Kubernetes context (default: dal2-beta)"
+    echo ""
+    echo "Examples:"
+    echo "  $0              # Build and deploy all images"
+    echo "  $0 api          # Build and deploy only API"
+    echo "  $0 web          # Build and deploy only Web"
+    echo "  $0 -r           # Rollout all deployments without rebuilding"
+    echo "  $0 -r api       # Rollout only API deployment"
+    exit 0
 }
 
+# Configuration
+REGISTRY="registry-dal2.penguintech.io"
+VERSION_FILE=".version"
+K8S_NAMESPACE="elder"
+K8S_CONTEXT="dal2-beta"
+BUILD_ONLY=false
+ROLLOUT_ONLY=false
+FORCE_RESTART=false
+TARGET_IMAGE="all"
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --tag=*) IMAGE_TAG="${1#*=}"; shift;;
-        --tag) IMAGE_TAG="$2"; shift 2;;
-        --service=*) SERVICE="${1#*=}"; shift;;
-        --service) SERVICE="$2"; shift 2;;
-        --skip-build) BUILD_IMAGES=0; shift;;
-        --dry-run) DRY_RUN=1; shift;;
-        --rollback) ROLLBACK=1; shift;;
-        -h|--help) echo "Usage: $0 [--tag=TAG] [--service=SVC] [--skip-build] [--dry-run] [--rollback]"; exit 0;;
-        *) log_error "Unknown: $1"; exit 1;;
+        -h|--help)
+            usage
+            ;;
+        -b|--build-only)
+            BUILD_ONLY=true
+            shift
+            ;;
+        -r|--rollout-only)
+            ROLLOUT_ONLY=true
+            shift
+            ;;
+        --restart)
+            FORCE_RESTART=true
+            shift
+            ;;
+        -n|--namespace)
+            K8S_NAMESPACE="$2"
+            shift 2
+            ;;
+        -c|--context)
+            K8S_CONTEXT="$2"
+            shift 2
+            ;;
+        all|api|web|scanner|connector)
+            TARGET_IMAGE="$1"
+            shift
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            usage
+            ;;
     esac
 done
 
-main() {
-    log_section "Elder - Beta Deployment"
-    check_prerequisites || exit 1
-    if [ "$ROLLBACK" -eq 1 ]; then do_rollback; exit $?; fi
-    if [ "$BUILD_IMAGES" -eq 1 ]; then build_and_push_images || exit 2; fi
-    do_deploy || exit 3
-    verify_deployment
-    log_section "Deployment Summary"
-    echo -e "${GREEN}✓${NC} Release: $RELEASE_NAME"
-    echo -e "${GREEN}✓${NC} Namespace: $NAMESPACE"
-    echo -e "${GREEN}✓${NC} Tag: $IMAGE_TAG"
-    echo -e "${GREEN}✓${NC} URL: https://$APP_HOST"
-    log_info "Deployment complete!"
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_ROOT"
+
+# Read version from .version file
+if [ ! -f "$VERSION_FILE" ]; then
+    log_error "Version file not found: $VERSION_FILE"
+    exit 1
+fi
+
+VERSION=$(cat "$VERSION_FILE" | tr -d '\n')
+log_info "Version: $VERSION"
+log_info "Target: $TARGET_IMAGE"
+log_info "Namespace: $K8S_NAMESPACE"
+log_info "Context: $K8S_CONTEXT"
+echo ""
+
+# Image configurations: name, dockerfile, context, deployment_name, container_name
+declare -A IMAGES
+IMAGES[api]="apps/api/Dockerfile:.:elder-api:api"
+IMAGES[web]="web/Dockerfile:.:elder-web:web"
+IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner:elder-scanner:scanner"
+IMAGES[connector]="apps/connector/Dockerfile:.:elder-connector:connector"
+
+build_and_push_image() {
+    local name=$1
+    local config=${IMAGES[$name]}
+
+    if [ -z "$config" ]; then
+        log_error "Unknown image: $name"
+        return 1
+    fi
+
+    IFS=':' read -r dockerfile context _ _ <<< "$config"
+    local image_name="elder-${name}"
+
+    log_info "Building ${image_name}..."
+
+    # Prepare build args
+    local build_args=(
+        --file "$dockerfile"
+        --tag "${REGISTRY}/${image_name}:${VERSION}"
+        --tag "${REGISTRY}/${image_name}:latest"
+    )
+
+    # Add GitHub token for web builds (needed for @penguintechinc packages)
+    if [ "$name" = "web" ]; then
+        if [ -f "$HOME/code/.gh-token" ]; then
+            GITHUB_TOKEN=$(cat "$HOME/code/.gh-token" | grep -v '^#' | head -1)
+            build_args+=(--build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}")
+            log_info "Using GitHub token for package authentication"
+        else
+            log_error "GitHub token not found at ~/code/.gh-token (required for web build)"
+            return 1
+        fi
+    fi
+
+    docker build "${build_args[@]}" "$context"
+
+    log_success "Built ${image_name}"
+
+    log_info "Pushing ${image_name} to ${REGISTRY}..."
+    docker push "${REGISTRY}/${image_name}:${VERSION}"
+    docker push "${REGISTRY}/${image_name}:latest"
+
+    log_success "Pushed ${image_name}"
 }
 
-main
+rollout_deployment() {
+    local name=$1
+    local config=${IMAGES[$name]}
+
+    if [ -z "$config" ]; then
+        log_error "Unknown image: $name"
+        return 1
+    fi
+
+    IFS=':' read -r _ _ deployment_name container_name <<< "$config"
+    local image_name="elder-${name}"
+
+    log_info "Updating deployment ${deployment_name}..."
+
+    # Check if deployment exists
+    if ! kubectl --context="$K8S_CONTEXT" get deployment "$deployment_name" -n "$K8S_NAMESPACE" &>/dev/null; then
+        log_warn "Deployment ${deployment_name} not found in namespace ${K8S_NAMESPACE}, skipping"
+        return 0
+    fi
+
+    # Update image and trigger rollout
+    kubectl --context="$K8S_CONTEXT" set image \
+        "deployment/${deployment_name}" \
+        "${container_name}=${REGISTRY}/${image_name}:${VERSION}" \
+        -n "$K8S_NAMESPACE"
+
+    log_info "Waiting for rollout to complete..."
+    kubectl --context="$K8S_CONTEXT" rollout status \
+        "deployment/${deployment_name}" \
+        -n "$K8S_NAMESPACE" \
+        --timeout=300s
+
+    # Force restart if requested (ensures image cache is cleared)
+    if [ "$FORCE_RESTART" = true ]; then
+        log_info "Force restarting deployment ${deployment_name}..."
+        kubectl --context="$K8S_CONTEXT" rollout restart \
+            "deployment/${deployment_name}" \
+            -n "$K8S_NAMESPACE"
+
+        log_info "Waiting for restart to complete..."
+        kubectl --context="$K8S_CONTEXT" rollout status \
+            "deployment/${deployment_name}" \
+            -n "$K8S_NAMESPACE" \
+            --timeout=300s
+    fi
+
+    log_success "Deployment ${deployment_name} rolled out successfully"
+}
+
+# Determine which images to process
+if [ "$TARGET_IMAGE" = "all" ]; then
+    TARGETS=("api" "web")  # Default to api and web for 'all'
+else
+    TARGETS=("$TARGET_IMAGE")
+fi
+
+# Build and push phase
+if [ "$ROLLOUT_ONLY" = false ]; then
+    log_info "=== Building and Pushing Images ==="
+    for target in "${TARGETS[@]}"; do
+        build_and_push_image "$target"
+        echo ""
+    done
+fi
+
+# Rollout phase
+if [ "$BUILD_ONLY" = false ]; then
+    log_info "=== Updating Kubernetes Deployments ==="
+    for target in "${TARGETS[@]}"; do
+        rollout_deployment "$target"
+        echo ""
+    done
+fi
+
+log_success "=== Deployment Complete ==="
+echo ""
+log_info "Deployed images:"
+for target in "${TARGETS[@]}"; do
+    log_info "  - ${REGISTRY}/elder-${target}:${VERSION}"
+done
+echo ""
+log_info "To check status:"
+log_info "  kubectl --context=${K8S_CONTEXT} get pods -n ${K8S_NAMESPACE}"
+log_info "  kubectl --context=${K8S_CONTEXT} logs -f deployment/elder-api -n ${K8S_NAMESPACE}"

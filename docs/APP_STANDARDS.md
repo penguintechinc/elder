@@ -305,13 +305,13 @@ This approach:
 **Deployment**:
 ```bash
 # Deploy API and Web to beta cluster
-./scripts/deploy-to-beta.sh all
+./scripts/deploy-beta.sh all
 
 # Deploy only API
-./scripts/deploy-to-beta.sh api
+./scripts/deploy-beta.sh api
 
 # Rollout only (no rebuild)
-./scripts/deploy-to-beta.sh -r all
+./scripts/deploy-beta.sh -r all
 ```
 
 **Smoke Tests**:
