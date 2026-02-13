@@ -5,8 +5,10 @@ FROM node:18-slim AS builder
 # VITE_API_URL defaults to empty string - nginx proxies /api/* to API server
 # Only set VITE_API_URL for development or when API is on a different domain
 ARG VITE_API_URL=
+ARG VITE_VERSION=0.0.0
 ARG VITE_BUILD_TIME
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_VERSION=$VITE_VERSION
 ENV VITE_BUILD_TIME=$VITE_BUILD_TIME
 
 # GitHub token for private package access

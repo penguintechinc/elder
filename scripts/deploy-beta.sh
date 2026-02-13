@@ -148,6 +148,8 @@ build_and_push_image() {
         --file "$dockerfile"
         --tag "${REGISTRY}/${image_name}:${VERSION}"
         --tag "${REGISTRY}/${image_name}:latest"
+        --build-arg "VITE_VERSION=${VERSION}"
+        --build-arg "VITE_BUILD_TIME=$(date +%s)"
     )
 
     # Add GitHub token for web builds (needed for @penguintechinc packages)
