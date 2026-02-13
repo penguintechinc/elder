@@ -1,0 +1,205 @@
+{{- range $component := list "postgres" "redis" "web" "api" "scanner" "connector" "prometheus" "alertmanager" "grafana" }}
+{{- $componentConfig := index $.Values $component }}
+{{- if $componentConfig.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
+spec:
+  {{- if not (hasKey $componentConfig "autoscaling") }}
+  replicas: {{ $componentConfig.replicaCount | default 1 }}
+  {{- else if not $componentConfig.autoscaling.enabled }}
+  replicas: {{ $componentConfig.replicaCount | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list $component $) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "elder.componentSelectorLabels" (list $component $) | nindent 8 }}
+    spec:
+      {{- with $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "elder.serviceAccountName" $ }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      containers:
+      - name: {{ $component }}
+        image: {{ include "elder.image" (list $component $) }}
+        imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
+        {{- if $componentConfig.env }}
+        env:
+        {{- range $key, $value := $componentConfig.env }}
+        - name: {{ $key }}
+          value: {{ $value | quote }}
+        {{- end }}
+        {{- end }}
+        ports:
+        {{- if eq $component "postgres" }}
+        - name: postgres
+          containerPort: 5432
+          protocol: TCP
+        {{- else if eq $component "redis" }}
+        - name: redis
+          containerPort: 6379
+          protocol: TCP
+        {{- else if eq $component "web" }}
+        - name: http
+          containerPort: {{ $componentConfig.service.targetPort }}
+          protocol: TCP
+        {{- else if eq $component "api" }}
+        - name: http
+          containerPort: {{ $componentConfig.service.targetPort }}
+          protocol: TCP
+        - name: grpc
+          containerPort: {{ $componentConfig.service.grpcPort }}
+          protocol: TCP
+        {{- else if eq $component "connector" }}
+        - name: http
+          containerPort: {{ $componentConfig.service.targetPort }}
+          protocol: TCP
+        {{- else if eq $component "prometheus" }}
+        - name: http
+          containerPort: 9090
+          protocol: TCP
+        {{- else if eq $component "alertmanager" }}
+        - name: http
+          containerPort: 9093
+          protocol: TCP
+        {{- else if eq $component "grafana" }}
+        - name: http
+          containerPort: 3000
+          protocol: TCP
+        {{- end }}
+        {{- if $componentConfig.healthcheck }}
+        {{- if $componentConfig.healthcheck.enabled }}
+        livenessProbe:
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "connector") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          httpGet:
+            path: {{ $componentConfig.healthcheck.path }}
+            port: http
+          {{- else if eq $component "postgres" }}
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U {{ $componentConfig.env.POSTGRES_USER }} -d {{ $componentConfig.env.POSTGRES_DB }}
+          {{- else if eq $component "redis" }}
+          exec:
+            command:
+            - redis-cli
+            - ping
+          {{- end }}
+          initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
+          periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
+          timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
+          failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
+        readinessProbe:
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "connector") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          httpGet:
+            path: {{ $componentConfig.healthcheck.path }}
+            port: http
+          {{- else if eq $component "postgres" }}
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - pg_isready -U {{ $componentConfig.env.POSTGRES_USER }} -d {{ $componentConfig.env.POSTGRES_DB }}
+          {{- else if eq $component "redis" }}
+          exec:
+            command:
+            - redis-cli
+            - ping
+          {{- end }}
+          initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
+          periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
+          timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
+          failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
+        {{- end }}
+        {{- end }}
+        resources:
+          {{- toYaml $componentConfig.resources | nindent 10 }}
+        {{- if $componentConfig.persistence }}
+        {{- if $componentConfig.persistence.enabled }}
+        volumeMounts:
+        {{- if eq $component "postgres" }}
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        {{- else if eq $component "redis" }}
+        - name: data
+          mountPath: /data
+        {{- else if eq $component "scanner" }}
+        - name: data
+          mountPath: /app/screenshots
+        {{- else if eq $component "connector" }}
+        - name: data
+          mountPath: /app/credentials
+        {{- else if eq $component "prometheus" }}
+        - name: data
+          mountPath: /prometheus
+        {{- else if eq $component "alertmanager" }}
+        - name: data
+          mountPath: /alertmanager
+        {{- else if eq $component "grafana" }}
+        - name: data
+          mountPath: /var/lib/grafana
+        {{- end }}
+        {{- end }}
+        {{- end }}
+        {{- if and (eq $component "scanner") ($componentConfig.securityContext) }}
+        securityContext:
+          {{- toYaml $componentConfig.securityContext | nindent 10 }}
+        {{- else }}
+        securityContext:
+          {{- toYaml $.Values.securityContext | nindent 10 }}
+        {{- end }}
+      {{- if $componentConfig.persistence }}
+      {{- if $componentConfig.persistence.enabled }}
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
+      {{- end }}
+      {{- end }}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- if $componentConfig.persistence }}
+{{- if $componentConfig.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if $componentConfig.persistence.storageClass }}
+  storageClassName: {{ $componentConfig.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $componentConfig.persistence.size }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

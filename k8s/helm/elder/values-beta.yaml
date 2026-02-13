@@ -1,0 +1,264 @@
+# Beta environment overrides
+# Staging / pre-production environment
+
+namespace: elder-beta
+
+# Global settings for beta
+global:
+  imageRegistry: registry-dal2.penguintech.io
+  imagePullSecrets:
+    - name: penguintech-registry
+
+# PostgreSQL - 2 replicas for beta
+postgres:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/postgres
+    tag: 17-bookworm
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "fast-ssd"
+
+# Redis - 2 replicas for beta
+redis:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/redis
+    tag: 7-bookworm
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: "fast-ssd"
+
+# Elder Web UI - 2 replicas for beta
+web:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/elder-web
+    tag: beta-latest
+    pullPolicy: Always
+  buildArgs:
+    VITE_API_URL: "https://elder.penguintech.io/api"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+# Elder Flask API - 2 replicas for beta
+api:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/elder-api
+    tag: beta-latest
+    pullPolicy: Always
+  env:
+    FLASK_ENV: production
+    SECRET_KEY: "CHANGE-IN-PRODUCTION-BETA"
+    SITE_URL: "https://elder.penguintech.io"
+    LOG_LEVEL: INFO
+    RELEASE_MODE: "false"
+    GRPC_REQUIRE_LICENSE: "true"
+    LICENSE_SERVER_URL: "https://license.penguintech.io"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# Scanner Service - 2 replicas for beta
+scanner:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/elder-scanner
+    tag: beta-latest
+    pullPolicy: Always
+  env:
+    SCANNER_POLL_INTERVAL: "300"
+    LOG_LEVEL: INFO
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "fast-ssd"
+
+# Connector Service - 2 replicas for beta
+connector:
+  enabled: true
+  replicaCount: 2
+  image:
+    repository: registry-dal2.penguintech.io/elder-connector
+    tag: beta-latest
+    pullPolicy: Always
+  env:
+    LOG_LEVEL: INFO
+    LOG_FORMAT: json
+    SYNC_ON_STARTUP: "true"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "fast-ssd"
+
+# Prometheus - Enabled in beta
+prometheus:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: registry-dal2.penguintech.io/prom/prometheus
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "fast-ssd"
+
+# Alertmanager - Enabled in beta
+alertmanager:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: registry-dal2.penguintech.io/prom/alertmanager
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: "fast-ssd"
+
+# Grafana - Enabled in beta
+grafana:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: registry-dal2.penguintech.io/grafana/grafana
+    pullPolicy: Always
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "fast-ssd"
+
+# Ingress - Enabled in beta with TLS
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: elder.penguintech.io
+      paths:
+        - path: /
+          pathType: Prefix
+          service: web
+          port: 80
+        - path: /api
+          pathType: Prefix
+          service: api
+          port: 5000
+  tls:
+    - secretName: elder-tls
+      hosts:
+        - elder.penguintech.io
+
+# Service Account
+serviceAccount:
+  create: true
+  name: "elder-beta"
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+
+# Security Context - Strict for beta
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Node affinity for production nodes
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: node-role.kubernetes.io/production
+              operator: In
+              values:
+                - "true"
