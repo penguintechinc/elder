@@ -148,12 +148,15 @@ build_and_push_image() {
         --file "$dockerfile"
         --tag "${REGISTRY}/${image_name}:${VERSION}"
         --tag "${REGISTRY}/${image_name}:latest"
-        --build-arg "VITE_VERSION=${VERSION}"
-        --build-arg "VITE_BUILD_TIME=$(date +%s)"
     )
 
-    # Add GitHub token for web builds (needed for @penguintechinc packages)
+    # Add service-specific build args
     if [ "$name" = "web" ]; then
+        # Web-specific: Vite env vars
+        build_args+=(--build-arg "VITE_VERSION=${VERSION}")
+        build_args+=(--build-arg "VITE_BUILD_TIME=$(date +%s)")
+
+        # GitHub token for @penguintechinc packages
         if [ -f "$HOME/code/.gh-token" ]; then
             GITHUB_TOKEN=$(cat "$HOME/code/.gh-token" | grep -v '^#' | head -1)
             build_args+=(--build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}")
@@ -162,6 +165,9 @@ build_and_push_image() {
             log_error "GitHub token not found at ~/code/.gh-token (required for web build)"
             return 1
         fi
+    elif [ "$name" = "api" ]; then
+        # API-specific: Flask app version
+        build_args+=(--build-arg "APP_VERSION=${VERSION}")
     fi
 
     docker build "${build_args[@]}" "$context"
