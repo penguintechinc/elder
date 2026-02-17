@@ -58,7 +58,7 @@ web:
     tag: beta-latest
     pullPolicy: Always
   buildArgs:
-    VITE_API_URL: "https://elder.penguintech.io/api"
+    VITE_API_URL: "https://elder.penguintech.cloud/api"
   resources:
     requests:
       memory: "128Mi"
@@ -83,7 +83,7 @@ api:
   env:
     FLASK_ENV: production
     SECRET_KEY: "CHANGE-IN-PRODUCTION-BETA"
-    SITE_URL: "https://elder.penguintech.io"
+    SITE_URL: "https://elder.penguintech.cloud"
     LOG_LEVEL: INFO
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "true"
@@ -218,7 +218,7 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
   hosts:
-    - host: elder.penguintech.io
+    - host: elder.penguintech.cloud
       paths:
         - path: /
           pathType: Prefix
@@ -231,7 +231,7 @@ ingress:
   tls:
     - secretName: elder-tls
       hosts:
-        - elder.penguintech.io
+        - elder.penguintech.cloud
 
 # Service Account
 serviceAccount:
