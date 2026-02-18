@@ -43,14 +43,14 @@ ingress:
   enabled: true
   className: nginx
   hosts:
-    - host: elder.penguintech.io
+    - host: elder.penguintech.cloud
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: penguintech-wildcard-tls
+    - secretName: penguintech-cloud-wildcard-tls
       hosts:
-        - elder.penguintech.io
+        - elder.penguintech.cloud
 
 postgresql:
   enabled: true
