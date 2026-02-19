@@ -3,7 +3,7 @@
 [![Continuous Integration](https://github.com/penguintechinc/elder/actions/workflows/ci.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml)
 [![Test Coverage](https://codecov.io/gh/penguintechinc/elder/branch/main/graph/badge.svg)](https://codecov.io/gh/penguintechinc/elder)
-[![Version](https://img.shields.io/badge/version-3.0.8-green.svg)](https://github.com/penguintechinc/elder/releases)
+[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/penguintechinc/elder/releases)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: Limited AGPL v3](https://img.shields.io/badge/License-Limited_AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)*
@@ -239,7 +239,19 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 
-### v3.0 Highlights (Latest)
+### v3.1.0 Highlights (Latest)
+- **Periodic Access Review System**: Automated quarterly/annual access reviews for identity groups with Okta sync (Enterprise)
+  - Background scheduler creates reviews hourly; owners review members with Keep/Remove/Extend decisions
+  - Full audit logging for compliance; member removals auto-sync to Okta
+  - IAM → Access Reviews tab with real-time progress tracking and overdue warnings
+- **LoginPageBuilder Integration**: Migrated login page to `react-libs` LoginPageBuilder for consistent UX
+- **LXD Compute Sub-types**: Added LXD Container and LXD VM as entity sub-types under Compute
+- **Version Injection**: APP_VERSION, VITE_VERSION, and VITE_BUILD_TIME injected into containers at build time
+- **Playwright Web UI Test Suite**: 18 browser automation tests covering all pages, navigation, forms, and modals
+- **K8s Deployment Standardization**: Helm + Kustomize values for alpha (`.localhost.local`) and beta (`.penguintech.cloud`)
+
+### v3.0.x Highlights
+- **v3.0.9**: Connector entity client fixes (removed invalid update fields, added sub_type support); Express and dependency security updates
 - **OpenID Connect (OIDC)**: Full OIDC support alongside SAML for SSO integration
 - **Data Stores Tracking**: Track S3, GCS, Azure Blob, NAS, SAN, databases, and data lakes with compliance metadata (PII, PHI, PCI flags)
 - **Group Membership Management**: Approval workflows, access requests, owner reviews, and multi-provider write-back (LDAP + Okta)
