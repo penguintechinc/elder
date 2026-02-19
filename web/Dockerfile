@@ -26,8 +26,10 @@ RUN echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
 
 # Install dependencies fresh for current architecture
 # @penguintechinc/react-libs installed from GitHub Packages
-RUN npm install --ignore-scripts && \
-    npm rebuild esbuild lightningcss && \
+# Note: npm install (not --ignore-scripts) is required so that native modules
+# (esbuild, lightningcss) correctly resolve platform-specific optional deps.
+# See: https://github.com/npm/cli/issues/4828
+RUN npm install && \
     rm -f .npmrc
 
 # Copy source code
