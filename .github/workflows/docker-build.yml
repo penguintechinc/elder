@@ -47,6 +47,21 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Checkout penguin-libs (for API build)
+      if: matrix.service.name == 'api'
+      uses: actions/checkout@v4
+      with:
+        repository: penguintechinc/penguin-libs
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: _penguin-libs
+
+    - name: Prepare libs/penguin-libs (for API build)
+      if: matrix.service.name == 'api'
+      run: |
+        mkdir -p libs
+        cp -r _penguin-libs/packages/python-libs libs/penguin-libs
+        rm -rf _penguin-libs
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
