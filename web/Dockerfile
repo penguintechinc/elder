@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-slim AS builder
+FROM node:20-slim AS builder
 
 # Build arguments for Vite
 # VITE_API_URL defaults to empty string - nginx proxies /api/* to API server
