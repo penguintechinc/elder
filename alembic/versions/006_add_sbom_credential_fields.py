@@ -10,6 +10,7 @@ Uses the same credential pattern as discovery_jobs (builtin_secrets reference).
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -21,15 +22,26 @@ depends_on = None
 
 def upgrade():
     """Add credential fields for private repo authentication."""
-    # Add credential fields to sbom_scans table
-    op.add_column('sbom_scans', sa.Column('credential_type', sa.String(50), nullable=True))
-    op.add_column('sbom_scans', sa.Column('credential_id', sa.Integer(), nullable=True))
-    op.add_column('sbom_scans', sa.Column('credential_mapping', sa.JSON(), nullable=True))
+    bind = op.get_bind()
+    inspector = inspect(bind)
 
-    # Add credential fields to sbom_scan_schedules table
-    op.add_column('sbom_scan_schedules', sa.Column('credential_type', sa.String(50), nullable=True))
-    op.add_column('sbom_scan_schedules', sa.Column('credential_id', sa.Integer(), nullable=True))
-    op.add_column('sbom_scan_schedules', sa.Column('credential_mapping', sa.JSON(), nullable=True))
+    # Add credential fields to sbom_scans table (idempotent — PyDAL may have created them)
+    existing = {c['name'] for c in inspector.get_columns('sbom_scans')}
+    if 'credential_type' not in existing:
+        op.add_column('sbom_scans', sa.Column('credential_type', sa.String(50), nullable=True))
+    if 'credential_id' not in existing:
+        op.add_column('sbom_scans', sa.Column('credential_id', sa.Integer(), nullable=True))
+    if 'credential_mapping' not in existing:
+        op.add_column('sbom_scans', sa.Column('credential_mapping', sa.JSON(), nullable=True))
+
+    # Add credential fields to sbom_scan_schedules table (idempotent)
+    existing = {c['name'] for c in inspector.get_columns('sbom_scan_schedules')}
+    if 'credential_type' not in existing:
+        op.add_column('sbom_scan_schedules', sa.Column('credential_type', sa.String(50), nullable=True))
+    if 'credential_id' not in existing:
+        op.add_column('sbom_scan_schedules', sa.Column('credential_id', sa.Integer(), nullable=True))
+    if 'credential_mapping' not in existing:
+        op.add_column('sbom_scan_schedules', sa.Column('credential_mapping', sa.JSON(), nullable=True))
 
 
 def downgrade():

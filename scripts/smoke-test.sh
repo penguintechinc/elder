@@ -338,9 +338,9 @@ fi
 
 # Test authentication - login
 log_info "Testing authentication..."
-LOGIN_RESPONSE=$(do_curl -sf -X POST "$API_URL/api/v1/auth/login" \
+LOGIN_RESPONSE=$(do_curl -sf -X POST "$API_URL/api/v1/portal-auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\": \"$ADMIN_USERNAME\", \"password\": \"$ADMIN_PASSWORD\"}" 2>/dev/null || echo "")
+    -d "{\"email\": \"$ADMIN_USERNAME\", \"password\": \"$ADMIN_PASSWORD\"}" 2>/dev/null || echo "")
 
 TOKEN=""
 if echo "$LOGIN_RESPONSE" | grep -qi "access_token\|token"; then

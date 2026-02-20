@@ -153,10 +153,44 @@ def init_db(app):
     # Attach to Flask app for use in endpoints
     app.db = db
 
-    # Import and define all tables
+    # Import and define all tables.
+    # pydal_models.py uses migrate=False per-table (safe for production where schema
+    # already exists), but this prevents PyDAL from creating tables on a fresh DB.
+    # Patch define_table to strip per-table migrate=False for BASE tables only, so
+    # the DAL-level migrate=True takes effect for them. Enterprise tables (managed by
+    # Alembic migrations) keep migrate=False — Alembic creates those after PyDAL.
+    # PyDAL's migrate is idempotent — it only adds missing tables/columns.
     from apps.api.models.pydal_models import define_all_tables
 
+    # Tables created by Alembic migrations (001, 003, 008, 009).
+    # These must NOT be auto-created by PyDAL — Alembic owns their schema.
+    # Also includes tables that have FK dependencies on Alembic-managed tables;
+    # those must wait for Alembic to create their dependencies first.
+    _ALEMBIC_MANAGED_TABLES = {
+        # Migration 001: enterprise feature tables
+        "resource_roles", "issue_labels", "issues", "issue_label_assignments",
+        "issue_comments", "issue_entity_links", "metadata_fields",
+        # Migration 003: alerting
+        "alert_configurations",
+        # Migration 008: on-call rotations
+        "on_call_rotations", "on_call_rotation_participants",
+        "on_call_escalation_policies", "on_call_overrides",
+        "on_call_shifts", "on_call_notifications",
+        # Migration 009: cross-boundary link tables (depend on issue_labels/issues)
+        "issue_milestone_links", "issue_project_links",
+    }
+
+    _orig_define_table = db.define_table
+
+    def _define_table_allowing_migrate(*args, **kwargs):
+        table_name = args[0] if args else kwargs.get("tablename", "")
+        if table_name not in _ALEMBIC_MANAGED_TABLES:
+            kwargs.pop("migrate", None)
+        return _orig_define_table(*args, **kwargs)
+
+    db.define_table = _define_table_allowing_migrate
     define_all_tables(db)
+    db.define_table = _orig_define_table
 
     # Create default admin user if not exists
     _create_default_admin(app, db)
