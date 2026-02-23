@@ -189,8 +189,8 @@ services:
     restart: unless-stopped
     networks:
       - elder-network
-    volumes:
-      - scanner_screenshots:/app/screenshots
+    tmpfs:
+      - /app/screenshots:size=1G
 
   # Prometheus Monitoring
   prometheus:
@@ -267,16 +267,21 @@ services:
       - elder-network
     restart: unless-stopped
 
-  # Elder Connector Service
-  connector:
+  # Elder Worker Service
+  worker:
     build:
       context: .
-      dockerfile: apps/connector/Dockerfile
-    container_name: elder-connector
+      dockerfile: apps/worker/Dockerfile
+    container_name: elder-worker
     environment:
       # Elder API Configuration
       - ELDER_API_URL=http://api:5000
       - ELDER_API_KEY=${ELDER_API_KEY}
+
+      # Database (direct access for discovery jobs)
+      - DATABASE_URL=postgres://${POSTGRES_USER:-elder}:${POSTGRES_PASSWORD:-elder_dev_password}@postgres:5432/${POSTGRES_DB:-elder}
+      - DATABASE_READ_URL=
+      - DB_POOL_SIZE=10
 
       # AWS Configuration
       - AWS_ENABLED=${AWS_ENABLED:-false}
@@ -339,14 +344,15 @@ services:
       - LOG_FORMAT=${LOG_FORMAT:-json}
 
     ports:
-      - "${CONNECTOR_HEALTH_PORT:-28000}:28000"
+      - "${WORKER_HEALTH_PORT:-28000}:28000"
     depends_on:
+      postgres:
+        condition: service_healthy
       api:
         condition: service_healthy
     volumes:
-      - ./apps/connector:/app/apps/connector
+      - ./apps/worker:/app/apps/worker
       - ./shared:/app/shared
-      - connector_credentials:/app/credentials
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:28000/healthz"]
       interval: 30s
@@ -368,10 +374,6 @@ volumes:
   grafana_data:
     driver: local
   pydal_migrations:
-    driver: local
-  connector_credentials:
-    driver: local
-  scanner_screenshots:
     driver: local
 
 networks:

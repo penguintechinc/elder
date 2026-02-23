@@ -43,7 +43,7 @@ async def get_graph():
             "edges": [{"from": 1, "to": 2, "type": "depends_on", ...}]
         }
     """
-    db = current_app.db
+    db = current_app.db_read
 
     # Get filter parameters
     org_id = request.args.get("organization_id", type=int)
@@ -165,7 +165,7 @@ async def analyze_graph():
     Returns:
         200: Graph analysis metrics
     """
-    db = current_app.db
+    db = current_app.db_read
 
     org_id = request.args.get("organization_id", type=int)
 
@@ -294,7 +294,7 @@ async def find_path():
         200: Path information
         404: No path found
     """
-    db = current_app.db
+    db = current_app.db_read
 
     from_id = request.args.get("from", type=int)
     to_id = request.args.get("to", type=int)
@@ -386,7 +386,7 @@ async def get_map():
     Returns:
         200: Graph data in vis.js compatible format
     """
-    db = current_app.db
+    db = current_app.db_read
 
     # Get filter parameters
     tenant_id = request.args.get("tenant_id", type=int)

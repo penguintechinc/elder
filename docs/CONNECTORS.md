@@ -1,6 +1,6 @@
 # Elder Connectors Documentation
 
-Elder Connectors are discovery integrations that automatically sync resources from external platforms into Elder. All connectors are read-only and run as part of the Connector Service.
+Elder Connectors are discovery integrations that automatically sync resources from external platforms into Elder. All connectors are read-only and run as part of the Worker Service.
 
 ## Available Connectors
 
@@ -176,7 +176,7 @@ K8S_SYNC_INTERVAL=3600
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: elder-connector
+  name: elder-worker
 rules:
 - apiGroups: [""]
   resources: ["namespaces", "pods", "services", "secrets", "configmaps", "persistentvolumes", "persistentvolumeclaims", "serviceaccounts"]
@@ -347,26 +347,26 @@ FleetDM CVSS scores are mapped to severity levels:
 
 ---
 
-## Running the Connector Service
+## Running the Worker Service
 
 ### Docker Compose
 
 ```bash
-docker-compose up -d connector
+docker-compose up -d worker
 ```
 
 ### Standalone
 
 ```bash
-cd apps/connector
+cd apps/worker
 python3 -m main
 ```
 
 ### Test Connectivity
 
 ```bash
-docker-compose exec connector \
-  python3 /app/apps/connector/test_connectivity.py
+docker-compose exec worker \
+  python3 /app/apps/worker/test_connectivity.py
 ```
 
 ### Health Check
@@ -452,7 +452,7 @@ LOG_LEVEL=DEBUG
 
 ```python
 # In Python shell
-from apps.connector.connectors.aws_connector import AWSConnector
+from apps.worker.connectors.aws_connector import AWSConnector
 
 async def test():
     connector = AWSConnector()

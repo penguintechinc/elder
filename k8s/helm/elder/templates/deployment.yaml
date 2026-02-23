@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "connector" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "prometheus" "alertmanager" "grafana" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
@@ -61,7 +61,7 @@ spec:
         - name: grpc
           containerPort: {{ $componentConfig.service.grpcPort }}
           protocol: TCP
-        {{- else if eq $component "connector" }}
+        {{- else if eq $component "worker" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
@@ -81,7 +81,7 @@ spec:
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
         livenessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "connector") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -102,7 +102,7 @@ spec:
           timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
           failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
         readinessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "connector") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -126,8 +126,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if $componentConfig.persistence }}
-        {{- if $componentConfig.persistence.enabled }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -136,11 +135,12 @@ spec:
         - name: data
           mountPath: /data
         {{- else if eq $component "scanner" }}
-        - name: data
+        - name: screenshots
           mountPath: /app/screenshots
-        {{- else if eq $component "connector" }}
-        - name: data
-          mountPath: /app/credentials
+        {{- else if eq $component "worker" }}
+        - name: credentials
+          mountPath: /var/run/secrets/elder
+          readOnly: true
         {{- else if eq $component "prometheus" }}
         - name: data
           mountPath: /prometheus
@@ -152,7 +152,6 @@ spec:
           mountPath: /var/lib/grafana
         {{- end }}
         {{- end }}
-        {{- end }}
         {{- if and (eq $component "scanner") ($componentConfig.securityContext) }}
         securityContext:
           {{- toYaml $componentConfig.securityContext | nindent 10 }}
@@ -160,9 +159,18 @@ spec:
         securityContext:
           {{- toYaml $.Values.securityContext | nindent 10 }}
         {{- end }}
-      {{- if $componentConfig.persistence }}
-      {{- if $componentConfig.persistence.enabled }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") }}
       volumes:
+      {{- if eq $component "scanner" }}
+      - name: screenshots
+        emptyDir:
+          sizeLimit: {{ ($componentConfig.screenshotStorage).sizeLimit | default "1Gi" }}
+      {{- else if eq $component "worker" }}
+      - name: credentials
+        secret:
+          secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
+          optional: true
+      {{- else }}
       - name: data
         persistentVolumeClaim:
           claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
@@ -180,8 +188,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- if $componentConfig.persistence }}
-{{- if $componentConfig.persistence.enabled }}
+{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "scanner") (ne $component "worker") }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -199,7 +206,6 @@ spec:
   resources:
     requests:
       storage: {{ $componentConfig.persistence.size }}
-{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}

@@ -229,8 +229,44 @@ class DiscoveryService:
 
     # Discovery Execution
 
+    def queue_job_for_worker(self, job_id: int) -> Dict[str, Any]:
+        """Queue a discovery job for the worker service by setting next_run_at = now.
+
+        The worker polls discovery_jobs and will pick this up on its next cycle.
+
+        Args:
+            job_id: Discovery job ID
+
+        Returns:
+            Status dict with job_id and queued message
+        """
+        job = self.db.discovery_jobs[job_id]
+        if not job:
+            raise Exception(f"Discovery job not found: {job_id}")
+
+        self.db(self.db.discovery_jobs.id == job_id).update(
+            next_run_at=datetime.utcnow(),
+        )
+        self.db.commit()
+
+        logger.info(f"Discovery job {job_id} queued for worker execution")
+        return {
+            "job_id": job_id,
+            "success": True,
+            "message": "Job queued for worker execution",
+            "queued_at": datetime.utcnow().isoformat(),
+        }
+
     def run_discovery(self, job_id: int) -> Dict[str, Any]:
-        """Execute discovery for a job."""
+        """Execute discovery for a job.
+
+        DEPRECATED: Discovery execution in the API is deprecated.
+        Use the worker service instead. Sunset target: v4.0.0
+        """
+        logger.warning(
+            "DEPRECATED: Discovery execution in API is deprecated. "
+            "Use the worker service. Sunset target: v4.0.0"
+        )
         job = self.db.discovery_jobs[job_id]
 
         if not job:

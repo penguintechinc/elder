@@ -118,7 +118,7 @@ CORRUPTED_PACKAGES=(
   "Elder-grpc"
   "Elder-envoy"
   "Elder-scanner"
-  "Elder-connector"
+  "Elder-worker"
 )
 
 for pkg in "${CORRUPTED_PACKAGES[@]}"; do
@@ -140,7 +140,7 @@ CORRECT_PACKAGES=(
   "elder-grpc"
   "elder-envoy"
   "elder-scanner"
-  "elder-connector"
+  "elder-worker"
 )
 
 for pkg in "${CORRECT_PACKAGES[@]}"; do

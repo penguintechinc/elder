@@ -16,9 +16,14 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("discovery", __name__)
 
 
-def get_discovery_service():
-    """Get DiscoveryService instance with current database."""
-    return DiscoveryService(current_app.db)
+def get_discovery_service(read_only=False):
+    """Get DiscoveryService instance with current database.
+
+    Args:
+        read_only: If True, uses read replica connection for queries.
+    """
+    db = current_app.db_read if read_only else current_app.db
+    return DiscoveryService(db)
 
 
 # Discovery Jobs endpoints
@@ -39,7 +44,7 @@ def list_discovery_jobs():
         200: List of discovery jobs
     """
     try:
-        service = get_discovery_service()
+        service = get_discovery_service(read_only=True)
 
         provider = request.args.get("provider")
         enabled = request.args.get("enabled")
@@ -127,7 +132,7 @@ def get_discovery_job(job_id):
         404: Job not found
     """
     try:
-        service = get_discovery_service()
+        service = get_discovery_service(read_only=True)
         job = service.get_job(job_id)
         return jsonify(job), 200
 
@@ -228,16 +233,34 @@ def run_discovery_job(job_id):
     """
     Manually trigger a discovery job.
 
+    DEPRECATED: Synchronous discovery execution in the API is deprecated.
+    The worker service now handles cloud discovery jobs by polling the DB.
+    This endpoint sets next_run_at=now() so the worker picks it up.
+    Pass ?legacy=true to force synchronous execution (emergency fallback).
+
+    Sunset target: v4.0.0
+
     Returns:
-        202: Job started
+        202: Job queued for worker execution
         404: Job not found
     """
     try:
         service = get_discovery_service()
-        result = service.run_discovery(job_id)
 
-        status_code = 202 if result.get("success") else 500
-        return jsonify(result), status_code
+        # Legacy synchronous execution (emergency fallback only)
+        legacy = request.args.get("legacy", "").lower() == "true"
+        if legacy:
+            logger.warning(
+                "DEPRECATED: Synchronous discovery execution via API. "
+                "Use the worker service instead. Sunset target: v4.0.0"
+            )
+            result = service.run_discovery(job_id)
+            status_code = 202 if result.get("success") else 500
+            return jsonify(result), status_code
+
+        # Default: queue for worker by setting next_run_at = now
+        result = service.queue_job_for_worker(job_id)
+        return jsonify(result), 202
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -258,7 +281,7 @@ def get_discovery_job_history(job_id):
         200: Job history
     """
     try:
-        service = get_discovery_service()
+        service = get_discovery_service(read_only=True)
 
         limit = request.args.get("limit", 50, type=int)
 
@@ -283,7 +306,7 @@ def get_all_discovery_history():
         200: Discovery history
     """
     try:
-        service = get_discovery_service()
+        service = get_discovery_service(read_only=True)
 
         limit = request.args.get("limit", 50, type=int)
 
@@ -311,7 +334,7 @@ def get_pending_jobs():
         200: List of pending jobs
     """
     try:
-        service = get_discovery_service()
+        service = get_discovery_service(read_only=True)
         jobs = service.get_pending_jobs()
         return jsonify({"jobs": jobs}), 200
 

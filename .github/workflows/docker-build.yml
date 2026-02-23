@@ -39,8 +39,8 @@ jobs:
             dockerfile: apps/scanner/Dockerfile
             context: apps/scanner
             platforms: linux/amd64,linux/arm64
-          - name: connector
-            dockerfile: apps/connector/Dockerfile
+          - name: worker
+            dockerfile: apps/worker/Dockerfile
             context: .
             platforms: linux/amd64,linux/arm64
     steps:
@@ -130,7 +130,7 @@ jobs:
     if: false
     strategy:
       matrix:
-        service: [api, web, scanner, connector]
+        service: [api, web, scanner, worker]
 
     steps:
     - name: Get short SHA

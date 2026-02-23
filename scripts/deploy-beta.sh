@@ -37,7 +37,7 @@ usage() {
     echo "  api       Build and deploy only elder-api"
     echo "  web       Build and deploy only elder-web"
     echo "  scanner   Build and deploy only elder-scanner"
-    echo "  connector Build and deploy only elder-connector"
+    echo "  worker    Build and deploy only elder-worker"
     echo ""
     echo "OPTIONS:"
     echo "  -h, --help       Show this help message"
@@ -92,7 +92,7 @@ while [[ $# -gt 0 ]]; do
             K8S_CONTEXT="$2"
             shift 2
             ;;
-        all|api|web|scanner|connector)
+        all|api|web|scanner|worker)
             TARGET_IMAGE="$1"
             shift
             ;;
@@ -127,7 +127,7 @@ declare -A IMAGES
 IMAGES[api]="apps/api/Dockerfile:.:elder-api:api"
 IMAGES[web]="web/Dockerfile:.:elder-web:web"
 IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner:elder-scanner:scanner"
-IMAGES[connector]="apps/connector/Dockerfile:.:elder-connector:connector"
+IMAGES[worker]="apps/worker/Dockerfile:.:elder-worker:worker"
 
 build_and_push_image() {
     local name=$1

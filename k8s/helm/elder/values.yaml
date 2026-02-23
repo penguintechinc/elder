@@ -227,20 +227,18 @@ scanner:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: ""
+  screenshotStorage:
+    sizeLimit: "1Gi"
   securityContext:
     capabilities:
       add:
         - NET_ADMIN
 
-# Connector Service
-connector:
+# Worker Service
+worker:
   enabled: true
   image:
-    repository: elder-connector
+    repository: elder-worker
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 1
@@ -253,6 +251,11 @@ connector:
     ELDER_API_URL: "http://api:5000"
     ELDER_API_KEY: ""
 
+    # Database (direct access for discovery jobs)
+    DATABASE_URL: ""
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "10"
+
     # AWS Configuration
     AWS_ENABLED: "false"
     AWS_ACCESS_KEY_ID: ""
@@ -264,12 +267,12 @@ connector:
     # GCP Configuration
     GCP_ENABLED: "false"
     GCP_PROJECT_ID: ""
-    GCP_CREDENTIALS_PATH: "/app/credentials/gcp-credentials.json"
+    GCP_CREDENTIALS_PATH: "/var/run/secrets/elder/gcp-credentials.json"
     GCP_SYNC_INTERVAL: "3600"
 
     # Google Workspace Configuration
     GOOGLE_WORKSPACE_ENABLED: "false"
-    GOOGLE_WORKSPACE_CREDENTIALS_PATH: "/app/credentials/workspace-credentials.json"
+    GOOGLE_WORKSPACE_CREDENTIALS_PATH: "/var/run/secrets/elder/workspace-credentials.json"
     GOOGLE_WORKSPACE_ADMIN_EMAIL: ""
     GOOGLE_WORKSPACE_CUSTOMER_ID: "my_customer"
     GOOGLE_WORKSPACE_SYNC_INTERVAL: "3600"
@@ -310,10 +313,8 @@ connector:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: ""
+  credentialsSecret:
+    name: ""  # K8s Secret name containing credential files (GCP JSON, etc.)
   healthcheck:
     enabled: true
     path: /healthz

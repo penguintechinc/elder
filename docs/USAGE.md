@@ -387,7 +387,7 @@ PRODUCT_NAME=elder
 LICENSE_SERVER_URL=https://license.penguintech.io
 ```
 
-### Connector Service
+### Worker Service
 
 ```bash
 # AWS
@@ -457,12 +457,12 @@ docker-compose exec redis redis-cli ping
 - **Grafana**: http://localhost:4001 (admin/admin)
 - **API Metrics**: http://localhost:4000/metrics
 
-### Connector Service
+### Worker Service
 
 **Test Connectivity:**
 ```bash
-docker-compose exec connector \
-  python3 /app/apps/connector/test_connectivity.py
+docker-compose exec worker \
+  python3 /app/apps/worker/test_connectivity.py
 ```
 
 **View Sync Status:**

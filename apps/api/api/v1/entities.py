@@ -45,7 +45,7 @@ async def list_entities():
     Returns:
         200: List of entities with pagination metadata
     """
-    db = current_app.db
+    db = current_app.db_read
 
     # Get pagination params using helper
     pagination = PaginationParams.from_request()

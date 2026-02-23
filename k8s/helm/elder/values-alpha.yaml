@@ -105,22 +105,24 @@ scanner:
     limits:
       memory: "512Mi"
       cpu: "500m"
-  persistence:
-    enabled: true
-    size: 2Gi
+  screenshotStorage:
+    sizeLimit: "500Mi"
 
-# Connector Service - Single replica for alpha
-connector:
+# Worker Service - Single replica for alpha
+worker:
   enabled: true
   replicaCount: 1
   image:
-    repository: elder-connector
+    repository: elder-worker
     tag: alpha-latest
     pullPolicy: Never
   env:
     LOG_LEVEL: DEBUG
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "false"
+    DATABASE_URL: ""
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
   resources:
     requests:
       memory: "128Mi"
@@ -128,9 +130,8 @@ connector:
     limits:
       memory: "512Mi"
       cpu: "500m"
-  persistence:
-    enabled: true
-    size: 2Gi
+  credentialsSecret:
+    name: ""
 
 # Prometheus - Disabled in alpha
 prometheus:

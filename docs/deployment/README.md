@@ -88,7 +88,7 @@ Docker Compose starts the following services:
 - `redis` - Redis cache
 - `api` - Flask REST API
 - `web` - React web UI
-- `connector` - Data sync service (optional)
+- `worker` - Data sync service (optional)
 - `prometheus` - Metrics collection
 - `grafana` - Monitoring dashboards
 
@@ -202,7 +202,7 @@ kubectl logs -f deployment/elder-api -n elder
 **Deployments:**
 - `elder-api` - API server (2+ replicas)
 - `elder-web` - Web UI
-- `elder-connector` - Connector service (1 replica)
+- `elder-worker` - Worker service (1 replica)
 
 **StatefulSets:**
 - `postgresql` - Database
@@ -333,8 +333,8 @@ alembic upgrade head
 # Start API (systemd service)
 sudo systemctl start elder-api
 
-# Start connector (systemd service)
-sudo systemctl start elder-connector
+# Start worker (systemd service)
+sudo systemctl start elder-worker
 ```
 
 ### Nginx Configuration
@@ -453,7 +453,7 @@ docker-compose logs -f api
 docker-compose logs api > api-logs.txt
 
 # Follow specific service
-docker-compose logs -f --tail=100 connector
+docker-compose logs -f --tail=100 worker
 ```
 
 ## Troubleshooting
@@ -486,17 +486,17 @@ docker-compose exec api env | grep -E "POSTGRES|REDIS|SECRET_KEY"
 docker-compose exec api python3 -c "from apps.api.main import create_app; app = create_app(); print('OK')"
 ```
 
-#### Connector Not Syncing
+#### Worker Not Syncing
 
 ```bash
-# Check connector logs
-docker-compose logs connector
+# Check worker logs
+docker-compose logs worker
 
 # Test connectivity
-docker-compose exec connector python3 /app/apps/connector/test_connectivity.py
+docker-compose exec worker python3 /app/apps/worker/test_connectivity.py
 
 # Verify configuration
-docker-compose exec connector env | grep -E "AWS|GCP|LDAP"
+docker-compose exec worker env | grep -E "AWS|GCP|LDAP"
 ```
 
 ## Performance Tuning
@@ -604,4 +604,4 @@ ALTER SYSTEM SET ssl = on;
 - [Architecture Documentation](../architecture/README.md)
 - [API Documentation](../api/README.md)
 - [Database Schema](../DATABASE.md)
-- [Connector Configuration](../connector/README.md)
+- [Worker Configuration](../worker/README.md)

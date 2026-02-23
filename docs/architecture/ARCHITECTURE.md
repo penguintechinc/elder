@@ -18,7 +18,7 @@ Elder is a multi-tier infrastructure tracking and dependency management platform
 ┌─────────┼─────────────────┼────────────────────┼─────────────┐
 │         ▼                 ▼                    ▼             │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │   REST API   │  │   gRPC API   │  │  Connector Service │ │
+│  │   REST API   │  │   gRPC API   │  │  Worker Service    │ │
 │  │   (Flask)    │  │ (Enterprise) │  │  (Multi-cloud sync)│ │
 │  └──────┬───────┘  └──────┬───────┘  └──────────┬──────────┘ │
 │         │                 │                      │            │
@@ -94,7 +94,7 @@ apps/api/
 - Responsive design
 - Dark mode support
 
-### 3. Connector Service (`apps/connector/`)
+### 3. Worker Service (`apps/worker/`)
 
 **Purpose:** Synchronize external infrastructure and identity data into Elder.
 
@@ -106,7 +106,7 @@ apps/api/
 
 **Architecture:**
 ```
-Connector Service
+Worker Service
 ├── Scheduler (aiocron)
 ├── AWS Connector ──┐
 ├── GCP Connector ──┼─→ Elder API Client ──→ Elder REST API
@@ -114,7 +114,7 @@ Connector Service
 └── LDAP Connector ─┘
 ```
 
-See [Connector Documentation](../connector/README.md) for details.
+See [Worker Documentation](../worker/README.md) for details.
 
 ### 4. gRPC API (Enterprise)
 
@@ -384,7 +384,7 @@ ratelimit:{user_id}:{endpoint}    # Rate limit tracking
 
 ### Async/Concurrent Operations
 
-1. **Connector Service**
+1. **Worker Service**
    - Async HTTP with aiohttp
    - Concurrent sync operations
    - Connection pooling
@@ -439,7 +439,7 @@ http_request_duration_seconds{method, endpoint}
 db_connections_active
 db_query_duration_seconds
 
-# Connector
+# Worker
 connector_sync_total{connector, status}
 connector_entities_synced{connector, operation}
 ```
@@ -498,7 +498,7 @@ connector_entities_synced{connector, operation}
 **Services:**
 - API (multiple replicas)
 - Web UI (static hosting)
-- Connector (single instance)
+- Worker (single instance)
 - gRPC (Enterprise, multiple replicas)
 - PostgreSQL (primary + read replicas)
 - Redis (cluster mode)
@@ -526,7 +526,7 @@ connector_entities_synced{connector, operation}
 ### Horizontal Scaling
 
 - **API**: Stateless, scales linearly
-- **Connector**: Single instance (scheduled jobs)
+- **Worker**: Single instance (scheduled jobs)
 - **Database**: Read replicas for queries
 - **Cache**: Redis cluster
 
@@ -534,7 +534,7 @@ connector_entities_synced{connector, operation}
 
 - **Database**: CPU/memory for large graphs
 - **API**: Memory for large result sets
-- **Connector**: Network I/O for sync operations
+- **Worker**: Network I/O for sync operations
 
 ### Performance Targets
 
@@ -578,7 +578,7 @@ connector_entities_synced{connector, operation}
 ### Planned Enhancements
 
 1. **Microservices Split**
-   - Separate connector service
+   - Separate worker service
    - Dedicated graph service
    - Independent scaling
 

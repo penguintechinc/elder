@@ -18,8 +18,8 @@ bp = Blueprint("search", __name__)
 
 
 def get_search_service():
-    """Get SearchService instance with current database."""
-    return SearchService(current_app.db)
+    """Get SearchService instance with read replica for search queries."""
+    return SearchService(current_app.db_read)
 
 
 # ===========================

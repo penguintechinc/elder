@@ -153,6 +153,26 @@ def init_db(app):
     # Attach to Flask app for use in endpoints
     app.db = db
 
+    # Initialize read replica connection if configured
+    read_url = app.config.get("DATABASE_READ_URL") or os.getenv("DATABASE_READ_URL")
+    if read_url and read_url.strip():
+        read_url_pydal = read_url
+        if read_url_pydal.startswith("postgresql://"):
+            read_url_pydal = read_url_pydal.replace("postgresql://", "postgres://", 1)
+        logger.info("Initializing read replica connection")
+        app.db_read = DAL(
+            read_url_pydal,
+            folder=os.path.join(
+                app.instance_path if hasattr(app, "instance_path") else "/tmp/pydal",
+                "read_replica",
+            ),
+            migrate=False,
+            pool_size=10,
+        )
+    else:
+        # No replica configured — reads go to primary
+        app.db_read = db
+
     # Import and define all tables.
     # pydal_models.py uses migrate=False per-table (safe for production where schema
     # already exists), but this prevents PyDAL from creating tables on a fresh DB.
@@ -160,7 +180,7 @@ def init_db(app):
     # the DAL-level migrate=True takes effect for them. Enterprise tables (managed by
     # Alembic migrations) keep migrate=False — Alembic creates those after PyDAL.
     # PyDAL's migrate is idempotent — it only adds missing tables/columns.
-    from apps.api.models.pydal_models import define_all_tables
+    from shared.models.pydal_models import define_all_tables
 
     # Tables created by Alembic migrations (001, 003, 008, 009).
     # These must NOT be auto-created by PyDAL — Alembic owns their schema.
@@ -191,6 +211,11 @@ def init_db(app):
     db.define_table = _define_table_allowing_migrate
     define_all_tables(db)
     db.define_table = _orig_define_table
+
+    # Define tables on read replica too (if it's a separate connection)
+    if app.db_read is not db:
+        define_all_tables(app.db_read)
+        logger.info("Read replica tables defined")
 
     # Create default admin user if not exists
     _create_default_admin(app, db)
@@ -283,6 +308,9 @@ def get_db_session():
 # Mock db object for imports
 db = None
 
+from shared.database.connection import create_db_connection  # noqa: E402
+from shared.database.manager import DatabaseManager  # noqa: E402
+
 __all__ = [
     "db",
     "init_db",
@@ -291,4 +319,6 @@ __all__ = [
     "get_db_session",
     "ensure_database_ready",
     "log_startup_status",
+    "create_db_connection",
+    "DatabaseManager",
 ]

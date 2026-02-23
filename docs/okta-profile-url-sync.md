@@ -111,7 +111,7 @@ Updates a user's profileUrl in Okta to link to their Elder profile.
 **Example:**
 
 ```python
-from apps.connector.connectors.okta_connector import OktaConnector
+from apps.worker.connectors.okta_connector import OktaConnector
 
 connector = OktaConnector()
 await connector.connect()
@@ -174,13 +174,13 @@ echo $OKTA_SYNC_PROFILE_URL
 **Check Logs:**
 ```bash
 # Look for profile URL update messages
-docker logs elder-connector | grep "update_user_profile_url"
+docker logs elder-worker | grep "update_user_profile_url"
 ```
 
 **Common Issues:**
 1. **Missing village_id**: Identity not synced to Elder yet
 2. **Invalid Okta token**: Check OKTA_API_TOKEN permissions
-3. **Network issues**: Verify connector can reach Okta API
+3. **Network issues**: Verify worker can reach Okta API
 4. **Disabled feature**: Ensure OKTA_SYNC_PROFILE_URL=true
 
 ### Permissions Required

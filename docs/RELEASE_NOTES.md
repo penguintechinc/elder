@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 📦 CI/CD Improvements
 
-- Added `scanner`, `connector`, and `envoy` containers to multi-arch build workflow
+- Added `scanner`, `worker`, and `envoy` containers to multi-arch build workflow
 - All 5 containers now build for both `linux/amd64` and `linux/arm64`
 - Security scanning enabled for all container images
 
@@ -230,7 +230,7 @@ This release includes database schema changes that require migration.
 - **Entity Mappings**:
   - Users → identity (employee/serviceAccount based on attributes)
   - Groups → identity_group with nested group support
-- **File**: `apps/connector/connectors/authentik_connector.py` (474 lines)
+- **File**: `apps/worker/connectors/authentik_connector.py` (474 lines)
 
 #### OIDC SSO Support (Enterprise Feature)
 - **OpenID Connect**: Full OIDC support alongside existing SAML
@@ -280,7 +280,7 @@ This release includes database schema changes that require migration.
 - `apps/api/services/group_membership/ldap_connector.py` - LDAP sync connector
 - `apps/api/services/group_membership/okta_connector.py` - Okta sync connector
 - `apps/api/services/sso/oidc_service.py` (496 lines) - OIDC SSO service
-- `apps/connector/connectors/authentik_connector.py` (474 lines) - Authentik IdP connector
+- `apps/worker/connectors/authentik_connector.py` (474 lines) - Authentik IdP connector
 - `apps/api/migrations/007_v300_data_stores_group_membership.sql` - v3.0.0 migration
 - `web/src/pages/DataStores.tsx` (500+ lines) - Data Stores management UI
 
@@ -1103,13 +1103,13 @@ FLEETDM_SYNC_INTERVAL=3600
 ### 📝 Files Added/Modified
 
 **New Files**:
-- `apps/connector/connectors/iboss_connector.py` (454 lines)
-- `apps/connector/connectors/vcenter_connector.py` (500+ lines)
-- `apps/connector/connectors/fleetdm_connector.py` (489 lines)
+- `apps/worker/connectors/iboss_connector.py` (454 lines)
+- `apps/worker/connectors/vcenter_connector.py` (500+ lines)
+- `apps/worker/connectors/fleetdm_connector.py` (489 lines)
 - `docs/CONNECTORS.md` (460+ lines)
 
 **Modified Files**:
-- `apps/connector/config/settings.py` - Added 15 new configuration fields
+- `apps/worker/config/settings.py` - Added 15 new configuration fields
 - `.version` - Updated to 2.1.0
 
 ### 🔍 Breaking Changes
@@ -1628,9 +1628,9 @@ Elder now discovers and tracks:
 - `apps/api/models/entity_types.py` - Added namespace sub-type and metadata
 
 **Connectors**:
-- `apps/connector/connectors/aws_connector.py` - Added RDS, ElastiCache, SQS sync methods
-- `apps/connector/connectors/k8s_connector.py` - NEW: Complete Kubernetes connector (518 lines)
-- `apps/connector/utils/elder_client.py` - Extended Entity dataclass
+- `apps/worker/connectors/aws_connector.py` - Added RDS, ElastiCache, SQS sync methods
+- `apps/worker/connectors/k8s_connector.py` - NEW: Complete Kubernetes connector (518 lines)
+- `apps/worker/utils/elder_client.py` - Extended Entity dataclass
 
 **Backup System**:
 - `apps/api/api/v1/backup.py` - Enhanced create_backup_job endpoint

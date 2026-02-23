@@ -496,7 +496,7 @@ prometheus:
 **Scrape targets:**
 - API: localhost:5000/metrics
 - Web: localhost:3005/metrics
-- Connector: localhost:8000/metrics
+- Worker: localhost:8000/metrics
 - gRPC: localhost:50051/metrics
 
 ### Grafana Dashboards
@@ -505,7 +505,7 @@ Pre-built dashboards:
 - Platform Overview
 - Per-Tenant Usage
 - API Performance
-- Connector Sync Status
+- Worker Sync Status
 - Security Events
 
 ---
@@ -866,11 +866,11 @@ Track sensitive data stores across your infrastructure for compliance and govern
 Authentik is an open-source identity provider that supports OIDC, SAML, LDAP, and SCIM.
 
 **AuthentikConnector Implementation:**
-- File: `apps/connector/connectors/authentik_connector.py` (474 lines)
+- File: `apps/worker/connectors/authentik_connector.py` (474 lines)
 - Extends BaseConnector and GroupOperationsMixin
 - Bearer token authentication via API v3
 
-**Configuration Settings:** Added to `apps/connector/config/settings.py`:
+**Configuration Settings:** Added to `apps/worker/config/settings.py`:
 - `authentik_enabled`, `authentik_domain`, `authentik_api_token`
 - `authentik_sync_interval`, `authentik_sync_users`, `authentik_sync_groups`
 - `authentik_write_back_enabled`, `authentik_verify_ssl`

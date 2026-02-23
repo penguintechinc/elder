@@ -1,3 +1,5 @@
+# DEPRECATED: Discovery providers have moved to apps/worker/discovery/
+# This file is retained for legacy API fallback (?legacy=true). Sunset target: v4.0.0
 """AWS cloud discovery client for Elder.
 
 Supports multiple authentication methods:

@@ -1,3 +1,5 @@
+# DEPRECATED: Discovery providers have moved to apps/worker/discovery/
+# This file is retained for legacy API fallback (?legacy=true). Sunset target: v4.0.0
 """Azure cloud discovery client for Elder - IaaS focus."""
 
 # flake8: noqa: E501

@@ -119,23 +119,24 @@ scanner:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: "fast-ssd"
+  screenshotStorage:
+    sizeLimit: "2Gi"
 
-# Connector Service - 2 replicas for beta
-connector:
+# Worker Service - 2 replicas for beta
+worker:
   enabled: true
   replicaCount: 2
   image:
-    repository: registry-dal2.penguintech.io/elder-connector
+    repository: registry-dal2.penguintech.io/elder-worker
     tag: beta-latest
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
+    DATABASE_URL: ""
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "10"
   resources:
     requests:
       memory: "256Mi"
@@ -143,10 +144,8 @@ connector:
     limits:
       memory: "1Gi"
       cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: "fast-ssd"
+  credentialsSecret:
+    name: ""
 
 # Prometheus - Enabled in beta
 prometheus:

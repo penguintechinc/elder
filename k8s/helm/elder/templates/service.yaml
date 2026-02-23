@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "connector" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "worker" "prometheus" "alertmanager" "grafana" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 {{- if $componentConfig.service }}
@@ -37,7 +37,7 @@ spec:
     targetPort: {{ $componentConfig.service.grpcPort }}
     protocol: TCP
     name: grpc
-  {{- else if eq $component "connector" }}
+  {{- else if eq $component "worker" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
