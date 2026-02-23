@@ -585,9 +585,10 @@ const PAGES_WITH_CREATE_MODAL = [
 // Helper: login and set token in localStorage
 async function loginAndSetToken(page: Page): Promise<boolean> {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  const token = await page.evaluate(async (creds) => {
+  const apiBase = process.env.PLAYWRIGHT_API_URL || 'http://localhost:4000';
+  const token = await page.evaluate(async ({ creds, apiBase }) => {
     try {
-      const res = await fetch('/api/v1/portal-auth/login', {
+      const res = await fetch(`${apiBase}/api/v1/portal-auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(creds),
@@ -600,8 +601,11 @@ async function loginAndSetToken(page: Page): Promise<boolean> {
       return null;
     }
   }, {
-    email: process.env.ELDER_TEST_EMAIL || 'admin@localhost.local',
-    password: process.env.ELDER_TEST_PASSWORD || 'admin123',
+    creds: {
+      email: process.env.ELDER_TEST_EMAIL || 'admin@localhost.local',
+      password: process.env.ELDER_TEST_PASSWORD || 'admin123',
+    },
+    apiBase,
   });
   return !!token;
 }

@@ -21,6 +21,7 @@ from apps.connector.connectors.google_workspace_connector import (
     GoogleWorkspaceConnector,
 )
 from apps.connector.connectors.ldap_connector import LDAPConnector
+from apps.connector.connectors.lxd_connector import LXDConnector
 from apps.connector.connectors.okta_connector import OktaConnector
 from apps.connector.utils.logger import configure_logging, get_logger
 
@@ -119,6 +120,7 @@ class ConnectorService:
                             "ldap_enabled": settings.ldap_enabled,
                             "okta_enabled": settings.okta_enabled,
                             "authentik_enabled": settings.authentik_enabled,
+                            "lxd_enabled": settings.lxd_enabled,
                         },
                     }
                 ),
@@ -152,6 +154,10 @@ class ConnectorService:
         if settings.authentik_enabled:
             logger.info("Authentik connector enabled (Enterprise)")
             self.connectors.append(AuthentikConnector())
+
+        if settings.lxd_enabled:
+            logger.info("LXD connector enabled")
+            self.connectors.append(LXDConnector())
 
         if not self.connectors:
             logger.warning("No connectors enabled! Check your configuration.")
@@ -269,6 +275,8 @@ class ConnectorService:
                 interval = settings.okta_sync_interval
             elif isinstance(connector, AuthentikConnector):
                 interval = settings.authentik_sync_interval
+            elif isinstance(connector, LXDConnector):
+                interval = settings.lxd_sync_interval
             else:
                 interval = 3600  # Default to 1 hour
 

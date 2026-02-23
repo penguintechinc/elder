@@ -61,11 +61,11 @@ services:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
     container_name: elder-web
     ports:
-      - "${WEB_PORT:-3005}:80"
+      - "${WEB_PORT:-3005}:3000"
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/"]
       interval: 30s
       timeout: 10s
       start_period: 5s
@@ -311,6 +311,15 @@ services:
       - LDAP_USER_FILTER=${LDAP_USER_FILTER:-(objectClass=person)}
       - LDAP_GROUP_FILTER=${LDAP_GROUP_FILTER:-(objectClass=group)}
       - LDAP_SYNC_INTERVAL=${LDAP_SYNC_INTERVAL:-3600}
+
+      # LXD Configuration
+      - LXD_ENABLED=${LXD_ENABLED:-false}
+      - LXD_URL=${LXD_URL:-}
+      - LXD_CERT=${LXD_CERT:-}
+      - LXD_KEY=${LXD_KEY:-}
+      - LXD_VERIFY_CERT=${LXD_VERIFY_CERT:-false}
+      - LXD_TRUST_TOKEN=${LXD_TRUST_TOKEN:-}
+      - LXD_SYNC_INTERVAL=${LXD_SYNC_INTERVAL:-3600}
 
       # Organization Mapping
       - DEFAULT_ORGANIZATION_ID=${DEFAULT_ORGANIZATION_ID}

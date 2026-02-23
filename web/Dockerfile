@@ -38,20 +38,13 @@ COPY web/ .
 # Build the application
 RUN npm run build
 
-# Production stage
-FROM nginx:stable-bookworm
-
-# Copy built files
-COPY --from=builder /app/dist /usr/share/nginx/html
-
-# Copy nginx configuration
-COPY web/nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-# Health check - verify nginx is serving content
-# Use 127.0.0.1 (not localhost) to avoid IPv6 resolution issues
+# Production stage — serve built files with a lightweight static server
+FROM node:20-slim AS runner
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN npm install -g serve
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1/ || exit 1
-
-CMD ["nginx", "-g", "daemon off;"]
+    CMD curl -f http://127.0.0.1:3000/ || exit 1
+CMD ["serve", "-s", "dist", "-l", "3000"]

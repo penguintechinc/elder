@@ -244,6 +244,33 @@ class Settings(BaseSettings):
         description="vCenter sync interval in seconds (default: 1 hour)",
     )
 
+    # LXD Configuration
+    lxd_enabled: bool = Field(default=False, description="Enable LXD connector")
+    lxd_url: Optional[str] = Field(
+        default=None,
+        description="LXD REST API base URL (e.g. https://lxd.example.com:8443)",
+    )
+    lxd_cert: Optional[str] = Field(
+        default=None,
+        description="LXD client certificate PEM string for TLS auth",
+    )
+    lxd_key: Optional[str] = Field(
+        default=None,
+        description="LXD client private key PEM string for TLS auth",
+    )
+    lxd_verify_cert: bool = Field(
+        default=False,
+        description="Verify LXD server TLS certificate (disable for self-signed)",
+    )
+    lxd_trust_token: Optional[str] = Field(
+        default=None,
+        description="LXD trust token for bearer token authentication",
+    )
+    lxd_sync_interval: int = Field(
+        default=3600,
+        description="LXD sync interval in seconds (default: 1 hour)",
+    )
+
     # FleetDM Configuration
     fleetdm_enabled: bool = Field(default=False, description="Enable FleetDM connector")
     fleetdm_url: str = Field(
