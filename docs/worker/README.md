@@ -1,463 +1,336 @@
 # Elder Worker Service
 
-The Elder Worker Service synchronizes data from external sources (AWS, GCP, Google Workspace, LDAP/LDAPS, Okta, Authentik) into the Elder infrastructure management platform.
+The Elder Worker Service is a stateless background job orchestrator that owns two critical responsibilities:
 
-## Features
+1. **Cloud Discovery** — Discovers and inventories cloud infrastructure resources (AWS, GCP, Azure, Kubernetes)
+2. **Identity & Infrastructure Connectors** — Syncs users, groups, and directory data from multiple sources
 
-- **AWS Integration**: Sync EC2 instances, VPCs, S3 buckets, and more
-- **GCP Integration**: Sync Compute Engine instances, VPC networks, Cloud Storage buckets
-- **Google Workspace Integration**: Sync users, groups, and organizational units
-- **LDAP/LDAPS Integration**: Sync directory services including users, groups, and organizational units
-- **Okta Integration** (Enterprise): Sync users and groups with bidirectional group membership write-back
-- **Authentik Integration** (Enterprise): Sync users and groups with bidirectional group membership write-back
-- **Scheduled Synchronization**: Configurable sync intervals for each connector
-- **Health Monitoring**: Built-in health checks and Prometheus metrics
-- **Auto-Organization Creation**: Automatically creates organizational hierarchies in Elder
+The worker runs scheduled jobs that poll the database for pending tasks and executes them asynchronously, enabling Elder to maintain an up-to-date inventory of cloud resources and identity data across your infrastructure.
+
+## Overview
+
+The worker is **stateless and horizontally scalable**. It runs background jobs that:
+- Poll the `discovery_jobs` table every 5 minutes for pending cloud discovery tasks
+- Execute cloud discovery via AWS SDK, GCP SDK, Azure SDK, and Kubernetes client
+- Sync identity/infrastructure data (users, groups, permissions) from 11+ connectors
+- Store all results directly in the database
+- Expose metrics via Prometheus for monitoring
+
+**Note**: The Worker Service was formerly called the "Connector Service" for backward compatibility.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   Elder Worker Service                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │ AWS Connector│  │ GCP Connector│  │  Workspace   │      │
-│  │              │  │              │  │  Connector   │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│                                                               │
-│  ┌──────────────┐  ┌──────────────────────────────────┐    │
-│  │LDAP Connector│  │   Elder API Client               │    │
-│  │              │  │   (Organizations & Entities)     │    │
-│  └──────────────┘  └──────────────────────────────────┘    │
-│                                                               │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  Scheduler (aiocron) + Health Server (Flask)        │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-         │                                         │
-         │ Pull Data                               │ Push Data
-         ▼                                         ▼
-┌─────────────────────┐                 ┌─────────────────────┐
-│  External Sources   │                 │    Elder API        │
-│  - AWS              │                 │  - Organizations    │
-│  - GCP              │                 │  - Entities         │
-│  - Google Workspace │                 │  - Dependencies     │
-│  - LDAP/LDAPS       │                 └─────────────────────┘
-└─────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     Elder Worker Service                          │
+│                   (Stateless, Horizontally Scalable)              │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  ┌───────────────────────────┐  ┌──────────────────────────────┐ │
+│  │  Cloud Discovery Executor  │  │  Connector Sync Orchestrator │ │
+│  ├───────────────────────────┤  ├──────────────────────────────┤ │
+│  │ - Poll discovery_jobs      │  │ - AWS (EC2, VPC, RDS...)    │ │
+│  │ - Execute via SDK clients  │  │ - GCP (Compute, VPC, GCS)   │ │
+│  │ - Store results to DB      │  │ - Azure (VMs, Vnets, etc)   │ │
+│  │ - AWS/GCP/Azure/K8s        │  │ - Kubernetes                │ │
+│  └───────────────────────────┘  │ - Google Workspace          │ │
+│                                  │ - LDAP / LDAPS              │ │
+│                                  │ - Okta (Enterprise)         │ │
+│                                  │ - Authentik (Enterprise)    │ │
+│                                  │ - Fleet DM, iBoss, vCenter  │ │
+│                                  │ - LXD (Container discovery) │ │
+│                                  └──────────────────────────────┘ │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐ │
+│  │  Job Scheduler + Health/Metrics Server (Flask)               │ │
+│  │  - Polls discovery_jobs every 5 minutes                       │ │
+│  │  - Executes enabled connectors on configured intervals        │ │
+│  │  - /healthz, /metrics, /status endpoints                      │ │
+│  └──────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+         │                              │
+         │ Read/Write                   │ Write
+         ▼                              ▼
+┌──────────────────────────┐   ┌────────────────────────────┐
+│  External Cloud Providers │   │   Elder Database           │
+│  - AWS                    │   │   - discovery_jobs         │
+│  - GCP                    │   │   - entities               │
+│  - Azure                  │   │   - identities             │
+│  - Kubernetes             │   │   - identity_groups        │
+│  - Okta, Authentik, etc   │   │   - organizations          │
+└──────────────────────────┘   └────────────────────────────┘
 ```
 
-## Configuration
+## Cloud Discovery
 
-All configuration is done via environment variables in Docker.
+Elder Worker Service executes cloud discovery jobs to automatically discover and inventory infrastructure resources across AWS, GCP, Azure, and Kubernetes clusters.
 
-### Elder API Configuration
+### How Discovery Works
 
-```bash
-ELDER_API_URL=http://api:5000              # Elder API base URL
-ELDER_API_KEY=                             # Optional API key for authentication
+1. **API Scheduling**: The Elder API creates discovery jobs in the `discovery_jobs` table via admin panel or API
+2. **Worker Polling**: The worker polls `discovery_jobs` every 5 minutes for pending tasks
+3. **Job Execution**: For each due job, the worker:
+   - Loads credentials from Kubernetes Secrets (or environment)
+   - Connects to the cloud provider via official SDKs
+   - Discovers resources (EC2 instances, GCP VMs, AKS clusters, etc.)
+   - Stores results directly in the `entities` and `networking_resources` tables
+4. **Status Tracking**: Job completion status, errors, and last run timestamp are recorded in `discovery_jobs`
+
+### Supported Cloud Providers
+
+| Provider | Discovery Scope | Credentials |
+|----------|-----------------|-------------|
+| **AWS** | EC2, RDS, ElastiCache, VPCs, Subnets, S3, Lambda | Access Key ID + Secret Key |
+| **GCP** | Compute instances, VPC networks, Cloud Storage, GKE | Service Account JSON |
+| **Azure** | Virtual Machines, Virtual Networks, Storage accounts, AKS | Service Principal credentials |
+| **Kubernetes** | Pods, Services, Deployments, Namespaces, PersistentVolumes | kubeconfig or in-cluster auth |
+
+### Discovery Job Configuration
+
+Discovery jobs are configured via the Elder API or admin dashboard. Key fields:
+
+```json
+{
+  "provider": "aws",              // aws, gcp, azure, kubernetes
+  "organization_id": 1,           // Elder organization to own discovered resources
+  "credentials": { ... },         // Provider-specific credentials (encrypted)
+  "schedule_interval": 3600,      // Seconds between discovery runs (default: 1 hour)
+  "enabled": true,                // Enable/disable this discovery job
+  "next_run_at": "2025-02-23...", // When to run next (auto-calculated)
+  "last_run_at": "2025-02-23...", // Timestamp of last execution
+  "last_error": null,             // Error message if last run failed
+  "status": "pending"             // pending, running, completed, failed
+}
 ```
 
-### AWS Connector
+### Credentials Management
+
+Cloud credentials are stored securely in Kubernetes Secrets and referenced by discovery jobs:
 
 ```bash
-AWS_ENABLED=false                          # Enable AWS connector
-AWS_ACCESS_KEY_ID=                         # AWS access key ID
-AWS_SECRET_ACCESS_KEY=                     # AWS secret access key
-AWS_DEFAULT_REGION=us-east-1               # Default AWS region
-AWS_REGIONS=us-east-1,us-west-2           # Comma-separated list of regions to scan
-AWS_SYNC_INTERVAL=3600                     # Sync interval in seconds (default: 1 hour)
+# Create a secret for AWS discovery
+kubectl create secret generic aws-discovery-creds \
+  --from-literal=AWS_ACCESS_KEY_ID=AKIA... \
+  --from-literal=AWS_SECRET_ACCESS_KEY=... \
+  -n elder
+
+# The discovery job references: "secret://aws-discovery-creds"
 ```
 
-**Resources Synced:**
-- EC2 Instances → Elder entities (type: `compute`)
-- VPCs → Elder entities (type: `vpc`)
-- S3 Buckets → Elder entities (type: `network`)
+### Database Schema
 
-### GCP Connector
+Discovered resources are stored in standard Elder tables:
 
+| Table | Purpose |
+|-------|---------|
+| `entities` | EC2 instances, VM instances, compute resources |
+| `networking_resources` | VPCs, Subnets, Networks, Namespaces, Load Balancers |
+| `data_stores` | S3, EBS, GCS, RDS, Persistent Volumes |
+| `services` | Lambda, Cloud Functions, K8s Services |
+| `network_entity_mappings` | Links networking resources to entities |
+
+## Identity & Infrastructure Connectors
+
+The worker manages 11+ connectors that sync identity and infrastructure data into Elder, enabling RBAC, compliance auditing, and access control.
+
+### Supported Connectors
+
+| Connector | Type | Resources Synced | Write-Back |
+|-----------|------|------------------|-----------|
+| **AWS** | Cloud | EC2, RDS, Lambda, S3 resources | No |
+| **GCP** | Cloud | Compute, GCS, Cloud Run resources | No |
+| **Google Workspace** | Identity | Users, Groups, Org Units | No |
+| **LDAP / LDAPS** | Directory | Users, Groups, Org Units | No |
+| **Okta** | Identity | Users, Groups | Yes (group membership) |
+| **Authentik** | Identity | Users, Groups (nested) | Yes (group membership) |
+| **Kubernetes** | Infrastructure | Service Accounts, RBAC bindings | No |
+| **Fleet DM** | Endpoint | Enrolled devices, OS info | No |
+| **iBoss** | Network | Network policies, categories | No |
+| **vCenter** | Virtualization | VMs, ESXi hosts, datastores | No |
+| **LXD** | Container | Container instances, images | No |
+
+### Connector Sync Flow
+
+Each connector:
+1. Connects to external service using stored credentials
+2. Fetches users, groups, and resource data
+3. Creates/updates entities and identity_groups in Elder
+4. Syncs group memberships (enabling RBAC policy evaluation)
+5. Records sync status and error metrics
+
+### Write-Back Connectors
+
+Some connectors support bidirectional sync:
+
+- **Okta**: Changes to Elder identity_group membership are synced back to Okta groups
+- **Authentik**: Changes to Elder identity_group membership are synced back to Authentik groups
+
+This allows Elder to be the source-of-truth for group membership while keeping external systems in sync.
+
+## Deployment Architecture
+
+### Database Access
+
+The worker operates with **direct database access** (not via Elder API) to efficiently:
+- Poll `discovery_jobs` and sync task tables
+- Store results at scale
+- Track job status and metrics
+
+**Database Configuration**:
 ```bash
-GCP_ENABLED=false                          # Enable GCP connector
-GCP_PROJECT_ID=                            # GCP project ID
-GCP_CREDENTIALS_PATH=/app/credentials/gcp-credentials.json  # Path to service account JSON
-GCP_SYNC_INTERVAL=3600                     # Sync interval in seconds
+DB_URL=postgresql://elder_worker:password@db:5432/elder  # Write connection
+DB_READ_URL=postgresql://elder_worker_ro:password@db-replica:5432/elder  # Read replica (optional)
 ```
 
-**Resources Synced:**
-- Compute Engine Instances → Elder entities (type: `compute`)
-- VPC Networks → Elder entities (type: `vpc`)
-- Cloud Storage Buckets → Elder entities (type: `network`)
+**Least-Privilege Access**: The worker uses a dedicated `elder_worker` database account with:
+- `SELECT` on all discovery/sync tables
+- `INSERT, UPDATE` on `entities`, `identities`, `discovery_jobs`
+- `SELECT` on configuration tables
+- No direct access to user accounts, secrets, or billing tables
 
-**Credentials Setup:**
-1. Create a service account in GCP with appropriate permissions
-2. Download the JSON key file
-3. Mount it to `/app/credentials/gcp-credentials.json` in the container
+### Credentials Management
 
-### Google Workspace Connector
+Worker credentials are stored securely in **Kubernetes Secrets** (production) or environment variables (development):
 
 ```bash
-GOOGLE_WORKSPACE_ENABLED=false             # Enable Google Workspace connector
-GOOGLE_WORKSPACE_CREDENTIALS_PATH=/app/credentials/workspace-credentials.json
-GOOGLE_WORKSPACE_ADMIN_EMAIL=              # Admin email for domain-wide delegation
-GOOGLE_WORKSPACE_CUSTOMER_ID=my_customer   # Customer ID (usually "my_customer")
-GOOGLE_WORKSPACE_SYNC_INTERVAL=3600        # Sync interval in seconds
+# Kubernetes Secret example
+kubectl create secret generic elder-worker \
+  --from-literal=DB_URL=postgresql://... \
+  --from-literal=AWS_ACCESS_KEY_ID=... \
+  --from-literal=OKTA_API_TOKEN=... \
+  -n elder
 ```
 
-**Resources Synced:**
-- Users → Elder entities (type: `user`)
-- Groups → Elder entities (type: `user` with `type: group` in attributes)
-- Organizational Units → Elder organizations (hierarchical)
+**Security Best Practices**:
+- No PVC (persistent volumes) — credentials are mounted as Secrets, not persistent files
+- Credentials rotated regularly via Secret Manager
+- API keys stored with expiration dates
+- No credentials logged or exposed in metrics
 
-**Credentials Setup:**
-1. Create a service account with domain-wide delegation
-2. Grant necessary Admin SDK scopes
-3. Download the JSON key file
-4. Mount it to `/app/credentials/workspace-credentials.json`
+### Metrics & Monitoring
 
-### LDAP/LDAPS Connector
+The worker exposes Prometheus metrics for operational visibility:
 
-```bash
-LDAP_ENABLED=false                         # Enable LDAP connector
-LDAP_SERVER=                               # LDAP server hostname or IP
-LDAP_PORT=389                              # LDAP port (389 for LDAP, 636 for LDAPS)
-LDAP_USE_SSL=false                         # Use LDAPS (SSL/TLS)
-LDAP_VERIFY_CERT=true                      # Verify SSL certificate
-LDAP_BIND_DN=                              # Bind DN for authentication
-LDAP_BIND_PASSWORD=                        # Bind password
-LDAP_BASE_DN=                              # Base DN for searches (e.g., dc=example,dc=com)
-LDAP_USER_FILTER=(objectClass=person)      # LDAP filter for users
-LDAP_GROUP_FILTER=(objectClass=group)      # LDAP filter for groups
-LDAP_SYNC_INTERVAL=3600                    # Sync interval in seconds
+```
+worker_discovery_jobs_executed_total{provider="aws",status="success"}
+worker_discovery_poll_duration_seconds
+worker_sync_total{connector="okta",status="success"}
+worker_sync_errors_total{connector="ldap"}
+worker_entities_synced{connector="gcp",operation="created"}
 ```
 
-**Resources Synced:**
-- LDAP Users → Elder entities (type: `user`)
-- LDAP Groups → Elder entities (type: `user` with `type: group` in attributes)
-- Organizational Units → Elder organizations (hierarchical)
+Integrate with Prometheus and Grafana for:
+- Discovery job success rates
+- Sync performance and latency
+- Error tracking and alerting
+- Entity creation/update trends
 
-**Common LDAP Configurations:**
+## Quick Links
 
-**Active Directory:**
-```bash
-LDAP_SERVER=ad.example.com
-LDAP_PORT=389
-LDAP_USE_SSL=false
-LDAP_BIND_DN=cn=admin,cn=Users,dc=example,dc=com
-LDAP_BASE_DN=dc=example,dc=com
-LDAP_USER_FILTER=(&(objectClass=user)(objectCategory=person))
-LDAP_GROUP_FILTER=(objectClass=group)
-```
+- **[QUICKSTART.md](QUICKSTART.md)** — Get the worker running in 5 minutes (environment setup, testing connectivity, troubleshooting)
+- **[IMPLEMENTATION.md](IMPLEMENTATION.md)** — Deep dive into architecture, connector implementation details, and deployment patterns
 
-**OpenLDAP:**
-```bash
-LDAP_SERVER=ldap.example.com
-LDAP_PORT=389
-LDAP_USE_SSL=false
-LDAP_BIND_DN=cn=admin,dc=example,dc=com
-LDAP_BASE_DN=dc=example,dc=com
-LDAP_USER_FILTER=(objectClass=inetOrgPerson)
-LDAP_GROUP_FILTER=(objectClass=groupOfNames)
-```
+## Configuration Quick Reference
 
-**LDAPS (Secure):**
-```bash
-LDAP_SERVER=ldaps.example.com
-LDAP_PORT=636
-LDAP_USE_SSL=true
-LDAP_VERIFY_CERT=true
-```
+Worker configuration is done via environment variables. The worker automatically discovers enabled connectors and schedules them for execution.
 
-### Okta Connector (Enterprise)
+| Setting | Required | Default | Description |
+|---------|----------|---------|-------------|
+| `DB_URL` | Yes | — | PostgreSQL connection string (write access) |
+| `DB_READ_URL` | No | `DB_URL` | PostgreSQL read replica (optional) |
+| `ELDER_API_URL` | No | `http://api:5000` | Elder API base URL |
+| `HEALTH_CHECK_PORT` | No | `8000` | Health check server port |
+| `LOG_LEVEL` | No | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
+| `METRICS_ENABLED` | No | `true` | Enable Prometheus metrics |
 
-```bash
-OKTA_ENABLED=false                         # Enable Okta connector
-OKTA_DOMAIN=                               # Okta domain (e.g., dev-123456.okta.com)
-OKTA_API_TOKEN=                            # Okta API token (SSWS token)
-OKTA_SYNC_INTERVAL=3600                    # Sync interval in seconds
-OKTA_SYNC_USERS=true                       # Sync users to Elder identities
-OKTA_SYNC_GROUPS=true                      # Sync groups to Elder identity_groups
-OKTA_WRITE_BACK_ENABLED=false              # Enable group membership write-back
-```
+### Enable Connectors
 
-**Resources Synced:**
-- Users → Elder identities (identity_type: `human`)
-- Groups (OKTA_GROUP type only) → Elder identity_groups
-- Group Memberships → Bidirectional sync (when write-back enabled)
+Each connector can be enabled independently:
 
-**Write-Back Features:**
-- Add members to Okta groups from Elder
-- Remove members from Okta groups from Elder
-- Sync group membership changes back to Okta
+| Connector | Enable Setting | Interval Setting | Docs |
+|-----------|----------------|------------------|------|
+| **AWS** | `AWS_ENABLED` | `AWS_SYNC_INTERVAL` | QUICKSTART.md |
+| **GCP** | `GCP_ENABLED` | `GCP_SYNC_INTERVAL` | QUICKSTART.md |
+| **Azure** | `AZURE_ENABLED` | `AZURE_SYNC_INTERVAL` | QUICKSTART.md |
+| **Kubernetes** | `K8S_ENABLED` | `K8S_SYNC_INTERVAL` | QUICKSTART.md |
+| **Google Workspace** | `GOOGLE_WORKSPACE_ENABLED` | `GOOGLE_WORKSPACE_SYNC_INTERVAL` | QUICKSTART.md |
+| **LDAP/LDAPS** | `LDAP_ENABLED` | `LDAP_SYNC_INTERVAL` | QUICKSTART.md |
+| **Okta** | `OKTA_ENABLED` | `OKTA_SYNC_INTERVAL` | QUICKSTART.md |
+| **Authentik** | `AUTHENTIK_ENABLED` | `AUTHENTIK_SYNC_INTERVAL` | QUICKSTART.md |
+| **Fleet DM** | `FLEETDM_ENABLED` | `FLEETDM_SYNC_INTERVAL` | QUICKSTART.md |
+| **iBoss** | `IBOSS_ENABLED` | `IBOSS_SYNC_INTERVAL` | QUICKSTART.md |
+| **vCenter** | `VCENTER_ENABLED` | `VCENTER_SYNC_INTERVAL` | QUICKSTART.md |
+| **LXD** | `LXD_ENABLED` | `LXD_SYNC_INTERVAL` | QUICKSTART.md |
 
-**Setup:**
-1. Create API token in Okta admin console
-2. Grant necessary permissions for user/group read access
-3. Enable write-back only if modifying Okta groups is intended
+See **QUICKSTART.md** for detailed configuration examples for each connector, including credential setup and common configurations (e.g., Active Directory, OpenLDAP, LDAPS).
 
-### Authentik Connector (Enterprise)
+## Getting Started
+
+Start the worker service with configured connectors:
 
 ```bash
-AUTHENTIK_ENABLED=false                    # Enable Authentik connector
-AUTHENTIK_DOMAIN=                          # Authentik domain (e.g., auth.example.com)
-AUTHENTIK_API_TOKEN=                       # Authentik API token (Bearer token)
-AUTHENTIK_SYNC_INTERVAL=3600               # Sync interval in seconds
-AUTHENTIK_SYNC_USERS=true                  # Sync users to Elder identities
-AUTHENTIK_SYNC_GROUPS=true                 # Sync groups to Elder identity_groups
-AUTHENTIK_WRITE_BACK_ENABLED=true          # Enable group membership write-back
-AUTHENTIK_VERIFY_SSL=true                  # Verify SSL certificate
-```
+# 1. Configure .env file with enabled connectors
+export AWS_ENABLED=true
+export AWS_ACCESS_KEY_ID=your_key
+export AWS_SECRET_ACCESS_KEY=your_secret
 
-**Resources Synced:**
-- Users → Elder identities (identity_type: `employee` or `serviceAccount`)
-- Groups → Elder identity_groups (includes nested groups)
-- Group Memberships → Bidirectional sync (when write-back enabled)
-
-**API Endpoints Used:**
-- `GET /api/v3/core/users/` - User sync
-- `GET /api/v3/core/groups/` - Group sync
-- `POST /api/v3/core/groups/{pk}/add_user/` - Add member (write-back)
-- `POST /api/v3/core/groups/{pk}/remove_user/` - Remove member (write-back)
-
-**Setup:**
-1. Create API token in Authentik admin interface
-2. Grant token appropriate permissions for user/group management
-3. Enable write-back for bidirectional group membership sync
-4. Set `AUTHENTIK_VERIFY_SSL=false` if using self-signed certificates (not recommended)
-
-### Organization Mapping
-
-```bash
-DEFAULT_ORGANIZATION_ID=                   # Default Elder org ID for entities without mapping
-CREATE_MISSING_ORGANIZATIONS=true          # Auto-create organizations in Elder
-```
-
-### Sync Configuration
-
-```bash
-SYNC_ON_STARTUP=true                       # Run initial sync when worker starts
-SYNC_BATCH_SIZE=100                        # Number of entities per batch
-SYNC_MAX_RETRIES=3                         # Max retries for failed operations
-```
-
-### Health & Monitoring
-
-```bash
-HEALTH_CHECK_PORT=8000                     # Health check HTTP server port
-METRICS_ENABLED=true                       # Enable Prometheus metrics
-```
-
-**Health Endpoints:**
-- `GET /healthz` - Health check (returns 200 if healthy)
-- `GET /metrics` - Prometheus metrics
-- `GET /status` - Detailed service status
-
-### Logging
-
-```bash
-LOG_LEVEL=INFO                             # Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-LOG_FORMAT=json                            # Log format (json or text)
-```
-
-## Usage
-
-### Running with Docker Compose
-
-1. **Configure environment variables** in `.env` file:
-
-```bash
-# Enable connectors
-AWS_ENABLED=true
-AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXXXXXX
-AWS_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-AWS_REGIONS=us-east-1,us-west-2
-
-GCP_ENABLED=true
-GCP_PROJECT_ID=my-gcp-project
-```
-
-2. **Place credential files** (if using GCP or Google Workspace):
-
-```bash
-# Create credentials directory
-docker volume create worker_credentials
-
-# Copy credential files
-docker run --rm -v worker_credentials:/credentials \
-  -v $(pwd)/gcp-credentials.json:/src/gcp-credentials.json \
-  alpine cp /src/gcp-credentials.json /credentials/
-```
-
-3. **Start the worker service**:
-
-```bash
+# 2. Start the worker
 docker-compose up -d worker
-```
 
-4. **Check logs**:
-
-```bash
+# 3. Verify it's running
+curl http://localhost:8000/healthz
 docker-compose logs -f worker
 ```
 
-5. **Verify health**:
+For detailed setup instructions, see **[QUICKSTART.md](QUICKSTART.md)**.
 
-```bash
-curl http://localhost:8000/healthz
-curl http://localhost:8000/status
-```
+## Data & Metrics
 
-### Manual Sync Trigger
+The worker stores discovered resources directly in the database:
 
-The worker automatically syncs on startup (if `SYNC_ON_STARTUP=true`) and on the configured intervals. To manually trigger a sync, restart the worker:
+- **`entities`** — Compute resources (EC2, VMs), network resources, data stores
+- **`identities`** — Users and service accounts from directory services
+- **`identity_groups`** — Groups and group memberships
+- **`discovery_jobs`** — Status and history of cloud discovery tasks
+- **`organizations`** — Auto-created organizational hierarchy
 
-```bash
-docker-compose restart worker
-```
-
-## Data Mapping
-
-### AWS Resources
-
-| AWS Resource | Elder Entity Type | Key Attributes |
-|--------------|-------------------|----------------|
-| EC2 Instance | `compute` | `instance_id`, `instance_type`, `state`, `private_ip`, `public_ip` |
-| VPC | `vpc` | `vpc_id`, `cidr_block`, `state` |
-| S3 Bucket | `network` | `bucket_name`, `region` |
-
-### GCP Resources
-
-| GCP Resource | Elder Entity Type | Key Attributes |
-|--------------|-------------------|----------------|
-| Compute Instance | `compute` | `instance_id`, `machine_type`, `status`, `zone` |
-| VPC Network | `vpc` | `network_id`, `network_name`, `routing_mode` |
-| Storage Bucket | `network` | `bucket_name`, `location`, `storage_class` |
-
-### Google Workspace
-
-| Workspace Resource | Elder Type | Key Attributes |
-|-------------------|------------|----------------|
-| User | Entity (`user`) | `email`, `user_id`, `first_name`, `last_name`, `suspended` |
-| Group | Entity (`user`) | `email`, `group_id`, `group_name`, `type: group` |
-| Org Unit | Organization | `org_unit_path`, hierarchical structure |
-
-### LDAP/LDAPS
-
-| LDAP Resource | Elder Type | Key Attributes |
-|--------------|------------|----------------|
-| User | Entity (`user`) | `ldap_dn`, `cn`, `uid`, `email`, `display_name` |
-| Group | Entity (`user`) | `ldap_dn`, `cn`, `group_name`, `type: group` |
-| Org Unit | Organization | `ldap_dn`, hierarchical structure |
-
-## Monitoring
-
-### Prometheus Metrics
-
-The worker exposes the following Prometheus metrics at `/metrics`:
+Prometheus metrics are exposed at `/metrics`:
 
 ```
-# Sync operations
-connector_sync_total{connector="aws",status="success"} 10
-connector_sync_total{connector="aws",status="failed"} 0
-connector_sync_duration_seconds{connector="aws"} 15.2
-
-# Errors
-connector_sync_errors_total{connector="aws"} 0
-
-# Entities and organizations
-connector_entities_synced{connector="aws",operation="created"} 150
-connector_entities_synced{connector="aws",operation="updated"} 25
-connector_organizations_synced{connector="aws",operation="created"} 5
-
-# Last sync timestamp
-connector_last_sync_timestamp{connector="aws"} 1672531200
+worker_discovery_jobs_executed_total{provider="aws",status="success"}
+worker_sync_total{connector="okta",status="success"}
+worker_sync_duration_seconds{connector="gcp"}
+worker_entities_synced{connector="ldap",operation="created"}
 ```
 
-### Grafana Dashboard
+## Security
 
-A Grafana dashboard can be created to visualize:
-- Sync success/failure rates
-- Sync duration trends
-- Number of entities synced per connector
-- Error rates and patterns
+- **No PVCs** — Credentials stored in Kubernetes Secrets, not persistent volumes
+- **Least Privilege** — Dedicated `elder_worker` DB account with minimal permissions
+- **Encrypted** — All sensitive credentials encrypted at rest
+- **Rotation** — API keys and passwords rotated regularly
+- **No Logging** — Credentials excluded from logs and metrics
 
-## Troubleshooting
-
-### Worker Not Starting
-
-1. Check logs: `docker-compose logs worker`
-2. Verify Elder API is healthy: `curl http://localhost:5000/healthz`
-3. Check configuration in `.env` file
-
-### Sync Errors
-
-1. View detailed error messages: `docker-compose logs worker | grep ERROR`
-2. Check credentials and permissions for each connector
-3. Verify network connectivity to external services
-4. Check Elder API is accepting requests
-
-### Missing Entities
-
-1. Verify the connector is enabled: Check `*_ENABLED` environment variable
-2. Check sync interval hasn't expired
-3. Review entity filters in connector configuration
-4. Check Elder organization mapping settings
-
-### LDAP Connection Issues
-
-1. Test LDAP connectivity: `ldapsearch -H ldap://server -D "bind_dn" -W`
-2. For LDAPS, verify certificate is valid
-3. Check bind DN and password are correct
-4. Verify base DN exists
-
-### GCP/Google Workspace Authentication
-
-1. Verify service account has correct permissions
-2. For Google Workspace, ensure domain-wide delegation is configured
-3. Check credential file path is correct and accessible
-4. Verify admin email has necessary permissions
-
-## Security Considerations
-
-- **Credentials**: Store all credentials securely using Docker secrets or encrypted environment variables
-- **LDAPS**: Always use LDAPS (SSL/TLS) for production LDAP connections
-- **Least Privilege**: Grant minimum necessary permissions to service accounts
-- **Network**: Use private networks when possible, avoid exposing worker to public internet
-- **Logging**: Ensure sensitive data is not logged (credentials, passwords, etc.)
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 apps/worker/
-├── config/
-│   ├── __init__.py
-│   └── settings.py          # Configuration management
-├── connectors/
-│   ├── __init__.py
-│   ├── base.py             # Base connector interface
-│   ├── aws_connector.py    # AWS connector implementation
-│   ├── gcp_connector.py    # GCP connector implementation
-│   ├── google_workspace_connector.py
-│   └── ldap_connector.py   # LDAP/LDAPS connector implementation
-├── utils/
-│   ├── __init__.py
-│   ├── logger.py           # Structured logging
-│   └── elder_client.py     # Elder API client
-├── main.py                 # Main service orchestrator
-├── requirements.txt        # Python dependencies
-├── Dockerfile              # Container definition
-└── README.md              # This file
+├── config/settings.py          # Configuration and validation
+├── connectors/                 # 12+ connector implementations
+│   ├── base.py                # Base connector interface
+│   ├── aws_connector.py       # AWS, GCP, Azure, K8s
+│   ├── okta_connector.py      # Okta, Authentik, LDAP
+│   └── ...
+├── discovery/                  # Cloud discovery service
+│   ├── base.py                # Discovery provider interface
+│   ├── executor.py            # Job scheduler and executor
+│   └── aws_discovery.py       # AWS, GCP, Azure, K8s discovery
+├── utils/elder_client.py      # Database and API client
+├── main.py                    # Service orchestrator
+└── Dockerfile
 ```
 
-### Adding a New Connector
-
-1. Create a new connector class inheriting from `BaseConnector`
-2. Implement required methods: `connect()`, `disconnect()`, `sync()`, `health_check()`
-3. Add configuration settings to `config/settings.py`
-4. Register the connector in `main.py`
-5. Update docker-compose.yml with environment variables
-6. Update this README with configuration and usage
+See **[IMPLEMENTATION.md](IMPLEMENTATION.md)** for architectural deep-dive and developer guide.
 
 ## License
 

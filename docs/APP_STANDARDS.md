@@ -6,6 +6,235 @@ This document extends the [company-wide standards](STANDARDS.md) with Elder-spec
 
 ---
 
+## Microservices Architecture
+
+Elder implements a **stateless, multi-container microservices architecture** with specialized role separation for cloud discovery, local scanning, and REST API operations.
+
+### Service Roles & Responsibilities
+
+**API Service** (Flask backend, port 5000)
+- REST CRUD endpoints for all domain resources (entities, organizations, services, etc.)
+- Discovery job management (create, update, delete, list, test)
+- Job queuing via `POST /api/v1/discovery/jobs/<id>/run` (sets `next_run_at = now()`, returns 202)
+- Scanner job status queries (fetch pending jobs for scanner)
+- Discovery history tracking and reporting
+- Legacy discovery execution via `?legacy=true` query parameter (deprecated, sunset v4.0.0)
+
+**Worker Service** (Python background service, no public ports)
+- Direct PostgreSQL polling of `discovery_jobs` table every 5 minutes
+- Executes cloud discovery jobs (AWS, GCP, Azure, Kubernetes) directly against cloud provider APIs
+- Uses least-privilege DB account `elder_worker` with read-only access to config
+- Writes discovery results and history directly to PostgreSQL
+- No PVC — state persisted entirely to database
+- Credentials sourced from K8s Secrets at `/var/run/secrets/elder/` (e.g., `AWS_ROLE_ARN`, `GCP_SERVICE_ACCOUNT`)
+
+**Scanner Service** (Python background service, ephemeral storage)
+- HTTP polling of `GET /api/v1/discovery/jobs/pending` every 5 minutes
+- Executes local network scans:
+  - `network` — network discovery (NMAP, ARP)
+  - `banner` — service banner grabbing (TCP port enumeration)
+  - `http_screenshot` — HTTP endpoint screenshots (Playwright, Firefox)
+- Uploads screenshots to API or persists to ephemeral emptyDir/tmpfs
+- Uses least-privilege DB account `elder_scanner`
+- No PVC — screenshots stored in ephemeral memory or temporary storage
+
+### Database Account Separation
+
+Elder enforces least-privilege database access via separate PostgreSQL accounts:
+
+| Account | Service | Permissions | Purpose |
+|---------|---------|-------------|---------|
+| `elder` | API | Full read/write | REST API operations, all tables |
+| `elder_worker` | Worker | `discovery_jobs`, `discovery_history` read/write | Cloud discovery job polling & result storage |
+| `elder_scanner` | Scanner | `discovery_jobs` read, `discovery_history` write | Local scan job polling & history recording |
+
+Each account password is provisioned via K8s Secrets and passed through environment variables during container startup.
+
+---
+
+## Database Access Patterns
+
+Elder optimizes database performance through **primary/replica read splitting** and specialized query patterns for each service.
+
+### Primary/Replica Split
+
+```
+PostgreSQL Cluster
+├── Primary (DATABASE_URL) — All writes, transactional reads
+└── Read Replica (DATABASE_READ_URL) — Analytical & reporting reads
+```
+
+**Configuration**:
+```bash
+# Primary connection (writes, transactional)
+DATABASE_URL=postgres://elder:password@db-primary:5432/elder
+
+# Read replica (read-heavy queries)
+DATABASE_READ_URL=postgres://elder:password@db-replica:5432/elder
+```
+
+### Read-Heavy Endpoints (Use Read Replica)
+
+The following API endpoints use `DATABASE_READ_URL` for horizontal scaling:
+
+- `GET /api/v1/entities` — Entity listing with filtering
+- `GET /api/v1/entities/search` — Full-text entity search
+- `GET /api/v1/entities/<id>/graph` — Entity dependency graph visualization
+- `GET /api/v1/discovery/history` — Discovery execution history
+- Analytics and reporting endpoints
+
+### Write Operations (Always Primary)
+
+- `POST /api/v1/entities` — Entity creation
+- `POST /api/v1/discovery/jobs/<id>/run` — Job queuing
+- `PATCH /api/v1/entities/<id>` — Entity updates
+- `DELETE /api/v1/entities/<id>` — Entity deletion
+- All discovery result storage
+
+### Worker Discovery Execution Pattern
+
+The **DiscoveryExecutor** in the worker service uses split connections:
+
+```python
+# Polling for pending jobs (uses read replica if available)
+jobs = db_read(
+    (db_read.discovery_jobs.enabled == True) &
+    (db_read.discovery_jobs.provider.belongs(['aws', 'gcp', 'azure', 'kubernetes']))
+).select()
+
+# Writing results (always primary)
+db_write.discovery_history.insert(
+    job_id=job_id,
+    status='completed',
+    results_json=discovery_results
+)
+db_write.commit()
+```
+
+---
+
+## Stateless Container Design
+
+All Elder containers follow a **stateless, shared-nothing architecture** with state persisted exclusively to PostgreSQL.
+
+### Storage Layout
+
+| Container | Mount | Purpose | Persistence |
+|-----------|-------|---------|-------------|
+| API | N/A | REST endpoints only | DB-backed |
+| Worker | K8s Secrets `/var/run/secrets/elder/` | Cloud credentials (mounted read-only) | None (ephemeral) |
+| Scanner | emptyDir `/tmp/screenshots` | HTTP screenshot storage (ephemeral) | None (discarded on pod restart) |
+
+### Credential Management
+
+All services retrieve credentials via **K8s Secrets** mounted as read-only volumes:
+
+```yaml
+# kubernetes deployment volume mounts
+- name: elder-secrets
+  mountPath: /var/run/secrets/elder/
+  readOnly: true
+```
+
+**Secrets provisioned**:
+- `AWS_ROLE_ARN` — IAM role for AWS discovery
+- `GCP_SERVICE_ACCOUNT_JSON` — Service account key for GCP
+- `AZURE_SUBSCRIPTION_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`
+- `KUBECONFIG` — Kubeconfig for Kubernetes discovery
+
+**No hardcoded credentials** — all sourced from K8s Secrets at runtime.
+
+### Pod Restarts & Data Loss
+
+Stateless design ensures **zero data loss on pod restart**:
+
+- **API restart** → Session cache flushed, all data in DB, request resumption seamless
+- **Worker restart** → Pending jobs remain in `discovery_jobs`, poll cycle resumes next 5-min interval
+- **Scanner restart** → Pending jobs remain in `discovery_jobs`, screenshots regenerated on next scan cycle
+
+---
+
+## Discovery Execution
+
+Elder's **job queuing and execution** model separates API job management from background worker execution.
+
+### Execution Flow
+
+```
+1. API receives: POST /api/v1/discovery/jobs/<id>/run
+   ↓
+2. API queues job: UPDATE discovery_jobs SET next_run_at = NOW()
+   ↓
+3. API returns: 202 Accepted (job queued, not executed)
+   ↓
+4. Worker polls: SELECT * FROM discovery_jobs WHERE next_run_at <= NOW()
+   ↓
+5. Worker executes: DiscoveryService.run_discovery(job_id)
+   ↓
+6. Worker stores: INSERT INTO discovery_history, UPDATE discovery_jobs.last_run_at
+```
+
+### Asynchronous Job Execution
+
+- **API call returns immediately** (202 Accepted) — no long-running discovery in request context
+- **Worker polls every 5 minutes** — executes pending cloud jobs asynchronously
+- **Client polls history** — checks `GET /api/v1/discovery/history?job_id=<id>` for results
+- **Prevents timeout** — discovery operations (especially multi-cloud) can take minutes
+
+### Scanner Job Polling
+
+Scanner service polls the API for local scan jobs:
+
+```python
+# Scanner polls API
+GET /api/v1/discovery/jobs/pending
+→ Returns: [{id, provider: "network"}, {id, provider: "banner"}, ...]
+
+# Scanner executes
+NetworkScanner().scan(targets)
+BannerScanner().scan(targets)
+HTTPScreenshotScanner().scan(targets)
+
+# Scanner reports results back to API
+POST /api/v1/discovery/jobs/<id>/complete
+  {success: true, results: {...}}
+```
+
+### Job Scheduling
+
+Discovery jobs support **interval-based scheduling**:
+
+```json
+{
+  "id": 42,
+  "name": "AWS Production Discovery",
+  "provider": "aws",
+  "schedule_interval": 3600,
+  "last_run_at": "2026-02-23T10:00:00Z",
+  "next_run_at": "2026-02-23T11:00:00Z"
+}
+```
+
+- `schedule_interval = 0` → One-time job (execute once, no reschedule)
+- `schedule_interval > 0` → Repeating job (execute every N seconds)
+- Worker calculates `next_run_at = last_run_at + schedule_interval`
+
+### Deprecation Timeline
+
+**v3.1.0 (Current)**
+- API discovery execution deprecated (marked with warning logs)
+- Worker handles all cloud discovery jobs (AWS, GCP, Azure, K8s)
+- Legacy synchronous execution available via `?legacy=true` query parameter
+- API endpoints accept but discourage `/api/v1/discovery/jobs/<id>/run?legacy=true`
+
+**v4.0.0 (Next Major)**
+- API discovery execution removed entirely
+- `DiscoveryService.run_discovery()` removed
+- Only worker-based async execution supported
+- All legacy query parameters ignored
+
+---
+
 ## RBAC Implementation
 
 Elder implements a **three-tier Role-Based Access Control (RBAC)** system providing granular permissions at global, tenant, and resource levels.
@@ -353,5 +582,5 @@ The default admin user is created during initialization if `ADMIN_EMAIL` and `AD
 
 ---
 
-**Last Updated**: 2026-02-10
+**Last Updated**: 2026-02-23
 **Version**: 3.1.0

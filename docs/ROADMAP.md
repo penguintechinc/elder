@@ -1,3 +1,153 @@
+# Deprecation & Breaking Changes
+
+## v3.1.0 (Current) — Discovery Migration
+
+**Cloud discovery execution has moved from API to Worker Service** to improve scalability and reliability.
+
+### What Changed
+- `POST /jobs/<id>/run` now queues jobs for the Worker Service and returns `202 Accepted` instead of executing synchronously
+- Worker Service processes discovery jobs asynchronously with proper resource isolation
+- API discovery provider classes (`aws_discovery.py`, `gcp_discovery.py`, `azure_discovery.py`, `k8s_discovery.py`) marked as deprecated
+
+### Backward Compatibility
+**For immediate emergency use only:** Add `?legacy=true` query parameter to `POST /jobs/<id>/run` to trigger synchronous execution in API
+
+```bash
+# v3.1.0 - Asynchronous (recommended)
+curl -X POST https://api.example.com/jobs/123/run
+# Returns: 202 Accepted
+
+# v3.1.0 - Synchronous fallback (legacy, not recommended)
+curl -X POST https://api.example.com/jobs/123/run?legacy=true
+# Returns: 200 OK with results (blocks until complete)
+```
+
+### Migration Required
+Update clients to use async pattern:
+```python
+# OLD (v2.x & early v3.x) - Synchronous
+response = requests.post(f"{api_url}/jobs/{job_id}/run")
+results = response.json()  # Blocks until discovery completes
+
+# NEW (v3.1.0+) - Asynchronous
+response = requests.post(f"{api_url}/jobs/{job_id}/run")
+assert response.status_code == 202  # Accepted
+
+# Poll for completion
+while True:
+    history = requests.get(f"{api_url}/jobs/{job_id}/history")
+    if history.json()[-1]["status"] == "completed":
+        break
+    time.sleep(5)
+```
+
+---
+
+## v4.0.0 (Next Major) — Breaking Changes
+
+**v4.0.0 removes all synchronous discovery execution and legacy fallback mechanisms.** This is a breaking change that requires client updates.
+
+### Removed
+- **Synchronous discovery execution in API** - All `POST /jobs/<id>/run` implementations deleted
+- **API discovery provider classes** deleted:
+  - `apps/api/services/discovery/aws_discovery.py`
+  - `apps/api/services/discovery/gcp_discovery.py`
+  - `apps/api/services/discovery/azure_discovery.py`
+  - `apps/api/services/discovery/k8s_discovery.py`
+- **Legacy `?legacy=true` fallback** - No longer supported
+
+### Breaking API Changes
+```
+POST /jobs/<id>/run
+Before (v3.0.x): Returns 200 with results (synchronous)
+After (v4.0.0): Returns 202 with queue location (asynchronous only)
+```
+
+### Required Client Migration
+**All applications relying on synchronous `POST /jobs/<id>/run` must migrate to the async pattern:**
+
+1. **Queue the job**
+   ```bash
+   POST /jobs/{id}/run
+   # Returns: 202 Accepted
+   ```
+
+2. **Poll for completion**
+   ```bash
+   GET /jobs/{id}/history
+   # Check if latest entry has status: "completed"
+   ```
+
+3. **Get results**
+   ```bash
+   GET /jobs/{id}/history
+   # Parse entries with status: "success"/"failure"
+   ```
+
+---
+
+## Migration Path: v3.1.0 → v4.0.0
+
+### Step 1: Verify Worker Service Deployment
+Ensure Worker Service has `DATABASE_URL` configured in v3.1.0:
+```yaml
+# docker-compose.yml or K8s deployment
+worker:
+  environment:
+    DATABASE_URL: postgres://...
+    WORKER_DISCOVERY_ENABLED: "true"
+```
+
+### Step 2: Deploy v3.1.0
+Update client code **before** upgrading to v4.0.0:
+- Test that discovery jobs queue successfully via `POST /jobs/<id>/run` (202 response)
+- Implement polling logic using `GET /jobs/<id>/history`
+- Verify discovery_history table receives completion events
+- Monitor Worker logs for discovery job processing
+
+### Step 3: Monitor Discovery Completion
+```python
+# Verify discovery jobs complete successfully
+import requests
+import time
+
+def wait_for_discovery(job_id, max_wait=300):
+    start = time.time()
+    while time.time() - start < max_wait:
+        resp = requests.get(f"{api_url}/jobs/{job_id}/history")
+        history = resp.json()
+        if history and history[-1]["status"] in ["completed", "failed"]:
+            return history[-1]
+        time.sleep(5)
+    raise TimeoutError(f"Discovery job {job_id} did not complete")
+```
+
+### Step 4: Verify All Discovery Jobs Complete
+Before upgrading to v4.0.0:
+- Run smoke tests to confirm discovery jobs complete successfully
+- Monitor `discovery_history` table for new entries
+- Verify no jobs stuck in "queued" or "running" state
+- Check Worker service logs for errors
+
+### Step 5: Upgrade to v4.0.0
+Once all clients updated and discovery jobs verified:
+```bash
+# Safe to upgrade
+docker pull ghcr.io/penguintechinc/elder-api:v4.0.0
+docker pull ghcr.io/penguintechinc/elder-worker:v4.0.0
+```
+
+### Rollback Strategy (v4.0.0 → v3.1.0)
+If critical issues discovered:
+```bash
+# Rollback to v3.1.0 with legacy fallback still available
+docker pull ghcr.io/penguintechinc/elder-api:v3.1.0
+docker pull ghcr.io/penguintechinc/elder-worker:v3.1.0
+# Client code can temporarily use ?legacy=true while making permanent changes
+```
+
+---
+
 # v2.1.0 ✅ COMPLETED
 ## Integrations
 - iBoss API integration and discovery to pull networking, user, applications, and other metadata (Read only)

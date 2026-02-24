@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-02-23
+
+### ⚠️ Breaking Changes
+
+#### Cloud Discovery Execution Migration
+- **DEPRECATED**: Cloud discovery execution in API (sunset v4.0.0)
+  - **Old behavior**: `POST /jobs/<id>/run` executed synchronously, blocking until completion
+  - **New behavior**: `POST /jobs/<id>/run` sets `next_run_at=now()` (202 Accepted), worker executes asynchronously
+  - **Fallback**: `POST /jobs/<id>/run?legacy=true` for emergency synchronous execution (available until v4.0.0)
+  - **Migration**: Update automation to poll `GET /jobs/<id>` for `status` and `last_run_at` instead of blocking on run endpoint
+
+### ✨ New Features
+
+#### Elder Worker Service
+- **Background operations ownership**: Worker service now owns all background operations
+  - Cloud discovery execution (AWS, GCP, Azure, Kubernetes)
+  - Connector state synchronization
+  - Credential refresh and expiration handling
+- **Worker polling architecture**: Polls `discovery_jobs` table every 5 minutes
+  - Zero external triggers required
+  - Horizontal scaling ready (stateless design)
+- **Multi-provider discovery**: Executes discovery for AWS, GCP, Azure, and Kubernetes providers
+- **Read replica support**: Optional `DATABASE_READ_URL` environment variable for read-only connections
+  - Enables horizontal scaling of read-heavy endpoints
+  - Falls back to primary database if not configured
+
+#### Stateless Container Architecture
+- **Worker credentials**: Mounted from Kubernetes Secrets instead of persistent volumes
+  - No PVC required
+  - Supports pod disruption budgets and graceful eviction
+- **Scanner screenshots**: Uses `emptyDir` temporary storage instead of PVC
+  - Screenshots cleaned up after scan completion
+  - No persistent storage overhead
+- **Ready for horizontal scaling**: All Elder services now stateless (API, Worker, Scanner)
+
+#### Per-Service Database Accounts (Least Privilege)
+- **Database role separation**:
+  - `elder` (API): Full access to all tables
+  - `elder_worker`: `discovery_jobs` read/write, `entities` write, `organizations` read
+  - `elder_scanner`: `scan_jobs` read, `discovery_history` write
+- **Benefits**: Limits blast radius of compromised credentials, enforces operation separation
+- **Configuration**: Via `DATABASE_USERNAME` and `DATABASE_PASSWORD` per container
+
+#### Shared Database Module
+- **Centralized ORM/models**: `shared/models/` and `shared/database/` for all services
+  - Previously only available in Flask context
+  - Now accessible to standalone services (Worker, Scanner, Connector)
+- **Non-API database access**: Worker and other services can connect to databases without Flask
+- **Consistent schema version management**: Alembic migrations centralized in `shared/migrations/`
+
+#### Read Replica Optimization
+- **Heavy read endpoints use read replica** (when `DATABASE_READ_URL` configured):
+  - `GET /entities` (list, search, filters)
+  - `GET /graph` (relationship traversal)
+  - `GET /discovery-jobs/<id>/history` (discovery history)
+  - `GET /health/db` (read-only health check)
+- **Write operations always use primary**: Ensures consistency
+- **Fallback logic**: If read replica unavailable, queries transparently use primary
+
+### 🐛 Bug Fixes
+
+#### Login System & Database Access
+- **Fixed**: Portal authentication now uses Flask app context database properly
+  - Changed from module-level `database.db` to `current_app.db`
+  - Resolves database connection issues in single-tenant deployments
+- **Fixed**: Single-tenant fallback for systems without explicit tenant
+  - Login endpoint falls back to "system" tenant, then "default" if not found
+  - Ensures login works in default deployments
+
+#### Discovery Job Lifecycle
+- **Fixed**: UpdateEntityRequest now includes `organization_id` field
+  - Ensures entities are properly scoped to organizations during discovery
+  - Resolves entity orphaning in multi-tenant scenarios
+- **Fixed**: JWT token lifecycle improvements with proper datetime handling
+  - Credentials now properly expire and refresh
+  - Connector credentials no longer silently fail on expiration
+
+### 📦 Technical Improvements
+
+- **Dependency**: New `worker` service in Docker Compose (complementary to existing API, Scanner, Connector)
+- **Database scalability**: Read replicas enable horizontal scaling without replication burden on primary
+- **Credential security**: Kubernetes Secrets-based credential management (no PVC storage)
+- **Architecture documentation**: Updated [APP_STANDARDS.md](docs/APP_STANDARDS.md) with new microservices patterns
+
+---
+
 ## [3.0.2] - 2026-01-06
 
 ### ✨ New Features
