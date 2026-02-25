@@ -292,8 +292,8 @@ class ElderAPIClient:
             "entity_type": entity.entity_type,
             "organization_id": entity.organization_id,
             "description": entity.description,
+            "sub_type": entity.sub_type,
             "parent_id": entity.parent_id,
-            "owner_identity_id": entity.owner_identity_id,
             "attributes": entity.attributes or {},
             "tags": entity.tags or [],
             "is_active": entity.is_active,
@@ -305,6 +305,7 @@ class ElderAPIClient:
             "Creating entity",
             name=entity.name,
             type=entity.entity_type,
+            sub_type=entity.sub_type,
             org_id=entity.organization_id,
         )
         return await self._request("POST", "/entities", json=data)
@@ -317,6 +318,10 @@ class ElderAPIClient:
         """
         Update an existing entity.
 
+        Note: organization_id cannot be changed via update - entities are bound
+        to their organization. Only the fields supported by UpdateEntityRequest
+        are included here.
+
         Args:
             entity_id: Entity ID
             entity: Updated entity data
@@ -324,13 +329,14 @@ class ElderAPIClient:
         Returns:
             Updated entity
         """
+        # Only include fields that are valid for UpdateEntityRequest
+        # organization_id and owner_identity_id are not updatable fields
         data = {
             "name": entity.name,
             "entity_type": entity.entity_type,
-            "organization_id": entity.organization_id,
             "description": entity.description,
+            "sub_type": entity.sub_type,
             "parent_id": entity.parent_id,
-            "owner_identity_id": entity.owner_identity_id,
             "attributes": entity.attributes or {},
             "tags": entity.tags or [],
             "is_active": entity.is_active,
@@ -343,6 +349,7 @@ class ElderAPIClient:
             entity_id=entity_id,
             name=entity.name,
             type=entity.entity_type,
+            sub_type=entity.sub_type,
         )
         return await self._request("PATCH", f"/entities/{entity_id}", json=data)
 

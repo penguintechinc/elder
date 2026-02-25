@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "overrides": {
+    "safer-buffer": {
+      "reason": "safer-buffer@2.1.2 is a widely-used, legitimate npm package providing safe Buffer operations. The minification patterns flagged are standard for this established package.",
+      "expires": "2026-03-31"
+    }
+  }
+}

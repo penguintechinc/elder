@@ -250,6 +250,9 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
+      - name: Build react_libs
+        run: cd shared/react_libs && npm ci && npm run build
+
       - name: Install dependencies
         working-directory: web
         run: npm ci
