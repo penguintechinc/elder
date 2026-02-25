@@ -13,7 +13,7 @@ from flask import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.group_membership import GroupMembershipService
-from shared.licensing import license_required
+from apps.api.licensing_fallback import license_required
 
 logger = logging.getLogger(__name__)
 

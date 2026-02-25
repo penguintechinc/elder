@@ -1,0 +1,125 @@
+import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * Read environment variables from file.
+ * https://github.com/motdotla/dotenv
+ */
+// require('dotenv').config();
+
+/**
+ * Beta/bypass URL support:
+ * When PLAYWRIGHT_BASE_URL points to a bypass URL (e.g. dal2.penguintech.io),
+ * use PLAYWRIGHT_TARGET_HOST to specify the K8s ingress hostname.
+ * Chromium's --host-resolver-rules maps the target host to the bypass IP.
+ * This lets the browser send the correct Host header for ingress routing.
+ *
+ * Example: PLAYWRIGHT_BASE_URL=https://dal2.penguintech.io PLAYWRIGHT_TARGET_HOST=elder.penguintech.io
+ */
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3005';
+const targetHost = process.env.PLAYWRIGHT_TARGET_HOST;
+
+// If a target host is specified, resolve it to the bypass URL's IP
+let resolverRules: string | undefined;
+let effectiveBaseURL = baseURL;
+if (targetHost) {
+  // Extract hostname from base URL to get the bypass IP
+  const bypassHost = new URL(baseURL).hostname;
+  resolverRules = `MAP ${targetHost} ${bypassHost}`;
+  // Rewrite base URL to use the target hostname instead
+  effectiveBaseURL = baseURL.replace(bypassHost, targetHost);
+}
+
+/**
+ * See https://playwright.dev/docs/test-configuration.
+ */
+export default defineConfig({
+  testDir: './tests/e2e',
+  /* Run tests in files in parallel */
+  fullyParallel: true,
+  /* Fail the build on CI if you accidentally left test.only in the source code. */
+  forbidOnly: !!process.env.CI,
+  /* Retry on CI only */
+  retries: process.env.CI ? 2 : 0,
+  /* Opt out of parallel tests on CI. */
+  workers: process.env.CI ? 1 : undefined,
+  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  reporter: 'html',
+  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
+  use: {
+    /* Base URL to use in actions like `await page.goto('/')`. */
+    baseURL: effectiveBaseURL,
+    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
+    trace: 'on-first-retry',
+    /* Screenshot on failure */
+    screenshot: 'only-on-failure',
+    /* Video on failure */
+    video: 'retain-on-failure',
+    /* Ignore SSL certificate errors for self-signed certs in beta deployments */
+    ignoreHTTPSErrors: true,
+  },
+
+  /* Configure projects for major browsers */
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // When using bypass URL, map target host to bypass IP for correct Host header
+        ...(resolverRules
+          ? { launchOptions: { args: [`--host-resolver-rules=${resolverRules}`] } }
+          : {}),
+      },
+    },
+
+    // Firefox and WebKit can be enabled on systems with all dependencies
+    // For CI/K8s environments, chromium-only is recommended
+    ...(process.env.PLAYWRIGHT_BROWSERS === 'all'
+      ? [
+          {
+            name: 'firefox',
+            use: { ...devices['Desktop Firefox'] },
+          },
+
+          {
+            name: 'webkit',
+            use: { ...devices['Desktop Safari'] },
+          },
+        ]
+      : []),
+
+    /* Test against mobile viewports. */
+    // {
+    //   name: 'Mobile Chrome',
+    //   use: { ...devices['Pixel 5'] },
+    // },
+    // {
+    //   name: 'Mobile Safari',
+    //   use: { ...devices['iPhone 12'] },
+    // },
+
+    /* Test against branded browsers. */
+    // {
+    //   name: 'Microsoft Edge',
+    //   use: { ...devices['Desktop Edge'], channel: 'msedge' },
+    // },
+    // {
+    //   name: 'Google Chrome',
+    //   use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+    // },
+  ],
+
+  /* Run your local dev server before starting the tests */
+  webServer: process.env.PLAYWRIGHT_WEBSERVER_DISABLED
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: 'http://localhost:3005',
+        reuseExistingServer: !process.env.CI,
+        timeout: 120 * 1000,
+      },
+
+  /* Global timeout for tests */
+  timeout: 30 * 1000,
+  /* Expect timeout */
+  expect: { timeout: 10 * 1000 },
+});

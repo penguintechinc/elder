@@ -1,0 +1,167 @@
+# Alpha environment overrides
+# Local development / testing environment
+
+namespace: elder-alpha
+
+# Global settings for alpha
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# PostgreSQL - Single replica for alpha
+postgres:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: Never
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# Redis - Single replica for alpha
+redis:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: Never
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  persistence:
+    enabled: true
+    size: 2Gi
+
+# Elder Web UI - Single replica for alpha
+web:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-web
+    tag: alpha-latest
+    pullPolicy: Never
+  buildArgs:
+    VITE_API_URL: "http://localhost:4000"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  autoscaling:
+    enabled: false
+
+# Elder Flask API - Single replica for alpha
+api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-api
+    tag: alpha-latest
+    pullPolicy: Never
+  env:
+    FLASK_ENV: development
+    SECRET_KEY: "alpha-dev-secret-key"
+    SITE_URL: "http://localhost:3005"
+    LOG_LEVEL: DEBUG
+    RELEASE_MODE: "false"
+    GRPC_REQUIRE_LICENSE: "false"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  autoscaling:
+    enabled: false
+
+# Scanner Service - Single replica for alpha
+scanner:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-scanner
+    tag: alpha-latest
+    pullPolicy: Never
+  env:
+    SCANNER_POLL_INTERVAL: "600"
+    LOG_LEVEL: DEBUG
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  screenshotStorage:
+    sizeLimit: "500Mi"
+
+# Worker Service - Single replica for alpha
+worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-worker
+    tag: alpha-latest
+    pullPolicy: Never
+  env:
+    LOG_LEVEL: DEBUG
+    LOG_FORMAT: json
+    SYNC_ON_STARTUP: "false"
+    DATABASE_URL: ""
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  credentialsSecret:
+    name: ""
+
+# Prometheus - Disabled in alpha
+prometheus:
+  enabled: false
+
+# Alertmanager - Disabled in alpha
+alertmanager:
+  enabled: false
+
+# Grafana - Disabled in alpha
+grafana:
+  enabled: false
+
+# Ingress - Disabled in alpha
+ingress:
+  enabled: false
+
+# Service Account
+serviceAccount:
+  create: true
+  name: "elder-alpha"
+
+# Pod Security Context - More relaxed for development
+podSecurityContext:
+  fsGroup: 1000
+
+# Security Context - More relaxed for development
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 1000
+  allowPrivilegeEscalation: true
+  capabilities:
+    drop: []

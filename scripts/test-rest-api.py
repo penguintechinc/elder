@@ -291,10 +291,51 @@ class RestApiTester:
         # self.test_crud_workflow('organizations',
         #     create_data={'name': 'Test Org CRUD', 'description': 'Test organization for CRUD'})
 
-        # Test entity CRUD
+        # Test entity CRUD - Generic compute entity
         self.test_crud_workflow('entities',
             create_data={'name': 'Test Entity', 'entity_type': 'server', 'organization_id': 1, 'description': 'Test entity'},
             update_data={'description': 'Updated entity description'})
+
+        # Test LXD Container entity creation
+        self.test_crud_workflow('entities',
+            create_data={
+                'name': 'Test LXD Container',
+                'entity_type': 'compute',
+                'sub_type': 'lxd_container',
+                'organization_id': 1,
+                'description': 'Test LXD container entity',
+                'attributes': {
+                    'metadata': {
+                        'os': 'Ubuntu 22.04',
+                        'memory_gb': 2,
+                        'cpu_cores': 2,
+                        'root_disk_gb': 20,
+                        'status': 'running'
+                    }
+                }
+            },
+            update_data={'description': 'Updated LXD container'})
+
+        # Test LXD VM entity creation
+        self.test_crud_workflow('entities',
+            create_data={
+                'name': 'Test LXD VM',
+                'entity_type': 'compute',
+                'sub_type': 'lxd_vm',
+                'organization_id': 1,
+                'description': 'Test LXD VM entity',
+                'attributes': {
+                    'metadata': {
+                        'os': 'Ubuntu 20.04',
+                        'vcpu_count': 4,
+                        'memory_gb': 8,
+                        'disk_gb': 50,
+                        'status': 'running',
+                        'boot_mode': 'UEFI'
+                    }
+                }
+            },
+            update_data={'description': 'Updated LXD VM'})
 
         # Test service CRUD
         self.test_crud_workflow('services',

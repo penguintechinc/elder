@@ -1,0 +1,105 @@
+{{- range $component := list "postgres" "redis" "web" "api" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- $componentConfig := index $.Values $component }}
+{{- if $componentConfig.enabled }}
+{{- if $componentConfig.service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
+spec:
+  type: {{ $componentConfig.service.type | default "ClusterIP" }}
+  ports:
+  {{- if eq $component "postgres" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: 5432
+    protocol: TCP
+    name: postgres
+  {{- else if eq $component "redis" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: 6379
+    protocol: TCP
+    name: redis
+  {{- else if eq $component "web" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: {{ $componentConfig.service.targetPort }}
+    protocol: TCP
+    name: http
+  {{- else if eq $component "api" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: {{ $componentConfig.service.targetPort }}
+    protocol: TCP
+    name: http
+  - port: {{ $componentConfig.service.grpcPort }}
+    targetPort: {{ $componentConfig.service.grpcPort }}
+    protocol: TCP
+    name: grpc
+  {{- else if eq $component "worker" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: {{ $componentConfig.service.targetPort }}
+    protocol: TCP
+    name: http
+  {{- else if eq $component "prometheus" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: 9090
+    protocol: TCP
+    name: http
+  {{- else if eq $component "alertmanager" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: 9093
+    protocol: TCP
+    name: http
+  {{- else if eq $component "grafana" }}
+  - port: {{ $componentConfig.service.port }}
+    targetPort: 3000
+    protocol: TCP
+    name: http
+  {{- end }}
+  selector:
+    {{- include "elder.componentSelectorLabels" (list $component $) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if not .Values.api.service }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "elder.fullname" . }}-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5000
+    targetPort: 5000
+    protocol: TCP
+    name: http
+  - port: 50051
+    targetPort: 50051
+    protocol: TCP
+    name: grpc
+  selector:
+    {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 4 }}
+{{- end }}
+
+{{- if and (not .Values.scanner.service) .Values.scanner.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "elder.fullname" . }}-scanner
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "scanner" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "elder.componentSelectorLabels" (list "scanner" .) | nindent 4 }}
+{{- end }}

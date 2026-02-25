@@ -8,7 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
-      '@penguin/react_libs': path.resolve(__dirname, '../shared/react_libs/dist'),
+      // @penguintechinc/react-libs pulled from GitHub Packages (npm)
     },
   },
   server: {

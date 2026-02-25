@@ -6,7 +6,7 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-import { FormModalBuilder, FormField } from '@penguin/react_libs/components'
+import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import type { IdPConfiguration } from '@/types'
 
 const idpFields: FormField[] = [
@@ -159,10 +159,11 @@ export default function SSOConfiguration() {
     if (!editingIdP) return idpFields
     return idpFields.map((field) => {
       const value = editingIdP[field.name as keyof IdPConfiguration]
-      const isValidValue = value !== undefined && value !== null && typeof value !== 'object'
+      // Only use scalar values as defaultValue (skip objects like attribute_mappings)
+      const isScalar = typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
       return {
         ...field,
-        defaultValue: isValidValue ? (value as string | number | boolean) : field.defaultValue,
+        defaultValue: isScalar ? value : field.defaultValue,
       }
     })
   }, [editingIdP])

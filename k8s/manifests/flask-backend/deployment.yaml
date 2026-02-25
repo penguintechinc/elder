@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-backend
+  labels:
+    app: flask-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-backend
+  template:
+    metadata:
+      labels:
+        app: flask-backend
+    spec:
+      containers:
+        - name: flask-backend
+          image: registry-dal2.penguintech.io/elder/flask-backend:latest
+          ports:
+            - containerPort: 5000

@@ -12,9 +12,8 @@ import secrets
 from typing import Optional
 
 import pyotp
+from flask import current_app
 from werkzeug.security import check_password_hash, generate_password_hash
-
-import shared.database.connection as database
 
 
 class PortalAuthService:
@@ -55,9 +54,9 @@ class PortalAuthService:
 
         # Check if email already exists in this tenant
         existing = (
-            database.db(
-                (database.db.portal_users.email == email.lower())
-                & (database.db.portal_users.tenant_id == tenant_id)
+            current_app.db(
+                (current_app.db.portal_users.email == email.lower())
+                & (current_app.db.portal_users.tenant_id == tenant_id)
             )
             .select()
             .first()
@@ -70,7 +69,7 @@ class PortalAuthService:
         password_hash = generate_password_hash(password)
 
         # Create user
-        user_id = database.db.portal_users.insert(
+        user_id = current_app.db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=password_hash,
@@ -82,7 +81,7 @@ class PortalAuthService:
             failed_login_attempts=0,
             password_changed_at=datetime.datetime.now(datetime.timezone.utc),
         )
-        database.db.commit()
+        current_app.db.commit()
 
         return {
             "id": user_id,
@@ -105,9 +104,9 @@ class PortalAuthService:
             User dict on success, error dict on failure
         """
         user = (
-            database.db(
-                (database.db.portal_users.email == email.lower())
-                & (database.db.portal_users.tenant_id == tenant_id)
+            current_app.db(
+                (current_app.db.portal_users.email == email.lower())
+                & (current_app.db.portal_users.tenant_id == tenant_id)
             )
             .select()
             .first()
@@ -123,7 +122,7 @@ class PortalAuthService:
             else:
                 # Unlock account
                 user.update_record(locked_until=None, failed_login_attempts=0)
-                database.db.commit()
+                current_app.db.commit()
 
         # Check if account is active
         if not user.is_active:
@@ -143,7 +142,7 @@ class PortalAuthService:
                 )
 
             user.update_record(**updates)
-            database.db.commit()
+            current_app.db.commit()
             return {"error": "Invalid credentials"}
 
         # Reset failed attempts on successful login
@@ -151,7 +150,7 @@ class PortalAuthService:
             failed_login_attempts=0,
             last_login_at=datetime.datetime.now(datetime.timezone.utc),
         )
-        database.db.commit()
+        current_app.db.commit()
 
         # Check if MFA is required
         if user.mfa_secret:
@@ -181,7 +180,7 @@ class PortalAuthService:
         Returns:
             User dict on success, error dict on failure
         """
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
 
@@ -211,7 +210,7 @@ class PortalAuthService:
         Returns:
             MFA setup info (secret, provisioning URI)
         """
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
 
@@ -226,7 +225,7 @@ class PortalAuthService:
             mfa_secret=secret,
             mfa_backup_codes=backup_codes,
         )
-        database.db.commit()
+        current_app.db.commit()
 
         # Generate provisioning URI for authenticator apps
         totp = pyotp.TOTP(secret)
@@ -248,12 +247,12 @@ class PortalAuthService:
         Returns:
             Success dict
         """
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
 
         user.update_record(mfa_secret=None, mfa_backup_codes=None)
-        database.db.commit()
+        current_app.db.commit()
 
         return {"success": True}
 
@@ -269,7 +268,7 @@ class PortalAuthService:
         Returns:
             Success dict or error dict
         """
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
         if not user:
             return {"error": "User not found"}
 
@@ -288,7 +287,7 @@ class PortalAuthService:
             password_hash=generate_password_hash(new_password),
             password_changed_at=datetime.datetime.now(datetime.timezone.utc),
         )
-        database.db.commit()
+        current_app.db.commit()
 
         return {"success": True}
 
@@ -304,9 +303,9 @@ class PortalAuthService:
             Reset token (in production, send via email)
         """
         user = (
-            database.db(
-                (database.db.portal_users.email == email.lower())
-                & (database.db.portal_users.tenant_id == tenant_id)
+            current_app.db(
+                (current_app.db.portal_users.email == email.lower())
+                & (current_app.db.portal_users.tenant_id == tenant_id)
             )
             .select()
             .first()
@@ -344,13 +343,13 @@ class PortalAuthService:
         """
         # Check if assignment exists
         existing = (
-            database.db(
+            current_app.db(
                 (
-                    database.db.portal_user_org_assignments.portal_user_id
+                    current_app.db.portal_user_org_assignments.portal_user_id
                     == portal_user_id
                 )
                 & (
-                    database.db.portal_user_org_assignments.organization_id
+                    current_app.db.portal_user_org_assignments.organization_id
                     == organization_id
                 )
             )
@@ -361,16 +360,16 @@ class PortalAuthService:
         if existing:
             # Update existing assignment
             existing.update_record(role=role)
-            database.db.commit()
+            current_app.db.commit()
             return {"id": existing.id, "role": role, "updated": True}
 
         # Create new assignment
-        assignment_id = database.db.portal_user_org_assignments.insert(
+        assignment_id = current_app.db.portal_user_org_assignments.insert(
             portal_user_id=portal_user_id,
             organization_id=organization_id,
             role=role,
         )
-        database.db.commit()
+        current_app.db.commit()
 
         return {"id": assignment_id, "role": role, "created": True}
 
@@ -384,13 +383,13 @@ class PortalAuthService:
         Returns:
             Dict with global_role, tenant_role, and org_roles
         """
-        user = database.db.portal_users[portal_user_id]
+        user = current_app.db.portal_users[portal_user_id]
         if not user:
             return {"error": "User not found"}
 
         # Get org assignments
-        org_assignments = database.db(
-            database.db.portal_user_org_assignments.portal_user_id == portal_user_id
+        org_assignments = current_app.db(
+            current_app.db.portal_user_org_assignments.portal_user_id == portal_user_id
         ).select()
 
         org_roles = {a.organization_id: a.role for a in org_assignments}

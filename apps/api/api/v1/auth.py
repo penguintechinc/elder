@@ -15,7 +15,7 @@ from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("auth", __name__)
 
@@ -422,6 +422,35 @@ async def refresh_token_endpoint():
         ),
         200,
     )
+
+
+@bp.route("/captcha-challenge", methods=["GET"])
+def captcha_challenge():
+    """Generate ALTCHA proof-of-work challenge."""
+    import hashlib
+    import hmac
+    import time
+
+    salt = os.urandom(16).hex()
+    timestamp = str(int(time.time()))
+    secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
+    challenge = hashlib.sha256(f"{salt}{timestamp}{secret}".encode()).hexdigest()
+
+    # Generate signature for ALTCHA verification
+    signature_data = f"{challenge}{salt}{timestamp}".encode()
+    signature = hmac.new(
+        secret.encode(),
+        signature_data,
+        hashlib.sha256
+    ).hexdigest()
+
+    return jsonify({
+        "algorithm": "SHA-256",
+        "challenge": challenge,
+        "salt": salt,
+        "difficulty": 10000,
+        "signature": signature,
+    })
 
 
 def _create_audit_log_sync(

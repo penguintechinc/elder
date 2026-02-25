@@ -158,6 +158,21 @@ test-coverage: ## Testing - Generate coverage report
 	@pytest tests/ --cov=apps --cov-report=html
 	@echo "$(GREEN)Coverage report generated in htmlcov/$(RESET)"
 
+test-ui: ## Testing - Run Playwright web UI tests (headless)
+	@echo "$(BLUE)Running Playwright web UI tests...$(RESET)"
+	@cd web && npm run test:e2e
+	@echo "$(GREEN)Web UI tests complete!$(RESET)"
+
+test-ui-headed: ## Testing - Run Playwright web UI tests with UI
+	@echo "$(BLUE)Running Playwright web UI tests (headed mode)...$(RESET)"
+	@cd web && npm run test:e2e:ui
+	@echo "$(GREEN)Web UI tests complete! View results in playwright report.$(RESET)"
+
+test-ui-debug: ## Testing - Run Playwright with debug mode
+	@echo "$(BLUE)Running Playwright in debug mode...$(RESET)"
+	@cd web && npm run test:e2e:debug
+	@echo "$(GREEN)Debug session ended$(RESET)"
+
 # Code Quality Commands
 lint: ## Testing - Run linting checks
 	@echo "$(BLUE)Running linters...$(RESET)"
@@ -298,3 +313,34 @@ health: ## Check health of all services
 status: ## Show status of all services
 	@echo "$(BLUE)Service Status:$(RESET)"
 	@docker-compose ps
+
+# === Kubernetes Deployment (microk8s + Helm v3) ===
+HELM_DIR := infrastructure/helm/$(PROJECT_NAME)
+
+k8s-alpha-deploy:
+	@./tests/k8s/alpha/run-all-alpha.sh
+
+k8s-beta-deploy:
+	@./tests/k8s/beta/run-all-beta.sh
+
+k8s-prod-deploy:
+	@read -p "Deploy to PRODUCTION? (yes/NO): " c && [ "$$c" = "yes" ]
+	@helm upgrade --install $(PROJECT_NAME) ./$(HELM_DIR) --namespace $(PROJECT_NAME)-prod --create-namespace --values ./$(HELM_DIR)/values.yaml --wait --timeout 10m
+
+k8s-alpha-test:
+	@./tests/k8s/alpha/run-all-alpha.sh
+
+k8s-beta-test:
+	@./tests/k8s/beta/run-all-beta.sh
+
+k8s-cleanup:
+	@helm uninstall $(PROJECT_NAME) -n $(PROJECT_NAME)-alpha 2>/dev/null || true
+	@helm uninstall $(PROJECT_NAME) -n $(PROJECT_NAME)-beta 2>/dev/null || true
+	@microk8s kubectl delete namespace $(PROJECT_NAME)-alpha 2>/dev/null || true
+	@microk8s kubectl delete namespace $(PROJECT_NAME)-beta 2>/dev/null || true
+
+helm-lint:
+	@helm lint ./$(HELM_DIR)
+
+helm-template:
+	@helm template $(PROJECT_NAME) ./$(HELM_DIR) --values ./$(HELM_DIR)/values-alpha.yaml

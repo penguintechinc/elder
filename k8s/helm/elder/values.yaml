@@ -1,0 +1,469 @@
+# Default values for elder
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+namespace: elder
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# PostgreSQL Database
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: 17-bookworm
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 5432
+  env:
+    POSTGRES_DB: elder
+    POSTGRES_USER: elder
+    POSTGRES_PASSWORD: elder_dev_password
+    POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  healthcheck:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 5
+
+# Redis Cache
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-bookworm
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 6379
+  env:
+    REDIS_PASSWORD: elder_redis_password
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  healthcheck:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+# Elder Web UI
+web:
+  enabled: true
+  image:
+    repository: elder-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 80
+  buildArgs:
+    VITE_API_URL: "http://localhost:4000"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  healthcheck:
+    enabled: true
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+# Elder Flask API
+api:
+  enabled: true
+  image:
+    repository: elder-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 5000
+    targetPort: 5000
+    grpcPort: 50051
+  buildArgs:
+    JWT_ACCESS_TOKEN_HOURS: "4"
+    JWT_REFRESH_TOKEN_DAYS: "30"
+  env:
+    # Flask
+    FLASK_ENV: production
+    FLASK_APP: "apps.api.main:create_app"
+    FLASK_HOST: "0.0.0.0"
+    FLASK_PORT: "5000"
+    SECRET_KEY: "CHANGE-IN-PRODUCTION"
+
+    # JWT Token Expiration
+    JWT_ACCESS_TOKEN_HOURS: "4"
+    JWT_REFRESH_TOKEN_DAYS: "30"
+
+    # Site URL
+    SITE_URL: "http://localhost:3005"
+
+    # Database
+    DB_TYPE: postgres
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    DB_NAME: elder
+    DB_USER: elder
+    DB_PASSWORD: elder_dev_password
+    DB_POOL_SIZE: "20"
+
+    # Redis
+    REDIS_URL: "redis://:elder_redis_password@redis:6379/0"
+
+    # gRPC
+    GRPC_ENABLED: "true"
+    GRPC_HOST: "0.0.0.0"
+    GRPC_PORT: "50051"
+    GRPC_MAX_WORKERS: "10"
+    GRPC_REQUIRE_LICENSE: "true"
+
+    # License Server
+    LICENSE_KEY: ""
+    PRODUCT_NAME: elder
+    LICENSE_SERVER_URL: "https://license.penguintech.io"
+
+    # Auth
+    SAML_ENABLED: "false"
+    OAUTH2_ENABLED: "false"
+    LDAP_ENABLED: "false"
+
+    # Admin user
+    ADMIN_USERNAME: admin
+    ADMIN_PASSWORD: admin123
+    ADMIN_EMAIL: "admin@localhost.local"
+
+    # Guest user
+    ENABLE_GUEST_LOGIN: "false"
+    GUEST_USERNAME: guest
+    GUEST_PASSWORD: guest
+
+    # Logging
+    LOG_LEVEL: INFO
+    SYSLOG_ENABLED: "false"
+
+    # Metrics
+    METRICS_ENABLED: "true"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  healthcheck:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+# Scanner Service
+scanner:
+  enabled: true
+  image:
+    repository: elder-scanner
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  buildArgs:
+    SCANNER_POLL_INTERVAL: "300"
+  env:
+    SCANNER_POLL_INTERVAL: "300"
+    ELDER_API_URL: "http://api:5000"
+    ELDER_API_TOKEN: ""
+    SCREENSHOT_DIR: "/app/screenshots"
+    LOG_LEVEL: INFO
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  screenshotStorage:
+    sizeLimit: "1Gi"
+  securityContext:
+    capabilities:
+      add:
+        - NET_ADMIN
+
+# Worker Service
+worker:
+  enabled: true
+  image:
+    repository: elder-worker
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 28000
+    targetPort: 28000
+  env:
+    # Elder API Configuration
+    ELDER_API_URL: "http://api:5000"
+    ELDER_API_KEY: ""
+
+    # Database (direct access for discovery jobs)
+    DATABASE_URL: ""
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "10"
+
+    # AWS Configuration
+    AWS_ENABLED: "false"
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
+    AWS_DEFAULT_REGION: "us-east-1"
+    AWS_REGIONS: "us-east-1,us-west-2"
+    AWS_SYNC_INTERVAL: "3600"
+
+    # GCP Configuration
+    GCP_ENABLED: "false"
+    GCP_PROJECT_ID: ""
+    GCP_CREDENTIALS_PATH: "/var/run/secrets/elder/gcp-credentials.json"
+    GCP_SYNC_INTERVAL: "3600"
+
+    # Google Workspace Configuration
+    GOOGLE_WORKSPACE_ENABLED: "false"
+    GOOGLE_WORKSPACE_CREDENTIALS_PATH: "/var/run/secrets/elder/workspace-credentials.json"
+    GOOGLE_WORKSPACE_ADMIN_EMAIL: ""
+    GOOGLE_WORKSPACE_CUSTOMER_ID: "my_customer"
+    GOOGLE_WORKSPACE_SYNC_INTERVAL: "3600"
+
+    # LDAP Configuration
+    LDAP_ENABLED: "false"
+    LDAP_SERVER: ""
+    LDAP_PORT: "389"
+    LDAP_USE_SSL: "false"
+    LDAP_VERIFY_CERT: "true"
+    LDAP_BIND_DN: ""
+    LDAP_BIND_PASSWORD: ""
+    LDAP_BASE_DN: ""
+    LDAP_USER_FILTER: "(objectClass=person)"
+    LDAP_GROUP_FILTER: "(objectClass=group)"
+    LDAP_SYNC_INTERVAL: "3600"
+
+    # Organization Mapping
+    DEFAULT_ORGANIZATION_ID: ""
+    CREATE_MISSING_ORGANIZATIONS: "true"
+
+    # Sync Configuration
+    SYNC_ON_STARTUP: "true"
+    SYNC_BATCH_SIZE: "100"
+    SYNC_MAX_RETRIES: "3"
+
+    # Health & Monitoring
+    HEALTH_CHECK_PORT: "28000"
+    METRICS_ENABLED: "true"
+
+    # Logging
+    LOG_LEVEL: INFO
+    LOG_FORMAT: json
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  credentialsSecret:
+    name: ""  # K8s Secret name containing credential files (GCP JSON, etc.)
+  healthcheck:
+    enabled: true
+    path: /healthz
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# Prometheus Monitoring
+prometheus:
+  enabled: true
+  image:
+    repository: prom/prometheus
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 9090
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  healthcheck:
+    enabled: true
+    path: /-/healthy
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# Alertmanager
+alertmanager:
+  enabled: true
+  image:
+    repository: prom/alertmanager
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 9093
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  healthcheck:
+    enabled: true
+    path: /-/healthy
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# Grafana Dashboard
+grafana:
+  enabled: true
+  image:
+    repository: grafana/grafana
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 3000
+  env:
+    GF_SECURITY_ADMIN_USER: admin
+    GF_SECURITY_ADMIN_PASSWORD: admin
+    GF_USERS_ALLOW_SIGN_UP: "false"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  healthcheck:
+    enabled: true
+    path: /api/health
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+
+# Ingress configuration
+ingress:
+  enabled: false
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: elder.penguintech.io
+      paths:
+        - path: /
+          pathType: Prefix
+          service: web
+          port: 80
+        - path: /api
+          pathType: Prefix
+          service: api
+          port: 5000
+  tls:
+    - secretName: elder-tls
+      hosts:
+        - elder.penguintech.io
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+
+# Security Context
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}

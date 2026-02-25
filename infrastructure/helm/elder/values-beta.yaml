@@ -1,0 +1,75 @@
+namespace: elder-beta
+
+api:
+  replicas: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  image:
+    registry: registry-dal2.penguintech.io
+    repository: elder/api
+
+web:
+  replicas: 2
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  image:
+    registry: registry-dal2.penguintech.io
+    repository: elder/web
+
+scanner:
+  replicas: 2
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  image:
+    registry: registry-dal2.penguintech.io
+    repository: elder/scanner
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - host: elder.penguintech.cloud
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: penguintech-cloud-wildcard-tls
+      hosts:
+        - elder.penguintech.cloud
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      size: 50Gi
+
+redis:
+  enabled: true
+  master:
+    persistence:
+      enabled: true
+      storageClass: longhorn
+      size: 10Gi
+
+networkPolicy:
+  enabled: true
+
+config:
+  logLevel: info

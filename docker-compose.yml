@@ -1,3 +1,16 @@
+# ==========================================================================
+# DEPRECATED: Docker Compose support has been deprecated.
+# Kubernetes (microk8s) with Helm v3 is now the standard deployment method.
+#
+# Use instead:
+#   Alpha:  make k8s-alpha-deploy
+#   Beta:   make k8s-beta-deploy
+#   Prod:   make k8s-prod-deploy
+#
+# See k8s/helm/<project>/ for Helm charts and values files.
+# This file is retained for reference only and will be removed in a future release.
+# ==========================================================================
+
 #version: '3.8'
 
 services:
@@ -44,14 +57,15 @@ services:
       context: .
       dockerfile: web/Dockerfile
       args:
+        GITHUB_TOKEN: ${GITHUB_TOKEN}
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
     container_name: elder-web
     ports:
-      - "${WEB_PORT:-3005}:80"
+      - "${WEB_PORT:-3005}:3000"
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:80/"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/"]
       interval: 30s
       timeout: 10s
       start_period: 5s
@@ -84,7 +98,8 @@ services:
       # Site URL (used to build CORS origins dynamically)
       - SITE_URL=${SITE_URL:-http://localhost:3005}
 
-      # Database - Use individual components for flexibility
+      # Database
+      - DATABASE_URL=postgres://${POSTGRES_USER:-elder}:${POSTGRES_PASSWORD:-elder_dev_password}@postgres:5432/${POSTGRES_DB:-elder}
       - DB_TYPE=postgres
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -149,6 +164,7 @@ services:
     volumes:
       - ./apps:/app/apps
       - ./shared:/app/shared
+      - ./alembic:/app/alembic
       - pydal_migrations:/app/instance
 
   # Scanner Service for local network scans
@@ -173,8 +189,8 @@ services:
     restart: unless-stopped
     networks:
       - elder-network
-    volumes:
-      - scanner_screenshots:/app/screenshots
+    tmpfs:
+      - /app/screenshots:size=1G
 
   # Prometheus Monitoring
   prometheus:
@@ -251,16 +267,21 @@ services:
       - elder-network
     restart: unless-stopped
 
-  # Elder Connector Service
-  connector:
+  # Elder Worker Service
+  worker:
     build:
       context: .
-      dockerfile: apps/connector/Dockerfile
-    container_name: elder-connector
+      dockerfile: apps/worker/Dockerfile
+    container_name: elder-worker
     environment:
       # Elder API Configuration
       - ELDER_API_URL=http://api:5000
       - ELDER_API_KEY=${ELDER_API_KEY}
+
+      # Database (direct access for discovery jobs)
+      - DATABASE_URL=postgres://${POSTGRES_USER:-elder}:${POSTGRES_PASSWORD:-elder_dev_password}@postgres:5432/${POSTGRES_DB:-elder}
+      - DATABASE_READ_URL=
+      - DB_POOL_SIZE=10
 
       # AWS Configuration
       - AWS_ENABLED=${AWS_ENABLED:-false}
@@ -296,6 +317,15 @@ services:
       - LDAP_GROUP_FILTER=${LDAP_GROUP_FILTER:-(objectClass=group)}
       - LDAP_SYNC_INTERVAL=${LDAP_SYNC_INTERVAL:-3600}
 
+      # LXD Configuration
+      - LXD_ENABLED=${LXD_ENABLED:-false}
+      - LXD_URL=${LXD_URL:-}
+      - LXD_CERT=${LXD_CERT:-}
+      - LXD_KEY=${LXD_KEY:-}
+      - LXD_VERIFY_CERT=${LXD_VERIFY_CERT:-false}
+      - LXD_TRUST_TOKEN=${LXD_TRUST_TOKEN:-}
+      - LXD_SYNC_INTERVAL=${LXD_SYNC_INTERVAL:-3600}
+
       # Organization Mapping
       - DEFAULT_ORGANIZATION_ID=${DEFAULT_ORGANIZATION_ID}
       - CREATE_MISSING_ORGANIZATIONS=${CREATE_MISSING_ORGANIZATIONS:-true}
@@ -314,14 +344,15 @@ services:
       - LOG_FORMAT=${LOG_FORMAT:-json}
 
     ports:
-      - "${CONNECTOR_HEALTH_PORT:-28000}:28000"
+      - "${WORKER_HEALTH_PORT:-28000}:28000"
     depends_on:
+      postgres:
+        condition: service_healthy
       api:
         condition: service_healthy
     volumes:
-      - ./apps/connector:/app/apps/connector
+      - ./apps/worker:/app/apps/worker
       - ./shared:/app/shared
-      - connector_credentials:/app/credentials
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:28000/healthz"]
       interval: 30s
@@ -343,10 +374,6 @@ volumes:
   grafana_data:
     driver: local
   pydal_migrations:
-    driver: local
-  connector_credentials:
-    driver: local
-  scanner_screenshots:
     driver: local
 
 networks:

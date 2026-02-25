@@ -1,6 +1,6 @@
 {
   "name": "project-template-web",
-  "version": "3.0.8",
+  "version": "3.1.0",
   "description": "Frontend web application",
   "type": "module",
   "scripts": {
@@ -10,14 +10,18 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:debug": "playwright test --debug",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@penguintechinc/react-libs": "^1.1.4",
     "@tanstack/react-query": "^5.62.2",
     "@xyflow/react": "^12.3.5",
-    "axios": "^1.7.7",
+    "axios": "^1.13.5",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
     "react": "^18.3.1",
@@ -25,10 +29,13 @@
     "react-hook-form": "^7.53.2",
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.30.2",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.48.2",
+    "@tailwindcss/postcss": "^4.1.17",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@typescript-eslint/eslint-plugin": "^8.15.0",
@@ -43,7 +50,6 @@
     "globals": "^16.5.0",
     "postcss": "^8.5.3",
     "prettier": "^3.4.2",
-    "@tailwindcss/postcss": "^4.1.17",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.47.0",

@@ -28,9 +28,11 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --user --no-cache-dir -r requirements.txt
 
-# Copy and install py_libs package
-COPY shared/py_libs /build/py_libs
-RUN pip install --user --no-cache-dir /build/py_libs
+# Copy and install penguin-libs package (symlinked from ~/code/penguin-libs/packages/python-libs)
+# For local builds: ln -s ~/code/penguin-libs/packages/python-libs libs/penguin-libs
+# When published to PyPI: replace with pip install penguin-libs==<version>
+COPY libs/penguin-libs /build/penguin-libs
+RUN pip install --user --no-cache-dir /build/penguin-libs
 
 # Runtime stage
 FROM python:3.12-slim
@@ -38,6 +40,9 @@ FROM python:3.12-slim
 # Build arguments for JWT token expiration
 ARG JWT_ACCESS_TOKEN_HOURS=4
 ARG JWT_REFRESH_TOKEN_DAYS=30
+
+# Build argument for application version
+ARG APP_VERSION=0.0.0
 
 # Set working directory
 WORKDIR /app
@@ -88,6 +93,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV JWT_ACCESS_TOKEN_HOURS=${JWT_ACCESS_TOKEN_HOURS}
 ENV JWT_REFRESH_TOKEN_DAYS=${JWT_REFRESH_TOKEN_DAYS}
+ENV APP_VERSION=${APP_VERSION}
 
 # Run unified startup script that launches both Flask and gRPC servers
 CMD ["python3", "-m", "apps.api.start"]

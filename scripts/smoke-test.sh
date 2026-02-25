@@ -338,9 +338,9 @@ fi
 
 # Test authentication - login
 log_info "Testing authentication..."
-LOGIN_RESPONSE=$(do_curl -sf -X POST "$API_URL/api/v1/auth/login" \
+LOGIN_RESPONSE=$(do_curl -sf -X POST "$API_URL/api/v1/portal-auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\": \"$ADMIN_USERNAME\", \"password\": \"$ADMIN_PASSWORD\"}" 2>/dev/null || echo "")
+    -d "{\"email\": \"$ADMIN_USERNAME\", \"password\": \"$ADMIN_PASSWORD\"}" 2>/dev/null || echo "")
 
 TOKEN=""
 if echo "$LOGIN_RESPONSE" | grep -qi "access_token\|token"; then
@@ -553,6 +553,45 @@ else
 
     log_info ""
     log_info "Step 8: Skipped (container-specific tests not applicable in K8s mode)"
+fi
+
+# ============================================================
+# PLAYWRIGHT WEB UI TESTS (both alpha and beta modes)
+# ============================================================
+log_info ""
+log_info "Step 9: Playwright Web UI Tests..."
+
+# Check if Node.js and npm are available
+if ! command -v npm &> /dev/null; then
+    log_warn "npm not found - skipping Playwright tests"
+else
+    # Set up Playwright environment
+    export PLAYWRIGHT_BASE_URL="$WEB_URL"
+
+    # Disable web server in beta mode (using existing deployment)
+    if [ "$TEST_MODE" = "beta" ]; then
+        export PLAYWRIGHT_WEBSERVER_DISABLED=1
+    fi
+
+    # For HTTPS (beta mode), we might need to disable SSL verification
+    if [ "$TEST_MODE" = "beta" ]; then
+        export NODE_TLS_REJECT_UNAUTHORIZED=0
+    fi
+
+    log_info "Running Playwright web UI tests against: $WEB_URL"
+
+    # Run Playwright tests with timeout
+    if timeout 300 bash -c 'cd "$PROJECT_ROOT/web" && npm run test:e2e 2>&1' | tee /tmp/playwright-output.log; then
+        record_pass "Playwright web UI tests passed"
+    else
+        if grep -q "no such file or directory\|cannot find" /tmp/playwright-output.log; then
+            log_warn "Playwright tests not yet installed - run 'cd web && npm install' to set up"
+        else
+            record_fail "Playwright web UI tests failed"
+            log_error "Playwright test output:"
+            tail -50 /tmp/playwright-output.log | sed 's/^/  /'
+        fi
+    fi
 fi
 
 # ============================================================

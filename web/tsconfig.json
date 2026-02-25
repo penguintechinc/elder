@@ -26,8 +26,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@penguin/react_libs": ["../shared/react_libs/dist"],
-      "@penguin/react_libs/*": ["../shared/react_libs/dist/*"]
+      "@penguintechinc/react-libs": ["../../penguin-libs/packages/react-libs/dist"],
+      "@penguintechinc/react-libs/*": ["../../penguin-libs/packages/react-libs/dist/*"]
     }
   },
   "include": ["src"],

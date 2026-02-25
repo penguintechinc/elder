@@ -451,8 +451,22 @@ vagrant/.TODO
 *.local.json
 .claude/.mcp.json
 
+# Copied external libraries (local development and Docker builds only)
+libs/penguin-libs
+shared/react_libs
+
 # Allow web/public for Vite static assets
 !web/public/
 
 # Allow react_libs dist for TypeScript path resolution
 !shared/react_libs/dist/
+
+.FUTURE
+.gh-token
+
+# Debug/verification screenshots (root-level throwaway captures)
+modal-*.png
+
+# Playwright test artifacts
+web/playwright-report/
+web/test-results/

@@ -11,6 +11,7 @@ for the same CVEs.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -22,7 +23,11 @@ depends_on = None
 
 def upgrade():
     """Add nvd_last_sync field to vulnerabilities table."""
-    op.add_column('vulnerabilities', sa.Column('nvd_last_sync', sa.DateTime(timezone=True), nullable=True))
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    existing = {c['name'] for c in inspector.get_columns('vulnerabilities')}
+    if 'nvd_last_sync' not in existing:
+        op.add_column('vulnerabilities', sa.Column('nvd_last_sync', sa.DateTime(timezone=True), nullable=True))
 
 
 def downgrade():

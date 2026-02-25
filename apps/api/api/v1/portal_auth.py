@@ -7,14 +7,13 @@ MFA management, and password operations with tenant context.
 # flake8: noqa: E501
 
 
-import datetime
+from datetime import datetime, timezone
 from functools import wraps
 
 import jwt
 from flask import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
-import shared.database.connection as database
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService
 
@@ -36,7 +35,9 @@ def portal_token_required(f):
             return jsonify({"error": "Token is missing"}), 401
 
         try:
-            secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+            secret_key = current_app.config.get(
+                "JWT_SECRET_KEY"
+            ) or current_app.config.get("SECRET_KEY")
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
 
             if payload.get("type") != "portal_user":
@@ -55,21 +56,29 @@ def portal_token_required(f):
 
 def generate_tokens(user: dict) -> dict:
     """Generate access and refresh tokens for a portal user."""
-    secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+    secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
+        "SECRET_KEY"
+    )
 
-    # Access token (1 hour)
+    # Access token expiration from config
+    access_token_expires = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
+    refresh_token_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
+
+    now = datetime.now(timezone.utc)
+
+    # Access token
     access_payload = PortalAuthService.generate_jwt_claims(user)
-    access_payload["exp"] = datetime.datetime.utcnow() + datetime.timedelta(hours=1)
-    access_payload["iat"] = datetime.datetime.utcnow()
+    access_payload["exp"] = now + access_token_expires
+    access_payload["iat"] = now
     access_token = jwt.encode(access_payload, secret_key, algorithm="HS256")
 
-    # Refresh token (7 days)
+    # Refresh token
     refresh_payload = {
         "sub": str(user["id"]),
         "tenant_id": user["tenant_id"],
         "type": "portal_refresh",
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=7),
-        "iat": datetime.datetime.utcnow(),
+        "exp": now + refresh_token_expires,
+        "iat": now,
     }
     refresh_token = jwt.encode(refresh_payload, secret_key, algorithm="HS256")
 
@@ -77,7 +86,7 @@ def generate_tokens(user: dict) -> dict:
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "Bearer",
-        "expires_in": 3600,
+        "expires_in": int(access_token_expires.total_seconds()),
     }
 
 
@@ -123,18 +132,26 @@ def register():
     # Resolve tenant_id from slug if not provided
     if not tenant_id and tenant_slug:
         tenant_record = (
-            database.db(database.db.tenants.slug == tenant_slug).select().first()
+            current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
         )
         if tenant_record:
             tenant_id = tenant_record.id
 
     if not tenant_id:
-        return jsonify({"error": "Valid tenant is required"}), 400
+        return jsonify({
+            "success": False,
+            "error": "Valid tenant is required",
+            "errorCode": "INVALID_TENANT"
+        }), 400
 
     # Verify tenant exists
-    tenant = database.db.tenants[tenant_id]
+    tenant = current_app.db.tenants[tenant_id]
     if not tenant or not tenant.is_active:
-        return jsonify({"error": "Invalid tenant"}), 400
+        return jsonify({
+            "success": False,
+            "error": "Invalid tenant",
+            "errorCode": "INVALID_TENANT"
+        }), 400
 
     result = PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
@@ -145,18 +162,33 @@ def register():
     )
 
     if "error" in result:
-        return jsonify(result), 400
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "REGISTRATION_FAILED"
+        }), 400
 
     # Generate tokens
     tokens = generate_tokens(result)
 
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": ["reader"],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         201,
     )
 
@@ -201,9 +233,18 @@ def login():
 
     # Resolve tenant_id from slug if not provided
     if not tenant_id and tenant_slug:
-        tenant = database.db(database.db.tenants.slug == tenant_slug).select().first()
+        tenant = current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
         if tenant:
             tenant_id = tenant.id
+
+    # Fall back to system/default tenant for single-tenant deployments
+    if not tenant_id:
+        # Try "system" first (common in Elder v3.x), then "default"
+        default_tenant = current_app.db(current_app.db.tenants.slug == "system").select().first()
+        if not default_tenant:
+            default_tenant = current_app.db(current_app.db.tenants.slug == "default").select().first()
+        if default_tenant:
+            tenant_id = default_tenant.id
 
     if not tenant_id:
         return jsonify({"error": "Valid tenant is required"}), 400
@@ -213,21 +254,44 @@ def login():
     )
 
     if "error" in result:
-        return jsonify(result), 401
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "INVALID_CREDENTIALS"
+        }), 401
 
     if result.get("mfa_required"):
-        return jsonify(result), 200
+        return jsonify({
+            "success": False,
+            "mfaRequired": True,
+            "user": {
+                "id": str(result.get("user_id")),
+                "email": result.get("email"),
+            }
+        }), 200
 
     # Generate tokens
     tokens = generate_tokens(result)
 
+    # Format response for react-libs LoginPageBuilder compatibility
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         200,
     )
 
@@ -256,18 +320,33 @@ def verify_mfa():
     result = PortalAuthService.verify_mfa(user_id, totp_code)
 
     if "error" in result:
-        return jsonify(result), 401
+        return jsonify({
+            "success": False,
+            "error": result["error"],
+            "errorCode": "INVALID_MFA_CODE"
+        }), 401
 
     # Generate tokens
     tokens = generate_tokens(result)
 
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
     return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
+        jsonify(response_data),
         200,
     )
 
@@ -382,7 +461,9 @@ def refresh_token():
         return jsonify({"error": "refresh_token is required"}), 400
 
     try:
-        secret_key = current_app.config.get("SECRET_KEY", "elder-secret-key")
+        secret_key = current_app.config.get(
+            "JWT_SECRET_KEY"
+        ) or current_app.config.get("SECRET_KEY")
         payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":
@@ -390,12 +471,12 @@ def refresh_token():
 
         # Get user
         user_id = int(payload["sub"])
-        user = database.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]
 
         if not user or not user.is_active:
             return jsonify({"error": "User not found or inactive"}), 401
 
-        # Generate new tokens
+        # Generate new tokens (with refresh token rotation for security)
         user_dict = {
             "id": user.id,
             "email": user.email,
@@ -422,7 +503,7 @@ def get_current_user():
         User info and permissions
     """
     user_id = int(request.portal_user["sub"])
-    user = database.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]
 
     if not user:
         return jsonify({"error": "User not found"}), 404

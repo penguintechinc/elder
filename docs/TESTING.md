@@ -50,6 +50,42 @@ pytest tests/e2e/ -v --tb=short
 docker compose down
 ```
 
+### 3b. Playwright Web UI Tests (15 min - Local Only)
+
+Comprehensive browser automation tests that verify all pages load without JavaScript errors, tabs/modals work correctly, and form interactions function:
+
+```bash
+# Install Playwright dependencies (one-time)
+cd web && npm install
+
+# Run Playwright tests (headless mode)
+make test-ui
+
+# Or run with interactive UI for debugging
+make test-ui-headed
+
+# Or run with debugger for step-through debugging
+make test-ui-debug
+```
+
+**What Playwright Tests Verify**:
+- All main pages load without JavaScript errors
+- Navigation between pages works correctly
+- Tab switching on compute/entity detail pages
+- Modals open/close and forms are interactive
+- Form validation works
+- React error boundaries don't trigger
+- API error handling is graceful
+- No console errors or warnings
+- Responsive design across viewports (mobile, tablet, desktop)
+
+**Test Reports**:
+```bash
+# View HTML test report after tests complete
+open web/playwright-report/index.html  # macOS
+xdg-open web/playwright-report/index.html  # Linux
+```
+
 ### 4. Security Checks (2 min)
 
 ```bash
@@ -69,7 +105,8 @@ docker compose build --no-cache web
 |-----------|-----------------|--------|
 | Code Quality | Yes | ✅ Blocking |
 | Unit Tests | Yes | ✅ Blocking |
-| E2E Tests | No | ❌ Disabled |
+| E2E Tests (API) | No | ❌ Disabled |
+| Web UI Tests (Playwright) | No | ⚠️ Local Only |
 | Integration Tests | No | ❌ Disabled |
 | Container Security | No | ❌ Disabled |
 

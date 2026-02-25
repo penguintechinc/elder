@@ -113,6 +113,7 @@ class UpdateEntityRequest:
     description: Optional[str] = None
     entity_type: Optional[str] = None
     sub_type: Optional[str] = None
+    organization_id: Optional[int] = None
     parent_id: Optional[int] = None
     attributes: Optional[dict] = None
     tags: Optional[list[str]] = None

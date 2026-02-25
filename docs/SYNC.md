@@ -22,22 +22,22 @@ Elder v1.1.0 introduces two-way synchronization with external project management
 
 ### Components
 
-1. **Base Sync Framework** (`apps/connector/sync/base.py`)
+1. **Base Sync Framework** (`apps/worker/sync/base.py`)
    - `BaseSyncClient`: Abstract base class for all platforms
    - `SyncOperation`, `SyncResult`, `SyncMapping`: Core data structures
    - Database mapping management
 
-2. **Conflict Resolution** (`apps/connector/sync/conflict_resolver.py`)
+2. **Conflict Resolution** (`apps/worker/sync/conflict_resolver.py`)
    - Last-modified-wins strategy (primary)
    - Elder-wins, External-wins strategies
    - Field-level merge with intelligent detection
 
-3. **Webhook Handler** (`apps/connector/sync/webhook_handler.py`)
+3. **Webhook Handler** (`apps/worker/sync/webhook_handler.py`)
    - Unified webhook handling for all platforms
    - Platform-specific signature validation
    - Event parsing and routing
 
-4. **Batch Scheduler** (`apps/connector/sync/batch_scheduler.py`)
+4. **Batch Scheduler** (`apps/worker/sync/batch_scheduler.py`)
    - APScheduler-based async job scheduling
    - Automatic fallback when webhooks timeout
    - Webhook health monitoring
@@ -327,7 +327,7 @@ Conflicts are detected when:
 ### Health Checks
 
 ```bash
-# Connector health check
+# Worker health check
 GET http://localhost:8000/healthz
 ```
 

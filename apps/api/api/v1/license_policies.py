@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 import structlog
 from flask import Blueprint, current_app, jsonify, request
-from py_libs.pydantic.models import (
+from apps.api.models.pydantic import (
     CreateLicensePolicyRequest,
     LicensePolicyDTO,
     UpdateLicensePolicyRequest,
@@ -24,7 +24,7 @@ from apps.api.utils.validation_helpers import (
     validate_required_fields,
     validate_resource_exists,
 )
-from shared.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("license_policies", __name__)
 logger = structlog.get_logger()

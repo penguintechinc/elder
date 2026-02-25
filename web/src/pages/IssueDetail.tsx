@@ -7,7 +7,6 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 // Input component not currently used

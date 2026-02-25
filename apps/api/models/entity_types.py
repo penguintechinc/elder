@@ -46,8 +46,10 @@ class ComputeSubType:
     MOBILE = "mobile"
     DESKTOP = "desktop"
     KUBERNETES_NODE = "kubernetes_node"
-    VIRTUAL_MACHINE = "virtual_machine"
     KUBERNETES_CLUSTER = "kubernetes_cluster"
+    VIRTUAL_MACHINE = "virtual_machine"
+    LXD_CONTAINER = "lxd_container"
+    LXD_VM = "lxd_vm"
     FUNCTION_RUN = "function_run"
     OTHER = "other"
 
@@ -115,8 +117,10 @@ ENTITY_SUBTYPES: Dict[str, List[str]] = {
         ComputeSubType.MOBILE,
         ComputeSubType.DESKTOP,
         ComputeSubType.KUBERNETES_NODE,
-        ComputeSubType.VIRTUAL_MACHINE,
         ComputeSubType.KUBERNETES_CLUSTER,
+        ComputeSubType.VIRTUAL_MACHINE,
+        ComputeSubType.LXD_CONTAINER,
+        ComputeSubType.LXD_VM,
         ComputeSubType.FUNCTION_RUN,
         ComputeSubType.OTHER,
     ],
@@ -226,6 +230,23 @@ DEFAULT_METADATA_TEMPLATES: Dict[str, Dict[str, Dict]] = {
             },
             "memory_mb": {"type": "integer", "description": "Allocated memory in MB"},
             "timeout_seconds": {"type": "integer", "description": "Execution timeout"},
+        },
+        ComputeSubType.LXD_CONTAINER: {
+            "os": {"type": "string", "description": "Container OS (Ubuntu, Alpine, etc.)"},
+            "memory_gb": {"type": "number", "description": "Allocated memory in GB"},
+            "cpu_cores": {"type": "integer", "description": "Allocated CPU cores"},
+            "root_disk_gb": {"type": "number", "description": "Root disk size in GB"},
+            "status": {"type": "string", "description": "Container status (running, stopped)"},
+            "created_at": {"type": "string", "description": "Container creation timestamp"},
+        },
+        ComputeSubType.LXD_VM: {
+            "os": {"type": "string", "description": "VM OS (Ubuntu, Debian, etc.)"},
+            "vcpu_count": {"type": "integer", "description": "Virtual CPU cores"},
+            "memory_gb": {"type": "number", "description": "Allocated memory in GB"},
+            "disk_gb": {"type": "number", "description": "Disk size in GB"},
+            "status": {"type": "string", "description": "VM status (running, stopped)"},
+            "created_at": {"type": "string", "description": "VM creation timestamp"},
+            "boot_mode": {"type": "string", "description": "Boot mode (UEFI, BIOS)"},
         },
     },
     EntityType.STORAGE: {
