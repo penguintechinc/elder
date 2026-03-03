@@ -470,3 +470,4 @@ modal-*.png
 # Playwright test artifacts
 web/playwright-report/
 web/test-results/
+.npmrc
