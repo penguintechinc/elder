@@ -45,6 +45,7 @@ const navigationCategories: MenuCategory[] = [
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
       { name: 'Search', href: '/search', icon: SearchIcon },
+      { name: 'Dependencies', href: '/dependencies', icon: GitBranch },
       { name: 'Map', href: '/map', icon: MapIcon },
     ],
   },
@@ -94,7 +95,6 @@ const navigationCategories: MenuCategory[] = [
     collapsible: true,
     items: [
       { name: 'On-Call Rotations', href: '/on-call-rotations', icon: Clock },
-      { name: 'Dependencies', href: '/dependencies', icon: GitBranch },
       { name: 'Discovery', href: '/discovery', icon: Compass },
       { name: 'Networking', href: '/networking', icon: Network },
       { name: 'IPAM', href: '/ipam', icon: Globe },

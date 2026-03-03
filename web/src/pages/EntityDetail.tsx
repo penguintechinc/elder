@@ -308,9 +308,9 @@ export default function EntityDetail() {
                 <div className="mb-4 p-3 bg-slate-800/50 rounded-lg">
                   <AddDependencyForm
                     sourceEntityId={parseInt(id!)}
-                    onSuccess={() => {
+                    onSuccess={async () => {
+                      await queryClient.invalidateQueries({ queryKey: ['dependencies'], refetchType: 'all' })
                       setShowAddDependency(false)
-                      queryClient.invalidateQueries({ queryKey: ['dependencies'] })
                     }}
                   />
                 </div>

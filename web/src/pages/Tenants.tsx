@@ -73,7 +73,7 @@ export default function Tenants() {
   const createMutation = useMutation({
     mutationFn: (data: Record<string, any>) => api.createTenant(data as Parameters<typeof api.createTenant>[0]),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tenants'] })
+      await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant created successfully')
       setShowCreateModal(false)
     },
@@ -86,7 +86,7 @@ export default function Tenants() {
     mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
       api.updateTenant(id, data),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tenants'] })
+      await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant updated successfully')
       setEditingTenant(null)
     },
@@ -98,7 +98,7 @@ export default function Tenants() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteTenant(id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['tenants'] })
+      await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant deactivated successfully')
     },
     onError: (error: any) => {

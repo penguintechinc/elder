@@ -12,6 +12,7 @@ const queryClient = new QueryClient({
       retry: 1,
       refetchOnWindowFocus: false,
       staleTime: 30000, // 30 seconds
+      refetchOnMount: 'always', // Always refetch when component mounts
     },
   },
 })
