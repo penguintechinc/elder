@@ -138,20 +138,30 @@ def register():
             tenant_id = tenant_record.id
 
     if not tenant_id:
-        return jsonify({
-            "success": False,
-            "error": "Valid tenant is required",
-            "errorCode": "INVALID_TENANT"
-        }), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Valid tenant is required",
+                    "errorCode": "INVALID_TENANT",
+                }
+            ),
+            400,
+        )
 
     # Verify tenant exists
     tenant = current_app.db.tenants[tenant_id]
     if not tenant or not tenant.is_active:
-        return jsonify({
-            "success": False,
-            "error": "Invalid tenant",
-            "errorCode": "INVALID_TENANT"
-        }), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Invalid tenant",
+                    "errorCode": "INVALID_TENANT",
+                }
+            ),
+            400,
+        )
 
     result = PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
@@ -162,11 +172,16 @@ def register():
     )
 
     if "error" in result:
-        return jsonify({
-            "success": False,
-            "error": result["error"],
-            "errorCode": "REGISTRATION_FAILED"
-        }), 400
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": result["error"],
+                    "errorCode": "REGISTRATION_FAILED",
+                }
+            ),
+            400,
+        )
 
     # Generate tokens
     tokens = generate_tokens(result)
@@ -233,16 +248,24 @@ def login():
 
     # Resolve tenant_id from slug if not provided
     if not tenant_id and tenant_slug:
-        tenant = current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
+        tenant = (
+            current_app.db(current_app.db.tenants.slug == tenant_slug).select().first()
+        )
         if tenant:
             tenant_id = tenant.id
 
     # Fall back to system/default tenant for single-tenant deployments
     if not tenant_id:
         # Try "system" first (common in Elder v3.x), then "default"
-        default_tenant = current_app.db(current_app.db.tenants.slug == "system").select().first()
+        default_tenant = (
+            current_app.db(current_app.db.tenants.slug == "system").select().first()
+        )
         if not default_tenant:
-            default_tenant = current_app.db(current_app.db.tenants.slug == "default").select().first()
+            default_tenant = (
+                current_app.db(current_app.db.tenants.slug == "default")
+                .select()
+                .first()
+            )
         if default_tenant:
             tenant_id = default_tenant.id
 
@@ -254,21 +277,31 @@ def login():
     )
 
     if "error" in result:
-        return jsonify({
-            "success": False,
-            "error": result["error"],
-            "errorCode": "INVALID_CREDENTIALS"
-        }), 401
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": result["error"],
+                    "errorCode": "INVALID_CREDENTIALS",
+                }
+            ),
+            401,
+        )
 
     if result.get("mfa_required"):
-        return jsonify({
-            "success": False,
-            "mfaRequired": True,
-            "user": {
-                "id": str(result.get("user_id")),
-                "email": result.get("email"),
-            }
-        }), 200
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "mfaRequired": True,
+                    "user": {
+                        "id": str(result.get("user_id")),
+                        "email": result.get("email"),
+                    },
+                }
+            ),
+            200,
+        )
 
     # Generate tokens
     tokens = generate_tokens(result)
@@ -320,11 +353,16 @@ def verify_mfa():
     result = PortalAuthService.verify_mfa(user_id, totp_code)
 
     if "error" in result:
-        return jsonify({
-            "success": False,
-            "error": result["error"],
-            "errorCode": "INVALID_MFA_CODE"
-        }), 401
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": result["error"],
+                    "errorCode": "INVALID_MFA_CODE",
+                }
+            ),
+            401,
+        )
 
     # Generate tokens
     tokens = generate_tokens(result)
@@ -461,9 +499,9 @@ def refresh_token():
         return jsonify({"error": "refresh_token is required"}), 400
 
     try:
-        secret_key = current_app.config.get(
-            "JWT_SECRET_KEY"
-        ) or current_app.config.get("SECRET_KEY")
+        secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
+            "SECRET_KEY"
+        )
         payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":

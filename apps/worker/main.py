@@ -318,7 +318,9 @@ class WorkerService:
             with discovery_poll_duration.time():
                 executed = self.discovery_executor.run_pending()
                 if executed > 0:
-                    discovery_jobs_executed.labels(provider="cloud", status="success").inc(executed)
+                    discovery_jobs_executed.labels(
+                        provider="cloud", status="success"
+                    ).inc(executed)
                     logger.info(f"Discovery poll completed: {executed} job(s) executed")
         except Exception as e:
             discovery_jobs_executed.labels(provider="cloud", status="failed").inc()
@@ -330,6 +332,7 @@ class WorkerService:
 
         # Schedule discovery job polling (every 5 minutes)
         if self.discovery_executor:
+
             @aiocron.crontab("*/5 * * * *")
             async def discovery_poll():
                 await self._run_discovery_poll()

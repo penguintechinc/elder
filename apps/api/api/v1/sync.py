@@ -11,6 +11,7 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, g, jsonify, request
 from flask_cors import cross_origin
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.auth.decorators import admin_required, login_required
 
@@ -33,7 +34,7 @@ def list_sync_configs():
 @cross_origin()
 @login_required
 @admin_required
-def create_sync_config():
+async def create_sync_config():
     """Create a new sync configuration."""
     db = current_app.db
     data = request.json
@@ -43,23 +44,26 @@ def create_sync_config():
     if not all(field in data for field in required):
         return jsonify({"error": "Missing required fields"}), 400
 
-    # Create sync config
-    config_id = db.sync_configs.insert(
-        name=data["name"],
-        platform=data["platform"],
-        enabled=data.get("enabled", True),
-        sync_interval=data.get("sync_interval", 300),
-        batch_fallback_enabled=data.get("batch_fallback_enabled", True),
-        batch_size=data.get("batch_size", 100),
-        two_way_create=data.get("two_way_create", False),
-        webhook_enabled=data.get("webhook_enabled", True),
-        webhook_secret=data.get("webhook_secret"),
-        config_json=data.get("config_json", {}),
-    )
-    db.commit()
+    def inner():
+        config_id = db.sync_configs.insert(
+            name=data["name"],
+            platform=data["platform"],
+            enabled=data.get("enabled", True),
+            sync_interval=data.get("sync_interval", 300),
+            batch_fallback_enabled=data.get("batch_fallback_enabled", True),
+            batch_size=data.get("batch_size", 100),
+            two_way_create=data.get("two_way_create", False),
+            webhook_enabled=data.get("webhook_enabled", True),
+            webhook_secret=data.get("webhook_secret"),
+            config_json=data.get("config_json", {}),
+        )
+        db.commit()
+        config = db.sync_configs[config_id].as_dict()
+        return config, None, None
 
-    config = db.sync_configs[config_id].as_dict()
-
+    config, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
     return jsonify({"config": config}), 201
 
 
@@ -81,54 +85,60 @@ def get_sync_config(config_id):
 @bp.route("/configs/<int:config_id>", methods=["PATCH"])
 @cross_origin()
 @admin_required
-def update_sync_config(config_id):
+async def update_sync_config(config_id):
     """Update sync configuration."""
     db = current_app.db
     data = request.json
 
-    config = db.sync_configs[config_id]
+    def inner():
+        config = db.sync_configs[config_id]
+        if not config:
+            return None, "Config not found", 404
 
-    if not config:
-        return jsonify({"error": "Config not found"}), 404
+        allowed_fields = [
+            "enabled",
+            "sync_interval",
+            "batch_fallback_enabled",
+            "batch_size",
+            "two_way_create",
+            "webhook_enabled",
+            "webhook_secret",
+            "config_json",
+        ]
 
-    # Update allowed fields
-    allowed_fields = [
-        "enabled",
-        "sync_interval",
-        "batch_fallback_enabled",
-        "batch_size",
-        "two_way_create",
-        "webhook_enabled",
-        "webhook_secret",
-        "config_json",
-    ]
+        update_data = {k: v for k, v in data.items() if k in allowed_fields}
+        db(db.sync_configs.id == config_id).update(**update_data)
+        db.commit()
 
-    update_data = {k: v for k, v in data.items() if k in allowed_fields}
+        updated_config = db.sync_configs[config_id].as_dict()
+        return updated_config, None, None
 
-    db(db.sync_configs.id == config_id).update(**update_data)
-    db.commit()
-
-    updated_config = db.sync_configs[config_id].as_dict()
-
-    return jsonify({"config": updated_config}), 200
+    config, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify({"config": config}), 200
 
 
 @bp.route("/configs/<int:config_id>", methods=["DELETE"])
 @cross_origin()
 @admin_required
-def delete_sync_config(config_id):
+async def delete_sync_config(config_id):
     """Delete sync configuration."""
     db = current_app.db
 
-    config = db.sync_configs[config_id]
+    def inner():
+        config = db.sync_configs[config_id]
+        if not config:
+            return None, "Config not found", 404
 
-    if not config:
-        return jsonify({"error": "Config not found"}), 404
+        db(db.sync_configs.id == config_id).delete()
+        db.commit()
+        return {"message": "Config deleted"}, None, None
 
-    db(db.sync_configs.id == config_id).delete()
-    db.commit()
-
-    return jsonify({"message": "Config deleted"}), 200
+    result, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), 200
 
 
 @bp.route("/history", methods=["GET"])
@@ -201,29 +211,33 @@ def list_sync_conflicts():
 @bp.route("/conflicts/<int:conflict_id>/resolve", methods=["POST"])
 @cross_origin()
 @admin_required
-def resolve_conflict(conflict_id):
+async def resolve_conflict(conflict_id):
     """Resolve a sync conflict manually."""
     db = current_app.db
     data = request.json
+    user_id = g.current_user.id
 
-    conflict = db.sync_conflicts[conflict_id]
+    def inner():
+        conflict = db.sync_conflicts[conflict_id]
+        if not conflict:
+            return None, "Conflict not found", 404
 
-    if not conflict:
-        return jsonify({"error": "Conflict not found"}), 404
+        strategy = data.get("resolution_strategy", "manual")
+        db(db.sync_conflicts.id == conflict_id).update(
+            resolved=True,
+            resolved_at=datetime.now(),
+            resolved_by_id=user_id,
+            resolution_strategy=strategy,
+        )
+        db.commit()
 
-    strategy = data.get("resolution_strategy", "manual")
+        updated_conflict = db.sync_conflicts[conflict_id].as_dict()
+        return updated_conflict, None, None
 
-    db(db.sync_conflicts.id == conflict_id).update(
-        resolved=True,
-        resolved_at=datetime.now(),
-        resolved_by_id=g.current_user.id,
-        resolution_strategy=strategy,
-    )
-    db.commit()
-
-    updated_conflict = db.sync_conflicts[conflict_id].as_dict()
-
-    return jsonify({"conflict": updated_conflict}), 200
+    conflict, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify({"conflict": conflict}), 200
 
 
 @bp.route("/mappings", methods=["GET"])

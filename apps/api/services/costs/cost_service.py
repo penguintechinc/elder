@@ -27,14 +27,18 @@ class CostService:
     def __init__(self, db):
         self.db = db
 
-    def _get_provider(self, provider_name: str, config: Dict[str, Any]) -> BaseCostProvider:
+    def _get_provider(
+        self, provider_name: str, config: Dict[str, Any]
+    ) -> BaseCostProvider:
         """Get configured cost provider instance."""
         provider_cls = self.PROVIDER_MAP.get(provider_name)
         if not provider_cls:
             raise ValueError(f"Unsupported cost provider: {provider_name}")
         return provider_cls(config)
 
-    def get_resource_costs(self, resource_type: str, resource_id: int) -> Optional[Dict[str, Any]]:
+    def get_resource_costs(
+        self, resource_type: str, resource_id: int
+    ) -> Optional[Dict[str, Any]]:
         """Get cost summary for a resource."""
         record = (
             self.db(
@@ -51,9 +55,8 @@ class CostService:
         result = record.as_dict()
 
         # Get recent cost history
-        history = (
-            self.db(self.db.cost_history.resource_cost_id == record.id)
-            .select(orderby=~self.db.cost_history.snapshot_date, limitby=(0, 30))
+        history = self.db(self.db.cost_history.resource_cost_id == record.id).select(
+            orderby=~self.db.cost_history.snapshot_date, limitby=(0, 30)
         )
         result["history"] = [h.as_dict() for h in history]
 
@@ -93,12 +96,14 @@ class CostService:
             self.db(self.db.resource_costs.id == existing.id).update(**update_fields)
             return existing.id
 
-        update_fields.update({
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "organization_id": cost_data.get("organization_id", 1),
-            "created_at": datetime.utcnow(),
-        })
+        update_fields.update(
+            {
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "organization_id": cost_data.get("organization_id", 1),
+                "created_at": datetime.utcnow(),
+            }
+        )
 
         return self.db.resource_costs.insert(**update_fields)
 
@@ -162,7 +167,9 @@ class CostService:
 
                 synced += 1
             except Exception as e:
-                logger.warning("Failed to sync costs for resource %s: %s", resource.id, e)
+                logger.warning(
+                    "Failed to sync costs for resource %s: %s", resource.id, e
+                )
                 errors += 1
 
         self.db.commit()
@@ -177,23 +184,33 @@ class CostService:
 
         # Total cost to date
         total = self.db.cost_history.cost_amount.sum()
-        total_result = self.db(
-            self.db.cost_history.resource_cost_id == resource_cost_id
-        ).select(total).first()
+        total_result = (
+            self.db(self.db.cost_history.resource_cost_id == resource_cost_id)
+            .select(total)
+            .first()
+        )
         cost_to_date = total_result[total] or Decimal("0")
 
         # Year to date
-        ytd_result = self.db(
-            (self.db.cost_history.resource_cost_id == resource_cost_id)
-            & (self.db.cost_history.snapshot_date >= start_of_year)
-        ).select(total).first()
+        ytd_result = (
+            self.db(
+                (self.db.cost_history.resource_cost_id == resource_cost_id)
+                & (self.db.cost_history.snapshot_date >= start_of_year)
+            )
+            .select(total)
+            .first()
+        )
         cost_ytd = ytd_result[total] or Decimal("0")
 
         # Month to date
-        mtd_result = self.db(
-            (self.db.cost_history.resource_cost_id == resource_cost_id)
-            & (self.db.cost_history.snapshot_date >= start_of_month)
-        ).select(total).first()
+        mtd_result = (
+            self.db(
+                (self.db.cost_history.resource_cost_id == resource_cost_id)
+                & (self.db.cost_history.snapshot_date >= start_of_month)
+            )
+            .select(total)
+            .first()
+        )
         cost_mtd = mtd_result[total] or Decimal("0")
 
         self.db(self.db.resource_costs.id == resource_cost_id).update(

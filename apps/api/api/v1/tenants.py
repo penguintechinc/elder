@@ -13,6 +13,7 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_login import login_required
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.api.v1.portal_auth import portal_token_required
 
@@ -181,7 +182,7 @@ def get_tenant(tenant_id):
 @login_required
 @portal_token_required
 @global_admin_required
-def create_tenant():
+async def create_tenant():
     """Create a new tenant.
 
     Requires global admin.
@@ -210,35 +211,32 @@ def create_tenant():
         return jsonify({"error": "Validation failed", "details": errors}), 400
 
     db = current_app.db
-    # Check if slug already exists
-    existing = db(db.tenants.slug == body.slug).select().first()
-    if existing:
-        return jsonify({"error": "Slug already exists"}), 400
 
-    tenant_id = db.tenants.insert(
-        name=body.name,
-        slug=body.slug,
-        domain=body.domain,
-        subscription_tier=body.subscription_tier,
-        license_key=body.license_key,
-        settings=body.settings,
-        feature_flags=body.feature_flags,
-        data_retention_days=body.data_retention_days,
-        storage_quota_gb=body.storage_quota_gb,
-        is_active=True,
-    )
-    db.commit()
+    def inner():
+        # Check if slug already exists
+        existing = db(db.tenants.slug == body.slug).select().first()
+        if existing:
+            return None, "Slug already exists", 400
 
-    return (
-        jsonify(
-            {
-                "id": tenant_id,
-                "name": body.name,
-                "slug": body.slug,
-            }
-        ),
-        201,
-    )
+        tenant_id = db.tenants.insert(
+            name=body.name,
+            slug=body.slug,
+            domain=body.domain,
+            subscription_tier=body.subscription_tier,
+            license_key=body.license_key,
+            settings=body.settings,
+            feature_flags=body.feature_flags,
+            data_retention_days=body.data_retention_days,
+            storage_quota_gb=body.storage_quota_gb,
+            is_active=True,
+        )
+        db.commit()
+        return {"id": tenant_id, "name": body.name, "slug": body.slug}, None, None
+
+    result, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), 201
 
 
 @bp.route("/<int:tenant_id>", methods=["PUT"])

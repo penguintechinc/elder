@@ -121,7 +121,11 @@ class LXDConnector(BaseConnector):
 
             # Test connectivity — /1.0 returns server info
             info = self._lxd_get("/1.0")
-            api_version = info.get("api_version", "unknown") if isinstance(info, dict) else "unknown"
+            api_version = (
+                info.get("api_version", "unknown")
+                if isinstance(info, dict)
+                else "unknown"
+            )
             self.logger.info(
                 "LXD API connection established",
                 url=self.lxd_url,
@@ -239,7 +243,9 @@ class LXDConnector(BaseConnector):
 
                 # Determine type: "virtual-machine" or "container"
                 instance_type = instance.get("type", "container")
-                sub_type = "lxd_vm" if instance_type == "virtual-machine" else "lxd_container"
+                sub_type = (
+                    "lxd_vm" if instance_type == "virtual-machine" else "lxd_container"
+                )
 
                 # Instance status from state
                 status = instance.get("status", "Unknown")
@@ -277,7 +283,8 @@ class LXDConnector(BaseConnector):
                 profiles = instance.get("profiles", [])
                 devices = instance.get("devices", {})
                 disk_devices = {
-                    k: v for k, v in devices.items()
+                    k: v
+                    for k, v in devices.items()
                     if isinstance(v, dict) and v.get("type") == "disk"
                 }
 
@@ -301,7 +308,9 @@ class LXDConnector(BaseConnector):
                         "os_release": os_release,
                         "ipv4_addresses": ipv4_addresses,
                         "profiles": profiles,
-                        "disk_devices": {k: v.get("source", "") for k, v in disk_devices.items()},
+                        "disk_devices": {
+                            k: v.get("source", "") for k, v in disk_devices.items()
+                        },
                         "config_memory_limit": config.get("limits.memory", ""),
                         "config_cpu_limit": config.get("limits.cpu", ""),
                         "lxd_url": self.lxd_url,
@@ -544,7 +553,9 @@ class LXDConnector(BaseConnector):
             # Check if clustering is enabled
             cluster_info = self._lxd_get("/1.0/cluster")
             if not isinstance(cluster_info, dict) or not cluster_info.get("enabled"):
-                self.logger.info("LXD cluster mode not enabled — skipping cluster members")
+                self.logger.info(
+                    "LXD cluster mode not enabled — skipping cluster members"
+                )
                 return created, updated
 
             member_paths = self._lxd_get("/1.0/cluster/members")
@@ -579,8 +590,7 @@ class LXDConnector(BaseConnector):
                     sub_type="server",
                     organization_id=lxd_org_id,
                     description=(
-                        description_text
-                        or f"LXD cluster node: {member_name}"
+                        description_text or f"LXD cluster node: {member_name}"
                     ),
                     attributes={
                         "member_name": member_name,

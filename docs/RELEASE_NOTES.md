@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed**: `organization_tree` tree-stats endpoint returned unhandled 500 on exceptions
 - **Solution**: Added error handling around thread pool execution
 
+#### Async Endpoints Missing DB Commit (Issue #61)
+- **Fixed**: Organizations (and other resources) created via API were not persisted to database
+- **Root cause**: `@login_required` wraps handlers as `async def`; all async handlers share the event-loop thread, so PyDAL's thread-local connections get interleaved transactions causing implicit rollbacks
+- **Solution**: Wrapped DB operations in `run_in_threadpool()` so each runs in its own thread with its own PyDAL connection
+- **Endpoints converted**: 9 write endpoints across organizations, audit, sync, and tenants modules
+
 ### 🎨 UI Improvements
 
 #### Ultrawide Monitor Support

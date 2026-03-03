@@ -7,6 +7,7 @@ import logging
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
@@ -87,7 +88,7 @@ def get_retention_policy(policy_id):
 @bp.route("/retention-policies", methods=["POST"])
 @login_required
 @admin_required
-def create_retention_policy():
+async def create_retention_policy():
     """
     Create audit retention policy.
 
@@ -114,50 +115,46 @@ def create_retention_policy():
                 400,
             )
 
-        db = current_app.db
+        def inner():
+            db = current_app.db
 
-        # Ensure clean transaction state
-        try:
-            db.commit()
-        except Exception:
-            db.rollback()
+            # Check if policy already exists for this resource type
+            existing = (
+                db(db.audit_retention_policies.resource_type == data["resource_type"])
+                .select()
+                .first()
+            )
+            if existing:
+                return (
+                    None,
+                    f'Retention policy already exists for {data["resource_type"]}',
+                    400,
+                )
 
-        # Check if policy already exists for this resource type
-        existing = (
-            db(db.audit_retention_policies.resource_type == data["resource_type"])
-            .select()
-            .first()
-        )
-        if existing:
-            return (
-                jsonify(
-                    {
-                        "error": f'Retention policy already exists for {data["resource_type"]}'
-                    }
-                ),
-                400,
+            policy_id = db.audit_retention_policies.insert(
+                resource_type=data["resource_type"],
+                retention_days=data["retention_days"],
+                enabled=data.get("enabled", True),
+                created_at=datetime.utcnow(),
             )
 
-        policy_id = db.audit_retention_policies.insert(
-            resource_type=data["resource_type"],
-            retention_days=data["retention_days"],
-            enabled=data.get("enabled", True),
-            created_at=datetime.utcnow(),
-        )
+            db.commit()
 
-        db.commit()
+            policy = db.audit_retention_policies[policy_id]
+            return policy.as_dict(), None, None
 
-        policy = db.audit_retention_policies[policy_id]
-        return jsonify(policy.as_dict()), 201
+        policy_dict, error, status = await run_in_threadpool(inner)
+        if error:
+            return jsonify({"error": error}), status
+        return jsonify(policy_dict), 201
 
     except Exception as e:
-        db.rollback()  # Rollback failed transaction
         return log_error_and_respond(logger, e, "Failed to process request", 400)
 
 
 @bp.route("/retention-policies/<int:policy_id>", methods=["PUT"])
 @admin_required
-def update_retention_policy(policy_id):
+async def update_retention_policy(policy_id):
     """
     Update retention policy.
 
@@ -177,40 +174,39 @@ def update_retention_policy(policy_id):
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        db = current_app.db
+        def inner():
+            db = current_app.db
 
-        # Ensure clean transaction state
-        try:
+            policy = db.audit_retention_policies[policy_id]
+
+            if not policy:
+                return None, "Retention policy not found", 404
+
+            update_data = {}
+            if "retention_days" in data:
+                update_data["retention_days"] = data["retention_days"]
+            if "enabled" in data:
+                update_data["enabled"] = data["enabled"]
+            update_data["updated_at"] = datetime.utcnow()
+
+            db(db.audit_retention_policies.id == policy_id).update(**update_data)
             db.commit()
-        except Exception:
-            db.rollback()
 
-        policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]
+            return policy.as_dict(), None, None
 
-        if not policy:
-            return jsonify({"error": "Retention policy not found"}), 404
-
-        update_data = {}
-        if "retention_days" in data:
-            update_data["retention_days"] = data["retention_days"]
-        if "enabled" in data:
-            update_data["enabled"] = data["enabled"]
-        update_data["updated_at"] = datetime.utcnow()
-
-        db(db.audit_retention_policies.id == policy_id).update(**update_data)
-        db.commit()
-
-        policy = db.audit_retention_policies[policy_id]
-        return jsonify(policy.as_dict()), 200
+        policy_dict, error, status = await run_in_threadpool(inner)
+        if error:
+            return jsonify({"error": error}), status
+        return jsonify(policy_dict), 200
 
     except Exception as e:
-        db.rollback()  # Rollback failed transaction
         return log_error_and_respond(logger, e, "Failed to process request", 400)
 
 
 @bp.route("/retention-policies/<int:policy_id>", methods=["DELETE"])
 @admin_required
-def delete_retention_policy(policy_id):
+async def delete_retention_policy(policy_id):
     """
     Delete retention policy.
 
@@ -219,26 +215,26 @@ def delete_retention_policy(policy_id):
         404: Policy not found
     """
     try:
-        db = current_app.db
 
-        # Ensure clean transaction state
-        try:
+        def inner():
+            db = current_app.db
+
+            policy = db.audit_retention_policies[policy_id]
+
+            if not policy:
+                return None, "Retention policy not found", 404
+
+            db(db.audit_retention_policies.id == policy_id).delete()
             db.commit()
-        except Exception:
-            db.rollback()
 
-        policy = db.audit_retention_policies[policy_id]
+            return {"message": "Retention policy deleted successfully"}, None, None
 
-        if not policy:
-            return jsonify({"error": "Retention policy not found"}), 404
-
-        db(db.audit_retention_policies.id == policy_id).delete()
-        db.commit()
-
-        return jsonify({"message": "Retention policy deleted successfully"}), 200
+        result_dict, error, status = await run_in_threadpool(inner)
+        if error:
+            return jsonify({"error": error}), status
+        return jsonify(result_dict), 200
 
     except Exception as e:
-        db.rollback()  # Rollback failed transaction
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 

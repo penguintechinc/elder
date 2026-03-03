@@ -68,16 +68,20 @@ class AWSCostExplorerProvider(BaseCostProvider):
                 period_start = result["TimePeriod"]["Start"]
                 blended = result["Total"].get("BlendedCost", {})
                 usage = result["Total"].get("UsageQuantity", {})
-                costs.append({
-                    "date": period_start,
-                    "amount": float(blended.get("Amount", 0)),
-                    "currency": blended.get("Unit", "USD"),
-                    "usage_quantity": float(usage.get("Amount", 0)),
-                    "usage_unit": usage.get("Unit", ""),
-                })
+                costs.append(
+                    {
+                        "date": period_start,
+                        "amount": float(blended.get("Amount", 0)),
+                        "currency": blended.get("Unit", "USD"),
+                        "usage_quantity": float(usage.get("Amount", 0)),
+                        "usage_unit": usage.get("Unit", ""),
+                    }
+                )
             return costs
         except Exception as e:
-            logger.warning("Failed to fetch AWS costs for %s/%s: %s", resource_type, resource_id, e)
+            logger.warning(
+                "Failed to fetch AWS costs for %s/%s: %s", resource_type, resource_id, e
+            )
             return []
 
     def get_recommendations(
@@ -100,18 +104,22 @@ class AWSCostExplorerProvider(BaseCostProvider):
                     target = rec.get("ModifyRecommendationDetail", {}).get(
                         "TargetInstances", [{}]
                     )
-                    savings = rec.get("CurrentInstance", {}).get(
-                        "MonthlyCost", "0"
+                    savings = rec.get("CurrentInstance", {}).get("MonthlyCost", "0")
+                    recommendations.append(
+                        {
+                            "type": "rightsizing",
+                            "title": f"{action} recommendation",
+                            "description": (
+                                f"Consider {action.lower()} this instance"
+                                + (
+                                    f" to {target[0].get('InstanceType', 'N/A')}"
+                                    if target
+                                    else ""
+                                )
+                            ),
+                            "estimated_savings": float(savings),
+                        }
                     )
-                    recommendations.append({
-                        "type": "rightsizing",
-                        "title": f"{action} recommendation",
-                        "description": (
-                            f"Consider {action.lower()} this instance"
-                            + (f" to {target[0].get('InstanceType', 'N/A')}" if target else "")
-                        ),
-                        "estimated_savings": float(savings),
-                    })
             return recommendations
         except Exception as e:
             logger.warning("Failed to get AWS recommendations: %s", e)

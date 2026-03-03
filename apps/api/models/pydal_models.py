@@ -3167,9 +3167,21 @@ def define_all_tables(db):
     # Resource costs table - tracks costs per resource across all domain tables
     db.define_table(
         "resource_costs",
-        Field("resource_type", "string", length=50, notnull=True, requires=IS_IN_SET(
-            ["entity", "service", "data_store", "networking_resource", "certificate"]
-        )),
+        Field(
+            "resource_type",
+            "string",
+            length=50,
+            notnull=True,
+            requires=IS_IN_SET(
+                [
+                    "entity",
+                    "service",
+                    "data_store",
+                    "networking_resource",
+                    "certificate",
+                ]
+            ),
+        ),
         Field("resource_id", "integer", notnull=True),
         Field(
             "organization_id",
@@ -3182,9 +3194,14 @@ def define_all_tables(db):
         Field("cost_mtd", "decimal(12,2)", default=0),
         Field("estimated_monthly_cost", "decimal(12,2)"),
         Field("currency", "string", length=3, default="USD"),
-        Field("cost_provider", "string", length=50, requires=IS_IN_SET(
-            ["aws_cost_explorer", "gcp_billing", "azure_cost", "manual"]
-        )),
+        Field(
+            "cost_provider",
+            "string",
+            length=50,
+            requires=IS_IN_SET(
+                ["aws_cost_explorer", "gcp_billing", "azure_cost", "manual"]
+            ),
+        ),
         Field("recommendations", "json"),
         Field(
             "created_by_identity_id",
@@ -3232,9 +3249,13 @@ def define_all_tables(db):
     db.define_table(
         "cost_sync_jobs",
         Field("name", "string", length=255, notnull=True, requires=IS_NOT_EMPTY()),
-        Field("provider", "string", length=50, notnull=True, requires=IS_IN_SET(
-            ["aws_cost_explorer", "gcp_billing", "azure_cost"]
-        )),
+        Field(
+            "provider",
+            "string",
+            length=50,
+            notnull=True,
+            requires=IS_IN_SET(["aws_cost_explorer", "gcp_billing", "azure_cost"]),
+        ),
         Field(
             "organization_id",
             "reference organizations",

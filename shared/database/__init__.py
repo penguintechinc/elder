@@ -91,7 +91,9 @@ def get_database_url(app, for_system: str = "pydal") -> str:
     # Transform for SQLAlchemy (standard format)
     if for_system == "sqlalchemy":
         # Ensure postgresql:// for SQLAlchemy (may already be correct)
-        if database_url.startswith("postgres://") and not database_url.startswith("postgresql://"):
+        if database_url.startswith("postgres://") and not database_url.startswith(
+            "postgresql://"
+        ):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
         return database_url
 
@@ -122,7 +124,9 @@ def get_database_url(app, for_system: str = "pydal") -> str:
 
         return database_url
 
-    raise ValueError(f"Unknown system: {for_system}. Use 'sqlalchemy', 'pydal', or 'raw'")
+    raise ValueError(
+        f"Unknown system: {for_system}. Use 'sqlalchemy', 'pydal', or 'raw'"
+    )
 
 
 def init_db(app):

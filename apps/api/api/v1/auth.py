@@ -438,19 +438,17 @@ def captcha_challenge():
 
     # Generate signature for ALTCHA verification
     signature_data = f"{challenge}{salt}{timestamp}".encode()
-    signature = hmac.new(
-        secret.encode(),
-        signature_data,
-        hashlib.sha256
-    ).hexdigest()
+    signature = hmac.new(secret.encode(), signature_data, hashlib.sha256).hexdigest()
 
-    return jsonify({
-        "algorithm": "SHA-256",
-        "challenge": challenge,
-        "salt": salt,
-        "difficulty": 10000,
-        "signature": signature,
-    })
+    return jsonify(
+        {
+            "algorithm": "SHA-256",
+            "challenge": challenge,
+            "salt": salt,
+            "difficulty": 10000,
+            "signature": signature,
+        }
+    )
 
 
 def _create_audit_log_sync(
