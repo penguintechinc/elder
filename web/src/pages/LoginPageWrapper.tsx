@@ -25,9 +25,12 @@ export default function LoginPageWrapper() {
               localStorage.setItem('elder_token', response.token)
             }
             // Store refresh token for automatic token refresh
-            const resp = response as Record<string, unknown>
-            const refreshToken = resp.refreshToken || resp.refresh_token
-            if (refreshToken && typeof refreshToken === 'string') {
+            const anyResp = response as LoginResponse & {
+              refreshToken?: string
+              refresh_token?: string
+            }
+            const refreshToken = anyResp.refreshToken ?? anyResp.refresh_token
+            if (refreshToken) {
               localStorage.setItem('elder_refresh_token', refreshToken)
             }
             navigate('/')

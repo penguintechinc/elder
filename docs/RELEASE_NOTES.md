@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Fixed**: `resource_role_required` decorator returned 500 when `resource_roles` table query failed for portal users
 - **Solution**: Wrapped DB query in try/except; gracefully returns 403 instead of 500
 - **Fixed**: `organization_tree` tree-stats endpoint returned unhandled 500 on exceptions
-- **Solution**: Added error handling around threadpool execution
+- **Solution**: Added error handling around thread pool execution
 
 ### 🎨 UI Improvements
 
