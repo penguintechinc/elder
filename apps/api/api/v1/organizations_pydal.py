@@ -8,10 +8,6 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, g, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
-from apps.api.models.pydantic.organization import (
-    CreateOrganizationRequest,
-    UpdateOrganizationRequest,
-)
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
@@ -21,14 +17,18 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.models.pydantic.organization import (
+    CreateOrganizationRequest,
+    UpdateOrganizationRequest,
+)
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import (
     PaginationParams,
     commit_db,
     get_by_id,
     insert_record,
 )
-from apps.api.utils.async_utils import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 

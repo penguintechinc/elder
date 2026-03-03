@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import from penguin_licensing, provide fallbacks if unavailable
 try:
-    from penguin_licensing import license_required, get_license_client
+    from penguin_licensing import get_license_client, license_required
 except ImportError:
     logger.warning(
         "penguin_licensing module not available, using fallback implementations"

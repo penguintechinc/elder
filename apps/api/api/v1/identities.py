@@ -8,13 +8,6 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, g, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
-from apps.api.models.pydantic.identity import (
-    CreateIdentityGroupRequest,
-    CreateIdentityRequest,
-    IdentityGroupDTO,
-    UpdateIdentityGroupRequest,
-    UpdateIdentityRequest,
-)
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
@@ -23,6 +16,13 @@ from apps.api.models.dataclasses import (
     PaginatedResponse,
     from_pydal_row,
     from_pydal_rows,
+)
+from apps.api.models.pydantic.identity import (
+    CreateIdentityGroupRequest,
+    CreateIdentityRequest,
+    IdentityGroupDTO,
+    UpdateIdentityGroupRequest,
+    UpdateIdentityRequest,
 )
 from apps.api.utils.async_utils import run_in_threadpool
 
