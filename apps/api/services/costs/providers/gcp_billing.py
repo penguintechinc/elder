@@ -21,7 +21,9 @@ class GCPBillingProvider(BaseCostProvider):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         if not bigquery:
-            raise ImportError("google-cloud-bigquery required. Install: pip install google-cloud-bigquery")
+            raise ImportError(
+                "google-cloud-bigquery required. Install: pip install google-cloud-bigquery"
+            )
 
         self.project_id = config.get("project_id")
         self.dataset = config.get("billing_dataset", "billing_export")
@@ -31,7 +33,9 @@ class GCPBillingProvider(BaseCostProvider):
     def test_connection(self) -> bool:
         """Test GCP BigQuery billing connectivity."""
         try:
-            query = f"SELECT 1 FROM `{self.project_id}.{self.dataset}.{self.table}` LIMIT 1"
+            query = (
+                f"SELECT 1 FROM `{self.project_id}.{self.dataset}.{self.table}` LIMIT 1"
+            )
             list(self.bq_client.query(query).result())
             return True
         except Exception as e:
@@ -69,16 +73,20 @@ class GCPBillingProvider(BaseCostProvider):
             results = self.bq_client.query(query, job_config=job_config).result()
             costs = []
             for row in results:
-                costs.append({
-                    "date": str(row.date),
-                    "amount": float(row.amount or 0),
-                    "currency": row.currency or "USD",
-                    "usage_quantity": float(row.usage_quantity or 0),
-                    "usage_unit": row.usage_unit or "",
-                })
+                costs.append(
+                    {
+                        "date": str(row.date),
+                        "amount": float(row.amount or 0),
+                        "currency": row.currency or "USD",
+                        "usage_quantity": float(row.usage_quantity or 0),
+                        "usage_unit": row.usage_unit or "",
+                    }
+                )
             return costs
         except Exception as e:
-            logger.warning("Failed to fetch GCP costs for %s/%s: %s", resource_type, resource_id, e)
+            logger.warning(
+                "Failed to fetch GCP costs for %s/%s: %s", resource_type, resource_id, e
+            )
             return []
 
     def get_recommendations(

@@ -6,7 +6,6 @@
 from dataclasses import asdict
 
 from flask import Blueprint, Response, current_app, jsonify, request
-from apps.api.models.pydantic.service import CreateServiceRequest, UpdateServiceRequest
 from penguin_libs.pydantic.flask_integration import validated_request
 
 from apps.api.auth.decorators import login_required, resource_role_required
@@ -17,14 +16,15 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.models.pydantic.service import CreateServiceRequest, UpdateServiceRequest
 from apps.api.services.sbom.exporters import CycloneDXExporter, SPDXExporter
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
     validate_resource_exists,
 )
-from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("services", __name__)
 

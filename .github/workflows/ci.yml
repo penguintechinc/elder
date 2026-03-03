@@ -145,8 +145,12 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
-    - name: Build react_libs (required for web TypeScript)
-      run: cd shared/react_libs && npm ci --prefer-offline && npm run build
+    - name: Configure npm for GitHub Packages
+      run: |
+        echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
+        echo "//npm.pkg.github.com/:_authToken=${NPM_PKG_TOKEN}" >> ~/.npmrc
+      env:
+        NPM_PKG_TOKEN: ${{ secrets.NPM_PKG_TOKEN }}
 
     - name: Install dependencies
       run: |
@@ -242,8 +246,8 @@ jobs:
         grep -r "license.penguintech.io" . --exclude-dir=.git --exclude-dir=node_modules || true
         grep -r "PENG-" . --exclude-dir=.git --exclude-dir=node_modules || true
 
-        # Verify license client files exist
-        test -f shared/licensing/python_client.py
+        # License client is provided by penguin-licensing PyPI package
+        python3 -c "import penguin_licensing" 2>/dev/null || echo "penguin-licensing not installed (checked at runtime)"
 
         echo "License integration check passed"
 

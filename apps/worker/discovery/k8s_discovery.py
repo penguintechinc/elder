@@ -76,7 +76,19 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
     def get_supported_services(self) -> List[str]:
         """Get supported Kubernetes resources."""
-        return ["nodes", "pods", "services", "deployments", "persistent_volumes", "service_accounts", "ingress", "pvcs", "secrets", "certificates", "cni"]
+        return [
+            "nodes",
+            "pods",
+            "services",
+            "deployments",
+            "persistent_volumes",
+            "service_accounts",
+            "ingress",
+            "pvcs",
+            "secrets",
+            "certificates",
+            "cni",
+        ]
 
     def discover_all(self) -> Dict[str, Any]:
         """Discover all Kubernetes resources."""
@@ -200,30 +212,44 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                             if pod.spec and pod.spec.containers
                             else []
                         ),
-                        "resource_requests": {
-                            "cpu": sum(
-                                self._parse_cpu(c.resources.requests.get("cpu", "0"))
-                                for c in (pod.spec.containers or [])
-                                if c.resources and c.resources.requests
-                            ),
-                            "memory": sum(
-                                self._parse_memory(c.resources.requests.get("memory", "0"))
-                                for c in (pod.spec.containers or [])
-                                if c.resources and c.resources.requests
-                            ),
-                        } if pod.spec and pod.spec.containers else {"cpu": 0, "memory": 0},
-                        "resource_limits": {
-                            "cpu": sum(
-                                self._parse_cpu(c.resources.limits.get("cpu", "0"))
-                                for c in (pod.spec.containers or [])
-                                if c.resources and c.resources.limits
-                            ),
-                            "memory": sum(
-                                self._parse_memory(c.resources.limits.get("memory", "0"))
-                                for c in (pod.spec.containers or [])
-                                if c.resources and c.resources.limits
-                            ),
-                        } if pod.spec and pod.spec.containers else {"cpu": 0, "memory": 0},
+                        "resource_requests": (
+                            {
+                                "cpu": sum(
+                                    self._parse_cpu(
+                                        c.resources.requests.get("cpu", "0")
+                                    )
+                                    for c in (pod.spec.containers or [])
+                                    if c.resources and c.resources.requests
+                                ),
+                                "memory": sum(
+                                    self._parse_memory(
+                                        c.resources.requests.get("memory", "0")
+                                    )
+                                    for c in (pod.spec.containers or [])
+                                    if c.resources and c.resources.requests
+                                ),
+                            }
+                            if pod.spec and pod.spec.containers
+                            else {"cpu": 0, "memory": 0}
+                        ),
+                        "resource_limits": (
+                            {
+                                "cpu": sum(
+                                    self._parse_cpu(c.resources.limits.get("cpu", "0"))
+                                    for c in (pod.spec.containers or [])
+                                    if c.resources and c.resources.limits
+                                ),
+                                "memory": sum(
+                                    self._parse_memory(
+                                        c.resources.limits.get("memory", "0")
+                                    )
+                                    for c in (pod.spec.containers or [])
+                                    if c.resources and c.resources.limits
+                                ),
+                            }
+                            if pod.spec and pod.spec.containers
+                            else {"cpu": 0, "memory": 0}
+                        ),
                     },
                     region="N/A",
                     tags=pod.metadata.labels or {},
@@ -338,13 +364,15 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                                             p.backend.service.port.number
                                             or p.backend.service.port.name
                                         )
-                                paths.append({
-                                    "host": host,
-                                    "path": p.path or "/",
-                                    "path_type": p.path_type,
-                                    "service": svc_name,
-                                    "port": svc_port,
-                                })
+                                paths.append(
+                                    {
+                                        "host": host,
+                                        "path": p.path or "/",
+                                        "path_type": p.path_type,
+                                        "service": svc_name,
+                                        "port": svc_port,
+                                    }
+                                )
                                 if svc_name and svc_name not in backend_services:
                                     backend_services.append(svc_name)
 
@@ -384,23 +412,17 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                     name=pvc.metadata.name,
                     metadata={
                         "namespace": pvc.metadata.namespace,
-                        "volume_name": (
-                            pvc.spec.volume_name if pvc.spec else None
-                        ),
+                        "volume_name": (pvc.spec.volume_name if pvc.spec else None),
                         "storage_class": (
                             pvc.spec.storage_class_name if pvc.spec else None
                         ),
-                        "access_modes": (
-                            pvc.spec.access_modes if pvc.spec else []
-                        ),
+                        "access_modes": (pvc.spec.access_modes if pvc.spec else []),
                         "capacity": (
                             pvc.status.capacity.get("storage")
                             if pvc.status and pvc.status.capacity
                             else None
                         ),
-                        "phase": (
-                            pvc.status.phase if pvc.status else None
-                        ),
+                        "phase": (pvc.status.phase if pvc.status else None),
                     },
                     region="N/A",
                     tags=pvc.metadata.labels or {},
@@ -459,11 +481,13 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
                 conditions = []
                 for cond in status.get("conditions", []):
-                    conditions.append({
-                        "type": cond.get("type"),
-                        "status": cond.get("status"),
-                        "reason": cond.get("reason"),
-                    })
+                    conditions.append(
+                        {
+                            "type": cond.get("type"),
+                            "status": cond.get("status"),
+                            "reason": cond.get("reason"),
+                        }
+                    )
 
                 resource = self.format_resource(
                     resource_id=metadata.get("uid", metadata.get("name")),
@@ -555,11 +579,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                             if hasattr(sa, "automount_service_account_token")
                             else None
                         ),
-                        "secrets": (
-                            [s.name for s in sa.secrets]
-                            if sa.secrets
-                            else []
-                        ),
+                        "secrets": ([s.name for s in sa.secrets] if sa.secrets else []),
                     },
                     region="N/A",
                     tags=sa.metadata.labels or {},

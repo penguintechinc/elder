@@ -232,12 +232,21 @@ DEFAULT_METADATA_TEMPLATES: Dict[str, Dict[str, Dict]] = {
             "timeout_seconds": {"type": "integer", "description": "Execution timeout"},
         },
         ComputeSubType.LXD_CONTAINER: {
-            "os": {"type": "string", "description": "Container OS (Ubuntu, Alpine, etc.)"},
+            "os": {
+                "type": "string",
+                "description": "Container OS (Ubuntu, Alpine, etc.)",
+            },
             "memory_gb": {"type": "number", "description": "Allocated memory in GB"},
             "cpu_cores": {"type": "integer", "description": "Allocated CPU cores"},
             "root_disk_gb": {"type": "number", "description": "Root disk size in GB"},
-            "status": {"type": "string", "description": "Container status (running, stopped)"},
-            "created_at": {"type": "string", "description": "Container creation timestamp"},
+            "status": {
+                "type": "string",
+                "description": "Container status (running, stopped)",
+            },
+            "created_at": {
+                "type": "string",
+                "description": "Container creation timestamp",
+            },
         },
         ComputeSubType.LXD_VM: {
             "os": {"type": "string", "description": "VM OS (Ubuntu, Debian, etc.)"},

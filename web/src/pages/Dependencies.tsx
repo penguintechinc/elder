@@ -1,15 +1,14 @@
-import { useState, useMemo } from 'react'
+import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Trash2, ArrowRight } from 'lucide-react'
+import { Plus, Search, Trash2, ArrowRight, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
+import SearchableSelect from '@/components/SearchableSelect'
 
-// Resource types supported by dependencies
 const RESOURCE_TYPES = [
   { value: 'entity', label: 'Entity' },
   { value: 'identity', label: 'Identity' },
@@ -44,6 +43,48 @@ interface PolymorphicDependency {
   updated_at: string
 }
 
+// Fetch resources by type with optional search
+function useResourceSearch(type: string, searchQuery: string) {
+  return useQuery({
+    queryKey: ['resource-search', type, searchQuery],
+    queryFn: () => {
+      const params: any = { per_page: 50 }
+      if (searchQuery) params.search = searchQuery
+      switch (type) {
+        case 'entity': return api.getEntities(params)
+        case 'identity': return api.getIdentities(params)
+        case 'project': return api.getProjects(params)
+        case 'milestone': return api.getMilestones(params)
+        case 'issue': return api.getIssues(params)
+        case 'organization': return api.getOrganizations(params)
+        default: return Promise.resolve({ items: [] })
+      }
+    },
+    enabled: !!type,
+  })
+}
+
+function formatResourceOptions(type: string, items: any[]) {
+  return (items || []).map((item: any) => {
+    switch (type) {
+      case 'entity':
+        return { value: item.id, label: `${item.name}${item.entity_type ? ` (${item.entity_type})` : ''}` }
+      case 'identity':
+        return { value: item.id, label: `${item.username}${item.identity_type ? ` (${item.identity_type})` : ''}` }
+      case 'project':
+        return { value: item.id, label: `${item.name}${item.status ? ` (${item.status})` : ''}` }
+      case 'milestone':
+        return { value: item.id, label: `${item.title}${item.status ? ` (${item.status})` : ''}` }
+      case 'issue':
+        return { value: item.id, label: `${item.title}${item.status ? ` (${item.status})` : ''}` }
+      case 'organization':
+        return { value: item.id, label: `${item.name}${item.organization_type ? ` (${item.organization_type})` : ''}` }
+      default:
+        return { value: item.id, label: `#${item.id}` }
+    }
+  })
+}
+
 export default function Dependencies() {
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -60,38 +101,32 @@ export default function Dependencies() {
       }),
   })
 
-  // Fetch all resource types for display names
+  // Small fetches just for display name resolution on existing deps
   const { data: entities } = useQuery({
     queryKey: ['entities-all'],
     queryFn: () => api.getEntities({ per_page: 1000 }),
   })
-
   const { data: identities } = useQuery({
     queryKey: ['identities-all'],
     queryFn: () => api.getIdentities({ per_page: 1000 }),
   })
-
   const { data: projects } = useQuery({
     queryKey: ['projects-all'],
     queryFn: () => api.getProjects({ per_page: 1000 }),
   })
-
   const { data: milestones } = useQuery({
     queryKey: ['milestones-all'],
     queryFn: () => api.getMilestones({ per_page: 1000 }),
   })
-
   const { data: issues } = useQuery({
     queryKey: ['issues-all'],
     queryFn: () => api.getIssues({ per_page: 1000 }),
   })
-
   const { data: organizations } = useQuery({
     queryKey: ['organizations-all'],
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
   })
 
-  // Helper to get resource name by type and id
   const getResourceName = (type: string, id: number): string => {
     switch (type) {
       case 'entity':
@@ -116,7 +151,7 @@ export default function Dependencies() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['dependencies'],
-        refetchType: 'all'
+        refetchType: 'all',
       })
       toast.success('Dependency deleted successfully')
     },
@@ -136,13 +171,15 @@ export default function Dependencies() {
     const sourceName = getResourceName(dep.source_type, dep.source_id).toLowerCase()
     const targetName = getResourceName(dep.target_type, dep.target_id).toLowerCase()
     const searchLower = search.toLowerCase()
-    return sourceName.includes(searchLower) || targetName.includes(searchLower) ||
-           dep.dependency_type.toLowerCase().includes(searchLower)
+    return (
+      sourceName.includes(searchLower) ||
+      targetName.includes(searchLower) ||
+      dep.dependency_type.toLowerCase().includes(searchLower)
+    )
   })
 
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">Dependencies</h1>
@@ -156,7 +193,6 @@ export default function Dependencies() {
         </Button>
       </div>
 
-      {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
@@ -192,7 +228,6 @@ export default function Dependencies() {
         </Select>
       </div>
 
-      {/* Dependencies List */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
@@ -213,7 +248,6 @@ export default function Dependencies() {
               <CardContent>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4 flex-1">
-                    {/* Source Resource */}
                     <div className="flex-1">
                       <div className="text-sm text-slate-400">Source</div>
                       <div className="text-white font-medium">
@@ -223,16 +257,12 @@ export default function Dependencies() {
                         {dep.source_type}
                       </div>
                     </div>
-
-                    {/* Arrow with dependency type */}
                     <div className="flex flex-col items-center">
                       <ArrowRight className="w-6 h-6 text-primary-500" />
                       <div className="text-xs text-slate-400 mt-1">
                         {dep.dependency_type}
                       </div>
                     </div>
-
-                    {/* Target Resource */}
                     <div className="flex-1">
                       <div className="text-sm text-slate-400">Target</div>
                       <div className="text-white font-medium">
@@ -243,8 +273,6 @@ export default function Dependencies() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Actions */}
                   <div className="flex items-center gap-2 ml-4">
                     <div className="text-xs text-slate-500">
                       {new Date(dep.created_at).toLocaleDateString()}
@@ -269,20 +297,13 @@ export default function Dependencies() {
         </div>
       )}
 
-      {/* Create Modal */}
       {showCreateModal && (
         <CreateDependencyModal
-          entities={entities?.items || []}
-          identities={identities?.items || []}
-          projects={projects?.items || []}
-          milestones={milestones?.items || []}
-          issues={issues?.items || []}
-          organizations={organizations?.items || []}
           onClose={() => setShowCreateModal(false)}
           onSuccess={async () => {
             await queryClient.invalidateQueries({
               queryKey: ['dependencies'],
-              refetchType: 'all'
+              refetchType: 'all',
             })
             setShowCreateModal(false)
           }}
@@ -292,104 +313,29 @@ export default function Dependencies() {
   )
 }
 
-interface CreateDependencyModalProps {
-  entities: any[]
-  identities: any[]
-  projects: any[]
-  milestones: any[]
-  issues: any[]
-  organizations: any[]
-  onClose: () => void
-  onSuccess: () => void
-}
-
 function CreateDependencyModal({
-  entities,
-  identities,
-  projects,
-  milestones,
-  issues,
-  organizations,
   onClose,
   onSuccess,
-}: CreateDependencyModalProps) {
-  // Get items for a resource type
-  const getItemsForType = (type: string) => {
-    switch (type) {
-      case 'entity':
-        return entities.map((e) => ({ value: e.id, label: `${e.name}${e.entity_type ? ` (${e.entity_type})` : ''}` }))
-      case 'identity':
-        return identities.map((i) => ({ value: i.id, label: `${i.username}${i.identity_type ? ` (${i.identity_type})` : ''}` }))
-      case 'project':
-        return projects.map((p) => ({ value: p.id, label: `${p.name}${p.status ? ` (${p.status})` : ''}` }))
-      case 'milestone':
-        return milestones.map((m) => ({ value: m.id, label: `${m.title}${m.status ? ` (${m.status})` : ''}` }))
-      case 'issue':
-        return issues.map((i) => ({ value: i.id, label: `${i.title}${i.status ? ` (${i.status})` : ''}` }))
-      case 'organization':
-        return organizations.map((o) => ({ value: o.id, label: `${o.name}${o.organization_type ? ` (${o.organization_type})` : ''}` }))
-      default:
-        return []
-    }
-  }
+}: {
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [sourceType, setSourceType] = useState('entity')
+  const [sourceId, setSourceId] = useState<number | string>('')
+  const [sourceSearch, setSourceSearch] = useState('')
+  const [targetType, setTargetType] = useState('entity')
+  const [targetId, setTargetId] = useState<number | string>('')
+  const [targetSearch, setTargetSearch] = useState('')
+  const [dependencyType, setDependencyType] = useState('depends')
 
-  // Build form fields with all resource options for all types
-  const dependencyFields: FormField[] = useMemo(() => [
-    {
-      name: 'source_type',
-      label: 'Source Type',
-      type: 'select',
-      required: true,
-      options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
-      defaultValue: 'entity',
-    },
-    {
-      name: 'source_id',
-      label: 'Source',
-      type: 'select',
-      required: true,
-      // Include all items from all types - user selects after choosing type
-      options: [
-        ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
-        ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
-        ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
-        ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
-        ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
-        ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
-      ],
-    },
-    {
-      name: 'dependency_type',
-      label: 'Relationship Type',
-      type: 'select',
-      required: true,
-      options: DEPENDENCY_TYPE_OPTIONS,
-      defaultValue: 'depends',
-    },
-    {
-      name: 'target_type',
-      label: 'Target Type',
-      type: 'select',
-      required: true,
-      options: RESOURCE_TYPES.map(t => ({ value: t.value, label: t.label })),
-      defaultValue: 'entity',
-    },
-    {
-      name: 'target_id',
-      label: 'Target',
-      type: 'select',
-      required: true,
-      // Include all items from all types
-      options: [
-        ...getItemsForType('entity').map(i => ({ ...i, label: `[Entity] ${i.label}` })),
-        ...getItemsForType('identity').map(i => ({ ...i, label: `[Identity] ${i.label}` })),
-        ...getItemsForType('project').map(i => ({ ...i, label: `[Project] ${i.label}` })),
-        ...getItemsForType('milestone').map(i => ({ ...i, label: `[Milestone] ${i.label}` })),
-        ...getItemsForType('issue').map(i => ({ ...i, label: `[Issue] ${i.label}` })),
-        ...getItemsForType('organization').map(i => ({ ...i, label: `[Organization] ${i.label}` })),
-      ],
-    },
-  ], [entities, identities, projects, milestones, issues, organizations])
+  const { data: sourceData, isLoading: sourceLoading } = useResourceSearch(sourceType, sourceSearch)
+  const { data: targetData, isLoading: targetLoading } = useResourceSearch(targetType, targetSearch)
+
+  const sourceOptions = formatResourceOptions(sourceType, sourceData?.items || [])
+  const targetOptions = formatResourceOptions(targetType, targetData?.items || [])
+
+  const handleSourceSearch = useCallback((q: string) => setSourceSearch(q), [])
+  const handleTargetSearch = useCallback((q: string) => setTargetSearch(q), [])
 
   const createMutation = useMutation({
     mutationFn: (data: {
@@ -408,35 +354,124 @@ function CreateDependencyModal({
     },
   })
 
-  const handleSubmit = (data: Record<string, any>) => {
-    const sourceId = parseInt(data.source_id)
-    const targetId = parseInt(data.target_id)
-
-    if (!sourceId || !targetId) {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const sId = Number(sourceId)
+    const tId = Number(targetId)
+    if (!sId || !tId) {
       toast.error('Please select both source and target resources')
       return
     }
-    if (data.source_type === data.target_type && sourceId === targetId) {
+    if (sourceType === targetType && sId === tId) {
       toast.error('Source and target cannot be the same resource')
       return
     }
     createMutation.mutate({
-      source_type: data.source_type,
-      source_id: sourceId,
-      target_type: data.target_type,
-      target_id: targetId,
-      dependency_type: data.dependency_type,
+      source_type: sourceType,
+      source_id: sId,
+      target_type: targetType,
+      target_id: tId,
+      dependency_type: dependencyType,
     })
   }
 
   return (
-    <FormModalBuilder
-      isOpen={true}
-      onClose={onClose}
-      title="Create Dependency"
-      fields={dependencyFields}
-      onSubmit={handleSubmit}
-      submitButtonText="Create"
-    />
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-semibold text-white">Create Dependency</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Source */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-slate-300">Source</h3>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Type</label>
+              <Select
+                value={sourceType}
+                onChange={(e) => {
+                  setSourceType(e.target.value)
+                  setSourceId('')
+                  setSourceSearch('')
+                }}
+              >
+                {RESOURCE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Resource</label>
+              <SearchableSelect
+                options={sourceOptions}
+                value={sourceId}
+                onChange={(val) => setSourceId(val)}
+                onSearch={handleSourceSearch}
+                isLoading={sourceLoading}
+                placeholder={`Search ${RESOURCE_TYPES.find(t => t.value === sourceType)?.label || ''}...`}
+              />
+            </div>
+          </div>
+
+          {/* Relationship Type */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Relationship Type</label>
+            <Select
+              value={dependencyType}
+              onChange={(e) => setDependencyType(e.target.value)}
+            >
+              {DEPENDENCY_TYPE_OPTIONS.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </Select>
+          </div>
+
+          {/* Target */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-medium text-slate-300">Target</h3>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Type</label>
+              <Select
+                value={targetType}
+                onChange={(e) => {
+                  setTargetType(e.target.value)
+                  setTargetId('')
+                  setTargetSearch('')
+                }}
+              >
+                {RESOURCE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Resource</label>
+              <SearchableSelect
+                options={targetOptions}
+                value={targetId}
+                onChange={(val) => setTargetId(val)}
+                onSearch={handleTargetSearch}
+                isLoading={targetLoading}
+                placeholder={`Search ${RESOURCE_TYPES.find(t => t.value === targetType)?.label || ''}...`}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending}>
+              {createMutation.isPending ? 'Creating...' : 'Create'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }

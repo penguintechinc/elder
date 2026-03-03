@@ -16,7 +16,12 @@ from prometheus_flask_exporter import PrometheusMetrics
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
-from shared.database import ensure_database_ready, init_db, log_startup_status, run_migrations
+from shared.database import (
+    ensure_database_ready,
+    init_db,
+    log_startup_status,
+    run_migrations,
+)
 
 # Configure standard library logging
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -81,11 +86,11 @@ def create_app(config_name: str = None) -> Flask:
     if not db_status["connected"]:
         raise RuntimeError("Cannot start application - database not available")
 
-    # Hybrid Database Initialization:
-    # 1. Initialize PyDAL first — creates base schema tables (identities, entities, etc.)
-    # 2. Run SQLAlchemy/Alembic migrations — adds enterprise tables that FK into PyDAL tables
-    init_db(app)
+    # Database Initialization:
+    # 1. Run Alembic migrations first — creates/updates all schema tables
+    # 2. Initialize PyDAL with migrate=False — connects to existing tables for queries
     run_migrations(app)
+    init_db(app)
 
     # Initialize license client
     _init_license_client(app)
@@ -109,12 +114,17 @@ def create_app(config_name: str = None) -> Flask:
     @app.route("/api/v1/status")
     def api_status():
         """API status endpoint for console version checks."""
-        return jsonify({
-            "status": "operational",
-            "service": "elder",
-            "version": app.config.get("APP_VERSION", "0.0.0"),
-            "environment": app.config.get("ENV", "production"),
-        }), 200
+        return (
+            jsonify(
+                {
+                    "status": "operational",
+                    "service": "elder",
+                    "version": app.config.get("APP_VERSION", "0.0.0"),
+                    "environment": app.config.get("ENV", "production"),
+                }
+            ),
+            200,
+        )
 
     logger.info(
         "elder_app_created",
@@ -380,9 +390,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(
         certificates.bp, url_prefix=f"{api_prefix}/certificates"
     )  # Certificate management
-    app.register_blueprint(
-        costs.bp, url_prefix=f"{api_prefix}/costs"
-    )  # Cost tracking
+    app.register_blueprint(costs.bp, url_prefix=f"{api_prefix}/costs")  # Cost tracking
 
     # v3.x Feature blueprints
     app.register_blueprint(

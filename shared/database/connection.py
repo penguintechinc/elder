@@ -76,6 +76,7 @@ def create_db_connection(
 
             # Define all shared tables
             from shared.models.pydal_models import define_all_tables
+
             define_all_tables(db)
             db.commit()
 

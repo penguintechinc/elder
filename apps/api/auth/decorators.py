@@ -369,19 +369,24 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
 
             # Check if user has required role on this resource using PyDAL
             db = current_app.db
-            user_roles = db(
-                (db.resource_roles.identity_id == user.id)
-                & (db.resource_roles.resource_type == resource_type)
-                & (db.resource_roles.resource_id == resource_id)
-            ).select()
+            try:
+                user_roles = db(
+                    (db.resource_roles.identity_id == user.id)
+                    & (db.resource_roles.resource_type == resource_type)
+                    & (db.resource_roles.resource_id == resource_id)
+                ).select()
 
-            has_role = False
-            for user_role in user_roles:
-                user_level = role_hierarchy.get(user_role.role, 0)
-                # Check if user's role level meets or exceeds required level
-                if user_level >= required_level:
-                    has_role = True
-                    break
+                has_role = False
+                for user_role in user_roles:
+                    user_level = role_hierarchy.get(user_role.role, 0)
+                    # Check if user's role level meets or exceeds required level
+                    if user_level >= required_level:
+                        has_role = True
+                        break
+            except Exception:
+                # resource_roles table may not exist or query failed
+                # Deny access gracefully instead of returning 500
+                has_role = False
 
             if not has_role:
                 return (

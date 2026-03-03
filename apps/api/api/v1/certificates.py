@@ -11,6 +11,7 @@ from flask import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.validation_helpers import (
     validate_enum_value,
@@ -19,7 +20,6 @@ from apps.api.utils.validation_helpers import (
     validate_required_fields,
     validate_resource_exists,
 )
-from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("certificates", __name__)
 

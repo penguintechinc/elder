@@ -40,7 +40,7 @@ def serve(
         if get_license_client is None:
             logger.warning(
                 "grpc_server_no_licensing_module",
-                message="penguin_licensing not available, skipping license check"
+                message="penguin_licensing not available, skipping license check",
             )
         else:
             try:

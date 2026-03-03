@@ -7,12 +7,6 @@ from dataclasses import asdict
 
 from flask import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
-from apps.api.models.pydantic.vulnerability import (
-    AssignVulnerabilityRequest,
-    NVDSyncRequest,
-    SyncVulnerabilitiesRequest,
-    UpdateComponentVulnerabilityRequest,
-)
 from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required, resource_role_required
@@ -23,11 +17,17 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.models.pydantic.vulnerability import (
+    AssignVulnerabilityRequest,
+    NVDSyncRequest,
+    SyncVulnerabilitiesRequest,
+    UpdateComponentVulnerabilityRequest,
+)
 from apps.api.services.sbom.vulnerability.matcher import VulnerabilityMatcher
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.validation_helpers import validate_resource_exists
-from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("vulnerabilities", __name__)
 

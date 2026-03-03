@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.1] - 2026-03-02
+
+### 🐛 Bug Fixes
+
+#### Schema Creation Moved from PyDAL to SQLAlchemy/Alembic (Issue #58)
+- **Fixed**: Multi-replica `DuplicateTable` race conditions in Kubernetes deployments
+- **Root cause**: PyDAL's `migrate=True` caused each pod to independently run `CREATE TABLE` DDL at startup
+- **Solution**: New Alembic migration 011 creates all 67 base tables; PyDAL now runs with `migrate=False` (runtime queries only)
+- **Startup order corrected**: Alembic migrations now run before PyDAL initialization
+- **Removed**: Monkey-patching mechanism that selectively allowed PyDAL to create "base" tables while blocking "enterprise" tables
+- **Impact**: Safe for multi-replica K8s deployments; fresh databases fully provisioned by Alembic
+
+#### Sidebar Not Loading After Login (Issue #59)
+- **Fixed**: Refresh token never stored after login, causing 401 cascade on token expiry
+- **Root cause**: `LoginPageWrapper.onSuccess` stored only the access token; the API client's refresh interceptor found no `elder_refresh_token` in localStorage
+- **Solution**: `onSuccess` now stores both `elder_token` and `elder_refresh_token` from the login response
+- **Fixed**: `resource_role_required` decorator returned 500 when `resource_roles` table query failed for portal users
+- **Solution**: Wrapped DB query in try/except; gracefully returns 403 instead of 500
+- **Fixed**: `organization_tree` tree-stats endpoint returned unhandled 500 on exceptions
+- **Solution**: Added error handling around thread pool execution
+
+#### Async Endpoints Missing DB Commit (Issue #61)
+- **Fixed**: Organizations (and other resources) created via API were not persisted to database
+- **Root cause**: `@login_required` wraps handlers as `async def`; all async handlers share the event-loop thread, so PyDAL's thread-local connections get interleaved transactions causing implicit rollbacks
+- **Solution**: Wrapped DB operations in `run_in_threadpool()` so each runs in its own thread with its own PyDAL connection
+- **Endpoints converted**: 9 write endpoints across organizations, audit, sync, and tenants modules
+
+### 🎨 UI Improvements
+
+#### Ultrawide Monitor Support
+- **Login page**: Centered with `max-w-md` constraint; no longer stretches on ultrawide displays
+- **All pages**: Main content area capped at `max-w-screen-2xl` (1536px) and centered via `mx-auto`
+- **Modals**: Already constrained to `max-w-md` — verified no ultrawide issues
+
+---
+
 ## [3.1.0] - 2026-02-23
 
 ### ⚠️ Breaking Changes

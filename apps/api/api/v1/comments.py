@@ -9,11 +9,11 @@ from flask import Blueprint, current_app, g, jsonify
 from models.dataclasses import IssueCommentDTO
 from penguin_libs.pydantic import Description1000, RequestModel
 from penguin_libs.pydantic.flask_integration import validated_request
+from penguin_licensing.decorators import license_required
 from utils.async_utils import run_in_threadpool
 
 from apps.api.auth.decorators import login_required
 from apps.api.models.dataclasses import from_pydal_row, from_pydal_rows
-from penguin_licensing.decorators import license_required
 
 bp = Blueprint("comments", __name__)
 

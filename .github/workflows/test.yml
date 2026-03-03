@@ -250,8 +250,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: Build react_libs
-        run: cd shared/react_libs && npm ci && npm run build
+      - name: Configure npm for GitHub Packages
+        run: |
+          echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
+          echo "//npm.pkg.github.com/:_authToken=${NPM_PKG_TOKEN}" >> ~/.npmrc
+        env:
+          NPM_PKG_TOKEN: ${{ secrets.NPM_PKG_TOKEN }}
 
       - name: Install dependencies
         working-directory: web

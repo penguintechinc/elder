@@ -14,6 +14,7 @@ from penguin_libs.pydantic.flask_integration import validated_request
 from pydantic import Field
 
 from apps.api.auth.decorators import login_required
+from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import (
     IssueCommentDTO,
     IssueDTO,
@@ -23,7 +24,6 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
-from apps.api.licensing_fallback import license_required
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)

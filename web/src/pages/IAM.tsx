@@ -45,8 +45,8 @@ function PendingApprovalsTab() {
 
   const approveMutation = useMutation({
     mutationFn: (requestId: number) => api.approveGroupAccessRequest(requestId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-group-requests'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['pending-group-requests'], refetchType: 'all' })
       toast.success('Request approved')
     },
     onError: (error: any) => {
@@ -56,8 +56,8 @@ function PendingApprovalsTab() {
 
   const denyMutation = useMutation({
     mutationFn: (requestId: number) => api.denyGroupAccessRequest(requestId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['pending-group-requests'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['pending-group-requests'], refetchType: 'all' })
       toast.success('Request denied')
     },
     onError: (error: any) => {
@@ -247,8 +247,8 @@ function IdentityRelationshipsTab() {
   // Delete relationship mutation
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteDependency(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['identity-relationships'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['identity-relationships'], refetchType: 'all' })
       toast.success('Relationship removed')
     },
     onError: () => toast.error('Failed to remove relationship')

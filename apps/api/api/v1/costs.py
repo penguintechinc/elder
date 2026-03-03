@@ -10,15 +10,25 @@ bp = Blueprint("costs", __name__)
 def _get_cost_service():
     """Get CostService instance."""
     from apps.api.services.costs.cost_service import CostService
+
     return CostService(g.db)
 
 
 @bp.route("/<resource_type>/<int:resource_id>", methods=["GET"])
 def get_resource_costs(resource_type, resource_id):
     """Get cost data for a specific resource."""
-    valid_types = ["entity", "service", "data_store", "networking_resource", "certificate"]
+    valid_types = [
+        "entity",
+        "service",
+        "data_store",
+        "networking_resource",
+        "certificate",
+    ]
     if resource_type not in valid_types:
-        return jsonify({"error": f"Invalid resource_type. Must be one of: {valid_types}"}), 400
+        return (
+            jsonify({"error": f"Invalid resource_type. Must be one of: {valid_types}"}),
+            400,
+        )
 
     service = _get_cost_service()
     costs = service.get_resource_costs(resource_type, resource_id)
@@ -32,9 +42,18 @@ def get_resource_costs(resource_type, resource_id):
 @bp.route("/<resource_type>/<int:resource_id>", methods=["POST"])
 def update_resource_costs(resource_type, resource_id):
     """Create or update cost entry for a resource."""
-    valid_types = ["entity", "service", "data_store", "networking_resource", "certificate"]
+    valid_types = [
+        "entity",
+        "service",
+        "data_store",
+        "networking_resource",
+        "certificate",
+    ]
     if resource_type not in valid_types:
-        return jsonify({"error": f"Invalid resource_type. Must be one of: {valid_types}"}), 400
+        return (
+            jsonify({"error": f"Invalid resource_type. Must be one of: {valid_types}"}),
+            400,
+        )
 
     data = request.get_json()
     if not data:
@@ -53,9 +72,7 @@ def update_resource_costs(resource_type, resource_id):
 def list_sync_jobs():
     """List cost sync jobs."""
     db = g.db
-    jobs = db(db.cost_sync_jobs.id > 0).select(
-        orderby=db.cost_sync_jobs.name
-    )
+    jobs = db(db.cost_sync_jobs.id > 0).select(orderby=db.cost_sync_jobs.name)
     return jsonify({"data": [j.as_dict() for j in jobs]}), 200
 
 

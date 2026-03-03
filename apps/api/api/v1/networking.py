@@ -7,11 +7,11 @@ import logging
 
 from flask import Blueprint, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
-from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
+from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from apps.api.services.networking import NetworkingService
 
 logger = logging.getLogger(__name__)

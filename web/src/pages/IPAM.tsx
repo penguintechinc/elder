@@ -128,8 +128,8 @@ export default function IPAM() {
   // Create mutations
   const createPrefixMutation = useMutation({
     mutationFn: (data: any) => api.createIpamPrefix(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'], refetchType: 'all' })
       setShowCreatePrefixModal(false)
       toast.success('Prefix created successfully')
     },
@@ -138,8 +138,8 @@ export default function IPAM() {
 
   const createAddressMutation = useMutation({
     mutationFn: (data: any) => api.createIpamAddress(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-addresses'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-addresses'], refetchType: 'all' })
       setShowCreateAddressModal(false)
       toast.success('Address created successfully')
     },
@@ -148,8 +148,8 @@ export default function IPAM() {
 
   const createVlanMutation = useMutation({
     mutationFn: (data: any) => api.createIpamVlan(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-vlans'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-vlans'], refetchType: 'all' })
       setShowCreateVlanModal(false)
       toast.success('VLAN created successfully')
     },
@@ -159,8 +159,8 @@ export default function IPAM() {
   // Update mutations
   const updatePrefixMutation = useMutation({
     mutationFn: (data: any) => api.updateIpamPrefix(editingPrefix!.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'], refetchType: 'all' })
       setEditingPrefix(null)
       toast.success('Prefix updated successfully')
     },
@@ -169,8 +169,8 @@ export default function IPAM() {
 
   const updateAddressMutation = useMutation({
     mutationFn: (data: any) => api.updateIpamAddress(editingAddress!.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-addresses'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-addresses'], refetchType: 'all' })
       setEditingAddress(null)
       toast.success('Address updated successfully')
     },
@@ -179,8 +179,8 @@ export default function IPAM() {
 
   const updateVlanMutation = useMutation({
     mutationFn: (data: any) => api.updateIpamVlan(editingVlan!.id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-vlans'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-vlans'], refetchType: 'all' })
       setEditingVlan(null)
       toast.success('VLAN updated successfully')
     },
@@ -190,8 +190,8 @@ export default function IPAM() {
   // Delete mutations
   const deletePrefixMutation = useMutation({
     mutationFn: (id: number) => api.deleteIpamPrefix(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'], refetchType: 'all' })
       toast.success('Prefix deleted successfully')
     },
     onError: () => toast.error('Failed to delete prefix'),
@@ -199,8 +199,8 @@ export default function IPAM() {
 
   const deleteAddressMutation = useMutation({
     mutationFn: (id: number) => api.deleteIpamAddress(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-addresses'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-addresses'], refetchType: 'all' })
       toast.success('Address deleted successfully')
     },
     onError: () => toast.error('Failed to delete address'),
@@ -208,8 +208,8 @@ export default function IPAM() {
 
   const deleteVlanMutation = useMutation({
     mutationFn: (id: number) => api.deleteIpamVlan(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['ipam-vlans'] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ipam-vlans'], refetchType: 'all' })
       toast.success('VLAN deleted successfully')
     },
     onError: () => toast.error('Failed to delete VLAN'),

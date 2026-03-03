@@ -121,7 +121,14 @@ async def get_organization_tree_stats(org_id: int):
             None,
         )
 
-    result, error, status = await run_in_threadpool(get_recursive_stats)
+    try:
+        result, error, status = await run_in_threadpool(get_recursive_stats)
+    except Exception:
+        current_app.logger.exception("Failed to compute tree statistics")
+        return (
+            jsonify({"error": "Failed to compute tree statistics"}),
+            500,
+        )
 
     if error:
         return jsonify({"error": error}), status

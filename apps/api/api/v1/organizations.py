@@ -5,6 +5,7 @@
 
 from flask import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from apps.api.auth.decorators import login_required
 from apps.api.schemas.organization import (
@@ -83,7 +84,7 @@ def list_organizations():
 
 @bp.route("", methods=["POST"])
 @login_required
-def create_organization():
+async def create_organization():
     """
     Create a new organization.
 
@@ -100,19 +101,24 @@ def create_organization():
     except ValidationError as e:
         return handle_validation_error(e)
 
-    # Create organization using PyDAL
-    try:
-        org_id = db.organizations.insert(**data)
-        db.commit()
+    def inner():
+        try:
+            org_id = db.organizations.insert(**data)
+            db.commit()
 
-        # Fetch the created organization
-        org = db.organizations[org_id]
+            # Fetch the created organization
+            org = db.organizations[org_id]
 
-        # Return as dict
-        return jsonify(org.as_dict()), 201
-    except Exception as e:
-        db.rollback()
-        return make_error_response(f"Database error: {str(e)}", 500)
+            # Return as dict
+            return org.as_dict(), None, None
+        except Exception as e:
+            db.rollback()
+            return None, f"Database error: {str(e)}", 500
+
+    result, error, status = await run_in_threadpool(inner)
+    if error:
+        return make_error_response(error, status)
+    return jsonify(result), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])

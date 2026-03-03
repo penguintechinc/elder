@@ -17,9 +17,7 @@ from apps.worker.connectors.authentik_connector import AuthentikConnector
 from apps.worker.connectors.aws_connector import AWSConnector
 from apps.worker.connectors.base import BaseConnector, SyncResult
 from apps.worker.connectors.gcp_connector import GCPConnector
-from apps.worker.connectors.google_workspace_connector import (
-    GoogleWorkspaceConnector,
-)
+from apps.worker.connectors.google_workspace_connector import GoogleWorkspaceConnector
 from apps.worker.connectors.ldap_connector import LDAPConnector
 from apps.worker.connectors.lxd_connector import LXDConnector
 from apps.worker.connectors.okta_connector import OktaConnector
@@ -318,7 +316,9 @@ class WorkerService:
             with discovery_poll_duration.time():
                 executed = self.discovery_executor.run_pending()
                 if executed > 0:
-                    discovery_jobs_executed.labels(provider="cloud", status="success").inc(executed)
+                    discovery_jobs_executed.labels(
+                        provider="cloud", status="success"
+                    ).inc(executed)
                     logger.info(f"Discovery poll completed: {executed} job(s) executed")
         except Exception as e:
             discovery_jobs_executed.labels(provider="cloud", status="failed").inc()
@@ -330,6 +330,7 @@ class WorkerService:
 
         # Schedule discovery job polling (every 5 minutes)
         if self.discovery_executor:
+
             @aiocron.crontab("*/5 * * * *")
             async def discovery_poll():
                 await self._run_discovery_poll()

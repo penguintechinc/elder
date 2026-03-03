@@ -869,16 +869,15 @@ export default function OrganizationDetail() {
         <CreateOrganizationModal
           parentId={orgId}
           onClose={() => setShowCreateOrgModal(false)}
-          onSuccess={() => {
-            setShowCreateOrgModal(false)
-            // Invalidate child organizations list
-            queryClient.invalidateQueries({ queryKey: ['organizations', { parent_id: id }] })
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['organizations', { parent_id: id }] })
             // Invalidate parent organization to update counts
-            queryClient.invalidateQueries({ queryKey: ['organization', id] })
+            await queryClient.invalidateQueries({ queryKey: ['organization', id] })
             // Invalidate tree stats
-            queryClient.invalidateQueries({ queryKey: ['organization-tree-stats', id] })
+            await queryClient.invalidateQueries({ queryKey: ['organization-tree-stats', id] })
             // Invalidate global organizations list
-            queryClient.invalidateQueries({ queryKey: ['organizations'] })
+            await queryClient.invalidateQueries({ queryKey: ['organizations'] })
+            setShowCreateOrgModal(false)
           }}
         />
       )}
@@ -888,16 +887,15 @@ export default function OrganizationDetail() {
         <CreateEntityModal
           organizationId={orgId}
           onClose={() => setShowCreateEntityModal(false)}
-          onSuccess={() => {
-            setShowCreateEntityModal(false)
-            // Invalidate organization's entities list
-            queryClient.invalidateQueries({ queryKey: ['entities', { organization_id: id }] })
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['entities', { organization_id: id }] })
             // Invalidate parent organization to update counts
-            queryClient.invalidateQueries({ queryKey: ['organization', id] })
+            await queryClient.invalidateQueries({ queryKey: ['organization', id] })
             // Invalidate tree stats
-            queryClient.invalidateQueries({ queryKey: ['organization-tree-stats', id] })
+            await queryClient.invalidateQueries({ queryKey: ['organization-tree-stats', id] })
             // Invalidate global entities list
-            queryClient.invalidateQueries({ queryKey: ['entities'] })
+            await queryClient.invalidateQueries({ queryKey: ['entities'] })
+            setShowCreateEntityModal(false)
           }}
         />
       )}
@@ -907,9 +905,9 @@ export default function OrganizationDetail() {
         <MetadataModal
           organizationId={orgId}
           onClose={() => setShowMetadataModal(false)}
-          onSuccess={() => {
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['organization-metadata', id] })
             setShowMetadataModal(false)
-            queryClient.invalidateQueries({ queryKey: ['organization-metadata', id] })
           }}
         />
       )}
@@ -919,9 +917,9 @@ export default function OrganizationDetail() {
         <EditOrganizationModal
           organization={organization}
           onClose={() => setShowEditModal(false)}
-          onSuccess={() => {
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({ queryKey: ['organization', id] })
             setShowEditModal(false)
-            queryClient.invalidateQueries({ queryKey: ['organization', id] })
           }}
         />
       )}
@@ -1145,12 +1143,12 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   const createMutation = useMutation({
     mutationFn: (data: { key: string; field_type: string; value: any }) =>
       api.createOrganizationMetadata(organizationId, data),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
       toast.success('Metadata field created successfully')
       setKey('')
       setValue('')
       setFieldType('string')
-      queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
     },
     onError: () => {
       toast.error('Failed to create metadata field')
@@ -1160,11 +1158,11 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   const updateMutation = useMutation({
     mutationFn: ({ key, value }: { key: string; value: any }) =>
       api.updateOrganizationMetadata(organizationId, key, { value }),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
       toast.success('Metadata field updated successfully')
       setEditingKey(null)
       setValue('')
-      queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
     },
     onError: () => {
       toast.error('Failed to update metadata field')
@@ -1173,9 +1171,9 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
 
   const deleteMutation = useMutation({
     mutationFn: (key: string) => api.deleteOrganizationMetadata(organizationId, key),
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
       toast.success('Metadata field deleted successfully')
-      queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
     },
     onError: () => {
       toast.error('Failed to delete metadata field')

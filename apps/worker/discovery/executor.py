@@ -56,9 +56,8 @@ class DiscoveryExecutor:
         now = datetime.now(timezone.utc)
 
         try:
-            query = (
-                (self.db_read.discovery_jobs.enabled == True)  # noqa: E712
-                & (self.db_read.discovery_jobs.provider.belongs(list(CLOUD_PROVIDERS)))
+            query = (self.db_read.discovery_jobs.enabled == True) & (  # noqa: E712
+                self.db_read.discovery_jobs.provider.belongs(list(CLOUD_PROVIDERS))
             )
 
             # Filter by schedule: either never run or overdue

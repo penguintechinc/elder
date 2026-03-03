@@ -50,8 +50,8 @@ export default function Vulnerabilities() {
         parent_id: data.parent_id,
         notes: data.notes,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.all })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.vulnerabilities.all, refetchType: 'all' })
       setAssignModalOpen(false)
       setSelectedVulnerability(null)
     },

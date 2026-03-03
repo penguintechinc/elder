@@ -386,7 +386,13 @@ class DiscoveryService:
         if not sub_type:
             return None
 
-        name = config.get("name", config.get("cluster_name", config.get("project_id", config.get("account_id", f"{provider} root"))))
+        name = config.get(
+            "name",
+            config.get(
+                "cluster_name",
+                config.get("project_id", config.get("account_id", f"{provider} root")),
+            ),
+        )
 
         existing = (
             self.db(
@@ -409,7 +415,10 @@ class DiscoveryService:
             entity_type="compute",
             sub_type=sub_type,
             organization_id=organization_id,
-            attributes={"provider": provider, "discovered_at": datetime.utcnow().isoformat()},
+            attributes={
+                "provider": provider,
+                "discovered_at": datetime.utcnow().isoformat(),
+            },
             created_at=datetime.utcnow(),
         )
         return entity_id
@@ -417,7 +426,11 @@ class DiscoveryService:
     # Intermediate networking
 
     def _ensure_intermediate_networking(
-        self, organization_id: int, provider: str, root_entity_id: Optional[int], discovery_results: Dict[str, Any]
+        self,
+        organization_id: int,
+        provider: str,
+        root_entity_id: Optional[int],
+        discovery_results: Dict[str, Any],
     ) -> Dict[str, int]:
         """Create intermediate networking resources (VPCs, Namespaces) and return lookup maps."""
         networking_lookup = {}
@@ -441,7 +454,9 @@ class DiscoveryService:
                     tags=["kubernetes", "namespace", "discovered"],
                 )
                 if net_id and root_entity_id:
-                    self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                    self._upsert_network_entity_mapping(
+                        net_id, root_entity_id, "attached"
+                    )
                 networking_lookup[f"namespace:{ns_name}"] = net_id
 
         elif provider == "aws":
@@ -457,11 +472,17 @@ class DiscoveryService:
                         name=resource.get("name", vpc_id_str),
                         network_type="other",
                         region=resource.get("region"),
-                        attributes={"cidr_block": meta.get("cidr_block"), "vpc_id": vpc_id_str, "is_default": meta.get("is_default")},
+                        attributes={
+                            "cidr_block": meta.get("cidr_block"),
+                            "vpc_id": vpc_id_str,
+                            "is_default": meta.get("is_default"),
+                        },
                         tags=["aws", "vpc", "discovered"],
                     )
                     if net_id and root_entity_id:
-                        self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                        self._upsert_network_entity_mapping(
+                            net_id, root_entity_id, "attached"
+                        )
                     vpc_lookup[vpc_id_str] = net_id
                     networking_lookup[f"vpc:{vpc_id_str}"] = net_id
 
@@ -477,10 +498,16 @@ class DiscoveryService:
                         network_type="subnet",
                         region=resource.get("region"),
                         parent_id=parent_id,
-                        attributes={"cidr_block": meta.get("cidr_block"), "availability_zone": meta.get("availability_zone"), "available_ips": meta.get("available_ips")},
+                        attributes={
+                            "cidr_block": meta.get("cidr_block"),
+                            "availability_zone": meta.get("availability_zone"),
+                            "available_ips": meta.get("available_ips"),
+                        },
                         tags=["aws", "subnet", "discovered"],
                     )
-                    subnet_id_str = meta.get("subnet_id", resource.get("resource_id", ""))
+                    subnet_id_str = meta.get(
+                        "subnet_id", resource.get("resource_id", "")
+                    )
                     networking_lookup[f"subnet:{subnet_id_str}"] = net_id
 
         elif provider == "gcp":
@@ -492,18 +519,30 @@ class DiscoveryService:
                         name=resource.get("name", ""),
                         network_type="other",
                         region="global",
-                        attributes={"auto_create_subnets": resource.get("metadata", {}).get("auto_create_subnets")},
+                        attributes={
+                            "auto_create_subnets": resource.get("metadata", {}).get(
+                                "auto_create_subnets"
+                            )
+                        },
                         tags=["gcp", "vpc", "discovered"],
                     )
                     if net_id and root_entity_id:
-                        self._upsert_network_entity_mapping(net_id, root_entity_id, "attached")
+                        self._upsert_network_entity_mapping(
+                            net_id, root_entity_id, "attached"
+                        )
                     networking_lookup[f"vpc:{resource.get('resource_id', '')}"] = net_id
 
         return networking_lookup
 
     def _upsert_networking_resource(
-        self, organization_id: int, name: str, network_type: str, region: Optional[str] = None,
-        parent_id: Optional[int] = None, attributes: Optional[Dict] = None, tags: Optional[List[str]] = None,
+        self,
+        organization_id: int,
+        name: str,
+        network_type: str,
+        region: Optional[str] = None,
+        parent_id: Optional[int] = None,
+        attributes: Optional[Dict] = None,
+        tags: Optional[List[str]] = None,
     ) -> Optional[int]:
         """Create or update a networking_resources record."""
         try:
@@ -546,7 +585,10 @@ class DiscoveryService:
         try:
             existing = (
                 self.db(
-                    (self.db.network_entity_mappings.networking_resource_id == network_id)
+                    (
+                        self.db.network_entity_mappings.networking_resource_id
+                        == network_id
+                    )
                     & (self.db.network_entity_mappings.entity_id == entity_id)
                 )
                 .select()
@@ -564,7 +606,9 @@ class DiscoveryService:
 
     # Domain table helpers
 
-    def _store_as_service(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+    def _store_as_service(
+        self, organization_id: int, resource: Dict[str, Any], provider: str
+    ) -> Optional[int]:
         """Store a K8s Service or Lambda function in the services table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -579,7 +623,14 @@ class DiscoveryService:
             deployment_method = "serverless"
             port = None
             runtime = metadata.get("runtime", "")
-            lang_map = {"python": "python", "nodejs": "nodejs", "java": "java", "go": "go", "ruby": "ruby", "dotnet": "dotnet"}
+            lang_map = {
+                "python": "python",
+                "nodejs": "nodejs",
+                "java": "java",
+                "go": "go",
+                "ruby": "ruby",
+                "dotnet": "dotnet",
+            }
             status = "active" if metadata.get("state") == "Active" else "active"
         else:
             return None
@@ -616,7 +667,9 @@ class DiscoveryService:
             logger.warning("Failed to store service %s: %s", name, e)
             return None
 
-    def _store_as_data_store(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+    def _store_as_data_store(
+        self, organization_id: int, resource: Dict[str, Any], provider: str
+    ) -> Optional[int]:
         """Store S3/EBS/GCS/RDS/PV in the data_stores table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -668,7 +721,12 @@ class DiscoveryService:
             logger.warning("Failed to store data_store %s: %s", name, e)
             return None
 
-    def _store_as_networking_resource(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+    def _store_as_networking_resource(
+        self,
+        organization_id: int,
+        resource: Dict[str, Any],
+        networking_lookup: Dict[str, int],
+    ) -> Optional[int]:
         """Store load balancers in the networking_resources table."""
         resource_type = resource.get("resource_type", "")
         if resource_type != "load_balancer":
@@ -684,11 +742,18 @@ class DiscoveryService:
             network_type="proxy",
             region=resource.get("region"),
             parent_id=parent_id,
-            attributes={"dns_name": metadata.get("dns_name"), "scheme": metadata.get("scheme"), "lb_type": metadata.get("type"), "state": metadata.get("state")},
+            attributes={
+                "dns_name": metadata.get("dns_name"),
+                "scheme": metadata.get("scheme"),
+                "lb_type": metadata.get("type"),
+                "state": metadata.get("state"),
+            },
             tags=["aws", "load-balancer", "discovered"],
         )
 
-    def _store_k8s_service_account_as_identity(self, organization_id: int, resource: Dict[str, Any], cluster_name: str) -> Optional[int]:
+    def _store_k8s_service_account_as_identity(
+        self, organization_id: int, resource: Dict[str, Any], cluster_name: str
+    ) -> Optional[int]:
         """Store a K8s ServiceAccount in the identities table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -730,7 +795,9 @@ class DiscoveryService:
             logger.warning("Failed to store K8s SA %s: %s", name, e)
             return None
 
-    def _store_container_image_as_software(self, organization_id: int, image: str) -> Optional[int]:
+    def _store_container_image_as_software(
+        self, organization_id: int, image: str
+    ) -> Optional[int]:
         """Store a container image in the software table."""
         # Parse image:tag
         if ":" in image and not image.startswith("sha256:"):
@@ -772,7 +839,15 @@ class DiscoveryService:
             logger.warning("Failed to store software %s: %s", image_name, e)
             return None
 
-    def _create_dependency_link(self, source_type: str, source_id: int, target_type: str, target_id: int, dep_type: str = "discovered_from", meta: Optional[Dict] = None) -> None:
+    def _create_dependency_link(
+        self,
+        source_type: str,
+        source_id: int,
+        target_type: str,
+        target_id: int,
+        dep_type: str = "discovered_from",
+        meta: Optional[Dict] = None,
+    ) -> None:
         """Create a dependencies record linking domain table entries."""
         try:
             existing = (
@@ -798,7 +873,12 @@ class DiscoveryService:
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
 
-    def _store_k8s_ingress(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+    def _store_k8s_ingress(
+        self,
+        organization_id: int,
+        resource: Dict[str, Any],
+        networking_lookup: Dict[str, int],
+    ) -> Optional[int]:
         """Store a K8s Ingress in the networking_resources table."""
         metadata = resource.get("metadata", {})
         namespace = metadata.get("namespace", "default")
@@ -834,8 +914,10 @@ class DiscoveryService:
                     )
                     if svc:
                         self._create_dependency_link(
-                            "networking_resource", ingress_id,
-                            "service", svc.id,
+                            "networking_resource",
+                            ingress_id,
+                            "service",
+                            svc.id,
                             "routes_to",
                             {"ingress": resource.get("name", "")},
                         )
@@ -851,11 +933,15 @@ class DiscoveryService:
                                         updated_at=datetime.utcnow(),
                                     )
                 except Exception as e:
-                    logger.warning("Failed to link ingress to service %s: %s", svc_name, e)
+                    logger.warning(
+                        "Failed to link ingress to service %s: %s", svc_name, e
+                    )
 
         return ingress_id
 
-    def _store_k8s_pvc_as_data_store(self, organization_id: int, resource: Dict[str, Any], provider: str) -> Optional[int]:
+    def _store_k8s_pvc_as_data_store(
+        self, organization_id: int, resource: Dict[str, Any], provider: str
+    ) -> Optional[int]:
         """Store a K8s PVC in data_stores and link to PV via dependencies."""
         pvc_id = self._store_as_data_store(organization_id, resource, provider)
 
@@ -877,8 +963,10 @@ class DiscoveryService:
                     )
                     if pv:
                         self._create_dependency_link(
-                            "data_store", pvc_id,
-                            "data_store", pv.id,
+                            "data_store",
+                            pvc_id,
+                            "data_store",
+                            pv.id,
                             "bound_to",
                             {"pvc": resource.get("name", ""), "pv": volume_name},
                         )
@@ -887,7 +975,9 @@ class DiscoveryService:
 
         return pvc_id
 
-    def _store_k8s_secret(self, organization_id: int, resource: Dict[str, Any]) -> Optional[int]:
+    def _store_k8s_secret(
+        self, organization_id: int, resource: Dict[str, Any]
+    ) -> Optional[int]:
         """Store a K8s Secret in builtin_secrets (metadata only, NEVER values)."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -938,7 +1028,9 @@ class DiscoveryService:
             logger.warning("Failed to store K8s secret %s: %s", full_name, e)
             return None
 
-    def _store_cert_manager_certificate(self, organization_id: int, resource: Dict[str, Any]) -> Optional[int]:
+    def _store_cert_manager_certificate(
+        self, organization_id: int, resource: Dict[str, Any]
+    ) -> Optional[int]:
         """Store a cert-manager Certificate in the certificates table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -997,7 +1089,12 @@ class DiscoveryService:
             logger.warning("Failed to store cert-manager cert %s: %s", name, e)
             return None
 
-    def _store_cni_as_networking(self, organization_id: int, resource: Dict[str, Any], networking_lookup: Dict[str, int]) -> Optional[int]:
+    def _store_cni_as_networking(
+        self,
+        organization_id: int,
+        resource: Dict[str, Any],
+        networking_lookup: Dict[str, int],
+    ) -> Optional[int]:
         """Store CNI plugin info in networking_resources."""
         metadata = resource.get("metadata", {})
 
@@ -1060,7 +1157,9 @@ class DiscoveryService:
 
         # Get config for root entity naming
         root_config = {"name": f"{provider} discovery"}
-        root_entity_id = self._ensure_provider_root_entity(organization_id, provider, root_config)
+        root_entity_id = self._ensure_provider_root_entity(
+            organization_id, provider, root_config
+        )
 
         # Create intermediate networking (VPCs, Namespaces, Subnets)
         networking_lookup = self._ensure_intermediate_networking(
@@ -1098,45 +1197,94 @@ class DiscoveryService:
                             organization_id, resource, cluster_name
                         )
                         if sa_id and root_entity_id:
-                            self._create_dependency_link("identity", sa_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                            self._create_dependency_link(
+                                "identity",
+                                sa_id,
+                                "entity",
+                                root_entity_id,
+                                "discovered_from",
+                                {"provider": provider},
+                            )
 
                 elif domain == "service":
                     svc_id = self._store_as_service(organization_id, resource, provider)
                     if svc_id and root_entity_id:
-                        self._create_dependency_link("service", svc_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                        self._create_dependency_link(
+                            "service",
+                            svc_id,
+                            "entity",
+                            root_entity_id,
+                            "discovered_from",
+                            {"provider": provider},
+                        )
 
                 elif domain == "data_store":
                     if resource_type == "k8s_pvc":
-                        ds_id = self._store_k8s_pvc_as_data_store(organization_id, resource, provider)
+                        ds_id = self._store_k8s_pvc_as_data_store(
+                            organization_id, resource, provider
+                        )
                     else:
-                        ds_id = self._store_as_data_store(organization_id, resource, provider)
+                        ds_id = self._store_as_data_store(
+                            organization_id, resource, provider
+                        )
                     if ds_id and root_entity_id:
-                        self._create_dependency_link("data_store", ds_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                        self._create_dependency_link(
+                            "data_store",
+                            ds_id,
+                            "entity",
+                            root_entity_id,
+                            "discovered_from",
+                            {"provider": provider},
+                        )
 
                 elif domain == "builtin_secret":
                     secret_id = self._store_k8s_secret(organization_id, resource)
                     if secret_id and root_entity_id:
-                        self._create_dependency_link("builtin_secret", secret_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                        self._create_dependency_link(
+                            "builtin_secret",
+                            secret_id,
+                            "entity",
+                            root_entity_id,
+                            "discovered_from",
+                            {"provider": provider},
+                        )
 
                 elif domain == "certificate":
-                    cert_id = self._store_cert_manager_certificate(organization_id, resource)
+                    cert_id = self._store_cert_manager_certificate(
+                        organization_id, resource
+                    )
                     if cert_id and root_entity_id:
-                        self._create_dependency_link("certificate", cert_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                        self._create_dependency_link(
+                            "certificate",
+                            cert_id,
+                            "entity",
+                            root_entity_id,
+                            "discovered_from",
+                            {"provider": provider},
+                        )
 
                 elif domain == "networking":
                     if resource_type == "load_balancer":
-                        self._store_as_networking_resource(organization_id, resource, networking_lookup)
+                        self._store_as_networking_resource(
+                            organization_id, resource, networking_lookup
+                        )
                     elif resource_type == "k8s_ingress":
-                        self._store_k8s_ingress(organization_id, resource, networking_lookup)
+                        self._store_k8s_ingress(
+                            organization_id, resource, networking_lookup
+                        )
                     elif resource_type == "k8s_cni":
-                        self._store_cni_as_networking(organization_id, resource, networking_lookup)
+                        self._store_cni_as_networking(
+                            organization_id, resource, networking_lookup
+                        )
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
                 else:
                     # Default: store as entity with parent_id
                     entity_type = category_to_entity_type.get(category, "compute")
                     entity_id = self._store_as_entity(
-                        organization_id, resource, entity_type,
+                        organization_id,
+                        resource,
+                        entity_type,
                         parent_id=root_entity_id,
                         networking_lookup=networking_lookup,
                     )
@@ -1147,12 +1295,16 @@ class DiscoveryService:
                         vpc_id = metadata.get("vpc_id")
                         if vpc_id and f"vpc:{vpc_id}" in networking_lookup:
                             self._upsert_network_entity_mapping(
-                                networking_lookup[f"vpc:{vpc_id}"], entity_id, "connected_to"
+                                networking_lookup[f"vpc:{vpc_id}"],
+                                entity_id,
+                                "connected_to",
                             )
                         ns = metadata.get("namespace")
                         if ns and f"namespace:{ns}" in networking_lookup:
                             self._upsert_network_entity_mapping(
-                                networking_lookup[f"namespace:{ns}"], entity_id, "connected_to"
+                                networking_lookup[f"namespace:{ns}"],
+                                entity_id,
+                                "connected_to",
                             )
 
                 # Extract container images from K8s pods
@@ -1162,9 +1314,18 @@ class DiscoveryService:
                         image = container.get("image", "")
                         if image and image not in seen_images:
                             seen_images.add(image)
-                            sw_id = self._store_container_image_as_software(organization_id, image)
+                            sw_id = self._store_container_image_as_software(
+                                organization_id, image
+                            )
                             if sw_id and root_entity_id:
-                                self._create_dependency_link("software", sw_id, "entity", root_entity_id, "discovered_from", {"provider": provider})
+                                self._create_dependency_link(
+                                    "software",
+                                    sw_id,
+                                    "entity",
+                                    root_entity_id,
+                                    "discovered_from",
+                                    {"provider": provider},
+                                )
 
         self.db.commit()
 
