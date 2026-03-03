@@ -194,7 +194,7 @@ export default function Layout() {
 
       {/* Main content */}
       <div className="lg:pl-64 pl-0">
-        <main className="min-h-screen">
+        <main className="min-h-screen max-w-screen-2xl mx-auto">
           <Outlet />
         </main>
       </div>

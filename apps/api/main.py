@@ -81,11 +81,11 @@ def create_app(config_name: str = None) -> Flask:
     if not db_status["connected"]:
         raise RuntimeError("Cannot start application - database not available")
 
-    # Hybrid Database Initialization:
-    # 1. Initialize PyDAL first — creates base schema tables (identities, entities, etc.)
-    # 2. Run SQLAlchemy/Alembic migrations — adds enterprise tables that FK into PyDAL tables
-    init_db(app)
+    # Database Initialization:
+    # 1. Run Alembic migrations first — creates/updates all schema tables
+    # 2. Initialize PyDAL with migrate=False — connects to existing tables for queries
     run_migrations(app)
+    init_db(app)
 
     # Initialize license client
     _init_license_client(app)

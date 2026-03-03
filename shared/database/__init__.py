@@ -141,11 +141,12 @@ def init_db(app):
         f"(DB_TYPE: {db_type or 'auto'})"
     )
 
-    # Create PyDAL DAL instance for queries
+    # Create PyDAL DAL instance for queries only.
+    # Schema creation is handled by Alembic migrations (run_migrations).
     db = DAL(
         database_url,
         folder=app.instance_path if hasattr(app, "instance_path") else "/tmp/pydal",
-        migrate=True,  # PyDAL can create missing tables
+        migrate=False,
         pool_size=10,
         fake_migrate_all=False,
     )
@@ -173,44 +174,12 @@ def init_db(app):
         # No replica configured — reads go to primary
         app.db_read = db
 
-    # Import and define all tables.
-    # pydal_models.py uses migrate=False per-table (safe for production where schema
-    # already exists), but this prevents PyDAL from creating tables on a fresh DB.
-    # Patch define_table to strip per-table migrate=False for BASE tables only, so
-    # the DAL-level migrate=True takes effect for them. Enterprise tables (managed by
-    # Alembic migrations) keep migrate=False — Alembic creates those after PyDAL.
-    # PyDAL's migrate is idempotent — it only adds missing tables/columns.
+    # Import and define all PyDAL table definitions for runtime queries.
+    # All schema creation is handled by Alembic (migration 011 creates base tables).
+    # PyDAL runs with migrate=False — it never issues DDL.
     from shared.models.pydal_models import define_all_tables
 
-    # Tables created by Alembic migrations (001, 003, 008, 009).
-    # These must NOT be auto-created by PyDAL — Alembic owns their schema.
-    # Also includes tables that have FK dependencies on Alembic-managed tables;
-    # those must wait for Alembic to create their dependencies first.
-    _ALEMBIC_MANAGED_TABLES = {
-        # Migration 001: enterprise feature tables
-        "resource_roles", "issue_labels", "issues", "issue_label_assignments",
-        "issue_comments", "issue_entity_links", "metadata_fields",
-        # Migration 003: alerting
-        "alert_configurations",
-        # Migration 008: on-call rotations
-        "on_call_rotations", "on_call_rotation_participants",
-        "on_call_escalation_policies", "on_call_overrides",
-        "on_call_shifts", "on_call_notifications",
-        # Migration 009: cross-boundary link tables (depend on issue_labels/issues)
-        "issue_milestone_links", "issue_project_links",
-    }
-
-    _orig_define_table = db.define_table
-
-    def _define_table_allowing_migrate(*args, **kwargs):
-        table_name = args[0] if args else kwargs.get("tablename", "")
-        if table_name not in _ALEMBIC_MANAGED_TABLES:
-            kwargs.pop("migrate", None)
-        return _orig_define_table(*args, **kwargs)
-
-    db.define_table = _define_table_allowing_migrate
     define_all_tables(db)
-    db.define_table = _orig_define_table
 
     # Define tables on read replica too (if it's a separate connection)
     if app.db_read is not db:
