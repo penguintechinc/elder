@@ -3,11 +3,11 @@
 # flake8: noqa: E501
 
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, jsonify, request
-from starlette.concurrency import run_in_threadpool
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
@@ -143,7 +143,7 @@ async def create_retention_policy():
             policy = db.audit_retention_policies[policy_id]
             return policy.as_dict(), None, None
 
-        policy_dict, error, status = await run_in_threadpool(inner)
+        policy_dict, error, status = await asyncio.to_thread(inner)
         if error:
             return jsonify({"error": error}), status
         return jsonify(policy_dict), 201
@@ -195,7 +195,7 @@ async def update_retention_policy(policy_id):
             policy = db.audit_retention_policies[policy_id]
             return policy.as_dict(), None, None
 
-        policy_dict, error, status = await run_in_threadpool(inner)
+        policy_dict, error, status = await asyncio.to_thread(inner)
         if error:
             return jsonify({"error": error}), status
         return jsonify(policy_dict), 200
@@ -229,7 +229,7 @@ async def delete_retention_policy(policy_id):
 
             return {"message": "Retention policy deleted successfully"}, None, None
 
-        result_dict, error, status = await run_in_threadpool(inner)
+        result_dict, error, status = await asyncio.to_thread(inner)
         if error:
             return jsonify({"error": error}), status
         return jsonify(result_dict), 200
