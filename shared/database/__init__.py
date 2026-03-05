@@ -60,6 +60,39 @@ def run_migrations(app):
         raise
 
 
+def init_sqlalchemy_tables(app):
+    """
+    Create all SQLAlchemy-defined tables if they don't exist.
+
+    Safe to call on startup — create_all() is idempotent and only creates
+    tables that are missing. Does NOT run Alembic migrations.
+    For schema migrations on existing databases, use: ./scripts/migrate.sh
+    """
+    from sqlalchemy import create_engine
+
+    from apps.api.models.base import Base
+
+    # Import all models so they register with Base.metadata
+    from apps.api.models import (  # noqa: F401
+        alert_config,
+        audit,
+        dependency,
+        entity,
+        identity,
+        issue,
+        metadata,
+        organization,
+        rbac,
+        resource_role,
+    )
+
+    database_url = get_database_url(app, for_system="sqlalchemy")
+    engine = create_engine(database_url)
+    Base.metadata.create_all(engine)
+    engine.dispose()
+    logger.info("SQLAlchemy tables created/verified")
+
+
 def get_database_url(app, for_system: str = "pydal") -> str:
     """
     Get database URL normalized for the target system.
@@ -287,6 +320,7 @@ from shared.database.manager import DatabaseManager  # noqa: E402
 __all__ = [
     "db",
     "init_db",
+    "init_sqlalchemy_tables",
     "run_migrations",
     "get_database_url",
     "get_db_session",
