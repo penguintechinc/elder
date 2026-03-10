@@ -1,7 +1,7 @@
 # Alpha environment overrides
 # Local development / testing environment
 
-namespace: elder-alpha
+namespace: elder
 
 # Global settings for alpha
 global:
@@ -152,7 +152,7 @@ ingress:
 # Service Account
 serviceAccount:
   create: true
-  name: "elder-alpha"
+  name: "elder"
 
 # Pod Security Context - More relaxed for development
 podSecurityContext:

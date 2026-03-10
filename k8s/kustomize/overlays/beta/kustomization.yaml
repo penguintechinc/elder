@@ -1,20 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: elder-beta
+namespace: elder
 namePrefix: beta-
-commonLabels:
-  environment: beta
 resources:
-  - ../../base
+- ../../base
 replicas:
-  - name: flask-backend
-    count: 2
+- count: 2
+  name: flask-backend
 images:
-  - name: registry-dal2.penguintech.io/elder/flask-backend
-    newTag: latest
+- name: registry-dal2.penguintech.io/elder/flask-backend
+  newTag: latest
 configMapGenerator:
-  - name: elder-config
-    behavior: merge
-    literals:
-      - LOG_LEVEL=INFO
-      - RELEASE_MODE=false
+- behavior: merge
+  literals:
+  - LOG_LEVEL=INFO
+  - RELEASE_MODE=false
+  name: elder-config
+labels:
+- includeSelectors: true
+  pairs:
+    environment: beta

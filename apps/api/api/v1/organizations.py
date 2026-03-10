@@ -5,7 +5,7 @@
 
 from flask import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
-from starlette.concurrency import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool
 
 from apps.api.auth.decorators import login_required
 from apps.api.schemas.organization import (
