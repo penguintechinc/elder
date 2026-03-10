@@ -7,7 +7,7 @@ import enum
 import secrets
 from typing import List, Optional
 
-from sqlalchemy import JSON, BigInteger, Column, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -56,6 +56,50 @@ class Entity(Base, IDMixin, TimestampMixin):
         comment="Type of entity (datacenter, vpc, subnet, compute, network, user, security_issue)",
     )
 
+    # Sub-type (e.g., router, server, database)
+    sub_type = Column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="Sub-type within entity_type (router, server, database, etc.)",
+    )
+
+    # Hierarchical parent
+    parent_id = Column(
+        Integer,
+        ForeignKey("entities.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    # Status tracking (v1.2.1)
+    status_metadata = Column(
+        JSON,
+        nullable=True,
+        comment="{status: Running|Stopped|Deleted|Creating|Error, timestamp: epoch64}",
+    )
+
+    # Default metadata template for this sub_type
+    default_metadata = Column(
+        JSON,
+        nullable=True,
+        comment="Default metadata template for this sub_type",
+    )
+
+    # Tags
+    tags = Column(
+        JSON,
+        nullable=True,
+        default=list,
+        comment="List of string tags",
+    )
+
+    # Active flag
+    is_active = Column(Boolean, nullable=True, default=True)
+
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
+
     # Organization relationship
     organization_id = Column(
         Integer,
@@ -79,8 +123,7 @@ class Entity(Base, IDMixin, TimestampMixin):
     # - compute: {"hostname": "web-01", "ip": "10.0.1.5", "os": "Ubuntu 22.04", "cpu": 4, "memory_gb": 16}
     # - network: {"device_type": "load_balancer", "ip": "10.0.1.10", "ports": [80, 443]}
     # - security_issue: {"cve": "CVE-2024-1234", "severity": "high", "cvss_score": 8.5}
-    entity_metadata = Column(
-        "metadata",  # Column name in database
+    attributes = Column(
         JSON,
         nullable=True,
         default=dict,
@@ -205,9 +248,9 @@ class Entity(Base, IDMixin, TimestampMixin):
         Returns:
             Field value or default
         """
-        if not self.entity_metadata:
+        if not self.attributes:
             return default
-        return self.entity_metadata.get(field, default)
+        return self.attributes.get(field, default)
 
     def set_metadata_field(self, field: str, value: any) -> None:
         """
@@ -217,6 +260,6 @@ class Entity(Base, IDMixin, TimestampMixin):
             field: Field name to set
             value: Value to set
         """
-        if self.entity_metadata is None:
-            self.entity_metadata = {}
-        self.entity_metadata[field] = value
+        if self.attributes is None:
+            self.attributes = {}
+        self.attributes[field] = value

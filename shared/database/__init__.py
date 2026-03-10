@@ -84,6 +84,17 @@ def init_sqlalchemy_tables(app):
         organization,
         rbac,
         resource_role,
+        tenant,
+        auth_providers,
+        discovery,
+        infrastructure,
+        security,
+        secrets,
+        access_review,
+        webhooks,
+        project,
+        oncall,
+        ipam,
     )
 
     database_url = get_database_url(app, for_system="sqlalchemy")
@@ -272,6 +283,7 @@ def _create_default_admin(app, db):
             password_hash=generate_password_hash(admin_password),
             is_active=True,
             is_admin=True,
+            global_role="admin",
         )
         db.commit()
         logger.info(f"Created default admin user: {admin_email}")

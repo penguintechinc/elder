@@ -6,7 +6,7 @@
 import enum
 from typing import List, Optional
 
-from sqlalchemy import Column, Enum, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Column, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -42,6 +42,18 @@ class ResourceRole(Base, IDMixin, TimestampMixin):
 
     __tablename__ = "resource_roles"
 
+    # Group that has this role (PyDAL has group_id alongside identity_id)
+    group_id = Column(
+        Integer,
+        ForeignKey("identity_groups.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+        comment="Identity group with this role (alternative to identity_id)",
+    )
+
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
+
     # Identity who has this role
     identity_id = Column(
         Integer,
@@ -73,6 +85,9 @@ class ResourceRole(Base, IDMixin, TimestampMixin):
         comment="Role level (maintainer, operator, viewer)",
     )
 
+    # Plain string role column (PyDAL expects this column name)
+    role = Column(String(50), nullable=True)
+
     # Who granted this role
     granted_by_id = Column(
         Integer,
@@ -85,6 +100,12 @@ class ResourceRole(Base, IDMixin, TimestampMixin):
     identity: Mapped["Identity"] = relationship(
         "Identity",
         foreign_keys=[identity_id],
+        backref="resource_roles",
+    )
+
+    group: Mapped[Optional["IdentityGroup"]] = relationship(
+        "IdentityGroup",
+        foreign_keys=[group_id],
         backref="resource_roles",
     )
 
