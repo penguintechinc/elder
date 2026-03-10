@@ -1,6 +1,6 @@
 {
   "name": "project-template-web",
-  "version": "3.1.3",
+  "version": "3.1.4",
   "description": "Frontend web application",
   "type": "module",
   "scripts": {
@@ -18,7 +18,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@penguintechinc/react-libs": "^1.1.7",
+    "@penguintechinc/react-libs": "^1.2.0",
     "@tanstack/react-query": "^5.62.2",
     "@xyflow/react": "^12.3.5",
     "axios": "^1.13.5",

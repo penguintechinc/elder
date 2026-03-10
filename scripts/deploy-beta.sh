@@ -232,7 +232,7 @@ rollout_deployment() {
 
 # Determine which images to process
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web")  # Default to api and web for 'all'
+    TARGETS=("api" "web" "scanner" "worker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi

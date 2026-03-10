@@ -25,11 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements
 COPY requirements.txt .
 
-# Install Python dependencies
+# Install Python dependencies (includes penguin-libs and penguin-licensing)
 RUN pip install --user --no-cache-dir -r requirements.txt
-
-# Install penguin-libs from PyPI
-RUN pip install --user --no-cache-dir penguin-libs
 
 # Runtime stage
 FROM python:3.12-slim

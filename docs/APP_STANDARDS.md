@@ -574,6 +574,45 @@ The default admin user is created during initialization if `ADMIN_EMAIL` and `AD
 
 ---
 
+## Penguin-Libs Integration Status
+
+Elder uses several shared libraries from `penguin-libs`. This section tracks current usage and planned migrations.
+
+### Currently Integrated (v3.1.x)
+
+| Package | Version | Usage | Files |
+|---------|---------|-------|-------|
+| `penguin-libs` | ~0.1.0 | Pydantic base models, validators, Flask integration | 25+ API files |
+| `penguin-licensing` | ~0.1.0 | License gating with graceful fallback | 3 files |
+| `penguin-utils` | ~0.1.0 | SanitizedLogger — PII-safe log filtering via structlog processor | `shared/logging/logger.py` |
+| `@penguintechinc/react-libs` | ^1.2.0 | LoginPageBuilder, FormModalBuilder, SidebarMenu, AppConsoleVersion | 25+ frontend files |
+
+### shared/ Modules — Keep vs Migrate
+
+| Module | Status | Rationale |
+|--------|--------|-----------|
+| `shared/database/` | **Keep until v4.0** | Replace with `penguin-dal` at next major version (see [#67](https://github.com/penguintechinc/elder/issues/67)) |
+| `shared/logging/` | **Keep** | Cloud-specific backends (CloudWatch, Kafka, GCP) not in penguin-utils; SanitizedLogger added as processor |
+| `shared/models/` | **Keep permanently** | Elder-specific domain schema (tenants, entities, networking_resources) |
+| `shared/utils/village_id.py` | **Keep permanently** | Elder-specific hierarchical ID generation (TTTT-OOOO-IIIIIIII) |
+| `shared/alerting/` | **Keep permanently** | Elder-specific Prometheus Alertmanager integration |
+| `shared/webhooks/` | **Keep permanently** | Elder-specific issue-created webhook dispatch |
+| `shared/api_utils.py` | **Keep until penguin-libs equivalent** | Thin wrappers (~150 lines): paginate, error/success responses, filters (see [#72](https://github.com/penguintechinc/elder/issues/72)) |
+| `shared/react_libs/` | **Removed in v3.1.x** | Was a local Docker build workaround; npm package `@penguintechinc/react-libs` is the canonical source |
+
+### Planned for v4.0 (Next Major)
+
+- **[#67] Migrate shared/database/ to penguin-dal** — Eliminates dual PyDAL+SQLAlchemy pattern. Single table definition, built-in connection pooling, async support. High-risk change; requires full regression testing.
+- **[#70] Evaluate penguin-aaa** — Elder uses Flask-Security-Too for auth; penguin-aaa (OIDC, RBAC, SPIFFE) is v0.1.0. Evaluate when AAA reaches v1.0.
+- **[#71] Evaluate penguin-sal** — Elder uses env vars for secrets. Evaluate when external secrets manager (Vault, AWS Secrets Manager) is needed.
+
+### Not Planned
+
+- `penguin-dal` mid-release migration — Per database.md: "Migrate at the next major version bump — not mid-release"
+- Deleting `shared/models/`, `shared/alerting/`, `shared/webhooks/` — Elder-specific business logic, not suitable for shared libraries
+
+---
+
 ## Related Documentation
 
 - **[Security Standards](standards/SECURITY.md)** - RBAC concepts, scope patterns, implementation details
@@ -582,5 +621,5 @@ The default admin user is created during initialization if `ADMIN_EMAIL` and `AD
 
 ---
 
-**Last Updated**: 2026-02-23
-**Version**: 3.1.0
+**Last Updated**: 2026-03-10
+**Version**: 3.1.x

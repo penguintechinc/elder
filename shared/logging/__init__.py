@@ -7,4 +7,7 @@ Structured logging package for Elder application.
 
 from .logger import StructuredLogger, configure_logging_from_env
 
-__all__ = ["StructuredLogger", "configure_logging_from_env"]
+# Re-export sanitizer availability so callers can check
+from .logger import _HAS_SANITIZER as HAS_SANITIZED_LOGGING
+
+__all__ = ["StructuredLogger", "configure_logging_from_env", "HAS_SANITIZED_LOGGING"]
