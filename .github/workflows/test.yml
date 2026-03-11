@@ -127,6 +127,7 @@ jobs:
             --ignore=tests/unit/test_models_organization.py \
             --ignore=tests/unit/test_models_entity.py \
             --ignore=tests/unit/test_api_organizations.py \
+            --cov=apps --cov=shared --cov-report=xml:coverage.xml \
             || echo "Some unit tests may need updates for PyDAL compatibility"
         env:
           DATABASE_URL: sqlite://test.db
@@ -134,6 +135,12 @@ jobs:
           SECRET_KEY: test-secret-key
           FLASK_ENV: testing
           ADMIN_PASSWORD: admin
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
 
   integration-tests:
     name: Integration Tests
