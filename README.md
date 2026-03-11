@@ -3,7 +3,7 @@
 [![Continuous Integration](https://github.com/penguintechinc/elder/actions/workflows/ci.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml)
 [![Test Coverage](https://codecov.io/gh/penguintechinc/elder/branch/main/graph/badge.svg)](https://codecov.io/gh/penguintechinc/elder)
-[![Version](https://img.shields.io/badge/version-3.1.0-green.svg)](https://github.com/penguintechinc/elder/releases)
+[![Version](https://img.shields.io/badge/version-3.1.4-green.svg)](https://github.com/penguintechinc/elder/releases)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: Limited AGPL v3](https://img.shields.io/badge/License-Limited_AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)*
@@ -239,7 +239,16 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 
-### v3.1.0 Highlights (Latest)
+### v3.1.4 Highlights (Latest)
+- **Penguin-Libs Migration**: Removed orphaned `shared/react_libs/` local copy (92 MB); frontend now uses `@penguintechinc/react-libs` npm package exclusively
+- **SanitizedLogger Integration**: Added `penguin-utils` SanitizedLogger as a structlog processor — PII and sensitive values are automatically redacted from all log output
+- **All 4 Containers in Deploy Script**: `deploy-beta.sh all` now builds and pushes api, web, scanner, and worker (previously only api + web)
+- **E2E Alpha Script**: Added `scripts/e2e-test-alpha.sh` with 57-test suite and Kustomize-based deploy/teardown
+- **K8s Manifests**: Added complete Kustomize base + alpha overlay manifests for all services
+- **SQLAlchemy Model Alignment**: Models now 1:1 with PyDAL schema; 13 new model files added for complete coverage
+- **CI Fixes**: Refreshed `NPM_PKG_TOKEN` secret; applied black + isort formatting across all model files
+
+### v3.1.0 Highlights
 - **Periodic Access Review System**: Automated quarterly/annual access reviews for identity groups with Okta sync (Enterprise)
   - Background scheduler creates reviews hourly; owners review members with Keep/Remove/Extend decisions
   - Full audit logging for compliance; member removals auto-sync to Okta
