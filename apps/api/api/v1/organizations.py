@@ -5,13 +5,13 @@
 
 from flask import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
-from apps.api.utils.async_utils import run_in_threadpool
 
 from apps.api.auth.decorators import login_required
 from apps.api.schemas.organization import (
     OrganizationCreateSchema,
     OrganizationUpdateSchema,
 )
+from apps.api.utils.async_utils import run_in_threadpool
 from shared.api_utils import (
     handle_validation_error,
     make_error_response,

@@ -1,7 +1,18 @@
 # flake8: noqa: E501
 """Infrastructure models: networking, services, software, data stores, costs."""
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
 
@@ -34,7 +45,7 @@ class NetworkEntityMapping(Base, IDMixin, TimestampMixin):
     network_id = Column(Integer, ForeignKey("networking_resources.id"), nullable=False)
     entity_id = Column(Integer, ForeignKey("entities.id"), nullable=False)
     relationship_type = Column(String(50), nullable=False)
-    extra_metadata = Column('metadata', JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
 
 
 class NetworkTopology(Base, IDMixin, TimestampMixin):
@@ -42,12 +53,16 @@ class NetworkTopology(Base, IDMixin, TimestampMixin):
 
     __tablename__ = "network_topology"
 
-    source_network_id = Column(Integer, ForeignKey("networking_resources.id"), nullable=False)
-    target_network_id = Column(Integer, ForeignKey("networking_resources.id"), nullable=False)
+    source_network_id = Column(
+        Integer, ForeignKey("networking_resources.id"), nullable=False
+    )
+    target_network_id = Column(
+        Integer, ForeignKey("networking_resources.id"), nullable=False
+    )
     connection_type = Column(String(50), nullable=False)
     bandwidth = Column(String(50), nullable=True)
     latency = Column(String(50), nullable=True)
-    extra_metadata = Column('metadata', JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
 
 
 class Service(Base, IDMixin, TimestampMixin):
@@ -132,7 +147,7 @@ class DataStore(Base, IDMixin, TimestampMixin):
     contains_pci = Column(Boolean, nullable=True)
     size_bytes = Column(Integer, nullable=True)
     last_access_audit = Column(DateTime(timezone=True), nullable=True)
-    extra_metadata = Column('metadata', JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     created_by = Column(Integer, ForeignKey("portal_users.id"), nullable=True)
     is_active = Column(Boolean, nullable=True)
 

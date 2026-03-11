@@ -8,11 +8,10 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text
-
-from shared.utils.village_id import generate_village_id
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
+from shared.utils.village_id import generate_village_id
 
 
 class IssueStatus(enum.Enum):

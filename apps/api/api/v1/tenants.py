@@ -13,9 +13,9 @@ from flask import Blueprint, current_app, jsonify, request
 from flask_login import login_required
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
-from apps.api.utils.async_utils import run_in_threadpool
 
 from apps.api.api.v1.portal_auth import portal_token_required
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("tenants", __name__)
 

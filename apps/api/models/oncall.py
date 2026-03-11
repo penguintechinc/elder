@@ -1,7 +1,17 @@
 # flake8: noqa: E501
 """On-call rotation models."""
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
 
@@ -86,7 +96,7 @@ class OnCallNotification(Base, IDMixin):
     channel = Column(String(50), nullable=False)
     subject = Column(String(512), nullable=True)
     message = Column(Text, nullable=True)
-    extra_metadata = Column('metadata', JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     status = Column(String(50), nullable=True)
     error_message = Column(Text, nullable=True)
     sent_at = Column(DateTime(timezone=True), nullable=True)

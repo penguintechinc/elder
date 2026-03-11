@@ -213,11 +213,15 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
     )
 
     # Approval workflow settings
-    approval_mode = Column(String(20), nullable=True, default="any", comment="any, all, threshold")
+    approval_mode = Column(
+        String(20), nullable=True, default="any", comment="any, all, threshold"
+    )
     approval_threshold = Column(Integer, nullable=True, default=1)
 
     # Multi-provider configuration
-    provider = Column(String(50), nullable=True, default="internal", comment="internal, ldap, okta")
+    provider = Column(
+        String(50), nullable=True, default="internal", comment="internal, ldap, okta"
+    )
     provider_group_id = Column(String(512), nullable=True)
     sync_enabled = Column(Boolean, nullable=True, default=False)
 
@@ -307,13 +311,19 @@ class IdentityGroupMembership(Base, IDMixin, TimestampMixin):
     )
 
     # Expiration support (Enterprise feature)
-    expires_at = Column(String(255), nullable=True, comment="Membership expiration datetime")
-    granted_via_request_id = Column(Integer, nullable=True, comment="Reference to group_access_requests")
+    expires_at = Column(
+        String(255), nullable=True, comment="Membership expiration datetime"
+    )
+    granted_via_request_id = Column(
+        Integer, nullable=True, comment="Reference to group_access_requests"
+    )
 
     # Provider sync tracking
     provider_synced = Column(Boolean, nullable=True, default=False)
     provider_synced_at = Column(String(255), nullable=True)
-    provider_member_id = Column(String(512), nullable=True, comment="Provider-specific user ID")
+    provider_member_id = Column(
+        String(512), nullable=True, comment="Provider-specific user ID"
+    )
 
     # Relationships
     identity: Mapped["Identity"] = relationship(

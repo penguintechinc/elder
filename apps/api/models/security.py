@@ -1,7 +1,18 @@
 # flake8: noqa: E501
 """Security models: vulnerabilities, SBOM, certificates, crypto keys, license policies."""
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
 
@@ -96,7 +107,7 @@ class SBOMComponent(Base, IDMixin, TimestampMixin):
     description = Column(Text, nullable=True)
     hash_sha256 = Column(String(64), nullable=True)
     hash_sha512 = Column(String(128), nullable=True)
-    extra_metadata = Column('metadata', JSON, nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
     is_active = Column(Boolean, nullable=False)
     village_id = Column(String(32), unique=True, nullable=True)
 
@@ -149,7 +160,9 @@ class Certificate(Base, IDMixin, TimestampMixin):
     certificate_fingerprint_sha1 = Column(String(64), nullable=True)
     certificate_fingerprint_sha256 = Column(String(64), nullable=True)
     serial_number = Column(String(255), nullable=True)
-    private_key_secret_id = Column(Integer, ForeignKey("builtin_secrets.id"), nullable=True)
+    private_key_secret_id = Column(
+        Integer, ForeignKey("builtin_secrets.id"), nullable=True
+    )
     entities_using = Column(JSON, nullable=True)
     services_using = Column(JSON, nullable=True)
     file_path = Column(String(1024), nullable=True)

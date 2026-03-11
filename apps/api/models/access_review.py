@@ -34,7 +34,9 @@ class AccessReviewItem(Base, IDMixin):
 
     tenant_id = Column(Integer, nullable=False)
     review_id = Column(Integer, ForeignKey("access_reviews.id"), nullable=False)
-    membership_id = Column(Integer, ForeignKey("identity_group_memberships.id"), nullable=False)
+    membership_id = Column(
+        Integer, ForeignKey("identity_group_memberships.id"), nullable=False
+    )
     identity_id = Column(Integer, ForeignKey("identities.id"), nullable=False)
     decision = Column(String(20), nullable=True)
     justification = Column(Text, nullable=True)

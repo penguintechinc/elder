@@ -1,7 +1,17 @@
 # flake8: noqa: E501
 """Project, milestone, label, issue linkage, and saved search models."""
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
 

@@ -70,32 +70,31 @@ def init_sqlalchemy_tables(app):
     """
     from sqlalchemy import create_engine
 
-    from apps.api.models.base import Base
-
     # Import all models so they register with Base.metadata
     from apps.api.models import (  # noqa: F401
+        access_review,
         alert_config,
         audit,
+        auth_providers,
         dependency,
+        discovery,
         entity,
         identity,
+        infrastructure,
+        ipam,
         issue,
         metadata,
+        oncall,
         organization,
+        project,
         rbac,
         resource_role,
-        tenant,
-        auth_providers,
-        discovery,
-        infrastructure,
-        security,
         secrets,
-        access_review,
+        security,
+        tenant,
         webhooks,
-        project,
-        oncall,
-        ipam,
     )
+    from apps.api.models.base import Base
 
     database_url = get_database_url(app, for_system="sqlalchemy")
     engine = create_engine(database_url)

@@ -1,7 +1,16 @@
 # flake8: noqa: E501
 """Auth provider, SCIM, audit retention, backup models."""
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
 
