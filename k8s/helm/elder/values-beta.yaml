@@ -6,17 +6,22 @@ namespace: elder
 # Global settings for beta
 global:
   imageRegistry: registry-dal2.penguintech.io
-  imagePullSecrets:
-    - name: penguintech-registry
+  imagePullSecrets: []
 
-# PostgreSQL - 2 replicas for beta
+# PostgreSQL - 1 replica for beta (RWO PVC cannot be multi-attached)
 postgres:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: postgres
-    tag: 17-bookworm
-    pullPolicy: Always
+    tag: 16-bookworm
+    pullPolicy: IfNotPresent
+  env:
+    POSTGRES_DB: elder
+    POSTGRES_USER: elder
+    POSTGRES_PASSWORD: elder_beta_password
+    POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    PGDATA: /var/lib/postgresql/data/pgdata
   resources:
     requests:
       memory: "256Mi"
@@ -27,16 +32,16 @@ postgres:
   persistence:
     enabled: true
     size: 10Gi
-    storageClass: "fast-ssd"
+    storageClass: "longhorn"
 
-# Redis - 2 replicas for beta
+# Redis - 1 replica for beta (RWO PVC cannot be multi-attached)
 redis:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   image:
     repository: redis
     tag: 7-bookworm
-    pullPolicy: Always
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "128Mi"
@@ -47,7 +52,7 @@ redis:
   persistence:
     enabled: true
     size: 5Gi
-    storageClass: "fast-ssd"
+    storageClass: "longhorn"
 
 # Elder Web UI - 2 replicas for beta
 web:
@@ -55,10 +60,10 @@ web:
   replicaCount: 2
   image:
     repository: elder-web
-    tag: 3.1.0.1771036480
+    tag: latest
     pullPolicy: Always
   buildArgs:
-    VITE_API_URL: "https://elder.penguintech.cloud/api"
+    VITE_API_URL: ""
   resources:
     requests:
       memory: "128Mi"
@@ -78,7 +83,7 @@ api:
   replicaCount: 2
   image:
     repository: elder-api
-    tag: beta-latest
+    tag: latest
     pullPolicy: Always
   env:
     FLASK_ENV: production
@@ -88,6 +93,11 @@ api:
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "true"
     LICENSE_SERVER_URL: "https://license.penguintech.io"
+    DB_HOST: elder-postgres
+    DB_PASSWORD: elder_beta_password
+    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
+    REDIS_HOST: elder-redis
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
   resources:
     requests:
       memory: "512Mi"
@@ -107,7 +117,7 @@ scanner:
   replicaCount: 2
   image:
     repository: elder-scanner
-    tag: beta-latest
+    tag: latest
     pullPolicy: Always
   env:
     SCANNER_POLL_INTERVAL: "300"
@@ -128,7 +138,7 @@ worker:
   replicaCount: 2
   image:
     repository: elder-worker
-    tag: beta-latest
+    tag: latest
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
@@ -153,7 +163,8 @@ prometheus:
   replicaCount: 1
   image:
     repository: prom/prometheus
-    pullPolicy: Always
+    tag: latest
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "512Mi"
@@ -164,7 +175,7 @@ prometheus:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: "fast-ssd"
+    storageClass: "longhorn"
 
 # Alertmanager - Enabled in beta
 alertmanager:
@@ -172,7 +183,8 @@ alertmanager:
   replicaCount: 1
   image:
     repository: prom/alertmanager
-    pullPolicy: Always
+    tag: latest
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "128Mi"
@@ -183,7 +195,7 @@ alertmanager:
   persistence:
     enabled: true
     size: 5Gi
-    storageClass: "fast-ssd"
+    storageClass: "longhorn"
 
 # Grafana - Enabled in beta
 grafana:
@@ -191,7 +203,8 @@ grafana:
   replicaCount: 1
   image:
     repository: grafana/grafana
-    pullPolicy: Always
+    tag: latest
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "256Mi"
@@ -202,7 +215,7 @@ grafana:
   persistence:
     enabled: true
     size: 10Gi
-    storageClass: "fast-ssd"
+    storageClass: "longhorn"
 
 # Ingress - Enabled in beta with TLS
 ingress:

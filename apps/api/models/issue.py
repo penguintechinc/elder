@@ -11,6 +11,7 @@ from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Tabl
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
+from shared.utils.village_id import generate_village_id
 
 
 class IssueStatus(enum.Enum):
@@ -153,7 +154,7 @@ class Issue(Base, IDMixin, TimestampMixin):
     )
 
     # User relationships
-    created_by_id = Column(
+    reporter_id = Column(
         Integer,
         ForeignKey("identities.id", ondelete="SET NULL"),
         nullable=True,
@@ -161,12 +162,20 @@ class Issue(Base, IDMixin, TimestampMixin):
         comment="User who created this issue",
     )
 
-    assigned_to_id = Column(
+    assignee_id = Column(
         Integer,
         ForeignKey("identities.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
         comment="User assigned to this issue",
+    )
+
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id"),
+        nullable=True,
+        index=True,
+        comment="Organization this issue belongs to",
     )
 
     # Closure tracking
@@ -189,16 +198,25 @@ class Issue(Base, IDMixin, TimestampMixin):
         comment="User who closed this issue",
     )
 
-    # Relationships
-    created_by: Mapped[Optional["Identity"]] = relationship(
-        "Identity",
-        foreign_keys=[created_by_id],
-        backref="created_issues",
+    village_id = Column(
+        String(32),
+        unique=True,
+        nullable=True,
+        index=True,
+        default=generate_village_id,
+        comment="Unique cross-system reference ID",
     )
 
-    assigned_to: Mapped[Optional["Identity"]] = relationship(
+    # Relationships
+    reporter: Mapped[Optional["Identity"]] = relationship(
         "Identity",
-        foreign_keys=[assigned_to_id],
+        foreign_keys=[reporter_id],
+        backref="reported_issues",
+    )
+
+    assignee: Mapped[Optional["Identity"]] = relationship(
+        "Identity",
+        foreign_keys=[assignee_id],
         backref="assigned_issues",
     )
 

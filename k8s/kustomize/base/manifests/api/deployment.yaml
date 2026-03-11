@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: elder-api:alpha-latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 5000
+            - name: grpc
+              containerPort: 50051
+          env:
+            - name: DATABASE_URL
+              value: "postgres://elder:elder_dev_password@postgres:5432/elder"
+            - name: FLASK_ENV
+              value: production
+            - name: FLASK_APP
+              value: "apps.api.main:create_app"
+            - name: FLASK_HOST
+              value: "0.0.0.0"
+            - name: FLASK_PORT
+              value: "5000"
+            - name: SECRET_KEY
+              value: "alpha-dev-secret-key"
+            - name: DB_TYPE
+              value: postgres
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              value: elder
+            - name: DB_USER
+              value: elder
+            - name: DB_PASSWORD
+              value: elder_dev_password
+            - name: DB_POOL_SIZE
+              value: "10"
+            - name: REDIS_URL
+              value: "redis://:elder_redis_password@redis:6379/0"
+            - name: GRPC_ENABLED
+              value: "true"
+            - name: GRPC_HOST
+              value: "0.0.0.0"
+            - name: GRPC_PORT
+              value: "50051"
+            - name: GRPC_MAX_WORKERS
+              value: "10"
+            - name: GRPC_REQUIRE_LICENSE
+              value: "false"
+            - name: ADMIN_EMAIL
+              value: "admin@localhost.local"
+            - name: ADMIN_PASSWORD
+              value: "admin123"
+            - name: ADMIN_USERNAME
+              value: "admin"
+            - name: LOG_LEVEL
+              value: DEBUG
+            - name: RELEASE_MODE
+              value: "false"
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: SITE_URL
+              value: "http://localhost:3005"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

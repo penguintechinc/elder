@@ -107,6 +107,9 @@ class MetadataField(Base, IDMixin, TimestampMixin):
         backref="created_metadata_fields",
     )
 
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
+
     # Ensure unique field keys per resource
     __table_args__ = (
         UniqueConstraint(

@@ -17,7 +17,7 @@
 #
 # Environment:
 #   KUBE_CONTEXT          Kubernetes context (default: local-alpha)
-#   NAMESPACE             Target namespace (default: elder-alpha)
+#   NAMESPACE             Target namespace (default: elder)
 #   APP_HOST              Application hostname (default: elder.localhost.local)
 #
 # =============================================================================
@@ -33,7 +33,7 @@ readonly PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 
 readonly APP_NAME="${APP_NAME:-elder}"
 readonly KUBE_CONTEXT="${KUBE_CONTEXT:-local-alpha}"
-readonly NAMESPACE="${NAMESPACE:-elder-alpha}"
+readonly NAMESPACE="${NAMESPACE:-elder}"
 readonly APP_HOST="${APP_HOST:-elder.localhost.local}"
 readonly OVERLAY_PATH="${OVERLAY_PATH:-k8s/kustomize/overlays/alpha}"
 

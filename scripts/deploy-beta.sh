@@ -158,7 +158,7 @@ build_and_push_image() {
 
         # GitHub token for @penguintechinc packages
         if [ -f "$HOME/code/.gh-token" ]; then
-            GITHUB_TOKEN=$(cat "$HOME/code/.gh-token" | grep -v '^#' | head -1)
+            GITHUB_TOKEN=$(sed -n '4p' "$HOME/code/.gh-token")
             build_args+=(--build-arg "GITHUB_TOKEN=${GITHUB_TOKEN}")
             log_info "Using GitHub token for package authentication"
         else
@@ -232,7 +232,7 @@ rollout_deployment() {
 
 # Determine which images to process
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web")  # Default to api and web for 'all'
+    TARGETS=("api" "web" "scanner" "worker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi

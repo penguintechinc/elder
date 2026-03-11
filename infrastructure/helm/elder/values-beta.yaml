@@ -1,4 +1,4 @@
-namespace: elder-beta
+namespace: elder
 
 api:
   replicas: 2

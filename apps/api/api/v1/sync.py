@@ -11,9 +11,9 @@ from datetime import datetime
 
 from flask import Blueprint, current_app, g, jsonify, request
 from flask_cors import cross_origin
-from starlette.concurrency import run_in_threadpool
 
 from apps.api.auth.decorators import admin_required, login_required
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
 

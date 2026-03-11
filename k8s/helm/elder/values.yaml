@@ -425,7 +425,7 @@ ingress:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
   hosts:
-    - host: elder.penguintech.io
+    - host: elder.penguintech.cloud
       paths:
         - path: /
           pathType: Prefix
@@ -438,7 +438,7 @@ ingress:
   tls:
     - secretName: elder-tls
       hosts:
-        - elder.penguintech.io
+        - elder.penguintech.cloud
 
 # Service Account
 serviceAccount:

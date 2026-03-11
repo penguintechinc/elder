@@ -1,20 +1,23 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: elder-alpha
-namePrefix: alpha-
-commonLabels:
-  environment: alpha
+namespace: elder
 resources:
   - ../../base
-replicas:
-  - name: flask-backend
-    count: 1
+  - ingress.yaml
 images:
-  - name: registry-dal2.penguintech.io/elder/flask-backend
-    newTag: latest
-configMapGenerator:
-  - name: elder-config
-    behavior: merge
-    literals:
-      - LOG_LEVEL=DEBUG
-      - RELEASE_MODE=false
+  - name: elder-api:alpha-latest
+    newName: localhost:32000/elder-api
+    newTag: alpha-latest
+  - name: elder-web:alpha-latest
+    newName: localhost:32000/elder-web
+    newTag: alpha-latest
+  - name: elder-scanner:alpha-latest
+    newName: localhost:32000/elder-scanner
+    newTag: alpha-latest
+  - name: elder-worker:alpha-latest
+    newName: localhost:32000/elder-worker
+    newTag: alpha-latest
+labels:
+  - includeSelectors: true
+    pairs:
+      environment: alpha

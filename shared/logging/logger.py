@@ -21,6 +21,21 @@ from typing import List, Optional
 
 import structlog
 
+try:
+    from penguintechinc_utils import sanitize_log_data as _sanitize_log_data
+
+    def _sanitize_processor(
+        logger: logging.Logger,
+        method_name: str,
+        event_dict: dict,
+    ) -> dict:
+        """Structlog processor that sanitizes sensitive data from all log events."""
+        return _sanitize_log_data(event_dict)
+
+    _HAS_SANITIZER = True
+except ImportError:
+    _HAS_SANITIZER = False
+
 
 class KafkaHTTP3Handler(logging.Handler):
     """
@@ -223,16 +238,21 @@ class StructuredLogger:
         Returns:
             Configured structlog logger
         """
+        # Build processor chain; insert sanitizer before final rendering
+        processors = [
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+        ]
+        if _HAS_SANITIZER:
+            processors.append(_sanitize_processor)
+        processors.append(structlog.processors.JSONRenderer())
+
         # Configure structlog
         structlog.configure(
-            processors=[
-                structlog.contextvars.merge_contextvars,
-                structlog.processors.add_log_level,
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.JSONRenderer(),
-            ],
+            processors=processors,
             wrapper_class=structlog.make_filtering_bound_logger(self.log_level),
             context_class=dict,
             logger_factory=structlog.PrintLoggerFactory(),

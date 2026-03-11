@@ -19,8 +19,8 @@ from apps.api.logging_config import setup_logging
 from shared.database import (
     ensure_database_ready,
     init_db,
+    init_sqlalchemy_tables,
     log_startup_status,
-    run_migrations,
 )
 
 # Configure standard library logging
@@ -87,9 +87,10 @@ def create_app(config_name: str = None) -> Flask:
         raise RuntimeError("Cannot start application - database not available")
 
     # Database Initialization:
-    # 1. Run Alembic migrations first — creates/updates all schema tables
+    # 1. SQLAlchemy create_all() — idempotent, creates missing tables at startup
     # 2. Initialize PyDAL with migrate=False — connects to existing tables for queries
-    run_migrations(app)
+    # NOTE: For schema migrations on existing databases, run: ./scripts/migrate.sh
+    init_sqlalchemy_tables(app)
     init_db(app)
 
     # Initialize license client

@@ -17,6 +17,14 @@ class IdentityType(enum.Enum):
 
     HUMAN = "human"  # Human user
     SERVICE_ACCOUNT = "service_account"  # Non-human service account
+    # v2.0.0: Extended identity types matching PyDAL
+    EMPLOYEE = "employee"
+    VENDOR = "vendor"
+    BOT = "bot"
+    SERVICE_ACCOUNT_PYDAL = "serviceAccount"
+    INTEGRATION = "integration"
+    OTHER_HUMAN = "otherHuman"
+    OTHER = "other"
 
 
 class AuthProvider(enum.Enum):
@@ -36,6 +44,15 @@ class Identity(Base, IDMixin, TimestampMixin):
     """
 
     __tablename__ = "identities"
+
+    # v2.2.0: Multi-tenancy support
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
 
     # Identity type
     identity_type = Column(
@@ -80,6 +97,25 @@ class Identity(Base, IDMixin, TimestampMixin):
         nullable=False,
         comment="Requires password change on next login",
     )
+
+    # Organization reference (integer to avoid circular FK)
+    organization_id = Column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="Associated organization (integer, no FK to avoid circular ref)",
+    )
+
+    # Portal access level
+    portal_role = Column(
+        String(20),
+        nullable=False,
+        default="observer",
+        comment="Portal access level: admin, editor, observer",
+    )
+
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
 
     # Last activity
     last_login_at = Column(
@@ -164,6 +200,40 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
     # Status
     is_active = Column(Boolean, default=True, nullable=False)
 
+    # Ownership (Enterprise feature)
+    owner_identity_id = Column(
+        Integer,
+        nullable=True,
+        comment="Owner identity ID (integer, no FK to avoid circular ref)",
+    )
+    owner_group_id = Column(
+        Integer,
+        nullable=True,
+        comment="Owner group ID (self-reference)",
+    )
+
+    # Approval workflow settings
+    approval_mode = Column(
+        String(20), nullable=True, default="any", comment="any, all, threshold"
+    )
+    approval_threshold = Column(Integer, nullable=True, default=1)
+
+    # Multi-provider configuration
+    provider = Column(
+        String(50), nullable=True, default="internal", comment="internal, ldap, okta"
+    )
+    provider_group_id = Column(String(512), nullable=True)
+    sync_enabled = Column(Boolean, nullable=True, default=False)
+
+    # Access review configuration (Enterprise feature)
+    review_enabled = Column(Boolean, nullable=False, default=False)
+    review_interval_days = Column(Integer, nullable=True, default=90)
+    last_review_date = Column(String(255), nullable=True)
+    next_review_date = Column(String(255), nullable=True)
+    review_assignment_mode = Column(String(20), nullable=True, default="all_owners")
+    review_due_days = Column(Integer, nullable=True, default=14)
+    review_auto_apply = Column(Boolean, nullable=False, default=True)
+
     # Relationships
     memberships: Mapped[List["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",
@@ -238,6 +308,21 @@ class IdentityGroupMembership(Base, IDMixin, TimestampMixin):
         ForeignKey("identity_groups.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
+    )
+
+    # Expiration support (Enterprise feature)
+    expires_at = Column(
+        String(255), nullable=True, comment="Membership expiration datetime"
+    )
+    granted_via_request_id = Column(
+        Integer, nullable=True, comment="Reference to group_access_requests"
+    )
+
+    # Provider sync tracking
+    provider_synced = Column(Boolean, nullable=True, default=False)
+    provider_synced_at = Column(String(255), nullable=True)
+    provider_member_id = Column(
+        String(512), nullable=True, comment="Provider-specific user ID"
     )
 
     # Relationships

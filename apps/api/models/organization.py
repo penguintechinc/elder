@@ -21,9 +21,30 @@ class Organization(Base, IDMixin, TimestampMixin):
 
     __tablename__ = "organizations"
 
+    # v2.2.0: Multi-tenancy support
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
+
     # Core fields
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
+
+    # Organization type (v2.2.0)
+    organization_type = Column(
+        String(50),
+        nullable=False,
+        default="organization",
+        index=True,
+        comment="Type: department, organization, team, collection, other",
+    )
+
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
 
     # Hierarchical relationship
     parent_id = Column(

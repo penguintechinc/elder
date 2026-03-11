@@ -6,7 +6,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer
+from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin
@@ -28,6 +28,32 @@ class Dependency(Base, IDMixin):
     """
 
     __tablename__ = "dependencies"
+
+    # v2.2.0: Multi-tenancy support
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        default=1,
+        index=True,
+    )
+
+    # Polymorphic source/target (v2.x: PyDAL uses source_type/source_id pattern)
+    source_type = Column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="Source resource type: entity, identity, project, milestone, issue, organization",
+    )
+    target_type = Column(
+        String(50),
+        nullable=True,
+        index=True,
+        comment="Target resource type: entity, identity, project, milestone, issue, organization",
+    )
+
+    # village_id for cross-system reference
+    village_id = Column(String(32), unique=True, nullable=True, index=True)
 
     # Source and target entities
     source_entity_id = Column(
@@ -64,12 +90,21 @@ class Dependency(Base, IDMixin):
         comment="Additional dependency metadata (e.g., criticality, notes)",
     )
 
+    # Plain integer source/target IDs (PyDAL pattern)
+    source_id = Column(Integer, nullable=True)
+    target_id = Column(Integer, nullable=True)
+
     # Timestamp
     created_at = Column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
         index=True,
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     # Relationships

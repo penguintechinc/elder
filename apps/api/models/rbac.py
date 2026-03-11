@@ -200,6 +200,14 @@ class UserRole(Base, IDMixin, TimestampMixin):
         comment="Scope of role assignment (global or organization)",
     )
 
+    # scope_id: PyDAL uses scope_id for scoped resource ID (e.g., organization ID)
+    scope_id = Column(
+        Integer,
+        nullable=True,
+        index=True,
+        comment="Scoped resource ID (e.g., organization ID) for scoped role assignments",
+    )
+
     organization_id = Column(
         Integer,
         ForeignKey("organizations.id", ondelete="CASCADE"),

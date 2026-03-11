@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: elder-worker:alpha-latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 28000
+          env:
+            - name: ELDER_API_URL
+              value: "http://api:5000"
+            - name: ELDER_API_KEY
+              value: ""
+            - name: DB_POOL_SIZE
+              value: "5"
+            - name: AWS_ENABLED
+              value: "false"
+            - name: GCP_ENABLED
+              value: "false"
+            - name: GOOGLE_WORKSPACE_ENABLED
+              value: "false"
+            - name: LDAP_ENABLED
+              value: "false"
+            - name: SYNC_ON_STARTUP
+              value: "false"
+            - name: SYNC_BATCH_SIZE
+              value: "100"
+            - name: HEALTH_CHECK_PORT
+              value: "28000"
+            - name: METRICS_ENABLED
+              value: "true"
+            - name: LOG_LEVEL
+              value: DEBUG
+            - name: LOG_FORMAT
+              value: json
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

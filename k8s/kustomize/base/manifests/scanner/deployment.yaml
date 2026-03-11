@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scanner
+  labels:
+    app: scanner
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scanner
+  template:
+    metadata:
+      labels:
+        app: scanner
+    spec:
+      containers:
+        - name: scanner
+          image: elder-scanner:alpha-latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SCANNER_POLL_INTERVAL
+              value: "600"
+            - name: ELDER_API_URL
+              value: "http://api:5000"
+            - name: ELDER_API_TOKEN
+              value: ""
+            - name: SCREENSHOT_DIR
+              value: "/app/screenshots"
+            - name: LOG_LEVEL
+              value: DEBUG
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+          volumeMounts:
+            - name: screenshots
+              mountPath: /app/screenshots
+      volumes:
+        - name: screenshots
+          emptyDir:
+            sizeLimit: "500Mi"

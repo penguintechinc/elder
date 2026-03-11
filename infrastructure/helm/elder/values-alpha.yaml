@@ -1,4 +1,4 @@
-namespace: elder-alpha
+namespace: elder
 
 api:
   replicas: 1

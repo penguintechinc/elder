@@ -2,11 +2,11 @@
 # Python 3.12+ required (optimized for 3.12 performance features)
 
 # Core Flask Framework (with async support)
-Flask[async]==3.1.1
+Flask[async]==3.1.3
 Flask-CORS==6.0.0
 Flask-Login==0.6.3
 Flask-WTF==1.2.2
-Werkzeug==3.1.5
+Werkzeug==3.1.6
 
 # REST API
 Flask-RESTful==0.3.10
@@ -15,12 +15,12 @@ webargs==8.6.0
 
 # gRPC - pinned to 5.x protobuf: google-cloud-iam and google-cloud-resource-manager
 # require protobuf<6.0.0, blocking upgrade to grpcio 1.70+ which needs protobuf>=6.31.1.
-# CVE-2026-0994 (protobuf 6.x fix) cannot be applied until google-cloud packages
-# release support for protobuf 6.x. Tracked in Dependabot alert #58.
+# CVE-2026-0994 patched in 5.29.6 (Dependabot alert #58 resolved at patch level).
+# Future: upgrade to protobuf 6.x once google-cloud packages support it.
 grpcio==1.69.0
 grpcio-tools==1.69.0
 grpcio-reflection==1.69.0
-protobuf==5.29.5
+protobuf==5.29.6
 
 # Database & ORM
 SQLAlchemy==2.0.36
@@ -42,14 +42,15 @@ xmlsec==1.3.16
 defusedxml>=0.7.1
 
 # Authentication - OAuth2
-Authlib==1.6.6
+Authlib==1.6.9
 # Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
 
 # Security & Cryptography
 PyJWT==2.10.1
 bcrypt==4.2.1
 cryptography==46.0.5
-python-jose[cryptography]==3.4.0
+# python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
+# Use PyJWT (above) for all JWT operations
 pyotp==2.9.0
 
 # HTTP & API Clients
@@ -132,6 +133,11 @@ types-pytz==2024.2.0.20241003
 
 # LDAP Integration
 python-ldap==3.4.5
+
+# PenguinTech Shared Libraries (penguin-libs)
+penguin-libs~=0.1.0      # H3 protocol, validation, Pydantic base models
+penguin-licensing~=0.1.0  # License management and feature gating
+penguin-utils~=0.1.0     # SanitizedLogger for PII-safe logging
 
 # License Server Integration
 # Using requests/httpx for HTTP client (already included above)
