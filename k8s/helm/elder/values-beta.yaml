@@ -5,8 +5,9 @@ namespace: elder
 
 # Global settings for beta
 global:
-  imageRegistry: registry-dal2.penguintech.io
-  imagePullSecrets: []
+  imageRegistry: ""
+  imagePullSecrets:
+    - name: ghcr-pull-secret
 
 # PostgreSQL - 1 replica for beta (RWO PVC cannot be multi-attached)
 postgres:
@@ -59,8 +60,8 @@ web:
   enabled: true
   replicaCount: 2
   image:
-    repository: elder-web
-    tag: latest
+    repository: ghcr.io/penguintechinc/elder-web
+    tag: 3.1.4.1773251978-beta
     pullPolicy: Always
   buildArgs:
     VITE_API_URL: ""
@@ -82,8 +83,8 @@ api:
   enabled: true
   replicaCount: 2
   image:
-    repository: elder-api
-    tag: latest
+    repository: ghcr.io/penguintechinc/elder-api
+    tag: 3.1.4.1773251978-beta
     pullPolicy: Always
   env:
     FLASK_ENV: production
@@ -116,8 +117,8 @@ scanner:
   enabled: true
   replicaCount: 2
   image:
-    repository: elder-scanner
-    tag: latest
+    repository: ghcr.io/penguintechinc/elder-scanner
+    tag: 3.1.4.1773251978-beta
     pullPolicy: Always
   env:
     SCANNER_POLL_INTERVAL: "300"
@@ -137,8 +138,8 @@ worker:
   enabled: true
   replicaCount: 2
   image:
-    repository: elder-worker
-    tag: latest
+    repository: ghcr.io/penguintechinc/elder-worker
+    tag: 3.1.4.1773251978-beta
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO

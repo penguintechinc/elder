@@ -659,6 +659,50 @@ async def create_issue_label(body: CreateIssueLabelRequest):
     return jsonify(asdict(label_dto)), 201
 
 
+@bp.route("/<int:id>/labels", methods=["GET"])
+@login_required
+@license_required("enterprise")
+async def list_issue_labels_for_issue(id: int):
+    """
+    List all labels assigned to a specific issue.
+
+    Path Parameters:
+        - id: Issue ID
+
+    Returns:
+        200: List of labels assigned to the issue
+        403: License required
+        404: Issue not found
+
+    Example:
+        GET /api/v1/issues/1/labels
+    """
+    db = current_app.db
+
+    def get_labels():
+        issue = db.issues[id]
+        if not issue:
+            return None, "Issue not found", 404
+
+        rows = db(
+            (db.issue_label_assignments.issue_id == id)
+            & (db.issue_label_assignments.label_id == db.issue_labels.id)
+        ).select(db.issue_labels.ALL)
+
+        items = from_pydal_rows(rows, IssueLabelDTO)
+        return items, None, None
+
+    result, error, status = await run_in_threadpool(get_labels)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return (
+        jsonify({"items": [asdict(item) for item in result], "total": len(result)}),
+        200,
+    )
+
+
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
 @license_required("enterprise")
@@ -951,6 +995,58 @@ async def delete_issue_entity_link(id: int, link_id: int):
 
         # Delete link
         db(db.issue_entity_links.id == link_id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(delete_link)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204
+
+
+@bp.route("/<int:id>/links/by-entity/<int:entity_id>", methods=["DELETE"])
+@login_required
+@license_required("enterprise")
+async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
+    """
+    Remove an entity link from an issue by entity ID.
+
+    Path Parameters:
+        - id: Issue ID
+        - entity_id: Entity ID
+
+    Returns:
+        204: Link removed
+        403: License required
+        404: Issue or link not found
+
+    Example:
+        DELETE /api/v1/issues/1/links/by-entity/42
+    """
+    db = current_app.db
+
+    def delete_link():
+        # Verify issue exists
+        issue = db.issues[id]
+        if not issue:
+            return None, "Issue not found", 404
+
+        # Get link by issue_id + entity_id
+        link = (
+            db(
+                (db.issue_entity_links.issue_id == id)
+                & (db.issue_entity_links.entity_id == entity_id)
+            )
+            .select()
+            .first()
+        )
+        if not link:
+            return None, "Link not found", 404
+
+        db(db.issue_entity_links.id == link.id).delete()
         db.commit()
 
         return True, None, None

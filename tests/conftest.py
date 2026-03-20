@@ -15,7 +15,7 @@ import pytest
 
 # Set testing environment before any app imports
 os.environ.setdefault("FLASK_ENV", "testing")
-os.environ.setdefault("DATABASE_URL", "sqlite://test.db")
+os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/elder_unit_test.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
 
 
@@ -25,20 +25,21 @@ def app():
     Create Flask application for testing.
 
     Returns:
-        Flask app configured for testing
+        Flask app configured for testing (unwrapped from WsgiToAsgi)
     """
     from apps.api.main import create_app
-    from apps.api.database import db
 
-    app = create_app("testing")
+    asgi_app = create_app("testing")
+    # create_app returns WsgiToAsgi wrapper; unwrap to get the Flask app
+    flask_app = getattr(asgi_app, "wsgi_application", asgi_app)
+    flask_app.config["TESTING"] = True
 
-    with app.app_context():
-        # PyDAL auto-creates tables on initialization
-        # Tables are already defined in init_db()
-        yield app
+    with flask_app.app_context():
+        yield flask_app
 
         # Cleanup: drop test database file if using SQLite
-        if "sqlite" in str(app.config.get("DATABASE_URL", "")):
+        db_url = str(flask_app.config.get("DATABASE_URL", ""))
+        if "sqlite" in db_url:
             try:
                 db_file = "test.db"
                 if os.path.exists(db_file):
@@ -75,14 +76,11 @@ def db_session(app):
         app: Flask application fixture
 
     Yields:
-        PyDAL db instance
+        PyDAL db instance (from app.db)
     """
-    from apps.api.database import db
-
     with app.app_context():
-        # Start a savepoint for test isolation
-        # Note: PyDAL doesn't have nested transactions like SQLAlchemy
-        # We'll commit at the end of setup and rollback changes manually
+        db = app.db
+
         yield db
 
         # Rollback any uncommitted changes

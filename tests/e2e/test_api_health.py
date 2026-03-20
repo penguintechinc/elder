@@ -16,13 +16,17 @@ class TestAPIHealth:
         assert data.get("status") in ["healthy", "ok", "up"]
 
     def test_version_endpoint(self, api_url, check_services):
-        """Test /api/v1/version endpoint returns version info."""
+        """Test /api/v1/version endpoint returns version info with a non-zero version."""
         response = requests.get(f"{api_url}/api/v1/version")
 
         # May return 200 or 404 depending on implementation
         if response.status_code == 200:
             data = response.json()
             assert "version" in data or "api_version" in data
+            version = data.get("version") or data.get("api_version", "")
+            assert version != "0.0.0", (
+                f"Version is '0.0.0' — APP_VERSION build-arg was not injected correctly"
+            )
 
 
 class TestAPIAuthentication:

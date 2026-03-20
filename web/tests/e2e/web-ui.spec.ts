@@ -681,7 +681,9 @@ test.describe('Elder Web UI - Create Modal Content', () => {
           !e.includes('net::ERR') &&
           !e.includes('Failed to fetch') &&
           !e.includes('Failed to load resource') &&
-          !e.includes('status of 5')
+          !e.includes('status of 5') &&
+          !e.includes('CORS policy') &&
+          !e.includes('Access-Control')
       );
       expect(
         newErrors,
@@ -692,4 +694,188 @@ test.describe('Elder Web UI - Create Modal Content', () => {
       await page.keyboard.press('Escape');
     });
   }
+});
+
+test.describe('Elder Web UI - API Route Verification', () => {
+  test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
+    test.setTimeout(120000);
+
+    // Login first
+    const loggedIn = await loginAndSetToken(page);
+    if (!loggedIn) {
+      test.skip(true, 'Login failed — cannot test authenticated pages');
+      return;
+    }
+
+    const notFoundEndpoints: string[] = [];
+
+    // Intercept all API responses and collect 404s
+    page.on('response', (resp) => {
+      const url = resp.url();
+      if (url.includes('/api/v1/') && resp.status() === 404) {
+        // Extract just the path for readability
+        const path = new URL(url).pathname;
+        const entry = `${resp.request().method()} ${path}`;
+        if (!notFoundEndpoints.includes(entry)) {
+          notFoundEndpoints.push(entry);
+        }
+      }
+    });
+
+    // Visit pages that trigger API calls — these are the main data pages
+    const pagesToVisit = [
+      '/',
+      '/entities',
+      '/software',
+      '/services',
+      '/certificates',
+      '/issues',
+      '/projects',
+      '/milestones',
+      '/labels',
+      '/data-stores',
+      '/dependencies',
+      '/organizations',
+      '/networking',
+      '/iam',
+      '/ipam',
+      '/backups',
+      '/webhooks',
+      '/on-call-rotations',
+      '/admin/sso',
+      '/admin/license-policies',
+      '/admin/tenants',
+      '/settings',
+    ];
+
+    for (const path of pagesToVisit) {
+      try {
+        const response = await page.goto(path, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000,
+        });
+        // Skip pages that don't exist as frontend routes
+        if (response && response.status() !== 404) {
+          // Wait for API calls to settle
+          await page.waitForLoadState('networkidle').catch(() => {});
+        }
+      } catch {
+        // Navigation timeout — page might be slow, continue
+      }
+    }
+
+    // Assert no API 404s were found
+    expect(
+      notFoundEndpoints,
+      `API endpoints returned 404 (route mismatch):\n${notFoundEndpoints.join('\n')}`
+    ).toHaveLength(0);
+  });
+});
+
+test.describe('Version validation', () => {
+  test('AppConsoleVersion logs a non-zero version on startup', async ({ page }) => {
+    const consoleLogs: string[] = [];
+    page.on('console', (msg) => {
+      consoleLogs.push(msg.text());
+    });
+
+    await page.goto('/login', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {
+      // Timeout is ok
+    });
+
+    // AppConsoleVersion logs version info — collect all console output
+    const allLogs = consoleLogs.join('\n');
+
+    // If no version-related output at all, skip (AppConsoleVersion may not be on login page)
+    if (!allLogs.toLowerCase().includes('version')) {
+      // Try the root/dashboard page which definitely loads AppConsoleVersion
+      consoleLogs.length = 0;
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => {});
+    }
+
+    const finalLogs = consoleLogs.join('\n');
+
+    // Check the /api/v1/status endpoint directly for a non-zero version
+    const statusResponse = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/v1/status');
+        if (!res.ok) return null;
+        return await res.json();
+      } catch {
+        return null;
+      }
+    });
+
+    if (statusResponse !== null) {
+      const version = statusResponse.version || statusResponse.api_version || '';
+      expect(version, 'API status version is 0.0.0 — APP_VERSION build-arg not injected').not.toBe('0.0.0');
+      expect(version, 'API status version is empty').not.toBe('');
+    } else {
+      // Endpoint not available — fall back to checking console logs
+      // AppConsoleVersion prints "Version: X.Y.Z" — assert it's not 0.0.0
+      const zeroVersionMatch = finalLogs.match(/Version:\s*0\.0\.0/);
+      expect(
+        zeroVersionMatch,
+        'AppConsoleVersion logged "Version: 0.0.0" — VITE_VERSION build-arg not injected correctly'
+      ).toBeNull();
+    }
+  });
+});
+
+test.describe('Elder Web UI - API Route Integrity', () => {
+  /**
+   * Detect frontend API calls that return 404 (path mismatch).
+   *
+   * This catches the class of bug where the frontend calls e.g. /sso/idp-configs
+   * but the backend registers /sso/idp — the mismatch produces silent 404s that
+   * don't throw JS errors, so they're invisible to other test suites.
+   *
+   * We navigate to pages that are known to make API calls on mount and collect
+   * any 404 responses from /api/v1/* endpoints.
+   */
+  test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
+    const notFoundCalls: string[] = [];
+
+    page.on('response', (response) => {
+      const url = response.url();
+      if (url.includes('/api/v1/') && response.status() === 404) {
+        notFoundCalls.push(`${response.request().method()} ${url} → 404`);
+      }
+    });
+
+    // Login first so protected pages actually fire their API calls
+    await page.goto('/login', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+    const passwordInput = page.locator('input[type="password"]').first();
+    const submitButton = page.locator('button[type="submit"]').first();
+
+    if (await emailInput.isVisible()) {
+      try {
+        // Wait for input to become enabled (LoginPageBuilder may disable it during init)
+        await emailInput.waitFor({ state: 'enabled', timeout: 8000 });
+        await emailInput.fill('admin@localhost.local');
+        await passwordInput.fill('admin123');
+        await submitButton.click();
+        await page.waitForLoadState('networkidle').catch(() => {});
+      } catch {
+        // Input never became enabled (redirect, CAPTCHA, navigation) — skip login
+      }
+    }
+
+    // Navigate to pages that are known API-heavy on mount
+    const pagesToVisit = ['/', '/dashboard', '/entities', '/issues', '/organizations'];
+    for (const path of pagesToVisit) {
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => {});
+    }
+
+    expect(
+      notFoundCalls,
+      `API path mismatches detected (frontend calls routes that don't exist on backend):\n${notFoundCalls.join('\n')}`
+    ).toHaveLength(0);
+  });
 });

@@ -1130,6 +1130,13 @@ def define_all_tables(db):
         Field(
             "village_id", "string", length=32, unique=True, default=generate_village_id
         ),
+        Field(
+            "unique_id",
+            "big-integer",
+            unique=True,
+            notnull=True,
+            default=lambda: __import__("secrets").randbits(63),
+        ),
         migrate=False,
     )
 

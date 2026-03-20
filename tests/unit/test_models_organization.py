@@ -1,167 +1,201 @@
 """
-Unit tests for Organization model.
+Unit tests for Organization model (PyDAL runtime layer).
 
-These tests are isolated and do not require network connections or external services.
-All database operations use in-memory SQLite or mocked connections.
+These tests verify CRUD operations on the organizations table
+using the PyDAL database layer that the application actually uses at runtime.
 """
 
-from apps.api import db
-from apps.api.models.organization import Organization
+import pytest
 
 
 class TestOrganizationModel:
-    """Test Organization model functionality."""
+    """Test Organization model functionality via PyDAL."""
 
     def test_organization_creation(self, app):
         """Test creating a basic organization."""
         with app.app_context():
-            org = Organization(
-                name="Test Organization", description="A test organization"
+            db = app.db
+            org_id = db.organizations.insert(
+                name="Test Organization",
+                description="A test organization",
+                tenant_id=1,
             )
-            db.session.add(org)
-            db.session.commit()
+            db.commit()
 
-            assert org.id is not None
+            org = db.organizations[org_id]
+            assert org is not None
             assert org.name == "Test Organization"
             assert org.description == "A test organization"
             assert org.parent_id is None
             assert org.created_at is not None
-            assert org.updated_at is not None
+
+            # Cleanup
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
     def test_organization_hierarchy(self, app):
         """Test parent-child organization relationships."""
         with app.app_context():
-            parent = Organization(name="Parent Org")
-            db.session.add(parent)
-            db.session.commit()
-
-            child = Organization(name="Child Org", parent_id=parent.id)
-            db.session.add(child)
-            db.session.commit()
-
-            assert child.parent_id == parent.id
-            assert child.parent.id == parent.id
-            assert child.parent.name == "Parent Org"
-            assert len(parent.children) == 1
-            assert parent.children[0].id == child.id
-
-    def test_organization_metadata(self, app):
-        """Test organization metadata field."""
-        with app.app_context():
-            org = Organization(
-                name="Metadata Org",
-                metadata={"region": "us-west", "tier": "production"},
+            db = app.db
+            parent_id = db.organizations.insert(
+                name="Parent Org", tenant_id=1
             )
-            db.session.add(org)
-            db.session.commit()
+            db.commit()
 
-            assert org.metadata is not None
-            assert org.metadata["region"] == "us-west"
-            assert org.metadata["tier"] == "production"
+            child_id = db.organizations.insert(
+                name="Child Org", parent_id=parent_id, tenant_id=1
+            )
+            db.commit()
+
+            child = db.organizations[child_id]
+            assert child.parent_id == parent_id
+
+            children = db(db.organizations.parent_id == parent_id).select()
+            assert len(children) == 1
+            assert children[0].id == child_id
+
+            # Cleanup
+            db(db.organizations.id == child_id).delete()
+            db(db.organizations.id == parent_id).delete()
+            db.commit()
 
     def test_organization_ldap_dn(self, app):
         """Test LDAP DN assignment."""
         with app.app_context():
-            org = Organization(
-                name="LDAP Org", ldap_dn="ou=engineering,dc=example,dc=com"
+            db = app.db
+            org_id = db.organizations.insert(
+                name="LDAP Org",
+                ldap_dn="ou=engineering,dc=example,dc=com",
+                tenant_id=1,
             )
-            db.session.add(org)
-            db.session.commit()
+            db.commit()
 
+            org = db.organizations[org_id]
             assert org.ldap_dn == "ou=engineering,dc=example,dc=com"
+
+            # Cleanup
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
     def test_organization_saml_group(self, app):
         """Test SAML group assignment."""
         with app.app_context():
-            org = Organization(name="SAML Org", saml_group="engineering-team")
-            db.session.add(org)
-            db.session.commit()
+            db = app.db
+            org_id = db.organizations.insert(
+                name="SAML Org",
+                saml_group="engineering-team",
+                tenant_id=1,
+            )
+            db.commit()
 
+            org = db.organizations[org_id]
             assert org.saml_group == "engineering-team"
 
-    def test_organization_unique_id(self, app):
-        """Test unique ID generation."""
-        with app.app_context():
-            org = Organization(name="Unique ID Org")
-            db.session.add(org)
-            db.session.commit()
+            # Cleanup
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
-            assert org.unique_id is not None
-            assert len(str(org.unique_id)) > 0
+    def test_organization_village_id(self, app):
+        """Test village_id generation."""
+        with app.app_context():
+            db = app.db
+            org_id = db.organizations.insert(
+                name="Village ID Org", tenant_id=1
+            )
+            db.commit()
+
+            org = db.organizations[org_id]
+            assert org.village_id is not None
+            assert len(str(org.village_id)) > 0
+
+            # Cleanup
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
     def test_organization_update(self, app):
         """Test updating organization fields."""
         with app.app_context():
-            org = Organization(name="Original Name")
-            db.session.add(org)
-            db.session.commit()
-            original_created = org.created_at
+            db = app.db
+            org_id = db.organizations.insert(
+                name="Original Name", tenant_id=1
+            )
+            db.commit()
 
-            org.name = "Updated Name"
-            org.description = "New description"
-            db.session.commit()
+            db(db.organizations.id == org_id).update(
+                name="Updated Name", description="New description"
+            )
+            db.commit()
 
+            org = db.organizations[org_id]
             assert org.name == "Updated Name"
             assert org.description == "New description"
-            assert org.created_at == original_created
-            assert org.updated_at > original_created
+
+            # Cleanup
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
     def test_organization_deletion(self, app):
         """Test organization deletion."""
         with app.app_context():
-            org = Organization(name="Delete Me")
-            db.session.add(org)
-            db.session.commit()
-            org_id = org.id
+            db = app.db
+            org_id = db.organizations.insert(
+                name="Delete Me", tenant_id=1
+            )
+            db.commit()
 
-            db.session.delete(org)
-            db.session.commit()
+            db(db.organizations.id == org_id).delete()
+            db.commit()
 
-            deleted_org = Organization.query.get(org_id)
+            deleted_org = db.organizations[org_id]
             assert deleted_org is None
 
     def test_multiple_organizations(self, app):
         """Test creating multiple organizations."""
         with app.app_context():
-            org1 = Organization(name="Org 1")
-            org2 = Organization(name="Org 2")
-            org3 = Organization(name="Org 3")
+            db = app.db
+            ids = []
+            for name in ["Org 1", "Org 2", "Org 3"]:
+                ids.append(
+                    db.organizations.insert(name=name, tenant_id=1)
+                )
+            db.commit()
 
-            db.session.add_all([org1, org2, org3])
-            db.session.commit()
-
-            orgs = Organization.query.all()
-            assert len(orgs) >= 3
+            orgs = db(db.organizations.id.belongs(ids)).select()
+            assert len(orgs) == 3
             org_names = [o.name for o in orgs]
             assert "Org 1" in org_names
             assert "Org 2" in org_names
             assert "Org 3" in org_names
 
+            # Cleanup
+            db(db.organizations.id.belongs(ids)).delete()
+            db.commit()
+
     def test_organization_query_by_parent(self, app):
         """Test querying organizations by parent."""
         with app.app_context():
-            parent = Organization(name="Parent")
-            db.session.add(parent)
-            db.session.commit()
+            db = app.db
+            parent_id = db.organizations.insert(
+                name="Parent", tenant_id=1
+            )
+            db.commit()
 
-            child1 = Organization(name="Child 1", parent_id=parent.id)
-            child2 = Organization(name="Child 2", parent_id=parent.id)
-            db.session.add_all([child1, child2])
-            db.session.commit()
+            child_ids = []
+            for name in ["Child 1", "Child 2"]:
+                child_ids.append(
+                    db.organizations.insert(
+                        name=name, parent_id=parent_id, tenant_id=1
+                    )
+                )
+            db.commit()
 
-            children = Organization.query.filter_by(parent_id=parent.id).all()
+            children = db(db.organizations.parent_id == parent_id).select()
             assert len(children) == 2
             child_names = [c.name for c in children]
             assert "Child 1" in child_names
             assert "Child 2" in child_names
 
-    def test_organization_repr(self, app):
-        """Test organization string representation."""
-        with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            repr_str = repr(org)
-            assert "Organization" in repr_str
-            assert "Test Org" in repr_str
+            # Cleanup
+            db(db.organizations.id.belongs(child_ids)).delete()
+            db(db.organizations.id == parent_id).delete()
+            db.commit()

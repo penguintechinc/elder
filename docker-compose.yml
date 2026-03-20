@@ -59,6 +59,7 @@ services:
       args:
         GITHUB_TOKEN: ${GITHUB_TOKEN}
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VITE_VERSION: ${APP_VERSION:-0.0.0}
     container_name: elder-web
     ports:
       - "${WEB_PORT:-3005}:3000"
@@ -84,6 +85,9 @@ services:
         JWT_REFRESH_TOKEN_DAYS: ${JWT_REFRESH_TOKEN_DAYS:-30}
     container_name: elder-api
     environment:
+      # Application version
+      - APP_VERSION=${APP_VERSION:-0.0.0}
+
       # Flask
       - FLASK_ENV=${FLASK_ENV:-development}
       - FLASK_APP=apps.api.main:create_app

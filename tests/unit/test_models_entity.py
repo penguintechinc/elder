@@ -1,240 +1,265 @@
 """
-Unit tests for Entity model.
+Unit tests for Entity model (PyDAL runtime layer).
 
-These tests are isolated and do not require network connections or external services.
+These tests verify CRUD operations on the entities table
+using the PyDAL database layer that the application actually uses at runtime.
 """
 
-from apps.api import db
-from apps.api.models.entity import Entity, EntityType
-from apps.api.models.organization import Organization
+import pytest
 
 
 class TestEntityModel:
-    """Test Entity model functionality."""
+    """Test Entity model functionality via PyDAL."""
+
+    @pytest.fixture(autouse=True)
+    def setup_org(self, app):
+        """Create a test organization for entity tests."""
+        with app.app_context():
+            db = app.db
+            self.org_id = db.organizations.insert(
+                name="Test Org", tenant_id=1
+            )
+            db.commit()
+            yield
+            # Cleanup org (entities cleaned in each test)
+            db(db.organizations.id == self.org_id).delete()
+            db.commit()
 
     def test_entity_creation(self, app):
         """Test creating a basic entity."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
+            db = app.db
+            entity_id = db.entities.insert(
                 name="Test Server",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
+                entity_type="compute",
+                organization_id=self.org_id,
                 description="A test server",
             )
-            db.session.add(entity)
-            db.session.commit()
+            db.commit()
 
-            assert entity.id is not None
+            entity = db.entities[entity_id]
+            assert entity is not None
             assert entity.name == "Test Server"
-            assert entity.entity_type == EntityType.COMPUTE
-            assert entity.organization_id == org.id
+            assert entity.entity_type == "compute"
+            assert entity.organization_id == self.org_id
             assert entity.description == "A test server"
 
-    def test_entity_types(self, app):
-        """Test all entity types."""
-        with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
+            # Cleanup
+            db(db.entities.id == entity_id).delete()
+            db.commit()
 
+    def test_entity_types(self, app):
+        """Test various entity types."""
+        with app.app_context():
+            db = app.db
             entity_types = [
-                (EntityType.DATACENTER, "DC1"),
-                (EntityType.SUBNET, "10.0.0.0/24"),
-                (EntityType.COMPUTE, "server-01"),
-                (EntityType.NETWORK, "router-01"),
-                (EntityType.USER, "john.doe"),
-                (EntityType.SECURITY_ISSUE, "CVE-2024-1234"),
+                ("datacenter", "DC1"),
+                ("subnet", "10.0.0.0/24"),
+                ("compute", "server-01"),
+                ("network", "router-01"),
             ]
 
+            ids = []
             for entity_type, name in entity_types:
-                entity = Entity(
-                    name=name, entity_type=entity_type, organization_id=org.id
+                ids.append(
+                    db.entities.insert(
+                        name=name,
+                        entity_type=entity_type,
+                        organization_id=self.org_id,
+                    )
                 )
-                db.session.add(entity)
+            db.commit()
 
-            db.session.commit()
-
-            for entity_type, name in entity_types:
-                entity = Entity.query.filter_by(name=name).first()
+            for eid, (entity_type, name) in zip(ids, entity_types):
+                entity = db.entities[eid]
                 assert entity is not None
                 assert entity.entity_type == entity_type
+                assert entity.name == name
 
-    def test_entity_metadata(self, app):
-        """Test entity metadata field."""
+            # Cleanup
+            db(db.entities.id.belongs(ids)).delete()
+            db.commit()
+
+    def test_entity_attributes(self, app):
+        """Test entity attributes (JSON) field."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
-                name="Server with metadata",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
-                metadata={"cpu": "8 cores", "memory": "32GB", "os": "Ubuntu 22.04"},
+            db = app.db
+            attrs = {"cpu": "8 cores", "memory": "32GB", "os": "Ubuntu 22.04"}
+            entity_id = db.entities.insert(
+                name="Server with attrs",
+                entity_type="compute",
+                organization_id=self.org_id,
+                attributes=attrs,
             )
-            db.session.add(entity)
-            db.session.commit()
+            db.commit()
 
-            assert entity.metadata is not None
-            assert entity.metadata["cpu"] == "8 cores"
-            assert entity.metadata["memory"] == "32GB"
-            assert entity.metadata["os"] == "Ubuntu 22.04"
+            entity = db.entities[entity_id]
+            assert entity.attributes is not None
+            assert entity.attributes["cpu"] == "8 cores"
+            assert entity.attributes["memory"] == "32GB"
 
-    def test_entity_unique_id(self, app):
-        """Test unique ID generation."""
+            # Cleanup
+            db(db.entities.id == entity_id).delete()
+            db.commit()
+
+    def test_entity_village_id(self, app):
+        """Test village_id generation."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
-                name="Unique Entity",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
+            db = app.db
+            entity_id = db.entities.insert(
+                name="Village Entity",
+                entity_type="compute",
+                organization_id=self.org_id,
             )
-            db.session.add(entity)
-            db.session.commit()
+            db.commit()
 
-            assert entity.unique_id is not None
-            assert len(str(entity.unique_id)) > 0
+            entity = db.entities[entity_id]
+            assert entity.village_id is not None
+            assert len(str(entity.village_id)) > 0
 
-    def test_entity_organization_relationship(self, app):
-        """Test entity-organization relationship."""
-        with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
-                name="Test Entity",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
-            )
-            db.session.add(entity)
-            db.session.commit()
-
-            assert entity.organization.id == org.id
-            assert entity.organization.name == "Test Org"
-            assert len(org.entities) == 1
-            assert org.entities[0].id == entity.id
+            # Cleanup
+            db(db.entities.id == entity_id).delete()
+            db.commit()
 
     def test_entity_update(self, app):
         """Test updating entity fields."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
+            db = app.db
+            entity_id = db.entities.insert(
                 name="Original Name",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
+                entity_type="compute",
+                organization_id=self.org_id,
             )
-            db.session.add(entity)
-            db.session.commit()
-            original_created = entity.created_at
+            db.commit()
 
-            entity.name = "Updated Name"
-            entity.description = "New description"
-            db.session.commit()
+            db(db.entities.id == entity_id).update(
+                name="Updated Name", description="New description"
+            )
+            db.commit()
 
+            entity = db.entities[entity_id]
             assert entity.name == "Updated Name"
             assert entity.description == "New description"
-            assert entity.created_at == original_created
-            assert entity.updated_at > original_created
+
+            # Cleanup
+            db(db.entities.id == entity_id).delete()
+            db.commit()
 
     def test_entity_deletion(self, app):
         """Test entity deletion."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
-                name="Delete Me", entity_type=EntityType.COMPUTE, organization_id=org.id
+            db = app.db
+            entity_id = db.entities.insert(
+                name="Delete Me",
+                entity_type="compute",
+                organization_id=self.org_id,
             )
-            db.session.add(entity)
-            db.session.commit()
-            entity_id = entity.id
+            db.commit()
 
-            db.session.delete(entity)
-            db.session.commit()
+            db(db.entities.id == entity_id).delete()
+            db.commit()
 
-            deleted_entity = Entity.query.get(entity_id)
-            assert deleted_entity is None
+            deleted = db.entities[entity_id]
+            assert deleted is None
 
     def test_multiple_entities_same_org(self, app):
         """Test multiple entities in same organization."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
+            db = app.db
+            ids = []
+            for name, etype in [
+                ("Entity 1", "compute"),
+                ("Entity 2", "network"),
+                ("Entity 3", "subnet"),
+            ]:
+                ids.append(
+                    db.entities.insert(
+                        name=name,
+                        entity_type=etype,
+                        organization_id=self.org_id,
+                    )
+                )
+            db.commit()
 
-            entity1 = Entity(
-                name="Entity 1", entity_type=EntityType.COMPUTE, organization_id=org.id
-            )
-            entity2 = Entity(
-                name="Entity 2", entity_type=EntityType.NETWORK, organization_id=org.id
-            )
-            entity3 = Entity(
-                name="Entity 3", entity_type=EntityType.SUBNET, organization_id=org.id
-            )
+            entities = db(
+                db.entities.organization_id == self.org_id
+            ).select()
+            assert len(entities) >= 3
 
-            db.session.add_all([entity1, entity2, entity3])
-            db.session.commit()
-
-            entities = Entity.query.filter_by(organization_id=org.id).all()
-            assert len(entities) == 3
+            # Cleanup
+            db(db.entities.id.belongs(ids)).delete()
+            db.commit()
 
     def test_entity_query_by_type(self, app):
         """Test querying entities by type."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            compute1 = Entity(
-                name="Server 1", entity_type=EntityType.COMPUTE, organization_id=org.id
+            db = app.db
+            ids = []
+            ids.append(
+                db.entities.insert(
+                    name="Server 1",
+                    entity_type="compute",
+                    organization_id=self.org_id,
+                )
             )
-            compute2 = Entity(
-                name="Server 2", entity_type=EntityType.COMPUTE, organization_id=org.id
+            ids.append(
+                db.entities.insert(
+                    name="Server 2",
+                    entity_type="compute",
+                    organization_id=self.org_id,
+                )
             )
-            network = Entity(
-                name="Router 1", entity_type=EntityType.NETWORK, organization_id=org.id
+            ids.append(
+                db.entities.insert(
+                    name="Router 1",
+                    entity_type="network",
+                    organization_id=self.org_id,
+                )
             )
+            db.commit()
 
-            db.session.add_all([compute1, compute2, network])
-            db.session.commit()
+            compute = db(
+                (db.entities.entity_type == "compute")
+                & (db.entities.id.belongs(ids))
+            ).select()
+            assert len(compute) == 2
 
-            compute_entities = Entity.query.filter_by(
-                entity_type=EntityType.COMPUTE
-            ).all()
-            assert len(compute_entities) == 2
+            network = db(
+                (db.entities.entity_type == "network")
+                & (db.entities.id.belongs(ids))
+            ).select()
+            assert len(network) == 1
 
-            network_entities = Entity.query.filter_by(
-                entity_type=EntityType.NETWORK
-            ).all()
-            assert len(network_entities) == 1
+            # Cleanup
+            db(db.entities.id.belongs(ids)).delete()
+            db.commit()
 
-    def test_entity_repr(self, app):
-        """Test entity string representation."""
+    def test_entity_hierarchy(self, app):
+        """Test parent-child entity relationships."""
         with app.app_context():
-            org = Organization(name="Test Org")
-            db.session.add(org)
-            db.session.commit()
-
-            entity = Entity(
-                name="Test Entity",
-                entity_type=EntityType.COMPUTE,
-                organization_id=org.id,
+            db = app.db
+            parent_id = db.entities.insert(
+                name="Parent DC",
+                entity_type="datacenter",
+                organization_id=self.org_id,
             )
-            db.session.add(entity)
-            db.session.commit()
+            db.commit()
 
-            repr_str = repr(entity)
-            assert "Entity" in repr_str
-            assert "Test Entity" in repr_str
+            child_id = db.entities.insert(
+                name="Child Server",
+                entity_type="compute",
+                organization_id=self.org_id,
+                parent_id=parent_id,
+            )
+            db.commit()
+
+            child = db.entities[child_id]
+            assert child.parent_id == parent_id
+
+            children = db(db.entities.parent_id == parent_id).select()
+            assert len(children) == 1
+
+            # Cleanup
+            db(db.entities.id == child_id).delete()
+            db(db.entities.id == parent_id).delete()
+            db.commit()

@@ -566,6 +566,53 @@ def get_current_user():
     )
 
 
+@bp.route("/me", methods=["PATCH"])
+@portal_token_required
+def update_current_user():
+    """Update current authenticated portal user info.
+
+    Allowed fields: full_name, organization_id
+    Email cannot be changed via this endpoint.
+
+    Returns:
+        Updated user info
+    """
+    user_id = int(request.portal_user["sub"])
+    user = current_app.db.portal_users[user_id]
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    updates = {}
+    if "full_name" in data:
+        updates["full_name"] = data["full_name"]
+    if "organization_id" in data:
+        updates["organization_id"] = data["organization_id"]
+
+    if updates:
+        current_app.db(current_app.db.portal_users.id == user_id).update(**updates)
+        current_app.db.commit()
+        user = current_app.db.portal_users[user_id]
+
+    return (
+        jsonify(
+            {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+                "tenant_id": user.tenant_id,
+                "tenant_role": user.tenant_role,
+                "global_role": user.global_role,
+                "mfa_enabled": bool(user.mfa_secret),
+                "email_verified": user.email_verified,
+            }
+        ),
+        200,
+    )
+
+
 @bp.route("/org-assignments", methods=["POST"])
 @portal_token_required
 def assign_org_role():
