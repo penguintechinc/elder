@@ -250,7 +250,7 @@ docker-push: ## Docker - Push Docker image to registry
 docker-scan: ## Docker - Scan Docker image for vulnerabilities
 	@echo "$(BLUE)Scanning Docker image for vulnerabilities...$(RESET)"
 	@docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-		aquasec/trivy image $(PROJECT_NAME):$(VERSION)
+		aquasec/trivy:0.69.3 image $(PROJECT_NAME):$(VERSION)
 
 # License Commands
 license-validate: ## License - Validate license configuration
