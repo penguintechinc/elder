@@ -1189,6 +1189,11 @@ def define_all_tables(db):
             "datetime",
             default=lambda: datetime.datetime.now(datetime.timezone.utc),
         ),
+        Field(
+            "updated_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
         migrate=False,
     )
 

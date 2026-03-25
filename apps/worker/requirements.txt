@@ -1,3 +1,4 @@
+# TODO: migrate to pip-compile --generate-hashes
 # Elder Worker Service Dependencies
 
 # Cloud Provider SDKs

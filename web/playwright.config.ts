@@ -1,4 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
+import { execFileSync } from 'child_process';
+import path from 'path';
+
+// Repo-scoped artifact dir — prevents /tmp collisions when multiple repos run tests concurrently
+const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+const repoName = path.basename(repoRoot);
+const artifactDir = `/tmp/playwright-${repoName}`;
 
 /**
  * Read environment variables from file.
@@ -34,6 +41,8 @@ if (targetHost) {
  */
 export default defineConfig({
   testDir: './tests/e2e',
+  /* Repo-scoped artifact dir keeps /tmp clean across concurrent repos */
+  outputDir: artifactDir,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

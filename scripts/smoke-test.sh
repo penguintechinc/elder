@@ -396,11 +396,13 @@ if [ -n "$TOKEN" ]; then
 
     if [ "$TEST_MODE" = "beta" ]; then
         SSL_FLAG="--no-verify-ssl"
+        HOST_FLAG="--host-header $HOST_HEADER"
     else
         SSL_FLAG=""
+        HOST_FLAG=""
     fi
 
-    if $PYTHON_CMD "$SCRIPT_DIR/test-rest-api.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG; then
+    if $PYTHON_CMD "$SCRIPT_DIR/test-rest-api.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG $HOST_FLAG; then
         record_pass "Comprehensive REST API tests passed"
     else
         record_fail "Comprehensive REST API tests failed"
@@ -409,7 +411,7 @@ if [ -n "$TOKEN" ]; then
     # Run API validation tests
     log_info ""
     log_info "Running API validation tests..."
-    if $PYTHON_CMD "$SCRIPT_DIR/test-api-validation.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG; then
+    if $PYTHON_CMD "$SCRIPT_DIR/test-api-validation.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG $HOST_FLAG; then
         record_pass "API validation tests passed"
     else
         log_warn "API validation tests failed (some failures expected for edge cases)"

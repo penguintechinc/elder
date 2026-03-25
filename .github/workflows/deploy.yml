@@ -55,7 +55,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -127,7 +127,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
@@ -271,7 +271,7 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Configure kubectl
       uses: azure/k8s-set-context@v3

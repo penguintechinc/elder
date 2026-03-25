@@ -2,8 +2,8 @@ const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
 
-const BASE_URL = 'http://localhost:3005';
-const OUTPUT_DIR = '/home/penguin/code/Elder/docs/screenshots';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3005';
+const OUTPUT_DIR = process.env.OUTPUT_DIR || '/home/penguin/code/elder/docs/screenshots';
 
 // All pages to capture - comprehensive list
 const pages = [
@@ -100,8 +100,8 @@ async function captureScreenshots() {
 
   // Verify we're logged in by checking for auth token in localStorage
   const isLoggedIn = await page.evaluate(() => {
-    return localStorage.getItem('token') !== null ||
-           localStorage.getItem('access_token') !== null ||
+    return localStorage.getItem('elder_token') !== null ||
+           localStorage.getItem('token') !== null ||
            !window.location.pathname.includes('/login');
   });
 

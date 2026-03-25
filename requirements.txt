@@ -1,3 +1,4 @@
+# TODO: migrate to pip-compile --generate-hashes
 # Elder - Entity Relationship Tracking Application
 # Python 3.12+ required (optimized for 3.12 performance features)
 

@@ -39,9 +39,19 @@ LB_URL="https://dal2.penguintech.io"
 HOST="elder.penguintech.cloud"
 API_BASE="$LB_URL/api/v1"
 PLAYWRIGHT_PORT=3030
+# Find a free port for the API port-forward using ss to avoid conflicts
+_find_free_port() {
+    local port=${1:-14000}
+    while ss -tlnp 2>/dev/null | awk '{print $4}' | grep -qE ":${port}$"; do
+        port=$((port + 1))
+    done
+    echo "$port"
+}
+API_PORT=$(_find_free_port 14000)
 DEPLOY=false
 VERBOSE=false
 PF_PID=""
+API_PF_PID=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -74,11 +84,15 @@ beta_curl() {
     curl -sk -H "Host: $HOST" "$@"
 }
 
-# Cleanup function — stop port-forward on exit
+# Cleanup function — stop port-forwards on exit
 cleanup() {
     if [[ -n "$PF_PID" ]]; then
         kill "$PF_PID" 2>/dev/null || true
-        log_info "Port-forward stopped (PID $PF_PID)"
+        log_info "Web port-forward stopped (PID $PF_PID)"
+    fi
+    if [[ -n "$API_PF_PID" ]]; then
+        kill "$API_PF_PID" 2>/dev/null || true
+        log_info "API port-forward stopped (PID $API_PF_PID)"
     fi
 }
 trap cleanup EXIT
@@ -348,11 +362,25 @@ else
         log_error "Port-forward failed to start"
         PHASE_RESULTS+=("Playwright: FAIL (port-forward)")
     else
-        log_success "Port-forward running (PID $PF_PID)"
+        log_success "Web port-forward running (PID $PF_PID)"
+
+        # Also port-forward the API so Playwright's page.evaluate() fetch() can reach it
+        log_info "Starting kubectl port-forward svc/elder-api $API_PORT:5000..."
+        kubectl --context "$CONTEXT" port-forward -n "$NAMESPACE" svc/elder-api "$API_PORT:5000" &
+        API_PF_PID=$!
+        sleep 2
+        if kill -0 "$API_PF_PID" 2>/dev/null; then
+            log_success "API port-forward running (PID $API_PF_PID)"
+        else
+            log_warn "API port-forward failed — Create Modal tests may be skipped"
+            API_PF_PID=""
+        fi
 
         cd "$WEB_DIR"
         PLAYWRIGHT_EXIT=0
-        PLAYWRIGHT_BASE_URL="http://localhost:$PLAYWRIGHT_PORT" npx playwright test --reporter=list 2>&1 || PLAYWRIGHT_EXIT=$?
+        PLAYWRIGHT_BASE_URL="http://localhost:$PLAYWRIGHT_PORT" \
+        PLAYWRIGHT_API_URL="http://localhost:$API_PORT" \
+        npx playwright test --reporter=list 2>&1 || PLAYWRIGHT_EXIT=$?
         cd "$PROJECT_ROOT"
 
         if [ $PLAYWRIGHT_EXIT -eq 0 ]; then
@@ -365,6 +393,11 @@ else
 
         kill "$PF_PID" 2>/dev/null || true
         PF_PID=""
+
+        # Clean up Playwright artifacts from repo-scoped /tmp dir
+        REPO_NAME=$(basename "$(git -C "$PROJECT_ROOT" rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "elder")
+        rm -rf "/tmp/playwright-${REPO_NAME}"
+        log_info "Playwright artifacts cleaned up (/tmp/playwright-${REPO_NAME})"
     fi
 fi
 
