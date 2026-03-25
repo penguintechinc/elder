@@ -40,6 +40,43 @@ This repository may contain `.local.md` variant files that provide project-speci
 
 ---
 
+## MCP Servers
+
+- **mem0**: Persistent memory across sessions. At the start of each session, `search_memories` for relevant context before asking the user to re-explain anything. Use `add_memory` whenever you discover project architecture, coding conventions, debugging insights, key decisions, or user preferences. Use `update_memory` when prior context changes. Save information like: "This project uses PostgreSQL with Prisma", "Tests run with pytest -v", "Auth uses JWT validated in middleware". When in doubt, save it, future sessions benefit from over-remembering.
+
+---
+
+## Setup Script
+
+This repo includes `setup.sh` which configures the local Claude Code environment:
+
+```bash
+.claude/setup.sh              # Full setup (statusline + mem0 + settings)
+.claude/setup.sh statusline   # Statusline only
+.claude/setup.sh mem0         # mem0 + Qdrant only
+.claude/setup.sh settings     # Settings update only
+```
+
+At session start, verify the environment is configured. If `~/.claude/statusline-command.sh` or `~/.claude/mcp/mem0/mcp-server.py` does not exist, run `setup.sh` from this repo.
+
+### Status Line
+
+The setup script symlinks `statusline-command.sh` to `~/.claude/` and configures `settings.json`. The statusline displays model, effort, repo, branch, context usage, cost, and duration.
+
+### mem0 (Local Persistent Memory)
+
+The setup script deploys a local Qdrant container for vector storage and configures a mem0 MCP server using Ollama for embeddings (`nomic-embed-text`) and LLM (`llama3.2:3b`). All memory operations are fully local — no external API calls.
+
+**Manage Qdrant:**
+```bash
+docker compose -f ~/.claude/mcp/mem0/docker-compose.yml up -d    # start
+docker compose -f ~/.claude/mcp/mem0/docker-compose.yml down      # stop
+```
+
+**Qdrant dashboard:** http://localhost:6333/dashboard
+
+---
+
 ## ⚠️ CRITICAL RULES - READ FIRST
 
 **Git Rules:**
@@ -137,12 +174,23 @@ project-name/
 - **Patch**: Minor updates, bug fixes, security patches
 - **Build**: Epoch64 timestamp of build time
 
+### ⚠️ Version Increment Rule
+
+**Only increment Major/Minor/Patch when the current version already has a published git tag and/or GitHub release.** If no tag/release exists for the current version yet, update only the build epoch.
+
+**Rationale:** Incrementing a version before the current one ships creates gaps in the published sequence (e.g., `v1.2.1` → `v1.2.4` with no `v1.2.2` or `v1.2.3` ever released). Consumers, changelogs, and package managers see these gaps as missing releases, which is confusing and looks like a mistake.
+
+**Decision flow:**
+1. Check if the current `.version` is already tagged: `git tag --list "$(cat .version | cut -d. -f1-3)*"`
+2. If **no tag exists** → only update the build epoch: `./scripts/version/update-version.sh`
+3. If **a tag already exists** → safe to increment: `./scripts/version/update-version.sh patch|minor|major`
+
 **Update Commands**:
 ```bash
-./scripts/version/update-version.sh          # Increment build timestamp
-./scripts/version/update-version.sh patch    # Increment patch version
-./scripts/version/update-version.sh minor    # Increment minor version
-./scripts/version/update-version.sh major    # Increment major version
+./scripts/version/update-version.sh          # Update build epoch ONLY (use when no tag yet)
+./scripts/version/update-version.sh patch    # Increment patch (only after current version is tagged)
+./scripts/version/update-version.sh minor    # Increment minor (only after current version is tagged)
+./scripts/version/update-version.sh major    # Increment major (only after current version is tagged)
 ```
 
 ## Development Workflow
@@ -277,7 +325,7 @@ Comprehensive development standards are organized by category in `docs/standards
 
 ## CI/CD & Workflows
 
-**Build Tags**: `beta-<epoch64>` (main) | `alpha-<epoch64>` (other) | `vX.X.X-beta` (version release) | `vX.X.X` (tagged release)
+**Build Tags**: `gamma-<epoch64>` (main, pre-release) | `beta-<epoch64>` (release branches) | `alpha-<epoch64>` (other) | `vX.X.X-gamma` (main version) | `vX.X.X-beta` (release version) | `vX.X.X` (tagged release)
 
 **Version**: `.version` file in root, semver format, monitored by all workflows
 
