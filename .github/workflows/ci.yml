@@ -198,9 +198,6 @@ jobs:
         echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
         echo "//npm.pkg.github.com/:_authToken=${NPM_PKG_TOKEN}" >> ~/.npmrc
 
-    - name: Install root dependencies
-      run: npm ci --prefer-offline
-
     - name: Install web dependencies
       run: cd web && npm ci --prefer-offline
 

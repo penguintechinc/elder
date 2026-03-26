@@ -143,7 +143,9 @@ async def get_entity_metadata(id: int):
         # Build metadata dictionary with type conversion
         metadata = {}
         for field in fields:
-            metadata[field.field_key] = _parse_value(field.field_value, field.field_type)
+            metadata[field.field_key] = _parse_value(
+                field.field_value, field.field_type
+            )
 
         return {"metadata": metadata}, None, None
 
@@ -455,7 +457,9 @@ async def get_organization_metadata(id: int):
         # Build metadata dictionary with type conversion
         metadata = {}
         for field in fields:
-            metadata[field.field_key] = _parse_value(field.field_value, field.field_type)
+            metadata[field.field_key] = _parse_value(
+                field.field_value, field.field_type
+            )
 
         return {"metadata": metadata}, None, None
 
