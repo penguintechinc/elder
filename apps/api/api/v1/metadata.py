@@ -143,7 +143,7 @@ async def get_entity_metadata(id: int):
         # Build metadata dictionary with type conversion
         metadata = {}
         for field in fields:
-            metadata[field.key] = _parse_value(field.value, field.field_type)
+            metadata[field.field_key] = _parse_value(field.field_value, field.field_type)
 
         return {"metadata": metadata}, None, None
 
@@ -198,7 +198,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
             db(
                 (db.metadata_fields.resource_type == "entity")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == body.key)
+                & (db.metadata_fields.field_key == body.key)
             )
             .select()
             .first()
@@ -219,15 +219,15 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
             # Update existing
             db(db.metadata_fields.id == existing.id).update(
                 field_type=body.field_type,
-                value=value_str,
+                field_value=value_str,
             )
             db.commit()
             field = db.metadata_fields[existing.id]
         else:
             # Create new
             field_id = db.metadata_fields.insert(
-                key=body.key,
-                value=value_str,
+                field_key=body.key,
+                field_value=value_str,
                 field_type=body.field_type,
                 resource_type="entity",
                 resource_id=id,
@@ -238,7 +238,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
 
         # Build response with parsed value
         field_dict = field.as_dict()
-        field_dict["value"] = _parse_value(field.value, field.field_type)
+        field_dict["field_value"] = _parse_value(field.field_value, field.field_type)
 
         return field_dict, None, None
 
@@ -293,7 +293,7 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
             db(
                 (db.metadata_fields.resource_type == "entity")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == field_key)
+                & (db.metadata_fields.field_key == field_key)
             )
             .select()
             .first()
@@ -317,7 +317,7 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
             return None, str(e), 400
 
         # Update field
-        update_fields = {"value": value_str}
+        update_fields = {"field_value": value_str}
         if body.field_type:
             update_fields["field_type"] = body.field_type
 
@@ -329,8 +329,8 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
 
         # Build response with parsed value
         field_dict = updated_field.as_dict()
-        field_dict["value"] = _parse_value(
-            updated_field.value, updated_field.field_type
+        field_dict["field_value"] = _parse_value(
+            updated_field.field_value, updated_field.field_type
         )
 
         return field_dict, None, None
@@ -378,7 +378,7 @@ async def delete_entity_metadata(id: int, field_key: str):
             db(
                 (db.metadata_fields.resource_type == "entity")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == field_key)
+                & (db.metadata_fields.field_key == field_key)
             )
             .select()
             .first()
@@ -455,7 +455,7 @@ async def get_organization_metadata(id: int):
         # Build metadata dictionary with type conversion
         metadata = {}
         for field in fields:
-            metadata[field.key] = _parse_value(field.value, field.field_type)
+            metadata[field.field_key] = _parse_value(field.field_value, field.field_type)
 
         return {"metadata": metadata}, None, None
 
@@ -510,7 +510,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
             db(
                 (db.metadata_fields.resource_type == "organization")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == body.key)
+                & (db.metadata_fields.field_key == body.key)
             )
             .select()
             .first()
@@ -531,15 +531,15 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
             # Update existing
             db(db.metadata_fields.id == existing.id).update(
                 field_type=body.field_type,
-                value=value_str,
+                field_value=value_str,
             )
             db.commit()
             field = db.metadata_fields[existing.id]
         else:
             # Create new
             field_id = db.metadata_fields.insert(
-                key=body.key,
-                value=value_str,
+                field_key=body.key,
+                field_value=value_str,
                 field_type=body.field_type,
                 resource_type="organization",
                 resource_id=id,
@@ -550,7 +550,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
 
         # Build response with parsed value
         field_dict = field.as_dict()
-        field_dict["value"] = _parse_value(field.value, field.field_type)
+        field_dict["field_value"] = _parse_value(field.field_value, field.field_type)
 
         return field_dict, None, None
 
@@ -607,7 +607,7 @@ async def update_organization_metadata(
             db(
                 (db.metadata_fields.resource_type == "organization")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == field_key)
+                & (db.metadata_fields.field_key == field_key)
             )
             .select()
             .first()
@@ -631,7 +631,7 @@ async def update_organization_metadata(
             return None, str(e), 400
 
         # Update field
-        update_fields = {"value": value_str}
+        update_fields = {"field_value": value_str}
         if body.field_type:
             update_fields["field_type"] = body.field_type
 
@@ -643,8 +643,8 @@ async def update_organization_metadata(
 
         # Build response with parsed value
         field_dict = updated_field.as_dict()
-        field_dict["value"] = _parse_value(
-            updated_field.value, updated_field.field_type
+        field_dict["field_value"] = _parse_value(
+            updated_field.field_value, updated_field.field_type
         )
 
         return field_dict, None, None
@@ -692,7 +692,7 @@ async def delete_organization_metadata(id: int, field_key: str):
             db(
                 (db.metadata_fields.resource_type == "organization")
                 & (db.metadata_fields.resource_id == id)
-                & (db.metadata_fields.key == field_key)
+                & (db.metadata_fields.field_key == field_key)
             )
             .select()
             .first()
