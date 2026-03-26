@@ -6,7 +6,7 @@
 #
 # Modes:
 #   --alpha          Alpha testing: local docker-compose cluster (default)
-#   --beta           Beta testing: K8s deployment at elder.penguintech.io
+#   --beta           Beta testing: K8s deployment at elder.penguintech.cloud
 #
 # Options:
 #   --skip-build     Skip container build (alpha mode only)
@@ -67,10 +67,10 @@ if [ "$TEST_MODE" = "beta" ]; then
     API_URL="${API_URL:-https://dal2.penguintech.io}"
     WEB_URL="${WEB_URL:-https://dal2.penguintech.io}"
     # Set Host header for proper routing through ingress
-    HOST_HEADER="elder.penguintech.io"
+    HOST_HEADER="elder.penguintech.cloud"
     ADMIN_USERNAME="${ADMIN_USERNAME:-admin@localhost.local}"
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
-    MODE_LABEL="BETA (K8s: elder.penguintech.io via dal2.penguintech.io)"
+    MODE_LABEL="BETA (K8s: elder.penguintech.cloud via dal2.penguintech.io)"
 else
     # Alpha mode: local docker-compose
     API_URL="${API_URL:-http://localhost:4000}"
@@ -136,6 +136,7 @@ record_fail() {
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+export PROJECT_ROOT
 
 cd "$PROJECT_ROOT"
 
@@ -332,6 +333,12 @@ fi
 VERSION_RESPONSE=$(do_curl -sf "$API_URL/api/v1/version" 2>/dev/null || echo "")
 if echo "$VERSION_RESPONSE" | grep -qi "version"; then
     record_pass "API /api/v1/version returns version info"
+    VERSION_VALUE=$(echo "$VERSION_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('version',''))" 2>/dev/null || echo "")
+    if [ "$VERSION_VALUE" = "0.0.0" ] || [ -z "$VERSION_VALUE" ]; then
+        record_fail "API version is '${VERSION_VALUE}' — build-arg not injected correctly"
+    else
+        record_pass "API version is '$VERSION_VALUE' (non-zero)"
+    fi
 else
     log_warn "API /api/v1/version not available (may be expected)"
 fi
@@ -389,11 +396,13 @@ if [ -n "$TOKEN" ]; then
 
     if [ "$TEST_MODE" = "beta" ]; then
         SSL_FLAG="--no-verify-ssl"
+        HOST_FLAG="--host-header $HOST_HEADER"
     else
         SSL_FLAG=""
+        HOST_FLAG=""
     fi
 
-    if $PYTHON_CMD "$SCRIPT_DIR/test-rest-api.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG; then
+    if $PYTHON_CMD "$SCRIPT_DIR/test-rest-api.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG $HOST_FLAG; then
         record_pass "Comprehensive REST API tests passed"
     else
         record_fail "Comprehensive REST API tests failed"
@@ -402,7 +411,7 @@ if [ -n "$TOKEN" ]; then
     # Run API validation tests
     log_info ""
     log_info "Running API validation tests..."
-    if $PYTHON_CMD "$SCRIPT_DIR/test-api-validation.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG; then
+    if $PYTHON_CMD "$SCRIPT_DIR/test-api-validation.py" --url "$API_URL" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD" $SSL_FLAG $HOST_FLAG; then
         record_pass "API validation tests passed"
     else
         log_warn "API validation tests failed (some failures expected for edge cases)"
@@ -581,7 +590,7 @@ else
     log_info "Running Playwright web UI tests against: $WEB_URL"
 
     # Run Playwright tests with timeout
-    if timeout 300 bash -c 'cd "$PROJECT_ROOT/web" && npm run test:e2e 2>&1' | tee /tmp/playwright-output.log; then
+    if timeout 300 bash -c 'cd "$PROJECT_ROOT/web" && npm run test:e2e 2>&1' > /tmp/playwright-output.log 2>&1; then
         record_pass "Playwright web UI tests passed"
     else
         if grep -q "no such file or directory\|cannot find" /tmp/playwright-output.log; then

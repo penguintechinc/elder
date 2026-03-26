@@ -355,6 +355,7 @@ class IssueLabelDTO:
     color: str
     description: Optional[str]
     created_at: datetime
+    updated_at: datetime
 
 
 @dataclass(slots=True, frozen=True)

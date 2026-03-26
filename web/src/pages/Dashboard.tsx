@@ -38,6 +38,7 @@ export default function Dashboard() {
       icon: Building2,
       color: 'text-blue-500',
       bgColor: 'bg-blue-500/10',
+      href: '/organizations',
     },
     {
       name: 'Entities',
@@ -45,6 +46,7 @@ export default function Dashboard() {
       icon: Box,
       color: 'text-green-500',
       bgColor: 'bg-green-500/10',
+      href: '/entities',
     },
     {
       name: 'Dependencies',
@@ -52,6 +54,7 @@ export default function Dashboard() {
       icon: GitBranch,
       color: 'text-purple-500',
       bgColor: 'bg-purple-500/10',
+      href: '/dependencies',
     },
     {
       name: 'Identities',
@@ -59,6 +62,7 @@ export default function Dashboard() {
       icon: Users,
       color: 'text-yellow-500',
       bgColor: 'bg-yellow-500/10',
+      href: '/iam',
     },
     {
       name: 'Open Issues',
@@ -66,6 +70,7 @@ export default function Dashboard() {
       icon: AlertCircle,
       color: 'text-red-500',
       bgColor: 'bg-red-500/10',
+      href: '/issues',
     },
   ]
 
@@ -83,7 +88,11 @@ export default function Dashboard() {
         {stats.map((stat) => {
           const Icon = stat.icon
           return (
-            <Card key={stat.name}>
+            <Card
+              key={stat.name}
+              className="cursor-pointer hover:ring-1 hover:ring-slate-500 transition-all"
+              onClick={() => navigate(stat.href)}
+            >
               <CardContent className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-slate-400">{stat.name}</p>

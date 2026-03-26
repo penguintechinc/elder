@@ -3,7 +3,7 @@
 [![Continuous Integration](https://github.com/penguintechinc/elder/actions/workflows/ci.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml)
 [![Test Coverage](https://codecov.io/gh/penguintechinc/elder/branch/main/graph/badge.svg)](https://codecov.io/gh/penguintechinc/elder)
-[![Version](https://img.shields.io/badge/version-3.1.4-green.svg)](https://github.com/penguintechinc/elder/releases)
+[![Version](https://img.shields.io/badge/version-3.1.5-green.svg)](https://github.com/penguintechinc/elder/releases)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: Limited AGPL v3](https://img.shields.io/badge/License-Limited_AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)*
@@ -239,7 +239,14 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 
-### v3.1.4 Highlights (Latest)
+### v3.1.5 Highlights (Latest)
+- **PyDAL Stale Cursor Fix**: Added `teardown_appcontext` handler to reset DB connections between requests — resolves `401 Authentication required` on all `@login_required` endpoints after first login
+- **Issue Labels `updated_at` Fix**: Added missing `updated_at` column to `issue_labels` table, preventing `FieldNotFound` errors when listing labeled issues
+- **E2E Test Suite Improvements**: CORS-safe authentication using Playwright Node.js request context; dynamic API port selection with `ss` to avoid docker-proxy conflicts; graceful skip for enterprise-gated UI elements
+- **penguin-libs Migration**: Replaced local `shared/react_libs` with published `@penguintechinc/react-libs`; integrated `SanitizedLogger` across API and Scanner services
+- **K8s Manifests**: Added complete Helm + Kustomize overlays for alpha (`.localhost.local`) and beta (`.penguintech.cloud`) with smoke test script
+
+### v3.1.4 Highlights
 - **Penguin-Libs Migration**: Removed orphaned `shared/react_libs/` local copy (92 MB); frontend now uses `@penguintechinc/react-libs` npm package exclusively
 - **SanitizedLogger Integration**: Added `penguin-utils` SanitizedLogger as a structlog processor — PII and sensitive values are automatically redacted from all log output
 - **All 4 Containers in Deploy Script**: `deploy-beta.sh all` now builds and pushes api, web, scanner, and worker (previously only api + web)
@@ -248,16 +255,18 @@ Entities use a flexible schema for infrastructure components:
 - **SQLAlchemy Model Alignment**: Models now 1:1 with PyDAL schema; 13 new model files added for complete coverage
 - **CI Fixes**: Refreshed `NPM_PKG_TOKEN` secret; applied black + isort formatting across all model files
 
+### v3.1.1 Highlights
+- **Schema via Alembic**: Migration 011 creates all 67 base tables; PyDAL runs with `migrate=False` — eliminates `DuplicateTable` race conditions in multi-replica K8s deployments (Issue #58)
+- **Refresh Token Storage**: `onSuccess` stores both `elder_token` and `elder_refresh_token` — resolves sidebar not loading after login (Issue #59)
+- **Async DB Commits**: Wrapped write operations in `run_in_threadpool()` — fixes organizations and other resources not persisting via async routes (Issue #61)
+- **Ultrawide Monitor Support**: Login page and main content capped at max-width and centered
+
 ### v3.1.0 Highlights
+- **Elder Worker Service**: Background service that owns all async operations — cloud discovery (AWS/GCP/Azure/K8s), connector state sync, credential refresh; stateless/horizontally scalable
 - **Periodic Access Review System**: Automated quarterly/annual access reviews for identity groups with Okta sync (Enterprise)
-  - Background scheduler creates reviews hourly; owners review members with Keep/Remove/Extend decisions
-  - Full audit logging for compliance; member removals auto-sync to Okta
-  - IAM → Access Reviews tab with real-time progress tracking and overdue warnings
 - **LoginPageBuilder Integration**: Migrated login page to `react-libs` LoginPageBuilder for consistent UX
 - **LXD Compute Sub-types**: Added LXD Container and LXD VM as entity sub-types under Compute
-- **Version Injection**: APP_VERSION, VITE_VERSION, and VITE_BUILD_TIME injected into containers at build time
-- **Playwright Web UI Test Suite**: 18 browser automation tests covering all pages, navigation, forms, and modals
-- **K8s Deployment Standardization**: Helm + Kustomize values for alpha (`.localhost.local`) and beta (`.penguintech.cloud`)
+- **Playwright Web UI Test Suite**: Browser automation tests covering all pages, navigation, forms, and modals
 
 ### v3.0.x Highlights
 - **v3.0.9**: Connector entity client fixes (removed invalid update fields, added sub_type support); Express and dependency security updates
@@ -299,45 +308,15 @@ For commercial licensing inquiries: sales@penguintech.io
 
 ### Prerequisites
 
-- **Docker & Docker Compose V2**: Required for all services
-- **Python 3.12+**: Backend API (included in Docker)
-- **Node.js 18+**: Web UI build (included in Docker)
-- **PostgreSQL 17**: Database (included in Docker Compose)
-- **Redis 7**: Cache and session storage (included in Docker Compose)
+- **Kubernetes** (primary): MicroK8s, Docker Desktop K8s, or Podman Desktop K8s
+- **kubectl** + **helm v3**: For K8s deployments
+- **Docker**: For local image builds (alpha dev only)
+- **Python 3.13+**: For local development without K8s
+- **Node.js 18+**: For Web UI development
 
-### Installation
+> **Note**: Docker Compose is deprecated. All environments (alpha, beta, prod) deploy to Kubernetes.
 
-```bash
-# Clone the repository
-git clone https://github.com/penguintechinc/elder.git
-cd elder
-
-# Run setup
-make setup
-
-# Edit configuration
-nano .env
-
-# Start development environment
-make dev
-```
-
-Access the services:
-- **Elder Web UI**: http://localhost:3005
-- **Elder API**: http://localhost:4000
-- **API Docs**: http://localhost:4000/api/docs
-
-### Docker Deployment
-
-```bash
-# Start all services
-docker compose up -d
-
-# Check health
-curl http://localhost:4000/healthz
-```
-
-### Kubernetes Deployment
+### Kubernetes Deployment (Recommended)
 
 Elder supports deployment to Kubernetes clusters (MicroK8s, kind, k3s, or standard Kubernetes) using Helm.
 
@@ -426,10 +405,17 @@ ADMIN_EMAIL=admin@example.com
 │  Flask REST │ gRPC Server │ WebSocket                   │
 │  JWT Auth │ RBAC │ Rate Limiting                        │
 └─────────────────────────────────────────────────────────┘
+              │                        │
+┌─────────────────────────┐  ┌────────────────────────────┐
+│     Worker Service      │  │     Scanner Service        │
+│  Cloud Discovery Exec   │  │  Network / Banner / SBOM   │
+│  Connector State Sync   │  │  HTTP Screenshot Capture   │
+│  Credential Refresh     │  │  Endpoint Parser           │
+└─────────────────────────┘  └────────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────┐
 │                   Data Layer                            │
-│  PyDAL (PostgreSQL, MySQL/MariaDB Galera, SQLite, etc.)│
+│  PyDAL (PostgreSQL, MySQL/MariaDB Galera, SQLite)       │
 │  Redis/Valkey (Cache, Sessions)                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -437,13 +423,16 @@ ADMIN_EMAIL=admin@example.com
 ### Technology Stack
 
 - **Backend**: Flask (Python 3.13), PyDAL
+- **Worker**: Python background service — cloud discovery, connector sync, credential refresh
+- **Scanner**: Python scanner service — network, SBOM, HTTP screenshot, endpoint parser
 - **Frontend**: React, TypeScript, Vite, Tailwind CSS, ReactFlow
-- **Database**: PostgreSQL (recommended), MySQL/MariaDB Galera, SQLite, Oracle, MSSQL
+- **Database**: PostgreSQL (recommended), MySQL/MariaDB Galera, SQLite
 - **Cache**: Redis / Valkey
 - **APIs**: REST (OpenAPI 3.0), gRPC
 - **Auth**: JWT, SAML, OIDC, OAuth2, LDAP, SCIM 2.0
 - **Connectors**: AWS, GCP, Kubernetes, Okta, LDAP, vCenter, FleetDM, iBoss
 - **Monitoring**: Prometheus, Grafana
+- **Deployment**: Kubernetes (Helm + Kustomize), MicroK8s local dev
 
 ## Scanners & Integrations
 

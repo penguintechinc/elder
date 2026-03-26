@@ -1,3 +1,4 @@
+# TODO: migrate to pip-compile --generate-hashes
 # Elder - Entity Relationship Tracking Application
 # Python 3.12+ required (optimized for 3.12 performance features)
 
@@ -125,6 +126,10 @@ isort==5.13.2
 flake8==7.1.1
 mypy==1.14.0
 pylint==3.3.3
+
+# Security Scanning
+bandit==1.8.3
+pip-audit==2.10.0
 
 # Type Stubs
 types-requests==2.32.0.20241016

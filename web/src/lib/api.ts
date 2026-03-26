@@ -341,31 +341,6 @@ class ApiClient {
     return response.data
   }
 
-  async createEntityType(data: {
-    name: string
-    category: string
-    sub_type?: string
-    description?: string
-    default_metadata?: any
-  }) {
-    const response = await this.client.post('/entity-types', data)
-    return response.data
-  }
-
-  async updateEntityType(id: number, data: Partial<{
-    name: string
-    description: string
-    default_metadata: any
-  }>) {
-    const response = await this.client.put(`/entity-types/${id}`, data)
-    return response.data
-  }
-
-  async deleteEntityType(id: number) {
-    const response = await this.client.delete(`/entity-types/${id}`)
-    return response.data
-  }
-
   // Dependencies
   async getDependencies(params?: {
     page?: number
@@ -399,7 +374,7 @@ class ApiClient {
   }
 
   async bulkDeleteDependencies(ids: number[]) {
-    const response = await this.client.post('/dependencies/bulk-delete', { ids })
+    const response = await this.client.delete('/dependencies/bulk', { data: { ids } })
     return response.data
   }
 
@@ -684,11 +659,6 @@ class ApiClient {
     return response.data
   }
 
-  async closeIssue(id: number) {
-    const response = await this.client.post(`/issues/${id}/close`)
-    return response.data
-  }
-
   // Issue Comments
   async getIssueComments(issueId: number) {
     const response = await this.client.get(`/issues/${issueId}/comments`)
@@ -721,25 +691,19 @@ class ApiClient {
     return response.data
   }
 
-  // Issue Subtasks
-  async getIssueSubtasks(issueId: number) {
-    const response = await this.client.get(`/issues/${issueId}/subtasks`)
-    return response.data
-  }
-
   // Issue Entity Links
   async getIssueEntities(issueId: number) {
-    const response = await this.client.get(`/issues/${issueId}/entities`)
+    const response = await this.client.get(`/issues/${issueId}/links`)
     return response.data
   }
 
   async linkIssueEntity(issueId: number, entityId: number) {
-    const response = await this.client.post(`/issues/${issueId}/entities/${entityId}`)
+    const response = await this.client.post(`/issues/${issueId}/links`, { entity_id: entityId })
     return response.data
   }
 
   async unlinkIssueEntity(issueId: number, entityId: number) {
-    const response = await this.client.delete(`/issues/${issueId}/entities/${entityId}`)
+    const response = await this.client.delete(`/issues/${issueId}/links/by-entity/${entityId}`)
     return response.data
   }
 
@@ -1008,12 +972,12 @@ class ApiClient {
   }
 
   async getSecret(providerId: number, secretName: string, params?: { version?: string }) {
-    const response = await this.client.get(`/secrets/providers/${providerId}/secrets/${secretName}`, { params })
+    const response = await this.client.get(`/secrets/${secretName}`, { params: { ...params, provider_id: providerId } })
     return response.data
   }
 
   async listSecrets(providerId: number) {
-    const response = await this.client.get(`/secrets/providers/${providerId}/secrets`)
+    const response = await this.client.get('/secrets', { params: { provider_id: providerId } })
     return response.data
   }
 
@@ -1055,12 +1019,12 @@ class ApiClient {
   }
 
   async encryptData(providerId: number, keyId: string, data: { plaintext: string; context?: any }) {
-    const response = await this.client.post(`/keys/providers/${providerId}/keys/${keyId}/encrypt`, data)
+    const response = await this.client.post(`/keys/${keyId}/encrypt`, data)
     return response.data
   }
 
   async decryptData(providerId: number, keyId: string, data: { ciphertext: string; context?: any }) {
-    const response = await this.client.post(`/keys/providers/${providerId}/keys/${keyId}/decrypt`, data)
+    const response = await this.client.post(`/keys/${keyId}/decrypt`, data)
     return response.data
   }
 
@@ -1299,22 +1263,22 @@ class ApiClient {
   }
 
   async getBackups(params?: { job_id?: number }) {
-    const response = await this.client.get('/backup/backups', { params })
+    const response = await this.client.get('/backup', { params })
     return response.data
   }
 
   async getBackup(id: number) {
-    const response = await this.client.get(`/backup/backups/${id}`)
+    const response = await this.client.get(`/backup/${id}`)
     return response.data
   }
 
   async deleteBackup(id: number) {
-    const response = await this.client.delete(`/backup/backups/${id}`)
+    const response = await this.client.delete(`/backup/${id}`)
     return response.data
   }
 
   async restoreBackup(id: number, data?: { dry_run?: boolean }) {
-    const response = await this.client.post(`/backup/backups/${id}/restore`, data)
+    const response = await this.client.post(`/backup/${id}/restore`, data)
     return response.data
   }
 
@@ -1608,14 +1572,9 @@ class ApiClient {
 
   // v2.2.0 Enterprise Edition - SSO/SAML/SCIM Configuration
   async getIdPConfigs(tenantId?: number) {
-    const response = await this.client.get('/sso/idp-configs', {
+    const response = await this.client.get('/sso/idp', {
       params: tenantId ? { tenant_id: tenantId } : undefined
     })
-    return response.data
-  }
-
-  async getIdPConfig(id: number) {
-    const response = await this.client.get(`/sso/idp-configs/${id}`)
     return response.data
   }
 
@@ -1632,7 +1591,7 @@ class ApiClient {
     jit_provisioning_enabled?: boolean
     default_role?: string
   }) {
-    const response = await this.client.post('/sso/idp-configs', data)
+    const response = await this.client.post('/sso/idp', data)
     return response.data
   }
 
@@ -1648,27 +1607,27 @@ class ApiClient {
     default_role: string
     is_active: boolean
   }>) {
-    const response = await this.client.put(`/sso/idp-configs/${id}`, data)
+    const response = await this.client.put(`/sso/idp/${id}`, data)
     return response.data
   }
 
   async deleteIdPConfig(id: number) {
-    const response = await this.client.delete(`/sso/idp-configs/${id}`)
+    const response = await this.client.delete(`/sso/idp/${id}`)
     return response.data
   }
 
   async getSCIMConfig(tenantId: number) {
-    const response = await this.client.get(`/sso/scim/${tenantId}`)
+    const response = await this.client.get(`/sso/scim/config/${tenantId}`)
     return response.data
   }
 
   async createSCIMConfig(tenantId: number, endpointUrl?: string) {
-    const response = await this.client.post(`/sso/scim/${tenantId}`, { endpoint_url: endpointUrl })
+    const response = await this.client.post('/sso/scim/config', { tenant_id: tenantId, endpoint_url: endpointUrl })
     return response.data
   }
 
   async regenerateSCIMToken(tenantId: number) {
-    const response = await this.client.post(`/sso/scim/${tenantId}/regenerate-token`)
+    const response = await this.client.post(`/sso/scim/config/${tenantId}/regenerate-token`)
     return response.data
   }
 
@@ -1694,12 +1653,12 @@ class ApiClient {
     limit?: number
     offset?: number
   }) {
-    const response = await this.client.get('/audit/logs', { params })
+    const response = await this.client.get('/audit-enterprise/logs', { params })
     return response.data
   }
 
   async getComplianceReport(tenantId: number, reportType: string, startDate: string, endDate: string) {
-    const response = await this.client.get('/audit/reports', {
+    const response = await this.client.get('/audit-enterprise/reports/compliance', {
       params: {
         tenant_id: tenantId,
         report_type: reportType,
@@ -1711,12 +1670,12 @@ class ApiClient {
   }
 
   async getAuditRetentionPolicy(tenantId: number) {
-    const response = await this.client.get(`/audit/retention/${tenantId}`)
+    const response = await this.client.get('/audit-enterprise/retention', { params: { tenant_id: tenantId } })
     return response.data
   }
 
   async cleanupAuditLogs(tenantId: number) {
-    const response = await this.client.post(`/audit/cleanup/${tenantId}`)
+    const response = await this.client.post('/audit-enterprise/cleanup', { tenant_id: tenantId })
     return response.data
   }
 
@@ -1726,7 +1685,7 @@ class ApiClient {
     end_date?: string
     format?: 'json' | 'csv'
   }) {
-    const response = await this.client.get('/audit/export', { params })
+    const response = await this.client.get('/audit-enterprise/export', { params })
     return response.data
   }
 
@@ -2159,12 +2118,12 @@ class ApiClient {
 
   // License Policies
   async getLicensePolicies(params?: { page?: number; per_page?: number; search?: string }) {
-    const response = await this.client.get('/admin/license-policies', { params })
+    const response = await this.client.get('/license-policies', { params })
     return response.data
   }
 
   async getLicensePolicy(id: number) {
-    const response = await this.client.get(`/admin/license-policies/${id}`)
+    const response = await this.client.get(`/license-policies/${id}`)
     return response.data
   }
 
@@ -2175,7 +2134,7 @@ class ApiClient {
     denied_patterns?: string
     is_active?: boolean
   }) {
-    const response = await this.client.post('/admin/license-policies', data)
+    const response = await this.client.post('/license-policies', data)
     return response.data
   }
 
@@ -2186,12 +2145,12 @@ class ApiClient {
     denied_patterns: string
     is_active: boolean
   }>) {
-    const response = await this.client.put(`/admin/license-policies/${id}`, data)
+    const response = await this.client.put(`/license-policies/${id}`, data)
     return response.data
   }
 
   async deleteLicensePolicy(id: number) {
-    const response = await this.client.delete(`/admin/license-policies/${id}`)
+    const response = await this.client.delete(`/license-policies/${id}`)
     return response.data
   }
 
@@ -2213,7 +2172,7 @@ class ApiClient {
   }
 
   async updateVulnerabilityStatus(id: number, data: Partial<{ status: string }>) {
-    const response = await this.client.patch(`/vulnerabilities/${id}`, data)
+    const response = await this.client.patch(`/vulnerabilities/component-vulnerabilities/${id}`, data)
     return response.data
   }
 
@@ -2347,12 +2306,12 @@ class ApiClient {
     override_end: string
     reason: string
   }>) {
-    const response = await this.client.put(`/on-call/rotations/${rotationId}/overrides/${overrideId}`, data)
+    const response = await this.client.put(`/on-call/rotations/overrides/${overrideId}`, data)
     return response.data
   }
 
   async deleteOnCallOverride(rotationId: number, overrideId: number) {
-    const response = await this.client.delete(`/on-call/rotations/${rotationId}/overrides/${overrideId}`)
+    const response = await this.client.delete(`/on-call/rotations/overrides/${overrideId}`)
     return response.data
   }
 
@@ -2374,11 +2333,11 @@ class ApiClient {
     rotation_id?: number
     search?: string
   }) {
-    const response = await this.client.get('/on-call/escalation-policies', { params })
+    const response = await this.client.get(`/on-call/rotations/${params?.rotation_id || 1}/escalations`, { params })
     return response.data
   }
 
-  async createEscalationPolicy(data: {
+  async createEscalationPolicy(rotationId: number, data: {
     name: string
     organization_id: number
     description?: string
@@ -2389,7 +2348,7 @@ class ApiClient {
     }>
     enabled?: boolean
   }) {
-    const response = await this.client.post('/on-call/escalation-policies', data)
+    const response = await this.client.post(`/on-call/rotations/${rotationId}/escalations`, data)
     return response.data
   }
 
@@ -2403,12 +2362,12 @@ class ApiClient {
     }>
     enabled: boolean
   }>) {
-    const response = await this.client.put(`/on-call/escalation-policies/${id}`, data)
+    const response = await this.client.put(`/on-call/rotations/escalations/${id}`, data)
     return response.data
   }
 
   async deleteEscalationPolicy(id: number) {
-    const response = await this.client.delete(`/on-call/escalation-policies/${id}`)
+    const response = await this.client.delete(`/on-call/rotations/escalations/${id}`)
     return response.data
   }
 

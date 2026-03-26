@@ -201,6 +201,35 @@ def init_db(app):
     # Attach to Flask app for use in endpoints
     app.db = db
 
+    # Register per-request teardown to return connections to pool cleanly.
+    # Without this, psycopg2 cursors go stale between requests — the pool hands
+    # out a connection whose cursor is already closed, causing "cursor already
+    # closed" errors on the next db.table[id] lookup.
+    def _teardown_db(exception=None):
+        _db = app.db
+        try:
+            if exception:
+                _db.rollback()
+            else:
+                _db.commit()
+        except Exception as e:
+            logger.debug(f"DB teardown error: {e}")
+            try:
+                _db.rollback()
+            except Exception:
+                pass
+        # Handle separate read replica if configured
+        if hasattr(app, "db_read") and app.db_read is not _db:
+            try:
+                if exception:
+                    app.db_read.rollback()
+                else:
+                    app.db_read.commit()
+            except Exception as e:
+                logger.debug(f"DB read replica teardown error: {e}")
+
+    app.teardown_appcontext(_teardown_db)
+
     # Initialize read replica connection if configured
     read_url = app.config.get("DATABASE_READ_URL") or os.getenv("DATABASE_READ_URL")
     if read_url and read_url.strip():

@@ -26,7 +26,7 @@ NC = '\033[0m'  # No Color
 class ValidationTester:
     """API validation test suite for Elder."""
 
-    def __init__(self, base_url: str, verify_ssl: bool = True, verbose: bool = False):
+    def __init__(self, base_url: str, verify_ssl: bool = True, verbose: bool = False, host_header: str = ''):
         self.base_url = base_url.rstrip('/')
         self.verify_ssl = verify_ssl
         self.verbose = verbose
@@ -40,6 +40,8 @@ class ValidationTester:
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        if host_header:
+            self.session.headers.update({'Host': host_header})
 
     def log_info(self, msg: str):
         print(f"{BLUE}[INFO]{NC} {msg}")
@@ -88,8 +90,8 @@ class ValidationTester:
         self.log_info("Authenticating...")
         resp, err = self._request(
             'POST',
-            '/api/v1/auth/login',
-            json={'username': username, 'password': password}
+            '/api/v1/portal-auth/login',
+            json={'email': username, 'password': password}
         )
 
         if err or not resp or resp.status_code != 200:
@@ -110,18 +112,18 @@ class ValidationTester:
         self.log_info("Testing authentication validation...")
 
         test_cases = [
-            {'data': {'username': '', 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'Empty username'},
-            {'data': {'username': 'test', 'password': ''}, 'expected': [400, 401, 422], 'name': 'Empty password'},
-            {'data': {'username': 'nonexistent@test.com', 'password': 'wrong'}, 'expected': [401], 'name': 'Invalid credentials'},
+            {'data': {'email': '', 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'Empty email'},
+            {'data': {'email': 'test', 'password': ''}, 'expected': [400, 401, 422], 'name': 'Empty password'},
+            {'data': {'email': 'nonexistent@test.com', 'password': 'wrong'}, 'expected': [401], 'name': 'Invalid credentials'},
             {'data': {}, 'expected': [400, 422], 'name': 'Missing fields'},
-            {'data': {'username': 'x' * 1000, 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'Extremely long username'},
-            {'data': {'username': "admin'; DROP TABLE users; --", 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'SQL injection attempt'},
-            {'data': {'username': '<script>alert(1)</script>', 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'XSS attempt'},
+            {'data': {'email': 'x' * 1000, 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'Extremely long email'},
+            {'data': {'email': "admin'; DROP TABLE users; --", 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'SQL injection attempt'},
+            {'data': {'email': '<script>alert(1)</script>', 'password': 'test'}, 'expected': [400, 401, 422], 'name': 'XSS attempt'},
         ]
 
         passed = 0
         for test_case in test_cases:
-            resp, err = self._request('POST', '/api/v1/auth/login', json=test_case['data'])
+            resp, err = self._request('POST', '/api/v1/portal-auth/login', json=test_case['data'])
             if resp is not None and resp.status_code in test_case['expected']:
                 self.log_success(f"{test_case['name']}: Rejected with {resp.status_code}")
                 passed += 1
@@ -397,13 +399,16 @@ def main():
                         help='Disable SSL certificate verification')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose output')
+    parser.add_argument('--host-header', default=os.getenv('HOST_HEADER', ''),
+                        help='Override Host header (for bypass URL routing, e.g. beta via dal2 LB)')
 
     args = parser.parse_args()
 
     tester = ValidationTester(
         base_url=args.url,
         verify_ssl=not args.no_verify_ssl,
-        verbose=args.verbose
+        verbose=args.verbose,
+        host_header=args.host_header
     )
 
     if not tester.authenticate(args.username, args.password):

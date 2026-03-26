@@ -1130,6 +1130,13 @@ def define_all_tables(db):
         Field(
             "village_id", "string", length=32, unique=True, default=generate_village_id
         ),
+        Field(
+            "unique_id",
+            "big-integer",
+            unique=True,
+            notnull=True,
+            default=lambda: __import__("secrets").randbits(63),
+        ),
         migrate=False,
     )
 
@@ -1179,6 +1186,11 @@ def define_all_tables(db):
         Field("description", "string", length=512),
         Field(
             "created_at",
+            "datetime",
+            default=lambda: datetime.datetime.now(datetime.timezone.utc),
+        ),
+        Field(
+            "updated_at",
             "datetime",
             default=lambda: datetime.datetime.now(datetime.timezone.utc),
         ),
@@ -1791,8 +1803,8 @@ def define_all_tables(db):
     # Metadata Fields table - uses generic resource_type/resource_id pattern
     db.define_table(
         "metadata_fields",
-        Field("key", "string", length=255, notnull=True, requires=IS_NOT_EMPTY()),
-        Field("value", "text"),
+        Field("field_key", "string", length=255, notnull=True, requires=IS_NOT_EMPTY()),
+        Field("field_value", "text"),
         Field("field_type", "string", length=50, notnull=True, default="string"),
         Field("is_system", "boolean", default=False, notnull=True),
         Field("resource_type", "string", length=50, notnull=True),
@@ -2048,7 +2060,7 @@ def define_all_tables(db):
         Field("vendor", "string", length=255),  # Software vendor
         Field("support_contact", "string", length=255),  # Vendor support contact
         Field("notes", "text"),
-        Field("tags", "list:string"),
+        Field("tags", "json"),
         Field("is_active", "boolean", default=True, notnull=True),
         Field(
             "created_at",

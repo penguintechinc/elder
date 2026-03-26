@@ -1,9 +1,13 @@
 const puppeteer = require('puppeteer');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
 
-const BASE_URL = 'http://localhost:3005';
-const OUTPUT_DIR = '/home/penguin/code/Elder/docs/screenshots';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3005';
+const API_URL = process.env.API_URL || 'http://localhost:4000';
+const OUTPUT_DIR = process.env.OUTPUT_DIR || '/home/penguin/code/elder/docs/screenshots';
+const TEST_EMAIL = process.env.ELDER_TEST_EMAIL || 'admin@localhost.local';
+const TEST_PASSWORD = process.env.ELDER_TEST_PASSWORD || 'admin123';
 
 // All pages to capture - comprehensive list
 const pages = [
@@ -68,49 +72,50 @@ async function captureScreenshots() {
   await page.screenshot({ path: path.join(OUTPUT_DIR, 'login.png') });
   console.log('  Saved login.png');
 
-  // Perform actual login through UI
-  console.log('Logging in...');
-
-  // Find and fill login form - email field, password field, tenant field
-  const inputs = await page.$$('input');
-  console.log(`Found ${inputs.length} input fields`);
-  if (inputs.length >= 3) {
-    await inputs[0].type('admin@localhost.local');  // Email field
-    await inputs[1].type('admin123');          // Password field
-    // inputs[2] is tenant field, already has default "Global" so we leave it
-  } else if (inputs.length >= 2) {
-    await inputs[0].type('admin@localhost.local');  // Email field
-    await inputs[1].type('admin123');          // Password field
-  }
-
-  // Click submit button
-  await page.click('button[type="submit"]');
-
-  // Wait for navigation to complete
-  try {
-    await page.waitForFunction(
-      () => !window.location.pathname.includes('/login'),
-      { timeout: 30000 }
-    );
-  } catch (e) {
-    console.log('Navigation timeout - checking if login succeeded anyway');
-  }
-  await sleep(2000);
-  console.log('Current URL after login:', page.url());
-
-  // Verify we're logged in by checking for auth token in localStorage
-  const isLoggedIn = await page.evaluate(() => {
-    return localStorage.getItem('token') !== null ||
-           localStorage.getItem('access_token') !== null ||
-           !window.location.pathname.includes('/login');
+  // Authenticate via API and inject token directly (bypasses UI login form)
+  console.log(`Authenticating as ${TEST_EMAIL}...`);
+  const token = await new Promise((resolve) => {
+    const body = JSON.stringify({ email: TEST_EMAIL, password: TEST_PASSWORD });
+    const opts = {
+      hostname: new URL(API_URL).hostname,
+      port: new URL(API_URL).port || 80,
+      path: '/api/v1/portal-auth/login',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    };
+    const req = http.request(opts, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          resolve(parsed.token || null);
+        } catch {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.write(body);
+    req.end();
   });
 
-  if (!isLoggedIn) {
-    console.error('Login failed! Cannot capture authenticated pages.');
+  if (!token) {
+    console.error(`Login failed — could not get token from ${API_URL}. Cannot capture authenticated pages.`);
     await browser.close();
     return;
   }
-  console.log('Login successful!');
+  console.log('  Got JWT token. Injecting into browser...');
+
+  // Navigate to the app and inject the token into localStorage
+  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.evaluate((t) => {
+    localStorage.setItem('elder_token', t);
+  }, token);
+  // Navigate to dashboard (forces React Router to re-render with auth state)
+  await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await sleep(1500);
+  console.log('  Login successful — current URL:', page.url());
 
   // Capture all other pages
   let successCount = 0;

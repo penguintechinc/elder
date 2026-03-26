@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.5] - 2026-03-25
+
+### 🐛 Bug Fixes
+
+#### PyDAL Stale Cursor — 401 on All `@login_required` Endpoints
+- **Fixed**: All `@login_required` endpoints returned `401 Authentication required` after the first request in a given connection
+- **Root cause**: `init_db()` created a single `app.db = DAL(..., pool_size=10)` with no `teardown_appcontext` handler; psycopg2 closed the cursor after the first transaction and PyDAL's pool returned the stale connection to the next request; `get_current_user()` failed silently → `None` → 401
+- **Solution**: Added `teardown_appcontext(_teardown_db)` in `init_db()` — calls `db.commit()` (or `db.rollback()`) at end of each request to reset cursor state cleanly
+
+#### Issue Labels `updated_at` Missing Column
+- **Fixed**: `FieldNotFound: updated_at` error when listing issues that have labels attached
+- **Root cause**: `issue_labels` table defined in PyDAL without `updated_at`, but queries joining through `issue_labels` expected the column
+- **Solution**: Added `updated_at` field to `issue_labels` PyDAL table definition and SQLAlchemy model
+
+### ✨ Improvements
+
+#### penguin-libs Migration
+- **Replaced**: Local `shared/react_libs` copy with published `@penguintechinc/react-libs` npm package
+- **Integrated**: `SanitizedLogger` from `penguin-utils` across API and Scanner services — replaces bare `print()` and `logging.getLogger()` calls with sanitized, structured output
+- **Removed**: `shared/react_libs/` directory; all consumers updated to package imports
+
+#### E2E Test Suite (Playwright)
+- **Fixed CORS**: `loginAndSetToken` rewritten to use Playwright's Node.js-side `request.newContext()` instead of `page.evaluate()` fetch — eliminates cross-origin failures when browser origin and API port differ
+- **Fixed port conflict**: API port-forward now uses dynamic port selection via `ss` to avoid conflicts with docker-proxy (which binds `0.0.0.0:4000` for the API container)
+- **Graceful skip**: Enterprise-gated UI elements (SSO Configuration and Tenants create buttons) now detected and skipped with `test.skip()` instead of timing out after 45s
+- **Result**: 40 passing / 3 intentional skips / 0 failures (was 20 pass / 23 skip)
+
+#### Kubernetes Manifests
+- **Added**: Complete Helm + Kustomize overlays for alpha (`elder.localhost.local`) and beta (`elder.penguintech.cloud`) environments
+- **Added**: `scripts/smoke-test.sh` with alpha (`--alpha`) and beta (`--beta`) modes; 9-phase test including Playwright browser tests
+- **Added**: `scripts/e2e-test-beta.sh` for full beta E2E validation (pod health, ingress, API suite, Playwright)
+
+---
+
+## [3.1.4] - 2026-03-10
+
+### 🐛 Bug Fixes
+
+#### Beta Deployment Blockers
+- **Fixed**: `ValueError: DATABASE_URL` — individual `DB_HOST`/`DB_USER`/etc. env vars were not sufficient; added explicit `DATABASE_URL` construction in `values-beta.yaml`
+- **Fixed**: `StorageClass "fast-ssd" not found` — dal2 cluster only has `longhorn` and `ceph-rbd`; updated all PVC storage class references
+- **Fixed**: `imagePullSecrets` — removed reference to non-existent `penguintech-registry` secret; app images now pulled from `ghcr.io` via `ghcr-pull-secret`
+- **Fixed**: Postgres init failure on fresh PVC — added `PGDATA: /var/lib/postgresql/data/pgdata` to avoid `lost+found` conflict
+- **Fixed**: REDIS_URL hostname — updated to `elder-redis` from bare `redis`
+
+#### SQLAlchemy ↔ PyDAL Model Alignment
+- **Fixed**: Schema drift between SQLAlchemy models and PyDAL table definitions causing runtime query failures
+- **Solution**: Audited all 67 tables; aligned column names, types, and constraints 1:1 between both layers
+
+#### Startup Crash on Fresh Database (Issues #62, #63)
+- **Fixed**: Application crashed on first startup against an empty database
+- **Root cause**: Alembic init-container and application initialization ordering race; `create_all()` called before tables existed
+- **Solution**: Replaced auto-Alembic startup call with `Base.metadata.create_all()` (idempotent); Alembic migrations remain manual via `scripts/migrate.sh`
+
+### ✨ New Features
+
+#### SearchableSelect for Dependencies
+- **Added**: `SearchableSelect` component with debounced server-side search for the Dependencies page — scales to large inventories without loading all resources into the UI
+- **Moved**: Dependencies from Infrastructure submenu to top-level navigation
+
+#### Auto-Refresh for Live Data Pages
+- **Added**: 30-second polling auto-refresh on IAM, IPAM, Tenants, Vulnerabilities, and Backups pages to surface live discovery and sync results without manual reload
+
+---
+
 ## [3.1.1] - 2026-03-02
 
 ### 🐛 Bug Fixes

@@ -1,131 +1,107 @@
 # Elder - Entity Relationship Tracking Application Makefile
-# Provides common development tasks for Elder
 
-.PHONY: help setup dev test build clean lint format docker deploy
+.PHONY: help \
+        setup setup-env setup-python \
+        dev dev-api dev-stop generate-grpc \
+        test test-unit test-integration test-e2e test-functional test-security test-coverage \
+        smoke-test seed-mock-data screenshots \
+        lint format format-check \
+        test-ui test-ui-headed test-ui-debug \
+        build docker-build docker-push docker-scan \
+        db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
+        deploy-alpha deploy-beta \
+        helm-lint helm-template \
+        license-validate license-check-features \
+        clean clean-docker \
+        version version-bump-patch version-bump-minor version-bump-major \
+        health pre-commit
 
-# Default target
 .DEFAULT_GOAL := help
 
-# Variables
-PROJECT_NAME := elder
-VERSION := $(shell cat .version 2>/dev/null || echo "0.1.0")
+# ── Variables ──────────────────────────────────────────────────────────────
+PROJECT_NAME    := elder
+VERSION         := $(shell cat .version 2>/dev/null || echo "0.0.0")
 DOCKER_REGISTRY := ghcr.io
-DOCKER_ORG := penguintechinc
-PYTHON_VERSION := 3.13
+DOCKER_ORG      := penguintechinc
+HELM_DIR        := k8s/helm/$(PROJECT_NAME)
+K8S_NAMESPACE   := $(PROJECT_NAME)
+VENV            := .venv
+PYTHON          := $(VENV)/bin/python3
+PIP             := $(VENV)/bin/pip
 
-# Colors for output
-RED := \033[31m
-GREEN := \033[32m
+# Colors
+RED    := \033[31m
+GREEN  := \033[32m
 YELLOW := \033[33m
-BLUE := \033[34m
-RESET := \033[0m
+BLUE   := \033[34m
+RESET  := \033[0m
 
-# Help target
+# ── Help ───────────────────────────────────────────────────────────────────
 help: ## Show this help message
 	@echo "$(BLUE)Elder - Entity Relationship Tracking Application$(RESET)"
+	@echo "$(YELLOW)Usage: make <target>$(RESET)"
 	@echo ""
-	@echo "$(GREEN)Setup Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Setup/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)Development Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Development/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)Testing Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Testing/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)Database Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Database/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)Docker Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /Docker/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo ""
-	@echo "$(GREEN)License Commands:$(RESET)"
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / && /License/ {printf "  $(YELLOW)%-25s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-28s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# Setup Commands
-setup: ## Setup - Install dependencies and initialize the project
-	@echo "$(BLUE)Setting up Elder...$(RESET)"
-	@$(MAKE) setup-env
-	@$(MAKE) setup-python
-	@echo "$(GREEN)Setup complete!$(RESET)"
-	@echo "$(YELLOW)Next steps:$(RESET)"
-	@echo "  1. Edit .env with your configuration"
-	@echo "  2. Run 'make dev' to start development environment"
-	@echo "  3. Run 'make db-migrate' to initialize database"
+# ── Setup ──────────────────────────────────────────────────────────────────
+setup: setup-env setup-python ## Install all dependencies and initialize the project
+	@echo "$(GREEN)Setup complete! Edit .env, then run 'make dev'$(RESET)"
 
-setup-env: ## Setup - Create environment file from template
+setup-env: ## Create .env from template (no-op if already exists)
 	@if [ ! -f .env ]; then \
 		echo "$(YELLOW)Creating .env file...$(RESET)"; \
-		echo "# Elder Environment Configuration" > .env; \
-		echo "FLASK_ENV=development" >> .env; \
-		echo "SECRET_KEY=dev-secret-key-change-in-production" >> .env; \
-		echo "" >> .env; \
-		echo "# Database" >> .env; \
-		echo "POSTGRES_DB=elder" >> .env; \
-		echo "POSTGRES_USER=elder" >> .env; \
-		echo "POSTGRES_PASSWORD=elder_dev_password" >> .env; \
-		echo "DATABASE_URL=postgresql://elder:elder_dev_password@localhost:5432/elder" >> .env; \
-		echo "" >> .env; \
-		echo "# Redis" >> .env; \
-		echo "REDIS_PASSWORD=elder_redis_password" >> .env; \
-		echo "REDIS_URL=redis://:elder_redis_password@localhost:6379/0" >> .env; \
-		echo "" >> .env; \
-		echo "# Admin User (optional)" >> .env; \
-		echo "ADMIN_USERNAME=admin" >> .env; \
-		echo "ADMIN_PASSWORD=" >> .env; \
-		echo "ADMIN_EMAIL=admin@localhost.local" >> .env; \
-		echo "" >> .env; \
-		echo "# License (optional)" >> .env; \
-		echo "LICENSE_KEY=" >> .env; \
-		echo "$(GREEN).env file created!$(RESET)"; \
+		printf '# Elder Environment Configuration\n' > .env; \
+		printf 'FLASK_ENV=development\n' >> .env; \
+		printf 'SECRET_KEY=dev-secret-key-change-in-production\n' >> .env; \
+		printf '\n# Database\n' >> .env; \
+		printf 'POSTGRES_DB=elder\n' >> .env; \
+		printf 'POSTGRES_USER=elder\n' >> .env; \
+		printf 'POSTGRES_PASSWORD=elder_dev_password\n' >> .env; \
+		printf 'DATABASE_URL=postgresql://elder:elder_dev_password@localhost:5432/elder\n' >> .env; \
+		printf '\n# Redis\n' >> .env; \
+		printf 'REDIS_PASSWORD=elder_redis_password\n' >> .env; \
+		printf 'REDIS_URL=redis://:elder_redis_password@localhost:6379/0\n' >> .env; \
+		printf '\n# Admin User\n' >> .env; \
+		printf 'ADMIN_EMAIL=admin@localhost.local\n' >> .env; \
+		printf 'ADMIN_PASSWORD=\n' >> .env; \
+		printf '\n# License (optional)\n' >> .env; \
+		printf 'LICENSE_KEY=\n' >> .env; \
+		echo "$(GREEN).env created$(RESET)"; \
 	else \
-		echo "$(YELLOW).env file already exists$(RESET)"; \
+		echo "$(YELLOW).env already exists$(RESET)"; \
 	fi
 
-setup-python: ## Setup - Install Python dependencies
-	@echo "$(BLUE)Setting up Python dependencies...$(RESET)"
-	@python3 --version || (echo "$(RED)Python $(PYTHON_VERSION) not installed$(RESET)" && exit 1)
-	@pip install --upgrade pip
-	@pip install -r requirements.txt
-	@echo "$(GREEN)Python dependencies installed!$(RESET)"
+setup-python: ## Create .venv and install Python dependencies
+	@echo "$(BLUE)Setting up Python virtualenv...$(RESET)"
+	@python3 --version
+	@python3 -m venv $(VENV)
+	@$(PIP) install --upgrade pip --quiet
+	@$(PIP) install -r requirements.txt --quiet
+	@echo "$(GREEN)Python dependencies installed into $(VENV)/$(RESET)"
 
-# Development Commands
-dev: ## Development - Start development environment
-	@echo "$(BLUE)Starting Elder development environment...$(RESET)"
-	@docker-compose up -d postgres redis
-	@echo "$(YELLOW)Waiting for services to be ready...$(RESET)"
-	@sleep 5
-	@echo "$(GREEN)Services are ready!$(RESET)"
-	@echo "$(YELLOW)Run 'make dev-api' to start the Flask API$(RESET)"
+# ── Development ────────────────────────────────────────────────────────────
+dev: ## Start backing services (postgres + redis) for local Flask development
+	@echo "$(BLUE)Starting backing services...$(RESET)"
+	@docker run -d --name elder-postgres -p 5432:5432 \
+		-e POSTGRES_DB=elder -e POSTGRES_USER=elder \
+		-e POSTGRES_PASSWORD=elder_dev_password \
+		-e PGDATA=/var/lib/postgresql/data/pgdata \
+		postgres:16-bookworm 2>/dev/null || docker start elder-postgres
+	@docker run -d --name elder-redis -p 6379:6379 \
+		redis:7-bookworm redis-server --requirepass elder_redis_password \
+		2>/dev/null || docker start elder-redis
+	@echo "$(GREEN)postgres:5432 and redis:6379 ready — run 'make dev-api' to start Flask$(RESET)"
 
-dev-api: ## Development - Start Flask API locally
-	@echo "$(BLUE)Starting Elder API...$(RESET)"
-	@export FLASK_APP=apps.api.main:create_app && \
-	export FLASK_ENV=development && \
-	flask run --host=0.0.0.0 --port=5000
+dev-api: ## Start Flask API (requires 'make dev' backing services)
+	@FLASK_APP=apps.api.main:create_app FLASK_ENV=development \
+		$(PYTHON) -m flask run --host=0.0.0.0 --port=5000
 
-dev-all: ## Development - Start all services with docker-compose
-	@echo "$(BLUE)Starting all Elder services...$(RESET)"
-	@docker-compose up -d
-	@echo "$(GREEN)All services started!$(RESET)"
-	@echo "$(YELLOW)API: http://localhost:5000$(RESET)"
-	@echo "$(YELLOW)Prometheus: http://localhost:9090$(RESET)"
-	@echo "$(YELLOW)Grafana: http://localhost:3001$(RESET)"
+dev-stop: ## Stop local backing services
+	@docker stop elder-postgres elder-redis 2>/dev/null || true
+	@echo "$(GREEN)Backing services stopped$(RESET)"
 
-dev-logs: ## Development - Show docker-compose logs
-	@docker-compose logs -f
-
-dev-stop: ## Development - Stop development environment
-	@echo "$(BLUE)Stopping Elder development environment...$(RESET)"
-	@docker-compose down
-	@echo "$(GREEN)Development environment stopped$(RESET)"
-
-dev-restart: ## Development - Restart development environment
-	@$(MAKE) dev-stop
-	@$(MAKE) dev-all
-
-generate-grpc: ## Development - Generate Python gRPC code from protobuf schemas
-	@echo "$(BLUE)Generating Python gRPC code...$(RESET)"
+generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
+	@echo "$(BLUE)Generating gRPC stubs...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim bash -c "\
 		pip install --quiet grpcio-tools protobuf && \
 		python3 -m grpc_tools.protoc \
@@ -135,212 +111,239 @@ generate-grpc: ## Development - Generate Python gRPC code from protobuf schemas
 			apps/api/grpc/proto/*.proto && \
 		cd apps/api/grpc/generated && \
 		for file in *.py; do \
-			sed -i 's/^import \\([a-z_]*\\)_pb2/from . import \\1_pb2/g' \$\$file 2>/dev/null || true; \
+			sed -i 's/^import \([a-z_]*\)_pb2/from . import \1_pb2/g' \$\$file 2>/dev/null || true; \
 		done"
 	@touch apps/api/grpc/generated/__init__.py
-	@echo "$(GREEN)✓ gRPC code generated successfully!$(RESET)"
+	@echo "$(GREEN)gRPC stubs generated$(RESET)"
 
-# Testing Commands
-test: ## Testing - Run all tests
-	@echo "$(BLUE)Running Elder tests...$(RESET)"
-	@pytest tests/ -v --cov=apps --cov-report=term-missing
+# ── Testing ────────────────────────────────────────────────────────────────
+test: lint test-unit test-integration test-functional test-security ## Run all tests (lint + unit + integration + functional + security)
+	@echo "$(GREEN)All tests passed$(RESET)"
 
-test-unit: ## Testing - Run unit tests only
+smoke-test: ## Run smoke tests — build, API health, page loads (<2 min, pre-commit)
+	@bash scripts/smoke-test.sh
+
+test-unit: ## Run unit tests
 	@echo "$(BLUE)Running unit tests...$(RESET)"
-	@pytest tests/unit/ -v
+	@$(PYTHON) -m pytest tests/unit/ -v
 
-test-integration: ## Testing - Run integration tests only
+test-integration: ## Run integration tests
 	@echo "$(BLUE)Running integration tests...$(RESET)"
-	@pytest tests/integration/ -v
+	@$(PYTHON) -m pytest tests/integration/ -v
 
-test-coverage: ## Testing - Generate coverage report
-	@echo "$(BLUE)Generating coverage report...$(RESET)"
-	@pytest tests/ --cov=apps --cov-report=html
-	@echo "$(GREEN)Coverage report generated in htmlcov/$(RESET)"
+test-e2e: ## Run E2E tests against local alpha cluster
+	@bash scripts/e2e-test-alpha.sh
 
-test-ui: ## Testing - Run Playwright web UI tests (headless)
-	@echo "$(BLUE)Running Playwright web UI tests...$(RESET)"
+test-functional: ## Run functional API tests against running services
+	@echo "$(BLUE)Running API functional tests...$(RESET)"
+	@bash scripts/test-api.sh
+	@$(PYTHON) scripts/test-rest-api.py
+	@$(PYTHON) scripts/test-api-validation.py
+
+test-security: ## Run all security scans (bandit, pip-audit, npm audit, hadolint, gitleaks, trufflehog, semgrep, trivy)
+	@echo "$(BLUE)[1/8] bandit — Python SAST...$(RESET)"
+	@$(PYTHON) -m bandit -r apps/ shared/ -q
+	@echo "$(BLUE)[2/8] pip-audit — Python dependency CVEs...$(RESET)"
+	@$(PYTHON) -m pip_audit -r requirements.txt --progress-spinner off
+	@echo "$(BLUE)[3/8] npm audit — Node dependency CVEs...$(RESET)"
+	@cd web && npm audit --audit-level=high
+	@echo "$(BLUE)[4/8] hadolint — Dockerfile linting...$(RESET)"
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/api/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < web/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/scanner/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/worker/Dockerfile
+	@echo "$(BLUE)[5/8] gitleaks — secret scan (git history)...$(RESET)"
+	@docker run --rm -v $(PWD):/repo \
+		zricethezav/gitleaks:v8.21.2 detect --source /repo --no-git --quiet
+	@echo "$(BLUE)[6/8] trufflehog — deep secret scan...$(RESET)"
+	@docker run --rm -v $(PWD):/repo \
+		trufflesecurity/trufflehog:3.88.1 filesystem /repo --only-verified --no-update --quiet
+	@echo "$(BLUE)[7/8] semgrep — SAST + OWASP Top 10...$(RESET)"
+	@docker run --rm -v $(PWD):/src \
+		semgrep/semgrep:1.107.0 semgrep scan /src \
+		--config p/security-audit --config p/secrets --config p/owasp-top-ten \
+		--quiet --error
+	@echo "$(BLUE)[8/8] trivy — filesystem CVE scan...$(RESET)"
+	@docker run --rm -v $(PWD):/project \
+		aquasec/trivy:0.69.3 fs /project --exit-code 1 --severity HIGH,CRITICAL --quiet
+	@echo "$(GREEN)All security scans passed$(RESET)"
+
+test-coverage: ## Generate HTML coverage report (htmlcov/)
+	@$(PYTHON) -m pytest tests/ --cov=apps --cov-report=html --cov-report=term-missing
+	@echo "$(GREEN)Coverage report in htmlcov/$(RESET)"
+
+test-ui: ## Run Playwright web UI tests (headless)
 	@cd web && npm run test:e2e
-	@echo "$(GREEN)Web UI tests complete!$(RESET)"
 
-test-ui-headed: ## Testing - Run Playwright web UI tests with UI
-	@echo "$(BLUE)Running Playwright web UI tests (headed mode)...$(RESET)"
+test-ui-headed: ## Run Playwright web UI tests with visible browser
 	@cd web && npm run test:e2e:ui
-	@echo "$(GREEN)Web UI tests complete! View results in playwright report.$(RESET)"
 
-test-ui-debug: ## Testing - Run Playwright with debug mode
-	@echo "$(BLUE)Running Playwright in debug mode...$(RESET)"
+test-ui-debug: ## Run Playwright in step-through debug mode
 	@cd web && npm run test:e2e:debug
-	@echo "$(GREEN)Debug session ended$(RESET)"
 
-# Code Quality Commands
-lint: ## Testing - Run linting checks
-	@echo "$(BLUE)Running linters...$(RESET)"
-	@flake8 apps/ shared/
-	@mypy apps/ shared/
-	@echo "$(GREEN)Linting complete!$(RESET)"
+seed-mock-data: ## Seed 3-4 realistic mock items per feature for local testing
+	@echo "$(BLUE)Seeding mock data...$(RESET)"
+	@$(PYTHON) scripts/seed_mock_data.py
+	@echo "$(GREEN)Mock data seeded$(RESET)"
 
-format: ## Testing - Format code with black and isort
-	@echo "$(BLUE)Formatting code...$(RESET)"
-	@black apps/ shared/ tests/
-	@isort apps/ shared/ tests/
-	@echo "$(GREEN)Code formatted!$(RESET)"
+screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
+	@node scripts/capture-screenshots.cjs
 
-format-check: ## Testing - Check code formatting
-	@echo "$(BLUE)Checking code formatting...$(RESET)"
-	@black --check apps/ shared/ tests/
-	@isort --check apps/ shared/ tests/
+pre-commit: ## Run full pre-commit sequence (lint + security + smoke-test)
+	@$(MAKE) lint
+	@$(MAKE) test-security
+	@$(MAKE) smoke-test
+	@echo "$(GREEN)Pre-commit checks passed$(RESET)"
 
-# Database Commands
-db-migrate: ## Database - Run database migrations
-	@echo "$(BLUE)Running database migrations...$(RESET)"
-	@alembic upgrade head
-	@echo "$(GREEN)Migrations complete!$(RESET)"
+# ── Code Quality ───────────────────────────────────────────────────────────
+lint: ## Run all linters (flake8, mypy, black-check, isort-check, eslint)
+	@echo "$(BLUE)Running Python linters...$(RESET)"
+	@$(PYTHON) -m flake8 apps/ shared/
+	@$(PYTHON) -m mypy apps/ shared/
+	@$(PYTHON) -m black --check apps/ shared/ tests/
+	@$(PYTHON) -m isort --check apps/ shared/ tests/
+	@echo "$(BLUE)Running web linters...$(RESET)"
+	@cd web && npm run lint
+	@echo "$(GREEN)All linters passed$(RESET)"
 
-db-create-migration: ## Database - Create a new migration
-	@read -p "Enter migration message: " msg; \
-	alembic revision --autogenerate -m "$$msg"
+format: ## Auto-format Python code (black + isort)
+	@$(PYTHON) -m black apps/ shared/ tests/
+	@$(PYTHON) -m isort apps/ shared/ tests/
+	@echo "$(GREEN)Code formatted$(RESET)"
 
-db-downgrade: ## Database - Rollback one migration
-	@echo "$(YELLOW)Rolling back one migration...$(RESET)"
-	@alembic downgrade -1
+format-check: ## Check Python formatting without modifying files
+	@$(PYTHON) -m black --check apps/ shared/ tests/
+	@$(PYTHON) -m isort --check apps/ shared/ tests/
 
-db-reset: ## Database - Reset database (WARNING: destroys all data)
-	@echo "$(RED)WARNING: This will destroy all data!$(RESET)"
-	@read -p "Are you sure? [y/N]: " confirm; \
-	if [ "$$confirm" = "y" ]; then \
-		docker-compose down -v; \
-		docker-compose up -d postgres redis; \
-		sleep 5; \
-		alembic upgrade head; \
-		echo "$(GREEN)Database reset complete!$(RESET)"; \
-	else \
-		echo "$(YELLOW)Cancelled$(RESET)"; \
-	fi
+# ── Build ──────────────────────────────────────────────────────────────────
+build: docker-build ## Build all service containers
 
-db-shell: ## Database - Open PostgreSQL shell
-	@docker-compose exec postgres psql -U elder -d elder
-
-db-backup: ## Database - Create database backup
-	@echo "$(BLUE)Creating database backup...$(RESET)"
-	@mkdir -p backups
-	@docker-compose exec -T postgres pg_dump -U elder elder > backups/elder_$$(date +%Y%m%d_%H%M%S).sql
-	@echo "$(GREEN)Backup created in backups/$(RESET)"
-
-# Docker Commands
-docker-build: ## Docker - Build Docker image
-	@echo "$(BLUE)Building Elder Docker image...$(RESET)"
-	@docker build -t $(PROJECT_NAME):$(VERSION) -f apps/api/Dockerfile .
-	@echo "$(GREEN)Docker image built: $(PROJECT_NAME):$(VERSION)$(RESET)"
-
-docker-build-multiarch: ## Docker - Build multi-architecture Docker images
-	@echo "$(BLUE)Building multi-arch Docker images...$(RESET)"
-	@docker buildx build --platform linux/amd64,linux/arm64 \
-		-t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(PROJECT_NAME):$(VERSION) \
-		-t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(PROJECT_NAME):latest \
+docker-build: ## Build all four service images locally (requires GITHUB_TOKEN env var)
+	@test -n "$(GITHUB_TOKEN)" || (echo "$(RED)ERROR: GITHUB_TOKEN env var required for web build$(RESET)" && exit 1)
+	@echo "$(BLUE)Building elder-api...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-api:$(VERSION) \
 		-f apps/api/Dockerfile .
-	@echo "$(GREEN)Multi-arch Docker images built!$(RESET)"
+	@echo "$(BLUE)Building elder-web...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-web:$(VERSION) \
+		--build-arg GITHUB_TOKEN=$(GITHUB_TOKEN) \
+		-f web/Dockerfile .
+	@echo "$(BLUE)Building elder-scanner...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-scanner:$(VERSION) \
+		-f apps/scanner/Dockerfile apps/scanner
+	@echo "$(BLUE)Building elder-worker...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-worker:$(VERSION) \
+		-f apps/worker/Dockerfile .
+	@echo "$(GREEN)All images built at $(VERSION)$(RESET)"
 
-docker-push: ## Docker - Push Docker image to registry
-	@echo "$(BLUE)Pushing Docker image...$(RESET)"
-	@docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(PROJECT_NAME):$(VERSION)
-	@docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/$(PROJECT_NAME):latest
-	@echo "$(GREEN)Docker image pushed!$(RESET)"
+docker-push: ## Push all service images to ghcr.io (requires docker login)
+	@for svc in api web scanner worker; do \
+		echo "$(BLUE)Pushing elder-$$svc...$(RESET)"; \
+		docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-$$svc:$(VERSION); \
+	done
+	@echo "$(GREEN)All images pushed$(RESET)"
 
-docker-scan: ## Docker - Scan Docker image for vulnerabilities
-	@echo "$(BLUE)Scanning Docker image for vulnerabilities...$(RESET)"
-	@docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-		aquasec/trivy:0.69.3 image $(PROJECT_NAME):$(VERSION)
+docker-scan: ## Scan filesystem for vulnerabilities with trivy
+	@docker run --rm -v $(PWD):/project \
+		aquasec/trivy:0.69.3 fs /project --severity HIGH,CRITICAL
 
-# License Commands
-license-validate: ## License - Validate license configuration
-	@echo "$(BLUE)Validating license...$(RESET)"
-	@python3 scripts/license/validate.py
+# ── Database ───────────────────────────────────────────────────────────────
+db-migrate: ## Run Alembic migrations (upgrade head)
+	@echo "$(BLUE)Running migrations...$(RESET)"
+	@$(PYTHON) -m alembic upgrade head
+	@echo "$(GREEN)Migrations complete$(RESET)"
 
-license-check-features: ## License - Check available features
-	@echo "$(BLUE)Checking available features...$(RESET)"
-	@python3 scripts/license/check_features.py
+db-create-migration: ## Create a new Alembic migration (prompts for message)
+	@read -p "Migration message: " msg; \
+	$(PYTHON) -m alembic revision --autogenerate -m "$$msg"
 
-# Build Commands
-build: docker-build ## Build - Build application
+db-downgrade: ## Roll back one Alembic migration
+	@$(PYTHON) -m alembic downgrade -1
 
-# Clean Commands
-clean: ## Clean build artifacts and cache files
-	@echo "$(BLUE)Cleaning build artifacts...$(RESET)"
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete
-	@find . -type f -name "*.pyo" -delete
-	@find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
-	@rm -f .coverage
-	@echo "$(GREEN)Clean complete!$(RESET)"
+db-reset: ## Reset database — destroys all data (prompts for confirmation)
+	@echo "$(RED)WARNING: This will destroy all data!$(RESET)"
+	@read -p "Type 'yes' to confirm: " confirm; \
+	[ "$$confirm" = "yes" ] || (echo "Cancelled" && exit 1)
+	@docker stop elder-postgres 2>/dev/null || true
+	@docker rm elder-postgres 2>/dev/null || true
+	@$(MAKE) dev
+	@sleep 3
+	@$(PYTHON) -m alembic upgrade head
+	@echo "$(GREEN)Database reset complete$(RESET)"
 
-clean-docker: ## Clean Docker containers and volumes
-	@echo "$(BLUE)Cleaning Docker resources...$(RESET)"
-	@docker-compose down -v
+db-shell: ## Open psql shell in the local postgres container
+	@docker exec -it elder-postgres psql -U elder -d elder
+
+db-backup: ## Backup local postgres to backups/
+	@mkdir -p backups
+	@docker exec elder-postgres pg_dump -U elder elder \
+		> backups/elder_$$(date +%Y%m%d_%H%M%S).sql
+	@echo "$(GREEN)Backup saved to backups/$(RESET)"
+
+# ── Kubernetes Deployment ──────────────────────────────────────────────────
+deploy-alpha: ## Deploy to local alpha cluster via Kustomize (context: local-alpha)
+	@echo "$(BLUE)Deploying to alpha (kustomize)...$(RESET)"
+	@kubectl apply --context local-alpha -k k8s/kustomize/overlays/alpha
+	@kubectl --context local-alpha rollout status deployment -n $(K8S_NAMESPACE) --timeout=120s
+	@echo "$(GREEN)Alpha deployment complete$(RESET)"
+
+deploy-beta: ## Deploy to beta cluster via Helm (context: dal2-beta)
+	@echo "$(BLUE)Deploying to beta...$(RESET)"
+	@bash scripts/deploy-beta.sh
+	@echo "$(GREEN)Beta deployment complete$(RESET)"
+
+helm-lint: ## Lint the Helm chart
+	@helm lint $(HELM_DIR)
+
+helm-template: ## Render Helm templates with alpha values (dry-run review)
+	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/values-alpha.yaml
+
+# ── License ────────────────────────────────────────────────────────────────
+license-validate: ## Validate license configuration
+	@$(PYTHON) scripts/license/validate.py
+
+license-check-features: ## List available licensed features
+	@$(PYTHON) scripts/license/check_features.py
+
+# ── Housekeeping ───────────────────────────────────────────────────────────
+clean: ## Remove Python caches, pytest artifacts, and coverage reports
+	@echo "$(BLUE)Cleaning...$(RESET)"
+	@find . -type d -name "__pycache__" -not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv/*" -delete
+	@find . -type d \( -name "*.egg-info" -o -name ".pytest_cache" -o -name ".mypy_cache" \) \
+		-not -path "./.venv/*" -exec rm -rf {} + 2>/dev/null || true
+	@rm -rf htmlcov .coverage
+	@echo "$(GREEN)Clean complete$(RESET)"
+
+clean-docker: ## Stop and remove elder-* containers, prune Docker system
+	@docker stop elder-postgres elder-redis 2>/dev/null || true
+	@docker rm elder-postgres elder-redis 2>/dev/null || true
 	@docker system prune -f
-	@echo "$(GREEN)Docker resources cleaned!$(RESET)"
+	@echo "$(GREEN)Docker cleaned$(RESET)"
 
-# Version Management
+# ── Version Management ─────────────────────────────────────────────────────
 version: ## Show current version
-	@echo "$(BLUE)Elder version: $(VERSION)$(RESET)"
+	@echo "$(BLUE)Elder $(VERSION)$(RESET)"
 
-version-bump-patch: ## Bump patch version
+version-bump-patch: ## Increment patch version (only if current version is tagged)
 	@./scripts/version/update-version.sh patch
-	@echo "$(GREEN)Version bumped to $$(cat .version)$(RESET)"
+	@echo "$(GREEN)Version: $$(cat .version)$(RESET)"
 
-version-bump-minor: ## Bump minor version
+version-bump-minor: ## Increment minor version (only if current version is tagged)
 	@./scripts/version/update-version.sh minor
-	@echo "$(GREEN)Version bumped to $$(cat .version)$(RESET)"
+	@echo "$(GREEN)Version: $$(cat .version)$(RESET)"
 
-version-bump-major: ## Bump major version
+version-bump-major: ## Increment major version (only if current version is tagged)
 	@./scripts/version/update-version.sh major
-	@echo "$(GREEN)Version bumped to $$(cat .version)$(RESET)"
+	@echo "$(GREEN)Version: $$(cat .version)$(RESET)"
 
-# Health Checks
-health: ## Check health of all services
+# ── Health ─────────────────────────────────────────────────────────────────
+health: ## Check health of locally running services
 	@echo "$(BLUE)Checking service health...$(RESET)"
-	@echo "$(YELLOW)API:$(RESET)"
-	@curl -f http://localhost:5000/healthz && echo " $(GREEN)✓$(RESET)" || echo " $(RED)✗$(RESET)"
-	@echo "$(YELLOW)Prometheus:$(RESET)"
-	@curl -f http://localhost:9090/-/healthy && echo " $(GREEN)✓$(RESET)" || echo " $(RED)✗$(RESET)"
-	@echo "$(YELLOW)Grafana:$(RESET)"
-	@curl -f http://localhost:3001/api/health && echo " $(GREEN)✓$(RESET)" || echo " $(RED)✗$(RESET)"
-
-# Status
-status: ## Show status of all services
-	@echo "$(BLUE)Service Status:$(RESET)"
-	@docker-compose ps
-
-# === Kubernetes Deployment (microk8s + Helm v3) ===
-HELM_DIR := infrastructure/helm/$(PROJECT_NAME)
-
-k8s-alpha-deploy:
-	@./tests/k8s/alpha/run-all-alpha.sh
-
-k8s-beta-deploy:
-	@./tests/k8s/beta/run-all-beta.sh
-
-k8s-prod-deploy:
-	@read -p "Deploy to PRODUCTION? (yes/NO): " c && [ "$$c" = "yes" ]
-	@helm upgrade --install $(PROJECT_NAME) ./$(HELM_DIR) --namespace $(PROJECT_NAME)-prod --create-namespace --values ./$(HELM_DIR)/values.yaml --wait --timeout 10m
-
-k8s-alpha-test:
-	@./tests/k8s/alpha/run-all-alpha.sh
-
-k8s-beta-test:
-	@./tests/k8s/beta/run-all-beta.sh
-
-k8s-cleanup:
-	@helm uninstall $(PROJECT_NAME) -n $(PROJECT_NAME)-alpha 2>/dev/null || true
-	@helm uninstall $(PROJECT_NAME) -n $(PROJECT_NAME)-beta 2>/dev/null || true
-	@microk8s kubectl delete namespace $(PROJECT_NAME)-alpha 2>/dev/null || true
-	@microk8s kubectl delete namespace $(PROJECT_NAME)-beta 2>/dev/null || true
-
-helm-lint:
-	@helm lint ./$(HELM_DIR)
-
-helm-template:
-	@helm template $(PROJECT_NAME) ./$(HELM_DIR) --values ./$(HELM_DIR)/values-alpha.yaml
+	@printf "$(YELLOW)API:$(RESET) "; \
+		curl -sf http://localhost:5000/healthz && echo "$(GREEN)✓$(RESET)" || echo "$(RED)✗$(RESET)"
+	@printf "$(YELLOW)Postgres:$(RESET) "; \
+		docker exec elder-postgres pg_isready -U elder -q 2>/dev/null \
+		&& echo "$(GREEN)✓$(RESET)" || echo "$(RED)✗$(RESET)"
+	@printf "$(YELLOW)Redis:$(RESET) "; \
+		docker exec elder-redis redis-cli -a elder_redis_password ping 2>/dev/null | grep -q PONG \
+		&& echo "$(GREEN)✓$(RESET)" || echo "$(RED)✗$(RESET)"

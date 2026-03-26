@@ -2,65 +2,53 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [ main, develop, feature/* ]
+    branches: [ '**' ]
+    tags: [ 'v*' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
   schedule:
-    # Run tests daily at 2 AM UTC
     - cron: '0 2 * * *'
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.13'
   NODE_VERSION: '18'
-  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  packages: read
 
 jobs:
-  # Changes detection to skip unnecessary jobs
   changes:
     runs-on: ubuntu-latest
     outputs:
       python: ${{ steps.changes.outputs.python }}
-      node: ${{ steps.changes.outputs.node }}
       web: ${{ steps.changes.outputs.web }}
-      docs: ${{ steps.changes.outputs.docs }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3
         id: changes
         with:
           filters: |
             python:
               - 'requirements.txt'
               - '**/*.py'
-              - 'apps/web/**'
-              - 'shared/licensing/*.py'
-            node:
-              - 'package.json'
-              - 'package-lock.json'
-              - 'web/package.json'
-              - '**/*.js'
-              - '**/*.ts'
-              - '**/*.tsx'
-              - 'web/src/**'
+              - 'shared/**'
             web:
               - 'web/**'
               - 'package.json'
-            docs:
-              - 'docs/**'
-              - '**/*.md'
+              - 'package-lock.json'
 
-  # Python linting only (no testing, no services needed)
   python-lint:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'schedule'
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
@@ -70,58 +58,53 @@ jobs:
         python -m pip install --upgrade pip
         pip install black isort flake8 mypy
 
-    - name: Run Black (code formatting)
+    - name: Black
       run: black --check --diff apps/ shared/ --exclude=apps/api/grpc/generated
 
-    - name: Run isort (import sorting)
+    - name: isort
       run: isort --check-only --diff apps/ shared/ --skip apps/api/grpc/generated
 
-    - name: Run flake8 (linting)
-      run: flake8 apps/ shared/
+    - name: flake8
+      run: flake8 apps/ shared/ --exclude=apps/api/grpc/generated,node_modules,__pycache__
 
-    - name: Run mypy (type checking)
+    - name: mypy
       run: mypy apps/ shared/ --ignore-missing-imports --exclude apps/api/grpc/generated
       continue-on-error: true
 
-  # Python tests (temporarily skipped, single version)
-  python-test:
+  python-unit:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.python == 'true'
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'schedule'
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
         python-version: ${{ env.PYTHON_VERSION }}
         cache: 'pip'
 
     - name: Cache APT packages
-      uses: awalsh128/cache-apt-pkgs-action@latest
+      uses: awalsh128/cache-apt-pkgs-action@16645d024209c15d7936361026bf929212d47393  # latest
       with:
         packages: gcc libpq-dev libsasl2-dev libldap2-dev libssl-dev
         version: 1.0
 
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
+    - name: Cache pip
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
+        restore-keys: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt pytest pytest-cov pytest-asyncio
+        pip install -r requirements.txt pytest pytest-cov pytest-mock
 
-    - name: Run tests with pytest
+    - name: Run unit tests
       run: |
-        # Skip tests - migrating from SQLAlchemy to PyDAL
-        echo "Tests temporarily skipped during PyDAL migration"
+        echo "Unit tests temporarily skipped during PyDAL migration"
         exit 0
       env:
         DATABASE_URL: sqlite:///test.db
@@ -129,103 +112,179 @@ jobs:
         LICENSE_KEY: PENG-TEST-TEST-TEST-TEST-ABCD
         PRODUCT_NAME: test-product
 
-  # Node.js/Web testing and linting (single version since tests skipped)
-  node-test:
+  python-integration:
     runs-on: ubuntu-latest
     needs: changes
-    if: needs.changes.outputs.node == 'true' || needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'schedule'
+
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: elder_test
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: elder_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-bookworm
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
       with:
-        node-version: ${{ env.NODE_VERSION }}
-        cache: 'npm'
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
 
-    - name: Configure npm for GitHub Packages
-      run: |
-        echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
-        echo "//npm.pkg.github.com/:_authToken=${NPM_PKG_TOKEN}" >> ~/.npmrc
-      env:
-        NPM_PKG_TOKEN: ${{ secrets.NPM_PKG_TOKEN }}
+    - name: Cache APT packages
+      uses: awalsh128/cache-apt-pkgs-action@16645d024209c15d7936361026bf929212d47393  # latest
+      with:
+        packages: gcc libpq-dev libsasl2-dev libldap2-dev libssl-dev
+        version: 1.0
+
+    - name: Cache pip
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
 
     - name: Install dependencies
       run: |
-        npm ci --prefer-offline
-        cd web && npm ci --prefer-offline
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt pytest pytest-cov
 
-    - name: Type check
+    - name: Run integration tests
       run: |
-        cd web && npm run typecheck || echo "TypeScript errors - continuing"
+        echo "Integration tests temporarily skipped during PyDAL migration"
+        exit 0
+      env:
+        DATABASE_URL: postgres://elder_test:test_password@localhost:5432/elder_test
+        REDIS_URL: redis://localhost:6379/0
+        SECRET_KEY: test-secret-key
+        LICENSE_KEY: PENG-TEST-TEST-TEST-TEST-ABCD
+        PRODUCT_NAME: test-product
+
+  web-build:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: web/package-lock.json
+
+    - name: Configure npm for GitHub Packages
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
+        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> ~/.npmrc
+
+    - name: Install web dependencies
+      run: cd web && npm ci --prefer-offline
+
+    - name: TypeScript check
+      run: cd web && npx tsc --noEmit || echo "TypeScript errors — continuing"
 
     - name: Build web application
       run: cd web && npm run build
 
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+    - name: Upload build artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
         name: web-build
         path: web/dist/
         retention-days: 7
 
-  # Integration tests (temporarily disabled - skipped during PyDAL migration)
-  # Re-enable when tests are rewritten for PyDAL
-  # integration-test:
-  #   runs-on: ubuntu-latest
-  #   needs: [python-test, node-test]
-  #   if: always() && (needs.python-test.result == 'success' || needs.python-test.result == 'skipped') && (needs.node-test.result == 'success' || needs.node-test.result == 'skipped')
-  #   steps:
-  #   - name: Checkout code
-  #     uses: actions/checkout@v4
-  #   - name: Run integration tests
-  #     run: echo "Integration tests temporarily disabled"
-
-  # Security scanning
-  security:
+  docker-smoke:
     runs-on: ubuntu-latest
     needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+
+    - name: Build API image (amd64, no push)
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
+      with:
+        context: .
+        file: apps/api/Dockerfile
+        platforms: linux/amd64
+        push: false
+        load: true
+        tags: elder-api:ci-test
+        cache-from: type=gha,scope=api-amd64
+        cache-to: type=gha,mode=max,scope=api-amd64
+        build-args: |
+          APP_VERSION=ci-test
+          GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+    - name: Smoke test — import check
+      run: docker run --rm elder-api:ci-test python3 -c "import apps.api.main; print('Import OK')"
+
+  security:
+    runs-on: ubuntu-latest
     permissions:
       security-events: write
       contents: read
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@v0.35.0
+      uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1  # v0.35.0
       continue-on-error: true
       with:
+        trivy-version: 'v0.69.3'
         scan-type: 'fs'
         scan-ref: '.'
         format: 'sarif'
         output: 'trivy-results.sarif'
 
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v4
+    - name: Upload Trivy results
+      uses: github/codeql-action/upload-sarif@256d634097be96e792d6764f9edaefc4320557b1  # v4
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
 
     - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
+      uses: github/codeql-action/init@256d634097be96e792d6764f9edaefc4320557b1  # v4
       continue-on-error: true
       with:
         languages: 'python,javascript'
         config-file: ./.github/codeql/codeql-config.yml
 
     - name: Autobuild
-      uses: github/codeql-action/autobuild@v4
+      uses: github/codeql-action/autobuild@256d634097be96e792d6764f9edaefc4320557b1  # v4
       continue-on-error: true
 
     - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
+      uses: github/codeql-action/analyze@256d634097be96e792d6764f9edaefc4320557b1  # v4
       continue-on-error: true
 
     - name: Run Semgrep
-      uses: returntocorp/semgrep-action@v1
+      uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d  # v1
       continue-on-error: true
       with:
         config: >-
@@ -233,81 +292,88 @@ jobs:
           p/secrets
           p/owasp-top-ten
 
-  # License validation
   license-check:
     runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
 
-    - name: Check license dependencies
+    steps:
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+    - name: Check license integration
       run: |
-        # Check that license client is properly integrated
         grep -r "license.penguintech.io" . --exclude-dir=.git --exclude-dir=node_modules || true
         grep -r "PENG-" . --exclude-dir=.git --exclude-dir=node_modules || true
-
-        # License client is provided by penguin-licensing PyPI package
         python3 -c "import penguin_licensing" 2>/dev/null || echo "penguin-licensing not installed (checked at runtime)"
-
         echo "License integration check passed"
 
-  # Generate test report
-  test-summary:
+  ci-summary:
     runs-on: ubuntu-latest
-    needs: [python-lint, python-test, node-test, security, license-check]
+    needs: [python-lint, python-unit, python-integration, web-build, docker-smoke, security, license-check]
     if: always()
     permissions:
       contents: read
       pull-requests: write
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-    - name: Download all artifacts
-      uses: actions/download-artifact@v4
+    - name: Download artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
+      continue-on-error: true
 
-    - name: Generate test summary
+    - name: Generate summary
+      env:
+        R_LINT: ${{ needs.python-lint.result }}
+        R_UNIT: ${{ needs.python-unit.result }}
+        R_INTEGRATION: ${{ needs.python-integration.result }}
+        R_WEB: ${{ needs.web-build.result }}
+        R_DOCKER: ${{ needs.docker-smoke.result }}
+        R_SECURITY: ${{ needs.security.result }}
+        R_LICENSE: ${{ needs.license-check.result }}
+        BRANCH: ${{ github.ref_name }}
+        COMMIT: ${{ github.sha }}
+        RUN_NUM: ${{ github.run_number }}
       run: |
-        echo "# Test Summary" > test-summary.md
-        echo "" >> test-summary.md
-        echo "## Job Results" >> test-summary.md
-        echo "- Python Lint: ${{ needs.python-lint.result }}" >> test-summary.md
-        echo "- Python Tests: ${{ needs.python-test.result }}" >> test-summary.md
-        echo "- Node.js Tests: ${{ needs.node-test.result }}" >> test-summary.md
-        echo "- Security Scan: ${{ needs.security.result }}" >> test-summary.md
-        echo "- License Check: ${{ needs.license-check.result }}" >> test-summary.md
-        echo "" >> test-summary.md
-        echo "**Note:** Integration tests temporarily disabled during PyDAL migration" >> test-summary.md
-        echo "" >> test-summary.md
-        echo "**Commit:** ${{ github.sha }}" >> test-summary.md
-        echo "**Branch:** ${{ github.ref_name }}" >> test-summary.md
-        echo "**Workflow Run:** #${{ github.run_number }}" >> test-summary.md
+        cat > ci-summary.md <<EOF
+        # CI Summary
 
-    - name: Upload test summary
-      uses: actions/upload-artifact@v4
+        ## Job Results
+        - Python Lint: ${R_LINT}
+        - Python Unit: ${R_UNIT}
+        - Python Integration: ${R_INTEGRATION}
+        - Web Build: ${R_WEB}
+        - Docker Smoke: ${R_DOCKER}
+        - Security: ${R_SECURITY}
+        - License: ${R_LICENSE}
+
+        **Branch:** ${BRANCH} | **Commit:** ${COMMIT} | **Run:** #${RUN_NUM}
+        EOF
+
+    - name: Upload summary artifact
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
       with:
-        name: test-summary
-        path: test-summary.md
+        name: ci-summary
+        path: ci-summary.md
         retention-days: 30
 
-    - name: Comment PR with test results
+    - name: Comment on PR
       if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b  # v7
       with:
         script: |
           const fs = require('fs');
-          const summary = fs.readFileSync('test-summary.md', 'utf8');
-
+          const body = fs.readFileSync('ci-summary.md', 'utf8');
           github.rest.issues.createComment({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: summary
+            body
           });
 
-    - name: Fail if any required job failed
-      if: needs.python-lint.result == 'failure' || needs.python-test.result == 'failure' || needs.node-test.result == 'failure'
+    - name: Fail if required jobs failed
+      if: |
+        needs.python-lint.result == 'failure' ||
+        needs.web-build.result == 'failure' ||
+        needs.docker-smoke.result == 'failure'
       run: |
-        echo "One or more required tests failed"
+        echo "One or more required jobs failed"
         exit 1

@@ -26,7 +26,7 @@ NC = '\033[0m'  # No Color
 class RestApiTester:
     """Test suite for Elder REST API."""
 
-    def __init__(self, base_url: str, verify_ssl: bool = True, verbose: bool = False):
+    def __init__(self, base_url: str, verify_ssl: bool = True, verbose: bool = False, host_header: str = ''):
         self.base_url = base_url.rstrip('/')
         self.verify_ssl = verify_ssl
         self.verbose = verbose
@@ -40,6 +40,8 @@ class RestApiTester:
         retries = Retry(total=3, backoff_factor=1, status_forcelist=[502, 503, 504])
         self.session.mount('http://', HTTPAdapter(max_retries=retries))
         self.session.mount('https://', HTTPAdapter(max_retries=retries))
+        if host_header:
+            self.session.headers.update({'Host': host_header})
 
     def log_info(self, msg: str):
         print(f"{BLUE}[INFO]{NC} {msg}")
@@ -104,8 +106,8 @@ class RestApiTester:
         self.log_info("Testing authentication...")
         resp, err = self._request(
             'POST',
-            '/api/v1/auth/login',
-            json={'username': username, 'password': password}
+            '/api/v1/portal-auth/login',
+            json={'email': username, 'password': password}
         )
 
         if err:
@@ -209,6 +211,14 @@ class RestApiTester:
             self.log_fail("Authentication failed - cannot continue with authenticated tests")
             return
 
+        # Fetch a real org ID for CRUD tests (fresh deployments may have no org with id=1)
+        resp, _ = self._request('GET', '/api/v1/organizations')
+        self.org_id: Optional[int] = None
+        if resp and resp.status_code == 200:
+            items = resp.json().get('items', [])
+            if items:
+                self.org_id = items[0]['id']
+
         self.log_info("")
         self.log_info("Testing authenticated endpoints...")
         self.log_info("")
@@ -218,7 +228,7 @@ class RestApiTester:
 
         # Entity endpoints
         self.test_endpoint('GET', '/api/v1/entities', 'GET /entities')
-        self.test_endpoint('GET', '/api/v1/entity-types', 'GET /entity-types')
+        self.test_endpoint('GET', '/api/v1/entity-types/', 'GET /entity-types')
 
         # Identity/User endpoints
         self.test_endpoint('GET', '/api/v1/identities', 'GET /identities')
@@ -285,77 +295,78 @@ class RestApiTester:
         self.log_info("Testing CRUD workflows (Create, Read, Update, Delete)...")
         self.log_info("")
 
-        # Note: Organization CRUD test skipped due to test infrastructure quirk
-        # Organizations work perfectly (verified via database + manual API testing)
-        # Test framework has session state issue causing false 404 on READ
-        # self.test_crud_workflow('organizations',
-        #     create_data={'name': 'Test Org CRUD', 'description': 'Test organization for CRUD'})
+        if self.org_id is None:
+            self.log_warn("No organizations found — skipping org-scoped CRUD tests (seed data needed)")
+        else:
+            org_id = self.org_id
 
-        # Test entity CRUD - Generic compute entity
-        self.test_crud_workflow('entities',
-            create_data={'name': 'Test Entity', 'entity_type': 'server', 'organization_id': 1, 'description': 'Test entity'},
-            update_data={'description': 'Updated entity description'})
+            # Test entity CRUD - Generic compute entity
+            self.test_crud_workflow('entities',
+                create_data={'name': 'Test Entity', 'entity_type': 'server', 'organization_id': org_id, 'description': 'Test entity'},
+                update_data={'description': 'Updated entity description'})
 
-        # Test LXD Container entity creation
-        self.test_crud_workflow('entities',
-            create_data={
-                'name': 'Test LXD Container',
-                'entity_type': 'compute',
-                'sub_type': 'lxd_container',
-                'organization_id': 1,
-                'description': 'Test LXD container entity',
-                'attributes': {
-                    'metadata': {
-                        'os': 'Ubuntu 22.04',
-                        'memory_gb': 2,
-                        'cpu_cores': 2,
-                        'root_disk_gb': 20,
-                        'status': 'running'
+            # Test LXD Container entity creation
+            self.test_crud_workflow('entities',
+                create_data={
+                    'name': 'Test LXD Container',
+                    'entity_type': 'compute',
+                    'sub_type': 'lxd_container',
+                    'organization_id': org_id,
+                    'description': 'Test LXD container entity',
+                    'attributes': {
+                        'metadata': {
+                            'os': 'Ubuntu 22.04',
+                            'memory_gb': 2,
+                            'cpu_cores': 2,
+                            'root_disk_gb': 20,
+                            'status': 'running'
+                        }
                     }
-                }
-            },
-            update_data={'description': 'Updated LXD container'})
+                },
+                update_data={'description': 'Updated LXD container'})
 
-        # Test LXD VM entity creation
-        self.test_crud_workflow('entities',
-            create_data={
-                'name': 'Test LXD VM',
-                'entity_type': 'compute',
-                'sub_type': 'lxd_vm',
-                'organization_id': 1,
-                'description': 'Test LXD VM entity',
-                'attributes': {
-                    'metadata': {
-                        'os': 'Ubuntu 20.04',
-                        'vcpu_count': 4,
-                        'memory_gb': 8,
-                        'disk_gb': 50,
-                        'status': 'running',
-                        'boot_mode': 'UEFI'
+            # Test LXD VM entity creation
+            self.test_crud_workflow('entities',
+                create_data={
+                    'name': 'Test LXD VM',
+                    'entity_type': 'compute',
+                    'sub_type': 'lxd_vm',
+                    'organization_id': org_id,
+                    'description': 'Test LXD VM entity',
+                    'attributes': {
+                        'metadata': {
+                            'os': 'Ubuntu 20.04',
+                            'vcpu_count': 4,
+                            'memory_gb': 8,
+                            'disk_gb': 50,
+                            'status': 'running',
+                            'boot_mode': 'UEFI'
+                        }
                     }
-                }
-            },
-            update_data={'description': 'Updated LXD VM'})
+                },
+                update_data={'description': 'Updated LXD VM'})
 
-        # Test service CRUD
-        self.test_crud_workflow('services',
-            create_data={'name': 'Test Service', 'organization_id': 1, 'language': 'python'},
-            update_data={'language': 'go'})
+            # Test service CRUD
+            self.test_crud_workflow('services',
+                create_data={'name': 'Test Service', 'organization_id': org_id, 'language': 'python'},
+                update_data={'language': 'go'})
 
-        # Test label CRUD
+            # Test issue CRUD
+            self.test_crud_workflow('issues',
+                create_data={'title': 'Test Issue CRUD', 'description': 'Test issue', 'priority': 'medium', 'organization_id': org_id},
+                update_data={'priority': 'high'})
+
+            # Test project CRUD
+            self.test_crud_workflow('projects',
+                create_data={'name': 'Test Project', 'description': 'Test project', 'status': 'active', 'organization_id': org_id},
+                update_data={'status': 'completed'})
+
+        # Label CRUD (not org-scoped) — use timestamp to avoid 409 on repeated runs
+        import time as _time
+        label_name = f'test-crud-label-{int(_time.time())}'
         self.test_crud_workflow('labels',
-            create_data={'name': 'test-crud-label', 'description': 'Test label', 'color': '#FF5733'},
+            create_data={'name': label_name, 'description': 'Test label', 'color': '#FF5733'},
             update_data={'description': 'Updated label description'})
-
-        # Test issue CRUD
-        self.test_crud_workflow('issues',
-            create_data={'title': 'Test Issue CRUD', 'description': 'Test issue', 'priority': 'medium', 'organization_id': 1},
-            update_data={'priority': 'high'})
-
-        # Test project CRUD
-        self.test_crud_workflow('projects',
-            create_data={'name': 'Test Project', 'description': 'Test project', 'status': 'active', 'organization_id': 1},
-            update_data={'status': 'completed'})
 
         # Skip secret CRUD (requires secret provider setup)
         # Skip webhook CRUD (requires admin role)
@@ -391,13 +402,16 @@ def main():
                         help='Disable SSL certificate verification')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='Enable verbose output')
+    parser.add_argument('--host-header', default=os.getenv('HOST_HEADER', ''),
+                        help='Override Host header (for bypass URL routing, e.g. beta via dal2 LB)')
 
     args = parser.parse_args()
 
     tester = RestApiTester(
         base_url=args.url,
         verify_ssl=not args.no_verify_ssl,
-        verbose=args.verbose
+        verbose=args.verbose,
+        host_header=args.host_header
     )
 
     tester.run_all_tests(args.username, args.password)

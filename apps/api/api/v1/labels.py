@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Optional
 
 from flask import Blueprint, current_app, jsonify
@@ -149,10 +150,12 @@ async def create_label(body: CreateLabelRequest):
             return None
 
         # Create label
+        now = datetime.now(timezone.utc)
         label_id = db.issue_labels.insert(
             name=body.name,
             description=body.description,
             color=body.color,
+            updated_at=now,
         )
         db.commit()
 

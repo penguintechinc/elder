@@ -15,14 +15,15 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME_API: ${{ github.repository_owner }}/elder-api
-  IMAGE_NAME_WEB: ${{ github.repository_owner }}/elder-web
   K8S_NAMESPACE: ${{ secrets.K8S_NAMESPACE || 'elder' }}
-  GHCR_PROPAGATION_DELAY: 60
 
+# ---------------------------------------------------------------------------
+# Build each platform in parallel, then merge into a multi-arch manifest.
+# Runs for every branch push and release tag.
+# ---------------------------------------------------------------------------
 jobs:
-  # Build matrix for different services
-  build-and-push:
+  build-platform:
+    name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -30,29 +31,32 @@ jobs:
           - name: api
             dockerfile: apps/api/Dockerfile
             context: .
-            platforms: linux/amd64,linux/arm64
           - name: web
             dockerfile: web/Dockerfile
             context: .
-            platforms: linux/amd64,linux/arm64
           - name: scanner
             dockerfile: apps/scanner/Dockerfile
             context: apps/scanner
-            platforms: linux/amd64,linux/arm64
           - name: worker
             dockerfile: apps/worker/Dockerfile
             context: .
-            platforms: linux/amd64,linux/arm64
+        platform:
+          - linux/amd64
+          - linux/arm64
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+
+    - name: Set up QEMU (for arm64 emulation)
+      uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
     - name: Log in to Container Registry
       if: github.event_name != 'pull_request'
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
@@ -63,452 +67,145 @@ jobs:
       run: |
         VERSION=$(cat .version | tr -d '\n')
         echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
 
-    - name: Extract metadata (tags, labels)
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-${{ matrix.service.name }}
-        tags: |
-          # Alpha tag for non-main branches: {version}-alpha
-          type=raw,value=${{ steps.version.outputs.version }}-alpha,enable=${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') }}
-          # Beta tag for main branch: {version}-beta
-          type=raw,value=${{ steps.version.outputs.version }}-beta,enable=${{ github.ref == 'refs/heads/main' }}
-          # Version tag for releases: {version} (from git tag)
-          type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-          # Latest tag for all releases (including pre-releases)
-          type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+    - name: Compute build epoch
+      id: epoch
+      run: echo "epoch=$(date +%s)" >> $GITHUB_OUTPUT
 
-    - name: Build and push Docker image
+    - name: Sanitize platform name for tag suffix
+      id: platform
+      env:
+        PLATFORM: ${{ matrix.platform }}
+      run: |
+        # linux/amd64 → amd64, linux/arm64 → arm64
+        echo "suffix=$(echo "$PLATFORM" | tr '/' '-' | cut -d'-' -f2-)" >> $GITHUB_OUTPUT
+
+    - name: Build and push platform image
       id: build
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6
       with:
         context: ${{ matrix.service.context }}
         file: ${{ matrix.service.dockerfile }}
-        platforms: ${{ matrix.service.platforms }}
+        platforms: ${{ matrix.platform }}
         push: ${{ github.event_name != 'pull_request' }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        # Disable provenance/sbom to create cleaner multi-arch manifests
+        # Push to a platform-specific tag; merged in the next job
+        tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-${{ matrix.service.name }}:${{ steps.version.outputs.version }}-${{ steps.platform.outputs.suffix }}
+        # Scope cache per service+platform to prevent eviction
+        cache-from: type=gha,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
         provenance: false
         sbom: false
         build-args: |
-          BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           VCS_REF=${{ github.sha }}
           VERSION=${{ steps.version.outputs.version }}
+          APP_VERSION=${{ steps.version.outputs.version }}
+          VITE_VERSION=${{ steps.version.outputs.version }}
+          VITE_BUILD_TIME=${{ steps.epoch.outputs.epoch }}
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-    - name: Output image digest
-      run: |
-        echo "Built ${{ matrix.service.name }} with digest: ${{ steps.build.outputs.digest }}"
-
-  # Security scanning of built images
-  security-scan:
-    needs: build-and-push
+  merge-manifests:
+    name: Merge manifest (${{ matrix.service }})
+    needs: build-platform
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    # Disabled: Container security scanning is resource-intensive and has registry propagation issues
-    # Trivy scanning is already done in the main CI workflow on filesystem
-    # Can be re-enabled when proper staging/registry infrastructure is in place
-    if: false
     strategy:
       matrix:
         service: [api, web, scanner, worker]
 
     steps:
-    - name: Get short SHA
-      id: short-sha
-      run: echo "sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Wait for registry propagation
-      run: |
-        echo "Waiting 30s for registry to propagate multi-arch manifest..."
-        sleep 30
-
-    - name: Pull image with retry
-      id: pull-image
-      run: |
-        IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-${{ matrix.service }}:sha-${{ steps.short-sha.outputs.sha }}"
-        echo "Attempting to pull: $IMAGE"
-
-        for i in 1 2 3 4 5; do
-          echo "Attempt $i of 5..."
-          if docker pull "$IMAGE"; then
-            echo "Successfully pulled image on attempt $i"
-            echo "image=$IMAGE" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          DELAY=$((i * 15))
-          echo "Pull failed, waiting ${DELAY}s before retry..."
-          sleep $DELAY
-        done
-
-        echo "Failed to pull image after 5 attempts"
-        exit 1
-
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@v0.35.0
-      with:
-        image-ref: ${{ steps.pull-image.outputs.image }}
-        format: 'sarif'
-        output: 'trivy-results-${{ matrix.service }}.sarif'
-
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v4
-      with:
-        sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
-
-  # Integration test with built images
-  integration-test:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    # Disabled: Integration tests require docker compose environment and registry propagation
-    # These should be run locally or in a proper staging environment
-    # Current integration tests use outdated SQLAlchemy models - need PyDAL rewrite
-    # See tests/integration/test_workflow_complete.py and docs/TESTING.md
-    if: false
-
-    steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
-    - name: Get short SHA
-      id: short-sha
-      run: echo "sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
 
     - name: Log in to Container Registry
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3
       with:
         registry: ${{ env.REGISTRY }}
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Wait for registry propagation
+    - name: Read version from .version file
+      id: version
       run: |
-        echo "Waiting 30s for registry to propagate multi-arch manifests..."
-        sleep 30
+        VERSION=$(cat .version | tr -d '\n')
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-    - name: Pull images with retry
-      run: |
-        pull_with_retry() {
-          local IMAGE="$1"
-          echo "Attempting to pull: $IMAGE"
-
-          for i in 1 2 3 4 5; do
-            echo "Attempt $i of 5..."
-            if docker pull "$IMAGE"; then
-              echo "Successfully pulled image on attempt $i"
-              return 0
-            fi
-            DELAY=$((i * 15))
-            echo "Pull failed, waiting ${DELAY}s before retry..."
-            sleep $DELAY
-          done
-
-          echo "Failed to pull image after 5 attempts"
-          return 1
-        }
-
-        API_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:sha-${{ steps.short-sha.outputs.sha }}"
-        WEB_IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:sha-${{ steps.short-sha.outputs.sha }}"
-
-        pull_with_retry "$API_IMAGE" || exit 1
-        pull_with_retry "$WEB_IMAGE" || exit 1
-
-        echo "All images pulled successfully"
-
-    - name: Create test docker-compose
-      run: |
-        cat << EOF > docker-compose.test.yml
-        services:
-          postgres:
-            image: postgres:15-alpine
-            environment:
-              POSTGRES_DB: test_db
-              POSTGRES_USER: test_user
-              POSTGRES_PASSWORD: test_pass
-            ports:
-              - "5432:5432"
-            healthcheck:
-              test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
-              interval: 10s
-              timeout: 5s
-              retries: 5
-
-          redis:
-            image: redis:7-alpine
-            command: redis-server --requirepass test_pass
-            ports:
-              - "6379:6379"
-            healthcheck:
-              test: ["CMD", "redis-cli", "-a", "test_pass", "ping"]
-              interval: 10s
-              timeout: 5s
-              retries: 5
-
-          api:
-            image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:sha-${{ steps.short-sha.outputs.sha }}
-            ports:
-              - "4000:5000"
-            environment:
-              - DATABASE_URL=postgres://test_user:test_pass@postgres:5432/test_db
-              - REDIS_URL=redis://:test_pass@redis:6379/0
-              - REDIS_PASSWORD=test_pass
-              - LICENSE_KEY=PENG-TEST-TEST-TEST-TEST-ABCD
-              - PRODUCT_NAME=elder
-              - SECRET_KEY=test-secret-key-for-ci
-              - JWT_SECRET_KEY=test-jwt-secret-key-for-ci
-              - ADMIN_USERNAME=admin
-              - ADMIN_PASSWORD=admin123
-              - ADMIN_EMAIL=admin@localhost.local
-              - CORS_ORIGINS=http://localhost:3000,http://localhost:3005
-              - SITE_URL=http://localhost:3000
-            depends_on:
-              postgres:
-                condition: service_healthy
-              redis:
-                condition: service_healthy
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:5000/healthz"]
-              interval: 30s
-              timeout: 10s
-              retries: 5
-
-          web:
-            image: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:sha-${{ steps.short-sha.outputs.sha }}
-            ports:
-              - "3000:80"
-            environment:
-              - NODE_ENV=production
-              - VITE_API_URL=http://localhost:4000
-            depends_on:
-              - api
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:80/"]
-              interval: 30s
-              timeout: 10s
-              retries: 3
-        EOF
-
-    - name: Start test environment
-      run: |
-        docker compose -f docker-compose.test.yml up -d --wait --wait-timeout 120
-      timeout-minutes: 5
-
-    - name: Set up Node.js for Web UI tests
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-
-    - name: Install Puppeteer dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y chromium-browser
-        npm install puppeteer
-
-    - name: Wait for services and run tests in parallel
+    - name: Merge platform images into multi-arch manifest
       env:
-        WEB_URL: http://localhost:3000
-        API_URL: http://localhost:4000
+        SERVICE: ${{ matrix.service }}
+        VERSION: ${{ steps.version.outputs.version }}
+        IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
+        IS_RELEASE_BRANCH: ${{ startsWith(github.ref, 'refs/heads/v') }}
+        REF_NAME: ${{ github.ref_name }}
+        REGISTRY: ${{ env.REGISTRY }}
+        ORG: ${{ github.repository_owner }}
       run: |
-        # Wait for API to be ready
-        echo "Waiting for API..."
-        for i in {1..30}; do
-          if curl -sf http://localhost:4000/healthz > /dev/null 2>&1; then
-            echo "API is ready!"
-            break
-          fi
-          echo "Attempt $i: API not ready, waiting..."
-          sleep 5
-        done
-        curl -f http://localhost:4000/healthz || { echo "API health check failed"; docker compose -f docker-compose.test.yml logs api; exit 1; }
+        IMAGE="${REGISTRY}/${ORG}/elder-${SERVICE}"
+        SRC_AMD64="${IMAGE}:${VERSION}-amd64"
+        SRC_ARM64="${IMAGE}:${VERSION}-arm64"
 
-        # Wait for Web to be ready
-        echo "Waiting for Web..."
-        for i in {1..30}; do
-          if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
-            echo "Web is ready!"
-            break
-          fi
-          echo "Attempt $i: Web not ready, waiting..."
-          sleep 5
-        done
-        curl -f http://localhost:3000/ || { echo "Web health check failed"; docker compose -f docker-compose.test.yml logs web; exit 1; }
+        # Determine which named tags to create for this ref
+        TAGS=()
+        if [ "$IS_RELEASE_TAG" = "true" ]; then
+          TAGS+=("${IMAGE}:${VERSION}" "${IMAGE}:${REF_NAME}" "${IMAGE}:latest")
+        elif [ "$IS_MAIN" = "true" ]; then
+          TAGS+=("${IMAGE}:${VERSION}-gamma")
+        elif [ "$IS_RELEASE_BRANCH" = "true" ]; then
+          TAGS+=("${IMAGE}:${VERSION}-beta")
+        else
+          TAGS+=("${IMAGE}:${VERSION}-alpha")
+        fi
 
-        echo "=== Starting parallel tests ==="
-
-        # Run API tests in background
-        (
-          echo "[API] Testing login endpoint..."
-          response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4000/api/v1/portal-auth/login -X POST -H "Content-Type: application/json" -d '{"email":"admin@localhost","password":"admin123"}')
-          if [ "$response" = "200" ] || [ "$response" = "201" ]; then
-            echo "[API] Login test passed"
-          else
-            echo "[API] Login endpoint returned: $response (may be expected if no admin user)"
-          fi
-          echo "[API] Tests completed"
-        ) &
-        API_PID=$!
-
-        # Run Puppeteer tests in background
-        (
-          if [ -f scripts/test-webui-pages.cjs ]; then
-            echo "[WEB] Starting Puppeteer tests..."
-            node scripts/test-webui-pages.cjs && echo "[WEB] Tests passed" || echo "[WEB] Tests completed with warnings"
-          else
-            echo "[WEB] Test script not found, skipping"
-          fi
-        ) &
-        WEB_PID=$!
-
-        # Wait for both to complete
-        echo "Waiting for parallel tests to complete..."
-        wait $API_PID
-        API_EXIT=$?
-        wait $WEB_PID
-        WEB_EXIT=$?
-
-        echo "=== Test Results ==="
-        echo "API tests exit code: $API_EXIT"
-        echo "Web tests exit code: $WEB_EXIT"
-
-        # Return success if both passed (allow warnings)
-        exit 0
-      timeout-minutes: 10
-
-    - name: Check container logs on failure
-      if: failure()
-      run: |
-        echo "=== API Logs ==="
-        docker compose -f docker-compose.test.yml logs api
-        echo "=== Web Logs ==="
-        docker compose -f docker-compose.test.yml logs web
-        echo "=== Database Logs ==="
-        docker compose -f docker-compose.test.yml logs postgres
-        echo "=== Redis Logs ==="
-        docker compose -f docker-compose.test.yml logs redis
-
-    - name: Cleanup test environment
-      if: always()
-      run: |
-        docker compose -f docker-compose.test.yml down -v
-        docker system prune -f
-
-  # Performance testing
-  performance-test:
-    needs: integration-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Get short SHA
-      id: short-sha
-      run: echo "sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-    - name: Log in to Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: ${{ env.REGISTRY }}
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Pull API image with retry
-      run: |
-        IMAGE="${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:sha-${{ steps.short-sha.outputs.sha }}"
-        echo "Attempting to pull: $IMAGE"
-
-        for i in 1 2 3 4 5; do
-          echo "Attempt $i of 5..."
-          if docker pull "$IMAGE"; then
-            echo "Successfully pulled image on attempt $i"
-            exit 0
-          fi
-          DELAY=$((i * 15))
-          echo "Pull failed, waiting ${DELAY}s before retry..."
-          sleep $DELAY
+        # Build the --tag args list
+        TAG_ARGS=()
+        for tag in "${TAGS[@]}"; do
+          TAG_ARGS+=(--tag "$tag")
         done
 
-        echo "Failed to pull image after 5 attempts"
-        exit 1
+        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64" "$SRC_ARM64"
 
-    - name: Run performance tests with k6
-      run: |
-        # Start minimal test environment
-        docker run -d --name api-perf \
-          -p 8080:5000 \
-          -e LICENSE_KEY=PENG-TEST-TEST-TEST-TEST-ABCD \
-          -e PRODUCT_NAME=perf-test \
-          ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:sha-${{ steps.short-sha.outputs.sha }}
+        echo "Merged multi-arch manifest for elder-${SERVICE} → ${TAGS[*]}"
+        docker buildx imagetools inspect "${TAGS[0]}"
 
-        sleep 10
-
-        # Run k6 performance tests
-        docker run --rm --network=host \
-          -v ${{ github.workspace }}/tests/performance:/scripts \
-          grafana/k6:latest run /scripts/load-test.js || true
-
-    - name: Cleanup performance test
-      if: always()
-      run: |
-        docker stop api-perf || true
-        docker rm api-perf || true
-
-  # Release creation
+  # Release creation (triggered after manifests are merged)
   release:
-    needs: [build-and-push, security-scan, integration-test]
+    needs: merge-manifests
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       with:
         fetch-depth: 0
 
     - name: Generate changelog
-      id: changelog
       run: |
         echo "## What's Changed" > CHANGELOG.md
-
-        # Get previous tag
         PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
         if [ -n "$PREVIOUS_TAG" ]; then
           echo "### Features" >> CHANGELOG.md
           git log --pretty=format:"* %s (%h)" "$PREVIOUS_TAG"..HEAD --grep="feat:" --grep="feature:" >> CHANGELOG.md || true
           echo "" >> CHANGELOG.md
-
           echo "### Bug Fixes" >> CHANGELOG.md
           git log --pretty=format:"* %s (%h)" "$PREVIOUS_TAG"..HEAD --grep="fix:" --grep="bug:" >> CHANGELOG.md || true
           echo "" >> CHANGELOG.md
-
           echo "### Other Changes" >> CHANGELOG.md
-          git log --pretty=format:"* %s (%h)" "$PREVIOUS_TAG"..HEAD --invert-grep --grep="feat:" --grep="feature:" --grep="fix:" --grep="bug:" >> CHANGELOG.md || true
+          git log --pretty=format:"* %s (%h)" "$PREVIOUS_TAG"..HEAD \
+            --invert-grep --grep="feat:" --grep="feature:" --grep="fix:" --grep="bug:" >> CHANGELOG.md || true
         else
           git log --pretty=format:"* %s (%h)" >> CHANGELOG.md
         fi
-
         echo "" >> CHANGELOG.md
         echo "### Docker Images" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
         echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
-        echo "" >> CHANGELOG.md
-        echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREVIOUS_TAG...${{ github.ref_name }}" >> CHANGELOG.md
 
     - name: Create Release
-      uses: actions/create-release@v1
+      uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e  # v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -518,208 +215,13 @@ jobs:
         draft: false
         prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
 
-  # Deploy to Kubernetes cluster
-  deploy-k8s:
-    needs: [build-and-push, integration-test]
+  # Security scanning disabled — handled in ci.yml filesystem scan
+  security-scan:
+    needs: build-platform
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-
-    environment:
-      name: kubernetes
-      url: https://elder.local
-
+    if: false
+    strategy:
+      matrix:
+        service: [api, web, scanner, worker]
     steps:
-    - name: Check if Kubernetes deployment is configured
-      id: check-config
-      run: |
-        if [ -z "${{ secrets.KUBE_CONFIG }}" ]; then
-          echo "KUBE_CONFIG secret not configured, skipping deployment"
-          echo "skip=true" >> $GITHUB_OUTPUT
-        else
-          echo "skip=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Checkout code
-      if: steps.check-config.outputs.skip != 'true'
-      uses: actions/checkout@v4
-
-    - name: Read version from .version file
-      if: steps.check-config.outputs.skip != 'true'
-      id: version
-      run: |
-        VERSION=$(cat .version | tr -d '\n')
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
-        echo "Version: $VERSION"
-        echo "Image tag will be: ${VERSION}-beta"
-
-    - name: Wait for GHCR propagation
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        echo "Waiting ${{ env.GHCR_PROPAGATION_DELAY }}s for GHCR to propagate multi-arch manifests..."
-        echo "This delay ensures images are available across all registries before deployment."
-        sleep ${{ env.GHCR_PROPAGATION_DELAY }}
-
-    - name: Setup kubectl
-      if: steps.check-config.outputs.skip != 'true'
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'v1.28.0'
-
-    - name: Setup Helm
-      if: steps.check-config.outputs.skip != 'true'
-      uses: azure/setup-helm@v3
-      with:
-        version: 'v3.13.0'
-
-    - name: Configure kubeconfig
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        mkdir -p $HOME/.kube
-        echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-        chmod 600 $HOME/.kube/config
-
-        echo "=== Cluster Information ==="
-        kubectl cluster-info
-        kubectl version --client
-
-        echo "=== Cluster Nodes ==="
-        kubectl get nodes || echo "Unable to list nodes (may not have cluster-wide permissions)"
-
-        echo "=== Target Namespace ==="
-        kubectl get namespace ${{ env.K8S_NAMESPACE }} || echo "Namespace will be created by Helm"
-
-    - name: Add Helm dependencies
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        cd infrastructure/helm/elder
-        helm dependency update
-        echo "=== Helm Dependencies ==="
-        helm dependency list
-
-    - name: Deploy to Kubernetes with Helm
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        IMAGE_TAG="${{ steps.version.outputs.version }}-beta"
-        echo "=== Deploying Elder to Kubernetes ==="
-        echo "Namespace: ${{ env.K8S_NAMESPACE }}"
-        echo "Image tag: $IMAGE_TAG"
-
-        helm upgrade --install elder ./infrastructure/helm/elder \
-          --namespace ${{ env.K8S_NAMESPACE }} \
-          --create-namespace \
-          --set api.image.repository=${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api \
-          --set api.image.tag="$IMAGE_TAG" \
-          --set web.image.repository=${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web \
-          --set web.image.tag="$IMAGE_TAG" \
-          --set config.secretKey="${{ secrets.SECRET_KEY || 'changeme-secret-key' }}" \
-          --set config.license.key="${{ secrets.LICENSE_KEY || '' }}" \
-          --set postgresql.auth.password="${{ secrets.POSTGRES_PASSWORD || 'changeme-postgres' }}" \
-          --set redis.auth.password="${{ secrets.REDIS_PASSWORD || 'changeme-redis' }}" \
-          --wait \
-          --timeout 10m \
-          --atomic \
-          --debug
-
-        echo "=== Deployment completed ==="
-
-    - name: Verify deployment
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        echo "=== Checking deployment status ==="
-        kubectl get deployments -n ${{ env.K8S_NAMESPACE }}
-        kubectl get pods -n ${{ env.K8S_NAMESPACE }}
-        kubectl get services -n ${{ env.K8S_NAMESPACE }}
-
-        echo "=== Waiting for API rollout ==="
-        if kubectl get deployment elder-api -n ${{ env.K8S_NAMESPACE }} >/dev/null 2>&1; then
-          kubectl rollout status deployment/elder-api -n ${{ env.K8S_NAMESPACE }} --timeout=5m
-        else
-          echo "API deployment not found, skipping rollout check"
-        fi
-
-        echo "=== Checking pod health ==="
-        kubectl wait --for=condition=ready pod \
-          -l app.kubernetes.io/name=elder,app.kubernetes.io/component=api \
-          -n ${{ env.K8S_NAMESPACE }} \
-          --timeout=300s || echo "Warning: Not all pods became ready in time"
-
-    - name: Health check
-      if: steps.check-config.outputs.skip != 'true'
-      run: |
-        echo "=== Running health check ==="
-
-        # Try to find API service
-        API_SERVICE=$(kubectl get service -n ${{ env.K8S_NAMESPACE }} -l app.kubernetes.io/component=api -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "elder-api")
-
-        echo "API Service: $API_SERVICE"
-
-        # Port forward in background
-        kubectl port-forward -n ${{ env.K8S_NAMESPACE }} svc/$API_SERVICE 8080:80 &
-        PF_PID=$!
-
-        # Wait for port forward to establish
-        sleep 10
-
-        # Try health check
-        for i in {1..30}; do
-          if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
-            echo "✓ Health check passed!"
-            kill $PF_PID 2>/dev/null || true
-            exit 0
-          fi
-          echo "Attempt $i: Health check not ready..."
-          sleep 2
-        done
-
-        echo "✗ Health check failed after 30 attempts"
-        kill $PF_PID 2>/dev/null || true
-
-        # Show pod logs for debugging
-        echo "=== Pod Logs ==="
-        kubectl logs -n ${{ env.K8S_NAMESPACE }} \
-          -l app.kubernetes.io/component=api \
-          --tail=50 || true
-
-        exit 1
-      timeout-minutes: 5
-
-    - name: Show pod logs on failure
-      if: failure() && steps.check-config.outputs.skip != 'true'
-      run: |
-        echo "=== API Pod Logs ==="
-        kubectl logs -n ${{ env.K8S_NAMESPACE }} \
-          -l app.kubernetes.io/component=api \
-          --tail=100 || true
-
-        echo "=== gRPC Pod Logs ==="
-        kubectl logs -n ${{ env.K8S_NAMESPACE }} \
-          -l app.kubernetes.io/component=grpc \
-          --tail=100 || true
-
-        echo "=== Describe Failed Pods ==="
-        kubectl describe pods -n ${{ env.K8S_NAMESPACE }} \
-          -l app.kubernetes.io/name=elder || true
-
-        echo "=== Events ==="
-        kubectl get events -n ${{ env.K8S_NAMESPACE }} \
-          --sort-by='.lastTimestamp' || true
-
-    - name: Deployment summary
-      if: always() && steps.check-config.outputs.skip != 'true'
-      run: |
-        echo "=== Deployment Summary ==="
-        echo "Namespace: ${{ env.K8S_NAMESPACE }}"
-        echo "Release: elder"
-        echo "Status: $(kubectl get deployment -n ${{ env.K8S_NAMESPACE }} -o json | jq -r '.items[] | "\(.metadata.name): \(.status.conditions[] | select(.type=="Available") | .status)"' || echo 'Unknown')"
-        echo ""
-        echo "=== Access Instructions ==="
-        echo "To access Elder API:"
-        echo "  kubectl port-forward -n ${{ env.K8S_NAMESPACE }} svc/elder-api 8080:80"
-        echo "  curl http://localhost:8080/healthz"
-        echo ""
-        echo "To access Elder Web UI:"
-        echo "  kubectl port-forward -n ${{ env.K8S_NAMESPACE }} svc/elder-web 3000:80"
-        echo "  open http://localhost:3000"
-        echo ""
-        echo "To view logs:"
-        echo "  kubectl logs -n ${{ env.K8S_NAMESPACE }} -l app.kubernetes.io/component=api --tail=100"
+    - run: echo "Container security scan disabled — see ci.yml for filesystem scan"
