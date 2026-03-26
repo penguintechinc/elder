@@ -246,6 +246,15 @@ Entities use a flexible schema for infrastructure components:
 - **penguin-libs Migration**: Replaced local `shared/react_libs` with published `@penguintechinc/react-libs`; integrated `SanitizedLogger` across API and Scanner services
 - **K8s Manifests**: Added complete Helm + Kustomize overlays for alpha (`.localhost.local`) and beta (`.penguintech.cloud`) with smoke test script
 
+### v3.1.4 Highlights
+- **Penguin-Libs Migration**: Removed orphaned `shared/react_libs/` local copy (92 MB); frontend now uses `@penguintechinc/react-libs` npm package exclusively
+- **SanitizedLogger Integration**: Added `penguin-utils` SanitizedLogger as a structlog processor — PII and sensitive values are automatically redacted from all log output
+- **All 4 Containers in Deploy Script**: `deploy-beta.sh all` now builds and pushes api, web, scanner, and worker (previously only api + web)
+- **E2E Alpha Script**: Added `scripts/e2e-test-alpha.sh` with 57-test suite and Kustomize-based deploy/teardown
+- **K8s Manifests**: Added complete Kustomize base + alpha overlay manifests for all services
+- **SQLAlchemy Model Alignment**: Models now 1:1 with PyDAL schema; 13 new model files added for complete coverage
+- **CI Fixes**: Refreshed `NPM_PKG_TOKEN` secret; applied black + isort formatting across all model files
+
 ### v3.1.1 Highlights
 - **Schema via Alembic**: Migration 011 creates all 67 base tables; PyDAL runs with `migrate=False` — eliminates `DuplicateTable` race conditions in multi-replica K8s deployments (Issue #58)
 - **Refresh Token Storage**: `onSuccess` stores both `elder_token` and `elder_refresh_token` — resolves sidebar not loading after login (Issue #59)
