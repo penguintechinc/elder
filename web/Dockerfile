@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-slim AS builder
+FROM --platform=$BUILDPLATFORM node:20-bookworm-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3 AS builder
 
 # GitHub token for private package access — declared early so validation
 # runs before any expensive steps, but DOES NOT bust the npm install cache
@@ -40,7 +40,7 @@ COPY web/ .
 RUN npm run build
 
 # Production stage — serve built files with a lightweight static server
-FROM node:20-slim AS runner
+FROM node:20-bookworm-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3 AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 RUN npm install -g serve
 WORKDIR /app
