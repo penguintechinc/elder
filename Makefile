@@ -140,15 +140,33 @@ test-functional: ## Run functional API tests against running services
 	@$(PYTHON) scripts/test-rest-api.py
 	@$(PYTHON) scripts/test-api-validation.py
 
-test-security: ## Run security scans (bandit, npm audit, trivy filesystem)
-	@echo "$(BLUE)Running bandit...$(RESET)"
+test-security: ## Run all security scans (bandit, pip-audit, npm audit, hadolint, gitleaks, trufflehog, semgrep, trivy)
+	@echo "$(BLUE)[1/8] bandit — Python SAST...$(RESET)"
 	@$(PYTHON) -m bandit -r apps/ shared/ -q
-	@echo "$(BLUE)Running npm audit...$(RESET)"
+	@echo "$(BLUE)[2/8] pip-audit — Python dependency CVEs...$(RESET)"
+	@$(PYTHON) -m pip_audit -r requirements.txt --progress-spinner off
+	@echo "$(BLUE)[3/8] npm audit — Node dependency CVEs...$(RESET)"
 	@cd web && npm audit --audit-level=high
-	@echo "$(BLUE)Running trivy filesystem scan...$(RESET)"
+	@echo "$(BLUE)[4/8] hadolint — Dockerfile linting...$(RESET)"
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/api/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < web/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/scanner/Dockerfile
+	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/worker/Dockerfile
+	@echo "$(BLUE)[5/8] gitleaks — secret scan (git history)...$(RESET)"
+	@docker run --rm -v $(PWD):/repo \
+		zricethezav/gitleaks:v8.21.2 detect --source /repo --no-git --quiet
+	@echo "$(BLUE)[6/8] trufflehog — deep secret scan...$(RESET)"
+	@docker run --rm -v $(PWD):/repo \
+		trufflesecurity/trufflehog:3.88.1 filesystem /repo --only-verified --no-update --quiet
+	@echo "$(BLUE)[7/8] semgrep — SAST + OWASP Top 10...$(RESET)"
+	@docker run --rm -v $(PWD):/src \
+		semgrep/semgrep:1.107.0 semgrep scan /src \
+		--config p/security-audit --config p/secrets --config p/owasp-top-ten \
+		--quiet --error
+	@echo "$(BLUE)[8/8] trivy — filesystem CVE scan...$(RESET)"
 	@docker run --rm -v $(PWD):/project \
 		aquasec/trivy:0.69.3 fs /project --exit-code 1 --severity HIGH,CRITICAL --quiet
-	@echo "$(GREEN)Security scans passed$(RESET)"
+	@echo "$(GREEN)All security scans passed$(RESET)"
 
 test-coverage: ## Generate HTML coverage report (htmlcov/)
 	@$(PYTHON) -m pytest tests/ --cov=apps --cov-report=html --cov-report=term-missing
