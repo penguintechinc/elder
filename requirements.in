@@ -1,0 +1,169 @@
+# Elder - Entity Relationship Tracking Application
+# Python 3.12+ required (optimized for 3.12 performance features)
+
+# Core Flask Framework (with async support)
+Flask[async]==3.1.3
+Flask-CORS==6.0.0
+Flask-Login==0.6.3
+Flask-WTF==1.2.2
+Werkzeug==3.1.6
+
+# REST API
+Flask-RESTful==0.3.10
+flask-restx==1.3.0
+webargs==8.6.0
+
+# gRPC - pinned to 5.x protobuf: google-cloud-iam and google-cloud-resource-manager
+# require protobuf<6.0.0, blocking upgrade to grpcio 1.70+ which needs protobuf>=6.31.1.
+# CVE-2026-0994 patched in 5.29.6 (Dependabot alert #58 resolved at patch level).
+# Future: upgrade to protobuf 6.x once google-cloud packages support it.
+grpcio==1.69.0
+grpcio-tools==1.69.0
+grpcio-reflection==1.69.0
+protobuf==5.29.6
+
+# Database & ORM
+SQLAlchemy==2.0.36
+alembic==1.14.0
+marshmallow==3.26.2
+marshmallow-sqlalchemy==1.1.0
+pydal==20260313.1
+psycopg2-binary==2.9.10
+
+# Redis/Cache
+redis==5.2.1
+flask-caching==2.3.0
+
+# Authentication - SAML
+python3-saml==1.16.0
+xmlsec==1.3.16
+
+# XML Security (XXE vulnerability prevention)
+defusedxml>=0.7.1
+
+# Authentication - OAuth2
+Authlib==1.6.9
+# Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
+
+# Security & Cryptography
+PyJWT==2.10.1
+bcrypt==4.2.1
+cryptography==46.0.5
+# python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
+# Use PyJWT (above) for all JWT operations
+pyotp==2.9.0
+
+# HTTP & API Clients
+requests==2.32.4
+httpx==0.28.1
+aiohttp==3.13.3
+
+# Configuration Management
+python-decouple==3.8
+click==8.1.8
+python-dotenv==1.0.1
+
+# Monitoring & Metrics
+prometheus-client==0.21.1
+prometheus-flask-exporter==0.23.1
+
+# Structured Logging
+structlog==25.4.0
+python-json-logger==3.2.1
+
+# Validation & Serialization
+jsonschema==4.23.0
+email-validator==2.2.0
+validators==0.34.0
+croniter>=2.0.0
+packaging==24.2
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# API Documentation
+flasgger==0.9.7.1
+apispec==6.8.0
+apispec-webframeworks==1.2.0
+
+# Rate Limiting
+Flask-Limiter==3.8.0
+
+# ASGI Server (for async Flask)
+uvicorn[standard]==0.25.0
+uvloop==0.22.1
+asgiref==3.8.1
+
+# Utilities
+python-dateutil==2.9.0.post0
+pytz==2024.2
+pyyaml==6.0.2
+toml==0.10.2
+
+# Graph & Data Processing
+networkx==3.4.2
+
+# WebSocket Support (for real-time updates)
+Flask-SocketIO==5.4.1
+python-socketio==5.14.0
+
+# Mock Data Generation
+Faker==33.3.1
+
+# Development Dependencies
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+pytest-flask==1.3.0
+pytest-mock==3.14.0
+
+# Code Quality
+black==24.10.0
+isort==5.13.2
+flake8==7.1.1
+mypy==1.14.0
+pylint==3.3.3
+
+# Security Scanning
+bandit==1.8.3
+pip-audit==2.10.0
+
+# Type Stubs
+types-requests==2.32.0.20241016
+types-redis==4.6.0.20241004
+types-pytz==2024.2.0.20241003
+
+# LDAP Integration
+python-ldap==3.4.5
+
+# PenguinTech Shared Libraries (penguin-libs)
+penguin-libs~=0.1.0
+penguin-licensing~=0.1.0
+penguin-utils~=0.1.0
+
+# License Server Integration
+# Using requests/httpx for HTTP client (already included above)
+
+# Cloud Providers - Secrets Management (Phase 2)
+boto3==1.35.90
+google-cloud-secret-manager==2.21.1
+# Infisical uses requests (already included above)
+
+# Cloud Providers - Keys Management (Phase 3)
+# boto3 already included above for AWS KMS
+google-cloud-kms==3.7.0
+# Infisical uses requests + cryptography (already included above)
+
+# Cloud Providers - IAM Integration (Phase 4)
+# boto3 already included above for AWS IAM
+google-cloud-iam==2.16.0
+google-cloud-resource-manager==1.13.1
+kubernetes==31.0.0
+
+# Google Workspace Integration (Phase 7)
+google-api-python-client==2.161.0
+google-auth==2.37.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# Cloud Logging (optional)
+# google-cloud-logging==3.11.4

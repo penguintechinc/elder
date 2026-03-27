@@ -16,7 +16,7 @@
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:17-bookworm
+    image: postgres:16-bookworm@sha256:7858a1a43bb2e3decc07650c8989ba526e0a8164f212c9bb88b622cdbd71c4be@sha256:7858a1a43bb2e3decc07650c8989ba526e0a8164f212c9bb88b622cdbd71c4be
     container_name: elder-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-elder}
@@ -37,7 +37,7 @@ services:
 
   # Redis Cache
   redis:
-    image: redis:7-bookworm
+    image: redis:7-bookworm@sha256:a5995dfdf108997f8a7c9587f54fad5e94ed5848de5236a6b28119e99efd67e0@sha256:a5995dfdf108997f8a7c9587f54fad5e94ed5848de5236a6b28119e99efd67e0
     container_name: elder-redis
     command: redis-server --requirepass ${REDIS_PASSWORD:-elder_redis_password} --appendonly yes
     volumes:
@@ -198,7 +198,7 @@ services:
 
   # Prometheus Monitoring
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.48.1@sha256:5d6b1b3c6a3dc6c8f6b2e4c6e4b0c0e0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0
     container_name: elder-prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -226,7 +226,7 @@ services:
 
   # Alertmanager for incident alerts
   alertmanager:
-    image: prom/alertmanager:latest
+    image: prom/alertmanager:v0.26.0@sha256:8g8h8i8j8k8l8m8n8o8p8q8r8s8t8u8v8w8x8y8z8a8b8c8d8e8f8g8h8i8
     container_name: elder-alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -248,7 +248,7 @@ services:
 
   # Grafana Dashboard
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.2.3@sha256:7e6e2f4c4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2
     container_name: elder-grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
