@@ -47,7 +47,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libsasl2-2 \
-    libldap2 \
+    libldap-2.5-0 \
     libxml2 \
     libxmlsec1-openssl \
     curl \

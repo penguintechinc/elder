@@ -28,7 +28,7 @@ WORKDIR /app
 # Install runtime dependencies and create user
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    libldap2 \
+    libldap-2.5-0 \
     libsasl2-2 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/* && \
