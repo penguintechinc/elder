@@ -3,7 +3,7 @@
 # Python 3.12 for performance optimizations (dataclasses with slots, asyncio TaskGroups)
 
 # Builder stage
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb AS builder
 
 # Set working directory
 WORKDIR /build
@@ -29,7 +29,7 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir -r requirements.txt
 
 # Runtime stage
-FROM python:3.12-slim
+FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
 # Build arguments for JWT token expiration
 ARG JWT_ACCESS_TOKEN_HOURS=4
@@ -38,6 +38,8 @@ ARG JWT_REFRESH_TOKEN_DAYS=30
 # Build argument for application version
 ARG APP_VERSION=0.0.0
 
+# Comment: Updated to Python 3.13 from 3.12
+
 # Set working directory
 WORKDIR /app
 
@@ -45,7 +47,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libsasl2-2 \
-    libldap2 \
+    libldap-2.5-0 \
     libxml2 \
     libxmlsec1-openssl \
     curl \
