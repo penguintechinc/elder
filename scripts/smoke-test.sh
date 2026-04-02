@@ -5,7 +5,7 @@
 # Usage: ./scripts/smoke-test.sh [OPTIONS]
 #
 # Modes:
-#   --alpha          Alpha testing: local docker-compose cluster (default)
+#   --alpha          Alpha testing: MicroK8s local cluster via Kustomize (default)
 #   --beta           Beta testing: K8s deployment at elder.penguintech.cloud
 #
 # Options:
@@ -29,10 +29,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Default mode: alpha (local docker-compose)
+# Default mode: alpha (local MicroK8s/Kustomize)
 TEST_MODE="alpha"
 SKIP_BUILD=false
 VERBOSE=false
+PF_PIDS=""
 
 # Parse arguments
 for arg in "$@"; do
@@ -72,13 +73,13 @@ if [ "$TEST_MODE" = "beta" ]; then
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
     MODE_LABEL="BETA (K8s: elder.penguintech.cloud via dal2.penguintech.io)"
 else
-    # Alpha mode: local docker-compose
+    # Alpha mode: local MicroK8s/Kustomize
     API_URL="${API_URL:-http://localhost:4000}"
     WEB_URL="${WEB_URL:-http://localhost:3005}"
     HOST_HEADER=""
     ADMIN_USERNAME="${ADMIN_USERNAME:-admin@localhost.local}"
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
-    MODE_LABEL="ALPHA (Local Docker Compose)"
+    MODE_LABEL="ALPHA (Local MicroK8s + Kustomize)"
 fi
 
 GRPC_PORT="${GRPC_PORT:-50052}"
@@ -148,37 +149,162 @@ log_info "Web URL: $WEB_URL"
 log_info ""
 
 # ============================================================
-# ALPHA MODE: Local Docker Compose Tests
+# ALPHA MODE: Local MicroK8s + Kustomize Tests
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ]; then
-    # Step 1: Build containers (unless skipped)
-    if [ "$SKIP_BUILD" = false ]; then
-        log_info "Step 1: Building containers..."
-        if docker compose build --no-cache; then
-            record_pass "Docker build completed successfully"
-        else
-            record_fail "Docker build failed"
-            exit 1
+    # Set up trap to kill port-forwards on exit
+    cleanup() {
+        if [ -n "$PF_PIDS" ]; then
+            log_verbose "Cleaning up port-forwards: $PF_PIDS"
+            kill $PF_PIDS 2>/dev/null || true
         fi
+    }
+    trap cleanup EXIT INT TERM
+
+    # Step 1: Build and push images to MicroK8s registry
+    if [ "$SKIP_BUILD" = false ]; then
+        log_info "Step 1: Building and pushing images to MicroK8s registry..."
+
+        # Check GITHUB_TOKEN for web build
+        if [ -z "$GITHUB_TOKEN" ]; then
+            log_warn "GITHUB_TOKEN not set - web image build may fail to install @penguintechinc packages"
+        fi
+
+        # Build and push each service
+        for svc in api web scanner worker; do
+            log_info "Building ${svc}..."
+            case "$svc" in
+                api)
+                    if docker build -t localhost:32000/elder-api:alpha-latest -f apps/api/Dockerfile --no-cache .; then
+                        if docker push localhost:32000/elder-api:alpha-latest; then
+                            log_verbose "Pushed api image"
+                        else
+                            record_fail "Failed to push api image to MicroK8s registry"
+                            exit 1
+                        fi
+                    else
+                        record_fail "Failed to build api image"
+                        exit 1
+                    fi
+                    ;;
+                web)
+                    BUILD_ARGS=""
+                    if [ -n "$GITHUB_TOKEN" ]; then
+                        BUILD_ARGS="--build-arg GITHUB_TOKEN=$GITHUB_TOKEN"
+                    fi
+                    if docker build -t localhost:32000/elder-web:alpha-latest --no-cache $BUILD_ARGS -f web/Dockerfile .; then
+                        if docker push localhost:32000/elder-web:alpha-latest; then
+                            log_verbose "Pushed web image"
+                        else
+                            record_fail "Failed to push web image to MicroK8s registry"
+                            exit 1
+                        fi
+                    else
+                        record_fail "Failed to build web image"
+                        exit 1
+                    fi
+                    ;;
+                scanner)
+                    if docker build -t localhost:32000/elder-scanner:alpha-latest -f apps/scanner/Dockerfile --no-cache apps/scanner; then
+                        if docker push localhost:32000/elder-scanner:alpha-latest; then
+                            log_verbose "Pushed scanner image"
+                        else
+                            record_fail "Failed to push scanner image to MicroK8s registry"
+                            exit 1
+                        fi
+                    else
+                        record_fail "Failed to build scanner image"
+                        exit 1
+                    fi
+                    ;;
+                worker)
+                    if docker build -t localhost:32000/elder-worker:alpha-latest -f apps/worker/Dockerfile --no-cache .; then
+                        if docker push localhost:32000/elder-worker:alpha-latest; then
+                            log_verbose "Pushed worker image"
+                        else
+                            record_fail "Failed to push worker image to MicroK8s registry"
+                            exit 1
+                        fi
+                    else
+                        record_fail "Failed to build worker image"
+                        exit 1
+                    fi
+                    ;;
+            esac
+        done
+        record_pass "All images built and pushed to MicroK8s registry"
     else
         log_info "Step 1: Skipping build (--skip-build flag set)"
     fi
 
-    # Step 2: Start services
+    # Step 2: Delete old deployment and redeploy fresh
     log_info ""
-    log_info "Step 2: Starting services..."
-    docker compose down --volumes 2>/dev/null || true
-    if docker compose up -d; then
-        record_pass "Docker Compose services started"
+    log_info "Step 2: Redeploying Kustomize overlay..."
+    if kubectl delete --context local-alpha -k k8s/kustomize/overlays/alpha --ignore-not-found 2>/dev/null; then
+        log_verbose "Deleted old K8s resources"
+        # Wait for old pods to terminate
+        sleep 5
+    fi
+
+    if kubectl apply --context local-alpha -k k8s/kustomize/overlays/alpha; then
+        record_pass "Kustomize overlay deployed"
     else
-        record_fail "Failed to start Docker Compose services"
+        record_fail "Failed to deploy Kustomize overlay"
         exit 1
     fi
 
-    # Step 3: Wait for services to be healthy
+    # Step 3: Wait for deployments and set up port-forwards
     log_info ""
-    log_info "Step 3: Waiting for services to become healthy..."
+    log_info "Step 3: Waiting for K8s deployments to be ready..."
 
+    if kubectl --context local-alpha rollout status deployment -n elder --timeout=180s > /dev/null 2>&1; then
+        record_pass "All K8s deployments are ready"
+    else
+        record_fail "K8s deployments failed to become ready"
+        log_error "Deployment status:"
+        kubectl --context local-alpha get deployments -n elder
+        exit 1
+    fi
+
+    # Start port-forwards as background processes
+    log_info ""
+    log_info "Setting up port-forwards..."
+
+    kubectl --context local-alpha port-forward -n elder svc/api 4000:5000 > /dev/null 2>&1 &
+    PF_PIDS="$! "
+    log_verbose "Port-forward api: pid $!"
+
+    kubectl --context local-alpha port-forward -n elder svc/web 3005:3000 > /dev/null 2>&1 &
+    PF_PIDS="${PF_PIDS}$! "
+    log_verbose "Port-forward web: pid $!"
+
+    kubectl --context local-alpha port-forward -n elder svc/worker 8000:28000 > /dev/null 2>&1 &
+    PF_PIDS="${PF_PIDS}$! "
+    log_verbose "Port-forward worker: pid $!"
+
+    kubectl --context local-alpha port-forward -n elder svc/api 50052:50051 > /dev/null 2>&1 &
+    PF_PIDS="${PF_PIDS}$!"
+    log_verbose "Port-forward gRPC: pid $!"
+
+    # Wait for port-forwards to be ready
+    log_info "Waiting for port-forwards to become active..."
+    PORTS_READY=0
+    WAIT_PORTS=0
+    while [ $WAIT_PORTS -lt 30 ]; do
+        if nc -z localhost 4000 2>/dev/null && nc -z localhost 3005 2>/dev/null; then
+            PORTS_READY=1
+            break
+        fi
+        sleep 1
+        WAIT_PORTS=$((WAIT_PORTS + 1))
+    done
+
+    if [ $PORTS_READY -eq 0 ]; then
+        record_fail "Port-forwards did not become ready"
+        exit 1
+    fi
+
+    # Define wait_for_health function for alpha mode
     wait_for_health() {
         local service_name="$1"
         local url="$2"
@@ -197,44 +323,14 @@ if [ "$TEST_MODE" = "alpha" ]; then
         return 1
     }
 
-    # Wait for PostgreSQL (via docker compose health check)
-    log_info "Waiting for PostgreSQL..."
-    POSTGRES_WAIT=0
-    while [ $POSTGRES_WAIT -lt $MAX_WAIT ]; do
-        if docker compose exec -T postgres pg_isready -U elder > /dev/null 2>&1; then
-            record_pass "PostgreSQL is ready"
-            break
-        fi
-        sleep $RETRY_INTERVAL
-        POSTGRES_WAIT=$((POSTGRES_WAIT + RETRY_INTERVAL))
-    done
-    if [ $POSTGRES_WAIT -ge $MAX_WAIT ]; then
-        record_fail "PostgreSQL failed to become ready"
-    fi
-
-    # Wait for Redis
-    log_info "Waiting for Redis..."
-    REDIS_WAIT=0
-    while [ $REDIS_WAIT -lt $MAX_WAIT ]; do
-        if docker compose exec -T redis redis-cli ping > /dev/null 2>&1; then
-            record_pass "Redis is ready"
-            break
-        fi
-        sleep $RETRY_INTERVAL
-        REDIS_WAIT=$((REDIS_WAIT + RETRY_INTERVAL))
-    done
-    if [ $REDIS_WAIT -ge $MAX_WAIT ]; then
-        record_fail "Redis failed to become ready"
-    fi
-
     # Wait for API
     log_info "Waiting for API..."
     if wait_for_health "API" "$API_URL/healthz"; then
         record_pass "API health check passed"
     else
         record_fail "API health check failed"
-        log_error "API logs:"
-        docker compose logs api --tail=50
+        log_error "API pod logs:"
+        kubectl --context local-alpha logs -n elder -l app=api --tail=50 2>/dev/null || echo "Could not fetch logs"
     fi
 
     # Wait for Web UI
@@ -243,8 +339,8 @@ if [ "$TEST_MODE" = "alpha" ]; then
         record_pass "Web UI is accessible"
     else
         record_fail "Web UI health check failed"
-        log_error "Web UI logs:"
-        docker compose logs web --tail=50
+        log_error "Web UI pod logs:"
+        kubectl --context local-alpha logs -n elder -l app=web --tail=50 2>/dev/null || echo "Could not fetch logs"
     fi
 
 # ============================================================
@@ -457,45 +553,43 @@ else
 fi
 
 # ============================================================
-# ALPHA-ONLY TESTS (local container tests)
+# ALPHA-ONLY TESTS (K8s pod tests)
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ]; then
-    # Step 6: Scanner Container Test (if running)
+    # Step 6: Scanner Pod Test
     log_info ""
-    log_info "Step 6: Scanner Container Test..."
+    log_info "Step 6: Scanner Pod Status..."
 
-    SCANNER_RUNNING=$(docker compose ps scanner --format json 2>/dev/null | grep -c "running" || echo "0")
-    if [ "$SCANNER_RUNNING" -gt "0" ]; then
-        # Check scanner health via docker exec
-        if docker compose exec -T scanner python -c "import sys; sys.exit(0)" 2>/dev/null; then
-            record_pass "Scanner container is running and Python works"
-        else
-            record_fail "Scanner container Python test failed"
-        fi
+    SCANNER_STATUS=$(kubectl --context local-alpha get pods -n elder -l app=scanner -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+    if [ "$SCANNER_STATUS" = "Running" ]; then
+        record_pass "Scanner pod is Running"
     else
-        log_warn "Scanner container not running (may be expected for dev setup)"
+        log_warn "Scanner pod status: $SCANNER_STATUS (may be expected for dev setup)"
     fi
 
-    # Step 7: Connector Container Test (if running)
+    # Step 7: Worker Pod Test and Health Check
     log_info ""
-    log_info "Step 7: Connector Container Test..."
+    log_info "Step 7: Worker Pod Status and Health Check..."
 
-    CONNECTOR_RUNNING=$(docker compose ps connector --format json 2>/dev/null | grep -c "running" || echo "0")
-    if [ "$CONNECTOR_RUNNING" -gt "0" ]; then
-        if docker compose exec -T connector python -c "import sys; sys.exit(0)" 2>/dev/null; then
-            record_pass "Connector container is running and Python works"
+    WORKER_STATUS=$(kubectl --context local-alpha get pods -n elder -l app=worker -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+    if [ "$WORKER_STATUS" = "Running" ]; then
+        record_pass "Worker pod is Running"
+
+        # Check worker health via port-forward
+        if do_curl -sf "http://localhost:8000/healthz" > /dev/null 2>&1; then
+            record_pass "Worker /healthz endpoint responding"
         else
-            record_fail "Connector container Python test failed"
+            log_warn "Worker /healthz endpoint not responding (may be expected)"
         fi
     else
-        log_warn "Connector container not running (may be expected for dev setup)"
+        log_warn "Worker pod status: $WORKER_STATUS"
     fi
 
     # Step 8: gRPC Server Test
     log_info ""
     log_info "Step 8: gRPC API Tests..."
 
-    # Check if gRPC is enabled (now runs in same container as API)
+    # Check if gRPC is enabled (runs in API pod on port 50051)
     if nc -z localhost $GRPC_PORT 2>/dev/null; then
         record_pass "gRPC server is listening on port $GRPC_PORT"
 
@@ -616,11 +710,7 @@ echo -e "${RED}Failed: $TESTS_FAILED${NC}"
 if [ $TESTS_FAILED -gt 0 ]; then
     echo -e "\n${RED}Failed tests:${NC}$FAILED_TESTS"
     log_info ""
-    if [ "$TEST_MODE" = "alpha" ]; then
-        log_info "Service logs available via: docker compose logs <service>"
-    else
-        log_info "Check K8s logs via: kubectl logs -n elder <pod-name>"
-    fi
+    log_info "Check K8s logs via: kubectl --context local-alpha logs -n elder <pod-name>"
     exit 1
 else
     log_success "All smoke tests passed!"
