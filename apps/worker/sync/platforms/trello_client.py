@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 import httpx
-from pydal import DAL
+from penguin_dal import DAL
 
 from apps.worker.sync.base import (
     BaseSyncClient,

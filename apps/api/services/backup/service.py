@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from pydal import DAL
+from penguin_dal import DAL
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class BackupService:
         Initialize BackupService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
         self.backup_dir = os.getenv("BACKUP_DIR", "/tmp/elder/backups")

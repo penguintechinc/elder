@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import requests
-from pydal import DAL
+from penguin_dal import DAL
 
 
 class WebhookService:
@@ -22,7 +22,7 @@ class WebhookService:
         Initialize WebhookService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
 

@@ -145,6 +145,25 @@ class TestEntityCRUD:
 
         assert response.status_code == 200
 
+    def test_entity_filter_by_type(self, api_url, auth_headers, check_services):
+        """Regression test for #97: entity_type filter must not return 500.
+
+        PostgreSQL enum values must match the lowercase .value strings that
+        PyDAL passes at runtime.  Prior to the fix, SQLAlchemy created the
+        entitytype enum with uppercase member names (e.g. 'NETWORK') while
+        PyDAL queries passed lowercase ('network'), causing a 500.
+        """
+        for entity_type in ["datacenter", "vpc", "subnet", "compute", "network", "user", "security_issue"]:
+            response = requests.get(
+                f"{api_url}/api/v1/entities",
+                headers=auth_headers,
+                params={"entity_type": entity_type},
+            )
+            assert response.status_code == 200, (
+                f"GET /api/v1/entities?entity_type={entity_type} returned "
+                f"{response.status_code}: {response.text[:200]}"
+            )
+
 
 class TestServiceCRUD:
     """Test Service CRUD operations."""

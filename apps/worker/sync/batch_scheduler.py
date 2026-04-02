@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from pydal import DAL
+from penguin_dal import DAL
 
 from apps.worker.config.settings import settings
 from apps.worker.sync.base import BaseSyncClient, ResourceType
@@ -65,7 +65,7 @@ class BatchSyncScheduler:
         """Initialize batch sync scheduler.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
             sync_clients: Dictionary of platform sync clients
             logger: Logger instance
         """

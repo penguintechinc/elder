@@ -5,7 +5,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from pydal import DAL
+from penguin_dal import DAL
 
 
 class SearchService:
@@ -16,7 +16,7 @@ class SearchService:
         Initialize SearchService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
 

@@ -40,11 +40,8 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
     to_dict,
 )
-from apps.api.models.pydal_models import define_all_tables
 
 __all__ = [
-    # PyDAL table definitions
-    "define_all_tables",
     # DTOs - Organizations
     "OrganizationDTO",
     "CreateOrganizationRequest",

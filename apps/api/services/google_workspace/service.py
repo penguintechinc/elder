@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-from pydal import DAL
+from penguin_dal import DAL
 
 
 class GoogleWorkspaceService:
@@ -21,7 +21,7 @@ class GoogleWorkspaceService:
         Initialize GoogleWorkspaceService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
 

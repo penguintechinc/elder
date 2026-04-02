@@ -1,10 +1,10 @@
 """Elder gRPC servicer implementation.
 
 NOTE: This servicer is currently a stub. The original implementation assumed SQLAlchemy
-ORM models, but Elder uses PyDAL. The servicer methods need to be rewritten to use
-PyDAL operations via the apps.api.api.v1 services.
+ORM models, but Elder uses penguin-dal. The servicer methods need to be rewritten to use
+penguin-dal operations via the apps.api.api.v1 services.
 
-For now, all methods return UNIMPLEMENTED status until proper PyDAL integration is done.
+For now, all methods return UNIMPLEMENTED status until proper penguin-dal integration is done.
 """
 
 # flake8: noqa: E501
@@ -18,7 +18,7 @@ import grpc
 import jwt
 import networkx as nx
 import structlog
-from pydal import DAL
+from penguin_dal import DAL
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.grpc.converters import (
@@ -39,7 +39,6 @@ from apps.api.grpc.generated import (
 )
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 from apps.api.models.dataclasses import from_pydal_row
-from apps.api.models.pydal_models import define_all_tables
 
 logger = structlog.get_logger(__name__)
 
@@ -77,7 +76,6 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             logger.info("using_database_url", database_url=f"...@{masked_url}")
 
         self.db = DAL(database_url, folder="/tmp/pydal", migrate=False, pool_size=5)
-        define_all_tables(self.db)
 
         # JWT configuration
         self.jwt_secret = os.getenv(

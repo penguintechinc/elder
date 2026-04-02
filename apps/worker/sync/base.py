@@ -17,7 +17,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydal import DAL
+from penguin_dal import DAL
 
 
 class SyncDirection(Enum):
@@ -167,7 +167,7 @@ class BaseSyncClient(abc.ABC):
     Attributes:
         platform_name: Name of the platform (github, gitlab, jira, etc.)
         config: Platform-specific configuration
-        db: PyDAL database instance
+        db: penguin-dal database instance
         sync_config_id: ID of the sync configuration
         logger: Logger instance with correlation ID support
     """

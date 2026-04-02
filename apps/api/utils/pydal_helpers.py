@@ -1,7 +1,7 @@
 """
-PyDAL async helper utilities for Elder API.
+penguin-dal async helper utilities for Elder API.
 
-This module provides async wrappers for common PyDAL operations,
+This module provides async wrappers for common penguin-dal operations,
 simplifying the use of run_in_threadpool with database queries.
 """
 
@@ -20,11 +20,11 @@ async def get_by_id(table: Any, resource_id: int) -> Optional[Any]:
     Get a record by ID with async support.
 
     Args:
-        table: PyDAL table object
+        table: penguin-dal table object
         resource_id: ID of record to retrieve
 
     Returns:
-        PyDAL Row object if found, None otherwise
+        penguin-dal Row object if found, None otherwise
 
     Example:
         org = await get_by_id(db.organizations, org_id)
@@ -39,7 +39,7 @@ async def query_count(query: Any) -> int:
     Execute a count query with async support.
 
     Args:
-        query: PyDAL query object
+        query: penguin-dal query object
 
     Returns:
         Count of matching records
@@ -58,13 +58,13 @@ async def query_select(
     Execute a select query with async support.
 
     Args:
-        query: PyDAL query object
+        query: penguin-dal query object
         orderby: Optional ordering specification
         limitby: Optional limit tuple (offset, limit)
         **kwargs: Additional select parameters
 
     Returns:
-        List of PyDAL Row objects
+        List of penguin-dal Row objects
 
     Example:
         query = db.entities.organization_id == org_id
@@ -92,7 +92,7 @@ async def insert_record(table: Any, **data) -> int:
     Insert a record with async support.
 
     Args:
-        table: PyDAL table object
+        table: penguin-dal table object
         **data: Field values to insert
 
     Returns:
@@ -119,7 +119,7 @@ async def update_record(table: Any, record_id: int, **data) -> bool:
     Update a record by ID with async support.
 
     Args:
-        table: PyDAL table object
+        table: penguin-dal table object
         record_id: ID of record to update
         **data: Field values to update
 
@@ -151,7 +151,7 @@ async def delete_record(table: Any, record_id: int) -> bool:
     Delete a record by ID with async support.
 
     Args:
-        table: PyDAL table object
+        table: penguin-dal table object
         record_id: ID of record to delete
 
     Returns:
@@ -178,7 +178,7 @@ async def query_update(query: Any, **data) -> int:
     Update multiple records matching a query with async support.
 
     Args:
-        query: PyDAL query object
+        query: penguin-dal query object
         **data: Field values to update
 
     Returns:
@@ -198,7 +198,7 @@ async def query_delete(query: Any) -> int:
     Delete multiple records matching a query with async support.
 
     Args:
-        query: PyDAL query object
+        query: penguin-dal query object
 
     Returns:
         Number of records deleted
@@ -214,7 +214,7 @@ async def commit_db(db: Any) -> None:
     Commit database transaction with async support.
 
     Args:
-        db: PyDAL database instance
+        db: penguin-dal database instance
 
     Example:
         await commit_db(current_app.db)
@@ -296,7 +296,7 @@ async def paginated_query(
     Execute a paginated query with count.
 
     Args:
-        query: PyDAL query object
+        query: penguin-dal query object
         pagination: PaginationParams instance
         orderby: Optional ordering specification
 

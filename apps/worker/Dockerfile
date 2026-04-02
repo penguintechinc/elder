@@ -47,7 +47,7 @@ RUN chown -R worker:worker /app
 
 # Set Python path and include site-packages
 ENV PATH=/app/.local/bin:$PATH
-ENV PYTHONPATH=/app:/app/.local/lib/python3.12/site-packages:$PYTHONPATH
+ENV PYTHONPATH=/app:/app/.local/lib/python3.13/site-packages:$PYTHONPATH
 
 # Switch to non-root user
 USER worker

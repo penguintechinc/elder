@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import httpx
-from pydal import DAL
+from penguin_dal import DAL
 
 from apps.worker.sync.base import (
     BaseSyncClient,
@@ -48,7 +48,7 @@ class GitHubSyncClient(BaseSyncClient):
 
         Args:
             config: GitHub configuration with api_token, org/repo info
-            db: PyDAL database instance
+            db: penguin-dal database instance
             sync_config_id: Sync configuration ID
             logger: Logger instance
         """

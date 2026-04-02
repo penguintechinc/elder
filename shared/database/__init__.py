@@ -2,7 +2,7 @@
 
 Hybrid Approach:
 - SQLAlchemy + Alembic: Schema definition and migrations
-- PyDAL: Runtime queries and database operations
+- penguin-dal: Runtime queries and database operations (SQLAlchemy-backed)
 """
 
 # flake8: noqa: E501
@@ -11,7 +11,7 @@ import logging
 import os
 import subprocess
 
-from pydal import DAL
+from penguin_dal import DAL
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def run_migrations(app):
     """
     try:
         # Get SQLAlchemy-compatible URL (postgresql:// not postgres://)
-        database_url = get_database_url(app, for_system="sqlalchemy")
+        database_url = get_database_url(app)
 
         # Set environment variable for Alembic
         env = os.environ.copy()
@@ -96,27 +96,26 @@ def init_sqlalchemy_tables(app):
     )
     from apps.api.models.base import Base
 
-    database_url = get_database_url(app, for_system="sqlalchemy")
+    database_url = get_database_url(app)
     engine = create_engine(database_url)
     Base.metadata.create_all(engine)
     engine.dispose()
     logger.info("SQLAlchemy tables created/verified")
 
 
-def get_database_url(app, for_system: str = "pydal") -> str:
+def get_database_url(app, **kwargs) -> str:
     """
-    Get database URL normalized for the target system.
+    Get database URL in SQLAlchemy format (postgresql://).
 
-    Different systems use different URI schemes:
-    - SQLAlchemy/Alembic: postgresql://user:pass@host:port/db
-    - PyDAL:              postgres://user:pass@host:port/db
+    penguin-dal is a SQLAlchemy-compatible wrapper, so returns standard
+    SQLAlchemy-compatible URLs for all database systems.
 
     Args:
         app: Flask app instance
-        for_system: Target system - "sqlalchemy", "pydal", or "raw"
+        **kwargs: Backward compatibility (ignored)
 
     Returns:
-        Database URL formatted for the target system
+        Database URL in SQLAlchemy format
 
     Raises:
         ValueError: If DATABASE_URL not configured
@@ -125,78 +124,34 @@ def get_database_url(app, for_system: str = "pydal") -> str:
     if not database_url:
         raise ValueError("DATABASE_URL not configured")
 
-    db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
+    # Ensure postgresql:// for SQLAlchemy/penguin-dal (may already be correct)
+    if database_url.startswith("postgres://") and not database_url.startswith(
+        "postgresql://"
+    ):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-    # Return raw URL without transformation
-    if for_system == "raw":
-        return database_url
-
-    # Transform for SQLAlchemy (standard format)
-    if for_system == "sqlalchemy":
-        # Ensure postgresql:// for SQLAlchemy (may already be correct)
-        if database_url.startswith("postgres://") and not database_url.startswith(
-            "postgresql://"
-        ):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        return database_url
-
-    # Transform for PyDAL (custom scheme)
-    if for_system == "pydal":
-        # PyDAL uses postgres:// not postgresql://
-        if database_url.startswith("postgresql://"):
-            database_url = database_url.replace("postgresql://", "postgres://", 1)
-
-        # Validate DB_TYPE if provided
-        if db_type:
-            db_type = db_type.lower()
-            if db_type in ["mariadb", "mysql"]:
-                if not database_url.startswith("mysql://"):
-                    logger.warning(
-                        f"DB_TYPE={db_type} but URL doesn't start with mysql://"
-                    )
-            elif db_type == "postgresql":
-                if not database_url.startswith("postgres://"):
-                    logger.warning(
-                        f"DB_TYPE=postgresql but URL doesn't start with postgres:// for PyDAL"
-                    )
-            elif db_type == "sqlite":
-                if not database_url.startswith("sqlite://"):
-                    logger.warning(
-                        f"DB_TYPE={db_type} but URL doesn't start with sqlite://"
-                    )
-
-        return database_url
-
-    raise ValueError(
-        f"Unknown system: {for_system}. Use 'sqlalchemy', 'pydal', or 'raw'"
-    )
+    return database_url
 
 
 def init_db(app):
     """
-    Initialize database for PyDAL runtime queries.
+    Initialize database for penguin-dal runtime queries.
 
     Note: Schema creation and migrations should be handled by SQLAlchemy/Alembic
-    before calling this function. This creates the PyDAL DAL instance for queries.
+    before calling this function. This creates the penguin-dal DAL instance for queries.
     """
-    # Get PyDAL-compatible URL (postgres:// not postgresql://)
-    database_url = get_database_url(app, for_system="pydal")
+    # Get SQLAlchemy-compatible URL
+    database_url = get_database_url(app)
 
     db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
     logger.info(
-        f"Initializing PyDAL: {database_url.split('@')[0].split('://')[0]}://*** "
+        f"Initializing penguin-dal: {database_url.split('@')[0].split('://')[0]}://*** "
         f"(DB_TYPE: {db_type or 'auto'})"
     )
 
-    # Create PyDAL DAL instance for queries only.
+    # Create penguin-dal DAL instance for queries only.
     # Schema creation is handled by Alembic migrations (run_migrations).
-    db = DAL(
-        database_url,
-        folder=app.instance_path if hasattr(app, "instance_path") else "/tmp/pydal",
-        migrate=False,
-        pool_size=10,
-        fake_migrate_all=False,
-    )
+    db = DAL(database_url, pool_size=10, migrate=False)
 
     # Attach to Flask app for use in endpoints
     app.db = db
@@ -208,23 +163,26 @@ def init_db(app):
     def _teardown_db(exception=None):
         _db = app.db
         try:
-            if exception:
-                _db.rollback()
-            else:
-                _db.commit()
+            if hasattr(_db, 'commit') and hasattr(_db, 'rollback'):
+                if exception:
+                    _db.rollback()
+                else:
+                    _db.commit()
         except Exception as e:
             logger.debug(f"DB teardown error: {e}")
             try:
-                _db.rollback()
+                if hasattr(_db, 'rollback'):
+                    _db.rollback()
             except Exception:
                 pass
         # Handle separate read replica if configured
         if hasattr(app, "db_read") and app.db_read is not _db:
             try:
-                if exception:
-                    app.db_read.rollback()
-                else:
-                    app.db_read.commit()
+                if hasattr(app.db_read, 'commit') and hasattr(app.db_read, 'rollback'):
+                    if exception:
+                        app.db_read.rollback()
+                    else:
+                        app.db_read.commit()
             except Exception as e:
                 logger.debug(f"DB read replica teardown error: {e}")
 
@@ -233,39 +191,21 @@ def init_db(app):
     # Initialize read replica connection if configured
     read_url = app.config.get("DATABASE_READ_URL") or os.getenv("DATABASE_READ_URL")
     if read_url and read_url.strip():
-        read_url_pydal = read_url
-        if read_url_pydal.startswith("postgresql://"):
-            read_url_pydal = read_url_pydal.replace("postgresql://", "postgres://", 1)
+        # Normalize read replica URL to SQLAlchemy format
+        if read_url.startswith("postgres://") and not read_url.startswith(
+            "postgresql://"
+        ):
+            read_url = read_url.replace("postgres://", "postgresql://", 1)
         logger.info("Initializing read replica connection")
-        app.db_read = DAL(
-            read_url_pydal,
-            folder=os.path.join(
-                app.instance_path if hasattr(app, "instance_path") else "/tmp/pydal",
-                "read_replica",
-            ),
-            migrate=False,
-            pool_size=10,
-        )
+        app.db_read = DAL(read_url, pool_size=10, migrate=False)
     else:
         # No replica configured — reads go to primary
         app.db_read = db
 
-    # Import and define all PyDAL table definitions for runtime queries.
-    # All schema creation is handled by Alembic (migration 011 creates base tables).
-    # PyDAL runs with migrate=False — it never issues DDL.
-    from shared.models.pydal_models import define_all_tables
-
-    define_all_tables(db)
-
-    # Define tables on read replica too (if it's a separate connection)
-    if app.db_read is not db:
-        define_all_tables(app.db_read)
-        logger.info("Read replica tables defined")
-
     # Create default admin user if not exists
     _create_default_admin(app, db)
 
-    logger.info("PyDAL database initialized successfully")
+    logger.info("penguin-dal database initialized successfully")
 
 
 def _create_default_admin(app, db):
@@ -320,8 +260,8 @@ def _create_default_admin(app, db):
 def ensure_database_ready(app):
     """Check if database is ready. Returns status dict."""
     try:
-        # Get PyDAL-compatible URL for connection test
-        database_url = get_database_url(app, for_system="pydal")
+        # Get SQLAlchemy-compatible URL for connection test
+        database_url = get_database_url(app)
         db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
 
         # Try to connect with a test DAL instance
@@ -347,7 +287,7 @@ def log_startup_status(status):
 
 
 def get_db_session():
-    """Get database session. Not used with PyDAL."""
+    """Get database session. Not used with penguin-dal."""
     pass
 
 

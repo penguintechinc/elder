@@ -27,7 +27,7 @@ SQLAlchemy==2.0.36
 alembic==1.14.0
 marshmallow==3.26.2
 marshmallow-sqlalchemy==1.1.0
-pydal==20260313.1
+penguin-dal==0.2.1
 psycopg2-binary==2.9.10
 
 # Redis/Cache

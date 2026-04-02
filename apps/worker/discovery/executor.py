@@ -12,7 +12,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from pydal import DAL
+from penguin_dal import DAL
 
 from apps.worker.discovery.service import DiscoveryService
 
@@ -38,8 +38,8 @@ class DiscoveryExecutor:
         """Initialize the executor.
 
         Args:
-            db_write: PyDAL database instance (write connection)
-            db_read: PyDAL database instance (read replica, defaults to db_write)
+            db_write: penguin-dal database instance (write connection)
+            db_read: penguin-dal database instance (read replica, defaults to db_write)
         """
         self.db_write = db_write
         self.db_read = db_read or db_write
