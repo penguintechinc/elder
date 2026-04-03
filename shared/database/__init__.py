@@ -10,6 +10,7 @@ Hybrid Approach:
 import logging
 import os
 import subprocess
+from datetime import datetime, timezone
 
 from penguin_dal import DAL
 
@@ -226,13 +227,15 @@ def _create_default_admin(app, db):
 
         if not default_tenant:
             logger.warning("No system tenant found, creating one with slug 'default'")
+            now = datetime.now(timezone.utc)
             default_tenant_id = db.tenants.insert(
                 name="Default",
                 slug="default",
                 subscription_tier="enterprise",
                 is_active=True,
+                created_at=now,
+                updated_at=now,
             )
-            db.commit()
         else:
             default_tenant_id = default_tenant.id
     except Exception as e:
@@ -244,15 +247,17 @@ def _create_default_admin(app, db):
     if not existing_user:
         from werkzeug.security import generate_password_hash
 
+        now = datetime.now(timezone.utc)
         db.portal_users.insert(
             tenant_id=default_tenant_id,
             email=admin_email,
             password_hash=generate_password_hash(admin_password),
             is_active=True,
-            is_admin=True,
+            email_verified=True,
             global_role="admin",
+            created_at=now,
+            updated_at=now,
         )
-        db.commit()
         logger.info(f"Created default admin user: {admin_email}")
 
 

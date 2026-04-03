@@ -121,7 +121,9 @@ class PortalAuthService:
                 return {"error": "Account locked. Try again later."}
             else:
                 # Unlock account
-                user.update_record(locked_until=None, failed_login_attempts=0)
+                current_app.db(current_app.db.portal_users.id == user.id).update(
+                    locked_until=None, failed_login_attempts=0
+                )
                 current_app.db.commit()
 
         # Check if account is active
@@ -141,12 +143,12 @@ class PortalAuthService:
                     minutes=PortalAuthService.LOCKOUT_DURATION_MINUTES
                 )
 
-            user.update_record(**updates)
+            current_app.db(current_app.db.portal_users.id == user.id).update(**updates)
             current_app.db.commit()
             return {"error": "Invalid credentials"}
 
         # Reset failed attempts on successful login
-        user.update_record(
+        current_app.db(current_app.db.portal_users.id == user.id).update(
             failed_login_attempts=0,
             last_login_at=datetime.datetime.now(datetime.timezone.utc),
         )
@@ -221,7 +223,7 @@ class PortalAuthService:
         backup_codes = [secrets.token_hex(4) for _ in range(10)]
 
         # Save secret (don't enable until verified)
-        user.update_record(
+        current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=secret,
             mfa_backup_codes=backup_codes,
         )
@@ -251,7 +253,9 @@ class PortalAuthService:
         if not user:
             return {"error": "User not found"}
 
-        user.update_record(mfa_secret=None, mfa_backup_codes=None)
+        current_app.db(current_app.db.portal_users.id == user.id).update(
+            mfa_secret=None, mfa_backup_codes=None
+        )
         current_app.db.commit()
 
         return {"success": True}
@@ -283,7 +287,7 @@ class PortalAuthService:
             }
 
         # Update password
-        user.update_record(
+        current_app.db(current_app.db.portal_users.id == user.id).update(
             password_hash=generate_password_hash(new_password),
             password_changed_at=datetime.datetime.now(datetime.timezone.utc),
         )
@@ -359,7 +363,9 @@ class PortalAuthService:
 
         if existing:
             # Update existing assignment
-            existing.update_record(role=role)
+            current_app.db(current_app.db.portal_user_org_assignments.id == existing.id).update(
+                role=role
+            )
             current_app.db.commit()
             return {"id": existing.id, "role": role, "updated": True}
 
