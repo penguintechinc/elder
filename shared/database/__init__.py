@@ -237,7 +237,6 @@ def _create_default_admin(app, db):
             default_tenant_id = default_tenant.id
     except Exception as e:
         logger.error(f"Failed to ensure default tenant: {e}")
-        db.rollback()
         return
 
     # Check if admin user exists in portal_users

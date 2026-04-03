@@ -61,21 +61,19 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             db_user = os.getenv("DB_USER", "elder")
             db_password = os.getenv("DB_PASSWORD", "elder")
             database_url = (
-                f"postgres://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
+                f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
             )
             logger.info(
                 "using_individual_db_vars", host=db_host, port=db_port, dbname=db_name
             )
         else:
-            # PyDAL requires 'postgres://' scheme, not 'postgresql://'
-            database_url = database_url.replace("postgresql://", "postgres://")
             # Mask password in logs
             masked_url = (
                 database_url.split("@")[1] if "@" in database_url else database_url
             )
             logger.info("using_database_url", database_url=f"...@{masked_url}")
 
-        self.db = DAL(database_url, folder="/tmp/pydal", migrate=False, pool_size=5)
+        self.db = DAL(database_url, migrate=False, pool_size=5)
 
         # JWT configuration
         self.jwt_secret = os.getenv(
