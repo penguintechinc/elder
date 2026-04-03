@@ -298,8 +298,7 @@ class SecretsService:
             update_data["metadata"] = metadata
 
         if update_data:
-            secret.update_record(**update_data)
-            self.db.commit()
+            self.db(self.db.secrets.id == secret_id).update(**update_data)
 
             # Log update
             if identity_id:
@@ -373,10 +372,9 @@ class SecretsService:
             secret_value = client.get_secret(secret.provider_path)
 
             # Update sync timestamp and KV status
-            secret.update_record(
+            self.db(self.db.secrets.id == secret_id).update(
                 is_kv=secret_value.is_kv, last_synced_at=datetime.utcnow()
             )
-            self.db.commit()
 
             logger.info(f"Synced secret {secret_id} from provider")
 
@@ -541,8 +539,7 @@ class SecretsService:
             update_data["enabled"] = enabled
 
         if update_data:
-            provider.update_record(**update_data)
-            self.db.commit()
+            self.db(self.db.secret_providers.id == provider_id).update(**update_data)
 
             logger.info(f"Updated provider {provider_id}")
 
@@ -591,14 +588,13 @@ class SecretsService:
 
                 if existing:
                     # Update sync timestamp
-                    existing.update_record(
+                    self.db(self.db.secrets.id == existing.id).update(
                         is_kv=provider_secret.is_kv, last_synced_at=datetime.utcnow()
                     )
                     synced_count += 1
 
             # Update provider sync timestamp
-            provider.update_record(last_sync_at=datetime.utcnow())
-            self.db.commit()
+            self.db(self.db.secret_providers.id == provider_id).update(last_sync_at=datetime.utcnow())
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
 

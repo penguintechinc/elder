@@ -119,7 +119,7 @@ async def update_record(table: Any, record_id: int, **data) -> bool:
     Update a record by ID with async support.
 
     Args:
-        table: penguin-dal table object
+        table: penguin-dal table object (must have id field)
         record_id: ID of record to update
         **data: Field values to update
 
@@ -136,11 +136,13 @@ async def update_record(table: Any, record_id: int, **data) -> bool:
     """
 
     def do_update():
+        from flask import current_app
+        db = current_app.db
         record = table[record_id]
         if not record:
             return False
         if data:
-            table[record_id] = data
+            db(table.id == record_id).update(**data)
         return True
 
     return await run_in_threadpool(do_update)

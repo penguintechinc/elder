@@ -179,8 +179,7 @@ async def update_profile():
             return profile_data, None, None
 
         # Update user
-        user.update_record(**update_data)
-        db.commit()
+        db(db.identities.id == user.id).update(**update_data)
 
         # Get updated user data
         updated_user = db.identities[uid]

@@ -289,13 +289,11 @@ class BuiltinSecretsClient(SecretProviderClient):
                 string_value = value
 
             # Update secret
-            row.update_record(
+            self.db(self.db.builtin_secrets.id == row.id).update(
                 secret_value=string_value,
                 secret_json=json_value,
                 updated_at=datetime.now(),
             )
-
-            self.db.commit()
 
             logger.info(f"Updated secret '{path}' (ID: {row.id})")
 
@@ -335,8 +333,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                 raise SecretNotFoundException(f"Secret '{path}' not found")
 
             # Soft delete (set is_active to False)
-            row.update_record(is_active=False, updated_at=datetime.now())
-            self.db.commit()
+            self.db(self.db.builtin_secrets.id == row.id).update(is_active=False, updated_at=datetime.now())
 
             logger.info(f"Deleted secret '{path}' (ID: {row.id})")
             return True

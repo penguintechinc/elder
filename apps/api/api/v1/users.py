@@ -209,8 +209,7 @@ async def update_user(user_id: int):
         if not user:
             return None, "User not found", 404
 
-        user.update_record(**update_data)
-        db.commit()
+        db(db.identities.id == user_id).update(**update_data)
         return db.identities[user_id], None, None
 
     user_row, error, status = await run_in_threadpool(update)

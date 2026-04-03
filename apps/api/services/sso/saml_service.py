@@ -205,8 +205,7 @@ class SAMLService:
         updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
         if updates:
-            config.update_record(**updates)
-            db.commit()
+            db(db.idp_configurations.id == config_id).update(**updates)
 
         return {"id": config_id, "updated": True}
 
@@ -291,10 +290,9 @@ class SAMLService:
 
         if existing:
             # Update last login
-            existing.update_record(
+            db(db.portal_users.id == existing.id).update(
                 last_login_at=datetime.datetime.now(datetime.timezone.utc)
             )
-            db.commit()
             return {
                 "id": existing.id,
                 "email": existing.email,

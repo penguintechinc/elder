@@ -448,10 +448,9 @@ class OIDCService:
 
         if existing:
             # Update last login
-            existing.update_record(
+            db(db.portal_users.id == existing.id).update(
                 last_login_at=datetime.datetime.now(datetime.timezone.utc)
             )
-            db.commit()
             return {
                 "id": existing.id,
                 "email": existing.email,

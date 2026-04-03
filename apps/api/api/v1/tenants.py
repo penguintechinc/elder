@@ -297,8 +297,7 @@ def update_tenant(tenant_id):
             updates[field_name] = field_value
 
     if updates:
-        tenant.update_record(**updates)
-        db.commit()
+        db(db.tenants.id == tenant.id).update(**updates)
 
     return jsonify({"id": tenant_id, "updated": True}), 200
 
@@ -326,8 +325,7 @@ def delete_tenant(tenant_id):
         return jsonify({"error": "Tenant not found"}), 404
 
     # Soft delete - deactivate instead
-    tenant.update_record(is_active=False)
-    db.commit()
+    db(db.tenants.id == tenant.id).update(is_active=False)
 
     return jsonify({"deleted": True, "tenant_id": tenant_id}), 200
 
@@ -424,8 +422,7 @@ def update_tenant_user(tenant_id, user_id):
     updates = {k: v for k, v in data.items() if k in allowed_fields}
 
     if updates:
-        user.update_record(**updates)
-        db.commit()
+        db(db.portal_users.id == user.id).update(**updates)
 
     return jsonify({"id": user_id, "updated": True}), 200
 
@@ -463,8 +460,7 @@ def delete_tenant_user(tenant_id, user_id):
         return jsonify({"error": "User not found"}), 404
 
     # Soft delete
-    user.update_record(is_active=False)
-    db.commit()
+    db(db.portal_users.id == user.id).update(is_active=False)
 
     return jsonify({"deleted": True, "user_id": user_id}), 200
 
