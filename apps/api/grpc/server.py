@@ -21,6 +21,7 @@ logger = structlog.get_logger(__name__)
 
 
 def serve(
+    app,
     host: str = "0.0.0.0",
     port: int = 50051,
     max_workers: int = 10,
@@ -30,11 +31,14 @@ def serve(
     Start the gRPC server.
 
     Args:
+        app: Flask application instance with shared DAL
         host: Host to bind to
         port: Port to bind to
         max_workers: Maximum number of worker threads
         require_license: Whether to require enterprise license
     """
+    # Dispose inherited database connections after fork
+    app.db.engine.dispose()
     # Validate license if required
     if require_license:
         if get_license_client is None:
@@ -82,7 +86,7 @@ def serve(
     )
 
     # Add servicer to server
-    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(), server)
+    elder_pb2_grpc.add_ElderServiceServicer_to_server(ElderServicer(app), server)
 
     # Enable reflection for grpcurl/grpcui
     service_names = (

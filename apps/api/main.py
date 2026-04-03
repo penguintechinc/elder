@@ -138,6 +138,12 @@ def create_app(config_name: str = None) -> Flask:
     return WsgiToAsgi(app)
 
 
+def create_flask_app(config_name: str = None) -> Flask:
+    """Return the inner Flask app (not ASGI-wrapped) for non-uvicorn contexts."""
+    asgi = create_app(config_name)
+    return asgi.wsgi_application
+
+
 def _init_extensions(app: Flask) -> None:
     """
     Initialize Flask extensions.

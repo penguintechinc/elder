@@ -10,7 +10,6 @@ For now, all methods return UNIMPLEMENTED status until proper penguin-dal integr
 # flake8: noqa: E501
 
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -18,7 +17,6 @@ import grpc
 import jwt
 import networkx as nx
 import structlog
-from penguin_dal import DAL
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.grpc.converters import (
@@ -46,36 +44,21 @@ logger = structlog.get_logger(__name__)
 class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     """Implementation of ElderService gRPC servicer."""
 
-    def __init__(self):
-        """Initialize the servicer."""
+    def __init__(self, app):
+        """
+        Initialize the servicer.
+
+        Args:
+            app: Flask application instance with shared DAL
+        """
         super().__init__()
 
-        # Initialize database connection
-        # Use DATABASE_URL if set (K8s/production), otherwise build from individual vars (local dev)
-        database_url = os.getenv("DATABASE_URL")
-        if not database_url:
-            db_type = os.getenv("DB_TYPE", "postgres")
-            db_host = os.getenv("DB_HOST", "localhost")
-            db_port = os.getenv("DB_PORT", "5432")
-            db_name = os.getenv("DB_NAME", "elder")
-            db_user = os.getenv("DB_USER", "elder")
-            db_password = os.getenv("DB_PASSWORD", "elder")
-            database_url = (
-                f"postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-            )
-            logger.info(
-                "using_individual_db_vars", host=db_host, port=db_port, dbname=db_name
-            )
-        else:
-            # Mask password in logs
-            masked_url = (
-                database_url.split("@")[1] if "@" in database_url else database_url
-            )
-            logger.info("using_database_url", database_url=f"...@{masked_url}")
-
-        self.db = DAL(database_url, migrate=False, pool_size=5)
+        # Store reference to Flask app for shared database access
+        self.app = app
 
         # JWT configuration
+        import os
+
         self.jwt_secret = os.getenv(
             "JWT_SECRET_KEY", "default-secret-key-change-in-production"
         )
@@ -84,6 +67,11 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         self.jwt_refresh_token_expires = timedelta(days=30)
 
         logger.info("elder_servicer_initialized")
+
+    @property
+    def db(self):
+        """Get the shared database connection from the Flask app."""
+        return self.app.db
 
     # ========================================================================
     # Helper Methods
