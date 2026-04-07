@@ -2,6 +2,8 @@
 
 # flake8: noqa: E501
 
+from datetime import datetime, timezone
+
 from flask import Blueprint, g, jsonify, request
 
 bp = Blueprint("costs", __name__)
@@ -90,6 +92,7 @@ def create_sync_job():
 
     db = g.db
     try:
+        now = datetime.now(timezone.utc)
         job_id = db.cost_sync_jobs.insert(
             name=data["name"],
             provider=data["provider"],
@@ -97,6 +100,8 @@ def create_sync_job():
             config_json=data["config_json"],
             schedule_interval=data.get("schedule_interval", 86400),
             enabled=data.get("enabled", True),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return jsonify({"data": {"id": job_id}, "message": "Sync job created"}), 201

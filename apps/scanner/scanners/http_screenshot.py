@@ -6,7 +6,7 @@
 import hashlib
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from typing import Any, Dict, List
 
 from .base import BaseScanner
@@ -128,7 +128,7 @@ class HTTPScreenshotScanner(BaseScanner):
         """Capture a screenshot of a single URL."""
         # Generate filename from URL hash
         url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"{url_hash}_{timestamp}.png"
         filepath = os.path.join(self.screenshot_dir, filename)
 

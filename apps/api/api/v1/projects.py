@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -145,6 +146,7 @@ async def create_project():
 
     def create():
         # Create project
+        now = datetime.now(timezone.utc)
         project_id = db.projects.insert(
             name=data["name"],
             description=data.get("description"),
@@ -153,6 +155,8 @@ async def create_project():
             tenant_id=org.tenant_id,
             start_date=data.get("start_date"),
             end_date=data.get("end_date"),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

@@ -12,6 +12,7 @@ Enterprise feature providing:
 import datetime
 import logging
 import secrets
+from datetime import timezone
 from typing import Any, Dict, List, Optional
 
 from apps.api.services.audit.service import AuditService
@@ -226,6 +227,7 @@ class GroupMembershipService:
             raise ValueError("Already have a pending request for this group")
 
         # Create request
+        now = datetime.datetime.now(timezone.utc)
         request_id = db.group_access_requests.insert(
             tenant_id=tenant_id,
             group_id=group_id,
@@ -234,6 +236,8 @@ class GroupMembershipService:
             reason=reason,
             expires_at=expires_at,
             village_id=self._generate_village_id(),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -350,12 +354,15 @@ class GroupMembershipService:
             raise ValueError("Not authorized to approve this request")
 
         # Record approval
+        now = datetime.datetime.now(timezone.utc)
         db.group_access_approvals.insert(
             tenant_id=request.tenant_id,
             request_id=request_id,
             approver_id=approver_id,
             decision="approved",
             comment=comment,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -400,12 +407,15 @@ class GroupMembershipService:
             raise ValueError("Not authorized to deny this request")
 
         # Record denial
+        now = datetime.datetime.now(timezone.utc)
         db.group_access_approvals.insert(
             tenant_id=request.tenant_id,
             request_id=request_id,
             approver_id=denier_id,
             decision="denied",
             comment=comment,
+            created_at=now,
+            updated_at=now,
         )
 
         # Update request status
@@ -537,11 +547,14 @@ class GroupMembershipService:
             raise ValueError("Already a member of this group")
 
         # Add membership
+        now = datetime.datetime.now(timezone.utc)
         membership_id = db.identity_group_memberships.insert(
             group_id=group_id,
             identity_id=identity_id,
             expires_at=expires_at,
             provider_member_id=provider_member_id,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -729,12 +742,15 @@ class GroupMembershipService:
                 provider_member_id = attrs.get("okta_id")
 
         # Create membership
+        now = datetime.datetime.now(timezone.utc)
         membership_id = db.identity_group_memberships.insert(
             group_id=request.group_id,
             identity_id=request.requester_id,
             expires_at=request.expires_at,
             granted_via_request_id=request_id,
             provider_member_id=provider_member_id,
+            created_at=now,
+            updated_at=now,
         )
 
         # Update request status

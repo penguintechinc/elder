@@ -5,7 +5,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -237,7 +237,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 path=path,
                 is_kv=self._is_json_dict(value),
                 version=response["VersionId"],
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
                 metadata={"arn": response["ARN"]},
             )
 
@@ -275,7 +275,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 path=path,
                 is_kv=self._is_json_dict(value),
                 version=response["VersionId"],
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
                 metadata={
                     "arn": response["ARN"],
                     "version_stages": response.get("VersionStages", []),

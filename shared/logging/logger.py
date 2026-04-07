@@ -15,7 +15,7 @@ import logging
 import os
 import socket
 import sys
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from logging.handlers import SysLogHandler
 from typing import List, Optional
 
@@ -159,7 +159,7 @@ class CloudWatchHandler(logging.Handler):
                 "logStreamName": self.log_stream,
                 "logEvents": [
                     {
-                        "timestamp": int(datetime.utcnow().timestamp() * 1000),
+                        "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
                         "message": self.format(record),
                     }
                 ],

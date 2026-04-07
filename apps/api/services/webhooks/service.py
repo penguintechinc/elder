@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -108,6 +108,7 @@ class WebhookService:
         if not events or not isinstance(events, list):
             raise Exception("Events must be a non-empty list")
 
+        now = datetime.now(timezone.utc)
         webhook_id = self.db.webhooks.insert(
             name=name,
             url=url,
@@ -117,7 +118,8 @@ class WebhookService:
             description=description,
             headers_json=json.dumps(headers) if headers else None,
             enabled=True,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -160,7 +162,7 @@ class WebhookService:
         if not webhook:
             raise Exception(f"Webhook {webhook_id} not found")
 
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now(timezone.utc)}
 
         if name is not None:
             update_data["name"] = name
@@ -256,17 +258,19 @@ class WebhookService:
         # Prepare payload
         delivery_payload = {
             "event": event_type,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "data": payload,
         }
 
         # Create delivery record
+        now = datetime.now(timezone.utc)
         delivery_id = self.db.webhook_deliveries.insert(
             webhook_id=webhook_id,
             event_type=event_type,
             payload_json=json.dumps(delivery_payload),
             attempts=0,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 
@@ -322,7 +326,7 @@ class WebhookService:
                 status_code=response.status_code,
                 response_body=response.text[:1000],  # Truncate response
                 duration_ms=duration_ms,
-                delivered_at=datetime.utcnow() if success else None,
+                delivered_at=datetime.now(timezone.utc) if success else None,
             )
             self.db.commit()
 
@@ -520,6 +524,7 @@ class WebhookService:
         if not config or not isinstance(config, dict):
             raise Exception("Config must be a non-empty dictionary")
 
+        now = datetime.now(timezone.utc)
         rule_id = self.db.notification_rules.insert(
             name=name,
             channel=channel,
@@ -528,7 +533,8 @@ class WebhookService:
             organization_id=organization_id,
             description=description,
             enabled=True,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -567,7 +573,7 @@ class WebhookService:
         if not rule:
             raise Exception(f"Notification rule {rule_id} not found")
 
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now(timezone.utc)}
 
         if name is not None:
             update_data["name"] = name

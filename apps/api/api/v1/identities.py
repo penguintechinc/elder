@@ -5,6 +5,7 @@
 
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, g, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
@@ -204,7 +205,10 @@ async def create_identity(body: CreateIdentityRequest):
             )
 
         # Create identity
-        identity_id = db.identities.insert(**insert_data)
+        now = datetime.now(timezone.utc)
+        identity_id = db.identities.insert(
+            created_at=now, updated_at=now, **insert_data
+        )
         db.commit()
 
         return db.identities[identity_id], None, None

@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, g, jsonify
 from models.dataclasses import IssueCommentDTO
@@ -116,10 +117,13 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
             return None, "Issue not found", 404
 
         # Create comment
+        now = datetime.now(timezone.utc)
         comment_id = db.issue_comments.insert(
             issue_id=id,
             author_id=g.current_user.id,
             content=body.content,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

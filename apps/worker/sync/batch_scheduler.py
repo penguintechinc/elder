@@ -13,7 +13,7 @@ monitors webhook health to automatically trigger fallback syncs when needed.
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -246,6 +246,7 @@ class BatchSyncScheduler:
         self.db.commit()
 
         # Record in sync history
+        now = datetime.now(timezone.utc)
         self.db.sync_history.insert(
             sync_config_id=job.sync_config_id,
             correlation_id=correlation_id,
@@ -253,12 +254,14 @@ class BatchSyncScheduler:
             items_synced=total_synced,
             items_failed=total_failed,
             started_at=job.last_run,
-            completed_at=datetime.now(),
+            completed_at=now,
             success=(total_failed == 0),
             sync_metadata={
                 "job_id": job.job_id,
                 "resource_types": [rt.value for rt in job.resource_types],
             },
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 

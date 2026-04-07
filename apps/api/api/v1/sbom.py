@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -163,6 +164,7 @@ async def create_component():
         return ApiResponse.not_found(data["parent_type"], data["parent_id"])
 
     def create():
+        now = datetime.now(timezone.utc)
         # Create component
         component_id = db.sbom_components.insert(
             parent_type=data["parent_type"],
@@ -183,6 +185,8 @@ async def create_component():
             hash_sha512=data.get("hash_sha512"),
             metadata=data.get("metadata"),
             is_active=data.get("is_active", True),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

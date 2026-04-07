@@ -11,6 +11,7 @@ Provides automated and manual access review workflows:
 import datetime
 import logging
 import secrets
+from datetime import timezone
 from typing import Any, Dict, List, Optional
 
 from apps.api.services.audit.service import AuditService
@@ -128,6 +129,7 @@ class AccessReviewService:
             raise ValueError(f"Group {group_id} not found")
 
         # Create review record
+        now = datetime.datetime.now(timezone.utc)
         review_id = db.access_reviews.insert(
             tenant_id=tenant_id,
             group_id=group_id,
@@ -137,6 +139,8 @@ class AccessReviewService:
             status=self.STATUS_SCHEDULED,
             auto_apply_decisions=auto_apply,
             village_id=self._generate_village_id(),
+            created_at=now,
+            updated_at=now,
         )
 
         # Get all current members
@@ -149,6 +153,8 @@ class AccessReviewService:
                 review_id=review_id,
                 membership_id=membership.id,
                 identity_id=membership.identity_id,
+                created_at=now,
+                updated_at=now,
             )
 
         # Update total_members count
@@ -211,11 +217,14 @@ class AccessReviewService:
                         reviewers.append(membership.identity_id)
 
         # Create assignments
+        now = datetime.datetime.now(datetime.timezone.utc)
         for reviewer_id in reviewers:
             db.access_review_assignments.insert(
                 tenant_id=group.tenant_id or 1,
                 review_id=review_id,
                 reviewer_identity_id=reviewer_id,
+                created_at=now,
+                updated_at=now,
             )
 
         db.commit()

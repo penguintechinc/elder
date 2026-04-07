@@ -4,7 +4,7 @@
 
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from google.oauth2 import service_account
@@ -105,6 +105,7 @@ class GoogleWorkspaceService:
                 f"Invalid service account JSON. Missing keys: {', '.join(missing)}"
             )
 
+        now = datetime.now(timezone.utc)
         provider_id = self.db.google_workspace_providers.insert(
             name=name,
             organization_id=organization_id,
@@ -113,7 +114,8 @@ class GoogleWorkspaceService:
             service_account_json=json.dumps(service_account_json),
             description=description,
             enabled=True,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -154,7 +156,7 @@ class GoogleWorkspaceService:
         if not provider:
             raise Exception(f"Google Workspace provider {provider_id} not found")
 
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now(timezone.utc)}
 
         if name is not None:
             update_data["name"] = name

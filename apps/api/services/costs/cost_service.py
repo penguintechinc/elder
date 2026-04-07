@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -75,6 +75,7 @@ class CostService:
             .first()
         )
 
+        now = datetime.now(timezone.utc)
         update_fields = {
             "cost_to_date": cost_data.get("cost_to_date"),
             "cost_ytd": cost_data.get("cost_ytd"),
@@ -85,8 +86,8 @@ class CostService:
             "recommendations": cost_data.get("recommendations"),
             "created_by_identity_id": cost_data.get("created_by_identity_id"),
             "resource_created_at": cost_data.get("resource_created_at"),
-            "last_synced_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "last_synced_at": now,
+            "updated_at": now,
         }
 
         # Remove None values
@@ -101,7 +102,7 @@ class CostService:
                 "resource_type": resource_type,
                 "resource_id": resource_id,
                 "organization_id": cost_data.get("organization_id", 1),
-                "created_at": datetime.utcnow(),
+                "created_at": now,
             }
         )
 
@@ -118,7 +119,7 @@ class CostService:
 
         # Update job run time
         self.db(self.db.cost_sync_jobs.id == job_id).update(
-            last_run_at=datetime.utcnow()
+            last_run_at=datetime.now(timezone.utc)
         )
 
         synced = 0
@@ -143,6 +144,7 @@ class CostService:
                     end_date,
                 )
 
+                now = datetime.now(timezone.utc)
                 for cost_entry in costs:
                     self.db.cost_history.insert(
                         resource_cost_id=resource.id,
@@ -150,7 +152,8 @@ class CostService:
                         cost_amount=Decimal(str(cost_entry["amount"])),
                         usage_quantity=cost_entry.get("usage_quantity"),
                         usage_unit=cost_entry.get("usage_unit"),
-                        created_at=datetime.utcnow(),
+                        created_at=now,
+                        updated_at=now,
                     )
 
                 self.calculate_aggregates(resource.id)
@@ -162,7 +165,7 @@ class CostService:
                 if recs:
                     self.db(self.db.resource_costs.id == resource.id).update(
                         recommendations=recs,
-                        updated_at=datetime.utcnow(),
+                        updated_at=datetime.now(timezone.utc),
                     )
 
                 synced += 1
@@ -217,5 +220,5 @@ class CostService:
             cost_to_date=cost_to_date,
             cost_ytd=cost_ytd,
             cost_mtd=cost_mtd,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )

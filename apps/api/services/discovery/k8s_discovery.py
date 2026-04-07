@@ -5,7 +5,7 @@
 # flake8: noqa: E501
 
 
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from typing import Any, Dict, List
 
 try:
@@ -94,7 +94,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
     def discover_all(self) -> Dict[str, Any]:
         """Discover all Kubernetes resources."""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         results = {
             "compute": self.discover_compute(),
@@ -112,8 +112,10 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
         return {
             **results,
             "resources_count": resources_count,
-            "discovery_time": datetime.utcnow(),
-            "duration_seconds": (datetime.utcnow() - start_time).total_seconds(),
+            "discovery_time": datetime.now(timezone.utc),
+            "duration_seconds": (
+                datetime.now(timezone.utc) - start_time
+            ).total_seconds(),
         }
 
     def discover_compute(self) -> List[Dict[str, Any]]:

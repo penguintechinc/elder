@@ -7,6 +7,7 @@ and usage statistics for the Super Admin Console.
 # flake8: noqa: E501
 
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, request
@@ -218,6 +219,7 @@ async def create_tenant():
         if existing:
             return None, "Slug already exists", 400
 
+        now = datetime.now(timezone.utc)
         tenant_id = db.tenants.insert(
             name=body.name,
             slug=body.slug,
@@ -229,6 +231,8 @@ async def create_tenant():
             data_retention_days=body.data_retention_days,
             storage_quota_gb=body.storage_quota_gb,
             is_active=True,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return {"id": tenant_id, "name": body.name, "slug": body.slug}, None, None

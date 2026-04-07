@@ -6,6 +6,7 @@
 import hashlib
 import secrets
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -134,7 +135,8 @@ async def create_api_key():
 
     # Insert into database
     def create_key():
-        key_id = db.api_keys.insert(**insert_data)
+        now = datetime.now(timezone.utc)
+        key_id = db.api_keys.insert(created_at=now, updated_at=now, **insert_data)
         db.commit()
         return db.api_keys[key_id]
 

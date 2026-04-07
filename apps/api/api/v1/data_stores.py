@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -153,6 +154,7 @@ async def create_data_store():
         return error
 
     def create():
+        now = datetime.now(timezone.utc)
         data_store_id = db.data_stores.insert(
             name=data["name"],
             description=data.get("description"),
@@ -178,6 +180,8 @@ async def create_data_store():
             size_bytes=data.get("size_bytes"),
             metadata=data.get("metadata"),
             is_active=data.get("is_active", True),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return db.data_stores[data_store_id]

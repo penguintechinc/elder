@@ -4,7 +4,7 @@
 
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timezone
 from typing import Any, Dict, List, Optional
 
 from flask import current_app
@@ -235,7 +235,7 @@ class SecretsService:
             organization_id=organization_id,
             parent_id=None,
             metadata=metadata or {},
-            last_synced_at=datetime.utcnow(),
+            last_synced_at=datetime.now(timezone.utc),
         )
         self.db.commit()
 
@@ -373,7 +373,7 @@ class SecretsService:
 
             # Update sync timestamp and KV status
             self.db(self.db.secrets.id == secret_id).update(
-                is_kv=secret_value.is_kv, last_synced_at=datetime.utcnow()
+                is_kv=secret_value.is_kv, last_synced_at=datetime.now(timezone.utc)
             )
 
             logger.info(f"Synced secret {secret_id} from provider")
@@ -423,7 +423,7 @@ class SecretsService:
                 identity_id=identity_id,
                 action=action,
                 masked=masked,
-                accessed_at=datetime.utcnow(),
+                accessed_at=datetime.now(timezone.utc),
             )
             self.db.commit()
         except Exception as e:
@@ -589,13 +589,14 @@ class SecretsService:
                 if existing:
                     # Update sync timestamp
                     self.db(self.db.secrets.id == existing.id).update(
-                        is_kv=provider_secret.is_kv, last_synced_at=datetime.utcnow()
+                        is_kv=provider_secret.is_kv,
+                        last_synced_at=datetime.now(timezone.utc),
                     )
                     synced_count += 1
 
             # Update provider sync timestamp
             self.db(self.db.secret_providers.id == provider_id).update(
-                last_sync_at=datetime.utcnow()
+                last_sync_at=datetime.now(timezone.utc)
             )
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
@@ -604,7 +605,7 @@ class SecretsService:
                 "provider_id": provider_id,
                 "secrets_synced": synced_count,
                 "total_provider_secrets": len(provider_secrets),
-                "synced_at": datetime.utcnow(),
+                "synced_at": datetime.now(timezone.utc),
             }
 
         except Exception as e:

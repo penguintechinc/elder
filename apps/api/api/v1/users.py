@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 from werkzeug.security import generate_password_hash
@@ -137,7 +138,8 @@ async def create_user():
             if existing_email:
                 return None, "Email already exists", 400
 
-        user_id = db.identities.insert(**insert_data)
+        now = datetime.now(timezone.utc)
+        user_id = db.identities.insert(created_at=now, updated_at=now, **insert_data)
         db.commit()
         return db.identities[user_id], None, None
 

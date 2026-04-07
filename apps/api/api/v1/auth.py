@@ -79,6 +79,7 @@ async def register():
             return None, "Email already exists", 400
 
         # Create new identity
+        now = datetime.now(timezone.utc)
         identity_id = db.identities.insert(
             username=validated_data.username,
             email=validated_data.email,
@@ -89,6 +90,8 @@ async def register():
             is_active=True,
             is_superuser=False,
             mfa_enabled=False,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -478,6 +481,7 @@ def _create_audit_log_sync(
     # Convert boolean to string for PyDAL
     success_str = "true" if success else "false"
 
+    now = datetime.now(timezone.utc)
     db.audit_logs.insert(
         identity_id=identity_id,
         action_name=action,
@@ -487,5 +491,7 @@ def _create_audit_log_sync(
         ip_address=ip_address,
         user_agent=user_agent,
         success=success_str,
+        created_at=now,
+        updated_at=now,
     )
     db.commit()

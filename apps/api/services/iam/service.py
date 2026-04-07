@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apps.api.services.iam.aws_client import AWSIAMClient
@@ -99,13 +99,15 @@ class IAMService:
             )
 
         # Create provider
+        now = datetime.now(timezone.utc)
         provider_id = self.db.iam_providers.insert(
             name=name,
             provider_type=provider_type.lower(),
             enabled=True,
             config_json=config,
             description=description,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -173,7 +175,7 @@ class IAMService:
             return {
                 "provider_id": provider_id,
                 "success": success,
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -181,7 +183,7 @@ class IAMService:
                 "provider_id": provider_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
     def sync_provider(self, provider_id: int) -> Dict[str, Any]:
@@ -191,13 +193,16 @@ class IAMService:
             result = client.sync_from_provider()
 
             # Store sync results in database
+            now = datetime.now(timezone.utc)
             self.db.iam_sync_log.insert(
                 iam_provider_id=provider_id,
-                synced_at=datetime.utcnow(),
+                synced_at=now,
                 users_synced=result.get("users_synced", 0),
                 roles_synced=result.get("roles_synced", 0),
                 policies_synced=result.get("policies_synced", 0),
                 errors_json=result.get("errors", []),
+                created_at=now,
+                updated_at=now,
             )
             self.db.commit()
 

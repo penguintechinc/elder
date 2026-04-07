@@ -364,6 +364,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 identity_type = "service_account"
 
             # Create identity
+            now = datetime.now(timezone.utc)
             identity_id = db.identities.insert(
                 username=request.username,
                 email=request.email,
@@ -374,6 +375,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                created_at=now,
+                updated_at=now,
             )
             db.commit()
 
@@ -718,6 +721,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["owner_group_id"] = request.owner_group_id
 
             # Create organization using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             org_id = db.organizations.insert(**data)
             db.commit()
 
@@ -994,6 +1000,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = org.tenant_id
 
             # Create entity using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             entity_id = db.entities.insert(**data)
             db.commit()
 
@@ -1150,6 +1159,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = org.tenant_id
 
                     # Create entity
+                    now = datetime.now(timezone.utc)
+                    data["created_at"] = now
+                    data["updated_at"] = now
                     entity_id = db.entities.insert(**data)
                     entity = db.entities[entity_id]
                     entity_dto = from_pydal_row(entity, EntityDTO)
@@ -1285,6 +1297,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = 1  # Default tenant
 
             # Create dependency using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             dep_id = db.dependencies.insert(**data)
             db.commit()
 
@@ -1404,6 +1419,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = source_entity.tenant_id
 
                     # Create dependency
+                    now = datetime.now(timezone.utc)
+                    data["created_at"] = now
+                    data["updated_at"] = now
                     dep_id = db.dependencies.insert(**data)
                     dep = db.dependencies[dep_id]
                     dep_dto = from_pydal_row(dep, DependencyDTO)

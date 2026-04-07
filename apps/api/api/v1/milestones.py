@@ -151,6 +151,7 @@ async def create_milestone():
 
     def create():
         # Create milestone
+        now = datetime.now(timezone.utc)
         milestone_id = db.milestones.insert(
             title=data["title"],
             description=data.get("description"),
@@ -159,6 +160,8 @@ async def create_milestone():
             tenant_id=org.tenant_id,
             project_id=data.get("project_id"),
             due_date=data.get("due_date"),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

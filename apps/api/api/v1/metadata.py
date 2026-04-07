@@ -4,7 +4,7 @@
 
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Union
 
 from flask import Blueprint, current_app, jsonify
@@ -227,6 +227,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
             field = db.metadata_fields[existing.id]
         else:
             # Create new
+            now = datetime.now(timezone.utc)
             field_id = db.metadata_fields.insert(
                 field_key=body.key,
                 field_value=value_str,
@@ -234,6 +235,8 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
                 resource_type="entity",
                 resource_id=id,
                 is_system=False,
+                created_at=now,
+                updated_at=now,
             )
             db.commit()
             field = db.metadata_fields[field_id]

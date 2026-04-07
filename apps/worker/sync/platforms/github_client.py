@@ -13,7 +13,7 @@ GitHub API: REST API v3 + GraphQL for complex queries
 # flake8: noqa: E501
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -323,6 +323,7 @@ class GitHubSyncClient(BaseSyncClient):
                 )
 
             # Create issue in Elder
+            now = datetime.now(timezone.utc)
             issue_id = self.db.issues.insert(
                 title=elder_data["title"],
                 description=elder_data["description"],
@@ -330,6 +331,8 @@ class GitHubSyncClient(BaseSyncClient):
                 priority=elder_data["priority"],
                 organization_id=org_id,
                 reporter_id=1,  # TODO: Map GitHub user to Elder identity
+                created_at=now,
+                updated_at=now,
             )
             self.db.commit()
 

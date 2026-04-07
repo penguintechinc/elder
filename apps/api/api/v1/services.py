@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
@@ -153,6 +154,7 @@ async def create_service(body: CreateServiceRequest):
 
     def create():
         # Create service
+        now = datetime.now(timezone.utc)
         service_id = db.services.insert(
             name=body.name,
             description=body.description,
@@ -174,6 +176,8 @@ async def create_service(body: CreateServiceRequest):
             notes=body.notes,
             tags=body.tags,
             status=body.status,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -185,6 +189,8 @@ async def create_service(body: CreateServiceRequest):
                 scan_type="git_clone",
                 status="pending",
                 repository_url=body.repository_url,
+                created_at=now,
+                updated_at=now,
                 repository_branch="main",
                 components_found=0,
                 components_added=0,
