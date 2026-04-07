@@ -333,7 +333,9 @@ class BuiltinSecretsClient(SecretProviderClient):
                 raise SecretNotFoundException(f"Secret '{path}' not found")
 
             # Soft delete (set is_active to False)
-            self.db(self.db.builtin_secrets.id == row.id).update(is_active=False, updated_at=datetime.now())
+            self.db(self.db.builtin_secrets.id == row.id).update(
+                is_active=False, updated_at=datetime.now()
+            )
 
             logger.info(f"Deleted secret '{path}' (ID: {row.id})")
             return True

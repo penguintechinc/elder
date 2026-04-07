@@ -594,7 +594,9 @@ class SecretsService:
                     synced_count += 1
 
             # Update provider sync timestamp
-            self.db(self.db.secret_providers.id == provider_id).update(last_sync_at=datetime.utcnow())
+            self.db(self.db.secret_providers.id == provider_id).update(
+                last_sync_at=datetime.utcnow()
+            )
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
 

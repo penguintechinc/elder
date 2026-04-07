@@ -363,9 +363,9 @@ class PortalAuthService:
 
         if existing:
             # Update existing assignment
-            current_app.db(current_app.db.portal_user_org_assignments.id == existing.id).update(
-                role=role
-            )
+            current_app.db(
+                current_app.db.portal_user_org_assignments.id == existing.id
+            ).update(role=role)
             current_app.db.commit()
             return {"id": existing.id, "role": role, "updated": True}
 

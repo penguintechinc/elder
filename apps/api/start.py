@@ -57,6 +57,7 @@ def run_grpc_server():
     # Create a Flask app for the gRPC process so it shares the same DB setup
     # (same config, same init_db path, same schema reflection) as the Flask server.
     from apps.api.main import create_flask_app
+
     flask_app = create_flask_app()
 
     host = os.getenv("GRPC_HOST", "0.0.0.0")
@@ -89,12 +90,8 @@ def main():
     logger.info("starting_elder_api_services")
 
     # Create processes for both servers
-    flask_process = multiprocessing.Process(
-        target=run_flask_server, name="FlaskServer"
-    )
-    grpc_process = multiprocessing.Process(
-        target=run_grpc_server, name="gRPCServer"
-    )
+    flask_process = multiprocessing.Process(target=run_flask_server, name="FlaskServer")
+    grpc_process = multiprocessing.Process(target=run_grpc_server, name="gRPCServer")
 
     # Start both processes
     flask_process.start()

@@ -137,6 +137,7 @@ async def update_record(table: Any, record_id: int, **data) -> bool:
 
     def do_update():
         from flask import current_app
+
         db = current_app.db
         record = table[record_id]
         if not record:

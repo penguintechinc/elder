@@ -179,7 +179,9 @@ class NetworkingService:
             if tags is not None:
                 update_data["tags"] = tags
 
-            current_app.db(current_app.db.networking_resources.id == network.id).update(**update_data)
+            current_app.db(current_app.db.networking_resources.id == network.id).update(
+                **update_data
+            )
 
             logger.info(f"Updated networking resource {network_id}")
 
@@ -220,7 +222,9 @@ class NetworkingService:
                 logger.info(f"Hard deleted networking resource {network_id}")
             else:
                 # Soft delete
-                current_app.db(current_app.db.networking_resources.id == network_id).update(is_active=False, updated_at=datetime.now())
+                current_app.db(
+                    current_app.db.networking_resources.id == network_id
+                ).update(is_active=False, updated_at=datetime.now())
 
                 logger.info(f"Soft deleted networking resource {network_id}")
 

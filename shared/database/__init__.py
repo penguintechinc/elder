@@ -164,7 +164,7 @@ def init_db(app):
     def _teardown_db(exception=None):
         _db = app.db
         try:
-            if hasattr(_db, 'commit') and hasattr(_db, 'rollback'):
+            if hasattr(_db, "commit") and hasattr(_db, "rollback"):
                 if exception:
                     _db.rollback()
                 else:
@@ -172,14 +172,14 @@ def init_db(app):
         except Exception as e:
             logger.debug(f"DB teardown error: {e}")
             try:
-                if hasattr(_db, 'rollback'):
+                if hasattr(_db, "rollback"):
                     _db.rollback()
             except Exception:
                 pass
         # Handle separate read replica if configured
         if hasattr(app, "db_read") and app.db_read is not _db:
             try:
-                if hasattr(app.db_read, 'commit') and hasattr(app.db_read, 'rollback'):
+                if hasattr(app.db_read, "commit") and hasattr(app.db_read, "rollback"):
                     if exception:
                         app.db_read.rollback()
                     else:
