@@ -14,7 +14,7 @@ Supports multiple authentication methods:
 
 import logging
 import os
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:

@@ -5,7 +5,7 @@
 
 import base64
 import json
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 try:

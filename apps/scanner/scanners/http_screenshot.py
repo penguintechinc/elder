@@ -6,7 +6,7 @@
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from .base import BaseScanner

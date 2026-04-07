@@ -8,7 +8,7 @@ Includes package information, licenses, checksums, and relationships.
 
 
 import json
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 

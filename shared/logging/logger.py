@@ -15,7 +15,7 @@ import logging
 import os
 import socket
 import sys
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from logging.handlers import SysLogHandler
 from typing import List, Optional
 

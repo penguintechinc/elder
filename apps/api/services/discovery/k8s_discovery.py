@@ -5,7 +5,7 @@
 # flake8: noqa: E501
 
 
-from datetime import datetime, timezone, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 try:
