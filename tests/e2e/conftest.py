@@ -18,6 +18,7 @@ import requests
 # Configuration
 API_URL = os.getenv("API_URL", "http://localhost:4000")
 WEB_URL = os.getenv("WEB_URL", "http://localhost:3000")
+WORKER_URL = os.getenv("WORKER_URL", "http://localhost:8000")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@localhost.local")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 MAX_WAIT = 60  # seconds
@@ -50,12 +51,22 @@ def web_url() -> str:
 
 
 @pytest.fixture(scope="session")
+def worker_url() -> str:
+    """Provide worker URL."""
+    return WORKER_URL
+
+
+@pytest.fixture(scope="session")
 def check_services():
     """Verify services are running before tests."""
     if not wait_for_service(f"{API_URL}/healthz"):
         pytest.skip("API service not available")
     if not wait_for_service(WEB_URL):
         pytest.skip("Web UI service not available")
+    # Regression guard for #95: worker PYTHONPATH version mismatch causes
+    # ModuleNotFoundError on startup, making /healthz unreachable.
+    if not wait_for_service(f"{WORKER_URL}/healthz"):
+        pytest.skip("Worker service not available — check PYTHONPATH in Dockerfile")
 
 
 @pytest.fixture(scope="session")

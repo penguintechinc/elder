@@ -13,11 +13,11 @@ the required abstract methods.
 
 import abc
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydal import DAL
+from penguin_dal import DAL
 
 
 class SyncDirection(Enum):
@@ -167,7 +167,7 @@ class BaseSyncClient(abc.ABC):
     Attributes:
         platform_name: Name of the platform (github, gitlab, jira, etc.)
         config: Platform-specific configuration
-        db: PyDAL database instance
+        db: penguin-dal database instance
         sync_config_id: ID of the sync configuration
         logger: Logger instance with correlation ID support
     """
@@ -354,6 +354,7 @@ class BaseSyncClient(abc.ABC):
         Returns:
             ID of created mapping
         """
+        now = datetime.now(timezone.utc)
         mapping_id = self.db.sync_mappings.insert(
             elder_type=mapping.elder_type,
             elder_id=mapping.elder_id,
@@ -362,9 +363,11 @@ class BaseSyncClient(abc.ABC):
             sync_config_id=mapping.sync_config_id,
             sync_status="synced",
             sync_method=sync_method,
-            last_synced_at=datetime.now(),
+            last_synced_at=now,
             elder_updated_at=mapping.elder_updated_at,
             external_updated_at=mapping.external_updated_at,
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 
@@ -412,17 +415,20 @@ class BaseSyncClient(abc.ABC):
             result: Sync result to record
             sync_type: Type of sync operation
         """
+        now = datetime.now(timezone.utc)
         self.db.sync_history.insert(
             sync_config_id=self.sync_config_id,
             correlation_id=result.operation.correlation_id,
             sync_type=sync_type,
             items_synced=result.items_synced,
             items_failed=result.items_failed,
-            started_at=datetime.now(),
-            completed_at=datetime.now(),
+            started_at=now,
+            completed_at=now,
             success=result.is_success,
             error_message="; ".join(result.errors) if result.errors else None,
             sync_metadata=result.metadata,
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 
@@ -440,6 +446,7 @@ class BaseSyncClient(abc.ABC):
         Returns:
             ID of created conflict record
         """
+        now = datetime.now(timezone.utc)
         conflict_id = self.db.sync_conflicts.insert(
             mapping_id=mapping_id,
             conflict_type=conflict.conflict_type,
@@ -447,6 +454,8 @@ class BaseSyncClient(abc.ABC):
             external_data=conflict.external_data,
             resolution_strategy=conflict.resolution_strategy,
             resolved=conflict.resolved,
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 

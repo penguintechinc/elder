@@ -10,12 +10,12 @@ import logging
 import os
 import tempfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
-from pydal import DAL
+from penguin_dal import DAL
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class BackupService:
         Initialize BackupService.
 
         Args:
-            db: PyDAL database instance
+            db: penguin-dal database instance
         """
         self.db = db
         self.backup_dir = os.getenv("BACKUP_DIR", "/tmp/elder/backups")
@@ -129,7 +129,7 @@ class BackupService:
                     ExtraArgs={
                         "Metadata": {
                             "elder-version": "1.2.0",
-                            "upload-timestamp": datetime.utcnow().isoformat(),
+                            "upload-timestamp": datetime.now(timezone.utc).isoformat(),
                         }
                     },
                 )
@@ -297,6 +297,7 @@ class BackupService:
         if exclude_tables:
             config["exclude_tables"] = exclude_tables
 
+        now = datetime.now(timezone.utc)
         job_id = self.db.backup_jobs.insert(
             name=name,
             schedule=schedule,
@@ -311,7 +312,8 @@ class BackupService:
             s3_access_key=s3_access_key,
             s3_secret_key=s3_secret_key,
             s3_prefix=s3_prefix,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -350,7 +352,7 @@ class BackupService:
         if not job:
             raise Exception(f"Backup job {job_id} not found")
 
-        update_data = {"updated_at": datetime.utcnow()}
+        update_data = {"updated_at": datetime.now(timezone.utc)}
 
         if name is not None:
             update_data["name"] = name
@@ -419,7 +421,9 @@ class BackupService:
             raise Exception(f"Backup job {job_id} not found")
 
         # Update last run time
-        self.db(self.db.backup_jobs.id == job_id).update(last_run_at=datetime.utcnow())
+        self.db(self.db.backup_jobs.id == job_id).update(
+            last_run_at=datetime.now(timezone.utc)
+        )
         self.db.commit()
 
         # Execute backup
@@ -440,7 +444,7 @@ class BackupService:
             Backup execution result
         """
         try:
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
 
             # Get config
             config = {}
@@ -495,7 +499,7 @@ class BackupService:
             # Get file size
             file_size = os.path.getsize(filepath)
 
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             duration_seconds = (end_time - start_time).total_seconds()
 
             # Upload to S3 if enabled (check per-job config first, then global)
@@ -559,6 +563,8 @@ class BackupService:
                 duration_seconds=duration_seconds,
                 s3_url=s3_url,
                 s3_key=s3_key,
+                created_at=start_time,
+                updated_at=end_time,
             )
 
             self.db.commit()
@@ -584,11 +590,14 @@ class BackupService:
 
         except Exception as e:
             # Record failed backup
+            failed_time = datetime.now(timezone.utc)
             backup_id = self.db.backups.insert(
                 job_id=job.id,
                 status="failed",
                 error_message=str(e),
-                started_at=datetime.utcnow(),
+                started_at=failed_time,
+                created_at=failed_time,
+                updated_at=failed_time,
             )
             self.db.commit()
 
@@ -602,7 +611,7 @@ class BackupService:
             job_id: Backup job ID
             retention_days: Retention period in days
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
 
         old_backups = self.db(
             (self.db.backups.job_id == job_id)
@@ -892,7 +901,7 @@ class BackupService:
                 export_data["issues"] = [i.as_dict() for i in issues]
 
         # Generate filename
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"export_{timestamp}.{format}"
         filepath = os.path.join(tempfile.gettempdir(), filename)
 

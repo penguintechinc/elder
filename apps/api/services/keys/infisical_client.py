@@ -5,7 +5,7 @@
 
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 try:
@@ -112,7 +112,7 @@ class InfisicalClient(BaseKeyProvider):
             # Add metadata
             key_data["description"] = description or f"Elder managed key: {key_name}"
             key_data["tags"] = tags or {}
-            key_data["created_at"] = datetime.utcnow().isoformat()
+            key_data["created_at"] = datetime.now(timezone.utc).isoformat()
             key_data["enabled"] = True
 
             # Store as secret in Infisical
@@ -524,7 +524,7 @@ class InfisicalClient(BaseKeyProvider):
 
             # Update material
             key_data["material"] = base64.b64encode(new_material).decode("utf-8")
-            key_data["rotated_at"] = datetime.utcnow().isoformat()
+            key_data["rotated_at"] = datetime.now(timezone.utc).isoformat()
 
             payload = {
                 "workspaceId": self.workspace_id,

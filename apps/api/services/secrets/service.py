@@ -4,12 +4,10 @@
 
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from flask import current_app
-
-from apps.api.models.pydal_models import define_all_tables
 
 from .aws_client import AWSSecretsManagerClient
 from .base import SecretNotFoundException, SecretProviderClient, SecretProviderException
@@ -37,8 +35,6 @@ class SecretsService:
             db_instance: Database instance (optional, uses current_app.db if not provided)
         """
         self.db = db_instance or current_app.db
-        if not hasattr(self.db, "secret_providers"):
-            define_all_tables(self.db)
 
     def get_provider_client(self, provider_id: int) -> SecretProviderClient:
         """
@@ -239,7 +235,7 @@ class SecretsService:
             organization_id=organization_id,
             parent_id=None,
             metadata=metadata or {},
-            last_synced_at=datetime.utcnow(),
+            last_synced_at=datetime.now(timezone.utc),
         )
         self.db.commit()
 
@@ -302,8 +298,7 @@ class SecretsService:
             update_data["metadata"] = metadata
 
         if update_data:
-            secret.update_record(**update_data)
-            self.db.commit()
+            self.db(self.db.secrets.id == secret_id).update(**update_data)
 
             # Log update
             if identity_id:
@@ -377,10 +372,9 @@ class SecretsService:
             secret_value = client.get_secret(secret.provider_path)
 
             # Update sync timestamp and KV status
-            secret.update_record(
-                is_kv=secret_value.is_kv, last_synced_at=datetime.utcnow()
+            self.db(self.db.secrets.id == secret_id).update(
+                is_kv=secret_value.is_kv, last_synced_at=datetime.now(timezone.utc)
             )
-            self.db.commit()
 
             logger.info(f"Synced secret {secret_id} from provider")
 
@@ -429,7 +423,7 @@ class SecretsService:
                 identity_id=identity_id,
                 action=action,
                 masked=masked,
-                accessed_at=datetime.utcnow(),
+                accessed_at=datetime.now(timezone.utc),
             )
             self.db.commit()
         except Exception as e:
@@ -545,8 +539,7 @@ class SecretsService:
             update_data["enabled"] = enabled
 
         if update_data:
-            provider.update_record(**update_data)
-            self.db.commit()
+            self.db(self.db.secret_providers.id == provider_id).update(**update_data)
 
             logger.info(f"Updated provider {provider_id}")
 
@@ -595,14 +588,16 @@ class SecretsService:
 
                 if existing:
                     # Update sync timestamp
-                    existing.update_record(
-                        is_kv=provider_secret.is_kv, last_synced_at=datetime.utcnow()
+                    self.db(self.db.secrets.id == existing.id).update(
+                        is_kv=provider_secret.is_kv,
+                        last_synced_at=datetime.now(timezone.utc),
                     )
                     synced_count += 1
 
             # Update provider sync timestamp
-            provider.update_record(last_sync_at=datetime.utcnow())
-            self.db.commit()
+            self.db(self.db.secret_providers.id == provider_id).update(
+                last_sync_at=datetime.now(timezone.utc)
+            )
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
 
@@ -610,7 +605,7 @@ class SecretsService:
                 "provider_id": provider_id,
                 "secrets_synced": synced_count,
                 "total_provider_secrets": len(provider_secrets),
-                "synced_at": datetime.utcnow(),
+                "synced_at": datetime.now(timezone.utc),
             }
 
         except Exception as e:

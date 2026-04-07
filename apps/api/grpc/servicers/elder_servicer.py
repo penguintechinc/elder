@@ -1,16 +1,15 @@
 """Elder gRPC servicer implementation.
 
 NOTE: This servicer is currently a stub. The original implementation assumed SQLAlchemy
-ORM models, but Elder uses PyDAL. The servicer methods need to be rewritten to use
-PyDAL operations via the apps.api.api.v1 services.
+ORM models, but Elder uses penguin-dal. The servicer methods need to be rewritten to use
+penguin-dal operations via the apps.api.api.v1 services.
 
-For now, all methods return UNIMPLEMENTED status until proper PyDAL integration is done.
+For now, all methods return UNIMPLEMENTED status until proper penguin-dal integration is done.
 """
 
 # flake8: noqa: E501
 
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -18,7 +17,6 @@ import grpc
 import jwt
 import networkx as nx
 import structlog
-from pydal import DAL
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.grpc.converters import (
@@ -39,7 +37,6 @@ from apps.api.grpc.generated import (
 )
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 from apps.api.models.dataclasses import from_pydal_row
-from apps.api.models.pydal_models import define_all_tables
 
 logger = structlog.get_logger(__name__)
 
@@ -47,39 +44,21 @@ logger = structlog.get_logger(__name__)
 class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     """Implementation of ElderService gRPC servicer."""
 
-    def __init__(self):
-        """Initialize the servicer."""
+    def __init__(self, app):
+        """
+        Initialize the servicer.
+
+        Args:
+            app: Flask application instance with shared DAL
+        """
         super().__init__()
 
-        # Initialize database connection
-        # Use DATABASE_URL if set (K8s/production), otherwise build from individual vars (local dev)
-        database_url = os.getenv("DATABASE_URL")
-        if not database_url:
-            db_type = os.getenv("DB_TYPE", "postgres")
-            db_host = os.getenv("DB_HOST", "localhost")
-            db_port = os.getenv("DB_PORT", "5432")
-            db_name = os.getenv("DB_NAME", "elder")
-            db_user = os.getenv("DB_USER", "elder")
-            db_password = os.getenv("DB_PASSWORD", "elder")
-            database_url = (
-                f"postgres://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}"
-            )
-            logger.info(
-                "using_individual_db_vars", host=db_host, port=db_port, dbname=db_name
-            )
-        else:
-            # PyDAL requires 'postgres://' scheme, not 'postgresql://'
-            database_url = database_url.replace("postgresql://", "postgres://")
-            # Mask password in logs
-            masked_url = (
-                database_url.split("@")[1] if "@" in database_url else database_url
-            )
-            logger.info("using_database_url", database_url=f"...@{masked_url}")
-
-        self.db = DAL(database_url, folder="/tmp/pydal", migrate=False, pool_size=5)
-        define_all_tables(self.db)
+        # Store reference to Flask app for shared database access
+        self.app = app
 
         # JWT configuration
+        import os
+
         self.jwt_secret = os.getenv(
             "JWT_SECRET_KEY", "default-secret-key-change-in-production"
         )
@@ -88,6 +67,11 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         self.jwt_refresh_token_expires = timedelta(days=30)
 
         logger.info("elder_servicer_initialized")
+
+    @property
+    def db(self):
+        """Get the shared database connection from the Flask app."""
+        return self.app.db
 
     # ========================================================================
     # Helper Methods
@@ -380,6 +364,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 identity_type = "service_account"
 
             # Create identity
+            now = datetime.now(timezone.utc)
             identity_id = db.identities.insert(
                 username=request.username,
                 email=request.email,
@@ -390,6 +375,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                created_at=now,
+                updated_at=now,
             )
             db.commit()
 
@@ -734,6 +721,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["owner_group_id"] = request.owner_group_id
 
             # Create organization using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             org_id = db.organizations.insert(**data)
             db.commit()
 
@@ -1010,6 +1000,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = org.tenant_id
 
             # Create entity using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             entity_id = db.entities.insert(**data)
             db.commit()
 
@@ -1166,6 +1159,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = org.tenant_id
 
                     # Create entity
+                    now = datetime.now(timezone.utc)
+                    data["created_at"] = now
+                    data["updated_at"] = now
                     entity_id = db.entities.insert(**data)
                     entity = db.entities[entity_id]
                     entity_dto = from_pydal_row(entity, EntityDTO)
@@ -1301,6 +1297,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = 1  # Default tenant
 
             # Create dependency using PyDAL
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             dep_id = db.dependencies.insert(**data)
             db.commit()
 
@@ -1420,6 +1419,9 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = source_entity.tenant_id
 
                     # Create dependency
+                    now = datetime.now(timezone.utc)
+                    data["created_at"] = now
+                    data["updated_at"] = now
                     dep_id = db.dependencies.insert(**data)
                     dep = db.dependencies[dep_id]
                     dep_dto = from_pydal_row(dep, DependencyDTO)

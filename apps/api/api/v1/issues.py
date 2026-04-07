@@ -224,6 +224,7 @@ async def create_issue(body: CreateIssueRequest):
 
     def create():
         # Create issue
+        now = datetime.now(timezone.utc)
         issue_id = db.issues.insert(
             title=body.title,
             description=body.description,
@@ -235,6 +236,8 @@ async def create_issue(body: CreateIssueRequest):
             organization_id=body.organization_id,
             tenant_id=org.tenant_id,
             is_incident=body.is_incident,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -507,10 +510,13 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
             return None, "Issue not found", 404
 
         # Create comment
+        now = datetime.now(timezone.utc)
         comment_id = db.issue_comments.insert(
             issue_id=id,
             author_id=g.current_user.id,
             content=body.content,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -641,10 +647,13 @@ async def create_issue_label(body: CreateIssueLabelRequest):
             return None, "Label already exists", 409
 
         # Create label
+        now = datetime.now(timezone.utc)
         label_id = db.issue_labels.insert(
             name=body.name,
             color=body.color,
             description=body.description,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

@@ -5,6 +5,7 @@
 
 import datetime
 from dataclasses import asdict
+from datetime import timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -156,11 +157,14 @@ async def add_participant(rotation_id: int):
         return ApiResponse.not_found("Identity", data["identity_id"])
 
     def create():
+        now = datetime.datetime.now(timezone.utc)
         insert_data = {
             "rotation_id": rotation_id,
             "identity_id": data["identity_id"],
             "order_index": data["order_index"],
             "is_active": data.get("is_active", True),
+            "created_at": now,
+            "updated_at": now,
         }
 
         for field in ["notification_email", "notification_phone", "notification_slack"]:
@@ -533,12 +537,15 @@ async def create_override(rotation_id: int):
         )
 
     def create():
+        now = datetime.datetime.now(timezone.utc)
         insert_data = {
             "rotation_id": rotation_id,
             "original_identity_id": data["original_identity_id"],
             "override_identity_id": data["override_identity_id"],
             "start_datetime": start_dt,
             "end_datetime": end_dt,
+            "created_at": now,
+            "updated_at": now,
         }
 
         if "reason" in data:

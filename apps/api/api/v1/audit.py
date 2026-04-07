@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 
@@ -131,11 +131,13 @@ async def create_retention_policy():
                     400,
                 )
 
+            now = datetime.now(timezone.utc)
             policy_id = db.audit_retention_policies.insert(
                 resource_type=data["resource_type"],
                 retention_days=data["retention_days"],
                 enabled=data.get("enabled", True),
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
 
             db.commit()
@@ -187,7 +189,7 @@ async def update_retention_policy(policy_id):
                 update_data["retention_days"] = data["retention_days"]
             if "enabled" in data:
                 update_data["enabled"] = data["enabled"]
-            update_data["updated_at"] = datetime.utcnow()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
             db(db.audit_retention_policies.id == policy_id).update(**update_data)
             db.commit()
@@ -274,7 +276,9 @@ def cleanup_audit_logs():
         total_deleted = 0
 
         for policy in policies:
-            cutoff_date = datetime.utcnow() - timedelta(days=policy.retention_days)
+            cutoff_date = datetime.now(timezone.utc) - timedelta(
+                days=policy.retention_days
+            )
 
             # Count/delete old audit logs for this resource type
             # Note: This is a simplified implementation
@@ -300,7 +304,7 @@ def cleanup_audit_logs():
                     "dry_run": dry_run,
                     "results": results,
                     "total_deleted": total_deleted,
-                    "executed_at": datetime.utcnow().isoformat(),
+                    "executed_at": datetime.now(timezone.utc).isoformat(),
                 }
             ),
             200,

@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, Response, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
@@ -97,6 +98,7 @@ async def create_software(body: CreateSoftwareRequest):
         return error
 
     def create():
+        now = datetime.now(timezone.utc)
         software_id = db.software.insert(
             name=body.name,
             description=body.description,
@@ -115,6 +117,8 @@ async def create_software(body: CreateSoftwareRequest):
             notes=body.notes,
             tags=body.tags,
             is_active=body.is_active,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return db.software[software_id]

@@ -4,6 +4,7 @@
 
 
 import datetime
+from datetime import timezone
 
 from flask import Blueprint, current_app, request
 
@@ -145,6 +146,7 @@ async def handle_alertmanager_webhook():
                 message = annotations.get("summary", "No summary")
 
                 def record_notification():
+                    now = datetime.datetime.now(timezone.utc)
                     notification_data = {
                         "rotation_id": rotation.id,
                         "identity_id": current["identity_id"],
@@ -157,6 +159,8 @@ async def handle_alertmanager_webhook():
                             "alert_annotations": annotations,
                         },
                         "status": "pending",
+                        "created_at": now,
+                        "updated_at": now,
                     }
 
                     notification_id = db.on_call_notifications.insert(

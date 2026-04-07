@@ -248,8 +248,7 @@ class SCIMService:
             updates["is_active"] = scim_user["active"]
 
         if updates:
-            user.update_record(**updates)
-            db.commit()
+            db(db.portal_users.id == user_id).update(**updates)
 
         # Refresh user data
         user = db.portal_users[user_id]
@@ -283,8 +282,7 @@ class SCIMService:
             return {"error": "User not found", "status": 404}
 
         # Soft delete - deactivate instead of delete
-        user.update_record(is_active=False)
-        db.commit()
+        db(db.portal_users.id == user_id).update(is_active=False)
 
         return {"status": 204}
 
@@ -392,7 +390,6 @@ class SCIMService:
             return {"error": "SCIM not configured for this tenant"}
 
         new_token = f"scim_{secrets.token_urlsafe(32)}"
-        config.update_record(bearer_token=new_token)
-        db.commit()
+        db(db.scim_configurations.tenant_id == tenant_id).update(bearer_token=new_token)
 
         return {"bearer_token": new_token}

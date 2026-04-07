@@ -3,6 +3,8 @@
 # flake8: noqa: E501
 
 
+from datetime import datetime, timezone
+
 from flask import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
 
@@ -103,6 +105,9 @@ async def create_organization():
 
     def inner():
         try:
+            now = datetime.now(timezone.utc)
+            data["created_at"] = now
+            data["updated_at"] = now
             org_id = db.organizations.insert(**data)
             db.commit()
 

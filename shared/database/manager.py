@@ -2,14 +2,14 @@
 
 Provides a DatabaseManager that maintains separate connections for
 read and write operations, enabling horizontal read scaling via
-database replicas.
+database replicas. Uses penguin-dal for database abstraction.
 """
 
 # flake8: noqa: E501
 
 import logging
 
-from pydal import DAL
+from penguin_dal import DAL
 
 from shared.database.connection import create_db_connection
 
@@ -38,7 +38,6 @@ class DatabaseManager:
         replica_url: str | None = None,
         pool_size: int = 10,
         migrate: bool = False,
-        folder: str = "/tmp/pydal",
     ):
         """Initialize database connections.
 
@@ -46,8 +45,7 @@ class DatabaseManager:
             primary_url: Primary (read-write) database URL
             replica_url: Read replica URL (defaults to primary if not set)
             pool_size: Connection pool size per connection
-            migrate: Whether to allow PyDAL migrations
-            folder: PyDAL metadata folder
+            migrate: Whether to allow schema migrations
         """
         logger.info("Initializing DatabaseManager")
 
@@ -55,7 +53,6 @@ class DatabaseManager:
             primary_url,
             pool_size=pool_size,
             migrate=migrate,
-            folder=folder,
         )
         logger.info("Primary database connection established")
 
@@ -64,7 +61,6 @@ class DatabaseManager:
                 replica_url,
                 pool_size=pool_size,
                 migrate=False,  # Never migrate on replica
-                folder=f"{folder}/replica",
             )
             logger.info("Read replica connection established")
         else:

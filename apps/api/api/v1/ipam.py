@@ -4,6 +4,7 @@
 
 
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
@@ -155,6 +156,7 @@ async def create_prefix():
 
     def create():
         # Create prefix
+        now = datetime.now(timezone.utc)
         prefix_id = db.ipam_prefixes.insert(
             prefix=data.prefix,
             description=data.description,
@@ -164,6 +166,8 @@ async def create_prefix():
             parent_id=data.parent_id,
             vlan_id=data.vlan_id,
             is_pool=data.is_pool,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -491,6 +495,7 @@ async def create_address():
 
     def create():
         # Create address
+        now = datetime.now(timezone.utc)
         address_id = db.ipam_addresses.insert(
             address=data.address,
             description=data.description,
@@ -498,6 +503,8 @@ async def create_address():
             prefix_id=data.prefix_id,
             tenant_id=prefix.tenant_id,
             dns_name=data.dns_name,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 
@@ -774,6 +781,7 @@ async def create_vlan():
 
     def create():
         # Create VLAN
+        now = datetime.now(timezone.utc)
         vlan_id = db.ipam_vlans.insert(
             vid=data.vid,
             name=data.name,
@@ -781,6 +789,8 @@ async def create_vlan():
             status=data.status,
             organization_id=data.organization_id,
             tenant_id=org.tenant_id,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
 

@@ -1802,6 +1802,10 @@ pathspec==1.0.4 \
     --hash=sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645 \
     --hash=sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723
     # via black
+penguin-dal==0.2.1 \
+    --hash=sha256:52caa11e9eef65041bf996113e1ca7195ea4a078d780e11b3bb3fed4011f4a6e \
+    --hash=sha256:d750532f956c663e195fd1d1512b2b523b249e3ba11243282e58630e78690bf7
+    # via -r requirements.in
 penguin-libs==0.1.0 \
     --hash=sha256:3ebcf4c646cd7fafabe67eef4400d7ff536fd85ecded45bd23756c368e35b366 \
     --hash=sha256:5b094006e50a468bef926b280f64ff42f3a718972a2d819dc553c368d4c2cefc
@@ -2105,9 +2109,7 @@ pycparser==3.0 \
 pydal==20260313.1 \
     --hash=sha256:2df8de415dda8821f0a291cd66459fb889b28458ee6501778f682e55530847e9 \
     --hash=sha256:501c91f02dad9e2bc1abed2e9276b9aa6d205875a1eff42fc3da2d24ee1b9c3e
-    # via
-    #   -r requirements.in
-    #   penguin-utils
+    # via penguin-utils
 pydantic==2.12.5 \
     --hash=sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49 \
     --hash=sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d
@@ -2686,6 +2688,7 @@ sqlalchemy==2.0.36 \
     #   -r requirements.in
     #   alembic
     #   marshmallow-sqlalchemy
+    #   penguin-dal
 stevedore==5.7.0 \
     --hash=sha256:31dd6fe6b3cbe921e21dcefabc9a5f1cf848cf538a1f27543721b8ca09948aa3 \
     --hash=sha256:fd25efbb32f1abb4c9e502f385f0018632baac11f9ee5d1b70f88cc5e22ad4ed

@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
 from apps.api.services.costs.base import BaseCostProvider
@@ -34,8 +34,10 @@ class AWSCostExplorerProvider(BaseCostProvider):
     def test_connection(self) -> bool:
         """Test AWS Cost Explorer connectivity."""
         try:
-            end = datetime.utcnow().strftime("%Y-%m-%d")
-            start = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+            end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            start = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
+                "%Y-%m-%d"
+            )
             self.ce_client.get_cost_and_usage(
                 TimePeriod={"Start": start, "End": end},
                 Granularity="DAILY",

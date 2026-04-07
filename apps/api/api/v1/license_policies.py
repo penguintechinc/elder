@@ -5,6 +5,7 @@
 
 import fnmatch
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 import structlog
 from flask import Blueprint, current_app, jsonify, request
@@ -234,6 +235,7 @@ async def create_policy():
         return ApiResponse.error("action must be 'warn' or 'block'", 400)
 
     def create():
+        now = datetime.now(timezone.utc)
         policy_id = db.license_policies.insert(
             name=req.name,
             organization_id=req.organization_id,
@@ -242,6 +244,8 @@ async def create_policy():
             denied_licenses=req.denied_licenses or [],
             action=req.action,
             is_active=req.is_active,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return db.license_policies[policy_id]

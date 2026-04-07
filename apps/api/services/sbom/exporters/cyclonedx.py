@@ -9,7 +9,7 @@ Includes component metadata, licenses, and vulnerability information.
 
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -83,7 +83,7 @@ class CycloneDXExporter:
             Dictionary representing CycloneDX BOM.
         """
         bom_serial = str(uuid4())
-        timestamp = datetime.utcnow().isoformat() + "Z"
+        timestamp = datetime.now(timezone.utc).isoformat() + "Z"
 
         bom = {
             "bomFormat": "CycloneDX",

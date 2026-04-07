@@ -5,6 +5,7 @@
 
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
@@ -131,6 +132,7 @@ async def create_entity(body: CreateEntityRequest):
 
     # Create entity in database
     def create_in_db():
+        now = datetime.now(timezone.utc)
         entity_id = db.entities.insert(
             name=body.name,
             description=body.description,
@@ -141,6 +143,8 @@ async def create_entity(body: CreateEntityRequest):
             attributes=body.attributes,
             tags=body.tags or [],
             is_active=body.is_active,
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         return db.entities[entity_id]

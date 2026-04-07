@@ -5,7 +5,7 @@
 
 import base64
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 try:
@@ -538,7 +538,7 @@ class GCPKMSClient(BaseKeyProvider):
             crypto_key = {
                 "name": key_name,
                 "rotation_period": rotation_period,
-                "next_rotation_time": datetime.utcnow() + timedelta(days=90),
+                "next_rotation_time": datetime.now(timezone.utc) + timedelta(days=90),
             }
 
             update_mask = {"paths": ["rotation_period", "next_rotation_time"]}

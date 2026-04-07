@@ -5,6 +5,7 @@
 
 import datetime
 from dataclasses import asdict
+from datetime import timezone
 
 from croniter import croniter
 from flask import Blueprint, current_app, jsonify, request
@@ -247,11 +248,14 @@ async def create_rotation():
         pass  # Manual schedule has no special requirements
 
     def create():
+        now = datetime.datetime.now(timezone.utc)
         insert_data = {
             "name": data["name"],
             "scope_type": scope_type,
             "schedule_type": schedule_type,
             "is_active": data.get("is_active", True),
+            "created_at": now,
+            "updated_at": now,
         }
 
         if "description" in data:

@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 import jwt
 from flask import current_app, g, request
-from pydal.objects import Row
+from penguin_dal import Row
 from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)

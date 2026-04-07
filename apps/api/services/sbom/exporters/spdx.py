@@ -8,7 +8,7 @@ Includes package information, licenses, checksums, and relationships.
 
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -55,7 +55,7 @@ class SPDXExporter:
             Dictionary representing SPDX document.
         """
         doc_namespace = f"https://elder.penguintech.io/spdx/{uuid4()}"
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Build document name
         doc_name = "Elder-SBOM"

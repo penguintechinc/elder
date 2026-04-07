@@ -5,6 +5,7 @@
 
 import datetime
 from dataclasses import asdict
+from datetime import timezone
 
 from croniter import croniter
 from flask import Blueprint, current_app, jsonify, request
@@ -168,6 +169,7 @@ async def create_schedule():
         return ApiResponse.error(f"Invalid cron expression: {str(e)}", 400)
 
     def create():
+        now = datetime.datetime.now(timezone.utc)
         # Create schedule record
         insert_data = {
             "parent_type": parent_type,
@@ -175,6 +177,8 @@ async def create_schedule():
             "schedule_cron": schedule_cron,
             "is_active": data.get("is_active", True),
             "next_run_at": next_run_at,
+            "created_at": now,
+            "updated_at": now,
         }
 
         # Add credential fields if provided

@@ -8,7 +8,7 @@ from functools import wraps
 from typing import Callable, List
 
 from flask import current_app, g, jsonify, request
-from pydal.objects import Row
+from penguin_dal import Row
 
 from apps.api.auth.jwt_handler import get_current_user
 

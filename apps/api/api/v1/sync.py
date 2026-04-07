@@ -7,7 +7,7 @@ project management platforms (GitHub, GitLab, Jira, Trello, OpenProject).
 # flake8: noqa: E501
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Blueprint, current_app, g, jsonify, request
 from flask_cors import cross_origin
@@ -45,6 +45,7 @@ async def create_sync_config():
         return jsonify({"error": "Missing required fields"}), 400
 
     def inner():
+        now = datetime.now(timezone.utc)
         config_id = db.sync_configs.insert(
             name=data["name"],
             platform=data["platform"],
@@ -56,6 +57,8 @@ async def create_sync_config():
             webhook_enabled=data.get("webhook_enabled", True),
             webhook_secret=data.get("webhook_secret"),
             config_json=data.get("config_json", {}),
+            created_at=now,
+            updated_at=now,
         )
         db.commit()
         config = db.sync_configs[config_id].as_dict()

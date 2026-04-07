@@ -4,7 +4,7 @@
 
 
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -142,7 +142,7 @@ class BaseDiscoveryProvider(ABC):
             "region": region,
             "tags": tags or {},
             "metadata": metadata,
-            "discovered_at": datetime.utcnow().isoformat(),
+            "discovered_at": datetime.now(timezone.utc).isoformat(),
         }
 
     def _normalize_tags(self, tags: Any) -> Dict[str, str]:

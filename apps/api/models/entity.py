@@ -60,7 +60,7 @@ class Entity(Base, IDMixin, TimestampMixin):
 
     # Type discriminator
     entity_type = Column(
-        Enum(EntityType),
+        Enum(EntityType, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         index=True,
         comment="Type of entity (datacenter, vpc, subnet, compute, network, user, security_issue)",

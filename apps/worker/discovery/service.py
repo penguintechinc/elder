@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -133,13 +133,15 @@ class DiscoveryService:
             job_config["_description"] = description
 
         # Create job
+        now = datetime.now(timezone.utc)
         job_id = self.db.discovery_jobs.insert(
             name=name,
             provider=provider.lower(),
             enabled=True,
             config_json=job_config,
             schedule_interval=schedule_interval or 3600,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -204,7 +206,7 @@ class DiscoveryService:
             result = {
                 "job_id": job_id,
                 "success": success,
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
             # Add auth method if available (AWS client)
@@ -224,7 +226,7 @@ class DiscoveryService:
                 "job_id": job_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
     # Discovery Execution
@@ -248,17 +250,20 @@ class DiscoveryService:
                 ].isoformat()
 
             # Record discovery history
+            now = datetime.now(timezone.utc)
             history_id = self.db.discovery_history.insert(
                 job_id=job_id,
-                started_at=datetime.utcnow(),
+                started_at=now,
                 entities_discovered=results["resources_count"],
                 status="completed",
                 results_json=results_for_storage,
+                created_at=now,
+                updated_at=now,
             )
 
             # Update job's last_run timestamp
             self.db(self.db.discovery_jobs.id == job_id).update(
-                last_run_at=datetime.utcnow()
+                last_run_at=datetime.now(timezone.utc)
             )
 
             self.db.commit()
@@ -282,12 +287,15 @@ class DiscoveryService:
 
         except Exception as e:
             # Record failed discovery
+            now = datetime.now(timezone.utc)
             self.db.discovery_history.insert(
                 job_id=job_id,
-                started_at=datetime.utcnow(),
+                started_at=now,
                 entities_discovered=0,
                 status="failed",
                 error_message=str(e),
+                created_at=now,
+                updated_at=now,
             )
             self.db.commit()
 
@@ -370,10 +378,11 @@ class DiscoveryService:
 
         if existing:
             self.db(self.db.entities.id == existing.id).update(
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
             )
             return existing.id
 
+        now = datetime.now(timezone.utc)
         entity_id = self.db.entities.insert(
             name=name,
             entity_type="compute",
@@ -381,9 +390,10 @@ class DiscoveryService:
             organization_id=organization_id,
             attributes={
                 "provider": provider,
-                "discovered_at": datetime.utcnow().isoformat(),
+                "discovered_at": now.isoformat(),
             },
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
         return entity_id
 
@@ -523,10 +533,11 @@ class DiscoveryService:
             if existing:
                 self.db(self.db.networking_resources.id == existing.id).update(
                     attributes=attributes or {},
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             net_id = self.db.networking_resources.insert(
                 name=name,
                 network_type=network_type,
@@ -535,7 +546,8 @@ class DiscoveryService:
                 parent_id=parent_id,
                 attributes=attributes or {},
                 tags=tags or [],
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return net_id
         except Exception as e:
@@ -559,11 +571,13 @@ class DiscoveryService:
                 .first()
             )
             if not existing:
+                now = datetime.now(timezone.utc)
                 self.db.network_entity_mappings.insert(
                     networking_resource_id=network_id,
                     entity_id=entity_id,
                     relationship_type=relationship_type,
-                    created_at=datetime.utcnow(),
+                    created_at=now,
+                    updated_at=now,
                 )
         except Exception as e:
             logger.warning("Failed to upsert network_entity_mapping: %s", e)
@@ -612,10 +626,11 @@ class DiscoveryService:
 
             if existing:
                 self.db(self.db.services.id == existing.id).update(
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             svc_id = self.db.services.insert(
                 name=name,
                 organization_id=organization_id,
@@ -624,7 +639,8 @@ class DiscoveryService:
                 status=status,
                 tags=[provider, "discovered"],
                 notes=f"Discovered from {provider} discovery",
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return svc_id
         except Exception as e:
@@ -666,10 +682,11 @@ class DiscoveryService:
 
             if existing:
                 self.db(self.db.data_stores.id == existing.id).update(
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             ds_id = self.db.data_stores.insert(
                 name=name,
                 organization_id=organization_id,
@@ -678,7 +695,8 @@ class DiscoveryService:
                 location_region=resource.get("region"),
                 tags=[provider, storage_type, "discovered"],
                 metadata=metadata,
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return ds_id
         except Exception as e:
@@ -737,10 +755,11 @@ class DiscoveryService:
 
             if existing:
                 self.db(self.db.identities.id == existing.id).update(
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             identity_id = self.db.identities.insert(
                 tenant_id=1,
                 identity_type="serviceAccount",
@@ -752,7 +771,8 @@ class DiscoveryService:
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return identity_id
         except Exception as e:
@@ -789,6 +809,7 @@ class DiscoveryService:
             if existing:
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             sw_id = self.db.software.insert(
                 name=image_name,
                 version=version,
@@ -796,7 +817,8 @@ class DiscoveryService:
                 software_type="container",
                 vendor=vendor,
                 tags=["kubernetes", "container-image", "discovered"],
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return sw_id
         except Exception as e:
@@ -825,6 +847,7 @@ class DiscoveryService:
                 .first()
             )
             if not existing:
+                now = datetime.now(timezone.utc)
                 self.db.dependencies.insert(
                     source_type=source_type,
                     source_id=source_id,
@@ -832,7 +855,8 @@ class DiscoveryService:
                     target_id=target_id,
                     dependency_type=dep_type,
                     metadata=meta or {},
-                    created_at=datetime.utcnow(),
+                    created_at=now,
+                    updated_at=now,
                 )
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
@@ -894,7 +918,7 @@ class DiscoveryService:
                                     existing_paths.append(endpoint)
                                     self.db(self.db.services.id == svc.id).update(
                                         paths=existing_paths,
-                                        updated_at=datetime.utcnow(),
+                                        updated_at=datetime.now(timezone.utc),
                                     )
                 except Exception as e:
                     logger.warning(
@@ -968,10 +992,11 @@ class DiscoveryService:
                         "cluster": "kubernetes",
                         "annotations": metadata.get("annotations", {}),
                     },
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             secret_id = self.db.builtin_secrets.insert(
                 name=full_name,
                 organization_id=organization_id,
@@ -985,7 +1010,8 @@ class DiscoveryService:
                     "annotations": metadata.get("annotations", {}),
                 },
                 tags=["kubernetes", "k8s-secret", "discovered"],
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return secret_id
         except Exception as e:
@@ -1028,10 +1054,11 @@ class DiscoveryService:
                     common_name=common_name,
                     subject_alternative_names=dns_names,
                     expiration_date=expiration,
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
 
+            now = datetime.now(timezone.utc)
             cert_id = self.db.certificates.insert(
                 tenant_id=1,
                 name=name,
@@ -1046,7 +1073,8 @@ class DiscoveryService:
                 is_revoked=False,
                 auto_renew=True,
                 tags=["kubernetes", "cert-manager", "discovered"],
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
             return cert_id
         except Exception as e:
@@ -1344,10 +1372,11 @@ class DiscoveryService:
             # Update existing identity
             self.db(self.db.identities.id == existing.id).update(
                 full_name=name,
-                updated_at=datetime.utcnow(),
+                updated_at=datetime.now(timezone.utc),
             )
         else:
             # Create new identity
+            now = datetime.now(timezone.utc)
             self.db.identities.insert(
                 tenant_id=1,  # Default tenant
                 identity_type=identity_type,
@@ -1360,7 +1389,8 @@ class DiscoveryService:
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
-                created_at=datetime.utcnow(),
+                created_at=now,
+                updated_at=now,
             )
 
     def _store_as_entity(
@@ -1405,7 +1435,7 @@ class DiscoveryService:
             "region": resource.get("region"),
             "tags": resource.get("tags", {}),
             "metadata": resource.get("metadata", {}),
-            "discovered_at": datetime.utcnow().isoformat(),
+            "discovered_at": datetime.now(timezone.utc).isoformat(),
         }
 
         if existing:
@@ -1413,7 +1443,7 @@ class DiscoveryService:
             update_data = {
                 "name": name,
                 "attributes": resource_attrs,
-                "updated_at": datetime.utcnow(),
+                "updated_at": datetime.now(timezone.utc),
             }
             if parent_id is not None:
                 update_data["parent_id"] = parent_id
@@ -1421,13 +1451,15 @@ class DiscoveryService:
             return existing.id
         else:
             # Create new entity
+            now = datetime.now(timezone.utc)
             insert_data = {
                 "name": name,
                 "entity_type": entity_type,
                 "sub_type": resource_type,
                 "organization_id": organization_id,
                 "attributes": resource_attrs,
-                "created_at": datetime.utcnow(),
+                "created_at": now,
+                "updated_at": now,
             }
             if parent_id is not None:
                 insert_data["parent_id"] = parent_id
@@ -1484,7 +1516,7 @@ class DiscoveryService:
         ).select()
 
         # Also get scheduled jobs that are due
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         scheduled_jobs = self.db(
             (self.db.discovery_jobs.enabled == True)  # noqa: E712
             & (self.db.discovery_jobs.provider.belongs(local_providers))
@@ -1518,17 +1550,20 @@ class DiscoveryService:
 
         # Update job status
         self.db(self.db.discovery_jobs.id == job_id).update(
-            last_run_at=datetime.utcnow(),
+            last_run_at=datetime.now(timezone.utc),
         )
 
         # Create history entry
+        now = datetime.now(timezone.utc)
         self.db.discovery_history.insert(
             job_id=job_id,
-            started_at=datetime.utcnow(),
+            started_at=now,
             status="running",
             entities_discovered=0,
             entities_updated=0,
             entities_created=0,
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -1575,7 +1610,7 @@ class DiscoveryService:
             # Update history entry
             status = "completed" if success else "failed"
             self.db(self.db.discovery_history.id == history_entry.id).update(
-                completed_at=datetime.utcnow(),
+                completed_at=datetime.now(timezone.utc),
                 status=status,
                 error_message=error_message,
                 results_json=results,
@@ -1585,7 +1620,9 @@ class DiscoveryService:
         if job.schedule_interval and job.schedule_interval > 0:
             from datetime import timedelta
 
-            next_run = datetime.utcnow() + timedelta(seconds=job.schedule_interval)
+            next_run = datetime.now(timezone.utc) + timedelta(
+                seconds=job.schedule_interval
+            )
             self.db(self.db.discovery_jobs.id == job_id).update(next_run_at=next_run)
 
         self.db.commit()

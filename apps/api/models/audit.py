@@ -16,8 +16,8 @@ class AuditLog(Base, IDMixin):
     """
     Audit log for tracking all system changes and access.
 
-    Schema matches PyDAL pydal_models.py audit_logs table exactly.
-    PyDAL handles all runtime queries; this model is for create_all() only.
+    Schema authority for the audit_logs table (SQLAlchemy/Alembic).
+    penguin-dal handles runtime queries via reflection.
     """
 
     __tablename__ = "audit_logs"

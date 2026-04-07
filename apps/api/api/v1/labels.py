@@ -155,6 +155,7 @@ async def create_label(body: CreateLabelRequest):
             name=body.name,
             description=body.description,
             color=body.color,
+            created_at=now,
             updated_at=now,
         )
         db.commit()

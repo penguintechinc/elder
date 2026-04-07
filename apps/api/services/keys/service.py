@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apps.api.services.keys.aws_client import AWSKMSClient
@@ -129,13 +129,15 @@ class KeysService:
             )
 
         # Create provider
+        now = datetime.now(timezone.utc)
         provider_id = self.db.key_providers.insert(
             name=name,
             provider_type=provider_type.lower(),
             enabled=True,
             config_json=config,
             description=description,
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -230,7 +232,7 @@ class KeysService:
             return {
                 "provider_id": provider_id,
                 "success": success,
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
         except Exception as e:
@@ -238,7 +240,7 @@ class KeysService:
                 "provider_id": provider_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": datetime.now(timezone.utc).isoformat(),
             }
 
     # Key Management
@@ -272,6 +274,7 @@ class KeysService:
         key_data = client.create_key(key_name, key_type, key_spec, description, tags)
 
         # Register key in database
+        now = datetime.now(timezone.utc)
         key_id = self.db.crypto_keys.insert(
             key_provider_id=provider_id,
             provider_key_id=key_data["key_id"],
@@ -285,7 +288,8 @@ class KeysService:
                 "description": description,
                 "tags": tags or {},
             },
-            created_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
         self.db.commit()
@@ -549,11 +553,14 @@ class KeysService:
 
     def _log_access(self, key_id: int, operation: str, **kwargs):
         """Log key access for audit trail."""
+        now = datetime.now(timezone.utc)
         self.db.key_access_log.insert(
             key_id=key_id,
             operation=operation,
-            accessed_at=datetime.utcnow(),
+            accessed_at=now,
             metadata_json=kwargs,
+            created_at=now,
+            updated_at=now,
         )
         self.db.commit()
 
