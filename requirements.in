@@ -48,7 +48,7 @@ Authlib==1.6.9
 # Security & Cryptography
 PyJWT==2.12.0
 bcrypt==4.2.1
-cryptography==46.0.5
+cryptography==46.0.7
 # python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
 # Use PyJWT (above) for all JWT operations
 pyotp==2.9.0
