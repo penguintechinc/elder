@@ -43,9 +43,12 @@ RUN npm run build
 FROM node:20-bookworm-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3 AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 RUN npm install -g serve
+RUN useradd --create-home --shell /bin/bash appuser
 WORKDIR /app
-COPY --from=builder /app/dist ./dist
+COPY --chown=appuser:appuser --from=builder /app/dist ./dist
+RUN chown -R appuser:appuser /app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://127.0.0.1:3000/ || exit 1
+USER appuser
 CMD ["serve", "-s", "dist", "-l", "3000"]

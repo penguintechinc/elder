@@ -25,10 +25,16 @@ RUN pip install playwright && \
 # Copy application code
 COPY . .
 
-# Create screenshots directory
-RUN mkdir -p /app/screenshots
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser
 
-# Note: Running as root is required for masscan raw socket access
+# Create screenshots directory and set ownership
+RUN mkdir -p /app/screenshots && \
+    chown -R appuser:appuser /app
+
+# ROOT EXCEPTION (approved): masscan requires raw socket access (NET_RAW/NET_ADMIN)
+# for packet crafting. This container must run as root or with CAP_NET_RAW.
+# USER appuser  ← cannot be set until masscan raw socket requirement is resolved
 
 # Environment variables
 ENV SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL}
