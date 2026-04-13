@@ -157,11 +157,15 @@ serviceAccount:
 # Pod Security Context - More relaxed for development
 podSecurityContext:
   fsGroup: 1000
-
-# Security Context - More relaxed for development
-securityContext:
-  runAsNonRoot: false
+  runAsNonRoot: true
   runAsUser: 1000
-  allowPrivilegeEscalation: true
+
+# Security Context - More relaxed for development (readOnlyRootFilesystem off for ergonomics)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
   capabilities:
-    drop: []
+    drop:
+      - ALL

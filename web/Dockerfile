@@ -1,5 +1,5 @@
 # Build stage
-FROM --platform=$BUILDPLATFORM node:20-bookworm-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3 AS builder
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS builder
 
 # GitHub token for private package access — declared early so validation
 # runs before any expensive steps, but DOES NOT bust the npm install cache
@@ -40,15 +40,14 @@ COPY web/ .
 RUN npm run build
 
 # Production stage — serve built files with a lightweight static server
-FROM node:20-bookworm-slim@sha256:1e85773c98c31d4fe5b545e4cb17379e617b348832fb3738b22a08f68dec30f3 AS runner
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
 RUN npm install -g serve
 RUN useradd --create-home --shell /bin/bash appuser
 WORKDIR /app
 COPY --chown=appuser:appuser --from=builder /app/dist ./dist
 RUN chown -R appuser:appuser /app
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://127.0.0.1:3000/ || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 USER appuser
 CMD ["serve", "-s", "dist", "-l", "3000"]
