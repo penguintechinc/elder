@@ -69,7 +69,7 @@ async def list_identities():
 
     identity_type = request.args.get("identity_type")
     if identity_type:
-        query &= db.identities.identity_type == identity_type
+        query &= db.identities.type == identity_type
 
     is_active = request.args.get("is_active")
     if is_active is not None:
@@ -88,7 +88,7 @@ async def list_identities():
         # Select only fields that exist in IdentityDTO (exclude password_hash)
         rows = db(query).select(
             db.identities.id,
-            db.identities.identity_type,
+            db.identities.type,
             db.identities.username,
             db.identities.email,
             db.identities.full_name,

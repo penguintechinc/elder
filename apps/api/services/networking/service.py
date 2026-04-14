@@ -39,7 +39,6 @@ class NetworkingService:
         attributes: Optional[Dict[str, Any]] = None,
         status_metadata: Optional[Dict[str, Any]] = None,
         tags: Optional[List[str]] = None,
-        is_active: bool = True,
     ) -> Dict[str, Any]:
         """Create a new networking resource."""
         try:
@@ -60,7 +59,6 @@ class NetworkingService:
                 attributes=attributes or {},
                 status_metadata=status_metadata or {},
                 tags=tags or [],
-                is_active=is_active,
             )
 
             self.db.commit()
@@ -98,13 +96,12 @@ class NetworkingService:
         network_type: Optional[str] = None,
         parent_id: Optional[int] = None,
         region: Optional[str] = None,
-        is_active: bool = True,
         limit: Optional[int] = None,
         offset: Optional[int] = 0,
     ) -> Dict[str, Any]:
         """List networking resources with filters."""
         try:
-            query = self.db.networking_resources.is_active == is_active
+            query = self.db.networking_resources.id > 0  # Base query: all records
 
             if organization_id:
                 query &= self.db.networking_resources.organization_id == organization_id
@@ -221,10 +218,10 @@ class NetworkingService:
 
                 logger.info(f"Hard deleted networking resource {network_id}")
             else:
-                # Soft delete
+                # Soft delete (mark as inactive)
                 current_app.db(
                     current_app.db.networking_resources.id == network_id
-                ).update(is_active=False, updated_at=datetime.now())
+                ).update(status="inactive", updated_at=datetime.now())
 
                 logger.info(f"Soft deleted networking resource {network_id}")
 
@@ -469,8 +466,7 @@ class NetworkingService:
         try:
             # Get all networks for the organization
             networks = self.db(
-                (self.db.networking_resources.organization_id == organization_id)
-                & (self.db.networking_resources.is_active is True)
+                self.db.networking_resources.organization_id == organization_id
             ).select()
 
             # Get all topology connections for these networks
@@ -554,7 +550,8 @@ class NetworkingService:
             "attributes": network.attributes,
             "status_metadata": network.status_metadata,
             "tags": network.tags,
-            "is_active": network.is_active,
+            "is_public": network.is_public,
+            "status": network.status,
             "created_at": (
                 network.created_at.isoformat() if network.created_at else None
             ),

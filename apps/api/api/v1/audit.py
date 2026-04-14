@@ -39,7 +39,7 @@ def list_retention_policies():
             db.rollback()
 
         policies = db(db.audit_retention_policies.id > 0).select(
-            orderby=db.audit_retention_policies.resource_type
+            orderby=db.audit_retention_policies.name
         )
 
         return (
@@ -94,9 +94,9 @@ async def create_retention_policy():
 
     Request body:
         {
-            "resource_type": "entities",
+            "name": "Standard Policy",
             "retention_days": 90,
-            "enabled": true
+            "event_types": ["login", "create"]
         }
 
     Returns:
@@ -109,33 +109,35 @@ async def create_retention_policy():
         if not data:
             return jsonify({"error": "Request body required"}), 400
 
-        if "resource_type" not in data or "retention_days" not in data:
+        if "name" not in data or "retention_days" not in data:
             return (
-                jsonify({"error": "resource_type and retention_days are required"}),
+                jsonify({"error": "name and retention_days are required"}),
                 400,
             )
 
         def inner():
             db = current_app.db
 
-            # Check if policy already exists for this resource type
+            # Check if policy already exists for this name
             existing = (
-                db(db.audit_retention_policies.resource_type == data["resource_type"])
+                db(db.audit_retention_policies.name == data["name"])
                 .select()
                 .first()
             )
             if existing:
                 return (
                     None,
-                    f'Retention policy already exists for {data["resource_type"]}',
+                    f'Retention policy already exists for {data["name"]}',
                     400,
                 )
 
             now = datetime.now(timezone.utc)
             policy_id = db.audit_retention_policies.insert(
-                resource_type=data["resource_type"],
+                name=data["name"],
+                description=data.get("description"),
                 retention_days=data["retention_days"],
-                enabled=data.get("enabled", True),
+                event_types=data.get("event_types"),
+                is_active=data.get("is_active", True),
                 created_at=now,
                 updated_at=now,
             )
@@ -163,7 +165,7 @@ async def update_retention_policy(policy_id):
     Request body:
         {
             "retention_days": 180,
-            "enabled": false
+            "is_active": false
         }
 
     Returns:
@@ -187,8 +189,12 @@ async def update_retention_policy(policy_id):
             update_data = {}
             if "retention_days" in data:
                 update_data["retention_days"] = data["retention_days"]
-            if "enabled" in data:
-                update_data["enabled"] = data["enabled"]
+            if "is_active" in data:
+                update_data["is_active"] = data["is_active"]
+            if "description" in data:
+                update_data["description"] = data["description"]
+            if "event_types" in data:
+                update_data["event_types"] = data["event_types"]
             update_data["updated_at"] = datetime.now(timezone.utc)
 
             db(db.audit_retention_policies.id == policy_id).update(**update_data)
@@ -285,13 +291,13 @@ def cleanup_audit_logs():
             # In production, you'd have specific audit log tables per resource type
 
             if dry_run:
-                results[policy.resource_type] = {
+                results[policy.name] = {
                     "retention_days": policy.retention_days,
                     "cutoff_date": cutoff_date.isoformat(),
                     "action": "dry_run",
                 }
             else:
-                results[policy.resource_type] = {
+                results[policy.name] = {
                     "retention_days": policy.retention_days,
                     "cutoff_date": cutoff_date.isoformat(),
                     "deleted": 0,

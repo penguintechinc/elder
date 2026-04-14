@@ -1070,9 +1070,20 @@ def from_pydal_row(row, dto_class):
     """Convert PyDAL Row to dataclass DTO."""
     if row is None:
         return None
-    return dto_class(**row.as_dict())
+    row_dict = row.as_dict()
+    # Map database column names to dataclass field names
+    if 'type' in row_dict and 'identity_type' not in row_dict:
+        row_dict['identity_type'] = row_dict.pop('type')
+    return dto_class(**row_dict)
 
 
 def from_pydal_rows(rows, dto_class) -> list:
     """Convert PyDAL Rows to list of dataclass DTOs."""
-    return [dto_class(**row.as_dict()) for row in rows]
+    result = []
+    for row in rows:
+        row_dict = row.as_dict()
+        # Map database column names to dataclass field names
+        if 'type' in row_dict and 'identity_type' not in row_dict:
+            row_dict['identity_type'] = row_dict.pop('type')
+        result.append(dto_class(**row_dict))
+    return result
