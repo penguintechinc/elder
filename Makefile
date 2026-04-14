@@ -7,7 +7,7 @@
         smoke-test seed-mock-data screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug \
-        build docker-build docker-push docker-scan \
+        build docker-build docker-build-alpha docker-push docker-scan \
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
         helm-lint helm-template \
@@ -243,6 +243,32 @@ docker-build: ## Build all four service images locally (requires GITHUB_TOKEN en
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-worker:$(VERSION) \
 		-f apps/worker/Dockerfile .
 	@echo "$(GREEN)All images built at $(VERSION)$(RESET)"
+
+docker-build-alpha: ## Build and push all service images to local MicroK8s registry (localhost:32000)
+	@test -n "$(GITHUB_TOKEN)" || (echo "$(RED)ERROR: GITHUB_TOKEN env var required for web build$(RESET)" && exit 1)
+	@echo "$(BLUE)Building elder-api → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-api:alpha-latest \
+		--build-arg APP_VERSION=$(VERSION) \
+		-f apps/api/Dockerfile .
+	@docker push localhost:32000/elder-api:alpha-latest
+	@echo "$(BLUE)Building elder-web → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-web:alpha-latest \
+		--build-arg GITHUB_TOKEN=$(GITHUB_TOKEN) \
+		--build-arg VITE_VERSION=$(VERSION) \
+		--build-arg VITE_BUILD_TIME=$(shell date +%s) \
+		-f web/Dockerfile .
+	@docker push localhost:32000/elder-web:alpha-latest
+	@echo "$(BLUE)Building elder-scanner → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-scanner:alpha-latest \
+		--build-arg APP_VERSION=$(VERSION) \
+		-f apps/scanner/Dockerfile apps/scanner
+	@docker push localhost:32000/elder-scanner:alpha-latest
+	@echo "$(BLUE)Building elder-worker → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-worker:alpha-latest \
+		--build-arg APP_VERSION=$(VERSION) \
+		-f apps/worker/Dockerfile .
+	@docker push localhost:32000/elder-worker:alpha-latest
+	@echo "$(GREEN)All alpha images built and pushed at $(VERSION)$(RESET)"
 
 docker-push: ## Push all service images to ghcr.io (requires docker login)
 	@for svc in api web scanner worker; do \
