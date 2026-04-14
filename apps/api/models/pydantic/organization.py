@@ -33,6 +33,7 @@ class OrganizationDTO(ImmutableModel):
     owner_group_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    slug: Optional[str] = None
     tenant_id: Optional[int] = None
     village_id: Optional[str] = None
     village_segment: Optional[str] = None
