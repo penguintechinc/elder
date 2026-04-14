@@ -57,14 +57,14 @@ async def list_identities():
     query = db.identities.id > 0
 
     # Apply filters
-    # Search filter (case-insensitive search on username, email, full_name)
+    # Search filter (case-insensitive search on username, email, display_name)
     search = request.args.get("search") or request.args.get("name")
     if search:
         search_pattern = f"%{search}%"
         query &= (
             (db.identities.username.ilike(search_pattern))
             | (db.identities.email.ilike(search_pattern))
-            | (db.identities.full_name.ilike(search_pattern))
+            | (db.identities.display_name.ilike(search_pattern))
         )
 
     identity_type = request.args.get("identity_type")
@@ -91,15 +91,16 @@ async def list_identities():
             db.identities.type,
             db.identities.username,
             db.identities.email,
-            db.identities.full_name,
-            db.identities.organization_id,
-            db.identities.portal_role,
-            db.identities.auth_provider,
-            db.identities.auth_provider_id,
+            db.identities.display_name,
+            db.identities.external_id,
+            db.identities.provider,
+            db.identities.name,
+            db.identities.avatar_url,
+            db.identities.is_service_account,
+            db.identities.metadata,
+            db.identities.last_seen_at,
+            db.identities.tenant_id,
             db.identities.is_active,
-            db.identities.is_superuser,
-            db.identities.mfa_enabled,
-            db.identities.last_login_at,
             db.identities.created_at,
             db.identities.updated_at,
             orderby=db.identities.username,

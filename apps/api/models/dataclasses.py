@@ -20,18 +20,22 @@ class OrganizationDTO:
     id: int
     name: str
     description: Optional[str]
-    organization_type: str  # department, organization, team, collection, other
+    type: Optional[str]  # organization type
     parent_id: Optional[int]
-    ldap_dn: Optional[str]
-    saml_group: Optional[str]
     owner_identity_id: Optional[int]
     owner_group_id: Optional[int]
     created_at: datetime
     updated_at: datetime
     slug: Optional[str] = None
     tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    village_segment: Optional[str] = None
+    display_name: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    is_active: bool = True
+    settings: Optional[dict] = None
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
 
 
 @dataclass(slots=True)
@@ -40,14 +44,15 @@ class CreateOrganizationRequest:
 
     name: str
     description: Optional[str] = None
-    organization_type: str = (
-        "organization"  # department, organization, team, collection, other
-    )
+    type: Optional[str] = None
     parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
     owner_identity_id: Optional[int] = None
     owner_group_id: Optional[int] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -56,14 +61,15 @@ class UpdateOrganizationRequest:
 
     name: Optional[str] = None
     description: Optional[str] = None
-    organization_type: Optional[str] = (
-        None  # department, organization, team, collection, other
-    )
+    type: Optional[str] = None
     parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
     owner_identity_id: Optional[int] = None
     owner_group_id: Optional[int] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 # ==================== Entities ====================
@@ -162,24 +168,21 @@ class IdentityDTO:
     """Immutable Identity data transfer object."""
 
     id: int
-    identity_type: str
     username: str
     email: Optional[str]
-    full_name: Optional[str]
-    organization_id: Optional[int]  # Link to organization
-    portal_role: str  # admin, editor, observer
-    auth_provider: str
-    auth_provider_id: Optional[str]
-    is_active: bool
-    is_superuser: bool
-    mfa_enabled: bool
-    last_login_at: Optional[datetime]
+    type: str  # identity type
     created_at: datetime
     updated_at: datetime
-    password_hash: Optional[str] = None  # Stored password hash (never expose to client)
-    mfa_secret: Optional[str] = None  # MFA secret (never expose to client)
-    tenant_id: Optional[int] = None  # Link to tenant
-    village_id: Optional[str] = None
+    tenant_id: Optional[int] = None
+    external_id: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_active: bool = True
+    is_service_account: bool = False
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
 
 
 @dataclass(slots=True)
@@ -523,12 +526,14 @@ class APIKeyDTO:
     id: int
     identity_id: int
     name: str
-    prefix: str  # First few chars for display
-    last_used_at: Optional[datetime]
-    expires_at: Optional[datetime]
-    is_active: bool
+    key_prefix: str  # First few chars for display
     created_at: datetime
     updated_at: datetime
+    key_hash: Optional[str] = None
+    scopes: Optional[str] = None
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    is_active: bool = True
 
 
 @dataclass(slots=True)
