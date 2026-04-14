@@ -140,6 +140,8 @@ spec:
         {{- else if eq $component "api" }}
         - name: instance-dir
           mountPath: /app/instance
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "worker" }}
         - name: credentials
           mountPath: /var/run/secrets/elder
@@ -171,6 +173,8 @@ spec:
           sizeLimit: {{ ($componentConfig.screenshotStorage).sizeLimit | default "1Gi" }}
       {{- else if eq $component "api" }}
       - name: instance-dir
+        emptyDir: {}
+      - name: tmp
         emptyDir: {}
       {{- else if eq $component "worker" }}
       - name: credentials
