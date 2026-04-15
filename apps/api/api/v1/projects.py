@@ -152,9 +152,6 @@ async def create_project():
             description=data.get("description"),
             status=data.get("status", "active"),
             organization_id=data["organization_id"],
-            tenant_id=org.tenant_id,
-            start_date=data.get("start_date"),
-            end_date=data.get("end_date"),
             created_at=now,
             updated_at=now,
         )
@@ -228,8 +225,7 @@ async def update_project(id: int):
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
+    # Validate organization if being changed
     if "organization_id" in data:
 
         def get_org():
@@ -238,16 +234,13 @@ async def update_project(id: int):
         org = await run_in_threadpool(get_org)
         if not org:
             return jsonify({"error": "Organization not found"}), 404
-        if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
 
     def update():
         project = db.projects[id]
         if not project:
             return None
 
-        # Update fields
+        # Update fields (only those that exist in DB schema)
         update_dict = {}
         if "name" in data:
             update_dict["name"] = data["name"]
@@ -255,13 +248,8 @@ async def update_project(id: int):
             update_dict["description"] = data["description"]
         if "status" in data:
             update_dict["status"] = data["status"]
-        if "start_date" in data:
-            update_dict["start_date"] = data["start_date"]
-        if "end_date" in data:
-            update_dict["end_date"] = data["end_date"]
         if "organization_id" in data:
             update_dict["organization_id"] = data["organization_id"]
-            update_dict["tenant_id"] = org_tenant_id
 
         if update_dict:
             db(db.projects.id == id).update(**update_dict)

@@ -66,23 +66,13 @@ async def list_services():
             org_id = request.args.get("organization_id", type=int)
             query &= db.services.organization_id == org_id
 
-        if request.args.get("language"):
-            query &= db.services.language == request.args.get("language")
-
-        if request.args.get("deployment_method"):
-            query &= db.services.deployment_method == request.args.get(
-                "deployment_method"
-            )
-
         if request.args.get("status"):
             query &= db.services.status == request.args.get("status")
 
         if request.args.get("search"):
             search = request.args.get("search")
             search_pattern = f"%{search}%"
-            query &= (db.services.name.ilike(search_pattern)) | (
-                db.services.description.ilike(search_pattern)
-            )
+            query &= db.services.name.ilike(search_pattern)
 
         # Get count and rows
         total = db(query).count()
@@ -157,25 +147,12 @@ async def create_service(body: CreateServiceRequest):
         now = datetime.now(timezone.utc)
         service_id = db.services.insert(
             name=body.name,
-            description=body.description,
             organization_id=body.organization_id,
             tenant_id=tenant_id,
-            domains=body.domains or [],
-            paths=body.paths or [],
-            poc_identity_id=body.poc_identity_id,
-            language=body.language,
-            deployment_method=body.deployment_method,
-            deployment_type=body.deployment_type,
-            is_public=body.is_public,
             port=body.port,
-            health_endpoint=body.health_endpoint,
-            repository_url=body.repository_url,
-            documentation_url=body.documentation_url,
-            sla_uptime=body.sla_uptime,
-            sla_response_time_ms=body.sla_response_time_ms,
-            notes=body.notes,
-            tags=body.tags,
             status=body.status,
+            type=getattr(body, "type", None) or "unknown",
+            tags=body.tags or [],
             created_at=now,
             updated_at=now,
         )
@@ -414,11 +391,8 @@ async def trigger_service_sbom_scan(id: int):
     if error:
         return error
 
-    # Verify service has repository URL
-    if not service.repository_url:
-        return ApiResponse.error(
-            "Service does not have a repository URL configured", 400
-        )
+    # Verify service has repository URL (not a DB column, so skip this check)
+    # Services table does not have repository_url column
 
     # Get request data if provided
     data = request.get_json() or {}
@@ -431,7 +405,6 @@ async def trigger_service_sbom_scan(id: int):
             parent_id=id,
             scan_type=scan_type,
             status="pending",
-            repository_url=service.repository_url,
             repository_branch=repository_branch or "main",
             components_found=0,
             components_added=0,
@@ -603,8 +576,7 @@ async def export_service_sbom(id: int):
     # Build metadata
     metadata = {
         "name": service.name,
-        "version": getattr(service, "version", "unknown"),
-        "description": service.description,
+        "version": "unknown",
     }
 
     # Export based on format
