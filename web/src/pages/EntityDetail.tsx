@@ -125,7 +125,7 @@ export default function EntityDetail() {
           <div>
             <h1 className="text-3xl font-bold text-white">{entity.name}</h1>
             <p className="mt-1 text-slate-400">
-              {entity.entity_type.replace('_', ' ').toUpperCase()}
+              {entity.type?.replace('_', ' ').toUpperCase()}
             </p>
           </div>
         </div>
@@ -166,7 +166,7 @@ export default function EntityDetail() {
                   <dt className="text-sm font-medium text-slate-400">Type</dt>
                   <dd className="mt-1">
                     <span className="inline-block px-2 py-1 text-xs font-medium bg-primary-500/20 text-primary-400 rounded">
-                      {entity.entity_type.replace('_', ' ').toUpperCase()}
+                      {entity.type?.replace('_', ' ').toUpperCase()}
                     </span>
                   </dd>
                 </div>

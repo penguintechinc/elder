@@ -558,7 +558,7 @@ test.describe('Elder Web UI - Performance', () => {
  */
 
 const PAGES_WITH_CREATE_MODAL = [
-  { route: '/entities', name: 'Entities', buttonText: 'Create' },
+  { route: '/entities', name: 'Entities', buttonText: 'Create Entity' },
   { route: '/software', name: 'Software', buttonText: 'Add Software' },
   { route: '/services', name: 'Services', buttonText: 'Create' },
   { route: '/certificates', name: 'Certificates', buttonText: 'Add Certificate' },
@@ -585,13 +585,28 @@ const PAGES_WITH_CREATE_MODAL = [
 // Helper: login and set token in localStorage
 // Uses Playwright's request context (not browser fetch) to avoid CORS issues
 // when the API port-forward is on a different port than the web server.
+//
+// Beta bypass routing: PLAYWRIGHT_TARGET_HOST triggers server-side Host header injection
+// so Node.js API requests go through the dal2 bypass URL with correct ingress routing.
 async function loginAndSetToken(page: Page): Promise<boolean> {
-  const apiBase = process.env.PLAYWRIGHT_API_URL || 'http://localhost:4000';
+  const targetHost = process.env.PLAYWRIGHT_TARGET_HOST;
+  const bypassBase = process.env.PLAYWRIGHT_BASE_URL;
+
+  // In beta mode: route Node.js request through bypass URL + Host header
+  // In local mode: use PLAYWRIGHT_API_URL (port-forwarded API)
+  const apiBase = targetHost && bypassBase
+    ? bypassBase
+    : (process.env.PLAYWRIGHT_API_URL || 'http://localhost:4000');
+
+  const extraHTTPHeaders: Record<string, string> = targetHost
+    ? { Host: targetHost }
+    : {};
+
   const email = process.env.ELDER_TEST_EMAIL || 'admin@localhost.local';
   const password = process.env.ELDER_TEST_PASSWORD || 'admin123';
 
   // Use a Node.js-side request context to bypass CORS (no browser origin header)
-  const ctx = await playwrightRequest.newContext({ baseURL: apiBase, ignoreHTTPSErrors: true });
+  const ctx = await playwrightRequest.newContext({ baseURL: apiBase, ignoreHTTPSErrors: true, extraHTTPHeaders });
   let token: string | null = null;
   try {
     const res = await ctx.post('/api/v1/portal-auth/login', {

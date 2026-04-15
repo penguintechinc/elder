@@ -4,9 +4,9 @@
         setup setup-env setup-python \
         dev dev-api dev-stop generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
-        smoke-test seed-mock-data screenshots \
+        smoke-test smoke-test-beta seed-mock-data screenshots \
         lint format format-check \
-        test-ui test-ui-headed test-ui-debug \
+        test-ui test-ui-headed test-ui-debug test-beta \
         build docker-build docker-build-alpha docker-push docker-scan \
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
@@ -122,6 +122,22 @@ test: lint test-unit test-integration test-functional test-security ## Run all t
 
 smoke-test: ## Run smoke tests — build, API health, page loads (<2 min, pre-commit)
 	@bash scripts/smoke-test.sh
+
+smoke-test-beta: ## Run smoke tests against beta cluster (dal2)
+	@bash scripts/smoke-test.sh --beta
+
+test-beta: ## Run full test suite against beta: smoke + REST API + Playwright e2e
+	@echo "$(BLUE)=== Beta Test Suite ===$(RESET)"
+	@echo "$(BLUE)[1/3] Smoke tests...$(RESET)"
+	@bash scripts/smoke-test.sh --beta
+	@echo "$(BLUE)[2/3] REST API tests...$(RESET)"
+	@$(PYTHON) scripts/test-rest-api.py --url https://dal2.penguintech.io --host-header elder.penguintech.cloud --no-verify-ssl
+	@echo "$(BLUE)[3/3] Playwright e2e...$(RESET)"
+	@cd web && PLAYWRIGHT_BASE_URL=https://dal2.penguintech.io \
+		PLAYWRIGHT_TARGET_HOST=elder.penguintech.cloud \
+		PLAYWRIGHT_WEBSERVER_DISABLED=1 \
+		npx playwright test
+	@echo "$(GREEN)All beta tests passed$(RESET)"
 
 test-unit: ## Run unit tests
 	@echo "$(BLUE)Running unit tests...$(RESET)"
