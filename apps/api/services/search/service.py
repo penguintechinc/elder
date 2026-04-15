@@ -121,7 +121,7 @@ class SearchService:
 
         # Entity type filter
         if entity_type:
-            db_query &= self.db.entities.entity_type == entity_type
+            db_query &= self.db.entities.type == entity_type
 
         # Sub-type filter
         if sub_type:

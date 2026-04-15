@@ -81,19 +81,20 @@ class EntityDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    entity_type: str
-    sub_type: Optional[str]
-    organization_id: int
-    parent_id: Optional[int]
-    attributes: Optional[dict]
-    tags: Optional[list[str]]
-    is_active: bool
-    default_metadata: Optional[dict]
-    status_metadata: Optional[dict]
-    created_at: datetime
-    updated_at: datetime
-    village_id: Optional[str] = None
+    type: str
+    organization_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    sub_type: Optional[str] = None
+    external_id: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    region: Optional[str] = None
+    status: Optional[str] = None
+    is_managed: bool = False
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 @dataclass(slots=True)

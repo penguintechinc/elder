@@ -57,7 +57,7 @@ async def list_entities():
     # Apply filters
     if request.args.get("entity_type"):
         entity_type = request.args.get("entity_type")
-        query &= db.entities.entity_type == entity_type
+        query &= db.entities.type == entity_type
 
     if request.args.get("organization_id"):
         organization_id = request.args.get("organization_id", type=int)
@@ -66,10 +66,6 @@ async def list_entities():
     if request.args.get("name"):
         name = request.args.get("name")
         query &= db.entities.name.ilike(f"%{name}%")
-
-    if request.args.get("is_active") is not None:
-        is_active = request.args.get("is_active", "true").lower() == "true"
-        query &= db.entities.is_active == is_active
 
     # Use asyncio TaskGroup for concurrent queries (Python 3.12)
     async with asyncio.TaskGroup() as tg:
@@ -135,14 +131,14 @@ async def create_entity(body: CreateEntityRequest):
         now = datetime.now(timezone.utc)
         entity_id = db.entities.insert(
             name=body.name,
-            description=body.description,
-            entity_type=body.entity_type,
+            type=body.entity_type,
             organization_id=body.organization_id,
-            tenant_id=tenant_id,
             parent_id=body.parent_id,
-            attributes=body.attributes,
+            sub_type=body.sub_type,
             tags=body.tags or [],
-            is_active=body.is_active,
+            metadata=body.attributes,
+            status="active",
+            is_managed=False,
             created_at=now,
             updated_at=now,
         )
@@ -219,21 +215,20 @@ async def update_entity(id: int, body: UpdateEntityRequest):
         update_fields = {}
         if body.name is not None:
             update_fields["name"] = body.name
-        if body.description is not None:
-            update_fields["description"] = body.description
         if body.entity_type is not None:
-            update_fields["entity_type"] = body.entity_type
+            update_fields["type"] = body.entity_type
         if body.organization_id is not None:
             update_fields["organization_id"] = body.organization_id
-            update_fields["tenant_id"] = org_tenant_id
         if body.parent_id is not None:
             update_fields["parent_id"] = body.parent_id
+        if body.sub_type is not None:
+            update_fields["sub_type"] = body.sub_type
         if body.attributes is not None:
-            update_fields["attributes"] = body.attributes
+            update_fields["metadata"] = body.attributes
         if body.tags is not None:
             update_fields["tags"] = body.tags
-        if body.is_active is not None:
-            update_fields["is_active"] = body.is_active
+
+        update_fields["updated_at"] = datetime.now(timezone.utc)
 
         db(db.entities.id == id).update(**update_fields)
         db.commit()
