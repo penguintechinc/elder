@@ -229,8 +229,8 @@ async def create_issue(body: CreateIssueRequest):
         issue_id = db.issues.insert(
             title=body.title,
             description=body.description,
-            status=body.status,
-            priority=body.priority,
+            status=(body.status or "open").upper(),
+            priority=(body.priority or "medium").upper(),
             issue_type=body.issue_type,
             created_by_id=current_user_id,
             assigned_to_id=body.assignee_id,
