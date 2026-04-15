@@ -123,6 +123,28 @@ def auth_headers(client, app):
         return {}
 
 
+@pytest.fixture(scope="function")
+def db(app):
+    """
+    Alias for db_session — database fixture for tests that need DB state.
+
+    Wraps each test in a transaction rollback for isolation.
+
+    Args:
+        app: Flask application fixture
+
+    Yields:
+        PyDAL db instance (from app.db)
+    """
+    with app.app_context():
+        db = app.db
+        yield db
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 @pytest.fixture
 def mock_pydal_db(mocker):
     """
