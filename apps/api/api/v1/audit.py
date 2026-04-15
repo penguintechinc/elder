@@ -120,9 +120,7 @@ async def create_retention_policy():
 
             # Check if policy already exists for this name
             existing = (
-                db(db.audit_retention_policies.name == data["name"])
-                .select()
-                .first()
+                db(db.audit_retention_policies.name == data["name"]).select().first()
             )
             if existing:
                 return (
