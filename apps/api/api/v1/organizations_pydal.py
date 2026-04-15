@@ -137,6 +137,10 @@ async def create_organization(body: CreateOrganizationRequest):
         if "tenant_id" not in org_data:
             org_data["tenant_id"] = tenant_id
 
+        # Map Pydantic field 'organization_type' to DB column 'type'
+        if "organization_type" in org_data:
+            org_data["type"] = org_data.pop("organization_type")
+
         org_id = await insert_record(db.organizations, **org_data)
         if not org_id:
             return log_error_and_respond(
@@ -238,6 +242,10 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
 
     if not update_fields:
         return ApiResponse.bad_request("No fields to update")
+
+    # Map Pydantic field 'organization_type' to DB column 'type'
+    if "organization_type" in update_fields:
+        update_fields["type"] = update_fields.pop("organization_type")
 
     # Update organization
     try:

@@ -75,10 +75,6 @@ async def list_identities():
     if is_active is not None:
         query &= db.identities.is_active == (is_active.lower() == "true")
 
-    organization_id = request.args.get("organization_id", type=int)
-    if organization_id is not None:
-        query &= db.identities.organization_id == organization_id
-
     # Calculate pagination
     offset = (page - 1) * per_page
 
@@ -143,11 +139,7 @@ async def create_identity(body: CreateIdentityRequest):
             "auth_provider": "local", "ldap", "saml", etc.,
             "email": "string" (optional),
             "full_name": "string" (optional),
-            "password": "string" (optional, for local auth),
-            "is_active": true/false (default: true),
-            "is_superuser": false (default: false),
-            "mfa_enabled": false (default: false),
-            "organization_id": int (optional)
+            "is_active": true/false (default: true)
         }
 
     Returns:
@@ -158,20 +150,8 @@ async def create_identity(body: CreateIdentityRequest):
 
     # Log the request for debugging
     current_app.logger.info(
-        f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}, org_id={body.organization_id}"
+        f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}"
     )
-
-    # Get organization to derive tenant_id
-    org_id = body.organization_id
-
-    def get_org():
-        return db.organizations[org_id] if org_id else None
-
-    org = await run_in_threadpool(get_org)
-    if org_id and not org:
-        return jsonify({"error": "Organization not found"}), 404
-    if org and not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
 
     # Create identity
     def create():
@@ -180,30 +160,16 @@ async def create_identity(body: CreateIdentityRequest):
         if existing:
             return None, "Username already exists", 400
 
-        # Prepare insert data
+        # Prepare insert data - use actual DB column names
         insert_data = {
             "username": body.username,
-            "identity_type": body.identity_type,
-            "auth_provider": body.auth_provider,
+            "type": body.identity_type,
+            "provider": body.auth_provider,
             "email": body.email,
-            "full_name": body.full_name,
-            "auth_provider_id": body.auth_provider_id,
-            "organization_id": body.organization_id,
-            "tenant_id": org.tenant_id if org else None,
+            "display_name": body.full_name,
+            "external_id": body.auth_provider_id,
             "is_active": body.is_active,
-            "is_superuser": body.is_superuser,
-            "mfa_enabled": body.mfa_enabled,
-            "portal_role": (
-                body.portal_role if hasattr(body, "portal_role") else "viewer"
-            ),
-            "must_change_password": False,
         }
-
-        # Hash password if provided (for local auth)
-        if body.password:
-            insert_data["password_hash"] = generate_password_hash(
-                body.password.get_secret_value()
-            )
 
         # Create identity
         now = datetime.now(timezone.utc)
@@ -282,20 +248,6 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
     if not existing:
         return jsonify({"error": "Identity not found"}), 404
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
-    if body.organization_id:
-
-        def get_org():
-            return db.organizations[body.organization_id]
-
-        org = await run_in_threadpool(get_org)
-        if not org:
-            return jsonify({"error": "Organization not found"}), 404
-        if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
-
     # Update identity
     def update():
         update_fields = {}
@@ -303,20 +255,12 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         if body.email is not None:
             update_fields["email"] = body.email
         if body.full_name is not None:
-            update_fields["full_name"] = body.full_name
+            update_fields["display_name"] = body.full_name
         if body.password is not None:
-            update_fields["password_hash"] = generate_password_hash(
-                body.password.get_secret_value()
-            )
+            # Note: identities table doesn't have password_hash - passwords are managed separately
+            pass
         if body.is_active is not None:
             update_fields["is_active"] = body.is_active
-        if body.mfa_enabled is not None:
-            update_fields["mfa_enabled"] = body.mfa_enabled
-        if body.portal_role is not None:
-            update_fields["portal_role"] = body.portal_role
-        if body.organization_id is not None:
-            update_fields["organization_id"] = body.organization_id
-            update_fields["tenant_id"] = org_tenant_id
 
         db(db.identities.id == id).update(**update_fields)
         db.commit()
@@ -354,10 +298,6 @@ async def delete_identity(id: int):
         # Prevent deleting own account
         if identity.id == g.current_user.id:
             return None, "Cannot delete your own account", 400
-
-        # Prevent deleting superusers (unless caller is also superuser)
-        if identity.is_superuser and not g.current_user.is_superuser:
-            return None, "Cannot delete superuser account", 403
 
         # Delete identity
         db(db.identities.id == id).delete()
