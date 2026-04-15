@@ -60,7 +60,7 @@ async def get_graph():
             query &= db.entities.organization_id == org_id
 
         if entity_type:
-            query &= db.entities.entity_type == entity_type
+            query &= db.entities.type == entity_type
 
         # If entity_id specified, get subgraph centered on that entity
         if entity_id:
@@ -106,15 +106,15 @@ async def get_graph():
             node = {
                 "id": entity.id,
                 "label": entity.name,
-                "type": entity.entity_type,
+                "type": entity.type,
                 "organization_id": entity.organization_id,
             }
 
-            if include_metadata and entity.attributes:
-                node["metadata"] = entity.attributes
+            if include_metadata and entity.metadata:
+                node["metadata"] = entity.metadata
 
             # Add visual styling based on entity type
-            node["shape"], node["color"] = _get_node_style(entity.entity_type)
+            node["shape"], node["color"] = _get_node_style(entity.type)
 
             nodes.append(node)
 
@@ -214,7 +214,7 @@ async def analyze_graph():
                 entity.id,
                 **{
                     "name": entity.name,
-                    "type": entity.entity_type,
+                    "type": entity.type,
                 },
             )
 
@@ -335,7 +335,7 @@ async def find_path():
                 {
                     "id": eid,
                     "name": entity_map[eid].name,
-                    "type": entity_map[eid].entity_type,
+                    "type": entity_map[eid].type,
                 }
                 for eid in path
             ]
@@ -510,7 +510,7 @@ async def get_map():
             elif org_id:
                 entity_query &= db.entities.organization_id == org_id
             if entity_types:
-                entity_query &= db.entities.entity_type.belongs(entity_types)
+                entity_query &= db.entities.type.belongs(entity_types)
 
             entities = db(entity_query).select(limitby=(0, limit))
             for entity in entities:
@@ -518,7 +518,7 @@ async def get_map():
                     "entity",
                     entity.id,
                     entity.name,
-                    entity.entity_type,
+                    entity.type,
                     {
                         "organization_id": entity.organization_id,
                         "parent_id": entity.parent_id,
@@ -530,27 +530,25 @@ async def get_map():
             identity_query = db.identities.id > 0
             if tenant_id:
                 identity_query &= db.identities.tenant_id == tenant_id
-            if org_ids_to_include:
-                identity_query &= db.identities.organization_id.belongs(
-                    list(org_ids_to_include)
-                )
 
             identities = db(identity_query).select(limitby=(0, limit))
             for identity in identities:
-                label = identity.full_name or identity.username
+                label = identity.display_name or identity.username
                 add_node(
                     "identity",
                     identity.id,
                     label,
-                    identity.identity_type,
-                    {"organization_id": identity.organization_id},
+                    identity.type,
+                    {},
                 )
 
         # Get projects
         if "project" in resource_types:
             project_query = db.projects.id > 0
             if tenant_id:
-                project_query &= db.projects.tenant_id == tenant_id
+                project_query &= (
+                    db.projects.organization_id > 0
+                )  # tenant_id not in projects
             if org_ids_to_include:
                 project_query &= db.projects.organization_id.belongs(
                     list(org_ids_to_include)
@@ -830,7 +828,7 @@ def _count_by_type(entities) -> Dict[str, int]:
     """Count entities by type."""
     counts = {}
     for entity in entities:
-        type_val = entity.entity_type
+        type_val = entity.type
         counts[type_val] = counts.get(type_val, 0) + 1
     return counts
 

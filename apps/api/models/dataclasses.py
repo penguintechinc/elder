@@ -411,14 +411,14 @@ class ProjectDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    status: str
     organization_id: int
-    start_date: Optional[datetime]
-    end_date: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    is_active: bool = True
+    settings: Optional[dict] = None
+    created_by_id: Optional[int] = None
 
 
 @dataclass(slots=True)
@@ -627,29 +627,24 @@ class ServiceDTO:
     """Immutable Service data transfer object."""
 
     id: int
-    tenant_id: int
     name: str
-    description: Optional[str]
-    organization_id: int
-    domains: Optional[list]
-    paths: Optional[list]
-    poc_identity_id: Optional[int]
-    language: Optional[str]
-    deployment_method: Optional[str]
-    deployment_type: Optional[str]
-    is_public: bool
-    port: Optional[int]
-    health_endpoint: Optional[str]
-    repository_url: Optional[str]
-    documentation_url: Optional[str]
-    sla_uptime: Optional[float]
-    sla_response_time_ms: Optional[int]
-    notes: Optional[str]
-    tags: Optional[list]
-    status: str
     created_at: datetime
-    updated_at: Optional[datetime]
-    village_id: Optional[str]
+    tenant_id: Optional[int] = None
+    organization_id: Optional[int] = None
+    identity_id: Optional[int] = None
+    type: Optional[str] = None
+    sub_type: Optional[str] = None
+    external_id: Optional[str] = None
+    namespace: Optional[str] = None
+    cluster: Optional[str] = None
+    endpoint: Optional[str] = None
+    port: Optional[int] = None
+    protocol: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ==================== Audit Logs ====================

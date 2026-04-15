@@ -49,6 +49,8 @@ async def list_users():
             db.identities.email,
             db.identities.display_name,
             db.identities.tenant_id,
+            db.identities.created_at,
+            db.identities.updated_at,
             orderby=db.identities.username,
             limitby=(offset, offset + per_page),
         )
