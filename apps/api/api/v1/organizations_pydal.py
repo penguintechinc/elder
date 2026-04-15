@@ -73,6 +73,18 @@ async def list_organizations():
     def get_orgs():
         total = db(query).count()
         rows = db(query).select(
+            db.organizations.id,
+            db.organizations.name,
+            db.organizations.description,
+            db.organizations.type,
+            db.organizations.parent_id,
+            db.organizations.owner_identity_id,
+            db.organizations.owner_group_id,
+            db.organizations.created_at,
+            db.organizations.updated_at,
+            db.organizations.slug,
+            db.organizations.tenant_id,
+            db.organizations.display_name,
             orderby=db.organizations.name,
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
