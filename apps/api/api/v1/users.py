@@ -44,10 +44,10 @@ async def list_users():
         total = db(query).count()
         rows = db(query).select(
             db.identities.id,
-            db.identities.type,
+            db.identities.identity_type,
             db.identities.username,
             db.identities.email,
-            db.identities.display_name,
+            db.identities.full_name,
             db.identities.tenant_id,
             db.identities.created_at,
             db.identities.updated_at,

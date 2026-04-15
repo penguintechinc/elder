@@ -254,6 +254,12 @@ async def create_dependency(body: CreateDependencyRequest):
     target_type = body.target_type
     target_id = body.target_id
 
+    # Capture tenant_id from current user before entering threadpool
+    from flask import g as flask_g
+    current_user_tenant_id = getattr(
+        getattr(flask_g, "current_user", None), "tenant_id", None
+    )
+
     # Validate resource types
     if source_type not in VALID_RESOURCE_TYPES:
         return (
@@ -313,8 +319,8 @@ async def create_dependency(body: CreateDependencyRequest):
                 None,
             )
 
-        # Get tenant from source resource
-        tenant_id = getattr(source, "tenant_id", None)
+        # Get tenant from source resource, falling back to current user's tenant
+        tenant_id = getattr(source, "tenant_id", None) or current_user_tenant_id
         if not tenant_id:
             return {"error": f"Source {source_type} must have a tenant"}, 400, None
 

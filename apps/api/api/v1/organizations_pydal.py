@@ -167,7 +167,6 @@ async def create_organization(body: CreateOrganizationRequest):
         return ApiResponse.created(org_dict)
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -260,7 +259,6 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
         return ApiResponse.success(asdict(org_dto))
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -299,7 +297,6 @@ async def delete_organization(id: int):
         return ApiResponse.no_content()
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 

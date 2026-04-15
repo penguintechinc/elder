@@ -15,16 +15,21 @@ class Base(DeclarativeBase):
 
 
 class TimestampMixin:
-    """Mixin for adding created_at and updated_at timestamps."""
+    """Mixin for adding created_at and updated_at timestamps.
+
+    nullable=True matches Alembic migration 011_create_base_tables so that
+    create_all() in tests generates a schema compatible with penguin-dal inserts
+    that don't explicitly include timestamp fields.
+    """
 
     created_at = Column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         default=lambda: datetime.now(timezone.utc),
     )
     updated_at = Column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )

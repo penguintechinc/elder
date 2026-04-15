@@ -83,12 +83,6 @@ def db_session(app):
 
         yield db
 
-        # Rollback any uncommitted changes
-        try:
-            db.rollback()
-        except Exception:
-            pass
-
 
 @pytest.fixture(scope="function")
 def auth_headers(client, app):
@@ -107,7 +101,7 @@ def auth_headers(client, app):
     with app.app_context():
         # Login with admin user (created during db init)
         response = client.post(
-            "/api/v1/auth/login",
+            "/api/v1/portal-auth/login",
             json={
                 "email": os.getenv("ADMIN_EMAIL", "admin@localhost.local"),
                 "password": os.getenv("ADMIN_PASSWORD", "admin123"),
@@ -139,10 +133,6 @@ def db(app):
     with app.app_context():
         db = app.db
         yield db
-        try:
-            db.rollback()
-        except Exception:
-            pass
 
 
 @pytest.fixture
