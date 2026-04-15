@@ -132,9 +132,10 @@ async def list_issues():
         query = db.issues.id > 0
 
         # Apply filters
-        if request.args.get("organization_id"):
-            org_id = request.args.get("organization_id", type=int)
-            query &= db.issues.organization_id == org_id
+        # Note: organization_id is not a column in issues table (removed)
+        # if request.args.get("organization_id"):
+        #     org_id = request.args.get("organization_id", type=int)
+        #     query &= db.issues.organization_id == org_id
 
         if request.args.get("status"):
             query &= db.issues.status == request.args.get("status")
@@ -144,11 +145,11 @@ async def list_issues():
 
         if request.args.get("assignee_id"):
             assignee_id = request.args.get("assignee_id", type=int)
-            query &= db.issues.assignee_id == assignee_id
+            query &= db.issues.assigned_to_id == assignee_id
 
         if request.args.get("reporter_id"):
             reporter_id = request.args.get("reporter_id", type=int)
-            query &= db.issues.reporter_id == reporter_id
+            query &= db.issues.created_by_id == reporter_id
 
         # Calculate pagination
         offset = (page - 1) * per_page
@@ -231,10 +232,10 @@ async def create_issue(body: CreateIssueRequest):
             status=body.status,
             priority=body.priority,
             issue_type=body.issue_type,
-            reporter_id=current_user_id,
-            assignee_id=body.assignee_id,
-            organization_id=body.organization_id,
-            tenant_id=org.tenant_id,
+            created_by_id=current_user_id,
+            assigned_to_id=body.assignee_id,
+            resource_type="organization",
+            resource_id=body.organization_id,
             is_incident=body.is_incident,
             created_at=now,
             updated_at=now,
@@ -247,7 +248,7 @@ async def create_issue(body: CreateIssueRequest):
     issue = await run_in_threadpool(create)
 
     # Send issue created webhooks asynchronously (fire and forget)
-    if issue.organization_id:
+    if issue.resource_id and issue.resource_type == "organization":
         asyncio.create_task(
             send_issue_created_webhooks(
                 db=db,
@@ -255,7 +256,7 @@ async def create_issue(body: CreateIssueRequest):
                 issue_title=issue.title,
                 issue_type=issue.issue_type,
                 is_incident=issue.is_incident if hasattr(issue, "is_incident") else 0,
-                organization_id=issue.organization_id,
+                organization_id=issue.resource_id,
                 web_url_base=current_app.config.get("WEB_URL", "http://localhost:3000"),
             )
         )
@@ -361,10 +362,10 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.priority is not None:
             update_fields["priority"] = body.priority
         if body.assignee_id is not None:
-            update_fields["assignee_id"] = body.assignee_id
+            update_fields["assigned_to_id"] = body.assignee_id
         if body.organization_id is not None:
-            update_fields["organization_id"] = body.organization_id
-            update_fields["tenant_id"] = org_tenant_id
+            update_fields["resource_id"] = body.organization_id
+            update_fields["resource_type"] = "organization"
         if body.is_incident is not None:
             update_fields["is_incident"] = body.is_incident
 

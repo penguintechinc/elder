@@ -309,16 +309,16 @@ class IssueDTO:
     status: str
     priority: str
     issue_type: str
-    reporter_id: int
-    assignee_id: Optional[int]
-    organization_id: Optional[int]
+    created_by_id: int
+    assigned_to_id: Optional[int]
+    resource_type: str
+    resource_id: int
     is_incident: int
     closed_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    parent_issue_id: Optional[int] = None
+    closed_by_id: Optional[int] = None
+    due_date: Optional[datetime] = None
 
 
 @dataclass(slots=True)
