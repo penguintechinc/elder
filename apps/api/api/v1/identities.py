@@ -406,8 +406,6 @@ async def create_group(body: CreateIdentityGroupRequest):
         group_id = db.identity_groups.insert(
             name=body.name,
             description=body.description,
-            ldap_dn=body.ldap_dn,
-            saml_group=body.saml_group,
             is_active=body.is_active,
         )
         db.commit()

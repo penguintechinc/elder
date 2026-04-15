@@ -311,7 +311,7 @@ class MockDataSeeder:
 
         for name, description in groups[: self.count]:
             result = self._api_post(
-                "/api/v1/groups",  # Correct endpoint
+                "/api/v1/identities/groups",  # Correct endpoint
                 {
                     "name": name,
                     "description": description,

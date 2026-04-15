@@ -222,11 +222,11 @@ class IdentityGroupDTO:
     id: int
     name: str
     description: Optional[str]
-    ldap_dn: Optional[str]
-    saml_group: Optional[str]
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    ldap_dn: Optional[str] = None
+    saml_group: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime = None
+    updated_at: datetime = None
 
 
 @dataclass(slots=True)
