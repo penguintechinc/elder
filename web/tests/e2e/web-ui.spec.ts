@@ -916,12 +916,22 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 /** Log in via the UI. Fails the test if login does not succeed. */
 async function loginAndWait(page: Page): Promise<void> {
+  // Pre-seed GDPR consent so LoginPageBuilder enables the form immediately.
+  // Without this the form stays disabled until the cookie banner is accepted.
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => {
+    localStorage.setItem(
+      'gdpr_consent',
+      JSON.stringify({ accepted: true, necessary: true, functional: true, analytics: true, marketing: true })
+    );
+  });
+  // Reload so LoginPageBuilder picks up the stored consent on mount
+  await page.reload({ waitUntil: 'domcontentloaded' });
 
   const emailInput = page.locator('input[type="email"], input[name="email"]').first();
   const passwordInput = page.locator('input[type="password"]').first();
 
-  await expect(emailInput, 'Login page must show email input').toBeVisible({ timeout: 10000 });
+  await expect(emailInput, 'Login page email input must become enabled').toBeEnabled({ timeout: 15000 });
 
   await emailInput.fill(ADMIN_EMAIL);
   await passwordInput.fill(ADMIN_PASSWORD);
@@ -929,7 +939,7 @@ async function loginAndWait(page: Page): Promise<void> {
 
   await expect(page, `Login with ${ADMIN_EMAIL} must redirect away from /login`).toHaveURL(
     /^(?!.*\/login)/,
-    { timeout: 10000 }
+    { timeout: 15000 }
   );
 }
 
