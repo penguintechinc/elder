@@ -905,3 +905,111 @@ test.describe('Elder Web UI - API Route Integrity', () => {
     ).toHaveLength(0);
   });
 });
+
+// ============================================================================
+// Authenticated post-login tests
+// Regression: blank page / TypeError after successful login (entity.type drift)
+// ============================================================================
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@localhost.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
+/** Log in via the UI and return once redirected away from /login. */
+async function loginAndWait(page: Page): Promise<boolean> {
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+
+  const emailInput = page.locator('input[type="email"], input[name="email"]').first();
+  const passwordInput = page.locator('input[type="password"]').first();
+
+  if (!(await emailInput.isVisible().catch(() => false))) return false;
+
+  await emailInput.fill(ADMIN_EMAIL);
+  await passwordInput.fill(ADMIN_PASSWORD);
+  await page.keyboard.press('Enter');
+
+  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
+  return !page.url().includes('/login');
+}
+
+test.describe('Elder Web UI - Authenticated Dashboard', () => {
+  test('dashboard renders after login without crashing', async ({ page }) => {
+    const jsErrors: string[] = [];
+    page.on('pageerror', (e) => jsErrors.push(e.message));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') jsErrors.push(msg.text());
+    });
+
+    const loggedIn = await loginAndWait(page);
+    if (!loggedIn) {
+      test.skip(true, 'Could not log in — skipping authenticated test');
+      return;
+    }
+
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // The page must have visible content — not a blank white/black screen
+    const body = page.locator('body');
+    await expect(body).toBeVisible();
+
+    // At least one layout landmark must be present (sidebar, nav, main)
+    const hasContent = await page
+      .locator('nav, aside, main, [role="navigation"], [role="main"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    expect(hasContent, 'Dashboard must render layout after login — blank page detected').toBe(true);
+
+    // No uncaught JS errors (filter out browser extension noise)
+    const appErrors = jsErrors.filter(
+      (e) =>
+        !e.includes('background.js') &&
+        !e.includes('extension') &&
+        !e.includes('404') &&
+        !e.includes('non-passive')
+    );
+    expect(
+      appErrors,
+      `Dashboard crashed with JS error(s) after login:\n${appErrors.join('\n')}`
+    ).toHaveLength(0);
+  });
+
+  test('dashboard entity list renders entity type without TypeError', async ({ page }) => {
+    // Regression: entity.entity_type.replace() crashed because API returns `type`, not `entity_type`
+    const jsErrors: string[] = [];
+    page.on('pageerror', (e) => jsErrors.push(e.message));
+
+    const loggedIn = await loginAndWait(page);
+    if (!loggedIn) {
+      test.skip(true, 'Could not log in — skipping authenticated test');
+      return;
+    }
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // Any TypeError about `.replace` on undefined is the entity_type drift crash
+    const typeErrors = jsErrors.filter((e) => e.includes('replace') || e.includes("reading 'replace'"));
+    expect(
+      typeErrors,
+      `Entity type field crash detected (API field name drift):\n${typeErrors.join('\n')}`
+    ).toHaveLength(0);
+  });
+
+  test('authenticated routes stay authenticated after login', async ({ page }) => {
+    const loggedIn = await loginAndWait(page);
+    if (!loggedIn) {
+      test.skip(true, 'Could not log in — skipping authenticated test');
+      return;
+    }
+
+    const protectedRoutes = ['/', '/entities', '/organizations', '/dependencies', '/issues'];
+    for (const route of protectedRoutes) {
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => {});
+      expect(
+        page.url(),
+        `Authenticated route ${route} redirected to login unexpectedly`
+      ).not.toContain('/login');
+    }
+  });
+});

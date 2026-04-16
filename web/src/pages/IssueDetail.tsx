@@ -628,7 +628,7 @@ export default function IssueDetail() {
                       ?.filter((entity: any) => !linkedEntities?.items?.some((e: any) => e.id === entity.id))
                       .map((entity: any) => (
                         <option key={entity.id} value={entity.id}>
-                          {entity.name} ({entity.entity_type})
+                          {entity.name} ({entity.type})
                         </option>
                       ))}
                   </Select>
@@ -643,7 +643,7 @@ export default function IssueDetail() {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{entity.name}</p>
-                      <p className="text-xs text-slate-500">{entity.entity_type}</p>
+                      <p className="text-xs text-slate-500">{entity.type}</p>
                     </div>
                     <button
                       onClick={(e) => {

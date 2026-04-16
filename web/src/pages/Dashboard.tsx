@@ -157,7 +157,7 @@ export default function Dashboard() {
                     <div>
                       <p className="text-white font-medium">{entity.name}</p>
                       <p className="text-sm text-slate-400">
-                        {entity.entity_type.replace('_', ' ').toUpperCase()}
+                        {entity.type?.replace('_', ' ').toUpperCase()}
                       </p>
                     </div>
                   </li>

@@ -68,7 +68,7 @@ function formatResourceOptions(type: string, items: any[]) {
   return (items || []).map((item: any) => {
     switch (type) {
       case 'entity':
-        return { value: item.id, label: `${item.name}${item.entity_type ? ` (${item.entity_type})` : ''}` }
+        return { value: item.id, label: `${item.name}${item.type ? ` (${item.type})` : ''}` }
       case 'identity':
         return { value: item.id, label: `${item.username}${item.identity_type ? ` (${item.identity_type})` : ''}` }
       case 'project':

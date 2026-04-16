@@ -265,7 +265,7 @@ export default function Search() {
                           <div className="flex items-center gap-2">
                             <h3 className="text-white font-medium truncate">{entity.name}</h3>
                             <span className="text-xs px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded">
-                              {entity.entity_type}
+                              {entity.type}
                             </span>
                           </div>
                           {entity.description && (
