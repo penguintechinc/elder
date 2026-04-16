@@ -914,21 +914,23 @@ test.describe('Elder Web UI - API Route Integrity', () => {
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@localhost.local';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-/** Log in via the UI and return once redirected away from /login. */
-async function loginAndWait(page: Page): Promise<boolean> {
+/** Log in via the UI. Fails the test if login does not succeed. */
+async function loginAndWait(page: Page): Promise<void> {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
 
   const emailInput = page.locator('input[type="email"], input[name="email"]').first();
   const passwordInput = page.locator('input[type="password"]').first();
 
-  if (!(await emailInput.isVisible().catch(() => false))) return false;
+  await expect(emailInput, 'Login page must show email input').toBeVisible({ timeout: 10000 });
 
   await emailInput.fill(ADMIN_EMAIL);
   await passwordInput.fill(ADMIN_PASSWORD);
   await page.keyboard.press('Enter');
 
-  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
-  return !page.url().includes('/login');
+  await expect(page, `Login with ${ADMIN_EMAIL} must redirect away from /login`).toHaveURL(
+    /^(?!.*\/login)/,
+    { timeout: 10000 }
+  );
 }
 
 test.describe('Elder Web UI - Authenticated Dashboard', () => {
@@ -939,12 +941,7 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
       if (msg.type() === 'error') jsErrors.push(msg.text());
     });
 
-    const loggedIn = await loginAndWait(page);
-    if (!loggedIn) {
-      test.skip(true, 'Could not log in — skipping authenticated test');
-      return;
-    }
-
+    await loginAndWait(page);
     await page.waitForLoadState('networkidle').catch(() => {});
 
     // The page must have visible content — not a blank white/black screen
@@ -978,12 +975,7 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
     const jsErrors: string[] = [];
     page.on('pageerror', (e) => jsErrors.push(e.message));
 
-    const loggedIn = await loginAndWait(page);
-    if (!loggedIn) {
-      test.skip(true, 'Could not log in — skipping authenticated test');
-      return;
-    }
-
+    await loginAndWait(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
@@ -996,11 +988,7 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
   });
 
   test('authenticated routes stay authenticated after login', async ({ page }) => {
-    const loggedIn = await loginAndWait(page);
-    if (!loggedIn) {
-      test.skip(true, 'Could not log in — skipping authenticated test');
-      return;
-    }
+    await loginAndWait(page);
 
     const protectedRoutes = ['/', '/entities', '/organizations', '/dependencies', '/issues'];
     for (const route of protectedRoutes) {
