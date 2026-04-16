@@ -582,53 +582,89 @@ const PAGES_WITH_CREATE_MODAL = [
   { route: '/admin/tenants', name: 'Tenants', buttonText: 'Create' },
 ];
 
-// Helper: login and set token in localStorage
-// Uses Playwright's request context (not browser fetch) to avoid CORS issues
-// when the API port-forward is on a different port than the web server.
+// ─── Auth configuration ──────────────────────────────────────────────────────
+// PLAYWRIGHT_API_URL: explicit API base URL (use when API runs on a different
+//   port or host from the web app, e.g. local dev with port-forwarded API).
+// Falls back to PLAYWRIGHT_BASE_URL so alpha/beta (shared ingress) work with
+//   zero extra config.
 //
-// Beta bypass routing: PLAYWRIGHT_TARGET_HOST triggers server-side Host header injection
-// so Node.js API requests go through the dal2 bypass URL with correct ingress routing.
-async function loginAndSetToken(page: Page): Promise<boolean> {
-  const targetHost = process.env.PLAYWRIGHT_TARGET_HOST;
-  const bypassBase = process.env.PLAYWRIGHT_BASE_URL;
+// PLAYWRIGHT_TARGET_HOST: beta bypass — when set, Node.js requests go through
+//   the bypass URL (PLAYWRIGHT_BASE_URL) with this value as the Host header,
+//   routing correctly through the K8s ingress without hitting Cloudflare.
+//
+// Examples:
+//   Alpha:  PLAYWRIGHT_BASE_URL=http://elder.localhost.local
+//           (API_BASE resolves to http://elder.localhost.local — same ingress)
+//   Beta:   PLAYWRIGHT_BASE_URL=https://dal2.penguintech.cloud
+//           PLAYWRIGHT_TARGET_HOST=elder.penguintech.cloud
+//           (requests go to bypass URL with Host header)
+//   Local:  PLAYWRIGHT_API_URL=http://localhost:4000
+//           PLAYWRIGHT_BASE_URL=http://localhost:3005
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // In beta mode: route Node.js request through bypass URL + Host header
-  // In local mode: use PLAYWRIGHT_API_URL (port-forwarded API)
-  const apiBase = targetHost && bypassBase
-    ? bypassBase
-    : (process.env.PLAYWRIGHT_API_URL || 'http://localhost:4000');
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@localhost.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
-  const extraHTTPHeaders: Record<string, string> = targetHost
-    ? { Host: targetHost }
-    : {};
+// API base: explicit override → same origin as web app → Playwright default
+const _API_BASE =
+  process.env.PLAYWRIGHT_API_URL ||
+  process.env.PLAYWRIGHT_BASE_URL ||
+  'http://localhost:3005';
 
-  const email = process.env.ELDER_TEST_EMAIL || 'admin@localhost.local';
-  const password = process.env.ELDER_TEST_PASSWORD || 'admin123';
+// Beta bypass: Host header for K8s ingress routing through the dal2 LB
+const _EXTRA_HEADERS: Record<string, string> = process.env.PLAYWRIGHT_TARGET_HOST
+  ? { Host: process.env.PLAYWRIGHT_TARGET_HOST }
+  : {};
 
-  // Use a Node.js-side request context to bypass CORS (no browser origin header)
-  const ctx = await playwrightRequest.newContext({ baseURL: apiBase, ignoreHTTPSErrors: true, extraHTTPHeaders });
-  let token: string | null = null;
+/**
+ * Authenticate the test browser session.
+ *
+ * Obtains a JWT via direct API call (fast; no browser UI needed), injects it
+ * into localStorage, and pre-seeds GDPR consent so any UI flows that render
+ * LoginPageBuilder also work without hitting the cookie banner.
+ *
+ * Hard-fails the test if the login API call is unreachable or returns a
+ * non-200 — default credentials are always present on alpha/beta deployments.
+ */
+async function authenticate(page: Page): Promise<void> {
+  const ctx = await playwrightRequest.newContext({
+    baseURL: _API_BASE,
+    ignoreHTTPSErrors: true,
+    extraHTTPHeaders: _EXTRA_HEADERS,
+  });
+
+  let token: string;
   try {
     const res = await ctx.post('/api/v1/portal-auth/login', {
-      data: { email, password },
+      data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
       headers: { 'Content-Type': 'application/json' },
     });
-    if (res.ok()) {
-      const data = await res.json();
-      token = data.token || null;
-    }
-  } catch {
-    token = null;
+    expect(
+      res.status(),
+      `Login API returned ${res.status()} — check API is reachable at ${_API_BASE} ` +
+        `(set PLAYWRIGHT_API_URL to override, defaults to PLAYWRIGHT_BASE_URL)`
+    ).toBe(200);
+    const data = await res.json();
+    token = data.token as string;
+    expect(token, 'Login response missing token — unexpected API response shape').toBeTruthy();
   } finally {
     await ctx.dispose();
   }
 
-  if (!token) return false;
-
-  // Inject the token into the browser's localStorage
+  // Navigate to /login so we have a same-origin context for localStorage writes
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate((t) => localStorage.setItem('elder_token', t), token);
-  return true;
+  await page.evaluate(
+    ({ t }) => {
+      localStorage.setItem('elder_token', t);
+      // Pre-seed GDPR consent — LoginPageBuilder keeps form inputs disabled
+      // until this key is present; fresh browser contexts lack it
+      localStorage.setItem(
+        'gdpr_consent',
+        JSON.stringify({ accepted: true, necessary: true, functional: true, analytics: true, marketing: true })
+      );
+    },
+    { t: token }
+  );
 }
 
 test.describe('Elder Web UI - Create Modal Content', () => {
@@ -636,12 +672,7 @@ test.describe('Elder Web UI - Create Modal Content', () => {
     test(`${pageConfig.name} - create modal renders content without errors`, async ({ page }) => {
       test.setTimeout(45000);
 
-      // Login
-      const loggedIn = await loginAndSetToken(page);
-      if (!loggedIn) {
-        test.skip(true, 'Login failed — cannot test authenticated pages');
-        return;
-      }
+      await authenticate(page);
 
       // Collect console errors
       const errors: string[] = [];
@@ -722,81 +753,6 @@ test.describe('Elder Web UI - Create Modal Content', () => {
   }
 });
 
-test.describe('Elder Web UI - API Route Verification', () => {
-  test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
-    test.setTimeout(120000);
-
-    // Login first
-    const loggedIn = await loginAndSetToken(page);
-    if (!loggedIn) {
-      test.skip(true, 'Login failed — cannot test authenticated pages');
-      return;
-    }
-
-    const notFoundEndpoints: string[] = [];
-
-    // Intercept all API responses and collect 404s
-    page.on('response', (resp) => {
-      const url = resp.url();
-      if (url.includes('/api/v1/') && resp.status() === 404) {
-        // Extract just the path for readability
-        const path = new URL(url).pathname;
-        const entry = `${resp.request().method()} ${path}`;
-        if (!notFoundEndpoints.includes(entry)) {
-          notFoundEndpoints.push(entry);
-        }
-      }
-    });
-
-    // Visit pages that trigger API calls — these are the main data pages
-    const pagesToVisit = [
-      '/',
-      '/entities',
-      '/software',
-      '/services',
-      '/certificates',
-      '/issues',
-      '/projects',
-      '/milestones',
-      '/labels',
-      '/data-stores',
-      '/dependencies',
-      '/organizations',
-      '/networking',
-      '/iam',
-      '/ipam',
-      '/backups',
-      '/webhooks',
-      '/on-call-rotations',
-      '/admin/sso',
-      '/admin/license-policies',
-      '/admin/tenants',
-      '/settings',
-    ];
-
-    for (const path of pagesToVisit) {
-      try {
-        const response = await page.goto(path, {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        // Skip pages that don't exist as frontend routes
-        if (response && response.status() !== 404) {
-          // Wait for API calls to settle
-          await page.waitForLoadState('networkidle').catch(() => {});
-        }
-      } catch {
-        // Navigation timeout — page might be slow, continue
-      }
-    }
-
-    // Assert no API 404s were found
-    expect(
-      notFoundEndpoints,
-      `API endpoints returned 404 (route mismatch):\n${notFoundEndpoints.join('\n')}`
-    ).toHaveLength(0);
-  });
-});
 
 test.describe('Version validation', () => {
   test('AppConsoleVersion logs a non-zero version on startup', async ({ page }) => {
@@ -854,49 +810,60 @@ test.describe('Elder Web UI - API Route Integrity', () => {
   /**
    * Detect frontend API calls that return 404 (path mismatch).
    *
-   * This catches the class of bug where the frontend calls e.g. /sso/idp-configs
-   * but the backend registers /sso/idp — the mismatch produces silent 404s that
-   * don't throw JS errors, so they're invisible to other test suites.
+   * Catches the class of bug where the frontend calls e.g. /sso/idp-configs
+   * but the backend registers /sso/idp — the mismatch produces silent 404s
+   * that don't throw JS errors and are invisible to other test suites.
    *
-   * We navigate to pages that are known to make API calls on mount and collect
-   * any 404 responses from /api/v1/* endpoints.
+   * Hard-fails on login — default credentials are always present on
+   * alpha/beta. Set PLAYWRIGHT_API_URL if the API runs on a different port.
    */
   test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
-    const notFoundCalls: string[] = [];
+    test.setTimeout(120000);
 
+    const notFoundCalls: string[] = [];
     page.on('response', (response) => {
       const url = response.url();
       if (url.includes('/api/v1/') && response.status() === 404) {
-        notFoundCalls.push(`${response.request().method()} ${url} → 404`);
+        notFoundCalls.push(`${response.request().method()} ${new URL(url).pathname} → 404`);
       }
     });
 
-    // Login first so protected pages actually fire their API calls
-    await page.goto('/login', { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await authenticate(page);
 
-    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-    const passwordInput = page.locator('input[type="password"]').first();
-    const submitButton = page.locator('button[type="submit"]').first();
+    const pagesToVisit = [
+      '/',
+      '/entities',
+      '/software',
+      '/services',
+      '/certificates',
+      '/issues',
+      '/projects',
+      '/milestones',
+      '/labels',
+      '/data-stores',
+      '/dependencies',
+      '/organizations',
+      '/networking',
+      '/iam',
+      '/ipam',
+      '/backups',
+      '/webhooks',
+      '/on-call-rotations',
+      '/admin/sso',
+      '/admin/license-policies',
+      '/admin/tenants',
+      '/settings',
+    ];
 
-    if (await emailInput.isVisible()) {
-      try {
-        // Wait for input to become enabled (LoginPageBuilder may disable it during init)
-        await emailInput.waitFor({ state: 'enabled', timeout: 8000 });
-        await emailInput.fill('admin@localhost.local');
-        await passwordInput.fill('admin123');
-        await submitButton.click();
-        await page.waitForLoadState('networkidle').catch(() => {});
-      } catch {
-        // Input never became enabled (redirect, CAPTCHA, navigation) — skip login
-      }
-    }
-
-    // Navigate to pages that are known API-heavy on mount
-    const pagesToVisit = ['/', '/dashboard', '/entities', '/issues', '/organizations'];
     for (const path of pagesToVisit) {
-      await page.goto(path, { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle').catch(() => {});
+      try {
+        const response = await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        if (response && response.status() !== 404) {
+          await page.waitForLoadState('networkidle').catch(() => {});
+        }
+      } catch {
+        // Navigation timeout — page may be slow, continue
+      }
     }
 
     expect(
@@ -911,38 +878,6 @@ test.describe('Elder Web UI - API Route Integrity', () => {
 // Regression: blank page / TypeError after successful login (entity.type drift)
 // ============================================================================
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@localhost.local';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-
-/** Log in via the UI. Fails the test if login does not succeed. */
-async function loginAndWait(page: Page): Promise<void> {
-  // Pre-seed GDPR consent so LoginPageBuilder enables the form immediately.
-  // Without this the form stays disabled until the cookie banner is accepted.
-  await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    localStorage.setItem(
-      'gdpr_consent',
-      JSON.stringify({ accepted: true, necessary: true, functional: true, analytics: true, marketing: true })
-    );
-  });
-  // Reload so LoginPageBuilder picks up the stored consent on mount
-  await page.reload({ waitUntil: 'domcontentloaded' });
-
-  const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-  const passwordInput = page.locator('input[type="password"]').first();
-
-  await expect(emailInput, 'Login page email input must become enabled').toBeEnabled({ timeout: 15000 });
-
-  await emailInput.fill(ADMIN_EMAIL);
-  await passwordInput.fill(ADMIN_PASSWORD);
-  await page.keyboard.press('Enter');
-
-  await expect(page, `Login with ${ADMIN_EMAIL} must redirect away from /login`).toHaveURL(
-    /^(?!.*\/login)/,
-    { timeout: 15000 }
-  );
-}
-
 test.describe('Elder Web UI - Authenticated Dashboard', () => {
   test('dashboard renders after login without crashing', async ({ page }) => {
     const jsErrors: string[] = [];
@@ -951,7 +886,8 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
       if (msg.type() === 'error') jsErrors.push(msg.text());
     });
 
-    await loginAndWait(page);
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
     // The page must have visible content — not a blank white/black screen
@@ -985,7 +921,7 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
     const jsErrors: string[] = [];
     page.on('pageerror', (e) => jsErrors.push(e.message));
 
-    await loginAndWait(page);
+    await authenticate(page);
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
@@ -998,7 +934,7 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
   });
 
   test('authenticated routes stay authenticated after login', async ({ page }) => {
-    await loginAndWait(page);
+    await authenticate(page);
 
     const protectedRoutes = ['/', '/entities', '/organizations', '/dependencies', '/issues'];
     for (const route of protectedRoutes) {
