@@ -256,6 +256,7 @@ async def create_dependency(body: CreateDependencyRequest):
 
     # Capture tenant_id from current user before entering threadpool
     from flask import g as flask_g
+
     current_user_tenant_id = getattr(
         getattr(flask_g, "current_user", None), "tenant_id", None
     )

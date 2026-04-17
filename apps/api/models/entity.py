@@ -47,7 +47,7 @@ class Entity(Base, IDMixin, TimestampMixin):
     status = Column(String(64), nullable=True)
     is_managed = Column(Boolean, nullable=True)
     tags = Column(JSON, nullable=True)
-    entity_metadata = Column('metadata', JSON, nullable=True)
+    entity_metadata = Column("metadata", JSON, nullable=True)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
 
     organization: Mapped["Organization"] = relationship(

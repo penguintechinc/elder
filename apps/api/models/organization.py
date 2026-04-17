@@ -55,7 +55,7 @@ class Organization(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False, server_default=text("true"))
     settings = Column(JSON, nullable=True)
     tags = Column(JSON, nullable=True)
-    org_metadata = Column('metadata', JSON, nullable=True)
+    org_metadata = Column("metadata", JSON, nullable=True)
 
     parent: Mapped[Optional["Organization"]] = relationship(
         "Organization",
