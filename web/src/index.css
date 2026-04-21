@@ -1,5 +1,9 @@
 @import "tailwindcss";
-@source "../../node_modules/@penguintechinc/react-libs/dist";
+/* Path is relative to this file (web/src/index.css).
+   One level up reaches web/node_modules/ in dev and /app/node_modules/ in Docker.
+   Do NOT change to ../../ — that resolves to the repo root or container root,
+   neither of which contains node_modules. */
+@source "../node_modules/@penguintechinc/react-libs/dist";
 
 /* Custom theme colors - migrated from tailwind.config.js */
 @theme {

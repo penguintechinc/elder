@@ -947,3 +947,107 @@ test.describe('Elder Web UI - Authenticated Dashboard', () => {
     }
   });
 });
+
+// ============================================================================
+// Regression: gh-75 — Sidebar invisible in Docker builds (Tailwind @source path)
+//
+// The @source directive in web/src/index.css must resolve to the node_modules
+// directory that actually contains @penguintechinc/react-libs. If the path is
+// wrong (e.g. ../../node_modules/ instead of ../node_modules/), Tailwind silently
+// skips scanning react-libs and strips sidebar classes from the production bundle.
+// No JS errors are thrown — the sidebar just becomes invisible.
+//
+// These tests catch that class of bug by asserting:
+//   A. The built CSS bundle contains the sidebar utility classes
+//   B. The sidebar <nav> element is visible with correct computed positioning
+//   C. The sidebar has the expected width on a desktop viewport
+// ============================================================================
+
+test.describe('Sidebar CSS — react-libs @source regression (gh-75)', () => {
+  test('built CSS bundle includes react-libs sidebar utility classes', async ({ page }) => {
+    // regression: gh-75
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'networkidle' });
+
+    // Collect all stylesheet URLs loaded by the page
+    const cssUrls: string[] = await page.evaluate(() =>
+      Array.from(document.styleSheets)
+        .map((s) => s.href)
+        .filter((href): href is string => Boolean(href))
+    );
+
+    expect(
+      cssUrls.length,
+      'No external stylesheets found — Vite bundle may not have loaded'
+    ).toBeGreaterThan(0);
+
+    // These are classes emitted by SidebarMenu in @penguintechinc/react-libs.
+    // If the @source path in index.css is broken, ALL of these will be absent
+    // from the purged production bundle.
+    const requiredSidebarClasses = ['left-0', 'w-64', 'border-r', 'fixed'];
+
+    for (const cssUrl of cssUrls) {
+      const response = await page.request.get(cssUrl);
+      if (!response.ok()) continue;
+      const cssText = await response.text();
+
+      // If any one stylesheet contains all required classes, we're good
+      const missingFromThisSheet = requiredSidebarClasses.filter((cls) => !cssText.includes(cls));
+      if (missingFromThisSheet.length === 0) return; // all present — pass
+    }
+
+    // No stylesheet contained all required classes
+    throw new Error(
+      `Built CSS bundle is missing react-libs sidebar utility classes: ${requiredSidebarClasses.join(', ')}. ` +
+        'This almost certainly means web/src/index.css has a broken @source path — ' +
+        'Tailwind skipped scanning @penguintechinc/react-libs and purged the sidebar classes. ' +
+        'Check that the @source path resolves to the correct node_modules directory.'
+    );
+  });
+
+  test('sidebar nav element is visible with correct CSS positioning', async ({ page }) => {
+    // regression: gh-75
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // SidebarMenu from react-libs renders a <nav> element with fixed positioning
+    const sidebar = page.locator('nav').first();
+    await expect(sidebar, 'Sidebar <nav> must be visible — CSS may be missing').toBeVisible();
+
+    // If Tailwind classes are missing, computed styles will be browser defaults
+    // (position: static, left: auto) instead of the react-libs values
+    const position = await sidebar.evaluate((el) => window.getComputedStyle(el).position);
+    expect(
+      position,
+      `Sidebar position is "${position}" instead of "fixed" — left-sidebar CSS classes are missing from the bundle`
+    ).toBe('fixed');
+
+    const left = await sidebar.evaluate((el) => window.getComputedStyle(el).left);
+    expect(
+      left,
+      `Sidebar left is "${left}" instead of "0px" — left-0 class is missing from the bundle`
+    ).toBe('0px');
+  });
+
+  test('sidebar has expected width on desktop viewport', async ({ page }) => {
+    // regression: gh-75 — w-64 (256px) should be applied on lg breakpoint
+    await authenticate(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const sidebar = page.locator('nav').first();
+    await expect(sidebar).toBeVisible();
+
+    const box = await sidebar.boundingBox();
+    if (box) {
+      // w-64 = 16rem; at default 16px base = 256px. Allow ±4px for sub-pixel rendering.
+      expect(
+        box.width,
+        `Sidebar width is ${box.width}px — expected ~256px (w-64). The w-64 class may be missing from the bundle.`
+      ).toBeGreaterThanOrEqual(252);
+      expect(box.width).toBeLessThanOrEqual(260);
+    }
+  });
+});
