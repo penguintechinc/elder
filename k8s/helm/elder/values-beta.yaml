@@ -61,7 +61,7 @@ web:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-web
-    tag: 3.2.0.1776092439-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   buildArgs:
     VITE_API_URL: ""
@@ -84,7 +84,7 @@ api:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-api
-    tag: 3.2.0.1776092439-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     FLASK_ENV: production
@@ -118,7 +118,7 @@ scanner:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-scanner
-    tag: 3.2.0.1776092439-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     SCANNER_POLL_INTERVAL: "300"
@@ -139,7 +139,7 @@ worker:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-worker
-    tag: 3.2.0.1776092439-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
