@@ -7,10 +7,10 @@ from sqlalchemy import (
     JSON,
     Boolean,
     Column,
+    DateTime,
     ForeignKey,
     Integer,
     String,
-    DateTime,
 )
 from sqlalchemy.orm import Mapped, relationship
 
