@@ -181,7 +181,7 @@ class GCPConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        if item.get("attributes", {}).get("instance_id") == str(
+                        if item.get("metadata", {}).get("instance_id") == str(
                             instance.id
                         ):
                             found = item
@@ -246,7 +246,7 @@ class GCPConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("network_id") == str(network.id):
+                    if item.get("metadata", {}).get("network_id") == str(network.id):
                         found = item
                         break
 
@@ -312,7 +312,7 @@ class GCPConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("bucket_name") == bucket.name:
+                    if item.get("metadata", {}).get("bucket_name") == bucket.name:
                         found = item
                         break
 

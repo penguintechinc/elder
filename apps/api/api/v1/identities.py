@@ -95,6 +95,14 @@ async def list_identities():
     if is_active is not None:
         query &= db.identities.is_active == (is_active.lower() == "true")
 
+    auth_provider = request.args.get("auth_provider")
+    if auth_provider:
+        query &= db.identities.auth_provider == auth_provider
+
+    auth_provider_id = request.args.get("auth_provider_id")
+    if auth_provider_id:
+        query &= db.identities.auth_provider_id == auth_provider_id
+
     # Calculate pagination
     offset = (page - 1) * per_page
 
