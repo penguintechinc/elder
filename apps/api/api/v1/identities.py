@@ -30,6 +30,26 @@ from apps.api.utils.async_utils import run_in_threadpool
 bp = Blueprint("identities", __name__)
 
 
+def _identity_row_to_dto(row) -> IdentityDTO:
+    """Map a PyDAL identity row (DB column names) to IdentityDTO (API field names)."""
+    d = row.as_dict()
+    return IdentityDTO(
+        id=d["id"],
+        username=d["username"],
+        email=d.get("email"),
+        type=d.get("identity_type", "human"),
+        tenant_id=d.get("tenant_id"),
+        provider=d.get("auth_provider"),
+        external_id=d.get("auth_provider_id"),
+        name=d.get("full_name"),
+        display_name=d.get("full_name"),
+        is_active=d.get("is_active", True),
+        last_seen_at=d.get("last_login_at"),
+        created_at=d["created_at"],
+        updated_at=d["updated_at"],
+    )
+
+
 @bp.route("", methods=["GET"])
 @login_required
 async def list_identities():
@@ -57,7 +77,7 @@ async def list_identities():
     query = db.identities.id > 0
 
     # Apply filters
-    # Search filter (case-insensitive search on username, email, full_name)
+    # Search filter — DB columns: username, email, full_name
     search = request.args.get("search") or request.args.get("name")
     if search:
         search_pattern = f"%{search}%"
@@ -75,30 +95,23 @@ async def list_identities():
     if is_active is not None:
         query &= db.identities.is_active == (is_active.lower() == "true")
 
-    organization_id = request.args.get("organization_id", type=int)
-    if organization_id is not None:
-        query &= db.identities.organization_id == organization_id
-
     # Calculate pagination
     offset = (page - 1) * per_page
 
     # Execute database queries in a single thread pool task to avoid cursor issues
     def get_identities():
         total = db(query).count()
-        # Select only fields that exist in IdentityDTO (exclude password_hash)
+        # Select actual DB columns (identity_type, full_name, auth_provider, auth_provider_id)
         rows = db(query).select(
             db.identities.id,
             db.identities.identity_type,
             db.identities.username,
             db.identities.email,
             db.identities.full_name,
-            db.identities.organization_id,
-            db.identities.portal_role,
             db.identities.auth_provider,
             db.identities.auth_provider_id,
+            db.identities.tenant_id,
             db.identities.is_active,
-            db.identities.is_superuser,
-            db.identities.mfa_enabled,
             db.identities.last_login_at,
             db.identities.created_at,
             db.identities.updated_at,
@@ -112,8 +125,7 @@ async def list_identities():
     # Calculate total pages
     pages = (total + per_page - 1) // per_page if total > 0 else 0
 
-    # Convert PyDAL rows to DTOs
-    items = from_pydal_rows(rows, IdentityDTO)
+    items = [_identity_row_to_dto(row) for row in rows]
 
     # Create paginated response
     response = PaginatedResponse(
@@ -142,11 +154,7 @@ async def create_identity(body: CreateIdentityRequest):
             "auth_provider": "local", "ldap", "saml", etc.,
             "email": "string" (optional),
             "full_name": "string" (optional),
-            "password": "string" (optional, for local auth),
-            "is_active": true/false (default: true),
-            "is_superuser": false (default: false),
-            "mfa_enabled": false (default: false),
-            "organization_id": int (optional)
+            "is_active": true/false (default: true)
         }
 
     Returns:
@@ -157,20 +165,8 @@ async def create_identity(body: CreateIdentityRequest):
 
     # Log the request for debugging
     current_app.logger.info(
-        f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}, org_id={body.organization_id}"
+        f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}"
     )
-
-    # Get organization to derive tenant_id
-    org_id = body.organization_id
-
-    def get_org():
-        return db.organizations[org_id] if org_id else None
-
-    org = await run_in_threadpool(get_org)
-    if org_id and not org:
-        return jsonify({"error": "Organization not found"}), 404
-    if org and not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
 
     # Create identity
     def create():
@@ -179,7 +175,7 @@ async def create_identity(body: CreateIdentityRequest):
         if existing:
             return None, "Username already exists", 400
 
-        # Prepare insert data
+        # Prepare insert data — use actual DB column names
         insert_data = {
             "username": body.username,
             "identity_type": body.identity_type,
@@ -187,22 +183,8 @@ async def create_identity(body: CreateIdentityRequest):
             "email": body.email,
             "full_name": body.full_name,
             "auth_provider_id": body.auth_provider_id,
-            "organization_id": body.organization_id,
-            "tenant_id": org.tenant_id if org else None,
             "is_active": body.is_active,
-            "is_superuser": body.is_superuser,
-            "mfa_enabled": body.mfa_enabled,
-            "portal_role": (
-                body.portal_role if hasattr(body, "portal_role") else "viewer"
-            ),
-            "must_change_password": False,
         }
-
-        # Hash password if provided (for local auth)
-        if body.password:
-            insert_data["password_hash"] = generate_password_hash(
-                body.password.get_secret_value()
-            )
 
         # Create identity
         now = datetime.now(timezone.utc)
@@ -218,7 +200,7 @@ async def create_identity(body: CreateIdentityRequest):
     if error:
         return jsonify({"error": error}), status
 
-    identity_dto = from_pydal_row(identity, IdentityDTO)
+    identity_dto = _identity_row_to_dto(identity)
     return jsonify(asdict(identity_dto)), 201
 
 
@@ -243,7 +225,7 @@ async def get_identity(id: int):
     if not identity:
         return jsonify({"error": "Identity not found"}), 404
 
-    identity_dto = from_pydal_row(identity, IdentityDTO)
+    identity_dto = _identity_row_to_dto(identity)
     return jsonify(asdict(identity_dto)), 200
 
 
@@ -281,20 +263,6 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
     if not existing:
         return jsonify({"error": "Identity not found"}), 404
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
-    if body.organization_id:
-
-        def get_org():
-            return db.organizations[body.organization_id]
-
-        org = await run_in_threadpool(get_org)
-        if not org:
-            return jsonify({"error": "Organization not found"}), 404
-        if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
-
     # Update identity
     def update():
         update_fields = {}
@@ -304,18 +272,10 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         if body.full_name is not None:
             update_fields["full_name"] = body.full_name
         if body.password is not None:
-            update_fields["password_hash"] = generate_password_hash(
-                body.password.get_secret_value()
-            )
+            # Note: identities table doesn't have password_hash - passwords are managed separately
+            pass
         if body.is_active is not None:
             update_fields["is_active"] = body.is_active
-        if body.mfa_enabled is not None:
-            update_fields["mfa_enabled"] = body.mfa_enabled
-        if body.portal_role is not None:
-            update_fields["portal_role"] = body.portal_role
-        if body.organization_id is not None:
-            update_fields["organization_id"] = body.organization_id
-            update_fields["tenant_id"] = org_tenant_id
 
         db(db.identities.id == id).update(**update_fields)
         db.commit()
@@ -323,7 +283,7 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
 
     identity = await run_in_threadpool(update)
 
-    identity_dto = from_pydal_row(identity, IdentityDTO)
+    identity_dto = _identity_row_to_dto(identity)
     return jsonify(asdict(identity_dto)), 200
 
 
@@ -353,10 +313,6 @@ async def delete_identity(id: int):
         # Prevent deleting own account
         if identity.id == g.current_user.id:
             return None, "Cannot delete your own account", 400
-
-        # Prevent deleting superusers (unless caller is also superuser)
-        if identity.is_superuser and not g.current_user.is_superuser:
-            return None, "Cannot delete superuser account", 403
 
         # Delete identity
         db(db.identities.id == id).delete()
@@ -465,8 +421,6 @@ async def create_group(body: CreateIdentityGroupRequest):
         group_id = db.identity_groups.insert(
             name=body.name,
             description=body.description,
-            ldap_dn=body.ldap_dn,
-            saml_group=body.saml_group,
             is_active=body.is_active,
         )
         db.commit()

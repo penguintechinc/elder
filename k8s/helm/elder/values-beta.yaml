@@ -15,7 +15,7 @@ postgres:
   replicaCount: 1
   image:
     repository: postgres
-    tag: 16-bookworm
+    tag: 17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
     pullPolicy: IfNotPresent
   env:
     POSTGRES_DB: elder
@@ -41,7 +41,7 @@ redis:
   replicaCount: 1
   image:
     repository: redis
-    tag: 7-bookworm
+    tag: 7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
     pullPolicy: IfNotPresent
   resources:
     requests:
@@ -61,7 +61,7 @@ web:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-web
-    tag: 3.1.6.1775150095-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   buildArgs:
     VITE_API_URL: ""
@@ -84,7 +84,7 @@ api:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-api
-    tag: 3.1.6.1775150095-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     FLASK_ENV: production
@@ -118,7 +118,7 @@ scanner:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-scanner
-    tag: 3.1.6.1775150095-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     SCANNER_POLL_INTERVAL: "300"
@@ -139,7 +139,7 @@ worker:
   replicaCount: 2
   image:
     repository: ghcr.io/penguintechinc/elder-worker
-    tag: 3.1.6.1775150095-beta
+    tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
     LOG_LEVEL: INFO
@@ -254,12 +254,15 @@ serviceAccount:
 # Pod Security Context
 podSecurityContext:
   fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
 
 # Security Context - Strict for beta
 securityContext:
-  runAsNonRoot: false
+  runAsNonRoot: true
   runAsUser: 1000
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL

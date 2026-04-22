@@ -71,6 +71,8 @@ class MockDataSeeder:
         count: int = 10,
         verbose: bool = False,
         dry_run: bool = False,
+        host_header: str = "",
+        verify_ssl: bool = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.tenant_id = tenant_id
@@ -79,8 +81,12 @@ class MockDataSeeder:
         self.count = count
         self.verbose = verbose
         self.dry_run = dry_run
+        self.verify_ssl = verify_ssl
 
         self.session = requests.Session()
+        self.session.verify = verify_ssl
+        if host_header:
+            self.session.headers.update({"Host": host_header})
         self.token: str | None = None
         self.faker = Faker()
 
@@ -176,9 +182,7 @@ class MockDataSeeder:
             print(f"  Connection error: {e}", file=sys.stderr)
             return False
 
-    def _api_post(
-        self, endpoint: str, data: dict[str, Any]
-    ) -> dict[str, Any] | None:
+    def _api_post(self, endpoint: str, data: dict[str, Any]) -> dict[str, Any] | None:
         """Make authenticated POST request to API."""
         if self.dry_run:
             name = data.get("name", "<no-name>")
@@ -307,7 +311,7 @@ class MockDataSeeder:
 
         for name, description in groups[: self.count]:
             result = self._api_post(
-                "/api/v1/groups",  # Correct endpoint
+                "/api/v1/identities/groups",  # Correct endpoint
                 {
                     "name": name,
                     "description": description,
@@ -332,9 +336,7 @@ class MockDataSeeder:
 
             for i in range(min(self.count, len(sub_types) * 2)):
                 sub_type = random.choice(sub_types)
-                name, attributes = self._generate_entity_data(
-                    entity_type, sub_type, i
-                )
+                name, attributes = self._generate_entity_data(entity_type, sub_type, i)
 
                 result = self._api_post(
                     "/api/v1/entities",
@@ -369,7 +371,9 @@ class MockDataSeeder:
                     "interfaces": random.randint(4, 48),
                 }
             elif sub_type == "firewall":
-                name = f"fw-{random.choice(['perimeter', 'internal', 'dmz'])}-{index:02d}"
+                name = (
+                    f"fw-{random.choice(['perimeter', 'internal', 'dmz'])}-{index:02d}"
+                )
                 attributes = {
                     "default_policy": random.choice(["deny", "allow"]),
                     "rule_count": random.randint(50, 500),
@@ -445,7 +449,9 @@ class MockDataSeeder:
                     ),
                 }
             elif sub_type == "queue_system":
-                name = f"queue-{random.choice(['kafka', 'rabbitmq', 'sqs'])}-{index:02d}"
+                name = (
+                    f"queue-{random.choice(['kafka', 'rabbitmq', 'sqs'])}-{index:02d}"
+                )
                 attributes = {
                     "engine": random.choice(["Kafka", "RabbitMQ", "SQS"]),
                     "message_retention_hours": random.choice([24, 72, 168, 336]),
@@ -494,7 +500,9 @@ class MockDataSeeder:
                 attributes = {
                     "framework": framework,
                     "control_id": f"{framework[:3]}-{random.randint(1, 100)}",
-                    "status": random.choice(["compliant", "non-compliant", "in-progress"]),
+                    "status": random.choice(
+                        ["compliant", "non-compliant", "in-progress"]
+                    ),
                 }
             else:
                 name = f"{sub_type}-finding-{index:02d}"
@@ -558,9 +566,7 @@ class MockDataSeeder:
 
         for project in self.created["projects"][: self.count // 2]:
             for i, name in enumerate(milestone_names[: random.randint(2, 4)]):
-                due_date = datetime.now(timezone.utc) + timedelta(
-                    days=30 * (i + 1)
-                )
+                due_date = datetime.now(timezone.utc) + timedelta(days=30 * (i + 1))
                 result = self._api_post(
                     "/api/v1/milestones",
                     {
@@ -715,8 +721,11 @@ class MockDataSeeder:
                     "seats": random.randint(10, 500),
                     "cost_monthly": float(random.randint(100, 5000)),
                     "renewal_date": (
-                        datetime.now(timezone.utc) + timedelta(days=random.randint(30, 365))
-                    ).date().isoformat(),
+                        datetime.now(timezone.utc)
+                        + timedelta(days=random.randint(30, 365))
+                    )
+                    .date()
+                    .isoformat(),
                     "is_active": True,
                 },
             )
@@ -1196,6 +1205,16 @@ Examples:
         action="store_true",
         help="Show what would be created without making requests",
     )
+    parser.add_argument(
+        "--host-header",
+        default="",
+        help="Override Host header (for beta bypass URL, e.g. elder.penguintech.cloud)",
+    )
+    parser.add_argument(
+        "--no-verify-ssl",
+        action="store_true",
+        help="Skip SSL certificate verification",
+    )
 
     args = parser.parse_args()
 
@@ -1206,6 +1225,8 @@ Examples:
         password=args.password,
         count=args.count,
         verbose=args.verbose,
+        host_header=args.host_header,
+        verify_ssl=not args.no_verify_ssl,
         dry_run=args.dry_run,
     )
 

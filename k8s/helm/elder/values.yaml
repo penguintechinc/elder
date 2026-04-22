@@ -14,7 +14,7 @@ postgres:
   enabled: true
   image:
     repository: postgres
-    tag: 17-bookworm
+    tag: 17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -42,13 +42,17 @@ postgres:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 5
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    allowPrivilegeEscalation: false
 
 # Redis Cache
 redis:
   enabled: true
   image:
     repository: redis
-    tag: 7-bookworm
+    tag: 7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -73,6 +77,10 @@ redis:
     periodSeconds: 10
     timeoutSeconds: 5
     failureThreshold: 3
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    allowPrivilegeEscalation: false
 
 # Elder Web UI
 web:
@@ -230,9 +238,15 @@ scanner:
   screenshotStorage:
     sizeLimit: "1Gi"
   securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     capabilities:
+      drop:
+        - ALL
       add:
-        - NET_ADMIN
+        - NET_RAW
 
 # Worker Service
 worker:
@@ -449,12 +463,15 @@ serviceAccount:
 # Pod Security Context
 podSecurityContext:
   fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
 
 # Security Context
 securityContext:
-  runAsNonRoot: false
+  runAsNonRoot: true
   runAsUser: 1000
   allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
   capabilities:
     drop:
       - ALL

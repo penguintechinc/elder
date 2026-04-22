@@ -1,0 +1,14 @@
+version: 2
+
+# Socket Security configuration for elder
+# https://docs.socket.dev/docs/socket-yml
+
+ignore:
+  issues:
+    obfuscatedCode:
+      # vite 6.4.2 ships prebuilt minified chunks (rollup internals)
+      # that trigger Socket's obfuscation heuristic as a false positive.
+      # vite 6.4.2 is required: it patches CVEs GHSA-p9ff-h696-f583,
+      # GHSA-4w7w-66w2-5vf9, and GHSA-93m4-6634-74q7 that affect <= 6.4.1.
+      - path: "web>vite"
+        reason: "False positive — vite 6.4.2 prebuilt chunks are minified rollup internals, not malicious obfuscation. This version is required to patch CVEs GHSA-p9ff-h696-f583, GHSA-4w7w-66w2-5vf9, GHSA-93m4-6634-74q7."

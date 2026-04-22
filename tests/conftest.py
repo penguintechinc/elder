@@ -83,12 +83,6 @@ def db_session(app):
 
         yield db
 
-        # Rollback any uncommitted changes
-        try:
-            db.rollback()
-        except Exception:
-            pass
-
 
 @pytest.fixture(scope="function")
 def auth_headers(client, app):
@@ -107,7 +101,7 @@ def auth_headers(client, app):
     with app.app_context():
         # Login with admin user (created during db init)
         response = client.post(
-            "/api/v1/auth/login",
+            "/api/v1/portal-auth/login",
             json={
                 "email": os.getenv("ADMIN_EMAIL", "admin@localhost.local"),
                 "password": os.getenv("ADMIN_PASSWORD", "admin123"),
@@ -121,6 +115,24 @@ def auth_headers(client, app):
 
         # Fallback: return empty headers (tests may skip or use mock)
         return {}
+
+
+@pytest.fixture(scope="function")
+def db(app):
+    """
+    Alias for db_session — database fixture for tests that need DB state.
+
+    Wraps each test in a transaction rollback for isolation.
+
+    Args:
+        app: Flask application fixture
+
+    Yields:
+        PyDAL db instance (from app.db)
+    """
+    with app.app_context():
+        db = app.db
+        yield db
 
 
 @pytest.fixture

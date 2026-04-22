@@ -33,7 +33,6 @@ def list_networks():
         network_type = request.args.get("network_type")
         parent_id = request.args.get("parent_id", type=int)
         region = request.args.get("region")
-        is_active = request.args.get("is_active", "true").lower() == "true"
         limit = request.args.get("limit", 100, type=int)
         offset = request.args.get("offset", 0, type=int)
 
@@ -42,7 +41,6 @@ def list_networks():
             network_type=network_type,
             parent_id=parent_id,
             region=region,
-            is_active=is_active,
             limit=limit,
             offset=offset,
         )
@@ -92,7 +90,6 @@ def create_network():
             cidr=body.cidr,
             region=body.region,
             location=body.location,
-            is_active=body.is_active,
         )
 
         return jsonify(network), 201
@@ -124,7 +121,6 @@ def update_network(network_id):
             gateway=body.gateway,
             vlan_id=body.vlan_id,
             mtu=body.mtu,
-            is_active=body.is_active,
         )
 
         return jsonify(network), 200

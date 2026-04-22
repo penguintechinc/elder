@@ -114,16 +114,14 @@ class SearchService:
         """
         db_query = self.db.entities.id > 0
 
-        # Text search on name and description (case-insensitive)
+        # Text search on name (case-insensitive)
         if query:
             search_pattern = f"%{query}%"
-            db_query &= self.db.entities.name.ilike(
-                search_pattern
-            ) | self.db.entities.description.ilike(search_pattern)
+            db_query &= self.db.entities.name.ilike(search_pattern)
 
         # Entity type filter
         if entity_type:
-            db_query &= self.db.entities.entity_type == entity_type
+            db_query &= self.db.entities.type == entity_type
 
         # Sub-type filter
         if sub_type:

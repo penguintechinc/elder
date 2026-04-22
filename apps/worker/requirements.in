@@ -17,8 +17,8 @@ google-auth-oauthlib>=1.2.0
 ldap3>=2.9.1
 
 # HTTP & API
-requests>=2.31.0
-aiohttp>=3.9.0
+requests>=2.33.0
+aiohttp>=3.13.4
 httpx>=0.27.0
 
 # Database (direct DB access for discovery jobs)

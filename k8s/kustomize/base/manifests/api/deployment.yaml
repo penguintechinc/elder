@@ -14,6 +14,10 @@ spec:
       labels:
         app: api
     spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
         - name: api
           image: elder-api:alpha-latest
@@ -92,6 +96,13 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           resources:
             requests:
               memory: "256Mi"
@@ -99,3 +110,9 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "1000m"
+          volumeMounts:
+            - name: instance-dir
+              mountPath: /app/instance
+      volumes:
+        - name: instance-dir
+          emptyDir: {}

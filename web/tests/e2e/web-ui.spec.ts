@@ -558,7 +558,7 @@ test.describe('Elder Web UI - Performance', () => {
  */
 
 const PAGES_WITH_CREATE_MODAL = [
-  { route: '/entities', name: 'Entities', buttonText: 'Create' },
+  { route: '/entities', name: 'Entities', buttonText: 'Create Entity' },
   { route: '/software', name: 'Software', buttonText: 'Add Software' },
   { route: '/services', name: 'Services', buttonText: 'Create' },
   { route: '/certificates', name: 'Certificates', buttonText: 'Add Certificate' },
@@ -582,38 +582,89 @@ const PAGES_WITH_CREATE_MODAL = [
   { route: '/admin/tenants', name: 'Tenants', buttonText: 'Create' },
 ];
 
-// Helper: login and set token in localStorage
-// Uses Playwright's request context (not browser fetch) to avoid CORS issues
-// when the API port-forward is on a different port than the web server.
-async function loginAndSetToken(page: Page): Promise<boolean> {
-  const apiBase = process.env.PLAYWRIGHT_API_URL || 'http://localhost:4000';
-  const email = process.env.ELDER_TEST_EMAIL || 'admin@localhost.local';
-  const password = process.env.ELDER_TEST_PASSWORD || 'admin123';
+// ─── Auth configuration ──────────────────────────────────────────────────────
+// PLAYWRIGHT_API_URL: explicit API base URL (use when API runs on a different
+//   port or host from the web app, e.g. local dev with port-forwarded API).
+// Falls back to PLAYWRIGHT_BASE_URL so alpha/beta (shared ingress) work with
+//   zero extra config.
+//
+// PLAYWRIGHT_TARGET_HOST: beta bypass — when set, Node.js requests go through
+//   the bypass URL (PLAYWRIGHT_BASE_URL) with this value as the Host header,
+//   routing correctly through the K8s ingress without hitting Cloudflare.
+//
+// Examples:
+//   Alpha:  PLAYWRIGHT_BASE_URL=http://elder.localhost.local
+//           (API_BASE resolves to http://elder.localhost.local — same ingress)
+//   Beta:   PLAYWRIGHT_BASE_URL=https://dal2.penguintech.cloud
+//           PLAYWRIGHT_TARGET_HOST=elder.penguintech.cloud
+//           (requests go to bypass URL with Host header)
+//   Local:  PLAYWRIGHT_API_URL=http://localhost:4000
+//           PLAYWRIGHT_BASE_URL=http://localhost:3005
+// ─────────────────────────────────────────────────────────────────────────────
 
-  // Use a Node.js-side request context to bypass CORS (no browser origin header)
-  const ctx = await playwrightRequest.newContext({ baseURL: apiBase, ignoreHTTPSErrors: true });
-  let token: string | null = null;
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@localhost.local';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
+// API base: explicit override → same origin as web app → Playwright default
+const _API_BASE =
+  process.env.PLAYWRIGHT_API_URL ||
+  process.env.PLAYWRIGHT_BASE_URL ||
+  'http://localhost:3005';
+
+// Beta bypass: Host header for K8s ingress routing through the dal2 LB
+const _EXTRA_HEADERS: Record<string, string> = process.env.PLAYWRIGHT_TARGET_HOST
+  ? { Host: process.env.PLAYWRIGHT_TARGET_HOST }
+  : {};
+
+/**
+ * Authenticate the test browser session.
+ *
+ * Obtains a JWT via direct API call (fast; no browser UI needed), injects it
+ * into localStorage, and pre-seeds GDPR consent so any UI flows that render
+ * LoginPageBuilder also work without hitting the cookie banner.
+ *
+ * Hard-fails the test if the login API call is unreachable or returns a
+ * non-200 — default credentials are always present on alpha/beta deployments.
+ */
+async function authenticate(page: Page): Promise<void> {
+  const ctx = await playwrightRequest.newContext({
+    baseURL: _API_BASE,
+    ignoreHTTPSErrors: true,
+    extraHTTPHeaders: _EXTRA_HEADERS,
+  });
+
+  let token: string;
   try {
     const res = await ctx.post('/api/v1/portal-auth/login', {
-      data: { email, password },
+      data: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
       headers: { 'Content-Type': 'application/json' },
     });
-    if (res.ok()) {
-      const data = await res.json();
-      token = data.token || null;
-    }
-  } catch {
-    token = null;
+    expect(
+      res.status(),
+      `Login API returned ${res.status()} — check API is reachable at ${_API_BASE} ` +
+        `(set PLAYWRIGHT_API_URL to override, defaults to PLAYWRIGHT_BASE_URL)`
+    ).toBe(200);
+    const data = await res.json();
+    token = data.token as string;
+    expect(token, 'Login response missing token — unexpected API response shape').toBeTruthy();
   } finally {
     await ctx.dispose();
   }
 
-  if (!token) return false;
-
-  // Inject the token into the browser's localStorage
+  // Navigate to /login so we have a same-origin context for localStorage writes
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
-  await page.evaluate((t) => localStorage.setItem('elder_token', t), token);
-  return true;
+  await page.evaluate(
+    ({ t }) => {
+      localStorage.setItem('elder_token', t);
+      // Pre-seed GDPR consent — LoginPageBuilder keeps form inputs disabled
+      // until this key is present; fresh browser contexts lack it
+      localStorage.setItem(
+        'gdpr_consent',
+        JSON.stringify({ accepted: true, necessary: true, functional: true, analytics: true, marketing: true })
+      );
+    },
+    { t: token }
+  );
 }
 
 test.describe('Elder Web UI - Create Modal Content', () => {
@@ -621,12 +672,7 @@ test.describe('Elder Web UI - Create Modal Content', () => {
     test(`${pageConfig.name} - create modal renders content without errors`, async ({ page }) => {
       test.setTimeout(45000);
 
-      // Login
-      const loggedIn = await loginAndSetToken(page);
-      if (!loggedIn) {
-        test.skip(true, 'Login failed — cannot test authenticated pages');
-        return;
-      }
+      await authenticate(page);
 
       // Collect console errors
       const errors: string[] = [];
@@ -707,81 +753,6 @@ test.describe('Elder Web UI - Create Modal Content', () => {
   }
 });
 
-test.describe('Elder Web UI - API Route Verification', () => {
-  test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
-    test.setTimeout(120000);
-
-    // Login first
-    const loggedIn = await loginAndSetToken(page);
-    if (!loggedIn) {
-      test.skip(true, 'Login failed — cannot test authenticated pages');
-      return;
-    }
-
-    const notFoundEndpoints: string[] = [];
-
-    // Intercept all API responses and collect 404s
-    page.on('response', (resp) => {
-      const url = resp.url();
-      if (url.includes('/api/v1/') && resp.status() === 404) {
-        // Extract just the path for readability
-        const path = new URL(url).pathname;
-        const entry = `${resp.request().method()} ${path}`;
-        if (!notFoundEndpoints.includes(entry)) {
-          notFoundEndpoints.push(entry);
-        }
-      }
-    });
-
-    // Visit pages that trigger API calls — these are the main data pages
-    const pagesToVisit = [
-      '/',
-      '/entities',
-      '/software',
-      '/services',
-      '/certificates',
-      '/issues',
-      '/projects',
-      '/milestones',
-      '/labels',
-      '/data-stores',
-      '/dependencies',
-      '/organizations',
-      '/networking',
-      '/iam',
-      '/ipam',
-      '/backups',
-      '/webhooks',
-      '/on-call-rotations',
-      '/admin/sso',
-      '/admin/license-policies',
-      '/admin/tenants',
-      '/settings',
-    ];
-
-    for (const path of pagesToVisit) {
-      try {
-        const response = await page.goto(path, {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        // Skip pages that don't exist as frontend routes
-        if (response && response.status() !== 404) {
-          // Wait for API calls to settle
-          await page.waitForLoadState('networkidle').catch(() => {});
-        }
-      } catch {
-        // Navigation timeout — page might be slow, continue
-      }
-    }
-
-    // Assert no API 404s were found
-    expect(
-      notFoundEndpoints,
-      `API endpoints returned 404 (route mismatch):\n${notFoundEndpoints.join('\n')}`
-    ).toHaveLength(0);
-  });
-});
 
 test.describe('Version validation', () => {
   test('AppConsoleVersion logs a non-zero version on startup', async ({ page }) => {
@@ -839,54 +810,244 @@ test.describe('Elder Web UI - API Route Integrity', () => {
   /**
    * Detect frontend API calls that return 404 (path mismatch).
    *
-   * This catches the class of bug where the frontend calls e.g. /sso/idp-configs
-   * but the backend registers /sso/idp — the mismatch produces silent 404s that
-   * don't throw JS errors, so they're invisible to other test suites.
+   * Catches the class of bug where the frontend calls e.g. /sso/idp-configs
+   * but the backend registers /sso/idp — the mismatch produces silent 404s
+   * that don't throw JS errors and are invisible to other test suites.
    *
-   * We navigate to pages that are known to make API calls on mount and collect
-   * any 404 responses from /api/v1/* endpoints.
+   * Hard-fails on login — default credentials are always present on
+   * alpha/beta. Set PLAYWRIGHT_API_URL if the API runs on a different port.
    */
   test('No API endpoints return 404 during authenticated page loads', async ({ page }) => {
-    const notFoundCalls: string[] = [];
+    test.setTimeout(120000);
 
+    const notFoundCalls: string[] = [];
     page.on('response', (response) => {
       const url = response.url();
       if (url.includes('/api/v1/') && response.status() === 404) {
-        notFoundCalls.push(`${response.request().method()} ${url} → 404`);
+        notFoundCalls.push(`${response.request().method()} ${new URL(url).pathname} → 404`);
       }
     });
 
-    // Login first so protected pages actually fire their API calls
-    await page.goto('/login', { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await authenticate(page);
 
-    const emailInput = page.locator('input[type="email"], input[name="email"]').first();
-    const passwordInput = page.locator('input[type="password"]').first();
-    const submitButton = page.locator('button[type="submit"]').first();
+    const pagesToVisit = [
+      '/',
+      '/entities',
+      '/software',
+      '/services',
+      '/certificates',
+      '/issues',
+      '/projects',
+      '/milestones',
+      '/labels',
+      '/data-stores',
+      '/dependencies',
+      '/organizations',
+      '/networking',
+      '/iam',
+      '/ipam',
+      '/backups',
+      '/webhooks',
+      '/on-call-rotations',
+      '/admin/sso',
+      '/admin/license-policies',
+      '/admin/tenants',
+      '/settings',
+    ];
 
-    if (await emailInput.isVisible()) {
-      try {
-        // Wait for input to become enabled (LoginPageBuilder may disable it during init)
-        await emailInput.waitFor({ state: 'enabled', timeout: 8000 });
-        await emailInput.fill('admin@localhost.local');
-        await passwordInput.fill('admin123');
-        await submitButton.click();
-        await page.waitForLoadState('networkidle').catch(() => {});
-      } catch {
-        // Input never became enabled (redirect, CAPTCHA, navigation) — skip login
-      }
-    }
-
-    // Navigate to pages that are known API-heavy on mount
-    const pagesToVisit = ['/', '/dashboard', '/entities', '/issues', '/organizations'];
     for (const path of pagesToVisit) {
-      await page.goto(path, { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle').catch(() => {});
+      try {
+        const response = await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        if (response && response.status() !== 404) {
+          await page.waitForLoadState('networkidle').catch(() => {});
+        }
+      } catch {
+        // Navigation timeout — page may be slow, continue
+      }
     }
 
     expect(
       notFoundCalls,
       `API path mismatches detected (frontend calls routes that don't exist on backend):\n${notFoundCalls.join('\n')}`
     ).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// Authenticated post-login tests
+// Regression: blank page / TypeError after successful login (entity.type drift)
+// ============================================================================
+
+test.describe('Elder Web UI - Authenticated Dashboard', () => {
+  test('dashboard renders after login without crashing', async ({ page }) => {
+    const jsErrors: string[] = [];
+    page.on('pageerror', (e) => jsErrors.push(e.message));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') jsErrors.push(msg.text());
+    });
+
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // The page must have visible content — not a blank white/black screen
+    const body = page.locator('body');
+    await expect(body).toBeVisible();
+
+    // At least one layout landmark must be present (sidebar, nav, main)
+    const hasContent = await page
+      .locator('nav, aside, main, [role="navigation"], [role="main"]')
+      .first()
+      .isVisible()
+      .catch(() => false);
+    expect(hasContent, 'Dashboard must render layout after login — blank page detected').toBe(true);
+
+    // No uncaught JS errors (filter out browser extension noise)
+    const appErrors = jsErrors.filter(
+      (e) =>
+        !e.includes('background.js') &&
+        !e.includes('extension') &&
+        !e.includes('404') &&
+        !e.includes('non-passive')
+    );
+    expect(
+      appErrors,
+      `Dashboard crashed with JS error(s) after login:\n${appErrors.join('\n')}`
+    ).toHaveLength(0);
+  });
+
+  test('dashboard entity list renders entity type without TypeError', async ({ page }) => {
+    // Regression: entity.entity_type.replace() crashed because API returns `type`, not `entity_type`
+    const jsErrors: string[] = [];
+    page.on('pageerror', (e) => jsErrors.push(e.message));
+
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // Any TypeError about `.replace` on undefined is the entity_type drift crash
+    const typeErrors = jsErrors.filter((e) => e.includes('replace') || e.includes("reading 'replace'"));
+    expect(
+      typeErrors,
+      `Entity type field crash detected (API field name drift):\n${typeErrors.join('\n')}`
+    ).toHaveLength(0);
+  });
+
+  test('authenticated routes stay authenticated after login', async ({ page }) => {
+    await authenticate(page);
+
+    const protectedRoutes = ['/', '/entities', '/organizations', '/dependencies', '/issues'];
+    for (const route of protectedRoutes) {
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await page.waitForLoadState('networkidle').catch(() => {});
+      expect(
+        page.url(),
+        `Authenticated route ${route} redirected to login unexpectedly`
+      ).not.toContain('/login');
+    }
+  });
+});
+
+// ============================================================================
+// Regression: gh-75 — Sidebar invisible in Docker builds (Tailwind @source path)
+//
+// The @source directive in web/src/index.css must resolve to the node_modules
+// directory that actually contains @penguintechinc/react-libs. If the path is
+// wrong (e.g. ../../node_modules/ instead of ../node_modules/), Tailwind silently
+// skips scanning react-libs and strips sidebar classes from the production bundle.
+// No JS errors are thrown — the sidebar just becomes invisible.
+//
+// These tests catch that class of bug by asserting:
+//   A. The built CSS bundle contains the sidebar utility classes
+//   B. The sidebar <nav> element is visible with correct computed positioning
+//   C. The sidebar has the expected width on a desktop viewport
+// ============================================================================
+
+test.describe('Sidebar CSS — react-libs @source regression (gh-75)', () => {
+  test('built CSS bundle includes react-libs sidebar utility classes', async ({ page }) => {
+    // regression: gh-75
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'networkidle' });
+
+    // Collect all stylesheet URLs loaded by the page
+    const cssUrls: string[] = await page.evaluate(() =>
+      Array.from(document.styleSheets)
+        .map((s) => s.href)
+        .filter((href): href is string => Boolean(href))
+    );
+
+    expect(
+      cssUrls.length,
+      'No external stylesheets found — Vite bundle may not have loaded'
+    ).toBeGreaterThan(0);
+
+    // These are classes emitted by SidebarMenu in @penguintechinc/react-libs.
+    // If the @source path in index.css is broken, ALL of these will be absent
+    // from the purged production bundle.
+    const requiredSidebarClasses = ['left-0', 'w-64', 'border-r', 'fixed'];
+
+    for (const cssUrl of cssUrls) {
+      const response = await page.request.get(cssUrl);
+      if (!response.ok()) continue;
+      const cssText = await response.text();
+
+      // If any one stylesheet contains all required classes, we're good
+      const missingFromThisSheet = requiredSidebarClasses.filter((cls) => !cssText.includes(cls));
+      if (missingFromThisSheet.length === 0) return; // all present — pass
+    }
+
+    // No stylesheet contained all required classes
+    throw new Error(
+      `Built CSS bundle is missing react-libs sidebar utility classes: ${requiredSidebarClasses.join(', ')}. ` +
+        'This almost certainly means web/src/index.css has a broken @source path — ' +
+        'Tailwind skipped scanning @penguintechinc/react-libs and purged the sidebar classes. ' +
+        'Check that the @source path resolves to the correct node_modules directory.'
+    );
+  });
+
+  test('sidebar nav element is visible with correct CSS positioning', async ({ page }) => {
+    // regression: gh-75
+    await authenticate(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    // SidebarMenu from react-libs renders a <nav> element with fixed positioning
+    const sidebar = page.locator('nav').first();
+    await expect(sidebar, 'Sidebar <nav> must be visible — CSS may be missing').toBeVisible();
+
+    // If Tailwind classes are missing, computed styles will be browser defaults
+    // (position: static, left: auto) instead of the react-libs values
+    const position = await sidebar.evaluate((el) => window.getComputedStyle(el).position);
+    expect(
+      position,
+      `Sidebar position is "${position}" instead of "fixed" — left-sidebar CSS classes are missing from the bundle`
+    ).toBe('fixed');
+
+    const left = await sidebar.evaluate((el) => window.getComputedStyle(el).left);
+    expect(
+      left,
+      `Sidebar left is "${left}" instead of "0px" — left-0 class is missing from the bundle`
+    ).toBe('0px');
+  });
+
+  test('sidebar has expected width on desktop viewport', async ({ page }) => {
+    // regression: gh-75 — w-64 (256px) should be applied on lg breakpoint
+    await authenticate(page);
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle').catch(() => {});
+
+    const sidebar = page.locator('nav').first();
+    await expect(sidebar).toBeVisible();
+
+    const box = await sidebar.boundingBox();
+    if (box) {
+      // w-64 = 16rem; at default 16px base = 256px. Allow ±4px for sub-pixel rendering.
+      expect(
+        box.width,
+        `Sidebar width is ${box.width}px — expected ~256px (w-64). The w-64 class may be missing from the bundle.`
+      ).toBeGreaterThanOrEqual(252);
+      expect(box.width).toBeLessThanOrEqual(260);
+    }
   });
 });

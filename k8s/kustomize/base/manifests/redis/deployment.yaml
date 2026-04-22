@@ -14,9 +14,13 @@ spec:
       labels:
         app: redis
     spec:
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
       containers:
         - name: redis
-          image: redis:7-bookworm
+          image: redis:7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 6379
@@ -35,6 +39,10 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
           resources:
             requests:
               memory: "64Mi"

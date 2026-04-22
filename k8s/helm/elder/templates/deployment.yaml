@@ -126,7 +126,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -137,10 +137,17 @@ spec:
         {{- else if eq $component "scanner" }}
         - name: screenshots
           mountPath: /app/screenshots
+        {{- else if eq $component "api" }}
+        - name: instance-dir
+          mountPath: /app/instance
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "worker" }}
         - name: credentials
           mountPath: /var/run/secrets/elder
           readOnly: true
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "prometheus" }}
         - name: data
           mountPath: /prometheus
@@ -152,24 +159,30 @@ spec:
           mountPath: /var/lib/grafana
         {{- end }}
         {{- end }}
-        {{- if and (eq $component "scanner") ($componentConfig.securityContext) }}
         securityContext:
+          {{- if $componentConfig.securityContext }}
           {{- toYaml $componentConfig.securityContext | nindent 10 }}
-        {{- else }}
-        securityContext:
+          {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
-        {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") }}
+          {{- end }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
       volumes:
       {{- if eq $component "scanner" }}
       - name: screenshots
         emptyDir:
           sizeLimit: {{ ($componentConfig.screenshotStorage).sizeLimit | default "1Gi" }}
+      {{- else if eq $component "api" }}
+      - name: instance-dir
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
       {{- else if eq $component "worker" }}
       - name: credentials
         secret:
           secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
           optional: true
+      - name: tmp
+        emptyDir: {}
       {{- else }}
       - name: data
         persistentVolumeClaim:

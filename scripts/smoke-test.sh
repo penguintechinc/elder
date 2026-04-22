@@ -674,6 +674,7 @@ else
     # Disable web server in beta mode (using existing deployment)
     if [ "$TEST_MODE" = "beta" ]; then
         export PLAYWRIGHT_WEBSERVER_DISABLED=1
+        export PLAYWRIGHT_TARGET_HOST="elder.penguintech.cloud"
     fi
 
     # For HTTPS (beta mode), we might need to disable SSL verification

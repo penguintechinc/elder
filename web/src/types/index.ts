@@ -19,7 +19,7 @@ export interface Entity {
   unique_id: string
   name: string
   description?: string
-  entity_type: EntityType
+  type: EntityType
   organization_id: number
   owner_identity_id?: number
   metadata?: Record<string, any>
@@ -40,13 +40,13 @@ export type EntityType =
 
 export interface Dependency {
   id: number
-  source_entity_id: number
-  target_entity_id: number
+  source_type: string
+  source_id: number
+  target_type: string
+  target_id: number
   dependency_type: DependencyType
   metadata?: Record<string, any>
   created_at: string
-  source_entity?: Entity
-  target_entity?: Entity
 }
 
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'
@@ -118,7 +118,7 @@ export interface GraphNode {
   id: number
   unique_id: string
   name: string
-  entity_type: EntityType
+  type: EntityType
   organization_id: number
 }
 

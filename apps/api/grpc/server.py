@@ -51,22 +51,22 @@ def serve(
                 license_client = get_license_client()
                 validation = license_client.validate()
 
-                if not validation.get("valid"):
+                if not validation.valid:
                     logger.error(
-                        "grpc_server_license_invalid", message=validation.get("message")
+                        "grpc_server_license_invalid", message=validation.message
                     )
                     sys.exit(1)
 
-                if validation.get("tier") != "enterprise":
+                if validation.tier != "enterprise":
                     logger.error(
-                        "grpc_server_requires_enterprise", tier=validation.get("tier")
+                        "grpc_server_requires_enterprise", tier=validation.tier
                     )
                     sys.exit(1)
 
                 logger.info(
                     "grpc_server_license_validated",
-                    tier=validation.get("tier"),
-                    customer=validation.get("customer"),
+                    tier=validation.tier,
+                    customer=validation.customer,
                 )
             except Exception as e:
                 logger.error("grpc_server_license_error", error=str(e))

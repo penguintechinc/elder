@@ -25,10 +25,17 @@ RUN pip install playwright && \
 # Copy application code
 COPY . .
 
-# Create screenshots directory
-RUN mkdir -p /app/screenshots
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash appuser
 
-# Note: Running as root is required for masscan raw socket access
+# Create screenshots directory and set ownership
+RUN mkdir -p /app/screenshots && \
+    chown -R appuser:appuser /app
+
+# ROOT CAPABILITY EXCEPTION (approved): masscan requires CAP_NET_RAW for raw socket
+# access (SYN scanning). Process runs as UID 1000 (non-root) with only NET_RAW
+# capability granted via Kubernetes securityContext. See k8s/helm/elder/values.yaml.
+USER appuser
 
 # Environment variables
 ENV SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL}
@@ -36,6 +43,7 @@ ENV ELDER_API_URL=http://api:5000
 ENV SCREENSHOT_DIR=/app/screenshots
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
 
 # Health check - verifies imports, API config, and writability
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \

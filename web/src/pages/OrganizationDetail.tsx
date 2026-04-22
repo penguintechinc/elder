@@ -217,7 +217,7 @@ export default function OrganizationDetail() {
 
           {node.type === 'entity' && (
             <span className="text-xs text-slate-500 ml-2">
-              {(node.data as Entity).entity_type}
+              {(node.data as Entity).type}
             </span>
           )}
         </div>

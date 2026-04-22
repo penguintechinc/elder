@@ -1,6 +1,7 @@
 #!/bin/bash
-# Deploy Elder to registry-dal2.penguintech.io and update beta k8s cluster
-# Builds amd64-only images, pushes to private registry, and triggers rollout
+# Deploy Elder to beta K8s cluster (dal2-beta)
+# Build mode: builds amd64-only images, pushes to ghcr.io, then helm upgrade
+# Rollout-only mode: helm upgrade with existing values-beta.yaml (no build)
 
 set -e
 
@@ -30,7 +31,7 @@ log_warn() {
 usage() {
     echo "Usage: $0 [OPTIONS] [IMAGE]"
     echo ""
-    echo "Deploy Elder images to beta cluster (registry-dal2.penguintech.io)"
+    echo "Deploy Elder images to beta cluster (ghcr.io/penguintechinc + dal2-beta)"
     echo ""
     echo "IMAGE:"
     echo "  all       Build and deploy all images (default)"
@@ -40,30 +41,26 @@ usage() {
     echo "  worker    Build and deploy only elder-worker"
     echo ""
     echo "OPTIONS:"
-    echo "  -h, --help       Show this help message"
-    echo "  -b, --build-only Build and push images without k8s rollout"
-    echo "  -r, --rollout-only Trigger k8s rollout without building (use existing images)"
-    echo "  --restart        Force pod restart after rollout (ensures new images load)"
-    echo "  -n, --namespace  Kubernetes namespace (default: elder)"
-    echo "  -c, --context    Kubernetes context (default: dal2-beta)"
+    echo "  -h, --help         Show this help message"
+    echo "  -b, --build-only   Build and push images without k8s rollout"
+    echo "  -r, --rollout-only Helm upgrade without building (uses values-beta.yaml)"
+    echo "  -n, --namespace    Kubernetes namespace (default: elder)"
+    echo "  -c, --context      Kubernetes context (default: dal2-beta)"
     echo ""
     echo "Examples:"
-    echo "  $0              # Build and deploy all images"
-    echo "  $0 api          # Build and deploy only API"
-    echo "  $0 web          # Build and deploy only Web"
-    echo "  $0 -r           # Rollout all deployments without rebuilding"
-    echo "  $0 -r api       # Rollout only API deployment"
+    echo "  $0              # Build all images and helm upgrade"
+    echo "  $0 api          # Build API image and helm upgrade"
+    echo "  $0 -r           # Helm upgrade only (uses values-beta.yaml image tags)"
     exit 0
 }
 
 # Configuration
-REGISTRY="registry-dal2.penguintech.io"
+REGISTRY="ghcr.io/penguintechinc"
 VERSION_FILE=".version"
 K8S_NAMESPACE="elder"
 K8S_CONTEXT="dal2-beta"
 BUILD_ONLY=false
 ROLLOUT_ONLY=false
-FORCE_RESTART=false
 TARGET_IMAGE="all"
 
 # Parse arguments
@@ -78,10 +75,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -r|--rollout-only)
             ROLLOUT_ONLY=true
-            shift
-            ;;
-        --restart)
-            FORCE_RESTART=true
             shift
             ;;
         -n|--namespace)
@@ -116,18 +109,22 @@ if [ ! -f "$VERSION_FILE" ]; then
 fi
 
 VERSION=$(cat "$VERSION_FILE" | tr -d '\n')
+# Beta tag format matches CI: {version}-beta
+BETA_TAG="${VERSION}-beta"
+
 log_info "Version: $VERSION"
+log_info "Beta tag: $BETA_TAG"
 log_info "Target: $TARGET_IMAGE"
 log_info "Namespace: $K8S_NAMESPACE"
 log_info "Context: $K8S_CONTEXT"
 echo ""
 
-# Image configurations: name, dockerfile, context, deployment_name, container_name
+# Image configurations: name, dockerfile, context
 declare -A IMAGES
-IMAGES[api]="apps/api/Dockerfile:.:elder-api:api"
-IMAGES[web]="web/Dockerfile:.:elder-web:web"
-IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner:elder-scanner:scanner"
-IMAGES[worker]="apps/worker/Dockerfile:.:elder-worker:worker"
+IMAGES[api]="apps/api/Dockerfile:."
+IMAGES[web]="web/Dockerfile:."
+IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner"
+IMAGES[worker]="apps/worker/Dockerfile:."
 
 build_and_push_image() {
     local name=$1
@@ -138,21 +135,21 @@ build_and_push_image() {
         return 1
     fi
 
-    IFS=':' read -r dockerfile context _ _ <<< "$config"
+    IFS=':' read -r dockerfile context <<< "$config"
     local image_name="elder-${name}"
+    local full_image="${REGISTRY}/${image_name}"
 
     log_info "Building ${image_name}..."
 
     # Prepare build args
     local build_args=(
         --file "$dockerfile"
-        --tag "${REGISTRY}/${image_name}:${VERSION}"
-        --tag "${REGISTRY}/${image_name}:latest"
+        --tag "${full_image}:${BETA_TAG}"
+        --tag "${full_image}:${VERSION}"
     )
 
     # Add service-specific build args
     if [ "$name" = "web" ]; then
-        # Web-specific: Vite env vars
         build_args+=(--build-arg "VITE_VERSION=${VERSION}")
         build_args+=(--build-arg "VITE_BUILD_TIME=$(date +%s)")
 
@@ -166,71 +163,54 @@ build_and_push_image() {
             return 1
         fi
     elif [ "$name" = "api" ]; then
-        # API-specific: Flask app version
         build_args+=(--build-arg "APP_VERSION=${VERSION}")
     fi
 
     docker build "${build_args[@]}" "$context"
-
     log_success "Built ${image_name}"
 
     log_info "Pushing ${image_name} to ${REGISTRY}..."
-    docker push "${REGISTRY}/${image_name}:${VERSION}"
-    docker push "${REGISTRY}/${image_name}:latest"
-
-    log_success "Pushed ${image_name}"
+    docker push "${full_image}:${BETA_TAG}"
+    docker push "${full_image}:${VERSION}"
+    log_success "Pushed ${image_name} as ${BETA_TAG}"
 }
 
-rollout_deployment() {
-    local name=$1
-    local config=${IMAGES[$name]}
+helm_upgrade() {
+    local set_args=()
 
-    if [ -z "$config" ]; then
-        log_error "Unknown image: $name"
-        return 1
+    # If we just built specific images, override their tags via --set
+    if [ "$TARGET_IMAGE" != "all" ] && [ "$ROLLOUT_ONLY" = false ]; then
+        set_args+=(--set "${TARGET_IMAGE}.image.tag=${BETA_TAG}")
     fi
 
-    IFS=':' read -r _ _ deployment_name container_name <<< "$config"
-    local image_name="elder-${name}"
-
-    log_info "Updating deployment ${deployment_name}..."
-
-    # Check if deployment exists
-    if ! kubectl --context="$K8S_CONTEXT" get deployment "$deployment_name" -n "$K8S_NAMESPACE" &>/dev/null; then
-        log_warn "Deployment ${deployment_name} not found in namespace ${K8S_NAMESPACE}, skipping"
-        return 0
-    fi
-
-    # Update image and trigger rollout
-    kubectl --context="$K8S_CONTEXT" set image \
-        "deployment/${deployment_name}" \
-        "${container_name}=${REGISTRY}/${image_name}:${VERSION}" \
-        -n "$K8S_NAMESPACE"
+    log_info "Running helm upgrade..."
+    helm upgrade elder k8s/helm/elder \
+        --kube-context="$K8S_CONTEXT" \
+        --namespace "$K8S_NAMESPACE" \
+        --values k8s/helm/elder/values.yaml \
+        --values k8s/helm/elder/values-beta.yaml \
+        "${set_args[@]}"
 
     log_info "Waiting for rollout to complete..."
-    kubectl --context="$K8S_CONTEXT" rollout status \
-        "deployment/${deployment_name}" \
-        -n "$K8S_NAMESPACE" \
-        --timeout=300s
-
-    # Force restart if requested (ensures image cache is cleared)
-    if [ "$FORCE_RESTART" = true ]; then
-        log_info "Force restarting deployment ${deployment_name}..."
-        kubectl --context="$K8S_CONTEXT" rollout restart \
-            "deployment/${deployment_name}" \
-            -n "$K8S_NAMESPACE"
-
-        log_info "Waiting for restart to complete..."
-        kubectl --context="$K8S_CONTEXT" rollout status \
-            "deployment/${deployment_name}" \
-            -n "$K8S_NAMESPACE" \
-            --timeout=300s
+    local services=("api" "web" "scanner" "worker")
+    if [ "$TARGET_IMAGE" != "all" ]; then
+        services=("$TARGET_IMAGE")
     fi
 
-    log_success "Deployment ${deployment_name} rolled out successfully"
+    for svc in "${services[@]}"; do
+        local deployment="elder-${svc}"
+        if kubectl --context="$K8S_CONTEXT" get deployment "$deployment" -n "$K8S_NAMESPACE" &>/dev/null; then
+            kubectl --context="$K8S_CONTEXT" rollout status \
+                "deployment/${deployment}" \
+                -n "$K8S_NAMESPACE" \
+                --timeout=300s || log_warn "Rollout status check timed out for ${deployment}"
+        fi
+    done
+
+    log_success "Helm upgrade complete"
 }
 
-# Determine which images to process
+# Determine which images to build
 if [ "$TARGET_IMAGE" = "all" ]; then
     TARGETS=("api" "web" "scanner" "worker")
 else
@@ -246,22 +226,22 @@ if [ "$ROLLOUT_ONLY" = false ]; then
     done
 fi
 
-# Rollout phase
+# Rollout phase via helm upgrade
 if [ "$BUILD_ONLY" = false ]; then
-    log_info "=== Updating Kubernetes Deployments ==="
-    for target in "${TARGETS[@]}"; do
-        rollout_deployment "$target"
-        echo ""
-    done
+    log_info "=== Helm Upgrade ==="
+    helm_upgrade
+    echo ""
 fi
 
 log_success "=== Deployment Complete ==="
 echo ""
-log_info "Deployed images:"
-for target in "${TARGETS[@]}"; do
-    log_info "  - ${REGISTRY}/elder-${target}:${VERSION}"
-done
-echo ""
+if [ "$ROLLOUT_ONLY" = false ]; then
+    log_info "Deployed images:"
+    for target in "${TARGETS[@]}"; do
+        log_info "  - ${REGISTRY}/elder-${target}:${BETA_TAG}"
+    done
+    echo ""
+fi
 log_info "To check status:"
 log_info "  kubectl --context=${K8S_CONTEXT} get pods -n ${K8S_NAMESPACE}"
 log_info "  kubectl --context=${K8S_CONTEXT} logs -f deployment/elder-api -n ${K8S_NAMESPACE}"

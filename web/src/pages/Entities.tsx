@@ -83,12 +83,14 @@ export default function Entities() {
               <CardContent>
                 <h3 className="text-lg font-semibold text-white mb-2">{entity.name}</h3>
                 <div className="flex gap-2 flex-wrap mb-3">
-                  <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.entity_type)}`}>
-                    {entity.entity_type.replace('_', ' ').toUpperCase()}
-                  </span>
-                  {entity.entity_sub_type && (
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.entity_sub_type)}`}>
-                      {entity.entity_sub_type.replace('_', ' ').toUpperCase()}
+                  {entity.type && (
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.type)}`}>
+                      {entity.type.replace('_', ' ').toUpperCase()}
+                    </span>
+                  )}
+                  {entity.sub_type && (
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.sub_type)}`}>
+                      {entity.sub_type.replace('_', ' ').toUpperCase()}
                     </span>
                   )}
                 </div>

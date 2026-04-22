@@ -14,6 +14,10 @@ spec:
       labels:
         app: scanner
     spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
         - name: scanner
           image: elder-scanner:alpha-latest
@@ -37,9 +41,13 @@ spec:
               memory: "512Mi"
               cpu: "500m"
           securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
-              add:
-                - NET_ADMIN
+              drop: ["ALL"]
+              add: ["NET_RAW"]
           volumeMounts:
             - name: screenshots
               mountPath: /app/screenshots

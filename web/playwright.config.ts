@@ -43,6 +43,8 @@ export default defineConfig({
   testDir: './tests/e2e',
   /* Repo-scoped artifact dir keeps /tmp clean across concurrent repos */
   outputDir: artifactDir,
+  /* Authenticated tests include login + networkidle; allow 60s per test */
+  timeout: 60000,
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

@@ -20,17 +20,22 @@ class OrganizationDTO:
     id: int
     name: str
     description: Optional[str]
-    organization_type: str  # department, organization, team, collection, other
+    type: Optional[str]  # organization type
     parent_id: Optional[int]
-    ldap_dn: Optional[str]
-    saml_group: Optional[str]
     owner_identity_id: Optional[int]
     owner_group_id: Optional[int]
     created_at: datetime
     updated_at: datetime
+    slug: Optional[str] = None
     tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    village_segment: Optional[str] = None
+    display_name: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    is_active: bool = True
+    settings: Optional[dict] = None
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
 
 
 @dataclass(slots=True)
@@ -39,14 +44,15 @@ class CreateOrganizationRequest:
 
     name: str
     description: Optional[str] = None
-    organization_type: str = (
-        "organization"  # department, organization, team, collection, other
-    )
+    type: Optional[str] = None
     parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
     owner_identity_id: Optional[int] = None
     owner_group_id: Optional[int] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -55,14 +61,15 @@ class UpdateOrganizationRequest:
 
     name: Optional[str] = None
     description: Optional[str] = None
-    organization_type: Optional[str] = (
-        None  # department, organization, team, collection, other
-    )
+    type: Optional[str] = None
     parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
     owner_identity_id: Optional[int] = None
     owner_group_id: Optional[int] = None
+    cloud_provider: Optional[str] = None
+    cloud_account_id: Optional[str] = None
+    region: Optional[str] = None
+    slug: Optional[str] = None
+    display_name: Optional[str] = None
 
 
 # ==================== Entities ====================
@@ -74,19 +81,20 @@ class EntityDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    entity_type: str
-    sub_type: Optional[str]
-    organization_id: int
-    parent_id: Optional[int]
-    attributes: Optional[dict]
-    tags: Optional[list[str]]
-    is_active: bool
-    default_metadata: Optional[dict]
-    status_metadata: Optional[dict]
-    created_at: datetime
-    updated_at: datetime
-    village_id: Optional[str] = None
+    type: str
+    organization_id: Optional[int] = None
+    parent_id: Optional[int] = None
+    sub_type: Optional[str] = None
+    external_id: Optional[str] = None
+    cloud_provider: Optional[str] = None
+    region: Optional[str] = None
+    status: Optional[str] = None
+    is_managed: bool = False
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 @dataclass(slots=True)
@@ -161,24 +169,21 @@ class IdentityDTO:
     """Immutable Identity data transfer object."""
 
     id: int
-    identity_type: str
     username: str
     email: Optional[str]
-    full_name: Optional[str]
-    organization_id: Optional[int]  # Link to organization
-    portal_role: str  # admin, editor, observer
-    auth_provider: str
-    auth_provider_id: Optional[str]
-    is_active: bool
-    is_superuser: bool
-    mfa_enabled: bool
-    last_login_at: Optional[datetime]
+    type: str  # identity type
     created_at: datetime
     updated_at: datetime
-    password_hash: Optional[str] = None  # Stored password hash (never expose to client)
-    mfa_secret: Optional[str] = None  # MFA secret (never expose to client)
-    tenant_id: Optional[int] = None  # Link to tenant
-    village_id: Optional[str] = None
+    tenant_id: Optional[int] = None
+    external_id: Optional[str] = None
+    provider: Optional[str] = None
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_active: bool = True
+    is_service_account: bool = False
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
 
 
 @dataclass(slots=True)
@@ -218,11 +223,11 @@ class IdentityGroupDTO:
     id: int
     name: str
     description: Optional[str]
-    ldap_dn: Optional[str]
-    saml_group: Optional[str]
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
+    ldap_dn: Optional[str] = None
+    saml_group: Optional[str] = None
+    is_active: bool = True
+    created_at: datetime = None
+    updated_at: datetime = None
 
 
 @dataclass(slots=True)
@@ -304,16 +309,16 @@ class IssueDTO:
     status: str
     priority: str
     issue_type: str
-    reporter_id: int
-    assignee_id: Optional[int]
-    organization_id: Optional[int]
+    created_by_id: int
+    assigned_to_id: Optional[int]
+    resource_type: str
+    resource_id: int
     is_incident: int
     closed_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    parent_issue_id: Optional[int] = None
+    closed_by_id: Optional[int] = None
+    due_date: Optional[datetime] = None
 
 
 @dataclass(slots=True)
@@ -406,14 +411,14 @@ class ProjectDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    status: str
     organization_id: int
-    start_date: Optional[datetime]
-    end_date: Optional[datetime]
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    is_active: bool = True
+    settings: Optional[dict] = None
+    created_by_id: Optional[int] = None
 
 
 @dataclass(slots=True)
@@ -522,12 +527,14 @@ class APIKeyDTO:
     id: int
     identity_id: int
     name: str
-    prefix: str  # First few chars for display
-    last_used_at: Optional[datetime]
-    expires_at: Optional[datetime]
-    is_active: bool
+    key_prefix: str  # First few chars for display
     created_at: datetime
     updated_at: datetime
+    key_hash: Optional[str] = None
+    scopes: Optional[str] = None
+    last_used_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    is_active: bool = True
 
 
 @dataclass(slots=True)
@@ -620,29 +627,24 @@ class ServiceDTO:
     """Immutable Service data transfer object."""
 
     id: int
-    tenant_id: int
     name: str
-    description: Optional[str]
-    organization_id: int
-    domains: Optional[list]
-    paths: Optional[list]
-    poc_identity_id: Optional[int]
-    language: Optional[str]
-    deployment_method: Optional[str]
-    deployment_type: Optional[str]
-    is_public: bool
-    port: Optional[int]
-    health_endpoint: Optional[str]
-    repository_url: Optional[str]
-    documentation_url: Optional[str]
-    sla_uptime: Optional[float]
-    sla_response_time_ms: Optional[int]
-    notes: Optional[str]
-    tags: Optional[list]
-    status: str
     created_at: datetime
-    updated_at: Optional[datetime]
-    village_id: Optional[str]
+    tenant_id: Optional[int] = None
+    organization_id: Optional[int] = None
+    identity_id: Optional[int] = None
+    type: Optional[str] = None
+    sub_type: Optional[str] = None
+    external_id: Optional[str] = None
+    namespace: Optional[str] = None
+    cluster: Optional[str] = None
+    endpoint: Optional[str] = None
+    port: Optional[int] = None
+    protocol: Optional[str] = None
+    status: Optional[str] = None
+    tags: Optional[list] = None
+    metadata: Optional[dict] = None
+    last_seen_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ==================== Audit Logs ====================
@@ -1069,9 +1071,13 @@ def from_pydal_row(row, dto_class):
     """Convert PyDAL Row to dataclass DTO."""
     if row is None:
         return None
-    return dto_class(**row.as_dict())
+    row_dict = row.as_dict()
+    return dto_class(**row_dict)
 
 
 def from_pydal_rows(rows, dto_class) -> list:
     """Convert PyDAL Rows to list of dataclass DTOs."""
-    return [dto_class(**row.as_dict()) for row in rows]
+    result = []
+    for row in rows:
+        result.append(dto_class(**row.as_dict()))
+    return result

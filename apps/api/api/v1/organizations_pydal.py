@@ -73,6 +73,18 @@ async def list_organizations():
     def get_orgs():
         total = db(query).count()
         rows = db(query).select(
+            db.organizations.id,
+            db.organizations.name,
+            db.organizations.description,
+            db.organizations.type,
+            db.organizations.parent_id,
+            db.organizations.owner_identity_id,
+            db.organizations.owner_group_id,
+            db.organizations.created_at,
+            db.organizations.updated_at,
+            db.organizations.slug,
+            db.organizations.tenant_id,
+            db.organizations.display_name,
             orderby=db.organizations.name,
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
@@ -125,6 +137,10 @@ async def create_organization(body: CreateOrganizationRequest):
         if "tenant_id" not in org_data:
             org_data["tenant_id"] = tenant_id
 
+        # Map Pydantic field 'organization_type' to DB column 'type'
+        if "organization_type" in org_data:
+            org_data["type"] = org_data.pop("organization_type")
+
         org_id = await insert_record(db.organizations, **org_data)
         if not org_id:
             return log_error_and_respond(
@@ -151,7 +167,6 @@ async def create_organization(body: CreateOrganizationRequest):
         return ApiResponse.created(org_dict)
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -227,6 +242,10 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
     if not update_fields:
         return ApiResponse.bad_request("No fields to update")
 
+    # Map Pydantic field 'organization_type' to DB column 'type'
+    if "organization_type" in update_fields:
+        update_fields["type"] = update_fields.pop("organization_type")
+
     # Update organization
     try:
         await run_in_threadpool(
@@ -240,7 +259,6 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
         return ApiResponse.success(asdict(org_dto))
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
@@ -279,7 +297,6 @@ async def delete_organization(id: int):
         return ApiResponse.no_content()
 
     except Exception as e:
-        await run_in_threadpool(lambda: db.rollback())
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 

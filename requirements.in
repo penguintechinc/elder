@@ -21,6 +21,7 @@ grpcio==1.69.0
 grpcio-tools==1.69.0
 grpcio-reflection==1.69.0
 protobuf==5.29.6
+setuptools==82.0.1
 
 # Database & ORM
 SQLAlchemy==2.0.36
@@ -48,15 +49,15 @@ Authlib==1.6.9
 # Security & Cryptography
 PyJWT==2.12.0
 bcrypt==4.2.1
-cryptography==46.0.5
+cryptography==46.0.7
 # python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
 # Use PyJWT (above) for all JWT operations
 pyotp==2.9.0
 
 # HTTP & API Clients
-requests==2.32.4
+requests==2.33.0
 httpx==0.28.1
-aiohttp==3.13.3
+aiohttp==3.13.4
 
 # Configuration Management
 python-decouple==3.8

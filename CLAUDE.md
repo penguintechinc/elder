@@ -80,22 +80,15 @@ docker compose -f ~/.claude/mcp/mem0/docker-compose.yml down      # stop
 
 The following rules **add to** the critical rules in root `CLAUDE.md`. See root for base git, code quality, and standards references.
 
+**Response Style:**
+- **Be concise** — lead with the answer, skip preamble, no trailing summaries. See [`.claude/rules/general.md`](.claude/rules/general.md) for the full brevity standard. Applies to all responses, skills, and rule files.
+
 **Git Branch Rules:**
 - **NEVER edit code directly on `main`** — always work on a feature branch
 - **CHECK current branch before any code change**: if on `main`, create and switch to a feature branch first (`git checkout -b feature/<name>`)
 
 **Code Quality (additions):**
 - **NEVER ignore pre-existing issues** — if you encounter existing bugs, failing tests, lint errors, TODOs marked as broken, or code that violates standards while working on an unrelated task, **fix them or explicitly flag them to the user**. Do not silently work around them or pretend they are not there. Leaving known issues in place is not acceptable
-
-**Tool Usage:**
-- **NEVER use `sed`, `awk`, `cat`, `head`, `tail`, `echo`, `grep`, `find`, or `rg` via Bash** when a dedicated tool exists — use the dedicated tools instead:
-  - Read files → **Read** tool (not `cat`, `head`, `tail`)
-  - Edit files → **Edit** tool (not `sed`, `awk`)
-  - Write/create files → **Write** tool (not `echo >`, `cat <<EOF`)
-  - Search file contents → **Grep** tool (not `grep`, `rg`)
-  - Find files by name → **Glob** tool (not `find`, `ls`)
-- Only fall back to Bash for these commands when the dedicated tool genuinely cannot accomplish the task (e.g., piped shell pipelines, complex transformations)
-- This reduces unnecessary approval prompts and keeps operations auditable
 
 ---
 

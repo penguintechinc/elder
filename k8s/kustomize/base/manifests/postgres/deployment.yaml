@@ -14,9 +14,13 @@ spec:
       labels:
         app: postgres
     spec:
+      securityContext:
+        fsGroup: 999
+        runAsNonRoot: true
+        runAsUser: 999
       containers:
         - name: postgres
-          image: postgres:17-bookworm
+          image: postgres:17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432
@@ -29,6 +33,8 @@ spec:
               value: elder_dev_password
             - name: POSTGRES_INITDB_ARGS
               value: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
           livenessProbe:
             exec:
               command:
@@ -49,6 +55,10 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
             failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
           resources:
             requests:
               memory: "128Mi"
