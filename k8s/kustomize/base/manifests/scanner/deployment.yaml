@@ -51,7 +51,11 @@ spec:
           volumeMounts:
             - name: screenshots
               mountPath: /app/screenshots
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: screenshots
           emptyDir:
             sizeLimit: "500Mi"
+        - name: tmp
+          emptyDir: {}

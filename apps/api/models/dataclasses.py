@@ -527,7 +527,7 @@ class APIKeyDTO:
     id: int
     identity_id: int
     name: str
-    key_prefix: str  # First few chars for display
+    prefix: str  # First few chars for display
     created_at: datetime
     updated_at: datetime
     key_hash: Optional[str] = None
