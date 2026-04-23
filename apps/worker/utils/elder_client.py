@@ -39,9 +39,23 @@ class Entity:
     sub_type: Optional[str] = None  # v1.2.1: Entity sub-type
     parent_id: Optional[int] = None
     owner_identity_id: Optional[int] = None
+    external_id: Optional[str] = None
     attributes: Optional[Dict[str, Any]] = None
     status_metadata: Optional[Dict[str, Any]] = None  # v1.2.1: Status tracking
     tags: Optional[List[str]] = None
+    is_active: bool = True
+
+
+@dataclass
+class Identity:
+    """Identity data model."""
+
+    username: str
+    identity_type: str
+    auth_provider: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    auth_provider_id: Optional[str] = None
     is_active: bool = True
 
 
@@ -244,6 +258,7 @@ class ElderAPIClient:
         per_page: int = 100,
         organization_id: Optional[int] = None,
         entity_type: Optional[str] = None,
+        external_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         List entities with pagination.
@@ -253,6 +268,7 @@ class ElderAPIClient:
             per_page: Items per page
             organization_id: Filter by organization ID
             entity_type: Filter by entity type
+            external_id: Filter by external ID (exact match)
 
         Returns:
             Paginated list of entities
@@ -262,8 +278,28 @@ class ElderAPIClient:
             params["organization_id"] = organization_id
         if entity_type:
             params["entity_type"] = entity_type
+        if external_id:
+            params["external_id"] = external_id
 
         return await self._request("GET", "/entities", params=params)
+
+    async def get_entity_by_external_id(
+        self,
+        external_id: str,
+        organization_id: Optional[int] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Look up a single entity by external_id.
+
+        Returns the first matching entity, or None if not found.
+        """
+        result = await self.list_entities(
+            external_id=external_id,
+            organization_id=organization_id,
+            per_page=1,
+        )
+        items = result.get("items", [])
+        return items[0] if items else None
 
     async def get_entity(self, entity_id: int) -> Dict[str, Any]:
         """
@@ -294,6 +330,7 @@ class ElderAPIClient:
             "description": entity.description,
             "sub_type": entity.sub_type,
             "parent_id": entity.parent_id,
+            "external_id": entity.external_id,
             "attributes": entity.attributes or {},
             "tags": entity.tags or [],
             "is_active": entity.is_active,
@@ -337,6 +374,7 @@ class ElderAPIClient:
             "description": entity.description,
             "sub_type": entity.sub_type,
             "parent_id": entity.parent_id,
+            "external_id": entity.external_id,
             "attributes": entity.attributes or {},
             "tags": entity.tags or [],
             "is_active": entity.is_active,
@@ -451,6 +489,50 @@ class ElderAPIClient:
                 attributes=attributes,
             )
         )
+
+    # Identity operations
+
+    async def list_identities(
+        self,
+        page: int = 1,
+        per_page: int = 100,
+        auth_provider: Optional[str] = None,
+        auth_provider_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """List identities with optional auth_provider / auth_provider_id filters."""
+        params: Dict[str, Any] = {"page": page, "per_page": per_page}
+        if auth_provider:
+            params["auth_provider"] = auth_provider
+        if auth_provider_id:
+            params["auth_provider_id"] = auth_provider_id
+        return await self._request("GET", "/identities", params=params)
+
+    async def create_identity(self, identity: Identity) -> Dict[str, Any]:
+        """Create a new identity."""
+        data = {
+            "username": identity.username,
+            "identity_type": identity.identity_type,
+            "auth_provider": identity.auth_provider,
+            "email": identity.email,
+            "full_name": identity.full_name,
+            "auth_provider_id": identity.auth_provider_id,
+            "is_active": identity.is_active,
+        }
+        data = {k: v for k, v in data.items() if v is not None}
+        return await self._request("POST", "/identities", json=data)
+
+    async def get_or_create_identity(self, identity: Identity) -> Dict[str, Any]:
+        """Get existing identity by auth_provider + auth_provider_id, or create it."""
+        if identity.auth_provider_id:
+            result = await self.list_identities(
+                auth_provider=identity.auth_provider,
+                auth_provider_id=identity.auth_provider_id,
+                per_page=1,
+            )
+            items = result.get("items", [])
+            if items:
+                return items[0]
+        return await self.create_identity(identity)
 
     async def health_check(self) -> bool:
         """

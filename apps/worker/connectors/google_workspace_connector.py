@@ -267,7 +267,7 @@ class GoogleWorkspaceConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        if item.get("attributes", {}).get("email") == email:
+                        if item.get("metadata", {}).get("email") == email:
                             found = item
                             break
 
@@ -345,7 +345,7 @@ class GoogleWorkspaceConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        attrs = item.get("attributes", {})
+                        attrs = item.get("metadata", {})
                         if attrs.get("email") == email and attrs.get("type") == "group":
                             found = item
                             break

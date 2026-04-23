@@ -21,6 +21,19 @@
 
 set -e
 
+# macOS compatibility: GNU timeout is 'gtimeout' via coreutils; fall back to plain exec
+_timeout() {
+    if command -v gtimeout &>/dev/null; then
+        gtimeout "$@"
+    elif command -v timeout &>/dev/null; then
+        timeout "$@"
+    else
+        # No timeout available — run without it
+        local _secs="$1"; shift
+        "$@"
+    fi
+}
+
 # Color codes for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -600,8 +613,14 @@ if [ "$TEST_MODE" = "alpha" ]; then
             PYTHON_CMD="python"
         fi
 
-        if $PYTHON_CMD "$SCRIPT_DIR/test-grpc-api.py" --host localhost --port "$GRPC_PORT" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"; then
+        set +e
+        $PYTHON_CMD "$SCRIPT_DIR/test-grpc-api.py" --host localhost --port "$GRPC_PORT" --username "$ADMIN_USERNAME" --password "$ADMIN_PASSWORD"
+        GRPC_EXIT=$?
+        set -e
+        if [ "$GRPC_EXIT" -eq 0 ]; then
             record_pass "Comprehensive gRPC API tests passed"
+        elif [ "$GRPC_EXIT" -eq 2 ]; then
+            log_warn "grpcio not installed on host — skipping gRPC tests (pip3 install grpcio grpcio-tools)"
         else
             record_fail "Comprehensive gRPC API tests failed"
         fi
@@ -685,7 +704,7 @@ else
     log_info "Running Playwright web UI tests against: $WEB_URL"
 
     # Run Playwright tests with timeout
-    if timeout 300 bash -c 'cd "$PROJECT_ROOT/web" && npm run test:e2e 2>&1' > /tmp/playwright-output.log 2>&1; then
+    if _timeout 300 bash -c 'cd "$PROJECT_ROOT/web" && npm run test:e2e 2>&1' > /tmp/playwright-output.log 2>&1; then
         record_pass "Playwright web UI tests passed"
     else
         if grep -q "no such file or directory\|cannot find" /tmp/playwright-output.log; then

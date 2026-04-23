@@ -67,6 +67,9 @@ async def list_entities():
         name = request.args.get("name")
         query &= db.entities.name.ilike(f"%{name}%")
 
+    if request.args.get("external_id"):
+        query &= db.entities.external_id == request.args.get("external_id")
+
     # Use asyncio TaskGroup for concurrent queries (Python 3.12)
     async with asyncio.TaskGroup() as tg:
         count_task = tg.create_task(run_in_threadpool(lambda: db(query).count()))
@@ -135,6 +138,7 @@ async def create_entity(body: CreateEntityRequest):
             organization_id=body.organization_id,
             parent_id=body.parent_id,
             sub_type=body.sub_type,
+            external_id=body.external_id,
             tags=body.tags or [],
             metadata=body.attributes,
             status="active",
@@ -223,6 +227,8 @@ async def update_entity(id: int, body: UpdateEntityRequest):
             update_fields["parent_id"] = body.parent_id
         if body.sub_type is not None:
             update_fields["sub_type"] = body.sub_type
+        if body.external_id is not None:
+            update_fields["external_id"] = body.external_id
         if body.attributes is not None:
             update_fields["metadata"] = body.attributes
         if body.tags is not None:

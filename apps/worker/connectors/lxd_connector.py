@@ -329,7 +329,7 @@ class LXDConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("instance_name") == instance_name
                         and attrs.get("lxd_url") == self.lxd_url
@@ -427,7 +427,7 @@ class LXDConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("pool_name") == pool_name
                         and attrs.get("lxd_url") == self.lxd_url
@@ -514,7 +514,7 @@ class LXDConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("network_name") == net_name
                         and attrs.get("lxd_url") == self.lxd_url
@@ -617,7 +617,7 @@ class LXDConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("member_name") == member_name
                         and attrs.get("lxd_resource") == "cluster_member"
