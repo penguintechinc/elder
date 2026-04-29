@@ -70,6 +70,7 @@ def init_sqlalchemy_tables(app):
     For schema migrations on existing databases, use: ./scripts/migrate.sh
     """
     from sqlalchemy import create_engine
+    from sqlalchemy.exc import IntegrityError, OperationalError
 
     # Import all models so they register with Base.metadata
     from apps.api.models import (  # noqa: F401
@@ -96,8 +97,6 @@ def init_sqlalchemy_tables(app):
         webhooks,
     )
     from apps.api.models.base import Base
-
-    from sqlalchemy.exc import IntegrityError, OperationalError
 
     database_url = get_database_url(app)
     engine = create_engine(database_url)
