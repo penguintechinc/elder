@@ -47,10 +47,6 @@ export interface Dependency {
   dependency_type: DependencyType
   metadata?: Record<string, any>
   created_at: string
-  source_entity_id?: number
-  source_entity?: Entity
-  target_entity_id?: number
-  target_entity?: Entity
 }
 
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'

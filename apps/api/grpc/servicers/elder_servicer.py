@@ -463,7 +463,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     if request.identity_type == auth_pb2.IdentityType.HUMAN
                     else "service_account"
                 )
-                query &= db.identities.identity_type == identity_type_str
+                query &= db.identities.type == identity_type_str
 
             if request.auth_provider != auth_pb2.AuthProvider.AUTH_PROVIDER_UNSPECIFIED:
                 provider_map = {
@@ -499,7 +499,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             # Execute query
             rows = db(query).select(
                 db.identities.id,
-                db.identities.identity_type,
+                db.identities.type,
                 db.identities.username,
                 db.identities.email,
                 db.identities.full_name,

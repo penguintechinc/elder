@@ -4,7 +4,6 @@
    Do NOT change to ../../ — that resolves to the repo root or container root,
    neither of which contains node_modules. */
 @source "../node_modules/@penguintechinc/react-libs/dist";
-@source inline("fixed left-0 top-0 bottom-0 h-full h-screen w-64 z-50 flex flex-col overflow-y-auto");
 
 /* Custom theme colors - migrated from tailwind.config.js */
 @theme {

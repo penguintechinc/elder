@@ -37,14 +37,14 @@ def _identity_row_to_dto(row) -> IdentityDTO:
         id=d["id"],
         username=d["username"],
         email=d.get("email"),
-        identity_type=d.get("identity_type", "human"),
+        type=d.get("identity_type", "human"),
         tenant_id=d.get("tenant_id"),
-        auth_provider=d.get("auth_provider"),
-        auth_provider_id=d.get("auth_provider_id"),
-        full_name=d.get("full_name"),
+        provider=d.get("auth_provider"),
+        external_id=d.get("auth_provider_id"),
+        name=d.get("full_name"),
         display_name=d.get("full_name"),
         is_active=d.get("is_active", True),
-        last_login_at=d.get("last_login_at"),
+        last_seen_at=d.get("last_login_at"),
         created_at=d["created_at"],
         updated_at=d["updated_at"],
     )
@@ -102,6 +102,7 @@ async def list_identities():
     auth_provider_id = request.args.get("auth_provider_id")
     if auth_provider_id:
         query &= db.identities.auth_provider_id == auth_provider_id
+
 
     # Calculate pagination
     offset = (page - 1) * per_page

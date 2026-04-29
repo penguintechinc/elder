@@ -538,7 +538,7 @@ async def get_map():
                     "identity",
                     identity.id,
                     label,
-                    identity.identity_type,
+                    identity.type,
                     {},
                 )
 
