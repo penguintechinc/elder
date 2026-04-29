@@ -70,7 +70,6 @@ async def list_entities():
     if request.args.get("external_id"):
         query &= db.entities.external_id == request.args.get("external_id")
 
-
     # Use asyncio TaskGroup for concurrent queries (Python 3.12)
     async with asyncio.TaskGroup() as tg:
         count_task = tg.create_task(run_in_threadpool(lambda: db(query).count()))

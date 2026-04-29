@@ -103,7 +103,6 @@ async def list_identities():
     if auth_provider_id:
         query &= db.identities.auth_provider_id == auth_provider_id
 
-
     # Calculate pagination
     offset = (page - 1) * per_page
 
