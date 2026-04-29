@@ -35,6 +35,11 @@ class AuthProvider(enum.Enum):
     OAUTH2 = "oauth2"  # OAuth2
     LDAP = "ldap"  # LDAP
     AWS = "aws"  # AWS IAM
+    OKTA = "okta"
+    GCP = "gcp"
+    GOOGLE = "google"
+    AUTHENTIK = "authentik"
+    KUBERNETES = "kubernetes"
 
 
 class Identity(Base, IDMixin, TimestampMixin):

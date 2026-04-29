@@ -22,7 +22,7 @@ from apps.worker.connectors.group_operations import (
     GroupMembershipResult,
     GroupOperationsMixin,
 )
-from apps.worker.utils.elder_client import ElderAPIClient
+from apps.worker.utils.elder_client import ElderAPIClient, Identity
 
 
 class OktaConnector(BaseConnector, GroupOperationsMixin):
@@ -132,43 +132,25 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
             try:
                 # Extract user data
                 profile = user.get("profile", {})
-                identity_data = {
-                    "provider": "okta",
-                    "provider_id": user["id"],
-                    "username": profile.get("login", ""),
-                    "email": profile.get("email", ""),
-                    "display_name": f"{profile.get('firstName', '')} {profile.get('lastName', '')}".strip(),
-                    "full_name": f"{profile.get('firstName', '')} {profile.get('lastName', '')}".strip(),
-                    "identity_type": "human",
-                    "is_active": True,
-                    "attributes": {
-                        "okta_id": user["id"],
-                        "okta_status": user.get("status"),
-                        "okta_login": profile.get("login"),
-                        "okta_department": profile.get("department"),
-                        "okta_title": profile.get("title"),
-                    },
-                }
+                full_name_str = f"{profile.get('firstName', '')} {profile.get('lastName', '')}".strip()
 
-                # Create or update identity in Elder
-                # Note: This would use elder_client to sync
-                # For now, we log the sync
-                self.logger.debug(
-                    "Syncing Okta user",
-                    okta_id=user["id"],
+                identity = Identity(
+                    username=profile.get("login", ""),
+                    identity_type="human",
+                    auth_provider="okta",
                     email=profile.get("email"),
+                    full_name=full_name_str or None,
+                    auth_provider_id=user["id"],
+                    is_active=True,
                 )
+
+                response = await self.elder_client.get_or_create_identity(identity)
                 result.entities_created += 1
 
-                # TODO: When identity sync is fully implemented:
-                # 1. Create/update identity in Elder via elder_client
-                # 2. Get the identity's village_id from the response
-                # 3. Update Okta profile URL to link back to Elder:
-                #
-                # identity_response = await self.elder_client.create_or_update_identity(identity_data)
-                # village_id = identity_response.get("village_id")
-                # if village_id and settings.okta_sync_profile_url:
-                #     await self.update_user_profile_url(user["id"], village_id)
+                # Update Okta profile URL to link back to Elder
+                village_id = response.get("village_id")
+                if village_id and settings.okta_sync_profile_url:
+                    await self.update_user_profile_url(user["id"], village_id)
 
             except Exception as e:
                 error_msg = f"Failed to sync Okta user {user.get('id')}: {str(e)}"
@@ -196,19 +178,21 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
                     continue
 
                 profile = group.get("profile", {})
-                group_data = {
-                    "provider": "okta",
-                    "provider_group_id": group["id"],
-                    "name": profile.get("name", ""),
-                    "description": profile.get("description"),
-                }
+                group_name = profile.get("name", "")
+                group_description = profile.get("description", "")
 
-                # Create or update group in Elder
-                self.logger.debug(
-                    "Syncing Okta group",
-                    okta_id=group["id"],
-                    name=profile.get("name"),
+                # Create identity for group
+                identity = Identity(
+                    username=group_name,
+                    identity_type="service_account",
+                    auth_provider="okta",
+                    email=None,
+                    full_name=group_name,
+                    auth_provider_id=group["id"],
+                    is_active=True,
                 )
+
+                await self.elder_client.get_or_create_identity(identity)
                 result.entities_created += 1
 
             except Exception as e:

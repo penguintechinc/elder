@@ -11,7 +11,12 @@ from googleapiclient.errors import HttpError
 
 from apps.worker.config.settings import settings
 from apps.worker.connectors.base import BaseConnector, SyncResult
-from apps.worker.utils.elder_client import ElderAPIClient, Entity, Organization
+from apps.worker.utils.elder_client import (
+    ElderAPIClient,
+    Entity,
+    Identity,
+    Organization,
+)
 
 
 class GoogleWorkspaceConnector(BaseConnector):
@@ -277,6 +282,19 @@ class GoogleWorkspaceConnector(BaseConnector):
                     else:
                         await self.elder_client.create_entity(entity)
                         created += 1
+
+                    # Also create identity for this user
+                    identity = Identity(
+                        username=email,
+                        identity_type="human",
+                        auth_provider="google",
+                        email=email,
+                        full_name=full_name if full_name != email else None,
+                        auth_provider_id=user["id"],
+                        is_active=not user.get("suspended", False),
+                    )
+
+                    await self.elder_client.get_or_create_identity(identity)
 
                 page_token = users_result.get("nextPageToken")
                 if not page_token:

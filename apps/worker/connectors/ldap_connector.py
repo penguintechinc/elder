@@ -16,7 +16,12 @@ from apps.worker.connectors.group_operations import (
     GroupMembershipResult,
     GroupOperationsMixin,
 )
-from apps.worker.utils.elder_client import ElderAPIClient, Entity, Organization
+from apps.worker.utils.elder_client import (
+    ElderAPIClient,
+    Entity,
+    Identity,
+    Organization,
+)
 
 
 class LDAPConnector(BaseConnector, GroupOperationsMixin):
@@ -331,6 +336,22 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
                 else:
                     await self.elder_client.create_entity(entity)
                     created += 1
+
+                # Also create identity for this user
+                display_name_for_identity = display_name or cn or mail
+                email_for_identity = mail if mail and "@" in mail else None
+
+                identity = Identity(
+                    username=uid or cn or mail or name,
+                    identity_type="human",
+                    auth_provider="ldap",
+                    email=email_for_identity,
+                    full_name=display_name_for_identity,
+                    auth_provider_id=dn,
+                    is_active=is_active,
+                )
+
+                await self.elder_client.get_or_create_identity(identity)
 
         except LDAPException as e:
             self.logger.error("Failed to sync users", error=str(e))
