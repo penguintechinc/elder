@@ -246,6 +246,15 @@ ingress:
       hosts:
         - elder.penguintech.cloud
 
+# Cilium Gateway API
+gateway:
+  enabled: true
+  host: elder.penguintech.cloud
+  tls:
+    secretName: penguintech-cloud-wildcard-tls
+  timeouts:
+    request: "300s"
+
 # Service Account
 serviceAccount:
   create: false

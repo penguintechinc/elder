@@ -39,7 +39,7 @@ def list_retention_policies():
             db.rollback()
 
         policies = db(db.audit_retention_policies.id > 0).select(
-            orderby=db.audit_retention_policies.name
+            orderby=db.audit_retention_policies.resource_type
         )
 
         return (

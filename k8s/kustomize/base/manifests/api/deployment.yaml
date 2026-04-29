@@ -113,6 +113,10 @@ spec:
           volumeMounts:
             - name: instance-dir
               mountPath: /app/instance
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: instance-dir
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}

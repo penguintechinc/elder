@@ -179,7 +179,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("iboss_user_id") == user.get(
+                    if item.get("metadata", {}).get("iboss_user_id") == user.get(
                         "id"
                     ):
                         found = item
@@ -252,7 +252,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if attrs.get("iboss_group_id") == group.get("id"):
                         found = item
                         break
@@ -324,7 +324,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("iboss_policy_id") == policy.get(
+                    if item.get("metadata", {}).get("iboss_policy_id") == policy.get(
                         "id"
                     ):
                         found = item
@@ -415,7 +415,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("iboss_app_id") == app.get("id"):
+                    if item.get("metadata", {}).get("iboss_app_id") == app.get("id"):
                         found = item
                         break
 
@@ -545,7 +545,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if attrs.get("iboss_connector_id") == connector.get("id"):
                         found = item
                         break

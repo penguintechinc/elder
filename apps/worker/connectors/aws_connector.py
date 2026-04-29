@@ -11,7 +11,13 @@ from botocore.exceptions import ClientError, NoCredentialsError
 
 from apps.worker.config.settings import settings
 from apps.worker.connectors.base import BaseConnector, SyncResult
-from apps.worker.utils.elder_client import ElderAPIClient, Entity, Organization
+from apps.worker.utils.elder_client import (
+    Dependency,
+    ElderAPIClient,
+    Entity,
+    Identity,
+    Organization,
+)
 
 
 class AWSConnector(BaseConnector):
@@ -22,15 +28,14 @@ class AWSConnector(BaseConnector):
         super().__init__("aws")
         self.elder_client: Optional[ElderAPIClient] = None
         self.aws_clients: Dict[str, Any] = {}
-        self.organization_cache: Dict[str, int] = (
-            {}
-        )  # Map AWS account/region to Elder org ID
+        self.organization_cache: Dict[str, int] = {}
+        # external_id -> entity_id cache to resolve dependency targets within a sync run
+        self._entity_id_cache: Dict[str, int] = {}
 
     async def connect(self) -> None:
         """Establish connection to AWS and Elder API."""
         self.logger.info("Connecting to AWS services")
 
-        # Verify AWS credentials
         try:
             sts = boto3.client(
                 "sts",
@@ -51,7 +56,6 @@ class AWSConnector(BaseConnector):
             self.logger.error("Failed to verify AWS credentials", error=str(e))
             raise
 
-        # Initialize Elder API client
         self.elder_client = ElderAPIClient()
         await self.elder_client.connect()
 
@@ -63,19 +67,11 @@ class AWSConnector(BaseConnector):
             await self.elder_client.close()
         self.aws_clients.clear()
         self.organization_cache.clear()
+        self._entity_id_cache.clear()
         self.logger.info("AWS connector disconnected")
 
     def _get_aws_client(self, service: str, region: str):
-        """
-        Get or create AWS client for a specific service and region.
-
-        Args:
-            service: AWS service name (ec2, s3, iam, etc.)
-            region: AWS region
-
-        Returns:
-            boto3 client instance
-        """
+        """Get or create AWS client for a specific service and region."""
         key = f"{service}:{region}"
         if key not in self.aws_clients:
             self.aws_clients[key] = boto3.client(
@@ -92,30 +88,17 @@ class AWSConnector(BaseConnector):
         description: str,
         parent_id: Optional[int] = None,
     ) -> int:
-        """
-        Get or create an organization in Elder.
-
-        Args:
-            name: Organization name
-            description: Organization description
-            parent_id: Parent organization ID
-
-        Returns:
-            Organization ID
-        """
-        # Check cache
+        """Get or create an organization in Elder."""
         cache_key = f"{parent_id or 'root'}:{name}"
         if cache_key in self.organization_cache:
             return self.organization_cache[cache_key]
 
-        # Search for existing organization
         response = await self.elder_client.list_organizations(per_page=1000)
         for org in response.get("items", []):
             if org["name"] == name and org.get("parent_id") == parent_id:
                 self.organization_cache[cache_key] = org["id"]
                 return org["id"]
 
-        # Create new organization
         if settings.create_missing_organizations:
             org_data = Organization(
                 name=name,
@@ -133,17 +116,48 @@ class AWSConnector(BaseConnector):
                 f"Organization '{name}' not found and auto-creation disabled"
             )
 
+    async def _upsert_entity(self, entity: Entity) -> int:
+        """
+        Create or update entity using external_id for dedup.
+
+        Returns the entity ID (for dependency wiring).
+        """
+        existing = await self.elder_client.get_entity_by_external_id(
+            entity.external_id,
+            organization_id=entity.organization_id,
+        )
+
+        if existing:
+            await self.elder_client.update_entity(existing["id"], entity)
+            entity_id = existing["id"]
+        else:
+            created = await self.elder_client.create_entity(entity)
+            entity_id = created["id"]
+
+        if entity.external_id:
+            self._entity_id_cache[entity.external_id] = entity_id
+
+        return entity_id
+
+    async def _link(self, source_id: int, target_external_id: str, dep_type: str) -> None:
+        """Create a dependency if the target entity is known in the cache."""
+        target_id = self._entity_id_cache.get(target_external_id)
+        if target_id is None:
+            # Target not yet synced this run — resolve via API
+            target = await self.elder_client.get_entity_by_external_id(target_external_id)
+            if target is None:
+                return
+            target_id = target["id"]
+            self._entity_id_cache[target_external_id] = target_id
+
+        await self.elder_client.get_or_create_dependency(
+            source_entity_id=source_id,
+            target_entity_id=target_id,
+            dependency_type=dep_type,
+        )
+
     async def _sync_vpcs(self, region: str, region_org_id: int) -> tuple[int, int]:
-        """
-        Sync VPCs from AWS region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for the region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+        """Sync VPCs from AWS region."""
         ec2 = self._get_aws_client("ec2", region)
         created = 0
         updated = 0
@@ -153,26 +167,20 @@ class AWSConnector(BaseConnector):
             for vpc in vpcs.get("Vpcs", []):
                 vpc_id = vpc["VpcId"]
                 vpc_name = next(
-                    (
-                        tag["Value"]
-                        for tag in vpc.get("Tags", [])
-                        if tag["Key"] == "Name"
-                    ),
+                    (tag["Value"] for tag in vpc.get("Tags", []) if tag["Key"] == "Name"),
                     vpc_id,
                 )
-
-                # Get current status with timestamp (v1.2.1)
                 state = vpc.get("State", "unknown")
-                status_metadata = {
-                    "status": state.capitalize(),
-                    "timestamp": int(time.time()),
-                }
+                was_new = await self.elder_client.get_entity_by_external_id(
+                    vpc_id, organization_id=region_org_id
+                ) is None
 
-                entity = Entity(
+                await self._upsert_entity(Entity(
                     name=f"VPC: {vpc_name}",
                     entity_type="vpc",
                     organization_id=region_org_id,
                     description=f"AWS VPC in {region}",
+                    external_id=vpc_id,
                     attributes={
                         "vpc_id": vpc_id,
                         "cidr_block": vpc.get("CidrBlock"),
@@ -181,47 +189,22 @@ class AWSConnector(BaseConnector):
                         "region": region,
                         "provider": "aws",
                     },
-                    status_metadata=status_metadata,
+                    status_metadata={"status": state.capitalize(), "timestamp": int(time.time())},
                     tags=["aws", "vpc", region],
-                )
+                ))
 
-                # Check if entity already exists by searching for vpc_id in attributes
-                existing = await self.elder_client.list_entities(
-                    organization_id=region_org_id,
-                    entity_type="vpc",
-                )
-
-                found = None
-                for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("vpc_id") == vpc_id:
-                        found = item
-                        break
-
-                if found:
-                    await self.elder_client.update_entity(found["id"], entity)
-                    updated += 1
-                else:
-                    await self.elder_client.create_entity(entity)
+                if was_new:
                     created += 1
+                else:
+                    updated += 1
 
         except ClientError as e:
             self.logger.error("Failed to sync VPCs", region=region, error=str(e))
 
         return created, updated
 
-    async def _sync_ec2_instances(
-        self, region: str, region_org_id: int
-    ) -> tuple[int, int]:
-        """
-        Sync EC2 instances from AWS region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for the region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+    async def _sync_ec2_instances(self, region: str, region_org_id: int) -> tuple[int, int]:
+        """Sync EC2 instances from AWS region."""
         ec2 = self._get_aws_client("ec2", region)
         created = 0
         updated = 0
@@ -232,26 +215,20 @@ class AWSConnector(BaseConnector):
                 for instance in reservation.get("Instances", []):
                     instance_id = instance["InstanceId"]
                     instance_name = next(
-                        (
-                            tag["Value"]
-                            for tag in instance.get("Tags", [])
-                            if tag["Key"] == "Name"
-                        ),
+                        (tag["Value"] for tag in instance.get("Tags", []) if tag["Key"] == "Name"),
                         instance_id,
                     )
-
-                    # Get current status with timestamp (v1.2.1)
                     state = instance.get("State", {}).get("Name", "unknown")
-                    status_metadata = {
-                        "status": state.capitalize(),
-                        "timestamp": int(time.time()),
-                    }
+                    was_new = await self.elder_client.get_entity_by_external_id(
+                        instance_id, organization_id=region_org_id
+                    ) is None
 
-                    entity = Entity(
+                    entity_id = await self._upsert_entity(Entity(
                         name=f"EC2: {instance_name}",
                         entity_type="compute",
                         organization_id=region_org_id,
                         description=f"AWS EC2 instance in {region}",
+                        external_id=instance_id,
                         attributes={
                             "instance_id": instance_id,
                             "instance_type": instance.get("InstanceType"),
@@ -260,9 +237,7 @@ class AWSConnector(BaseConnector):
                             "public_ip": instance.get("PublicIpAddress"),
                             "vpc_id": instance.get("VpcId"),
                             "subnet_id": instance.get("SubnetId"),
-                            "availability_zone": instance.get("Placement", {}).get(
-                                "AvailabilityZone"
-                            ),
+                            "availability_zone": instance.get("Placement", {}).get("AvailabilityZone"),
                             "region": region,
                             "provider": "aws",
                             "launch_time": (
@@ -271,75 +246,57 @@ class AWSConnector(BaseConnector):
                                 else None
                             ),
                         },
-                        status_metadata=status_metadata,
+                        status_metadata={"status": state.capitalize(), "timestamp": int(time.time())},
                         tags=["aws", "ec2", "compute", region],
                         is_active=state == "running",
-                    )
+                    ))
 
-                    # Check if entity already exists
-                    existing = await self.elder_client.list_entities(
-                        organization_id=region_org_id,
-                        entity_type="compute",
-                    )
+                    # Wire dependencies: EC2 → VPC, subnet, security groups
+                    if instance.get("VpcId"):
+                        await self._link(entity_id, instance["VpcId"], "in_vpc")
+                    if instance.get("SubnetId"):
+                        await self._link(entity_id, instance["SubnetId"], "in_subnet")
+                    for sg in instance.get("SecurityGroups", []):
+                        if sg.get("GroupId"):
+                            await self._link(entity_id, sg["GroupId"], "uses_sg")
+                    if instance.get("IamInstanceProfile", {}).get("Arn"):
+                        role_arn = instance["IamInstanceProfile"]["Arn"]
+                        await self._link(entity_id, role_arn, "assumes_role")
 
-                    found = None
-                    for item in existing.get("items", []):
-                        if item.get("attributes", {}).get("instance_id") == instance_id:
-                            found = item
-                            break
-
-                    if found:
-                        await self.elder_client.update_entity(found["id"], entity)
-                        updated += 1
-                    else:
-                        await self.elder_client.create_entity(entity)
+                    if was_new:
                         created += 1
+                    else:
+                        updated += 1
 
         except ClientError as e:
-            self.logger.error(
-                "Failed to sync EC2 instances", region=region, error=str(e)
-            )
+            self.logger.error("Failed to sync EC2 instances", region=region, error=str(e))
 
         return created, updated
 
-    async def _sync_rds_instances(
-        self, region: str, region_org_id: int
-    ) -> tuple[int, int]:
-        """
-        Sync RDS instances (including Aurora) from AWS region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for the region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+    async def _sync_rds_instances(self, region: str, region_org_id: int) -> tuple[int, int]:
+        """Sync RDS instances (including Aurora) from AWS region."""
         rds = self._get_aws_client("rds", region)
         created = 0
         updated = 0
 
         try:
-            # Sync RDS instances
             response = rds.describe_db_instances()
             for db_instance in response.get("DBInstances", []):
                 instance_id = db_instance["DBInstanceIdentifier"]
                 engine = db_instance.get("Engine", "unknown")
                 is_aurora = engine.startswith("aurora")
-
-                # Get current status with timestamp
                 status = db_instance.get("DBInstanceStatus", "unknown")
-                status_metadata = {
-                    "status": status.capitalize(),  # available -> Available
-                    "timestamp": int(time.time()),
-                }
+                was_new = await self.elder_client.get_entity_by_external_id(
+                    instance_id, organization_id=region_org_id
+                ) is None
 
-                entity = Entity(
+                entity_id = await self._upsert_entity(Entity(
                     name=f"RDS: {instance_id}" + (" (Aurora)" if is_aurora else ""),
                     entity_type="storage",
                     sub_type="database",
                     organization_id=region_org_id,
                     description=f"AWS RDS {engine} database in {region}",
+                    external_id=instance_id,
                     attributes={
                         "instance_id": instance_id,
                         "engine": engine,
@@ -375,75 +332,52 @@ class AWSConnector(BaseConnector):
                             else None
                         ),
                     },
-                    status_metadata=status_metadata,
-                    tags=["aws", "rds", "database", engine, region]
-                    + (["aurora"] if is_aurora else []),
+                    status_metadata={"status": status.capitalize(), "timestamp": int(time.time())},
+                    tags=["aws", "rds", "database", engine, region] + (["aurora"] if is_aurora else []),
                     is_active=status.lower() == "available",
+                ))
+
+                vpc_id = (
+                    db_instance.get("DBSubnetGroup", {}).get("VpcId")
+                    if db_instance.get("DBSubnetGroup")
+                    else None
                 )
+                if vpc_id:
+                    await self._link(entity_id, vpc_id, "in_vpc")
 
-                # Check if entity already exists
-                existing = await self.elder_client.list_entities(
-                    organization_id=region_org_id,
-                    entity_type="storage",
-                )
-
-                found = None
-                for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("instance_id") == instance_id:
-                        found = item
-                        break
-
-                if found:
-                    await self.elder_client.update_entity(found["id"], entity)
-                    updated += 1
-                else:
-                    await self.elder_client.create_entity(entity)
+                if was_new:
                     created += 1
+                else:
+                    updated += 1
 
         except ClientError as e:
-            self.logger.error(
-                "Failed to sync RDS instances", region=region, error=str(e)
-            )
+            self.logger.error("Failed to sync RDS instances", region=region, error=str(e))
 
         return created, updated
 
-    async def _sync_elasticache_clusters(
-        self, region: str, region_org_id: int
-    ) -> tuple[int, int]:
-        """
-        Sync Elasticache clusters from AWS region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for the region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+    async def _sync_elasticache_clusters(self, region: str, region_org_id: int) -> tuple[int, int]:
+        """Sync Elasticache clusters from AWS region."""
         elasticache = self._get_aws_client("elasticache", region)
         created = 0
         updated = 0
 
         try:
-            # Sync Elasticache clusters
             response = elasticache.describe_cache_clusters()
             for cluster in response.get("CacheClusters", []):
                 cluster_id = cluster["CacheClusterId"]
                 engine = cluster.get("Engine", "unknown")
-
-                # Get current status with timestamp
                 status = cluster.get("CacheClusterStatus", "unknown")
-                status_metadata = {
-                    "status": status.capitalize(),
-                    "timestamp": int(time.time()),
-                }
+                was_new = await self.elder_client.get_entity_by_external_id(
+                    cluster_id, organization_id=region_org_id
+                ) is None
 
-                entity = Entity(
+                await self._upsert_entity(Entity(
                     name=f"ElastiCache: {cluster_id}",
                     entity_type="storage",
                     sub_type="caching",
                     organization_id=region_org_id,
                     description=f"AWS ElastiCache {engine} cluster in {region}",
+                    external_id=cluster_id,
                     attributes={
                         "cluster_id": cluster_id,
                         "engine": engine,
@@ -452,16 +386,12 @@ class AWSConnector(BaseConnector):
                         "num_cache_nodes": cluster.get("NumCacheNodes", 0),
                         "status": status,
                         "endpoint": (
-                            cluster.get("CacheNodes", [{}])[0]
-                            .get("Endpoint", {})
-                            .get("Address")
+                            cluster.get("CacheNodes", [{}])[0].get("Endpoint", {}).get("Address")
                             if cluster.get("CacheNodes")
                             else None
                         ),
                         "port": (
-                            cluster.get("CacheNodes", [{}])[0]
-                            .get("Endpoint", {})
-                            .get("Port")
+                            cluster.get("CacheNodes", [{}])[0].get("Endpoint", {}).get("Port")
                             if cluster.get("CacheNodes")
                             else None
                         ),
@@ -476,129 +406,73 @@ class AWSConnector(BaseConnector):
                             else None
                         ),
                     },
-                    status_metadata=status_metadata,
+                    status_metadata={"status": status.capitalize(), "timestamp": int(time.time())},
                     tags=["aws", "elasticache", "cache", engine, region],
                     is_active=status.lower() == "available",
-                )
+                ))
 
-                # Check if entity already exists
-                existing = await self.elder_client.list_entities(
-                    organization_id=region_org_id,
-                    entity_type="storage",
-                )
-
-                found = None
-                for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("cluster_id") == cluster_id:
-                        found = item
-                        break
-
-                if found:
-                    await self.elder_client.update_entity(found["id"], entity)
-                    updated += 1
-                else:
-                    await self.elder_client.create_entity(entity)
+                if was_new:
                     created += 1
+                else:
+                    updated += 1
 
         except ClientError as e:
-            self.logger.error(
-                "Failed to sync ElastiCache clusters", region=region, error=str(e)
-            )
+            self.logger.error("Failed to sync ElastiCache clusters", region=region, error=str(e))
 
         return created, updated
 
-    async def _sync_sqs_queues(
-        self, region: str, region_org_id: int
-    ) -> tuple[int, int]:
-        """
-        Sync SQS queues from AWS region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for the region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+    async def _sync_sqs_queues(self, region: str, region_org_id: int) -> tuple[int, int]:
+        """Sync SQS queues from AWS region."""
         sqs = self._get_aws_client("sqs", region)
         created = 0
         updated = 0
 
         try:
-            # List all queues
             response = sqs.list_queues()
             queue_urls = response.get("QueueUrls", [])
 
             for queue_url in queue_urls:
                 queue_name = queue_url.split("/")[-1]
 
-                # Get queue attributes
                 try:
-                    attrs = sqs.get_queue_attributes(
-                        QueueUrl=queue_url, AttributeNames=["All"]
-                    )
+                    attrs = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["All"])
                     attributes = attrs.get("Attributes", {})
+                    queue_arn = attributes.get("QueueArn", queue_url)
+                    was_new = await self.elder_client.get_entity_by_external_id(
+                        queue_arn, organization_id=region_org_id
+                    ) is None
 
-                    # SQS queues don't have a traditional status, mark as Available
-                    status_metadata = {
-                        "status": "Available",
-                        "timestamp": int(time.time()),
-                    }
-
-                    entity = Entity(
+                    await self._upsert_entity(Entity(
                         name=f"SQS: {queue_name}",
                         entity_type="storage",
                         sub_type="queue_system",
                         organization_id=region_org_id,
                         description=f"AWS SQS queue in {region}",
+                        external_id=queue_arn,
                         attributes={
                             "queue_url": queue_url,
                             "queue_name": queue_name,
-                            "queue_arn": attributes.get("QueueArn"),
-                            "approximate_messages": int(
-                                attributes.get("ApproximateNumberOfMessages", 0)
-                            ),
-                            "message_retention_seconds": int(
-                                attributes.get("MessageRetentionPeriod", 0)
-                            ),
-                            "visibility_timeout": int(
-                                attributes.get("VisibilityTimeout", 0)
-                            ),
+                            "queue_arn": queue_arn,
+                            "approximate_messages": int(attributes.get("ApproximateNumberOfMessages", 0)),
+                            "message_retention_seconds": int(attributes.get("MessageRetentionPeriod", 0)),
+                            "visibility_timeout": int(attributes.get("VisibilityTimeout", 0)),
                             "delay_seconds": int(attributes.get("DelaySeconds", 0)),
-                            "receive_wait_time": int(
-                                attributes.get("ReceiveMessageWaitTimeSeconds", 0)
-                            ),
+                            "receive_wait_time": int(attributes.get("ReceiveMessageWaitTimeSeconds", 0)),
                             "is_fifo": queue_name.endswith(".fifo"),
                             "region": region,
                             "provider": "aws",
                             "service": "sqs",
-                            "created_timestamp": int(
-                                attributes.get("CreatedTimestamp", 0)
-                            ),
+                            "created_timestamp": int(attributes.get("CreatedTimestamp", 0)),
                         },
-                        status_metadata=status_metadata,
+                        status_metadata={"status": "Available", "timestamp": int(time.time())},
                         tags=["aws", "sqs", "queue", region],
                         is_active=True,
-                    )
+                    ))
 
-                    # Check if entity already exists
-                    existing = await self.elder_client.list_entities(
-                        organization_id=region_org_id,
-                        entity_type="storage",
-                    )
-
-                    found = None
-                    for item in existing.get("items", []):
-                        if item.get("attributes", {}).get("queue_url") == queue_url:
-                            found = item
-                            break
-
-                    if found:
-                        await self.elder_client.update_entity(found["id"], entity)
-                        updated += 1
-                    else:
-                        await self.elder_client.create_entity(entity)
+                    if was_new:
                         created += 1
+                    else:
+                        updated += 1
 
                 except ClientError as queue_error:
                     self.logger.warning(
@@ -613,46 +487,39 @@ class AWSConnector(BaseConnector):
         return created, updated
 
     async def _sync_s3_buckets(self) -> tuple[int, int]:
-        """
-        Sync S3 buckets (S3 is global).
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+        """Sync S3 buckets (S3 is global)."""
         s3 = self._get_aws_client("s3", settings.aws_default_region)
         created = 0
         updated = 0
 
-        # Get or create AWS root organization
-        aws_org_id = await self._get_or_create_organization(
-            "AWS",
-            "Amazon Web Services",
-        )
+        aws_org_id = await self._get_or_create_organization("AWS", "Amazon Web Services")
 
         try:
             buckets = s3.list_buckets()
             for bucket in buckets.get("Buckets", []):
                 bucket_name = bucket["Name"]
+                bucket_arn = f"arn:aws:s3:::{bucket_name}"
 
-                # Get bucket location
                 try:
                     location = s3.get_bucket_location(Bucket=bucket_name)
                     region = location.get("LocationConstraint") or "us-east-1"
                 except Exception as e:
-                    self.logger.warning(
-                        "Failed to get bucket location",
-                        bucket=bucket_name,
-                        error=str(e),
-                    )
+                    self.logger.warning("Failed to get bucket location", bucket=bucket_name, error=str(e))
                     region = "unknown"
 
-                entity = Entity(
+                was_new = await self.elder_client.get_entity_by_external_id(
+                    bucket_arn, organization_id=aws_org_id
+                ) is None
+
+                await self._upsert_entity(Entity(
                     name=f"S3: {bucket_name}",
-                    entity_type="network",  # S3 is networked storage
+                    entity_type="network",
                     organization_id=aws_org_id,
                     description="AWS S3 bucket",
+                    external_id=bucket_arn,
                     attributes={
                         "bucket_name": bucket_name,
+                        "bucket_arn": bucket_arn,
                         "region": region,
                         "provider": "aws",
                         "service": "s3",
@@ -663,61 +530,25 @@ class AWSConnector(BaseConnector):
                         ),
                     },
                     tags=["aws", "s3", "storage", region],
-                )
+                ))
 
-                # Check if entity already exists
-                existing = await self.elder_client.list_entities(
-                    organization_id=aws_org_id,
-                    entity_type="network",
-                )
-
-                found = None
-                for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("bucket_name") == bucket_name:
-                        found = item
-                        break
-
-                if found:
-                    await self.elder_client.update_entity(found["id"], entity)
-                    updated += 1
-                else:
-                    await self.elder_client.create_entity(entity)
+                if was_new:
                     created += 1
+                else:
+                    updated += 1
 
         except ClientError as e:
             self.logger.error("Failed to sync S3 buckets", error=str(e))
 
         return created, updated
 
-    async def _sync_lambda_functions(
-        self, region: str, region_org_id: int
-    ) -> tuple[int, int]:
-        """
-        Sync AWS Lambda functions for a region.
-
-        Args:
-            region: AWS region
-            region_org_id: Elder organization ID for this region
-
-        Returns:
-            Tuple of (created_count, updated_count)
-        """
+    async def _sync_lambda_functions(self, region: str, region_org_id: int) -> tuple[int, int]:
+        """Sync AWS Lambda functions for a region."""
         lambda_client = self._get_aws_client("lambda", region)
         created = 0
         updated = 0
 
         try:
-            # Fetch all existing compute entities once and build an index by function_arn
-            existing_response = await self.elder_client.list_entities(
-                organization_id=region_org_id,
-                entity_type="compute",
-            )
-            existing_entities_by_arn = {
-                item.get("attributes", {}).get("function_arn"): item
-                for item in existing_response.get("items", [])
-                if item.get("attributes", {}).get("function_arn")
-            }
-
             paginator = lambda_client.get_paginator("list_functions")
 
             for page in paginator.paginate():
@@ -726,8 +557,7 @@ class AWSConnector(BaseConnector):
                     function_name = func.get("FunctionName")
                     state = func.get("State", "Active")
 
-                    # Build attributes with Lambda metadata
-                    attributes = {
+                    attributes: Dict[str, Any] = {
                         "function_arn": function_arn,
                         "function_name": function_name,
                         "runtime": func.get("Runtime"),
@@ -744,96 +574,142 @@ class AWSConnector(BaseConnector):
                         "service": "lambda",
                     }
 
-                    # Add VPC config if present
                     vpc_config = func.get("VpcConfig", {})
                     if vpc_config.get("VpcId"):
                         attributes["vpc_config"] = {
                             "vpc_id": vpc_config.get("VpcId"),
                             "subnet_ids": vpc_config.get("SubnetIds", []),
-                            "security_group_ids": vpc_config.get(
-                                "SecurityGroupIds", []
-                            ),
+                            "security_group_ids": vpc_config.get("SecurityGroupIds", []),
                         }
 
-                    # Store environment variable keys only (not values for security)
                     env_vars = func.get("Environment", {}).get("Variables", {})
                     if env_vars:
                         attributes["environment_variable_keys"] = list(env_vars.keys())
 
-                    # Add layer ARNs
                     layers = func.get("Layers", [])
                     if layers:
                         attributes["layers"] = [layer.get("Arn") for layer in layers]
 
-                    # Add ephemeral storage size
                     ephemeral = func.get("EphemeralStorage", {})
                     if ephemeral.get("Size"):
                         attributes["ephemeral_storage_mb"] = ephemeral.get("Size")
 
-                    status_metadata = {
-                        "status": state.capitalize(),
-                        "timestamp": int(time.time()),
-                    }
+                    was_new = await self.elder_client.get_entity_by_external_id(
+                        function_arn, organization_id=region_org_id
+                    ) is None
 
-                    entity = Entity(
+                    entity_id = await self._upsert_entity(Entity(
                         name=f"Lambda: {function_name}",
                         entity_type="compute",
                         sub_type="serverless",
                         organization_id=region_org_id,
-                        description=(
-                            func.get("Description")
-                            or f"AWS Lambda function in {region}"
-                        ),
+                        description=(func.get("Description") or f"AWS Lambda function in {region}"),
+                        external_id=function_arn,
                         attributes=attributes,
-                        status_metadata=status_metadata,
+                        status_metadata={"status": state.capitalize(), "timestamp": int(time.time())},
                         tags=["aws", "lambda", "serverless", region],
-                    )
+                    ))
 
-                    # Check if entity already exists using the indexed lookup
-                    found = existing_entities_by_arn.get(function_arn)
+                    # Wire dependencies: Lambda → VPC, security groups, IAM role
+                    if vpc_config.get("VpcId"):
+                        await self._link(entity_id, vpc_config["VpcId"], "in_vpc")
+                    for sg_id in vpc_config.get("SecurityGroupIds", []):
+                        await self._link(entity_id, sg_id, "uses_sg")
+                    if func.get("Role"):
+                        await self._link(entity_id, func["Role"], "assumes_role")
 
-                    if found:
-                        await self.elder_client.update_entity(found["id"], entity)
-                        updated += 1
-                    else:
-                        await self.elder_client.create_entity(entity)
+                    if was_new:
                         created += 1
+                    else:
+                        updated += 1
 
         except ClientError as e:
-            self.logger.error(
-                "Failed to sync Lambda functions", region=region, error=str(e)
-            )
+            self.logger.error("Failed to sync Lambda functions", region=region, error=str(e))
+
+        return created, updated
+
+    async def _sync_iam_identities(self) -> tuple[int, int]:
+        """
+        Sync IAM users and roles as Elder identities.
+
+        IAM users → identity_type "human" (service users in practice)
+        IAM roles → identity_type "service_account"
+        """
+        iam = self._get_aws_client("iam", settings.aws_default_region)
+        created = 0
+        updated = 0
+
+        # Sync IAM users
+        try:
+            paginator = iam.get_paginator("list_users")
+            for page in paginator.paginate():
+                for user in page.get("Users", []):
+                    arn = user["Arn"]
+                    username = user["UserName"]
+                    result = await self.elder_client.get_or_create_identity(
+                        Identity(
+                            username=f"aws:{username}",
+                            identity_type="service_account",
+                            auth_provider="aws",
+                            auth_provider_id=arn,
+                            full_name=username,
+                            is_active=True,
+                        )
+                    )
+                    # get_or_create returns existing or newly created; track via presence of created_at
+                    if result.get("id"):
+                        created += 1
+        except ClientError as e:
+            self.logger.error("Failed to sync IAM users", error=str(e))
+
+        # Sync IAM roles
+        try:
+            paginator = iam.get_paginator("list_roles")
+            for page in paginator.paginate():
+                for role in page.get("Roles", []):
+                    arn = role["Arn"]
+                    role_name = role["RoleName"]
+                    result = await self.elder_client.get_or_create_identity(
+                        Identity(
+                            username=f"aws-role:{role_name}",
+                            identity_type="service_account",
+                            auth_provider="aws",
+                            auth_provider_id=arn,
+                            full_name=f"IAM Role: {role_name}",
+                            is_active=True,
+                        )
+                    )
+                    if result.get("id"):
+                        # Store in cache so Lambda/EC2 dependency links can use role ARN
+                        self._entity_id_cache[arn] = result["id"]
+                        created += 1
+        except ClientError as e:
+            self.logger.error("Failed to sync IAM roles", error=str(e))
 
         return created, updated
 
     async def sync(self) -> SyncResult:
-        """
-        Synchronize AWS resources to Elder.
-
-        Returns:
-            SyncResult with statistics
-        """
+        """Synchronize AWS resources to Elder."""
         result = SyncResult(connector_name=self.name)
         self.logger.info("Starting AWS sync")
+        self._entity_id_cache.clear()
 
         try:
-            # Create AWS root organization
-            aws_org_id = await self._get_or_create_organization(
-                "AWS",
-                "Amazon Web Services",
-            )
+            aws_org_id = await self._get_or_create_organization("AWS", "Amazon Web Services")
             result.organizations_created += 1
 
-            # Sync S3 buckets (global)
+            # IAM identities first so role ARNs are in cache for dependency wiring
+            iam_created, _ = await self._sync_iam_identities()
+            result.entities_created += iam_created
+
+            # S3 (global)
             s3_created, s3_updated = await self._sync_s3_buckets()
             result.entities_created += s3_created
             result.entities_updated += s3_updated
 
-            # Sync per-region resources
             for region in settings.aws_regions_list:
                 self.logger.info("Syncing AWS region", region=region)
 
-                # Create region organization
                 region_org_id = await self._get_or_create_organization(
                     f"AWS {region}",
                     f"AWS region {region}",
@@ -841,43 +717,27 @@ class AWSConnector(BaseConnector):
                 )
                 result.organizations_created += 1
 
-                # Sync VPCs
                 vpc_created, vpc_updated = await self._sync_vpcs(region, region_org_id)
                 result.entities_created += vpc_created
                 result.entities_updated += vpc_updated
 
-                # Sync EC2 instances
-                ec2_created, ec2_updated = await self._sync_ec2_instances(
-                    region, region_org_id
-                )
+                ec2_created, ec2_updated = await self._sync_ec2_instances(region, region_org_id)
                 result.entities_created += ec2_created
                 result.entities_updated += ec2_updated
 
-                # Sync RDS instances (v1.2.1)
-                rds_created, rds_updated = await self._sync_rds_instances(
-                    region, region_org_id
-                )
+                rds_created, rds_updated = await self._sync_rds_instances(region, region_org_id)
                 result.entities_created += rds_created
                 result.entities_updated += rds_updated
 
-                # Sync ElastiCache clusters (v1.2.1)
-                cache_created, cache_updated = await self._sync_elasticache_clusters(
-                    region, region_org_id
-                )
+                cache_created, cache_updated = await self._sync_elasticache_clusters(region, region_org_id)
                 result.entities_created += cache_created
                 result.entities_updated += cache_updated
 
-                # Sync SQS queues (v1.2.1)
-                sqs_created, sqs_updated = await self._sync_sqs_queues(
-                    region, region_org_id
-                )
+                sqs_created, sqs_updated = await self._sync_sqs_queues(region, region_org_id)
                 result.entities_created += sqs_created
                 result.entities_updated += sqs_updated
 
-                # Sync Lambda functions (v3.0.2)
-                lambda_created, lambda_updated = await self._sync_lambda_functions(
-                    region, region_org_id
-                )
+                lambda_created, lambda_updated = await self._sync_lambda_functions(region, region_org_id)
                 result.entities_created += lambda_created
                 result.entities_updated += lambda_updated
 

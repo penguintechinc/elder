@@ -267,7 +267,7 @@ class VCenterConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("vcenter_host_id") == str(
+                    if item.get("metadata", {}).get("vcenter_host_id") == str(
                         host._moId
                     ):
                         found = item
@@ -360,7 +360,7 @@ class VCenterConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("vcenter_vm_id") == str(vm._moId):
+                    if item.get("metadata", {}).get("vcenter_vm_id") == str(vm._moId):
                         found = item
                         break
 
@@ -422,7 +422,7 @@ class VCenterConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("vcenter_datastore_id") == str(
+                    if item.get("metadata", {}).get("vcenter_datastore_id") == str(
                         ds._moId
                     ):
                         found = item
@@ -486,7 +486,7 @@ class VCenterConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("vcenter_network_id") == str(
+                    if item.get("metadata", {}).get("vcenter_network_id") == str(
                         net._moId
                     ):
                         found = item

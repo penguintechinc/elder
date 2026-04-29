@@ -321,7 +321,7 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("ldap_dn") == dn:
+                    if item.get("metadata", {}).get("ldap_dn") == dn:
                         found = item
                         break
 
@@ -404,7 +404,7 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if attrs.get("ldap_dn") == dn and attrs.get("type") == "group":
                         found = item
                         break

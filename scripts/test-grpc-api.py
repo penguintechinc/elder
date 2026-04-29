@@ -9,7 +9,11 @@ import os
 import sys
 from typing import List, Optional
 
-import grpc
+try:
+    import grpc
+except ImportError:
+    print("ERROR: grpcio not installed. Run: pip3 install grpcio grpcio-tools")
+    sys.exit(2)
 
 # Color codes for output
 RED = '\033[0;31m'

@@ -70,7 +70,7 @@ async def list_api_keys():
             db.api_keys.id,
             db.api_keys.identity_id,
             db.api_keys.name,
-            db.api_keys.key_prefix,
+            db.api_keys.prefix,
             db.api_keys.key_hash,
             db.api_keys.scopes,
             db.api_keys.last_used_at,
