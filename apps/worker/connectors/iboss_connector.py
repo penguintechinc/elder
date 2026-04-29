@@ -179,9 +179,7 @@ class IBossConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("metadata", {}).get("iboss_user_id") == user.get(
-                        "id"
-                    ):
+                    if item.get("metadata", {}).get("iboss_user_id") == user.get("id"):
                         found = item
                         break
 

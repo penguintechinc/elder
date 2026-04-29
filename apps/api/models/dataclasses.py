@@ -1085,7 +1085,11 @@ def from_pydal_row(row, dto_class):
     if _dc.is_dataclass(dto_class):
         allowed = {f.name for f in _dc.fields(dto_class)}
         # EntityDTO uses entity_type but DB column is named type
-        if dto_class is EntityDTO and "type" in row_dict and "entity_type" not in row_dict:
+        if (
+            dto_class is EntityDTO
+            and "type" in row_dict
+            and "entity_type" not in row_dict
+        ):
             row_dict["entity_type"] = row_dict.pop("type")
         row_dict = {k: v for k, v in row_dict.items() if k in allowed}
     return dto_class(**row_dict)
@@ -1103,6 +1107,8 @@ def from_pydal_rows(rows, dto_class) -> list:
             row_dict = row.as_dict()
             if is_entity and "type" in row_dict and "entity_type" not in row_dict:
                 row_dict["entity_type"] = row_dict.pop("type")
-            result.append(dto_class(**{k: v for k, v in row_dict.items() if k in allowed}))
+            result.append(
+                dto_class(**{k: v for k, v in row_dict.items() if k in allowed})
+            )
         return result
     return [dto_class(**row.as_dict()) for row in rows]

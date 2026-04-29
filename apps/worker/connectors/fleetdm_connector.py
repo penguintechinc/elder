@@ -239,9 +239,9 @@ class FleetDMConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        if item.get("metadata", {}).get(
-                            "fleetdm_host_id"
-                        ) == host.get("id"):
+                        if item.get("metadata", {}).get("fleetdm_host_id") == host.get(
+                            "id"
+                        ):
                             found = item
                             break
 
@@ -581,9 +581,9 @@ class FleetDMConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("metadata", {}).get(
-                        "fleetdm_policy_id"
-                    ) == policy.get("id"):
+                    if item.get("metadata", {}).get("fleetdm_policy_id") == policy.get(
+                        "id"
+                    ):
                         found = item
                         break
 
