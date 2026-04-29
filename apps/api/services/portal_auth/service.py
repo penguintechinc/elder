@@ -122,7 +122,9 @@ class PortalAuthService:
             else:
                 # Unlock account
                 current_app.db(current_app.db.portal_users.id == user.id).update(
-                    locked_until=None, failed_login_attempts=0
+                    locked_until=None,
+                    failed_login_attempts=0,
+                    updated_at=datetime.datetime.now(datetime.timezone.utc),
                 )
                 current_app.db.commit()
 
@@ -143,6 +145,7 @@ class PortalAuthService:
                     minutes=PortalAuthService.LOCKOUT_DURATION_MINUTES
                 )
 
+            updates["updated_at"] = datetime.datetime.now(datetime.timezone.utc)
             current_app.db(current_app.db.portal_users.id == user.id).update(**updates)
             current_app.db.commit()
             return {"error": "Invalid credentials"}
@@ -151,6 +154,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             failed_login_attempts=0,
             last_login_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.timezone.utc),
         )
         current_app.db.commit()
 
@@ -226,6 +230,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=secret,
             mfa_backup_codes=backup_codes,
+            updated_at=datetime.datetime.now(datetime.timezone.utc),
         )
         current_app.db.commit()
 
@@ -254,7 +259,9 @@ class PortalAuthService:
             return {"error": "User not found"}
 
         current_app.db(current_app.db.portal_users.id == user.id).update(
-            mfa_secret=None, mfa_backup_codes=None
+            mfa_secret=None,
+            mfa_backup_codes=None,
+            updated_at=datetime.datetime.now(datetime.timezone.utc),
         )
         current_app.db.commit()
 
@@ -290,6 +297,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             password_hash=generate_password_hash(new_password),
             password_changed_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.timezone.utc),
         )
         current_app.db.commit()
 

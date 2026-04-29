@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.3] - 2026-04-29
+
+### 🐛 Bug Fixes
+
+#### AWS IAM Identity Sync Crash — `InvalidTextRepresentation` on `auth_provider` (Issue #112)
+- **Fixed**: AWS connector sync aborted immediately with a PostgreSQL `InvalidTextRepresentation` error because `"aws"` was not a valid value in the `authprovider` enum type
+- **Root cause 1**: `AuthProvider` enum in `apps/api/models/identity.py` was missing `AWS = "aws"`
+- **Root cause 2**: Both `auth_provider` and `identity_type` SQLAlchemy `Enum()` columns were missing `values_callable=lambda e: [x.value for x in e]` — without it SQLAlchemy stores the Python enum member *name* (uppercase: `LOCAL`, `HUMAN`) rather than the member *value* (lowercase: `local`, `human`)
+- **Solution**: Added `AWS = "aws"` to `AuthProvider`; added `values_callable` to both columns; fixed `shared/database/__init__.py` admin seed to use `"local"`/`"human"` instead of `"LOCAL"`/`"HUMAN"`
+- **Migration**: Alembic migration 014 converts any existing PostgreSQL enum columns to `VARCHAR(50)` and normalises stored values to lowercase via `LOWER()`
+- **Regression tests**: `TestEnumValues` class in `tests/unit/test_aws_connector.py`
+
+### ✨ Improvements
+
+#### Docker Desktop Alpha Smoke Tests
+- Platform flag is now conditional — Apple Silicon macs no longer force `--platform linux/amd64` QEMU emulation for local alpha builds
+
+#### react-libs 1.3.4 / Public npm Migration
+- Removed GitHub Packages registry requirement; `@penguintechinc/react-libs` is now fetched from public npmjs.com
+- Removed `web/.npmrc` auth token and `web/Dockerfile` `GITHUB_TOKEN` build arg
+- Updated Playwright selectors for react-libs 1.3.4 sidebar DOM change
+
+---
+
+## [3.2.2] - 2026-04-18
+
+### 🐛 Bug Fixes
+- **K8s /tmp emptyDir Mounts**: Added emptyDir volumes for `/tmp` in all pod specs — fixes write failures in read-only root filesystem containers
+- **API 500 Errors**: Resolved 500 errors from alpha smoke tests (gRPC converter datetime handling, `EntityDTO` dataclass mapping)
+
+### ✨ Improvements
+- **AWS Connector**: Dedup via `external_id` lookup, dependency linking for EC2/Lambda/RDS, IAM identity sync groundwork
+- **Cilium HTTPRoute**: Wired Cilium Gateway API HTTPRoute template for beta ingress migration
+- **CI Pin Updates**: Bumped CI dependency pins to v3.2.2
+
+---
+
 ## [3.1.5] - 2026-03-25
 
 ### 🐛 Bug Fixes

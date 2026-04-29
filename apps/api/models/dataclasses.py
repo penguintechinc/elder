@@ -36,6 +36,8 @@ class OrganizationDTO:
     settings: Optional[dict] = None
     tags: Optional[list] = None
     metadata: Optional[dict] = None
+    ldap_dn: Optional[str] = None
+    saml_group: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -81,20 +83,23 @@ class EntityDTO:
 
     id: int
     name: str
-    type: str
+    entity_type: str
     organization_id: Optional[int] = None
     parent_id: Optional[int] = None
+    description: Optional[str] = None
     sub_type: Optional[str] = None
     external_id: Optional[str] = None
     cloud_provider: Optional[str] = None
     region: Optional[str] = None
     status: Optional[str] = None
     is_managed: bool = False
+    attributes: Optional[dict] = None
     tags: Optional[list] = None
     metadata: Optional[dict] = None
     last_seen_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    village_id: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -171,19 +176,23 @@ class IdentityDTO:
     id: int
     username: str
     email: Optional[str]
-    type: str  # identity type
+    identity_type: str
     created_at: datetime
     updated_at: datetime
     tenant_id: Optional[int] = None
-    external_id: Optional[str] = None
-    provider: Optional[str] = None
-    name: Optional[str] = None
+    full_name: Optional[str] = None
     display_name: Optional[str] = None
+    organization_id: Optional[int] = None
+    portal_role: Optional[str] = None
+    auth_provider: Optional[str] = None
+    auth_provider_id: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool = True
+    is_superuser: bool = False
     is_service_account: bool = False
+    mfa_enabled: bool = False
     metadata: Optional[dict] = None
-    last_seen_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
 
 
 @dataclass(slots=True)
@@ -531,7 +540,6 @@ class APIKeyDTO:
     created_at: datetime
     updated_at: datetime
     key_hash: Optional[str] = None
-    scopes: Optional[str] = None
     last_used_at: Optional[datetime] = None
     expires_at: Optional[datetime] = None
     is_active: bool = True
@@ -1068,16 +1076,33 @@ def to_dict(obj) -> dict:
 
 
 def from_pydal_row(row, dto_class):
-    """Convert PyDAL Row to dataclass DTO."""
+    """Convert PyDAL Row to dataclass DTO, ignoring unknown fields."""
     if row is None:
         return None
     row_dict = row.as_dict()
+    import dataclasses as _dc
+
+    if _dc.is_dataclass(dto_class):
+        allowed = {f.name for f in _dc.fields(dto_class)}
+        # EntityDTO uses entity_type but DB column is named type
+        if dto_class is EntityDTO and "type" in row_dict and "entity_type" not in row_dict:
+            row_dict["entity_type"] = row_dict.pop("type")
+        row_dict = {k: v for k, v in row_dict.items() if k in allowed}
     return dto_class(**row_dict)
 
 
 def from_pydal_rows(rows, dto_class) -> list:
-    """Convert PyDAL Rows to list of dataclass DTOs."""
-    result = []
-    for row in rows:
-        result.append(dto_class(**row.as_dict()))
-    return result
+    """Convert PyDAL Rows to list of dataclass DTOs, ignoring unknown fields."""
+    import dataclasses as _dc
+
+    if _dc.is_dataclass(dto_class):
+        allowed = {f.name for f in _dc.fields(dto_class)}
+        is_entity = dto_class is EntityDTO
+        result = []
+        for row in rows:
+            row_dict = row.as_dict()
+            if is_entity and "type" in row_dict and "entity_type" not in row_dict:
+                row_dict["entity_type"] = row_dict.pop("type")
+            result.append(dto_class(**{k: v for k, v in row_dict.items() if k in allowed}))
+        return result
+    return [dto_class(**row.as_dict()) for row in rows]

@@ -15,17 +15,26 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from apps.worker.connectors.aws_connector import AWSConnector
 from apps.worker.utils.elder_client import Entity
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
 def _make_vpc(vpc_id: str = "vpc-abc123") -> dict:
-    return {"VpcId": vpc_id, "CidrBlock": "10.0.0.0/16", "State": "available", "Tags": [], "IsDefault": False}
+    return {
+        "VpcId": vpc_id,
+        "CidrBlock": "10.0.0.0/16",
+        "State": "available",
+        "Tags": [],
+        "IsDefault": False,
+    }
 
 
-def _make_instance(instance_id: str = "i-abc123", vpc_id: str = "vpc-abc123", subnet_id: str = "subnet-abc") -> dict:
+def _make_instance(
+    instance_id: str = "i-abc123",
+    vpc_id: str = "vpc-abc123",
+    subnet_id: str = "subnet-abc",
+) -> dict:
     return {
         "InstanceId": instance_id,
         "InstanceType": "t3.micro",
@@ -63,20 +72,30 @@ class TestDedupUsesMetadata:
     @pytest.mark.asyncio
     async def test_existing_entity_returned_via_external_id(self, connector):
         """get_entity_by_external_id returning a result means update, not create."""
-        existing = {"id": 42, "name": "VPC: vpc-abc123", "metadata": {"vpc_id": "vpc-abc123"}}
-        connector.elder_client.get_entity_by_external_id = AsyncMock(return_value=existing)
+        existing = {
+            "id": 42,
+            "name": "VPC: vpc-abc123",
+            "metadata": {"vpc_id": "vpc-abc123"},
+        }
+        connector.elder_client.get_entity_by_external_id = AsyncMock(
+            return_value=existing
+        )
         connector.elder_client.update_entity = AsyncMock(return_value=existing)
         connector.elder_client.create_entity = AsyncMock()
 
-        entity_id = await connector._upsert_entity(Entity(
-            name="VPC: vpc-abc123",
-            entity_type="vpc",
-            organization_id=2,
-            external_id="vpc-abc123",
-            attributes={"vpc_id": "vpc-abc123"},
-        ))
+        entity_id = await connector._upsert_entity(
+            Entity(
+                name="VPC: vpc-abc123",
+                entity_type="vpc",
+                organization_id=2,
+                external_id="vpc-abc123",
+                attributes={"vpc_id": "vpc-abc123"},
+            )
+        )
 
-        connector.elder_client.update_entity.assert_awaited_once_with(42, connector.elder_client.update_entity.call_args[0][1])
+        connector.elder_client.update_entity.assert_awaited_once_with(
+            42, connector.elder_client.update_entity.call_args[0][1]
+        )
         connector.elder_client.create_entity.assert_not_awaited()
         assert entity_id == 42
 
@@ -87,13 +106,15 @@ class TestDedupUsesMetadata:
         connector.elder_client.create_entity = AsyncMock(return_value={"id": 99})
         connector.elder_client.update_entity = AsyncMock()
 
-        entity_id = await connector._upsert_entity(Entity(
-            name="VPC: vpc-new",
-            entity_type="vpc",
-            organization_id=2,
-            external_id="vpc-new",
-            attributes={"vpc_id": "vpc-new"},
-        ))
+        entity_id = await connector._upsert_entity(
+            Entity(
+                name="VPC: vpc-new",
+                entity_type="vpc",
+                organization_id=2,
+                external_id="vpc-new",
+                attributes={"vpc_id": "vpc-new"},
+            )
+        )
 
         connector.elder_client.create_entity.assert_awaited_once()
         connector.elder_client.update_entity.assert_not_awaited()
@@ -106,29 +127,45 @@ class TestDedupUsesMetadata:
         After the first pass the entity exists; the second pass must update it,
         not create a duplicate. This is the core gh-109 regression scenario.
         """
-        existing = {"id": 77, "name": "VPC: vpc-abc123", "metadata": {"vpc_id": "vpc-abc123"}}
+        existing = {
+            "id": 77,
+            "name": "VPC: vpc-abc123",
+            "metadata": {"vpc_id": "vpc-abc123"},
+        }
 
         # Pass 1: entity does not exist yet
         connector.elder_client.get_entity_by_external_id = AsyncMock(return_value=None)
         connector.elder_client.create_entity = AsyncMock(return_value={"id": 77})
         connector.elder_client.update_entity = AsyncMock(return_value=existing)
 
-        await connector._upsert_entity(Entity(
-            name="VPC: vpc-abc123", entity_type="vpc", organization_id=2,
-            external_id="vpc-abc123", attributes={"vpc_id": "vpc-abc123"},
-        ))
+        await connector._upsert_entity(
+            Entity(
+                name="VPC: vpc-abc123",
+                entity_type="vpc",
+                organization_id=2,
+                external_id="vpc-abc123",
+                attributes={"vpc_id": "vpc-abc123"},
+            )
+        )
         assert connector.elder_client.create_entity.await_count == 1
         assert connector.elder_client.update_entity.await_count == 0
 
         # Pass 2: entity now exists (simulate next sync cycle)
-        connector.elder_client.get_entity_by_external_id = AsyncMock(return_value=existing)
+        connector.elder_client.get_entity_by_external_id = AsyncMock(
+            return_value=existing
+        )
         connector.elder_client.create_entity.reset_mock()
         connector.elder_client.update_entity.reset_mock()
 
-        await connector._upsert_entity(Entity(
-            name="VPC: vpc-abc123", entity_type="vpc", organization_id=2,
-            external_id="vpc-abc123", attributes={"vpc_id": "vpc-abc123"},
-        ))
+        await connector._upsert_entity(
+            Entity(
+                name="VPC: vpc-abc123",
+                entity_type="vpc",
+                organization_id=2,
+                external_id="vpc-abc123",
+                attributes={"vpc_id": "vpc-abc123"},
+            )
+        )
         assert connector.elder_client.create_entity.await_count == 0
         assert connector.elder_client.update_entity.await_count == 1
 
@@ -175,7 +212,11 @@ class TestDependenciesCreated:
             call.args[1:]  # skip source_entity_id, extract (target_id, dep_type)
             for call in connector.elder_client.get_or_create_dependency.call_args_list
         ]
-        dep_types = {kwargs["dependency_type"] for call in connector.elder_client.get_or_create_dependency.call_args_list for kwargs in [call.kwargs]}
+        dep_types = {
+            kwargs["dependency_type"]
+            for call in connector.elder_client.get_or_create_dependency.call_args_list
+            for kwargs in [call.kwargs]
+        }
         assert "in_vpc" in dep_types, "EC2 must create in_vpc dependency"
         assert "in_subnet" in dep_types, "EC2 must create in_subnet dependency"
         assert "uses_sg" in dep_types, "EC2 must create uses_sg dependency"
@@ -269,7 +310,9 @@ class TestIAMIdentitiesSync:
             {"Arn": "arn:aws:iam::123:user/alice", "UserName": "alice"},
             {"Arn": "arn:aws:iam::123:user/bob", "UserName": "bob"},
         ]
-        connector.elder_client.get_or_create_identity = AsyncMock(return_value={"id": 1})
+        connector.elder_client.get_or_create_identity = AsyncMock(
+            return_value={"id": 1}
+        )
 
         mock_iam = MagicMock()
         user_paginator = MagicMock()
@@ -293,7 +336,9 @@ class TestIAMIdentitiesSync:
         """IAM roles must be synced and their ARNs stored in the entity_id_cache."""
         role_arn = "arn:aws:iam::123:role/my-role"
         roles = [{"Arn": role_arn, "RoleName": "my-role"}]
-        connector.elder_client.get_or_create_identity = AsyncMock(return_value={"id": 55})
+        connector.elder_client.get_or_create_identity = AsyncMock(
+            return_value={"id": 55}
+        )
 
         mock_iam = MagicMock()
         user_paginator = MagicMock()
@@ -306,7 +351,57 @@ class TestIAMIdentitiesSync:
         connector.aws_clients["iam:us-east-1"] = mock_iam
         await connector._sync_iam_identities()
 
-        assert role_arn in connector._entity_id_cache, (
-            "Role ARN must be in entity_id_cache so Lambda/EC2 can wire assumes_role deps"
-        )
+        assert (
+            role_arn in connector._entity_id_cache
+        ), "Role ARN must be in entity_id_cache so Lambda/EC2 can wire assumes_role deps"
         assert connector._entity_id_cache[role_arn] == 55
+
+
+# ---------------------------------------------------------------------------
+# regression: gh-112 — enum values must be lowercase, not uppercase names
+# ---------------------------------------------------------------------------
+
+
+class TestEnumValues:
+    """
+    Regression: gh-112
+    AuthProvider and IdentityType enums must store lowercase values in the DB,
+    not uppercase enum member names. This ensures SQLAlchemy Enum columns use
+    values_callable to extract .value (not .name).
+
+    Also ensures AuthProvider.AWS exists (required for AWS identity syncs).
+    """
+
+    def test_authprovider_has_aws_member(self):
+        """regression: gh-112 — AuthProvider.AWS = 'aws' must exist."""
+        from apps.api.models.identity import AuthProvider
+
+        assert hasattr(AuthProvider, "AWS"), "AuthProvider must have AWS member"
+        assert (
+            AuthProvider.AWS.value == "aws"
+        ), "AuthProvider.AWS value must be lowercase 'aws'"
+
+    def test_authprovider_all_values_lowercase(self):
+        """regression: gh-112 — All AuthProvider values must be lowercase."""
+        from apps.api.models.identity import AuthProvider
+
+        for member in AuthProvider:
+            assert (
+                member.value == member.value.lower()
+            ), f"AuthProvider.{member.name} value '{member.value}' must be lowercase"
+
+    def test_identitytype_values_not_member_names(self):
+        """regression: gh-112 — IdentityType values must be lowercase strings, not uppercase member names."""
+        from apps.api.models.identity import IdentityType
+
+        for member in IdentityType:
+            # Values must never equal the uppercase Python enum name (which is what happens
+            # when values_callable is missing and SQLAlchemy stores .name instead of .value)
+            assert member.value != member.name, (
+                f"IdentityType.{member.name} value must not equal the enum name — "
+                f"add values_callable to the Enum() column definition"
+            )
+            # Values must start with a lowercase letter (not uppercase like "HUMAN")
+            assert member.value[
+                0
+            ].islower(), f"IdentityType.{member.name} value '{member.value}' must start with lowercase"

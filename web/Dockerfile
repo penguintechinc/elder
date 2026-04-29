@@ -1,20 +1,11 @@
 # Build stage
 FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS builder
 
-# GitHub token for private package access — declared early so validation
-# runs before any expensive steps, but DOES NOT bust the npm install cache
-ARG GITHUB_TOKEN
-RUN test -n "$GITHUB_TOKEN" || (echo "ERROR: GITHUB_TOKEN build arg is required" && exit 1)
-
 WORKDIR /app
 
 # Copy lockfile + package.json + .npmrc first so npm ci is cached independently
 # of source changes and build-time vars (VITE_VERSION, VITE_BUILD_TIME)
 COPY web/package.json web/package-lock.json web/.npmrc ./
-
-# Configure npm authentication for GitHub Packages
-# Token is passed as build arg and not persisted in image layers
-RUN echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> .npmrc
 
 # Install dependencies — this layer is cached as long as package-lock.json
 # and the token haven't changed.

@@ -478,9 +478,6 @@ def _create_audit_log_sync(
     ip_address = request.remote_addr
     user_agent = request.headers.get("User-Agent", "")[:512]
 
-    # Convert boolean to string for PyDAL
-    success_str = "true" if success else "false"
-
     now = datetime.now(timezone.utc)
     db.audit_logs.insert(
         identity_id=identity_id,
@@ -490,8 +487,7 @@ def _create_audit_log_sync(
         details=changes,  # PyDAL uses 'details' not 'changes'
         ip_address=ip_address,
         user_agent=user_agent,
-        success=success_str,
+        success=success,
         created_at=now,
-        updated_at=now,
     )
     db.commit()

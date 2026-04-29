@@ -762,7 +762,7 @@ test.describe('Version validation', () => {
     });
 
     await page.goto('/login', { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle').catch(() => {
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {
       // Timeout is ok
     });
 
@@ -774,21 +774,23 @@ test.describe('Version validation', () => {
       // Try the root/dashboard page which definitely loads AppConsoleVersion
       consoleLogs.length = 0;
       await page.goto('/', { waitUntil: 'domcontentloaded' });
-      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
     }
 
     const finalLogs = consoleLogs.join('\n');
 
     // Check the /api/v1/status endpoint directly for a non-zero version
-    const statusResponse = await page.evaluate(async () => {
-      try {
-        const res = await fetch('/api/v1/status');
-        if (!res.ok) return null;
-        return await res.json();
-      } catch {
-        return null;
-      }
-    });
+    const apiBase = process.env.PLAYWRIGHT_API_URL || process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3005';
+    const ctx2 = await playwrightRequest.newContext({ baseURL: apiBase, ignoreHTTPSErrors: true });
+    let statusResponse: Record<string, string> | null = null;
+    try {
+      const statusRes = await ctx2.get('/api/v1/status');
+      if (statusRes.ok()) statusResponse = await statusRes.json();
+    } catch {
+      // endpoint not available
+    } finally {
+      await ctx2.dispose();
+    }
 
     if (statusResponse !== null) {
       const version = statusResponse.version || statusResponse.api_version || '';
@@ -1011,22 +1013,23 @@ test.describe('Sidebar CSS — react-libs @source regression (gh-75)', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
-    // SidebarMenu from react-libs renders a <nav> element with fixed positioning
-    const sidebar = page.locator('nav').first();
-    await expect(sidebar, 'Sidebar <nav> must be visible — CSS may be missing').toBeVisible();
+    // SidebarMenu from react-libs renders a fixed container div with <nav> inside
+    const sidebarContainer = page.locator('div[class*="fixed"][class*="left-0"]').first();
+    const nav = page.locator('nav').first();
+    await expect(nav, 'Sidebar <nav> must be visible — CSS may be missing').toBeVisible();
 
     // If Tailwind classes are missing, computed styles will be browser defaults
     // (position: static, left: auto) instead of the react-libs values
-    const position = await sidebar.evaluate((el) => window.getComputedStyle(el).position);
+    const position = await sidebarContainer.evaluate((el) => window.getComputedStyle(el).position);
     expect(
       position,
-      `Sidebar position is "${position}" instead of "fixed" — left-sidebar CSS classes are missing from the bundle`
+      `Sidebar container position is "${position}" instead of "fixed" — fixed positioning classes are missing from the bundle`
     ).toBe('fixed');
 
-    const left = await sidebar.evaluate((el) => window.getComputedStyle(el).left);
+    const left = await sidebarContainer.evaluate((el) => window.getComputedStyle(el).left);
     expect(
       left,
-      `Sidebar left is "${left}" instead of "0px" — left-0 class is missing from the bundle`
+      `Sidebar container left is "${left}" instead of "0px" — left-0 class is missing from the bundle`
     ).toBe('0px');
   });
 
@@ -1037,10 +1040,10 @@ test.describe('Sidebar CSS — react-libs @source regression (gh-75)', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
-    const sidebar = page.locator('nav').first();
-    await expect(sidebar).toBeVisible();
+    const sidebarContainer = page.locator('div[class*="fixed"][class*="left-0"]').first();
+    await expect(sidebarContainer).toBeVisible();
 
-    const box = await sidebar.boundingBox();
+    const box = await sidebarContainer.boundingBox();
     if (box) {
       // w-64 = 16rem; at default 16px base = 256px. Allow ±4px for sub-pixel rendering.
       expect(

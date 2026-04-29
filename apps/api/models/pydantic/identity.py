@@ -14,7 +14,7 @@ from pydantic import BaseModel, SecretStr, model_validator
 # ==================== Type Definitions ====================
 
 IdentityType = Literal["human", "service_account"]
-AuthProvider = Literal["local", "ldap", "saml", "oauth2", "api_key"]
+AuthProvider = Literal["local", "ldap", "saml", "oauth2", "api_key", "aws"]
 PortalRole = Literal["admin", "editor", "viewer"]
 
 
