@@ -3,7 +3,7 @@
 [![Continuous Integration](https://github.com/penguintechinc/elder/actions/workflows/ci.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/ci.yml)
 [![Docker Build](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml/badge.svg)](https://github.com/penguintechinc/elder/actions/workflows/docker-build.yml)
 [![Test Coverage](https://codecov.io/gh/penguintechinc/elder/branch/main/graph/badge.svg)](https://codecov.io/gh/penguintechinc/elder)
-[![Version](https://img.shields.io/badge/version-3.1.5-green.svg)](https://github.com/penguintechinc/elder/releases)
+[![Version](https://img.shields.io/badge/version-3.2.3-green.svg)](https://github.com/penguintechinc/elder/releases)
 [![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![Node.js](https://img.shields.io/badge/node.js-18+-green.svg)](https://nodejs.org/)
 [![License: Limited AGPL v3](https://img.shields.io/badge/License-Limited_AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)*
@@ -239,59 +239,17 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
 
-### v3.1.5 Highlights (Latest)
-- **PyDAL Stale Cursor Fix**: Added `teardown_appcontext` handler to reset DB connections between requests — resolves `401 Authentication required` on all `@login_required` endpoints after first login
-- **Issue Labels `updated_at` Fix**: Added missing `updated_at` column to `issue_labels` table, preventing `FieldNotFound` errors when listing labeled issues
-- **E2E Test Suite Improvements**: CORS-safe authentication using Playwright Node.js request context; dynamic API port selection with `ss` to avoid docker-proxy conflicts; graceful skip for enterprise-gated UI elements
-- **penguin-libs Migration**: Replaced local `shared/react_libs` with published `@penguintechinc/react-libs`; integrated `SanitizedLogger` across API and Scanner services
-- **K8s Manifests**: Added complete Helm + Kustomize overlays for alpha (`.localhost.local`) and beta (`.penguintech.cloud`) with smoke test script
+### v3.2.3 Highlights (Latest)
+- **AWS IAM Identity Sync Fix** (Issue #112): `AuthProvider` enum was missing `AWS = "aws"` and both `auth_provider` and `identity_type` SQLAlchemy columns were storing uppercase enum member names (`LOCAL`, `HUMAN`) instead of lowercase values (`local`, `human`) due to missing `values_callable`. Fix adds `AWS` provider, normalises all stored values via Alembic migration 014, and adds regression tests to prevent recurrence.
+- **Docker Desktop Alpha Support**: Smoke-test script now auto-detects platform (Apple Silicon vs amd64) — no more forced `--platform linux/amd64` QEMU emulation on M-series Macs.
+- **react-libs 1.3.4**: Migrated from GitHub Packages to public npm; updated Playwright selectors for new sidebar DOM structure.
 
-### v3.1.4 Highlights
-- **Penguin-Libs Migration**: Removed orphaned `shared/react_libs/` local copy (92 MB); frontend now uses `@penguintechinc/react-libs` npm package exclusively
-- **SanitizedLogger Integration**: Added `penguin-utils` SanitizedLogger as a structlog processor — PII and sensitive values are automatically redacted from all log output
-- **All 4 Containers in Deploy Script**: `deploy-beta.sh all` now builds and pushes api, web, scanner, and worker (previously only api + web)
-- **E2E Alpha Script**: Added `scripts/e2e-test-alpha.sh` with 57-test suite and Kustomize-based deploy/teardown
-- **K8s Manifests**: Added complete Kustomize base + alpha overlay manifests for all services
-- **SQLAlchemy Model Alignment**: Models now 1:1 with PyDAL schema; 13 new model files added for complete coverage
-- **CI Fixes**: Refreshed `NPM_PKG_TOKEN` secret; applied black + isort formatting across all model files
-
-### v3.1.1 Highlights
-- **Schema via Alembic**: Migration 011 creates all 67 base tables; PyDAL runs with `migrate=False` — eliminates `DuplicateTable` race conditions in multi-replica K8s deployments (Issue #58)
-- **Refresh Token Storage**: `onSuccess` stores both `elder_token` and `elder_refresh_token` — resolves sidebar not loading after login (Issue #59)
-- **Async DB Commits**: Wrapped write operations in `run_in_threadpool()` — fixes organizations and other resources not persisting via async routes (Issue #61)
-- **Ultrawide Monitor Support**: Login page and main content capped at max-width and centered
-
-### v3.1.0 Highlights
-- **Elder Worker Service**: Background service that owns all async operations — cloud discovery (AWS/GCP/Azure/K8s), connector state sync, credential refresh; stateless/horizontally scalable
-- **Periodic Access Review System**: Automated quarterly/annual access reviews for identity groups with Okta sync (Enterprise)
-- **LoginPageBuilder Integration**: Migrated login page to `react-libs` LoginPageBuilder for consistent UX
-- **LXD Compute Sub-types**: Added LXD Container and LXD VM as entity sub-types under Compute
-- **Playwright Web UI Test Suite**: Browser automation tests covering all pages, navigation, forms, and modals
-
-### v3.0.x Highlights
-- **v3.0.9**: Connector entity client fixes (removed invalid update fields, added sub_type support); Express and dependency security updates
-- **OpenID Connect (OIDC)**: Full OIDC support alongside SAML for SSO integration
-- **Data Stores Tracking**: Track S3, GCS, Azure Blob, NAS, SAN, databases, and data lakes with compliance metadata (PII, PHI, PCI flags)
-- **Group Membership Management**: Approval workflows, access requests, owner reviews, and multi-provider write-back (LDAP + Okta)
-- **Okta Connector**: Full Okta identity provider with bidirectional sync and group management
-- **SCIM 2.0 Provisioning**: Complete SCIM user provisioning with JIT provisioning support
-- **Enhanced Key Management**: Improved crypto key schema with provider ARN, key types, and state tracking
-- **On-Call Rotation Management**: Schedule and manage on-call duty rotations with history tracking
-- **Milestones**: Project milestone tracking and progress management
-- **License Policy Management**: Enterprise license key and feature entitlement management
-- **Webhooks System**: Event-driven notifications with test and retry capabilities
-- **Network Topology Visualization**: Interactive map of infrastructure relationships
-- **Sub-task Support**: Hierarchical issue tracking with parent-child task relationships
-- **Shared Component Library**: Unified react_libs for consistent UI across all forms and modals
-
-### v2.x Highlights
-- **Unified Identity Center**: Single page for all identity types (Users, Groups, Service Accounts, API Keys)
-- **Multi-backend Secrets**: HashiCorp Vault, AWS Secrets Manager, GCP Secret Manager, Infisical
-- **Network Topology**: VPCs, Subnets, Firewalls, Load Balancers with connection mapping
-- **Project Sync**: Bi-directional sync with GitHub, GitLab, Jira, Trello, OpenProject
-- **Cloud Connectors**: AWS, GCP, Kubernetes, Google Workspace, LDAP, iBoss, vCenter, FleetDM
-- **SSL/TLS Certificate Management**: Track certificates with expiration, renewal, and compliance
-- **Village ID System**: Universal hierarchical identifiers for all resources
+### v3.2.2 Highlights
+- **K8s /tmp emptyDir Mounts**: Added emptyDir volumes for `/tmp` in all pod specs — fixes write failures in read-only root filesystem containers.
+- **API 500 Fixes**: Resolved 500 errors surfaced during alpha smoke tests.
+- **AWS Connector**: Dedup, dependency linking, and IAM identity sync groundwork (prerequisite for #112).
+- **Cilium HTTPRoute**: Wired Cilium Gateway API HTTPRoute for beta ingress migration.
+- **CI Pin Updates**: Bumped CI dependency pins to v3.2.2.
 
 ### License Tiers
 

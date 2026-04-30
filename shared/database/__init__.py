@@ -70,6 +70,7 @@ def init_sqlalchemy_tables(app):
     For schema migrations on existing databases, use: ./scripts/migrate.sh
     """
     from sqlalchemy import create_engine
+    from sqlalchemy.exc import IntegrityError, OperationalError
 
     # Import all models so they register with Base.metadata
     from apps.api.models import (  # noqa: F401
@@ -99,7 +100,12 @@ def init_sqlalchemy_tables(app):
 
     database_url = get_database_url(app)
     engine = create_engine(database_url)
-    Base.metadata.create_all(engine)
+    try:
+        Base.metadata.create_all(engine)
+    except (IntegrityError, OperationalError) as exc:
+        # Two processes (Flask + gRPC) may race on startup; if enum types
+        # already exist we can safely continue — schema is present.
+        logger.warning("create_all race condition (schema already exists): %s", exc)
     engine.dispose()
     logger.info("SQLAlchemy tables created/verified")
 
@@ -242,23 +248,48 @@ def _create_default_admin(app, db):
         logger.error(f"Failed to ensure default tenant: {e}")
         return
 
-    # Check if admin user exists in portal_users
-    existing_user = db(db.portal_users.email == admin_email).select().first()
-    if not existing_user:
-        from werkzeug.security import generate_password_hash
+    from werkzeug.security import generate_password_hash
 
-        now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    pwd_hash = generate_password_hash(admin_password)
+
+    # Check if admin user exists in portal_users
+    existing_portal_user = db(db.portal_users.email == admin_email).select().first()
+    if not existing_portal_user:
         db.portal_users.insert(
             tenant_id=default_tenant_id,
             email=admin_email,
-            password_hash=generate_password_hash(admin_password),
+            password_hash=pwd_hash,
             is_active=True,
             email_verified=True,
             global_role="admin",
             created_at=now,
             updated_at=now,
         )
-        logger.info(f"Created default admin user: {admin_email}")
+        logger.info(f"Created default admin portal user: {admin_email}")
+
+    # Check if admin user exists in identities (used by gRPC Login + IAM endpoints)
+    existing_identity = db(db.identities.username == admin_email).select().first()
+    if not existing_identity:
+        try:
+            db.identities.insert(
+                tenant_id=default_tenant_id,
+                username=admin_email,
+                email=admin_email,
+                identity_type="human",
+                auth_provider="local",
+                password_hash=pwd_hash,
+                is_active=True,
+                is_superuser=True,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="admin",
+                created_at=now,
+                updated_at=now,
+            )
+            logger.info(f"Created default admin identity: {admin_email}")
+        except Exception as e:
+            logger.warning(f"Could not create admin identity (may already exist): {e}")
 
 
 def ensure_database_ready(app):

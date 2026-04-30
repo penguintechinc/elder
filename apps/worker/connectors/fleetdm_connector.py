@@ -239,9 +239,9 @@ class FleetDMConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        if item.get("attributes", {}).get(
-                            "fleetdm_host_id"
-                        ) == host.get("id"):
+                        if item.get("metadata", {}).get("fleetdm_host_id") == host.get(
+                            "id"
+                        ):
                             found = item
                             break
 
@@ -337,7 +337,7 @@ class FleetDMConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get("cve") == vuln.get("cve"):
+                    if item.get("metadata", {}).get("cve") == vuln.get("cve"):
                         found = item
                         break
 
@@ -429,7 +429,7 @@ class FleetDMConnector(BaseConnector):
 
                     found = None
                     for item in existing.get("items", []):
-                        if item.get("attributes", {}).get(
+                        if item.get("metadata", {}).get(
                             "fleetdm_software_id"
                         ) == software.get("id"):
                             found = item
@@ -581,9 +581,9 @@ class FleetDMConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    if item.get("attributes", {}).get(
-                        "fleetdm_policy_id"
-                    ) == policy.get("id"):
+                    if item.get("metadata", {}).get("fleetdm_policy_id") == policy.get(
+                        "id"
+                    ):
                         found = item
                         break
 

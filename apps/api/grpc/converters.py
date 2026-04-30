@@ -4,16 +4,27 @@
 
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from apps.api.grpc.generated import auth_pb2, common_pb2, entity_pb2, organization_pb2
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 
 
-def datetime_to_timestamp(dt: Optional[datetime]) -> common_pb2.Timestamp:
-    """Convert datetime to protobuf Timestamp."""
+def datetime_to_timestamp(dt: Optional[Union[datetime, str]]) -> common_pb2.Timestamp:
+    """Convert datetime or ISO string to protobuf Timestamp.
+
+    Args:
+        dt: None, datetime object, or ISO format string (e.g., "2026-04-23T10:00:00")
+
+    Returns:
+        common_pb2.Timestamp with seconds and nanos set, or zero timestamp if dt is None
+    """
     if dt is None:
         return common_pb2.Timestamp(seconds=0, nanos=0)
+
+    # Convert string to datetime if needed
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt)
 
     timestamp = int(dt.timestamp())
     nanos = dt.microsecond * 1000

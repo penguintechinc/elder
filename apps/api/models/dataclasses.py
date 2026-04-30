@@ -1068,7 +1068,7 @@ def to_dict(obj) -> dict:
 
 
 def from_pydal_row(row, dto_class):
-    """Convert PyDAL Row to dataclass DTO."""
+    """Convert PyDAL Row to dataclass DTO, ignoring unknown fields."""
     if row is None:
         return None
     row_dict = row.as_dict()

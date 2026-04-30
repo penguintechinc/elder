@@ -34,6 +34,12 @@ class AuthProvider(enum.Enum):
     SAML = "saml"  # SAML SSO
     OAUTH2 = "oauth2"  # OAuth2
     LDAP = "ldap"  # LDAP
+    AWS = "aws"  # AWS IAM
+    OKTA = "okta"
+    GCP = "gcp"
+    GOOGLE = "google"
+    AUTHENTIK = "authentik"
+    KUBERNETES = "kubernetes"
 
 
 class Identity(Base, IDMixin, TimestampMixin):
@@ -56,7 +62,7 @@ class Identity(Base, IDMixin, TimestampMixin):
 
     # Identity type
     identity_type = Column(
-        Enum(IdentityType),
+        Enum(IdentityType, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=IdentityType.HUMAN,
         index=True,
@@ -69,7 +75,7 @@ class Identity(Base, IDMixin, TimestampMixin):
 
     # Authentication
     auth_provider = Column(
-        Enum(AuthProvider),
+        Enum(AuthProvider, values_callable=lambda e: [x.value for x in e]),
         nullable=False,
         default=AuthProvider.LOCAL,
         index=True,

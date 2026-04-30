@@ -104,6 +104,10 @@ class CreateEntityRequest(RequestModel):
         default=None,
         description="Optional parent entity ID",
     )
+    external_id: Optional[str] = Field(
+        default=None,
+        description="Optional external system identifier for deduplication",
+    )
     attributes: Optional[dict] = Field(
         default=None,
         description="Optional custom attributes",
@@ -166,6 +170,10 @@ class UpdateEntityRequest(RequestModel):
     parent_id: Optional[int] = Field(
         default=None,
         description="Parent entity ID",
+    )
+    external_id: Optional[str] = Field(
+        default=None,
+        description="External system identifier for deduplication",
     )
     attributes: Optional[dict] = Field(
         default=None,

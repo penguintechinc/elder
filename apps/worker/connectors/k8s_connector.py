@@ -188,7 +188,7 @@ class KubernetesConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("namespace") == ns_name
                         and attrs.get("cluster") == self.cluster_name
@@ -270,7 +270,7 @@ class KubernetesConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("secret_name") == secret_name
                         and attrs.get("namespace") == namespace
@@ -380,7 +380,7 @@ class KubernetesConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("pod_name") == pod_name
                         and attrs.get("namespace") == namespace
@@ -477,7 +477,7 @@ class KubernetesConnector(BaseConnector):
 
                 found = None
                 for item in existing.get("items", []):
-                    attrs = item.get("attributes", {})
+                    attrs = item.get("metadata", {})
                     if (
                         attrs.get("pvc_name") == pvc_name
                         and attrs.get("namespace") == namespace

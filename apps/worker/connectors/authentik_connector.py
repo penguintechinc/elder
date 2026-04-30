@@ -21,7 +21,7 @@ from apps.worker.connectors.group_operations import (
     GroupMembershipResult,
     GroupOperationsMixin,
 )
-from apps.worker.utils.elder_client import ElderAPIClient
+from apps.worker.utils.elder_client import ElderAPIClient, Identity
 
 
 class AuthentikConnector(BaseConnector, GroupOperationsMixin):
@@ -136,48 +136,24 @@ class AuthentikConnector(BaseConnector, GroupOperationsMixin):
 
         for user in users:
             try:
-                # Extract user data
-                attributes = user.get("attributes", {})
-
                 # Determine identity_type based on user attributes
-                # Service accounts typically have is_service_account or type attribute
                 identity_type = (
-                    "serviceAccount"
+                    "service_account"
                     if user.get("is_service_account", False)
-                    else "employee"
+                    else "human"
                 )
 
-                identity_data = {
-                    "provider": "authentik",
-                    "provider_id": str(user["pk"]),
-                    "username": user.get("username", ""),
-                    "email": user.get("email", ""),
-                    "display_name": user.get("name", user.get("username", "")),
-                    "full_name": user.get("name", ""),
-                    "identity_type": identity_type,
-                    "is_active": user.get("is_active", True),
-                    "attributes": {
-                        "authentik_pk": user["pk"],
-                        "authentik_username": user.get("username"),
-                        "authentik_uuid": user.get("uuid"),
-                        "email": user.get("email"),
-                        "name": user.get("name"),
-                        "is_active": user.get("is_active"),
-                        "is_superuser": user.get("is_superuser", False),
-                        "last_login": user.get("last_login"),
-                        "custom_attributes": attributes,
-                    },
-                }
-
-                # Create or update identity in Elder
-                # Note: This would use elder_client to sync
-                # For now, we log the sync
-                self.logger.debug(
-                    "Syncing Authentik user",
-                    authentik_pk=user["pk"],
-                    username=user.get("username"),
+                identity = Identity(
+                    username=user.get("username", ""),
+                    identity_type=identity_type,
+                    auth_provider="authentik",
                     email=user.get("email"),
+                    full_name=user.get("name") or None,
+                    auth_provider_id=str(user["pk"]),
+                    is_active=user.get("is_active", True),
                 )
+
+                await self.elder_client.get_or_create_identity(identity)
                 result.entities_created += 1
 
             except Exception as e:
@@ -195,35 +171,20 @@ class AuthentikConnector(BaseConnector, GroupOperationsMixin):
 
         for group in groups:
             try:
-                attributes = group.get("attributes", {})
-                users_obj = group.get("users_obj", [])
+                group_name = group.get("name", "")
 
-                group_data = {
-                    "provider": "authentik",
-                    "provider_group_id": str(group["pk"]),
-                    "name": group.get("name", ""),
-                    "description": f"Authentik group: {group.get('name')}",
-                    "attributes": {
-                        "authentik_pk": group["pk"],
-                        "authentik_uuid": group.get("uuid"),
-                        "name": group.get("name"),
-                        "is_superuser": group.get("is_superuser", False),
-                        "parent": group.get("parent"),
-                        "parent_name": group.get("parent_name"),
-                        "users": group.get("users", []),
-                        "users_obj": users_obj,
-                        "member_count": len(users_obj),
-                        "custom_attributes": attributes,
-                    },
-                }
-
-                # Create or update group in Elder
-                self.logger.debug(
-                    "Syncing Authentik group",
-                    authentik_pk=group["pk"],
-                    name=group.get("name"),
-                    member_count=len(users_obj),
+                # Create identity for group
+                identity = Identity(
+                    username=group_name,
+                    identity_type="service_account",
+                    auth_provider="authentik",
+                    email=None,
+                    full_name=group_name,
+                    auth_provider_id=str(group["pk"]),
+                    is_active=True,
                 )
+
+                await self.elder_client.get_or_create_identity(identity)
                 result.entities_created += 1
 
             except Exception as e:
