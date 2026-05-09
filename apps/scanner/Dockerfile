@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsasl2-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY apps/scanner/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Runtime stage — no compiler, no ldap dev headers
@@ -36,7 +36,7 @@ RUN pip install --no-cache-dir playwright && \
     playwright install chromium && \
     playwright install-deps chromium
 
-COPY . .
+COPY apps/scanner/ .
 
 RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
     mkdir -p /app/screenshots && \

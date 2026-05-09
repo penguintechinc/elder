@@ -7,11 +7,10 @@ WORKDIR /app
 # of source changes and build-time vars (VITE_VERSION, VITE_BUILD_TIME)
 COPY web/package.json web/package-lock.json web/.npmrc ./
 
-# Install dependencies — this layer is cached as long as package-lock.json hasn't changed.
-# Note: npm install (not --ignore-scripts) is required so that native modules
-# (esbuild, lightningcss) correctly resolve platform-specific optional deps.
-# See: https://github.com/npm/cli/issues/4828
-RUN npm install
+# npm ci: strictly follows package-lock.json; never resolves beyond pinned versions.
+# Optional deps (esbuild, lightningcss platform binaries) are still installed because
+# npm ci respects optionalDependencies in the lockfile.
+RUN npm ci
 
 # Declare build-time Vite vars AFTER npm install so they don't bust that cache.
 # Changing VITE_VERSION or VITE_BUILD_TIME only invalidates from here onward.
