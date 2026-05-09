@@ -243,14 +243,12 @@ format-check: ## Check Python formatting without modifying files
 # ── Build ──────────────────────────────────────────────────────────────────
 build: docker-build ## Build all service containers
 
-docker-build: ## Build all four service images locally (requires GITHUB_TOKEN env var)
-	@test -n "$(GITHUB_TOKEN)" || (echo "$(RED)ERROR: GITHUB_TOKEN env var required for web build$(RESET)" && exit 1)
+docker-build: ## Build all four service images locally
 	@echo "$(BLUE)Building elder-api...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-api:$(VERSION) \
 		-f apps/api/Dockerfile .
 	@echo "$(BLUE)Building elder-web...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-web:$(VERSION) \
-		--build-arg GITHUB_TOKEN=$(GITHUB_TOKEN) \
 		-f web/Dockerfile .
 	@echo "$(BLUE)Building elder-scanner...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-scanner:$(VERSION) \
@@ -260,8 +258,7 @@ docker-build: ## Build all four service images locally (requires GITHUB_TOKEN en
 		-f apps/worker/Dockerfile .
 	@echo "$(GREEN)All images built at $(VERSION)$(RESET)"
 
-docker-build-alpha: ## Build and push all service images to local MicroK8s registry (localhost:32000)
-	@test -n "$(GITHUB_TOKEN)" || (echo "$(RED)ERROR: GITHUB_TOKEN env var required for web build$(RESET)" && exit 1)
+docker-build-alpha: ## Build and push all service images to local registry (localhost:32000)
 	@echo "$(BLUE)Building elder-api → localhost:32000...$(RESET)"
 	@docker build -t localhost:32000/elder-api:alpha-latest \
 		--build-arg APP_VERSION=$(VERSION) \
@@ -269,7 +266,6 @@ docker-build-alpha: ## Build and push all service images to local MicroK8s regis
 	@docker push localhost:32000/elder-api:alpha-latest
 	@echo "$(BLUE)Building elder-web → localhost:32000...$(RESET)"
 	@docker build -t localhost:32000/elder-web:alpha-latest \
-		--build-arg GITHUB_TOKEN=$(GITHUB_TOKEN) \
 		--build-arg VITE_VERSION=$(VERSION) \
 		--build-arg VITE_BUILD_TIME=$(shell date +%s) \
 		-f web/Dockerfile .
