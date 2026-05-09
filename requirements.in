@@ -64,6 +64,8 @@ aiohttp==3.13.4
 python-decouple==3.8
 click==8.1.8
 python-dotenv==1.2.2
+mako==1.3.12
+mistune==3.2.1
 
 # Monitoring & Metrics
 prometheus-client==0.21.1

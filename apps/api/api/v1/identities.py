@@ -183,6 +183,15 @@ async def create_identity(body: CreateIdentityRequest):
         if existing:
             return None, "Username already exists", 400
 
+        # Derive tenant_id: from request body, then from current user, then from DB default
+        tenant_id = body.tenant_id
+        if not tenant_id and hasattr(g, "current_user") and g.current_user:
+            tenant_id = g.current_user.tenant_id
+        if not tenant_id:
+            # Fall back to default tenant from DB
+            default_tenant = db(db.tenants.id > 0).select(limitby=(0, 1)).first()
+            tenant_id = default_tenant.id if default_tenant else None
+
         # Prepare insert data — use actual DB column names
         insert_data = {
             "username": body.username,
@@ -192,6 +201,7 @@ async def create_identity(body: CreateIdentityRequest):
             "full_name": body.full_name,
             "auth_provider_id": body.auth_provider_id,
             "is_active": body.is_active,
+            "tenant_id": tenant_id,
         }
 
         # Create identity
