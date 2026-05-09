@@ -1,7 +1,7 @@
 # Elder Scanner Service Dockerfile
-# Multi-stage build: compiler + ldap headers in builder only, not in runtime image
+# Multi-stage: gcc + ldap headers in builder only; runtime has neither.
 
-# Build stage — gcc + ldap dev headers for python-ldap C extension
+# Build stage — compiler tools needed for python-ldap C extension
 FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb AS builder
 
 WORKDIR /app
@@ -13,9 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY apps/scanner/requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Install to /usr/local so site-packages can be trivially copied to runtime stage
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Runtime stage — no compiler, no ldap dev headers
+# Runtime stage — no compiler; ldap runtime shared libs only
 FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
 ARG SCANNER_POLL_INTERVAL=300
@@ -29,12 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /root/.local /root/.local
+# Copy compiled packages (including python-ldap .so files) into system Python path
+COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Install Playwright and browsers (must run in runtime stage — downloads Chromium binary)
-RUN pip install --no-cache-dir playwright && \
-    playwright install chromium && \
-    playwright install-deps chromium
+# Download Chromium browser binary and system deps (playwright CLI already copied above)
+RUN playwright install chromium && playwright install-deps chromium
 
 COPY apps/scanner/ .
 
@@ -47,7 +48,6 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
 # capability granted via Kubernetes securityContext. See k8s/helm/elder/values.yaml.
 USER appuser
 
-ENV PATH=/root/.local/bin:$PATH
 ENV SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL}
 ENV ELDER_API_URL=http://api:5000
 ENV SCREENSHOT_DIR=/app/screenshots
