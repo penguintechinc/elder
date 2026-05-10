@@ -382,6 +382,6 @@ class SAMLService:
                 | (db.idp_configurations.tenant_id == None)  # noqa: E711
             ).select()
         else:
-            configs = db(db.idp_configurations).select()
+            configs = db(db.idp_configurations.id > 0).select()
 
         return [SAMLService._config_to_dict(c) for c in configs]

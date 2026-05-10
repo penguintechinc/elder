@@ -643,44 +643,33 @@ class SearchService:
             List of search suggestions
         """
         suggestions = []
+        seen: set = set()
 
-        # Entity name suggestions - use groupby instead of distinct to avoid ORDER BY issues
+        def _add(text: str, stype: str, category: str) -> None:
+            key = (text, stype)
+            if key not in seen:
+                seen.add(key)
+                suggestions.append({"text": text, "type": stype, "category": category})
+
         if not resource_type or resource_type == "entity":
             entities = self.db(self.db.entities.name.contains(partial_query)).select(
-                self.db.entities.name, groupby=self.db.entities.name, limitby=(0, limit)
+                self.db.entities.name, limitby=(0, limit * 3)
             )
-            suggestions.extend(
-                [
-                    {"text": e.name, "type": "entity", "category": "name"}
-                    for e in entities
-                ]
-            )
+            for e in entities:
+                _add(e.name, "entity", "name")
 
-        # Organization name suggestions - use groupby instead of distinct
         if not resource_type or resource_type == "organization":
             orgs = self.db(self.db.organizations.name.contains(partial_query)).select(
-                self.db.organizations.name,
-                groupby=self.db.organizations.name,
-                limitby=(0, limit),
+                self.db.organizations.name, limitby=(0, limit * 3)
             )
-            suggestions.extend(
-                [
-                    {"text": o.name, "type": "organization", "category": "name"}
-                    for o in orgs
-                ]
-            )
+            for o in orgs:
+                _add(o.name, "organization", "name")
 
-        # Issue title suggestions - use groupby instead of distinct
         if not resource_type or resource_type == "issue":
             issues = self.db(self.db.issues.title.contains(partial_query)).select(
-                self.db.issues.title, groupby=self.db.issues.title, limitby=(0, limit)
+                self.db.issues.title, limitby=(0, limit * 3)
             )
-            suggestions.extend(
-                [
-                    {"text": i.title, "type": "issue", "category": "title"}
-                    for i in issues
-                ]
-            )
+            for i in issues:
+                _add(i.title, "issue", "title")
 
-        # Limit total suggestions
         return suggestions[:limit]

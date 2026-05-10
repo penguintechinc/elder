@@ -74,6 +74,8 @@ spec:
               value: "admin"
             - name: LOG_LEVEL
               value: DEBUG
+            - name: APP_VERSION
+              value: "3.2.1"
             - name: RELEASE_MODE
               value: "false"
             - name: METRICS_ENABLED

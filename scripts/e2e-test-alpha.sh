@@ -114,7 +114,44 @@ if [ "$RUNNING" -eq 0 ]; then
 fi
 
 log_success "Pods healthy ($RUNNING running)"
-PHASE_RESULTS+=("Pod Health: PASS ($RUNNING/$TOTAL running)")
+
+# Per-service internal healthchecks
+log_info "  Running per-service healthchecks..."
+HEALTH_FAILURES=0
+
+# Scanner — exec python healthcheck.py inside the container
+SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [[ -n "$SCANNER_POD" ]]; then
+    if kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$SCANNER_POD" -- python healthcheck.py >/dev/null 2>&1; then
+        log_success "  Scanner healthcheck: OK"
+    else
+        log_error "  Scanner healthcheck: FAILED"
+        HEALTH_FAILURES=$((HEALTH_FAILURES + 1))
+    fi
+else
+    log_warn "  Scanner pod not found — skipping healthcheck"
+fi
+
+# Worker — hit its HTTP health endpoint (port matches HEALTH_CHECK_PORT in deployment, default 28000)
+WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+if [[ -n "$WORKER_POD" ]]; then
+    WORKER_HEALTH=$(kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$WORKER_POD" -- \
+        python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:28000/healthz',timeout=5); print(r.status)" 2>/dev/null || echo "ERR")
+    if [[ "$WORKER_HEALTH" == "200" ]]; then
+        log_success "  Worker healthcheck: OK"
+    else
+        log_error "  Worker healthcheck: FAILED (status: $WORKER_HEALTH)"
+        HEALTH_FAILURES=$((HEALTH_FAILURES + 1))
+    fi
+else
+    log_warn "  Worker pod not found — skipping healthcheck"
+fi
+
+if [[ $HEALTH_FAILURES -gt 0 ]]; then
+    PHASE_RESULTS+=("Pod Health: FAIL ($RUNNING/$TOTAL running, $HEALTH_FAILURES service healthcheck failures)")
+else
+    PHASE_RESULTS+=("Pod Health: PASS ($RUNNING/$TOTAL running)")
+fi
 
 ###############################################################################
 # PHASE 3: Smoke — ingress reachability
@@ -162,12 +199,12 @@ api_call() {
     local endpoint=$2
     local data=${3:-}
     if [[ -n "$data" ]]; then
-        timeout 10 curl -s -w "\n%{http_code}" -X "$method" "$API_BASE$endpoint" \
+        curl --max-time 10 -s -w "\n%{http_code}" -X "$method" "$API_BASE$endpoint" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -d "$data" 2>/dev/null
     else
-        timeout 10 curl -s -w "\n%{http_code}" -X "$method" "$API_BASE$endpoint" \
+        curl --max-time 10 -s -w "\n%{http_code}" -X "$method" "$API_BASE$endpoint" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" 2>/dev/null
     fi
@@ -204,7 +241,7 @@ check_response() {
 
 # Authenticate
 log_info "Authenticating as $EMAIL..."
-LOGIN=$(timeout 10 curl -s -X POST "$API_BASE/portal-auth/login" \
+LOGIN=$(curl --max-time 10 -s -X POST "$API_BASE/portal-auth/login" \
     -H "Content-Type: application/json" \
     -d "{\"tenant_id\": $TENANT_ID, \"email\": \"$EMAIL\", \"password\": \"$PASSWORD\"}" 2>/dev/null)
 TOKEN=$(echo "$LOGIN" | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null)
@@ -229,7 +266,7 @@ IDENTITY_ID=$(echo "$IDENTITY_RESP" | sed '$d' | python3 -c "import sys,json; d=
 
 # Run all endpoint checks
 check_response "$(api_call GET "/portal-auth/me")"                              "200"     "/portal-auth/me"                       "GET"
-check_response "$(timeout 10 curl -s -w "\n%{http_code}" "$API_BASE/auth/guest-enabled" 2>/dev/null)" "200" "/auth/guest-enabled" "GET"
+check_response "$(curl --max-time 10 -s -w "\n%{http_code}" "$API_BASE/auth/guest-enabled" 2>/dev/null)" "200" "/auth/guest-enabled" "GET"
 check_response "$(api_call GET "/tenants")"                                     "200"     "/tenants"                              "GET"
 check_response "$(api_call GET "/tenants/1")"                                   "200"     "/tenants/1"                            "GET"
 check_response "$(api_call GET "/tenants/1/stats")"                             "200"     "/tenants/1/stats"                      "GET"
@@ -275,6 +312,16 @@ check_response "$(api_call GET "/google-workspace/providers")"                  
 check_response "$(api_call GET "/discovery/jobs")"                              "200"     "/discovery/jobs"                       "GET"
 check_response "$(api_call GET "/discovery/history")"                           "200"     "/discovery/history"                    "GET"
 check_response "$(api_call GET "/discovery/jobs/pending")"                      "200"     "/discovery/jobs/pending"               "GET"
+# Cloud provider filter coverage — all supported providers must return 200 (empty list is OK)
+check_response "$(api_call GET "/discovery/jobs?provider=aws")"                 "200"     "/discovery/jobs?provider=aws"          "GET"
+check_response "$(api_call GET "/discovery/jobs?provider=gcp")"                 "200"     "/discovery/jobs?provider=gcp"          "GET"
+check_response "$(api_call GET "/discovery/jobs?provider=azure")"               "200"     "/discovery/jobs?provider=azure"        "GET"
+check_response "$(api_call GET "/discovery/jobs?provider=kubernetes")"          "200"     "/discovery/jobs?provider=kubernetes"   "GET"
+check_response "$(api_call GET "/discovery/jobs?provider=vultr")"               "200"     "/discovery/jobs?provider=vultr"        "GET"
+check_response "$(api_call GET "/discovery/history?provider=aws")"              "200"     "/discovery/history?provider=aws"       "GET"
+check_response "$(api_call GET "/discovery/history?provider=gcp")"              "200"     "/discovery/history?provider=gcp"       "GET"
+check_response "$(api_call GET "/discovery/history?provider=azure")"            "200"     "/discovery/history?provider=azure"     "GET"
+check_response "$(api_call GET "/discovery/history?provider=vultr")"            "200"     "/discovery/history?provider=vultr"     "GET"
 check_response "$(api_call GET "/webhooks")"                                    "200"     "/webhooks"                             "GET"
 check_response "$(api_call GET "/webhooks/notification-rules")"                 "200"     "/webhooks/notification-rules"          "GET"
 check_response "$(api_call GET "/backup/jobs")"                                 "200"     "/backup/jobs"                          "GET"
@@ -288,7 +335,7 @@ check_response "$(api_call GET "/audit-enterprise/logs")"                       
 check_response "$(api_call GET "/sso/idp")"                                     "200"     "/sso/idp"                              "GET"
 check_response "$(api_call GET "/api-keys")"                                    "200"     "/api-keys"                             "GET"
 check_response "$(api_call GET "/on-call/rotations")"                           "200"     "/on-call/rotations"                    "GET"
-check_response "$(timeout 10 curl -s -w "\n%{http_code}" "$BASE_URL/healthz" 2>/dev/null)" "200" "/healthz" "GET"
+check_response "$(curl --max-time 10 -s -w "\n%{http_code}" "$BASE_URL/healthz" 2>/dev/null)" "200" "/healthz" "GET"
 
 TOTAL_API=$((PASSED + FAILED))
 if [[ $FAILED -gt 0 ]]; then

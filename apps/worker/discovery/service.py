@@ -13,6 +13,7 @@ from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
 from apps.worker.discovery.base import BaseDiscoveryProvider
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
+from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
 
 
 class DiscoveryService:
@@ -63,6 +64,8 @@ class DiscoveryService:
             return AzureDiscoveryClient(config)
         elif provider_type == "kubernetes":
             return KubernetesDiscoveryClient(config)
+        elif provider_type == "vultr":
+            return VultrDiscoveryClient(config)
         else:
             raise Exception(f"Unsupported provider type: {provider_type}")
 

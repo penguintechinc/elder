@@ -19,7 +19,7 @@ from apps.worker.discovery.service import DiscoveryService
 logger = logging.getLogger(__name__)
 
 # Cloud provider types handled by the worker
-CLOUD_PROVIDERS = {"aws", "gcp", "azure", "kubernetes"}
+CLOUD_PROVIDERS = {"aws", "gcp", "azure", "kubernetes", "vultr"}
 
 
 class DiscoveryExecutor:

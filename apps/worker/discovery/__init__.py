@@ -9,6 +9,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
 from apps.worker.discovery.service import DiscoveryService
+from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
 
 __all__ = [
     "BaseDiscoveryProvider",
@@ -16,5 +17,6 @@ __all__ = [
     "GCPDiscoveryClient",
     "AzureDiscoveryClient",
     "KubernetesDiscoveryClient",
+    "VultrDiscoveryClient",
     "DiscoveryService",
 ]
