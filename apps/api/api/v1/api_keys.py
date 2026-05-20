@@ -72,7 +72,6 @@ async def list_api_keys():
             db.api_keys.name,
             db.api_keys.prefix,
             db.api_keys.key_hash,
-
             db.api_keys.last_used_at,
             db.api_keys.expires_at,
             db.api_keys.is_active,

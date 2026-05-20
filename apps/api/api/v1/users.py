@@ -133,7 +133,9 @@ async def create_user():
                 return None, "Email already exists", 400
 
         # Derive tenant_id: from request body, then from current user, then from DB default
-        tenant_id = insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+        tenant_id = (
+            insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+        )
         if not tenant_id and hasattr(g, "current_user") and g.current_user:
             tenant_id = g.current_user.tenant_id
         if not tenant_id:
@@ -142,7 +144,9 @@ async def create_user():
             tenant_id = default_tenant.id if default_tenant else None
 
         now = datetime.now(timezone.utc)
-        user_id = db.identities.insert(created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data)
+        user_id = db.identities.insert(
+            created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
+        )
         db.commit()
         return db.identities[user_id], None, None
 

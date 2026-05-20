@@ -16,7 +16,6 @@ from auth import ElderSession
 from client import ElderClient
 from tools import entities, relationships, resources
 
-
 # Initialize MCP server
 mcp = FastMCP("elder")
 
@@ -207,9 +206,7 @@ async def update_entity(
 
 
 @mcp.tool()
-async def get_entity_relationships(
-    entity_id: int, direction: str = "both"
-) -> str:
+async def get_entity_relationships(entity_id: int, direction: str = "both") -> str:
     """
     Get all relationships for an entity.
 
@@ -269,7 +266,11 @@ async def search_relationships(
     """
     try:
         if not any(
-            [source_entity_id is not None, target_entity_id is not None, relationship_type]
+            [
+                source_entity_id is not None,
+                target_entity_id is not None,
+                relationship_type,
+            ]
         ):
             return json.dumps(
                 {

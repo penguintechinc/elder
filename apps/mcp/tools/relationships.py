@@ -27,7 +27,9 @@ async def get_entity_relationships(
         ValueError: If entity not found, session expired, or API error
     """
     params = {"direction": direction}
-    return await client.get(f"/api/v1/entities/{entity_id}/relationships", params=params)
+    return await client.get(
+        f"/api/v1/entities/{entity_id}/relationships", params=params
+    )
 
 
 async def search_relationships(

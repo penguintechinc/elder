@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 try:
     import httpx
+
     _HTTPX_AVAILABLE = True
 except ImportError:
     _HTTPX_AVAILABLE = False
@@ -66,30 +67,34 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
         resources: List[Dict[str, Any]] = []
         instances = self._get("/instances").get("instances", [])
         for inst in instances:
-            resources.append({
-                "id": inst.get("id"),
-                "name": inst.get("label") or inst.get("id"),
-                "type": "vultr_instance",
-                "region": inst.get("region"),
-                "status": inst.get("status"),
-                "plan": inst.get("plan"),
-                "main_ip": inst.get("main_ip"),
-                "os": inst.get("os"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": inst.get("id"),
+                    "name": inst.get("label") or inst.get("id"),
+                    "type": "vultr_instance",
+                    "region": inst.get("region"),
+                    "status": inst.get("status"),
+                    "plan": inst.get("plan"),
+                    "main_ip": inst.get("main_ip"),
+                    "os": inst.get("os"),
+                    "provider": "vultr",
+                }
+            )
         bare_metals = self._get("/bare-metals").get("bare_metals", [])
         for bm in bare_metals:
-            resources.append({
-                "id": bm.get("id"),
-                "name": bm.get("label") or bm.get("id"),
-                "type": "vultr_bare_metal",
-                "region": bm.get("region"),
-                "status": bm.get("status"),
-                "plan": bm.get("plan"),
-                "main_ip": bm.get("main_ip"),
-                "os": bm.get("os"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": bm.get("id"),
+                    "name": bm.get("label") or bm.get("id"),
+                    "type": "vultr_bare_metal",
+                    "region": bm.get("region"),
+                    "status": bm.get("status"),
+                    "plan": bm.get("plan"),
+                    "main_ip": bm.get("main_ip"),
+                    "os": bm.get("os"),
+                    "provider": "vultr",
+                }
+            )
         return resources
 
     def discover_storage(self) -> List[Dict[str, Any]]:
@@ -97,25 +102,29 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
         resources: List[Dict[str, Any]] = []
         blocks = self._get("/blocks").get("blocks", [])
         for blk in blocks:
-            resources.append({
-                "id": blk.get("id"),
-                "name": blk.get("label") or blk.get("id"),
-                "type": "vultr_block_storage",
-                "region": blk.get("region"),
-                "size_gb": blk.get("size_gb"),
-                "status": blk.get("status"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": blk.get("id"),
+                    "name": blk.get("label") or blk.get("id"),
+                    "type": "vultr_block_storage",
+                    "region": blk.get("region"),
+                    "size_gb": blk.get("size_gb"),
+                    "status": blk.get("status"),
+                    "provider": "vultr",
+                }
+            )
         objects = self._get("/object-storage").get("object_storages", [])
         for obj in objects:
-            resources.append({
-                "id": obj.get("id"),
-                "name": obj.get("label") or obj.get("id"),
-                "type": "vultr_object_storage",
-                "region": obj.get("region"),
-                "status": obj.get("status"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": obj.get("id"),
+                    "name": obj.get("label") or obj.get("id"),
+                    "type": "vultr_object_storage",
+                    "region": obj.get("region"),
+                    "status": obj.get("status"),
+                    "provider": "vultr",
+                }
+            )
         return resources
 
     def discover_network(self) -> List[Dict[str, Any]]:
@@ -123,24 +132,28 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
         resources: List[Dict[str, Any]] = []
         vpcs = self._get("/vpcs").get("vpcs", [])
         for vpc in vpcs:
-            resources.append({
-                "id": vpc.get("id"),
-                "name": vpc.get("description") or vpc.get("id"),
-                "type": "vultr_vpc",
-                "region": vpc.get("region"),
-                "ip_block": vpc.get("ip_block"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": vpc.get("id"),
+                    "name": vpc.get("description") or vpc.get("id"),
+                    "type": "vultr_vpc",
+                    "region": vpc.get("region"),
+                    "ip_block": vpc.get("ip_block"),
+                    "provider": "vultr",
+                }
+            )
         reserved_ips = self._get("/reserved-ips").get("reserved_ips", [])
         for rip in reserved_ips:
-            resources.append({
-                "id": rip.get("id"),
-                "name": rip.get("label") or rip.get("id"),
-                "type": "vultr_reserved_ip",
-                "region": rip.get("region"),
-                "subnet": rip.get("subnet"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": rip.get("id"),
+                    "name": rip.get("label") or rip.get("id"),
+                    "type": "vultr_reserved_ip",
+                    "region": rip.get("region"),
+                    "subnet": rip.get("subnet"),
+                    "provider": "vultr",
+                }
+            )
         return resources
 
     def discover_databases(self) -> List[Dict[str, Any]]:
@@ -148,15 +161,17 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
         resources: List[Dict[str, Any]] = []
         dbs = self._get("/databases").get("databases", [])
         for db in dbs:
-            resources.append({
-                "id": db.get("id"),
-                "name": db.get("label") or db.get("id"),
-                "type": "vultr_managed_database",
-                "region": db.get("region"),
-                "status": db.get("status"),
-                "database_engine": db.get("database_engine"),
-                "provider": "vultr",
-            })
+            resources.append(
+                {
+                    "id": db.get("id"),
+                    "name": db.get("label") or db.get("id"),
+                    "type": "vultr_managed_database",
+                    "region": db.get("region"),
+                    "status": db.get("status"),
+                    "database_engine": db.get("database_engine"),
+                    "provider": "vultr",
+                }
+            )
         return resources
 
     def discover_serverless(self) -> List[Dict[str, Any]]:
@@ -175,7 +190,10 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             "network": network,
             "database": databases,
             "serverless": [],
-            "resources_count": len(compute) + len(storage) + len(network) + len(databases),
+            "resources_count": len(compute)
+            + len(storage)
+            + len(network)
+            + len(databases),
             "discovery_time": start,
             "provider": "vultr",
         }

@@ -120,7 +120,12 @@ async def create_retention_policy():
 
             # Check if policy already exists for this resource_type
             existing = (
-                db(db.audit_retention_policies.resource_type == data.get("resource_type", data.get("name"))).select().first()
+                db(
+                    db.audit_retention_policies.resource_type
+                    == data.get("resource_type", data.get("name"))
+                )
+                .select()
+                .first()
             )
             if existing:
                 return (

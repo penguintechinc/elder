@@ -36,7 +36,7 @@ jobs:
             context: .
           - name: scanner
             dockerfile: apps/scanner/Dockerfile
-            context: apps/scanner
+            context: .
           - name: worker
             dockerfile: apps/worker/Dockerfile
             context: .
