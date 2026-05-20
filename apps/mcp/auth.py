@@ -9,7 +9,7 @@ from typing import Optional
 
 import httpx
 from jose import jwt
-from jose.exceptions import JWTError, ExpiredSignatureError
+from jose.exceptions import ExpiredSignatureError, JWTError
 
 
 @dataclass(slots=True)

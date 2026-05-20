@@ -9,11 +9,10 @@ import sys
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP
-from mcp.types import TextContent
-
 from auth import ElderSession
 from client import ElderClient
+from mcp.server.fastmcp import FastMCP
+from mcp.types import TextContent
 from tools import entities, relationships, resources
 
 # Initialize MCP server

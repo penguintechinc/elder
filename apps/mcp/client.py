@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import httpx
-from mcp.types import TextContent
-
 from auth import ElderSession
+from mcp.types import TextContent
 
 
 class ElderClient:
