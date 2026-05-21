@@ -7,7 +7,7 @@ import logging
 import os
 import tempfile
 
-from flask import Blueprint, current_app, jsonify, request, send_file
+from quart import Blueprint, current_app, jsonify, request, send_file
 from werkzeug.utils import secure_filename
 
 from apps.api.auth.decorators import admin_required, login_required

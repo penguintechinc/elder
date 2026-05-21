@@ -8,7 +8,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from flask import current_app
+from quart import current_app
 
 from .base import (
     InvalidSecretConfigException,

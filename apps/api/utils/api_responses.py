@@ -10,7 +10,7 @@ ensuring uniform error handling and success responses.
 
 from typing import Any, Optional, Tuple
 
-from flask import jsonify
+from quart import jsonify
 
 
 class ApiResponse:

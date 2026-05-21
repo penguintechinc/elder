@@ -5,7 +5,7 @@
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
 
 from apps.api.auth.decorators import login_required

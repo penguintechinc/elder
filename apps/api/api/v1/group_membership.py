@@ -8,7 +8,7 @@ Enterprise feature for group ownership, access requests, and provider write-back
 
 import logging
 
-from flask import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.licensing_fallback import license_required

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import jwt
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
 
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest

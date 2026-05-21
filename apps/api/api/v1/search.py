@@ -6,7 +6,7 @@
 import json
 import logging
 
-from flask import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond

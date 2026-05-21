@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Union
 
-from flask import Blueprint, current_app, jsonify
+from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import RequestModel
 from penguin_libs.pydantic.flask_integration import validated_request
 

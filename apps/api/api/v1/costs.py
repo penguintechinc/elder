@@ -4,7 +4,7 @@
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, g, jsonify, request
+from quart import Blueprint, g, jsonify, request
 
 bp = Blueprint("costs", __name__)
 

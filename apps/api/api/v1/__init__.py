@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 
-from flask import Blueprint
+from quart import Blueprint
 
 # On-call rotations routes - imported early to register blueprints
 from apps.api.api.v1 import on_call_rotations

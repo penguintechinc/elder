@@ -7,7 +7,9 @@ import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, make_response, request
+
+from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from pydantic import ValidationError
 from werkzeug.security import generate_password_hash
 
@@ -250,7 +252,7 @@ async def login():
     access_token = generate_token(identity, "access")
     refresh_token = generate_token(identity, "refresh")
 
-    return (
+    response = await make_response(
         jsonify(
             {
                 "access_token": access_token,
@@ -267,6 +269,10 @@ async def login():
         ),
         200,
     )
+    # Also set an HttpOnly cookie so the SSR web UI can authenticate
+    secure = not current_app.config.get("DEBUG", False)
+    set_session_cookie(response, access_token, secure=secure)
+    return response
 
 
 @bp.route("/logout", methods=["POST"])
@@ -290,7 +296,9 @@ async def logout():
         )
     )
 
-    return jsonify({"message": "Logged out successfully"}), 200
+    response = await make_response(jsonify({"message": "Logged out successfully"}), 200)
+    clear_session_cookie(response)
+    return response
 
 
 @bp.route("/me", methods=["GET"])

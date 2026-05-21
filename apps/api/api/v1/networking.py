@@ -5,7 +5,7 @@
 
 import logging
 
-from flask import Blueprint, jsonify, request
+from quart import Blueprint, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
 from pydantic import ValidationError
 

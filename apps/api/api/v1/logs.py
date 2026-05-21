@@ -6,7 +6,7 @@
 import os
 
 import structlog
-from flask import Blueprint, g, jsonify, request
+from quart import Blueprint, g, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import DEFAULT_LOG_FILE, FALLBACK_LOG_FILE
