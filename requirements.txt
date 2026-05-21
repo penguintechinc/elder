@@ -1806,6 +1806,10 @@ pathspec==1.0.4 \
     --hash=sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645 \
     --hash=sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723
     # via black
+penguin-aaa==0.1.0 \
+    --hash=sha256:4d894db11879f8adab6cb30229e5525c7eaa2fca1efd665da337eb07fff74caf \
+    --hash=sha256:d410eb578cf206cf13cbaa20deeda29d1a6cd0412c8406bb65ad473adb46cce4
+    # via -r requirements.in
 penguin-dal==0.3.0 \
     --hash=sha256:6f598d3131fcdffe1f1ab003f83d63952a1d5447bf8a2140e5a33d38a19085ca \
     --hash=sha256:16b679b5a9fadb825b48c9dd58c779c1418757b9353c9085957d7340489d950d
