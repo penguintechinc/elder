@@ -6,7 +6,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth.decorators import get_current_user, login_required, role_required
@@ -108,6 +108,7 @@ async def create_user():
         "is_active": data.get("is_active", True),
         "is_superuser": data.get("is_superuser", False),
         "mfa_enabled": data.get("mfa_enabled", False),
+        "tenant_id": data.get("tenant_id"),  # Optional from request body
     }
 
     # Build queries outside threadpool function (db is thread-local)
@@ -131,8 +132,21 @@ async def create_user():
             if existing_email:
                 return None, "Email already exists", 400
 
+        # Derive tenant_id: from request body, then from current user, then from DB default
+        tenant_id = (
+            insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+        )
+        if not tenant_id and hasattr(g, "current_user") and g.current_user:
+            tenant_id = g.current_user.tenant_id
+        if not tenant_id:
+            # Fall back to default tenant from DB
+            default_tenant = db(db.tenants.id > 0).select(limitby=(0, 1)).first()
+            tenant_id = default_tenant.id if default_tenant else None
+
         now = datetime.now(timezone.utc)
-        user_id = db.identities.insert(created_at=now, updated_at=now, **insert_data)
+        user_id = db.identities.insert(
+            created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
+        )
         db.commit()
         return db.identities[user_id], None, None
 

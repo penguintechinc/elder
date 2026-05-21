@@ -604,7 +604,7 @@ async def list_issue_labels():
     db = current_app.db
 
     labels = await run_in_threadpool(
-        lambda: db(db.issue_labels).select(orderby=db.issue_labels.name)
+        lambda: db(db.issue_labels.id > 0).select(orderby=db.issue_labels.name)
     )
 
     # Convert to DTOs

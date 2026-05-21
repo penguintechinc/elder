@@ -78,6 +78,10 @@ async def register():
         if existing_email:
             return None, "Email already exists", 400
 
+        # Get default tenant for new registrations
+        default_tenant = db(db.tenants.id > 0).select(limitby=(0, 1)).first()
+        default_tenant_id = default_tenant.id if default_tenant else None
+
         # Create new identity
         now = datetime.now(timezone.utc)
         identity_id = db.identities.insert(
@@ -90,6 +94,7 @@ async def register():
             is_active=True,
             is_superuser=False,
             mfa_enabled=False,
+            tenant_id=default_tenant_id,
             created_at=now,
             updated_at=now,
         )

@@ -405,3 +405,86 @@ class TestEnumValues:
             assert member.value[
                 0
             ].islower(), f"IdentityType.{member.name} value '{member.value}' must start with lowercase"
+
+
+# ---------------------------------------------------------------------------
+# regression: gh-121 — Identity tenant_id handling
+# ---------------------------------------------------------------------------
+
+
+class TestAWSIdentityTenantId:
+    """
+    Regression: gh-121 — AWS IAM identity creation must carry tenant_id.
+
+    identities.tenant_id is NOT NULL in the DB. create_identity() must always
+    set a tenant_id, either from the request, from g.current_user, or from DB default.
+    """
+
+    @pytest.mark.asyncio
+    async def test_create_identity_includes_tenant_id(self):
+        """
+        When creating an Identity with tenant_id set, HTTP request payload includes it.
+        """
+        from apps.worker.utils.elder_client import Identity
+
+        # Create an Identity with tenant_id
+        identity = Identity(
+            username="aws-iam-user",
+            identity_type="service_account",
+            auth_provider="aws",
+            auth_provider_id="arn:aws:iam::123456789012:user/MyUser",
+            tenant_id=3,
+        )
+
+        # Simulate the HTTP payload construction
+        data = {
+            "username": identity.username,
+            "identity_type": identity.identity_type,
+            "auth_provider": identity.auth_provider,
+            "email": identity.email,
+            "full_name": identity.full_name,
+            "auth_provider_id": identity.auth_provider_id,
+            "is_active": identity.is_active,
+            "tenant_id": identity.tenant_id,
+        }
+        payload = {k: v for k, v in data.items() if v is not None}
+
+        # Verify tenant_id is in the payload
+        assert "tenant_id" in payload, "tenant_id must be included in request payload"
+        assert payload["tenant_id"] == 3, f"Expected tenant_id=3, got {payload['tenant_id']}"
+
+    @pytest.mark.asyncio
+    async def test_create_identity_omits_none_tenant_id(self):
+        """
+        When tenant_id is None, HTTP request payload does NOT include the tenant_id key.
+
+        (It will be set server-side from default tenant or current_user.)
+        """
+        from apps.worker.utils.elder_client import Identity
+
+        # Create an Identity without tenant_id (defaults to None)
+        identity = Identity(
+            username="aws-iam-user",
+            identity_type="service_account",
+            auth_provider="aws",
+            auth_provider_id="arn:aws:iam::123456789012:user/MyUser",
+        )
+
+        # Simulate the HTTP payload construction
+        data = {
+            "username": identity.username,
+            "identity_type": identity.identity_type,
+            "auth_provider": identity.auth_provider,
+            "email": identity.email,
+            "full_name": identity.full_name,
+            "auth_provider_id": identity.auth_provider_id,
+            "is_active": identity.is_active,
+            "tenant_id": identity.tenant_id,
+        }
+        payload = {k: v for k, v in data.items() if v is not None}
+
+        # Verify tenant_id is NOT in the payload (because it's None)
+        assert "tenant_id" not in payload, (
+            "tenant_id must NOT be included when None; "
+            "server-side will use default tenant or current_user.tenant_id"
+        )

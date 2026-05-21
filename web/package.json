@@ -18,10 +18,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@penguintechinc/react-libs": "1.2.0",
+    "@penguintechinc/react-libs": "1.3.4",
     "@tanstack/react-query": "5.62.2",
     "@xyflow/react": "12.3.5",
-    "axios": "1.15.0",
+    "axios": "1.16.0",
     "clsx": "2.1.1",
     "lucide-react": "0.453.0",
     "react": "18.3.1",

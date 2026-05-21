@@ -25,7 +25,7 @@ def list_sync_configs():
     """List all sync configurations."""
     db = current_app.db
 
-    configs = db(db.sync_configs).select().as_list()
+    configs = db(db.sync_configs.id > 0).select().as_list()
 
     return jsonify({"configs": configs}), 200
 
@@ -275,7 +275,7 @@ def sync_status():
     db = current_app.db
 
     # Count configs
-    total_configs = db(db.sync_configs).count()
+    total_configs = db(db.sync_configs.id > 0).count()
     enabled_configs = db(db.sync_configs.enabled is True).count()
 
     # Count recent syncs (last 24 hours)
@@ -292,7 +292,7 @@ def sync_status():
     unresolved_conflicts = db(db.sync_conflicts.resolved is False).count()
 
     # Count mappings
-    total_mappings = db(db.sync_mappings).count()
+    total_mappings = db(db.sync_mappings.id > 0).count()
 
     return (
         jsonify(

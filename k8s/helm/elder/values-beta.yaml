@@ -218,9 +218,9 @@ grafana:
     size: 10Gi
     storageClass: "longhorn"
 
-# Ingress - Enabled in beta with TLS
+# Ingress - Disabled in beta (migrated to Cilium Gateway API)
 ingress:
-  enabled: true
+  enabled: false
   className: "nginx"
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"

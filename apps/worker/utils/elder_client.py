@@ -57,6 +57,7 @@ class Identity:
     full_name: Optional[str] = None
     auth_provider_id: Optional[str] = None
     is_active: bool = True
+    tenant_id: Optional[int] = None
 
 
 @dataclass
@@ -517,6 +518,7 @@ class ElderAPIClient:
             "full_name": identity.full_name,
             "auth_provider_id": identity.auth_provider_id,
             "is_active": identity.is_active,
+            "tenant_id": identity.tenant_id,
         }
         data = {k: v for k, v in data.items() if v is not None}
         return await self._request("POST", "/identities", json=data)

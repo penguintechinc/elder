@@ -1011,19 +1011,30 @@ test.describe('Sidebar CSS — react-libs @source regression (gh-75)', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.waitForLoadState('networkidle').catch(() => {});
 
-    // SidebarMenu from react-libs renders a <nav> element with fixed positioning
+    // SidebarMenu from react-libs wraps a <nav> in a fixed-positioned <div>.
+    // The outer div carries the `fixed` class; the inner <nav> has flex/overflow classes.
     const sidebar = page.locator('nav').first();
     await expect(sidebar, 'Sidebar <nav> must be visible — CSS may be missing').toBeVisible();
 
-    // If Tailwind classes are missing, computed styles will be browser defaults
-    // (position: static, left: auto) instead of the react-libs values
-    const position = await sidebar.evaluate((el) => window.getComputedStyle(el).position);
+    // Walk up to the nearest ancestor with position:fixed — that is the sidebar wrapper div.
+    // If Tailwind's @source for react-libs is missing, `.fixed` won't appear in the bundle
+    // and every ancestor will be position:static.
+    const { position, left } = await sidebar.evaluate((el) => {
+      let node: Element | null = el;
+      while (node) {
+        const style = window.getComputedStyle(node);
+        if (style.position === 'fixed') {
+          return { position: style.position, left: style.left };
+        }
+        node = node.parentElement;
+      }
+      return { position: window.getComputedStyle(el).position, left: 'auto' };
+    });
     expect(
       position,
       `Sidebar position is "${position}" instead of "fixed" — left-sidebar CSS classes are missing from the bundle`
     ).toBe('fixed');
 
-    const left = await sidebar.evaluate((el) => window.getComputedStyle(el).left);
     expect(
       left,
       `Sidebar left is "${left}" instead of "0px" — left-0 class is missing from the bundle`

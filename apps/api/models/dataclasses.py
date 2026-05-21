@@ -171,13 +171,13 @@ class IdentityDTO:
     id: int
     username: str
     email: Optional[str]
-    type: str  # identity type
     created_at: datetime
     updated_at: datetime
+    identity_type: Optional[str] = None
     tenant_id: Optional[int] = None
     external_id: Optional[str] = None
     provider: Optional[str] = None
-    name: Optional[str] = None
+    full_name: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool = True
@@ -1071,13 +1071,20 @@ def from_pydal_row(row, dto_class):
     """Convert PyDAL Row to dataclass DTO, ignoring unknown fields."""
     if row is None:
         return None
+    valid = set(getattr(dto_class, "__dataclass_fields__", {}).keys()) or None
     row_dict = row.as_dict()
+    if valid:
+        row_dict = {k: v for k, v in row_dict.items() if k in valid}
     return dto_class(**row_dict)
 
 
 def from_pydal_rows(rows, dto_class) -> list:
-    """Convert PyDAL Rows to list of dataclass DTOs."""
+    """Convert PyDAL Rows to list of dataclass DTOs, ignoring unknown fields."""
+    valid = set(getattr(dto_class, "__dataclass_fields__", {}).keys()) or None
     result = []
     for row in rows:
-        result.append(dto_class(**row.as_dict()))
+        row_dict = row.as_dict()
+        if valid:
+            row_dict = {k: v for k, v in row_dict.items() if k in valid}
+        result.append(dto_class(**row_dict))
     return result

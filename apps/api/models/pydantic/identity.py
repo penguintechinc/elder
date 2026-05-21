@@ -104,6 +104,7 @@ class CreateIdentityRequest(RequestModel):
     is_superuser: bool = False
     mfa_enabled: bool = False
     organization_id: Optional[int] = None
+    tenant_id: Optional[int] = None
 
     @model_validator(mode="after")
     def validate_local_auth_requires_password(self) -> "CreateIdentityRequest":

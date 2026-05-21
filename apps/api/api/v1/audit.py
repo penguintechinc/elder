@@ -39,7 +39,7 @@ def list_retention_policies():
             db.rollback()
 
         policies = db(db.audit_retention_policies.id > 0).select(
-            orderby=db.audit_retention_policies.name
+            orderby=db.audit_retention_policies.resource_type
         )
 
         return (
@@ -118,9 +118,14 @@ async def create_retention_policy():
         def inner():
             db = current_app.db
 
-            # Check if policy already exists for this name
+            # Check if policy already exists for this resource_type
             existing = (
-                db(db.audit_retention_policies.name == data["name"]).select().first()
+                db(
+                    db.audit_retention_policies.resource_type
+                    == data.get("resource_type", data.get("name"))
+                )
+                .select()
+                .first()
             )
             if existing:
                 return (
@@ -131,11 +136,11 @@ async def create_retention_policy():
 
             now = datetime.now(timezone.utc)
             policy_id = db.audit_retention_policies.insert(
-                name=data["name"],
+                resource_type=data.get("resource_type", data.get("name")),
                 description=data.get("description"),
                 retention_days=data["retention_days"],
                 event_types=data.get("event_types"),
-                is_active=data.get("is_active", True),
+                enabled=data.get("is_active", True),
                 created_at=now,
                 updated_at=now,
             )
@@ -289,13 +294,13 @@ def cleanup_audit_logs():
             # In production, you'd have specific audit log tables per resource type
 
             if dry_run:
-                results[policy.name] = {
+                results[policy.resource_type] = {
                     "retention_days": policy.retention_days,
                     "cutoff_date": cutoff_date.isoformat(),
                     "action": "dry_run",
                 }
             else:
-                results[policy.name] = {
+                results[policy.resource_type] = {
                     "retention_days": policy.retention_days,
                     "cutoff_date": cutoff_date.isoformat(),
                     "deleted": 0,
