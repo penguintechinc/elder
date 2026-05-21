@@ -7,7 +7,7 @@ type, ID, and redirect URL for navigation.
 # flake8: noqa: E501
 
 
-from flask import Blueprint, current_app, jsonify
+from quart import Blueprint, current_app, jsonify
 
 from apps.api.utils.async_utils import run_in_threadpool
 

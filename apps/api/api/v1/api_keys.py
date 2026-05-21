@@ -8,7 +8,7 @@ import secrets
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import get_current_user, login_required
 from apps.api.models.dataclasses import (

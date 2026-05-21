@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-from flask import Blueprint, current_app, jsonify
+from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import Description1000, Name255, RequestModel
 from penguin_libs.pydantic.flask_integration import validated_request
 

@@ -6,7 +6,7 @@
 import datetime
 from datetime import timezone
 
-from flask import Blueprint, current_app, request
+from quart import Blueprint, current_app, request
 
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool

@@ -9,7 +9,7 @@ for SOC 2, ISO 27001, HIPAA, and GDPR requirements.
 
 import datetime
 
-from flask import Blueprint, jsonify, request
+from quart import Blueprint, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.services.audit import AuditService

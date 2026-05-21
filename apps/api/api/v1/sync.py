@@ -9,8 +9,8 @@ project management platforms (GitHub, GitLab, Jira, Trello, OpenProject).
 
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, g, jsonify, request
-from flask_cors import cross_origin
+from quart import Blueprint, current_app, g, jsonify, request
+from quart_cors import route_cors
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.utils.async_utils import run_in_threadpool
@@ -19,7 +19,7 @@ bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
 
 
 @bp.route("/configs", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def list_sync_configs():
     """List all sync configurations."""
@@ -31,7 +31,7 @@ def list_sync_configs():
 
 
 @bp.route("/configs", methods=["POST"])
-@cross_origin()
+@route_cors()
 @login_required
 @admin_required
 async def create_sync_config():
@@ -71,7 +71,7 @@ async def create_sync_config():
 
 
 @bp.route("/configs/<int:config_id>", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def get_sync_config(config_id):
     """Get sync configuration details."""
@@ -86,7 +86,7 @@ def get_sync_config(config_id):
 
 
 @bp.route("/configs/<int:config_id>", methods=["PATCH"])
-@cross_origin()
+@route_cors()
 @admin_required
 async def update_sync_config(config_id):
     """Update sync configuration."""
@@ -123,7 +123,7 @@ async def update_sync_config(config_id):
 
 
 @bp.route("/configs/<int:config_id>", methods=["DELETE"])
-@cross_origin()
+@route_cors()
 @admin_required
 async def delete_sync_config(config_id):
     """Delete sync configuration."""
@@ -145,7 +145,7 @@ async def delete_sync_config(config_id):
 
 
 @bp.route("/history", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def list_sync_history():
     """List sync history with pagination."""
@@ -193,7 +193,7 @@ def list_sync_history():
 
 
 @bp.route("/conflicts", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def list_sync_conflicts():
     """List unresolved sync conflicts."""
@@ -212,7 +212,7 @@ def list_sync_conflicts():
 
 
 @bp.route("/conflicts/<int:conflict_id>/resolve", methods=["POST"])
-@cross_origin()
+@route_cors()
 @admin_required
 async def resolve_conflict(conflict_id):
     """Resolve a sync conflict manually."""
@@ -244,7 +244,7 @@ async def resolve_conflict(conflict_id):
 
 
 @bp.route("/mappings", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def list_sync_mappings():
     """List sync mappings."""
@@ -268,7 +268,7 @@ def list_sync_mappings():
 
 
 @bp.route("/status", methods=["GET"])
-@cross_origin()
+@route_cors()
 @login_required
 def sync_status():
     """Get overall sync status summary."""

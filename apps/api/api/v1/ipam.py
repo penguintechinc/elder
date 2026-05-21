@@ -6,7 +6,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
 from pydantic import ValidationError
 

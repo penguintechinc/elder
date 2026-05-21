@@ -6,7 +6,7 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from flask import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth.decorators import get_current_user, login_required, role_required

@@ -11,7 +11,7 @@ import datetime
 import secrets
 from typing import Optional
 
-from flask import current_app
+from quart import current_app
 
 
 class SCIMService:

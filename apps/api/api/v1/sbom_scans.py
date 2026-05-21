@@ -7,7 +7,7 @@ import fnmatch
 from dataclasses import asdict
 
 import structlog
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import (
     ValidationErrorResponse,
     validate_body,

@@ -6,7 +6,7 @@ This module aggregates all on-call rotation endpoints from separate modules.
 # flake8: noqa: E501
 
 
-from flask import Blueprint
+from quart import Blueprint
 
 from apps.api.api.v1 import (
     on_call_rotations_crud,

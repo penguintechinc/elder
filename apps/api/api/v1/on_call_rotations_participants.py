@@ -7,7 +7,7 @@ import datetime
 from dataclasses import asdict
 from datetime import timezone
 
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import PaginatedResponse

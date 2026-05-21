@@ -10,7 +10,7 @@ simplifying the use of run_in_threadpool with database queries.
 
 from typing import Any, List, Optional
 
-from flask import request
+from quart import request
 
 from apps.api.utils.async_utils import run_in_threadpool
 

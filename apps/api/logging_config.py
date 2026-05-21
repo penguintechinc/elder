@@ -18,14 +18,14 @@ import sys
 import traceback
 from typing import Optional, Tuple
 
-from flask import Flask, jsonify
+from quart import Quart, jsonify
 
 # Default log file path
 DEFAULT_LOG_FILE = "/var/log/elder.log"
 FALLBACK_LOG_FILE = "/tmp/elder.log"
 
 
-def setup_logging(app: Flask) -> None:
+def setup_logging(app: Quart) -> None:
     """
     Configure application logging with file and optional syslog handlers.
 
@@ -112,7 +112,7 @@ def setup_logging(app: Flask) -> None:
         except Exception as e:
             app.logger.error(f"Could not connect to syslog server: {e}")
 
-    # Set Flask app logger
+    # Set Quart app logger
     app.logger.handlers = root_logger.handlers
     app.logger.setLevel(log_level)
 

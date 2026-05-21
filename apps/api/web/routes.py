@@ -5,9 +5,9 @@
 
 import os
 
-from flask import Blueprint, flash, redirect, render_template, url_for
-from flask_login import current_user, login_required, logout_user
+from quart import Blueprint, flash, redirect, render_template, url_for
 
+from apps.api.auth.web_auth import clear_session_cookie, get_web_user, web_login_required
 from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
@@ -15,18 +15,18 @@ bp = Blueprint("web", __name__)
 
 def get_template_context():
     """Get common template context variables."""
+    user = get_web_user()
     context = {
         "app_version": os.getenv("APP_VERSION", "0.1.0"),
-        "current_user": current_user if current_user.is_authenticated else None,
+        "current_user": user,
     }
 
-    # Add license tier if user is authenticated
-    if current_user.is_authenticated:
+    if user is not None:
         try:
             license_client = get_license_client()
             validation = license_client.validate()
             context["license_tier"] = validation.tier
-        except:
+        except Exception:
             context["license_tier"] = "community"
 
     return context
@@ -38,36 +38,36 @@ def get_template_context():
 
 
 @bp.route("/")
-def index():
+async def index():
     """Home page - redirect to dashboard if logged in, else login."""
-    if current_user.is_authenticated:
+    if get_web_user() is not None:
         return redirect(url_for("web.dashboard"))
     return redirect(url_for("web.login"))
 
 
 @bp.route("/login", methods=["GET"])
-def login():
+async def login():
     """Login page."""
-    if current_user.is_authenticated:
+    if get_web_user() is not None:
         return redirect(url_for("web.dashboard"))
-    return render_template("auth/login.html", **get_template_context())
+    return await render_template("auth/login.html", **get_template_context())
 
 
 @bp.route("/register", methods=["GET"])
-def register():
+async def register():
     """Registration page."""
-    if current_user.is_authenticated:
+    if get_web_user() is not None:
         return redirect(url_for("web.dashboard"))
-    return render_template("auth/register.html", **get_template_context())
+    return await render_template("auth/register.html", **get_template_context())
 
 
 @bp.route("/logout")
-@login_required
-def logout():
+@web_login_required
+async def logout():
     """Logout user."""
-    logout_user()
     flash("You have been logged out successfully.", "success")
-    return redirect(url_for("web.login"))
+    response = redirect(url_for("web.login"))
+    return clear_session_cookie(response)
 
 
 # ============================================================================
@@ -76,24 +76,24 @@ def logout():
 
 
 @bp.route("/dashboard")
-@login_required
-def dashboard():
+@web_login_required
+async def dashboard():
     """Main dashboard."""
-    return render_template("dashboard.html", **get_template_context())
+    return await render_template("dashboard.html", **get_template_context())
 
 
 @bp.route("/graph")
-@login_required
-def graph():
+@web_login_required
+async def graph():
     """Graph visualization page."""
-    return render_template("graph.html", **get_template_context())
+    return await render_template("graph.html", **get_template_context())
 
 
 @bp.route("/profile")
-@login_required
-def profile():
+@web_login_required
+async def profile():
     """User profile page."""
-    return render_template("profile.html", **get_template_context())
+    return await render_template("profile.html", **get_template_context())
 
 
 # ============================================================================
@@ -102,35 +102,35 @@ def profile():
 
 
 @bp.route("/organizations")
-@login_required
-def organizations():
+@web_login_required
+async def organizations():
     """Organizations list page."""
-    return render_template("organizations/list.html", **get_template_context())
+    return await render_template("organizations/list.html", **get_template_context())
 
 
 @bp.route("/organizations/new")
-@login_required
-def create_organization():
+@web_login_required
+async def create_organization():
     """Create organization page."""
-    return render_template(
+    return await render_template(
         "organizations/form.html", mode="create", **get_template_context()
     )
 
 
 @bp.route("/organizations/<int:id>")
-@login_required
-def view_organization(id):
+@web_login_required
+async def view_organization(id):
     """View organization details."""
-    return render_template(
+    return await render_template(
         "organizations/view.html", org_id=id, **get_template_context()
     )
 
 
 @bp.route("/organizations/<int:id>/edit")
-@login_required
-def edit_organization(id):
+@web_login_required
+async def edit_organization(id):
     """Edit organization page."""
-    return render_template(
+    return await render_template(
         "organizations/form.html", mode="edit", org_id=id, **get_template_context()
     )
 
@@ -141,33 +141,33 @@ def edit_organization(id):
 
 
 @bp.route("/entities")
-@login_required
-def entities():
+@web_login_required
+async def entities():
     """Entities list page."""
-    return render_template("entities/list.html", **get_template_context())
+    return await render_template("entities/list.html", **get_template_context())
 
 
 @bp.route("/entities/new")
-@login_required
-def create_entity():
+@web_login_required
+async def create_entity():
     """Create entity page."""
-    return render_template(
+    return await render_template(
         "entities/form.html", mode="create", **get_template_context()
     )
 
 
 @bp.route("/entities/<int:id>")
-@login_required
-def view_entity(id):
+@web_login_required
+async def view_entity(id):
     """View entity details."""
-    return render_template("entities/view.html", entity_id=id, **get_template_context())
+    return await render_template("entities/view.html", entity_id=id, **get_template_context())
 
 
 @bp.route("/entities/<int:id>/edit")
-@login_required
-def edit_entity(id):
+@web_login_required
+async def edit_entity(id):
     """Edit entity page."""
-    return render_template(
+    return await render_template(
         "entities/form.html", mode="edit", entity_id=id, **get_template_context()
     )
 
@@ -178,36 +178,36 @@ def edit_entity(id):
 
 
 @bp.route("/issues")
-@login_required
-def issues():
+@web_login_required
+async def issues():
     """Issues list page (enterprise feature)."""
     context = get_template_context()
     if context.get("license_tier") != "enterprise":
         flash("Issues feature requires an Enterprise license.", "warning")
         return redirect(url_for("web.dashboard"))
-    return render_template("issues/list.html", **context)
+    return await render_template("issues/list.html", **context)
 
 
 @bp.route("/issues/new")
-@login_required
-def create_issue():
+@web_login_required
+async def create_issue():
     """Create issue page (enterprise feature)."""
     context = get_template_context()
     if context.get("license_tier") != "enterprise":
         flash("Issues feature requires an Enterprise license.", "warning")
         return redirect(url_for("web.dashboard"))
-    return render_template("issues/form.html", mode="create", **context)
+    return await render_template("issues/form.html", mode="create", **context)
 
 
 @bp.route("/issues/<int:id>")
-@login_required
-def view_issue(id):
+@web_login_required
+async def view_issue(id):
     """View issue details (enterprise feature)."""
     context = get_template_context()
     if context.get("license_tier") != "enterprise":
         flash("Issues feature requires an Enterprise license.", "warning")
         return redirect(url_for("web.dashboard"))
-    return render_template("issues/view.html", issue_id=id, **context)
+    return await render_template("issues/view.html", issue_id=id, **context)
 
 
 # ============================================================================
@@ -216,12 +216,12 @@ def view_issue(id):
 
 
 @bp.errorhandler(404)
-def not_found(error):
+async def not_found(error):
     """404 error handler."""
-    return render_template("errors/404.html", **get_template_context()), 404
+    return await render_template("errors/404.html", **get_template_context()), 404
 
 
 @bp.errorhandler(500)
-def internal_error(error):
+async def internal_error(error):
     """500 error handler."""
-    return render_template("errors/500.html", **get_template_context()), 500
+    return await render_template("errors/500.html", **get_template_context()), 500

@@ -1,4 +1,4 @@
-"""Main Flask application for Elder."""
+"""Main Quart application for Elder."""
 
 # flake8: noqa: E501
 
@@ -7,12 +7,9 @@ import logging
 import os
 
 import structlog
-from asgiref.wsgi import WsgiToAsgi
-from flask import Flask, jsonify
-from flask_cors import CORS
-from flask_login import LoginManager
-from flask_wtf.csrf import CSRFProtect
-from prometheus_flask_exporter import PrometheusMetrics
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+from quart import Quart, jsonify, make_response
+from quart_cors import cors
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
@@ -52,18 +49,17 @@ structlog.configure(
 logger = structlog.get_logger()
 
 
-def create_app(config_name: str = None) -> Flask:
+def create_app(config_name: str = None) -> Quart:
     """
-    Create and configure Flask application.
+    Create and configure Quart application.
 
     Args:
         config_name: Configuration name (development, production, testing)
 
     Returns:
-        Configured Flask application
+        Configured Quart application (native ASGI — no adapter needed)
     """
-    # Create Flask app
-    app = Flask(__name__)
+    app = Quart(__name__)
 
     # Load configuration
     if config_name is None:
@@ -134,62 +130,39 @@ def create_app(config_name: str = None) -> Flask:
         version=app.config["APP_VERSION"],
     )
 
-    # Wrap Flask WSGI app with ASGI adapter for uvicorn
-    return WsgiToAsgi(app)
+    return app
 
 
-def create_flask_app(config_name: str = None) -> Flask:
-    """Return the inner Flask app (not ASGI-wrapped) for non-uvicorn contexts."""
-    asgi = create_app(config_name)
-    return asgi.wsgi_application
+_metrics_registry = CollectorRegistry(auto_describe=True)
 
 
-def _init_extensions(app: Flask) -> None:
-    """
-    Initialize Flask extensions.
-
-    Args:
-        app: Flask application
-    """
-    # CORS
-    CORS(
+def _init_extensions(app: Quart) -> None:
+    """Initialize Quart extensions."""
+    cors(
         app,
-        origins=app.config["CORS_ORIGINS"],
-        methods=app.config["CORS_METHODS"],
+        allow_origin=app.config["CORS_ORIGINS"],
+        allow_methods=app.config["CORS_METHODS"],
         allow_headers=app.config["CORS_ALLOW_HEADERS"],
-        supports_credentials=app.config.get("CORS_SUPPORTS_CREDENTIALS", True),
+        allow_credentials=app.config.get("CORS_SUPPORTS_CREDENTIALS", True),
         expose_headers=app.config.get("CORS_EXPOSE_HEADERS", []),
     )
 
-    # CSRF Protection - Exempt API routes (they use JWT, not cookies)
-    csrf = CSRFProtect(app)
-
-    # Exempt API routes from CSRF since they use JWT Bearer tokens
-    app.config["WTF_CSRF_CHECK_DEFAULT"] = False
-
-    # Login Manager
-    login_manager = LoginManager()
-    login_manager.init_app(app)
-    login_manager.login_view = "auth.login"
-
-    @login_manager.user_loader
-    def load_user(user_id):
-        """Load user by ID."""
-        from apps.api.models import Identity
-
-        return Identity.query.get(int(user_id))
-
-    # Prometheus Metrics
     if app.config.get("METRICS_ENABLED"):
-        metrics = PrometheusMetrics(app)
-        metrics.info(
-            "elder_app_info", "Elder Application", version=app.config["APP_VERSION"]
-        )
+        _register_metrics_endpoint(app)
 
     logger.info("extensions_initialized")
 
 
-def _init_license_client(app: Flask) -> None:
+def _register_metrics_endpoint(app: Quart) -> None:
+    @app.route("/metrics")
+    async def metrics_endpoint():
+        data = generate_latest(_metrics_registry)
+        response = await make_response(data)
+        response.headers["Content-Type"] = CONTENT_TYPE_LATEST
+        return response
+
+
+def _init_license_client(app: Quart) -> None:
     """
     Initialize PenguinTech License Server client.
 
@@ -214,7 +187,7 @@ def _init_license_client(app: Flask) -> None:
         )
 
 
-def _init_access_review_scheduler(app: Flask) -> None:
+def _init_access_review_scheduler(app: Quart) -> None:
     """
     Initialize access review scheduler for periodic reviews.
 
@@ -233,13 +206,8 @@ def _init_access_review_scheduler(app: Flask) -> None:
         )
 
 
-def _register_blueprints(app: Flask) -> None:
-    """
-    Register Flask blueprints (async and sync).
-
-    Args:
-        app: Flask application
-    """
+def _register_blueprints(app: Quart) -> None:
+    """Register blueprints."""
     # Import blueprints (async versions where available)
     from apps.api.api.v1 import access_reviews  # v3.1.0: Access Review System
     from apps.api.api.v1 import audit  # Phase 8: Audit System Enhancement
@@ -432,13 +400,8 @@ def _register_blueprints(app: Flask) -> None:
     )
 
 
-def _register_error_handlers(app: Flask) -> None:
-    """
-    Register error handlers.
-
-    Args:
-        app: Flask application
-    """
+def _register_error_handlers(app: Quart) -> None:
+    """Register error handlers."""
 
     @app.errorhandler(400)
     def bad_request(error):
@@ -488,13 +451,10 @@ def _register_error_handlers(app: Flask) -> None:
 
 
 if __name__ == "__main__":
-    # Create and run application directly with Flask dev server
-    # Note: create_app() returns ASGI app, so we need to unwrap it
     import uvicorn
 
-    asgi_app = create_app()
     uvicorn.run(
-        asgi_app,
-        host=os.getenv("FLASK_HOST", "0.0.0.0"),
-        port=int(os.getenv("FLASK_PORT", 5000)),
+        create_app(),
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", 5000)),
     )

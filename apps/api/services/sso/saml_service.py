@@ -10,7 +10,7 @@ at both global and tenant levels.
 import datetime
 from typing import Optional
 
-from flask import current_app
+from quart import current_app
 
 
 class SAMLService:

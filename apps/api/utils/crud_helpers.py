@@ -11,7 +11,7 @@ and validation support. These helpers reduce code duplication across API endpoin
 from dataclasses import asdict
 from typing import Any, Callable, Dict, List, Optional
 
-from flask import current_app, jsonify, request
+from quart import current_app, jsonify, request
 
 from apps.api.utils.async_utils import run_in_threadpool
 

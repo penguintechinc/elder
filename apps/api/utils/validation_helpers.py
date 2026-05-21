@@ -13,7 +13,7 @@ from typing import Any, Optional, Tuple
 
 import pytz
 from croniter import croniter
-from flask import current_app
+from quart import current_app
 
 from apps.api.utils.async_utils import run_in_threadpool
 

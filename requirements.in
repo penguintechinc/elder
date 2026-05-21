@@ -1,17 +1,10 @@
 # Elder - Entity Relationship Tracking Application
 # Python 3.12+ required (optimized for 3.12 performance features)
 
-# Core Flask Framework (with async support)
-Flask[async]==3.1.3
-Flask-CORS==6.0.0
-Flask-Login==0.6.3
-Flask-WTF==1.2.2
+# Core ASGI Framework
+quart==0.20.0
+quart-cors==0.8.0
 Werkzeug==3.1.6
-
-# REST API
-Flask-RESTful==0.3.10
-flask-restx==1.3.0
-webargs==8.6.0
 
 # gRPC - pinned to 5.x protobuf: google-cloud-iam and google-cloud-resource-manager
 # require protobuf<6.0.0, blocking upgrade to grpcio 1.70+ which needs protobuf>=6.31.1.
@@ -86,18 +79,8 @@ packaging==24.2
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# API Documentation
-flasgger==0.9.7.1
-apispec==6.8.0
-apispec-webframeworks==1.2.0
-
-# Rate Limiting
-Flask-Limiter==3.8.0
-
-# ASGI Server (for async Flask)
+# ASGI Server
 uvicorn[standard]==0.25.0
-uvloop==0.22.1
-asgiref==3.8.1
 
 # Utilities
 python-dateutil==2.9.0.post0
@@ -108,10 +91,6 @@ toml==0.10.2
 # Graph & Data Processing
 networkx==3.4.2
 
-# WebSocket Support (for real-time updates)
-Flask-SocketIO==5.4.1
-python-socketio==5.14.0
-
 # Mock Data Generation
 Faker==33.3.1
 
@@ -119,7 +98,6 @@ Faker==33.3.1
 pytest==8.3.4
 pytest-asyncio==0.25.0
 pytest-cov==6.0.0
-pytest-flask==1.3.0
 pytest-mock==3.14.0
 
 # Code Quality

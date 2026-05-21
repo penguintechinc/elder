@@ -8,7 +8,7 @@ import logging
 from dataclasses import asdict
 from typing import Optional
 
-from flask import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic import RequestModel, validated_request
 from pydantic import Field
 

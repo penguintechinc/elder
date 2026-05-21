@@ -10,7 +10,7 @@ HIPAA, and GDPR compliance requirements.
 import datetime
 from typing import Optional
 
-from flask import current_app
+from quart import current_app
 
 
 class AuditService:

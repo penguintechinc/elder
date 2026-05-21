@@ -6,7 +6,7 @@
 import logging
 from dataclasses import asdict
 
-from flask import Blueprint, current_app, g, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
 
 from apps.api.auth.decorators import login_required

@@ -9,7 +9,7 @@ import sys
 from typing import List
 
 import aiocron
-from flask import Flask, jsonify
+from quart import Quart, jsonify
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from apps.worker.config.settings import settings
@@ -79,7 +79,7 @@ class WorkerService:
         self.sync_tasks: List[asyncio.Task] = []
         self.db_manager = None
         self.discovery_executor = None
-        self.health_app = Flask(__name__)
+        self.health_app = Quart(__name__)
         self._setup_health_endpoints()
         self._init_database()
         self._init_discovery_executor()
@@ -122,7 +122,7 @@ class WorkerService:
             logger.warning("Worker will continue without discovery execution")
 
     def _setup_health_endpoints(self):
-        """Setup Flask health check and metrics endpoints."""
+        """Setup Quart health check and metrics endpoints."""
 
         @self.health_app.route("/healthz")
         def health_check():
@@ -422,10 +422,10 @@ class WorkerService:
         logger.info("Elder Worker Service stopped")
 
     def run_health_server(self):
-        """Run Flask health check server in a separate thread."""
+        """Run Quart health check server in a separate thread."""
         import threading
 
-        def run_flask():
+        def run_quart():
             self.health_app.run(
                 host="0.0.0.0",
                 port=settings.health_check_port,
@@ -433,7 +433,7 @@ class WorkerService:
                 use_reloader=False,
             )
 
-        health_thread = threading.Thread(target=run_flask, daemon=True)
+        health_thread = threading.Thread(target=run_quart, daemon=True)
         health_thread.start()
         logger.info(
             "Health check server started",

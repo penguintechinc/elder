@@ -9,7 +9,7 @@ and SCIM 2.0 user provisioning.
 
 from functools import wraps
 
-from flask import Blueprint, Response, jsonify, request
+from quart import Blueprint, Response, jsonify, request
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
