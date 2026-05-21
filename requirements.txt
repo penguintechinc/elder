@@ -181,9 +181,9 @@ attrs==26.1.0 \
     #   aiohttp
     #   jsonschema
     #   referencing
-authlib==1.7.0 \
-    --hash=sha256:b3e326c9aa9cc3ea95fe7d89fd880722d3608da4d00e8a27e061e64b48d801d5 \
-    --hash=sha256:e36817afb02f6f0b6bf55f150782499ddd6ddf44b402bb055d3263cc65ac9ae0
+authlib==1.7.1 \
+    --hash=sha256:8470f4aa6b5590ac41bd81d6e6ee12448ce36a0da0af19bbed69fb53fb4e8ad9 \
+    --hash=sha256:8c09b0f9d080c823e594b52316af70f79a1fa4eed64d0363a076233c04ef063a
     # via -r requirements.in
 bandit==1.8.3 \
     --hash=sha256:28f04dc0d258e1dd0f99dee8eefa13d1cb5e3fde1a5ab0c523971f97b289bcd8 \
@@ -1174,9 +1174,9 @@ httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via -r requirements.in
-idna==3.11 \
-    --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea \
-    --hash=sha256:795dafcc9c04ed0c1fb032c2aa73654d8e8c5023a7df64a53f39190ada629902
+idna==3.15 \
+    --hash=sha256:048adeaf8c2d788c40fee287673ccaa74c24ffd8dcf09ffa555a2fbb59f10ac8 \
+    --hash=sha256:ca962446ea538f7092a95e057da437618e886f4d349216d2b1e294abfdb65fdc
     # via
     #   anyio
     #   email-validator
@@ -1806,9 +1806,9 @@ pathspec==1.0.4 \
     --hash=sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645 \
     --hash=sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723
     # via black
-penguin-dal==0.2.1 \
-    --hash=sha256:52caa11e9eef65041bf996113e1ca7195ea4a078d780e11b3bb3fed4011f4a6e \
-    --hash=sha256:d750532f956c663e195fd1d1512b2b523b249e3ba11243282e58630e78690bf7
+penguin-dal==0.3.0 \
+    --hash=sha256:6f598d3131fcdffe1f1ab003f83d63952a1d5447bf8a2140e5a33d38a19085ca \
+    --hash=sha256:16b679b5a9fadb825b48c9dd58c779c1418757b9353c9085957d7340489d950d
     # via -r requirements.in
 penguin-libs==0.1.0 \
     --hash=sha256:3ebcf4c646cd7fafabe67eef4400d7ff536fd85ecded45bd23756c368e35b366 \
@@ -2811,9 +2811,9 @@ uritemplate==4.2.0 \
     --hash=sha256:480c2ed180878955863323eea31b0ede668795de182617fef9c6ca09e6ec9d0e \
     --hash=sha256:962201ba1c4edcab02e60f9a0d3821e82dfc5d2d6662a21abd533879bdb8a686
     # via google-api-python-client
-urllib3==2.6.3 \
-    --hash=sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed \
-    --hash=sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4
+urllib3==2.7.0 \
+    --hash=sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c \
+    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
     # via
     #   botocore
     #   kubernetes
