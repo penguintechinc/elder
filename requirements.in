@@ -44,7 +44,7 @@ defusedxml>=0.7.1
 lxml>=6.1.0
 
 # Authentication - OAuth2
-Authlib==1.7.0
+Authlib==1.7.1
 # Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
 
 # Security & Cryptography
