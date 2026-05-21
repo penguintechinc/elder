@@ -54,7 +54,7 @@ def list_providers():
 @bp.route("/providers", methods=["POST"])
 @login_required
 @admin_required
-def create_provider():
+async def create_provider():
     """
     Create Google Workspace provider.
 
@@ -73,7 +73,7 @@ def create_provider():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -132,7 +132,7 @@ def get_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @admin_required
-def update_provider(provider_id):
+async def update_provider(provider_id):
     """
     Update provider configuration.
 
@@ -151,7 +151,7 @@ def update_provider(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -279,7 +279,7 @@ def get_user(provider_id, user_key):
 @bp.route("/providers/<int:provider_id>/users", methods=["POST"])
 @login_required
 @admin_required
-def create_user(provider_id):
+async def create_user(provider_id):
     """
     Create Google Workspace user.
 
@@ -298,7 +298,7 @@ def create_user(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -332,7 +332,7 @@ def create_user(provider_id):
 
 @bp.route("/providers/<int:provider_id>/users/<path:user_key>", methods=["PUT"])
 @admin_required
-def update_user(provider_id, user_key):
+async def update_user(provider_id, user_key):
     """
     Update user details.
 
@@ -349,7 +349,7 @@ def update_user(provider_id, user_key):
         404: Provider or user not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -455,7 +455,7 @@ def get_group(provider_id, group_key):
 @bp.route("/providers/<int:provider_id>/groups", methods=["POST"])
 @login_required
 @admin_required
-def create_group(provider_id):
+async def create_group(provider_id):
     """
     Create Google Workspace group.
 
@@ -472,7 +472,7 @@ def create_group(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -559,7 +559,7 @@ def list_group_members(provider_id, group_key):
     "/providers/<int:provider_id>/groups/<path:group_key>/members", methods=["POST"]
 )
 @admin_required
-def add_group_member(provider_id, group_key):
+async def add_group_member(provider_id, group_key):
     """
     Add member to group.
 
@@ -575,7 +575,7 @@ def add_group_member(provider_id, group_key):
         404: Provider or group not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data or "member_email" not in data:
             return jsonify({"error": "member_email is required"}), 400

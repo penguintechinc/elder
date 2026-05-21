@@ -7,7 +7,7 @@ import logging
 from dataclasses import asdict
 
 from quart import Blueprint, current_app, g, jsonify, request
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
@@ -292,7 +292,7 @@ async def delete_organization(id: int):
 
     # Delete organization
     try:
-        await run_in_threadpool(lambda: db.organizations.__delitem__(id))
+        await run_in_threadpool(lambda: db(db.organizations.id == id).delete())
         await commit_db(db)
         return ApiResponse.no_content()
 

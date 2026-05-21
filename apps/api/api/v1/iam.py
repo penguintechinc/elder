@@ -72,7 +72,7 @@ def get_provider(provider_id):
 @bp.route("/providers", methods=["POST"])
 @login_required
 @admin_required
-def create_provider():
+async def create_provider():
     """
     Create a new IAM provider.
 
@@ -93,7 +93,7 @@ def create_provider():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -122,7 +122,7 @@ def create_provider():
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @admin_required
-def update_provider(provider_id):
+async def update_provider(provider_id):
     """
     Update provider configuration.
 
@@ -139,7 +139,7 @@ def update_provider(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -287,7 +287,7 @@ def get_user(provider_id, user_id):
 @bp.route("/providers/<int:provider_id>/users", methods=["POST"])
 @login_required
 @admin_required
-def create_user(provider_id):
+async def create_user(provider_id):
     """
     Create a new user.
 
@@ -304,7 +304,7 @@ def create_user(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -325,7 +325,7 @@ def create_user(provider_id):
 
 @bp.route("/providers/<int:provider_id>/users/<user_id>", methods=["PUT"])
 @admin_required
-def update_user(provider_id, user_id):
+async def update_user(provider_id, user_id):
     """
     Update user.
 
@@ -340,7 +340,7 @@ def update_user(provider_id, user_id):
         404: Provider or user not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -436,7 +436,7 @@ def get_role(provider_id, role_id):
 @bp.route("/providers/<int:provider_id>/roles", methods=["POST"])
 @login_required
 @admin_required
-def create_role(provider_id):
+async def create_role(provider_id):
     """
     Create a new role.
 
@@ -454,7 +454,7 @@ def create_role(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -475,7 +475,7 @@ def create_role(provider_id):
 
 @bp.route("/providers/<int:provider_id>/roles/<role_id>", methods=["PUT"])
 @admin_required
-def update_role(provider_id, role_id):
+async def update_role(provider_id, role_id):
     """
     Update role.
 
@@ -490,7 +490,7 @@ def update_role(provider_id, role_id):
         404: Provider or role not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -586,7 +586,7 @@ def get_policy(provider_id, policy_id):
 @bp.route("/providers/<int:provider_id>/policies", methods=["POST"])
 @login_required
 @admin_required
-def create_policy(provider_id):
+async def create_policy(provider_id):
     """
     Create a new policy.
 
@@ -604,7 +604,7 @@ def create_policy(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -898,7 +898,7 @@ def list_groups(provider_id):
 @bp.route("/providers/<int:provider_id>/groups", methods=["POST"])
 @login_required
 @admin_required
-def create_group(provider_id):
+async def create_group(provider_id):
     """
     Create a new group.
 
@@ -914,7 +914,7 @@ def create_group(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

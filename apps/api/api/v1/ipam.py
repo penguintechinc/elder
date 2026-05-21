@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
-from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
+from apps.api.utils.quart_validation import ValidationErrorResponse
 from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required, resource_role_required
@@ -140,7 +140,7 @@ async def create_prefix():
     db = current_app.db
 
     try:
-        data = CreateIPAMPrefixRequest.model_validate(request.get_json() or {})
+        data = CreateIPAMPrefixRequest.model_validate(await request.get_json() or {})
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -278,7 +278,7 @@ async def update_prefix(id: int):
     db = current_app.db
 
     try:
-        data = UpdateIPAMPrefixRequest.model_validate(request.get_json() or {})
+        data = UpdateIPAMPrefixRequest.model_validate(await request.get_json() or {})
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -481,7 +481,7 @@ async def create_address():
     db = current_app.db
 
     try:
-        data = CreateIPAMAddressRequest.model_validate(request.get_json() or {})
+        data = CreateIPAMAddressRequest.model_validate(await request.get_json() or {})
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -571,7 +571,7 @@ async def update_address(id: int):
     db = current_app.db
 
     try:
-        data = UpdateIPAMAddressRequest.model_validate(request.get_json() or {})
+        data = UpdateIPAMAddressRequest.model_validate(await request.get_json() or {})
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -765,7 +765,7 @@ async def create_vlan():
     db = current_app.db
 
     try:
-        data = CreateIPAMVlanRequest.model_validate(request.get_json() or {})
+        data = CreateIPAMVlanRequest.model_validate(await request.get_json() or {})
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -856,7 +856,7 @@ async def update_vlan(id: int):
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 

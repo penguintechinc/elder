@@ -64,10 +64,10 @@ def get_secret(secret_path):
 
 @bp.route("", methods=["POST"])
 @login_required
-def create_secret():
+async def create_secret():
     """Create a new built-in secret."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -107,10 +107,10 @@ def create_secret():
 
 @bp.route("/<path:secret_path>", methods=["PUT", "PATCH"])
 @login_required
-def update_secret(secret_path):
+async def update_secret(secret_path):
     """Update a built-in secret."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -166,10 +166,10 @@ def delete_secret(secret_path):
 
 @bp.route("/test-connection", methods=["POST"])
 @login_required
-def test_connection():
+async def test_connection():
     """Test built-in secrets database connection."""
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
         organization_id = data.get("organization_id", 1)
 
         config = {"organization_id": organization_id}

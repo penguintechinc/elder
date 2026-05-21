@@ -180,7 +180,7 @@ async def create_rotation():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -385,7 +385,7 @@ async def update_rotation(rotation_id: int):
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

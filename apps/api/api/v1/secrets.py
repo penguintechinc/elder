@@ -144,7 +144,7 @@ def unmask_secret(secret_id):
 
 @bp.route("", methods=["POST"])
 @login_required
-def create_secret():
+async def create_secret():
     """
     Register a new secret from a provider.
 
@@ -165,7 +165,7 @@ def create_secret():
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -221,7 +221,7 @@ def create_secret():
 
 @bp.route("/<int:secret_id>", methods=["PUT"])
 @login_required
-def update_secret(secret_id):
+async def update_secret(secret_id):
     """
     Update secret metadata (not the actual value in provider).
 
@@ -239,7 +239,7 @@ def update_secret(secret_id):
     try:
         from flask import g
 
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -393,7 +393,7 @@ def list_secret_providers():
 
 @bp.route("/providers", methods=["POST"])
 @login_required
-def create_secret_provider():
+async def create_secret_provider():
     """
     Register a new secret provider.
 
@@ -414,7 +414,7 @@ def create_secret_provider():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -477,7 +477,7 @@ def get_secret_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
-def update_secret_provider(provider_id):
+async def update_secret_provider(provider_id):
     """
     Update secret provider configuration.
 
@@ -493,7 +493,7 @@ def update_secret_provider(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

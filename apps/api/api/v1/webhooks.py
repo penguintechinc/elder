@@ -63,7 +63,7 @@ def list_webhooks():
 @bp.route("", methods=["POST"])
 @login_required
 @admin_required
-def create_webhook():
+async def create_webhook():
     """
     Create a new webhook.
 
@@ -83,7 +83,7 @@ def create_webhook():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -136,7 +136,7 @@ def get_webhook(webhook_id):
 
 @bp.route("/<int:webhook_id>", methods=["PUT"])
 @admin_required
-def update_webhook(webhook_id):
+async def update_webhook(webhook_id):
     """
     Update webhook configuration.
 
@@ -156,7 +156,7 @@ def update_webhook(webhook_id):
         404: Webhook not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -321,7 +321,7 @@ def list_notification_rules():
 @bp.route("/notification-rules", methods=["POST"])
 @login_required
 @admin_required
-def create_notification_rule():
+async def create_notification_rule():
     """
     Create a new notification rule.
 
@@ -343,7 +343,7 @@ def create_notification_rule():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -395,7 +395,7 @@ def get_notification_rule(rule_id):
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["PUT"])
 @admin_required
-def update_notification_rule(rule_id):
+async def update_notification_rule(rule_id):
     """
     Update notification rule.
 
@@ -413,7 +413,7 @@ def update_notification_rule(rule_id):
         404: Rule not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -488,7 +488,7 @@ def test_notification_rule(rule_id):
 
 @bp.route("/broadcast", methods=["POST"])
 @admin_required
-def broadcast_event():
+async def broadcast_event():
     """
     Broadcast an event to all applicable webhooks and notification rules.
 
@@ -504,7 +504,7 @@ def broadcast_event():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

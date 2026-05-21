@@ -185,7 +185,7 @@ def get_retention_policy():
 
 @bp.route("/cleanup", methods=["POST"])
 @portal_token_required
-def cleanup_old_logs():
+async def cleanup_old_logs():
     """Clean up audit logs older than retention period.
 
     Requires admin permission.
@@ -203,7 +203,7 @@ def cleanup_old_logs():
     ):
         return jsonify({"error": "Admin permission required"}), 403
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     tenant_id = data.get("tenant_id")
 
     if not tenant_id:

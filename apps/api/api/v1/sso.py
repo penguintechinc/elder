@@ -90,7 +90,7 @@ def list_idp_configs():
 @bp.route("/idp", methods=["POST"])
 @login_required
 @portal_token_required
-def create_idp_config():
+async def create_idp_config():
     """Create a new IdP configuration.
 
     Requires global admin or tenant admin.
@@ -130,7 +130,7 @@ def create_idp_config():
     ):
         return jsonify({"error": "Admin permission required"}), 403
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -168,7 +168,7 @@ def create_idp_config():
 
 @bp.route("/idp/<int:config_id>", methods=["PUT"])
 @portal_token_required
-def update_idp_config(config_id):
+async def update_idp_config(config_id):
     """Update an IdP configuration.
 
     Args:
@@ -184,7 +184,7 @@ def update_idp_config(config_id):
     ):
         return jsonify({"error": "Admin permission required"}), 403
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -443,7 +443,7 @@ def oidc_callback():
 
 @bp.route("/oidc/logout/<int:idp_id>", methods=["POST"])
 @portal_token_required
-def oidc_logout(idp_id):
+async def oidc_logout(idp_id):
     """Initiate OIDC logout (RP-Initiated Logout).
 
     Args:
@@ -456,7 +456,7 @@ def oidc_logout(idp_id):
     Returns:
         End session endpoint URL
     """
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     id_token_hint = data.get("id_token_hint")
     post_logout_redirect_uri = data.get("post_logout_redirect_uri")
 
@@ -497,7 +497,7 @@ def oidc_userinfo(idp_id):
 
 @bp.route("/oidc/refresh/<int:idp_id>", methods=["POST"])
 @portal_token_required
-def oidc_refresh(idp_id):
+async def oidc_refresh(idp_id):
     """Refresh OIDC access token.
 
     Args:
@@ -509,7 +509,7 @@ def oidc_refresh(idp_id):
     Returns:
         New tokens
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -533,7 +533,7 @@ def oidc_refresh(idp_id):
 @bp.route("/scim/config", methods=["POST"])
 @login_required
 @portal_token_required
-def create_scim_config():
+async def create_scim_config():
     """Create SCIM configuration for a tenant.
 
     Request body:
@@ -549,7 +549,7 @@ def create_scim_config():
     ):
         return jsonify({"error": "Admin permission required"}), 403
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
 
     # Tenant admins can only configure their tenant
     tenant_id = data.get("tenant_id")
@@ -638,7 +638,7 @@ def scim_list_users(tenant_id):
 
 @bp.route("/scim/<int:tenant_id>/Users", methods=["POST"])
 @scim_auth_required
-def scim_create_user(tenant_id):
+async def scim_create_user(tenant_id):
     """SCIM 2.0 - Create user.
 
     Request body:
@@ -647,7 +647,7 @@ def scim_create_user(tenant_id):
     Returns:
         Created SCIM User
     """
-    scim_user = request.get_json()
+    scim_user = await request.get_json()
     if not scim_user:
         return (
             jsonify(
@@ -710,7 +710,7 @@ def scim_get_user(tenant_id, user_id):
 
 @bp.route("/scim/<int:tenant_id>/Users/<int:user_id>", methods=["PUT"])
 @scim_auth_required
-def scim_update_user(tenant_id, user_id):
+async def scim_update_user(tenant_id, user_id):
     """SCIM 2.0 - Replace user.
 
     Args:
@@ -723,7 +723,7 @@ def scim_update_user(tenant_id, user_id):
     Returns:
         Updated SCIM User
     """
-    scim_user = request.get_json()
+    scim_user = await request.get_json()
     if not scim_user:
         return (
             jsonify(

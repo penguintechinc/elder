@@ -6,7 +6,7 @@
 from dataclasses import asdict
 
 from quart import Blueprint, current_app, jsonify, request
-from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
+from apps.api.utils.quart_validation import ValidationErrorResponse
 from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required, resource_role_required
@@ -228,7 +228,7 @@ async def sync_vulnerabilities():
 
     # Validate request using pydantic
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
         validated_req = SyncVulnerabilitiesRequest(**data)
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
@@ -441,7 +441,7 @@ async def update_component_vulnerability(id: int):
 
     # Validate request using pydantic
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data:
             return ApiResponse.error("Request body is required", 400)
         validated_req = UpdateComponentVulnerabilityRequest(**data)
@@ -523,7 +523,7 @@ async def trigger_nvd_sync():
 
     # Validate request using pydantic
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
         validated_req = NVDSyncRequest(**data)
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
@@ -625,7 +625,7 @@ async def assign_vulnerability(id: int):
 
     # Validate request
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data:
             return ApiResponse.error("Request body is required", 400)
         validated_req = AssignVulnerabilityRequest(**data)

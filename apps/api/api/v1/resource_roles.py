@@ -164,7 +164,7 @@ async def create_resource_role():
 
     # Validate request body
     try:
-        req_data = CreateResourceRoleRequest(**request.get_json() or {})
+        req_data = CreateResourceRoleRequest(**await request.get_json() or {})
     except ValidationError as e:
         errors = []
         for err in e.errors():

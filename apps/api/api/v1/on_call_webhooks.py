@@ -95,7 +95,7 @@ async def handle_alertmanager_webhook():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

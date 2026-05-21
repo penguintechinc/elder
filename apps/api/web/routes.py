@@ -211,6 +211,20 @@ async def view_issue(id):
 
 
 # ============================================================================
+# SPA Catch-All Route
+# ============================================================================
+
+
+@bp.route("/<path:path>")
+async def spa_catch_all(path):
+    """Catch-all route for SPA client-side routing."""
+    if path.startswith("api/"):
+        from quart import jsonify
+        return jsonify({"error": "Not found"}), 404
+    return await render_template("dashboard.html", **get_template_context())
+
+
+# ============================================================================
 # Error Handlers
 # ============================================================================
 
@@ -218,10 +232,17 @@ async def view_issue(id):
 @bp.errorhandler(404)
 async def not_found(error):
     """404 error handler."""
-    return await render_template("errors/404.html", **get_template_context()), 404
+    from quart import request
+    if request.path.startswith("/api/"):
+        from quart import jsonify
+        return jsonify({"error": "Not found"}), 404
+    return await render_template("dashboard.html", **get_template_context()), 404
 
 
 @bp.errorhandler(500)
 async def internal_error(error):
     """500 error handler."""
-    return await render_template("errors/500.html", **get_template_context()), 500
+    from quart import request, jsonify
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return await render_template("dashboard.html", **get_template_context()), 500

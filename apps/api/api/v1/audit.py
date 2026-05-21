@@ -104,7 +104,7 @@ async def create_retention_policy():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -176,7 +176,7 @@ async def update_retention_policy(policy_id):
         404: Policy not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

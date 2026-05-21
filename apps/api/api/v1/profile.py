@@ -100,7 +100,7 @@ async def update_profile():
     db = current_app.db
     user_id = g.current_user.id  # Get user ID before entering thread pool
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 

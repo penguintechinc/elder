@@ -91,7 +91,7 @@ def generate_tokens(user: dict) -> dict:
 
 
 @bp.route("/register", methods=["POST"])
-def register():
+async def register():
     """Register a new portal user.
 
     Request body:
@@ -104,7 +104,7 @@ def register():
         User info and tokens on success
         422: Invalid email format or validation error
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -209,7 +209,7 @@ def register():
 
 
 @bp.route("/login", methods=["POST"])
-def login():
+async def login():
     """Authenticate a portal user.
 
     Request body:
@@ -221,7 +221,7 @@ def login():
         Tokens on success, or MFA challenge
         422: Invalid email format or validation error
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -330,7 +330,7 @@ def login():
 
 
 @bp.route("/mfa/verify", methods=["POST"])
-def verify_mfa():
+async def verify_mfa():
     """Verify MFA code after initial authentication.
 
     Request body:
@@ -340,7 +340,7 @@ def verify_mfa():
     Returns:
         Tokens on success
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -425,7 +425,7 @@ def disable_mfa():
 
 @bp.route("/password/change", methods=["POST"])
 @portal_token_required
-def change_password():
+async def change_password():
     """Change password for the authenticated user.
 
     Request body:
@@ -435,7 +435,7 @@ def change_password():
     Returns:
         Success status
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -455,7 +455,7 @@ def change_password():
 
 
 @bp.route("/password/reset", methods=["POST"])
-def reset_password():
+async def reset_password():
     """Initiate password reset.
 
     Request body:
@@ -465,7 +465,7 @@ def reset_password():
     Returns:
         Success message (token in development only)
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -481,7 +481,7 @@ def reset_password():
 
 
 @bp.route("/refresh", methods=["POST"])
-def refresh_token():
+async def refresh_token():
     """Refresh access token using refresh token.
 
     Request body:
@@ -490,7 +490,7 @@ def refresh_token():
     Returns:
         New access token
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
@@ -615,7 +615,7 @@ def update_current_user():
 
 @bp.route("/org-assignments", methods=["POST"])
 @portal_token_required
-def assign_org_role():
+async def assign_org_role():
     """Assign a portal user to an organization with a role.
 
     Requires tenant admin or global admin.
@@ -635,7 +635,7 @@ def assign_org_role():
     ):
         return jsonify({"error": "Admin permission required"}), 403
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 

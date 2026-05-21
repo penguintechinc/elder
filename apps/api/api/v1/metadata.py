@@ -9,7 +9,7 @@ from typing import Optional, Union
 
 from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import RequestModel
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.licensing_fallback import license_required

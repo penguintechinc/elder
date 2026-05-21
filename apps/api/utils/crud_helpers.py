@@ -87,7 +87,7 @@ class CrudHelper:
             orderby = ~table.created_at
 
         # Execute paginated query
-        def execute_query():
+        async def execute_query():
             total = db(query).count()
             rows = db(query).select(
                 orderby=orderby,
@@ -155,7 +155,7 @@ class CrudHelper:
         db = current_app.db
 
         # Get and validate JSON body
-        data = request.get_json()
+        data = await request.get_json()
         if error := validate_json_body(data):
             return error
 
@@ -174,7 +174,7 @@ class CrudHelper:
             data = pre_insert_fn(data)
 
         # Insert record
-        def do_create():
+        async def do_create():
             record_id = table.insert(**data)
             db.commit()
             return record_id
@@ -288,7 +288,7 @@ class CrudHelper:
         db = current_app.db
 
         # Get and validate JSON body
-        data = request.get_json()
+        data = await request.get_json()
         if error := validate_json_body(data):
             return error
 

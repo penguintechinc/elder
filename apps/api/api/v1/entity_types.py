@@ -149,7 +149,7 @@ def get_subtype_metadata_template(entity_type, sub_type):
 
 @bp.route("/validate", methods=["POST"])
 @login_required
-def validate_entity_type():
+async def validate_entity_type():
     """
     Validate an entity type and sub-type combination.
 
@@ -163,7 +163,7 @@ def validate_entity_type():
         200: Validation result
         400: Missing required fields
     """
-    data = request.get_json()
+    data = await request.get_json()
 
     if not data:
         return jsonify({"error": "Request body required"}), 400

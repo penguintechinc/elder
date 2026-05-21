@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 import structlog
 from quart import Blueprint, current_app, jsonify, request
-from penguin_libs.pydantic.flask_integration import (
+from apps.api.utils.quart_validation import (
     ValidationErrorResponse,
     validate_body,
 )

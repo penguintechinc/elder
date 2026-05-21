@@ -6,7 +6,7 @@
 import logging
 
 from quart import Blueprint, jsonify, request
-from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
+from apps.api.utils.quart_validation import ValidationErrorResponse
 from pydantic import ValidationError
 
 from apps.api.auth.decorators import login_required
@@ -68,10 +68,10 @@ def get_network(network_id):
 
 @bp.route("/networks", methods=["POST"])
 @login_required
-def create_network():
+async def create_network():
     """Create a new networking resource."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -103,10 +103,10 @@ def create_network():
 
 @bp.route("/networks/<int:network_id>", methods=["PUT", "PATCH"])
 @login_required
-def update_network(network_id):
+async def update_network(network_id):
     """Update networking resource."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -196,10 +196,10 @@ def get_topology_connection(connection_id):
 
 @bp.route("/topology/connections", methods=["POST"])
 @login_required
-def create_topology_connection():
+async def create_topology_connection():
     """Create a network topology connection."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -293,10 +293,10 @@ def get_entity_mapping(mapping_id):
 
 @bp.route("/mappings", methods=["POST"])
 @login_required
-def create_entity_mapping():
+async def create_entity_mapping():
     """Map an entity to a network."""
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

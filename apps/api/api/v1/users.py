@@ -83,7 +83,7 @@ async def create_user():
     """Create a new user (admin only)."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body is required"}), 400
 
@@ -184,7 +184,7 @@ async def update_user(user_id: int):
     """Update a user (admin only)."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body is required"}), 400
 

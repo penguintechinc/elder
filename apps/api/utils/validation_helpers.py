@@ -139,13 +139,13 @@ def validate_json_body(data: Any) -> Optional[Tuple[Any, int]]:
         Error response tuple if validation fails, None if successful
 
     Usage:
-        data = request.get_json()
+        data = await request.get_json()
         error = validate_json_body(data)
         if error:
             return error
 
     Example:
-        data = request.get_json()
+        data = await request.get_json()
         if error := validate_json_body(data):
             return error
     """

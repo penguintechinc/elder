@@ -326,7 +326,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
         @login_required
         @license_required('enterprise')
         @resource_role_required('maintainer', resource_param='id')
-        def create_entity_metadata(id):
+        async def create_entity_metadata(id):
             # Only maintainers can create metadata
             pass
 
@@ -334,7 +334,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
         @login_required
         @license_required('enterprise')
         @resource_role_required('viewer')
-        def create_issue():
+        async def create_issue():
             # Viewers can create issues
             # Must provide entity_id or organization_id in request body
             pass
@@ -368,7 +368,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
 
             # If not in route params, check request body (for POST/PATCH)
             if not resource_id and request.is_json:
-                data = request.get_json()
+                data = await request.get_json()
                 if "entity_id" in data:
                     resource_id = data["entity_id"]
                     resource_type = "entity"

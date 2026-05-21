@@ -62,7 +62,7 @@ def list_backup_jobs():
 @bp.route("/jobs", methods=["POST"])
 @login_required
 @admin_required
-def create_backup_job():
+async def create_backup_job():
     """
     Create a new backup job.
 
@@ -82,7 +82,7 @@ def create_backup_job():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -138,7 +138,7 @@ def get_backup_job(job_id):
 
 @bp.route("/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
-def update_backup_job(job_id):
+async def update_backup_job(job_id):
     """
     Update backup job configuration.
 
@@ -156,7 +156,7 @@ def update_backup_job(job_id):
         404: Job not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -329,7 +329,7 @@ def delete_backup(backup_id):
 
 @bp.route("/<int:backup_id>/restore", methods=["POST"])
 @admin_required
-def restore_backup(backup_id):
+async def restore_backup(backup_id):
     """
     Restore from backup.
 
@@ -349,7 +349,7 @@ def restore_backup(backup_id):
         404: Backup not found
     """
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         service = get_backup_service()
 
@@ -374,7 +374,7 @@ def restore_backup(backup_id):
 
 @bp.route("/export", methods=["POST"])
 @admin_required
-def export_data():
+async def export_data():
     """
     Export data to various formats.
 
@@ -390,7 +390,7 @@ def export_data():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

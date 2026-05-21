@@ -106,7 +106,7 @@ async def lookup_entities_batch():
     """
     db = current_app.db
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
 
     if "ids" not in data or not isinstance(data["ids"], list):
         return jsonify({"error": "Request must include 'ids' array"}), 400
