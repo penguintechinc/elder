@@ -66,13 +66,20 @@ quart-cors>=0.7.0       # CORS for Quart (replaces flask-cors)
 quart-wtf>=1.0.0        # WTF/CSRF for Quart (replaces flask-wtf)
 ```
 
-### Keep (already present)
+### Keep (already present, no change)
 
 ```
-uvicorn[standard]       # unchanged — still the ASGI server
-Flask[async]            # REMOVE — no longer needed
-Flask-CORS              # REMOVE — replaced by quart-cors
-Flask-WTF               # REMOVE — replaced by quart-wtf
+uvicorn[standard]       # still the ASGI server
+```
+
+### Remove (additional cleanup)
+
+```
+Flask[async]            # replaced by quart
+Flask-CORS              # replaced by quart-cors
+Flask-WTF               # replaced by quart-wtf
+Werkzeug                # Flask dependency — removed with Flask
+webargs                 # not imported anywhere in apps/api — safe to remove
 ```
 
 ---
@@ -211,7 +218,7 @@ API clients are unaffected: they continue sending `Authorization: Bearer <token>
 5. `apps/api/api/v1/auth.py` — set `elder_session` cookie on login response
 6. `apps/api/api/v1/sync.py` — replace cross_origin
 7. `apps/api/api/v1/tenants.py` — fix stray import
-8. Update `apps/worker/` health endpoint (Flask → Quart or plain http.server)
+8. Update `apps/worker/` health endpoint: replace `flask>=3.0.0` in `apps/worker/requirements.in` with `quart>=0.19.0`; the health Blueprint is a 3-route file, migration is mechanical
 9. Run full test suite; fix any `flask`-specific import failures
 10. Update `requirements.txt` (pip-compile)
 
