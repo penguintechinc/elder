@@ -462,6 +462,11 @@ gateway:
     secretName: penguintech-cloud-wildcard-tls
   timeouts:
     request: "300s"
+  parentRef:
+    name: shared
+    namespace: gateway
+    httpsSection: https
+    httpSection: http
 
 # Service Account
 serviceAccount:

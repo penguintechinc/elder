@@ -7,9 +7,9 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
-    sectionName: https
+  - name: {{ .Values.gateway.parentRef.name | default "shared" }}
+    namespace: {{ .Values.gateway.parentRef.namespace | default "gateway" }}
+    sectionName: {{ .Values.gateway.parentRef.httpsSection | default "https" }}
   hostnames:
   - {{ .Values.gateway.host | quote }}
   rules:
@@ -39,9 +39,9 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
-    sectionName: http
+  - name: {{ .Values.gateway.parentRef.name | default "shared" }}
+    namespace: {{ .Values.gateway.parentRef.namespace | default "gateway" }}
+    sectionName: {{ .Values.gateway.parentRef.httpSection | default "http" }}
   hostnames:
   - {{ .Values.gateway.host | quote }}
   rules:

@@ -34,8 +34,9 @@ NC='\033[0m'
 CONTEXT="dal2-beta"
 NAMESPACE="elder"
 # Internal LB — bypasses Cloudflare
-LB_URL="https://dal2.penguintech.io"
-# Host header — must match Ingress spec host
+# Internal bypass — office static IP whitelisted in Cloudflare, origin → 192.168.7.129:443
+LB_URL="https://dal2.penguintech.cloud"
+# Host header — must match Gateway HTTPRoute hostname
 HOST="elder.penguintech.cloud"
 API_BASE="$LB_URL/api/v1"
 PLAYWRIGHT_PORT=3030

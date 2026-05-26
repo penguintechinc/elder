@@ -33,7 +33,7 @@ postgres:
   persistence:
     enabled: true
     size: 10Gi
-    storageClass: "longhorn"
+    storageClass: "nest-block"
 
 # Redis - 1 replica for beta (RWO PVC cannot be multi-attached)
 redis:
@@ -53,7 +53,7 @@ redis:
   persistence:
     enabled: true
     size: 5Gi
-    storageClass: "longhorn"
+    storageClass: "nest-block"
 
 # Elder Web UI - 2 replicas for beta
 web:
@@ -176,7 +176,7 @@ prometheus:
   persistence:
     enabled: true
     size: 20Gi
-    storageClass: "longhorn"
+    storageClass: "nest-block"
 
 # Alertmanager - Enabled in beta
 alertmanager:
@@ -196,7 +196,7 @@ alertmanager:
   persistence:
     enabled: true
     size: 5Gi
-    storageClass: "longhorn"
+    storageClass: "nest-block"
 
 # Grafana - Enabled in beta
 grafana:
@@ -216,7 +216,7 @@ grafana:
   persistence:
     enabled: true
     size: 10Gi
-    storageClass: "longhorn"
+    storageClass: "nest-block"
 
 # Ingress - Disabled in beta (migrated to Cilium Gateway API)
 ingress:
@@ -254,6 +254,11 @@ gateway:
     secretName: penguintech-cloud-wildcard-tls
   timeouts:
     request: "300s"
+  parentRef:
+    name: dal2-gateway
+    namespace: cilium-gateway
+    httpsSection: https
+    httpSection: http
 
 # Service Account
 serviceAccount:

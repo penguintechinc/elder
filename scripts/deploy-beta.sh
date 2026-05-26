@@ -119,16 +119,20 @@ log_info "Namespace: $K8S_NAMESPACE"
 log_info "Context: $K8S_CONTEXT"
 echo ""
 
-# Image configurations: name, dockerfile, context
-declare -A IMAGES
-IMAGES[api]="apps/api/Dockerfile:."
-IMAGES[web]="web/Dockerfile:."
-IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner"
-IMAGES[worker]="apps/worker/Dockerfile:."
+# Image configurations: name -> "dockerfile:buildcontext" (Bash 3.2 compatible)
+_get_image_config() {
+    case "$1" in
+        api)     echo "apps/api/Dockerfile:." ;;
+        web)     echo "web/Dockerfile:." ;;
+        scanner) echo "apps/scanner/Dockerfile:apps/scanner" ;;
+        worker)  echo "apps/worker/Dockerfile:." ;;
+    esac
+}
 
 build_and_push_image() {
     local name=$1
-    local config=${IMAGES[$name]}
+    local config
+    config=$(_get_image_config "$name")
 
     if [ -z "$config" ]; then
         log_error "Unknown image: $name"
@@ -184,9 +188,9 @@ helm_upgrade() {
     fi
 
     log_info "Running helm upgrade..."
-    helm upgrade elder k8s/helm/elder \
+    helm upgrade --install elder k8s/helm/elder \
         --kube-context="$K8S_CONTEXT" \
-        --namespace "$K8S_NAMESPACE" \
+        --namespace "$K8S_NAMESPACE" --create-namespace \
         --values k8s/helm/elder/values.yaml \
         --values k8s/helm/elder/values-beta.yaml \
         "${set_args[@]}"
