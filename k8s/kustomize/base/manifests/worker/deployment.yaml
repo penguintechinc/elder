@@ -28,6 +28,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: elder-modules
+            - configMapRef:
+                name: elder-otel
           env:
             - name: ELDER_API_URL
               value: "http://api:5000"
@@ -55,6 +57,8 @@ spec:
               value: DEBUG
             - name: LOG_FORMAT
               value: json
+            - name: OTEL_SERVICE_NAME
+              value: "elder-worker"
           livenessProbe:
             httpGet:
               path: /healthz

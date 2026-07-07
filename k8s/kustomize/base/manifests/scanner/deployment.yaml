@@ -22,6 +22,9 @@ spec:
         - name: scanner
           image: elder-scanner:alpha-latest
           imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: elder-otel
           env:
             - name: SCANNER_POLL_INTERVAL
               value: "600"
@@ -33,6 +36,8 @@ spec:
               value: "/app/screenshots"
             - name: LOG_LEVEL
               value: DEBUG
+            - name: OTEL_SERVICE_NAME
+              value: "elder-scanner"
           resources:
             requests:
               memory: "128Mi"

@@ -20,6 +20,8 @@ from scanners.http_screenshot import HTTPScreenshotScanner
 from scanners.network import NetworkScanner
 from scanners.sbom_scanner import SBOMScanner
 
+from shared.observability import init_telemetry
+
 # Configuration from environment
 POLL_INTERVAL = int(os.getenv("SCANNER_POLL_INTERVAL", "300"))
 API_URL = os.getenv("ELDER_API_URL", "http://api:5000")
@@ -29,6 +31,9 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 NVD_SYNC_INTERVAL_HOURS = int(
     os.getenv("NVD_SYNC_INTERVAL_HOURS", "24")
 )  # Run NVD sync once per day
+
+# Initialize OpenTelemetry (Phase 0.5)
+otel = init_telemetry("elder-scanner")
 
 # Setup logging
 logging.basicConfig(

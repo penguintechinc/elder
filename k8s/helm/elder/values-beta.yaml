@@ -9,6 +9,12 @@ global:
   imagePullSecrets:
     - name: ghcr-pull-secret
 
+# OpenTelemetry - enabled, in-cluster SigNoz collector on dal2-beta
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
 # PostgreSQL - 1 replica for beta (RWO PVC cannot be multi-attached)
 postgres:
   enabled: true

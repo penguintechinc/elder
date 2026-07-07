@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ./manifests/namespace.yaml
   - ./manifests/configmap-modules.yaml
+  - ./manifests/configmap-otel.yaml
   - ./manifests/postgres/pvc.yaml
   - ./manifests/postgres/deployment.yaml
   - ./manifests/postgres/service.yaml

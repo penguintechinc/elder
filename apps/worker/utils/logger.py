@@ -10,10 +10,14 @@ from typing import Any
 import structlog
 
 from apps.worker.config.settings import settings
+from shared.observability import init_telemetry
 
 
 def configure_logging() -> None:
-    """Configure structured logging with structlog."""
+    """Configure structured logging with structlog and OpenTelemetry (Phase 0.5)."""
+
+    # Initialize OpenTelemetry (Phase 0.5)
+    otel = init_telemetry("elder-worker")
 
     # Configure standard logging
     logging.basicConfig(

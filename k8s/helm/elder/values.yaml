@@ -34,6 +34,15 @@ modules:
   aiSearch: false
   compliance: false
 
+# OpenTelemetry (Phase 0.5) — ungated/Free observability; all services export to SigNoz via OTLP.
+# Rendered into the elder-otel ConfigMap (OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL), consumed via
+# envFrom by the api, worker, and scanner Deployments. OTEL_SERVICE_NAME is set per-component
+# (elder-api/elder-worker/elder-scanner) directly in the deployment template.
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
 # PostHog feature flags / product analytics (Phase 2 — external shared instance, NOT a subchart)
 # Uncomment and configure when Layer 4 toggles are implemented.
 # posthog:
