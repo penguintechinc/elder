@@ -66,6 +66,17 @@ mistune==3.2.1
 prometheus-client==0.21.1
 prometheus-flask-exporter==0.23.1
 
+# OpenTelemetry (Phase 0.5) — OTLP HTTP export to SigNoz, ungated/free
+# Pinned to 1.43.0/0.64b0 for protobuf 5.29.6 compatibility (drop grpc exporter, use http only)
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-otlp-proto-http==1.43.0
+opentelemetry-instrumentation==0.64b0
+opentelemetry-instrumentation-asgi==0.64b0
+opentelemetry-instrumentation-httpx==0.64b0
+opentelemetry-instrumentation-psycopg2==0.64b0
+opentelemetry-instrumentation-redis==0.64b0
+
 # Structured Logging
 structlog==25.4.0
 python-json-logger==3.2.1

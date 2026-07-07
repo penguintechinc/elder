@@ -8,6 +8,12 @@ global:
   imageRegistry: ""
   imagePullSecrets: []
 
+# OpenTelemetry - enabled, in-cluster SigNoz collector on local-alpha (MicroK8s)
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
 # PostgreSQL - Single replica for alpha
 postgres:
   enabled: true

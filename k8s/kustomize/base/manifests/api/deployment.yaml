@@ -30,6 +30,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: elder-modules
+            - configMapRef:
+                name: elder-otel
           env:
             - name: DATABASE_URL
               value: "postgres://elder:elder_dev_password@postgres:5432/elder"
@@ -85,6 +87,8 @@ spec:
               value: "true"
             - name: SITE_URL
               value: "http://localhost:3005"
+            - name: OTEL_SERVICE_NAME
+              value: "elder-api"
           livenessProbe:
             httpGet:
               path: /healthz

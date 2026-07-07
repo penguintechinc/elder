@@ -23,6 +23,7 @@ from shared.database import (
     init_sqlalchemy_tables,
     log_startup_status,
 )
+from shared.observability import auto_instrument_app, init_telemetry
 
 # Configure standard library logging
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -73,7 +74,11 @@ def create_app(config_name: str = None) -> Quart:
     app.config.from_object(config)
     config.init_app(app)
 
-    # Setup logging (must be after config but before other initializations)
+    # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
+    otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "elder-api"))
+    app.extensions["otel"] = otel
+
+    # Setup logging (must be after OTel but before other initializations)
     setup_logging(app)
 
     # Initialize extensions
@@ -136,6 +141,9 @@ def create_app(config_name: str = None) -> Quart:
     )
 
     _register_before_request(app)
+
+    # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
+    auto_instrument_app(app)
 
     return app
 

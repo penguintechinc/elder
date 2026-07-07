@@ -34,16 +34,29 @@ spec:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
-        {{- if or (eq $component "api") (eq $component "worker") }}
+        {{- $hasModules := or (eq $component "api") (eq $component "worker") }}
+        {{- $isOtelComponent := or (eq $component "api") (eq $component "worker") (eq $component "scanner") }}
+        {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
+        {{- if or $hasModules $hasOtel }}
         envFrom:
+        {{- if $hasModules }}
         - configMapRef:
             name: elder-modules
         {{- end }}
-        {{- if $componentConfig.env }}
+        {{- if $hasOtel }}
+        - configMapRef:
+            name: elder-otel
+        {{- end }}
+        {{- end }}
+        {{- if or $componentConfig.env $hasOtel }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
+        {{- end }}
+        {{- if $hasOtel }}
+        - name: OTEL_SERVICE_NAME
+          value: {{ printf "elder-%s" $component | quote }}
         {{- end }}
         {{- end }}
         ports:
