@@ -68,35 +68,31 @@ def init_sqlalchemy_tables(app):
     Safe to call on startup — create_all() is idempotent and only creates
     tables that are missing. Does NOT run Alembic migrations.
     For schema migrations on existing databases, use: ./scripts/migrate.sh
+
+    Imports all models registry-driven via CORE_MODELS and MODULES.models_import
+    so table discovery is centralized in apps.api.modules/__init__.py.
     """
+    import importlib
+
     from sqlalchemy import create_engine
     from sqlalchemy.exc import IntegrityError, OperationalError
 
-    # Import all models so they register with Base.metadata
-    from apps.api.models import (  # noqa: F401
-        access_review,
-        alert_config,
-        audit,
-        auth_providers,
-        dependency,
-        discovery,
-        entity,
-        identity,
-        infrastructure,
-        ipam,
-        issue,
-        metadata,
-        oncall,
-        organization,
-        project,
-        rbac,
-        resource_role,
-        secrets,
-        security,
-        tenant,
-        webhooks,
-    )
     from apps.api.models.base import Base
+    from apps.api.modules import CORE_MODELS, MODULES
+
+    # Collect all model modules to import (dedup + order-independent)
+    model_modules_to_import = set(CORE_MODELS)
+
+    for module_manifest in MODULES:
+        for model_module in module_manifest.models_import:
+            model_modules_to_import.add(model_module)
+
+    # Import all models so they register with Base.metadata
+    for model_module_path in sorted(model_modules_to_import):
+        try:
+            importlib.import_module(model_module_path)
+        except ImportError as e:
+            logger.warning(f"Failed to import model module {model_module_path}: {e}")
 
     database_url = get_database_url(app)
     engine = create_engine(database_url)
