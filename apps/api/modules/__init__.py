@@ -84,7 +84,7 @@ def _sbom_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _services_oncall_blueprints() -> list[tuple[Blueprint, str]]:
     """Load service catalog and on-call rotation blueprints."""
-    from apps.api.api.v1 import on_call_rotations
+    from apps.api.modules.services_oncall.routes import on_call_rotations
 
     api_prefix = "/api/v1"
     return [(on_call_rotations.bp, f"{api_prefix}/on-call")]
@@ -213,7 +213,7 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_services_oncall_blueprints,
-        models_import=("apps.api.models.oncall",),
+        models_import=("apps.api.modules.services_oncall.models",),
         table_prefix=None,
         nav_id="nav_services_oncall",
         scopes=(
