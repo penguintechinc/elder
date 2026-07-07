@@ -13,6 +13,16 @@ if TYPE_CHECKING:
 
 from apps.api.modules.registry import ModuleManifest
 
+# Core models owned by no module — always loaded for Base.metadata discovery
+CORE_MODELS = (
+    "apps.api.models.audit",
+    "apps.api.models.auth_providers",
+    "apps.api.models.identity",
+    "apps.api.models.rbac",
+    "apps.api.models.security",
+    "apps.api.models.tenant",
+)
+
 
 def _infrastructure_blueprints() -> list[tuple[Blueprint, str]]:
     """Load infrastructure module blueprints (entities, compute, storage, deps, graph)."""
@@ -156,6 +166,7 @@ MODULES = (
             "apps.api.models.entity",
             "apps.api.models.organization",
             "apps.api.models.infrastructure",
+            "apps.api.models.dependency",
         ),
         table_prefix=None,
         nav_id="nav_infrastructure",
@@ -220,7 +231,11 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_issues_blueprints,
-        models_import=("apps.api.models.issue", "apps.api.models.project"),
+        models_import=(
+            "apps.api.models.issue",
+            "apps.api.models.project",
+            "apps.api.models.metadata",
+        ),
         table_prefix=None,
         nav_id="nav_issues",
         scopes=("issues:read", "issues:write", "issues:admin"),
@@ -297,4 +312,4 @@ MODULES = (
     ),
 )
 
-__all__ = ["MODULES", "ModuleManifest"]
+__all__ = ["MODULES", "CORE_MODELS", "ModuleManifest"]
