@@ -99,8 +99,9 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize access review scheduler (v3.1.0)
     _init_access_review_scheduler(app)
 
-    # Register blueprints
+    # Register core blueprints and load feature modules
     _register_blueprints(app)
+    _load_modules(app)
 
     # Register error handlers
     _register_error_handlers(app)
@@ -255,197 +256,94 @@ def _init_access_review_scheduler(app: Quart) -> None:
 
 
 def _register_blueprints(app: Quart) -> None:
-    """Register blueprints."""
-    # Import blueprints (async versions where available)
-    from apps.api.api.v1 import access_reviews  # v3.1.0: Access Review System
-    from apps.api.api.v1 import audit  # Phase 8: Audit System Enhancement
-    from apps.api.api.v1 import audit_enterprise  # v2.2.0: Enhanced Audit & Compliance
-    from apps.api.api.v1 import backup  # Phase 10: Backup & Data Management
-    from apps.api.api.v1 import builtin_secrets  # v2.0.0: Built-in Secrets Storage
-    from apps.api.api.v1 import certificates  # v2.4.0: Certificate Management
-    from apps.api.api.v1 import costs  # Cost tracking
-    from apps.api.api.v1 import data_stores  # v3.0.0: Data Store Tracking
-    from apps.api.api.v1 import discovery  # Phase 5: Cloud Auto-Discovery
-    from apps.api.api.v1 import group_membership  # v3.x: Group Membership Management
-    from apps.api.api.v1 import iam  # Phase 4: IAM Integration
-    from apps.api.api.v1 import ipam  # v2.3.0: IP Address Management
-    from apps.api.api.v1 import keys  # Phase 3: Keys Management
-    from apps.api.api.v1 import license_policies  # v3.0.0: License Compliance
-    from apps.api.api.v1 import logs  # Admin Log Viewer
-    from apps.api.api.v1 import networking  # v2.0.0: Networking Resources & Topology
-    from apps.api.api.v1 import on_call_rotations  # v3.x: On-Call Rotation Management
-    from apps.api.api.v1 import portal_auth  # v2.2.0: Portal User Authentication
-    from apps.api.api.v1 import sbom  # v3.0.0: SBOM Component Tracking
-    from apps.api.api.v1 import sbom_scans  # v3.0.0: SBOM Scan Management
-    from apps.api.api.v1 import sbom_schedules  # v3.0.0: SBOM Scan Schedules
-    from apps.api.api.v1 import search  # Phase 10: Advanced Search
-    from apps.api.api.v1 import secrets  # Phase 2: Secrets Management
-    from apps.api.api.v1 import services  # v2.3.0: Services Tracking
-    from apps.api.api.v1 import software  # v2.3.0: Software Tracking
-    from apps.api.api.v1 import sso  # v2.2.0: SSO/SAML/SCIM
-    from apps.api.api.v1 import tenants  # v2.2.0: Tenant Management
-    from apps.api.api.v1 import vulnerabilities  # v3.0.0: Vulnerability Management
-    from apps.api.api.v1 import webhooks  # Phase 9: Webhook & Notification System
-    from apps.api.api.v1 import (  # Phase 7: Google Workspace Integration
+    """Register CORE (always-on) blueprints.
+
+    Phase 0: Core blueprints that are always available. Feature modules
+    are registered separately via _load_modules().
+    """
+    # Lookup endpoints with special prefixes
+    from apps.api.api.v1 import (
         api_keys,
+        audit,
+        audit_enterprise,
         auth,
-        dependencies,
-        entities,
-        entity_types,
-        google_workspace,
-        graph,
+        backup,
         identities,
-        issues,
-        labels,
+        logs,
         lookup,
         lookup_village_id,
-        metadata,
-        milestones,
-        organization_tree,
-        organizations_pydal,
+        modules,
+        portal_auth,
         profile,
-        projects,
-        resource_roles,
-        sync,
+        search,
+        sso,
+        tenants,
         users,
     )
     from apps.api.web import routes as web
 
-    # Register API v1 blueprints
     api_prefix = app.config["API_PREFIX"]
 
-    # Use async organizations_pydal blueprint (PyDAL + async/await)
-    app.register_blueprint(
-        organizations_pydal.bp, url_prefix=f"{api_prefix}/organizations"
-    )
-    app.register_blueprint(entities.bp, url_prefix=f"{api_prefix}/entities")
-    app.register_blueprint(entity_types.bp, url_prefix=f"{api_prefix}/entity-types")
-    app.register_blueprint(dependencies.bp, url_prefix=f"{api_prefix}/dependencies")
-    app.register_blueprint(graph.bp, url_prefix=f"{api_prefix}/graph")
+    # Core authentication and identity
     app.register_blueprint(auth.bp, url_prefix=f"{api_prefix}/auth")
     app.register_blueprint(profile.bp, url_prefix=f"{api_prefix}/profile")
     app.register_blueprint(identities.bp, url_prefix=f"{api_prefix}/identities")
     app.register_blueprint(api_keys.bp, url_prefix=f"{api_prefix}/api-keys")
     app.register_blueprint(users.bp, url_prefix=f"{api_prefix}/users")
 
-    # Enterprise feature blueprints
-    app.register_blueprint(resource_roles.bp, url_prefix=f"{api_prefix}/resource-roles")
-    app.register_blueprint(issues.bp, url_prefix=f"{api_prefix}/issues")
-    app.register_blueprint(labels.bp, url_prefix=f"{api_prefix}/labels")
-    app.register_blueprint(metadata.bp, url_prefix=f"{api_prefix}/metadata")
-    app.register_blueprint(projects.bp, url_prefix=f"{api_prefix}/projects")
-    app.register_blueprint(milestones.bp, url_prefix=f"{api_prefix}/milestones")
-    app.register_blueprint(organization_tree.bp, url_prefix=f"{api_prefix}")
-    app.register_blueprint(sync.bp, url_prefix=f"{api_prefix}/sync")
-    app.register_blueprint(
-        group_membership.bp, url_prefix=f"{api_prefix}/group-membership"
-    )  # v3.x: Group Membership Management
-    app.register_blueprint(
-        access_reviews.bp, url_prefix=f"{api_prefix}"
-    )  # v3.1.0: Access Review System
+    # Tenancy and administration
+    app.register_blueprint(tenants.bp, url_prefix=f"{api_prefix}/tenants")
+    app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
+    app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
 
-    # v1.2.0 Feature blueprints
-    app.register_blueprint(secrets.bp, url_prefix=f"{api_prefix}/secrets")  # Phase 2
-    app.register_blueprint(keys.bp, url_prefix=f"{api_prefix}/keys")  # Phase 3
-    app.register_blueprint(iam.bp, url_prefix=f"{api_prefix}/iam")  # Phase 4
-    app.register_blueprint(
-        discovery.bp, url_prefix=f"{api_prefix}/discovery"
-    )  # Phase 5
-    app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")  # Phase 8
-    app.register_blueprint(logs.bp, url_prefix=f"{api_prefix}/logs")  # Admin Log Viewer
-    app.register_blueprint(webhooks.bp, url_prefix=f"{api_prefix}/webhooks")  # Phase 9
-    app.register_blueprint(search.bp, url_prefix=f"{api_prefix}/search")  # Phase 10
-    app.register_blueprint(backup.bp, url_prefix=f"{api_prefix}/backup")  # Phase 10
-    app.register_blueprint(
-        google_workspace.bp, url_prefix=f"{api_prefix}/google-workspace"
-    )  # Phase 7
-
-    # v2.0.0 Feature blueprints
-    app.register_blueprint(
-        networking.bp
-    )  # Networking already has /api/v1/networking prefix
-    app.register_blueprint(
-        builtin_secrets.bp
-    )  # Built-in secrets already has /api/v1/builtin-secrets prefix
-
-    # v2.2.0 Enterprise Edition blueprints
-    app.register_blueprint(
-        portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth"
-    )  # Portal user authentication
-    app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")  # SSO/SAML/SCIM
+    # Audit and logging
+    app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")
     app.register_blueprint(
         audit_enterprise.bp, url_prefix=f"{api_prefix}/audit-enterprise"
-    )  # Enhanced audit & compliance
-    app.register_blueprint(
-        tenants.bp, url_prefix=f"{api_prefix}/tenants"
-    )  # Tenant management
+    )
+    app.register_blueprint(logs.bp, url_prefix=f"{api_prefix}/logs")
 
-    # v2.3.0 Feature blueprints
-    app.register_blueprint(
-        software.bp, url_prefix=f"{api_prefix}/software"
-    )  # Software tracking
-    app.register_blueprint(
-        services.bp, url_prefix=f"{api_prefix}/services"
-    )  # Services tracking
-    app.register_blueprint(
-        ipam.bp, url_prefix=f"{api_prefix}/ipam"
-    )  # IP Address Management
-    app.register_blueprint(
-        data_stores.bp, url_prefix=f"{api_prefix}/data-stores"
-    )  # v3.0.0: Data Store Tracking (Community)
-    app.register_blueprint(
-        sbom.bp, url_prefix=f"{api_prefix}/sbom/components"
-    )  # v3.0.0: SBOM Component Tracking
-    app.register_blueprint(
-        sbom_scans.bp, url_prefix=f"{api_prefix}/sbom/scans"
-    )  # v3.0.0: SBOM Scan Management
-    app.register_blueprint(
-        sbom_schedules.bp, url_prefix=f"{api_prefix}/sbom/schedules"
-    )  # v3.0.0: SBOM Scan Schedules
-    app.register_blueprint(
-        vulnerabilities.bp, url_prefix=f"{api_prefix}/vulnerabilities"
-    )  # v3.0.0: Vulnerability Management
-    app.register_blueprint(
-        license_policies.bp, url_prefix=f"{api_prefix}/license-policies"
-    )  # v3.0.0: License Compliance
+    # Search and backup
+    app.register_blueprint(search.bp, url_prefix=f"{api_prefix}/search")
+    app.register_blueprint(backup.bp, url_prefix=f"{api_prefix}/backup")
 
-    # v2.4.0 Feature blueprints
-    app.register_blueprint(
-        certificates.bp, url_prefix=f"{api_prefix}/certificates"
-    )  # Certificate management
-    app.register_blueprint(costs.bp, url_prefix=f"{api_prefix}/costs")  # Cost tracking
+    # Module registry endpoint
+    app.register_blueprint(modules.bp, url_prefix=f"{api_prefix}")
 
-    # v3.x Feature blueprints
-    app.register_blueprint(
-        on_call_rotations.bp, url_prefix=f"{api_prefix}/on-call"
-    )  # On-Call Rotation Management
-
-    # Public lookup endpoint (no /api/v1 prefix for cleaner URLs)
+    # Special-prefix endpoints
     app.register_blueprint(lookup.bp, url_prefix="/lookup")
-
-    # Village ID lookup endpoint (no prefix - accessible at /id/{village_id})
     app.register_blueprint(lookup_village_id.bp, url_prefix="")
 
     # Web UI blueprint (root routes)
     app.register_blueprint(web.bp, url_prefix="")
 
     logger.info(
-        "blueprints_registered",
+        "core_blueprints_registered",
         api_prefix=api_prefix,
-        blueprints=[
-            "organizations (async PyDAL)",
-            "entities",
-            "dependencies",
-            "graph",
-            "auth",
-            "identities",
-            "resource_roles",
-            "issues",
-            "metadata",
-            "lookup",
-            "web",
-        ],
+        count=13,
     )
+
+
+def _load_modules(app: Quart) -> None:
+    """Load and mount feature modules based on environment configuration.
+
+    Resolves enabled modules from ELDER_MODULES_ENABLED env var and per-module
+    overrides, then registers their blueprints. Phase 0: all modules re-export
+    existing blueprints from apps.api.api.v1 with zero file moves.
+    """
+    from apps.api.modules.registry import mount, resolve_enabled
+
+    try:
+        enabled_modules = resolve_enabled(os.environ)
+        mount(app, enabled_modules)
+        logger.info(
+            "feature_modules_loaded",
+            module_count=len(enabled_modules),
+            modules=[m.name for m in enabled_modules],
+        )
+    except Exception as e:
+        logger.error("feature_modules_load_failed", error=str(e))
+        raise
 
 
 def _register_error_handlers(app: Quart) -> None:

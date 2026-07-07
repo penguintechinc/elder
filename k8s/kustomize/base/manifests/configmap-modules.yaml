@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elder-modules
+  labels:
+    app.kubernetes.io/part-of: elder
+data:
+  # Elder-native modules — enabled
+  ELDER_MODULE_INFRASTRUCTURE: "true"
+  ELDER_MODULE_IPAM: "true"
+  ELDER_MODULE_SBOM: "true"
+  ELDER_MODULE_SERVICES_ONCALL: "true"
+  ELDER_MODULE_ISSUES: "true"
+  ELDER_MODULE_DISCOVERY: "true"
+  ELDER_MODULE_SECRETS: "true"
+  ELDER_MODULE_WEBHOOKS_ALERTING: "true"
+  ELDER_MODULE_ACCESS_REVIEWS: "true"
+  # Absorbed modules (Ruffled/IceCharts) — disabled until ported (Phase 3+)
+  ELDER_MODULE_HELPDESK: "false"
+  ELDER_MODULE_DIAGRAMS: "false"
+  ELDER_MODULE_STREAMS: "false"
+  ELDER_MODULE_FLOWS: "false"
+  ELDER_MODULE_RUNS: "false"
+  ELDER_MODULE_DOCUMENTS: "false"
+  ELDER_MODULE_PAGES: "false"
+  ELDER_MODULE_AI_SEARCH: "false"
+  ELDER_MODULE_COMPLIANCE: "false"

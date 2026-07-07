@@ -27,6 +27,9 @@ spec:
               containerPort: 5000
             - name: grpc
               containerPort: 50051
+          envFrom:
+            - configMapRef:
+                name: elder-modules
           env:
             - name: DATABASE_URL
               value: "postgres://elder:elder_dev_password@postgres:5432/elder"

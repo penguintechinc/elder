@@ -25,6 +25,9 @@ spec:
           ports:
             - name: http
               containerPort: 28000
+          envFrom:
+            - configMapRef:
+                name: elder-modules
           env:
             - name: ELDER_API_URL
               value: "http://api:5000"

@@ -103,3 +103,20 @@ Image pull policy helper
 {{- $context := index . 1 -}}
 {{- (index $context.Values $component).image.pullPolicy | default "IfNotPresent" }}
 {{- end }}
+
+{{/*
+Convert a camelCase module key to UPPER_SNAKE_CASE for ELDER_MODULE_<NAME> env vars.
+e.g. servicesOncall -> SERVICES_ONCALL, aiSearch -> AI_SEARCH
+*/}}
+{{- define "elder.upperSnakeCase" -}}
+{{- $input := . -}}
+{{- $result := "" -}}
+{{- range $i, $char := regexSplit "" $input -1 }}
+{{- if and (regexMatch "[A-Z]" $char) (gt $i 0) }}
+{{- $result = printf "%s_%s" $result $char }}
+{{- else }}
+{{- $result = printf "%s%s" $result ($char | upper) }}
+{{- end }}
+{{- end }}
+{{- $result }}
+{{- end }}

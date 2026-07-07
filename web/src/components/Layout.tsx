@@ -1,111 +1,35 @@
 import { useLocation, Outlet, useNavigate } from 'react-router-dom'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
-  Building2,
-  Box,
-  GitBranch,
-  AlertCircle,
-  Tag,
   Search as SearchIcon,
-  Map as MapIcon,
-  FolderKanban,
-  Flag,
+  MapIcon,
   User,
   LogOut,
-  Key,
-  FileKey,
-  Shield,
-  Compass,
-  Webhook,
-  Database,
-  Network,
   Settings,
   FileText,
   Users,
   ChevronDown,
   ChevronRight,
-  Package,
-  Server,
-  Globe,
-  HardDrive,
+  Shield,
   Repeat2,
   Lock,
-  Bug,
-  Route,
-  Layers,
-  Clock,
 } from 'lucide-react'
 import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import api from '@/lib/api'
 
-// Navigation organized by categories
-const navigationCategories: MenuCategory[] = [
+// Module framework
+import { navFor } from '@/modules/registry'
+import { useModules } from '@/hooks/useModules'
+
+// Core navigation (always available)
+const coreNavigation: MenuCategory[] = [
   {
     items: [
       { name: 'Dashboard', href: '/', icon: LayoutDashboard },
       { name: 'Search', href: '/search', icon: SearchIcon },
-      { name: 'Dependencies', href: '/dependencies', icon: GitBranch },
       { name: 'Map', href: '/map', icon: MapIcon },
-    ],
-  },
-  {
-    header: 'Assets',
-    collapsible: true,
-    items: [
-      { name: 'Compute', href: '/compute', icon: Server },
-      { name: 'Entities', href: '/entities', icon: Box },
-      { name: 'Organizations', href: '/organizations', icon: Building2 },
-    ],
-  },
-  {
-    header: 'Software & Services',
-    collapsible: true,
-    items: [
-      { name: 'Software', href: '/software', icon: Package },
-      { name: 'Services', href: '/services', icon: Server },
-      { name: 'SBOM Dashboard', href: '/sbom', icon: Layers },
-      { name: 'Service Endpoints', href: '/service-endpoints', icon: Route },
-      { name: 'Vulnerabilities', href: '/vulnerabilities', icon: Bug },
-    ],
-  },
-  {
-    header: 'Tracking',
-    collapsible: true,
-    items: [
-      { name: 'Issues', href: '/issues', icon: AlertCircle },
-      { name: 'Labels', href: '/labels', icon: Tag },
-      { name: 'Milestones', href: '/milestones', icon: Flag },
-      { name: 'Projects', href: '/projects', icon: FolderKanban },
-      { name: 'Data Stores', href: '/data-stores', icon: HardDrive },
-    ],
-  },
-  {
-    header: 'Security',
-    collapsible: true,
-    items: [
-      { name: 'Identity Center', href: '/iam', icon: Shield },
-      { name: 'Keys', href: '/keys', icon: Key },
-      { name: 'Secrets', href: '/secrets', icon: Key },
-      { name: 'Certificates', href: '/certificates', icon: FileKey },
-    ],
-  },
-  {
-    header: 'Infrastructure',
-    collapsible: true,
-    items: [
-      { name: 'On-Call Rotations', href: '/on-call-rotations', icon: Clock },
-      { name: 'Discovery', href: '/discovery', icon: Compass },
-      { name: 'Networking', href: '/networking', icon: Network },
-      { name: 'IPAM', href: '/ipam', icon: Globe },
-    ],
-  },
-  {
-    header: 'Operations',
-    collapsible: true,
-    items: [
-      { name: 'Backups', href: '/backups', icon: Database },
-      { name: 'Webhooks', href: '/webhooks', icon: Webhook },
     ],
   },
 ]
@@ -138,6 +62,9 @@ export default function Layout() {
     retry: false,
   })
 
+  // Fetch enabled modules
+  const { enabled: enabledModules } = useModules()
+
   // Determine user roles for admin navigation visibility
   const globalRole = userProfile?.global_role
   const tenantRole = userProfile?.tenant_role
@@ -150,19 +77,23 @@ export default function Layout() {
     return false
   })
 
-  // Build all categories including admin if visible
-  const allCategories: MenuCategory[] = [
-    ...navigationCategories,
-    ...(visibleAdminNav.length > 0
-      ? [
-          {
-            header: 'Administration',
-            collapsible: true,
-            items: visibleAdminNav,
-          },
-        ]
-      : []),
-  ]
+  // Build navigation: core + module nav + admin
+  const allCategories: MenuCategory[] = useMemo(() => {
+    const categories = [
+      ...coreNavigation,
+      ...navFor(enabledModules), // Module-gated nav
+      ...(visibleAdminNav.length > 0
+        ? [
+            {
+              header: 'Administration',
+              collapsible: true,
+              items: visibleAdminNav,
+            },
+          ]
+        : []),
+    ]
+    return categories
+  }, [enabledModules, visibleAdminNav])
 
   const handleLogout = () => {
     localStorage.removeItem('elder_token')

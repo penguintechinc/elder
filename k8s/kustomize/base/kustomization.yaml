@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ./manifests/namespace.yaml
+  - ./manifests/configmap-modules.yaml
   - ./manifests/postgres/pvc.yaml
   - ./manifests/postgres/deployment.yaml
   - ./manifests/postgres/service.yaml
