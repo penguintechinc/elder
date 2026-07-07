@@ -92,7 +92,14 @@ def _services_oncall_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _issues_blueprints() -> list[tuple[Blueprint, str]]:
     """Load issues module blueprints (issues, projects, milestones, labels, comments)."""
-    from apps.api.api.v1 import comments, issues, labels, metadata, milestones, projects
+    from apps.api.modules.issues.routes import (
+        comments,
+        issues,
+        labels,
+        metadata,
+        milestones,
+        projects,
+    )
 
     api_prefix = "/api/v1"
     return [
@@ -241,9 +248,9 @@ MODULES = (
         depends_on=(),
         blueprints=_issues_blueprints,
         models_import=(
-            "apps.api.models.issue",
-            "apps.api.models.project",
-            "apps.api.models.metadata",
+            "apps.api.modules.issues.models.issue",
+            "apps.api.modules.issues.models.project",
+            "apps.api.modules.issues.models.metadata",
         ),
         table_prefix=None,
         nav_id="nav_issues",
