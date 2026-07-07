@@ -120,7 +120,12 @@ def _discovery_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _secrets_blueprints() -> list[tuple[Blueprint, str]]:
     """Load secrets module blueprints (secrets, keys, certificates, builtin secrets)."""
-    from apps.api.api.v1 import builtin_secrets, certificates, keys, secrets
+    from apps.api.modules.secrets.routes import (
+        builtin_secrets,
+        certificates,
+        keys,
+        secrets,
+    )
 
     api_prefix = "/api/v1"
     return [
@@ -263,7 +268,7 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_secrets_blueprints,
-        models_import=("apps.api.models.secrets",),
+        models_import=("apps.api.modules.secrets.models",),
         table_prefix=None,
         nav_id="nav_secrets",
         scopes=("secrets:read", "secrets:write", "secrets:admin"),
