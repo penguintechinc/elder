@@ -20,7 +20,8 @@ spec:
         runAsUser: 999
       containers:
         - name: postgres
-          image: postgres:17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
+          # pgvector required: Elder uses ONLY Postgres+pgvector (no MySQL/MariaDB/SQLite) — see design doc "AI/Search module"
+          image: pgvector/pgvector:pg17-bookworm@sha256:dd467f03ca5c5581222490e5217e48a262864ccb659be559f8491bbafdc97da0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5432

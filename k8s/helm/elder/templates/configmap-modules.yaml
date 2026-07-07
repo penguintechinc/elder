@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elder-modules
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+data:
+  {{- range $key, $enabled := .Values.modules }}
+  ELDER_MODULE_{{ include "elder.upperSnakeCase" $key }}: {{ $enabled | quote }}
+  {{- end }}

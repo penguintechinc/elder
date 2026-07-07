@@ -6,15 +6,14 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, g, jsonify
-from models.dataclasses import IssueCommentDTO
 from penguin_libs.pydantic import Description1000, RequestModel
-from apps.api.utils.quart_validation import validated_request
 from penguin_licensing.decorators import license_required
-from utils.async_utils import run_in_threadpool
+from quart import Blueprint, current_app, g, jsonify
 
 from apps.api.auth.decorators import login_required
-from apps.api.models.dataclasses import from_pydal_row, from_pydal_rows
+from apps.api.models.dataclasses import IssueCommentDTO, from_pydal_row, from_pydal_rows
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("comments", __name__)
 

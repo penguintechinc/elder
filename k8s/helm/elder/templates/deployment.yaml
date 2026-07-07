@@ -34,6 +34,11 @@ spec:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
+        {{- if or (eq $component "api") (eq $component "worker") }}
+        envFrom:
+        - configMapRef:
+            name: elder-modules
+        {{- end }}
         {{- if $componentConfig.env }}
         env:
         {{- range $key, $value := $componentConfig.env }}

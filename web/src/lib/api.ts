@@ -2381,6 +2381,12 @@ class ApiClient {
     const response = await this.client.post(`/costs/${resourceType}/${resourceId}`, data)
     return response.data
   }
+
+  // Module management (Phase 0)
+  async getModules() {
+    const response = await this.client.get('/modules')
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
