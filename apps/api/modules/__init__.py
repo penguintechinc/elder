@@ -149,7 +149,11 @@ def _webhooks_alerting_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _access_reviews_blueprints() -> list[tuple[Blueprint, str]]:
     """Load access reviews module blueprints (enterprise feature)."""
-    from apps.api.api.v1 import access_reviews, group_membership, resource_roles
+    from apps.api.modules.access_reviews.routes import (
+        access_reviews,
+        group_membership,
+        resource_roles,
+    )
 
     api_prefix = "/api/v1"
     return [
@@ -301,8 +305,8 @@ MODULES = (
         depends_on=(),
         blueprints=_access_reviews_blueprints,
         models_import=(
-            "apps.api.models.access_review",
-            "apps.api.models.resource_role",
+            "apps.api.modules.access_reviews.models.access_review",
+            "apps.api.modules.access_reviews.models.resource_role",
         ),
         table_prefix=None,
         nav_id="nav_access_reviews",
