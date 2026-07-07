@@ -52,7 +52,7 @@ def _infrastructure_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _ipam_blueprints() -> list[tuple[Blueprint, str]]:
     """Load IPAM module blueprints."""
-    from apps.api.api.v1 import ipam
+    from apps.api.modules.ipam import routes as ipam
 
     api_prefix = "/api/v1"
     return [(ipam.bp, f"{api_prefix}/ipam")]
@@ -185,7 +185,7 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_ipam_blueprints,
-        models_import=("apps.api.models.ipam",),
+        models_import=("apps.api.modules.ipam.models",),
         table_prefix=None,
         nav_id="nav_ipam",
         scopes=("ipam:read", "ipam:write", "ipam:admin"),
