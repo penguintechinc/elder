@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import jwt
-from quart import current_app, g, request
 from penguin_dal import Row
+from quart import current_app, g, request
 from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)
@@ -31,13 +31,22 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
     else:
         expires_delta = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
 
+    from apps.api.auth.rbac import role_scopes
+
+    portal_role = getattr(identity, "portal_role", "observer") or "observer"
+    tenant = str(getattr(identity, "tenant_id", "") or "")
+
     now = datetime.now(timezone.utc)
     payload = {
-        "sub": str(identity.id),  # JWT spec requires sub to be a string
+        "sub": str(identity.id),
         "username": identity.username,
         "type": token_type,
         "iat": now,
         "exp": now + expires_delta,
+        # penguin-aaa compatible claims — enables RBAC and tenant middleware
+        "tenant": tenant,
+        "roles": [portal_role],
+        "scope": role_scopes(portal_role) if token_type == "access" else [],
     }
 
     secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]

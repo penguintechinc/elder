@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from quart import Blueprint, current_app, g, jsonify
 from models.dataclasses import IssueCommentDTO
 from penguin_libs.pydantic import Description1000, RequestModel
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 from penguin_licensing.decorators import license_required
 from utils.async_utils import run_in_threadpool
 

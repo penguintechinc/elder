@@ -212,7 +212,7 @@ async def create_policy():
     db = current_app.db
 
     # Validate JSON body
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -327,7 +327,7 @@ async def update_policy(id: int):
     db = current_app.db
 
     # Validate JSON body
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -474,7 +474,7 @@ async def check_components():
     db = current_app.db
 
     # Validate JSON body
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

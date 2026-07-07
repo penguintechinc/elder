@@ -42,7 +42,7 @@ def get_resource_costs(resource_type, resource_id):
 
 
 @bp.route("/<resource_type>/<int:resource_id>", methods=["POST"])
-def update_resource_costs(resource_type, resource_id):
+async def update_resource_costs(resource_type, resource_id):
     """Create or update cost entry for a resource."""
     valid_types = [
         "entity",
@@ -57,7 +57,7 @@ def update_resource_costs(resource_type, resource_id):
             400,
         )
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
 
@@ -79,9 +79,9 @@ def list_sync_jobs():
 
 
 @bp.route("/sync-jobs", methods=["POST"])
-def create_sync_job():
+async def create_sync_job():
     """Create a cost sync job."""
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body required"}), 400
 

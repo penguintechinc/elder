@@ -359,7 +359,7 @@ async def create_escalation(rotation_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -471,7 +471,7 @@ async def update_escalation(policy_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

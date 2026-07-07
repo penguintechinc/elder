@@ -74,7 +74,7 @@ def auth_token(api_url, check_services) -> str:
     """Get authentication token for API calls."""
     response = requests.post(
         f"{api_url}/api/v1/auth/login",
-        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        json={"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
     )
     if response.status_code != 200:
         pytest.skip(f"Authentication failed: {response.text}")

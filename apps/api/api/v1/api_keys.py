@@ -110,7 +110,7 @@ async def create_api_key():
     user = get_current_user()
 
     # Parse request data
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body is required"}), 400
 

@@ -42,7 +42,7 @@ async def register():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -63,6 +63,10 @@ async def register():
                 }
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
+
+    # Capture request context before entering threadpool
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
 
     # Check if username or email already exists and create user
     def create_user():
@@ -112,6 +116,8 @@ async def register():
             action="create",
             resource_type="identity",
             resource_id=identity.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return identity, None, None
@@ -176,7 +182,7 @@ async def login():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -198,6 +204,10 @@ async def login():
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
 
+    # Capture request context before entering threadpool
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
+
     # Find user and verify password
     def authenticate():
         identity = (
@@ -216,6 +226,8 @@ async def login():
                 action="login",
                 resource_type="auth",
                 success=False,
+                ip_address=ip_address,
+                user_agent=user_agent,
             )
             return None, "Invalid username or password", 401
 
@@ -239,6 +251,8 @@ async def login():
             action="login",
             resource_type="auth",
             success=True,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return identity, None, None
@@ -285,14 +299,19 @@ async def logout():
         200: Logout successful
     """
     db = current_app.db
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
+    identity_id = g.current_user.id
 
     # Create logout audit log
     await run_in_threadpool(
         lambda: _create_audit_log_sync(
             db=db,
-            identity_id=g.current_user.id,
+            identity_id=identity_id,
             action="logout",
             resource_type="auth",
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
     )
 
@@ -341,7 +360,7 @@ async def change_password():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -354,6 +373,9 @@ async def change_password():
     # Validate new password length
     if len(data["new_password"]) < 8:
         return jsonify({"error": "new_password must be at least 8 characters"}), 400
+
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
 
     # Verify current password and update
     def update_password():
@@ -380,6 +402,8 @@ async def change_password():
             resource_type="identity",
             resource_id=identity.id,
             changes={"action": "password_change"},
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return True, None, None
@@ -408,7 +432,7 @@ async def refresh_token_endpoint():
     """
     db = current_app.db
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     refresh_token_str = data.get("refresh_token")
 
     if not refresh_token_str:
@@ -475,22 +499,15 @@ def _create_audit_log_sync(
     resource_id: int = None,
     success: bool = True,
     changes: dict = None,
+    ip_address: str = None,
+    user_agent: str = None,
 ):
     """
     Helper to create audit log entries (synchronous, call from threadpool).
 
-    Args:
-        db: PyDAL database instance
-        identity_id: ID of identity performing action
-        action: Audit action type (create, update, delete, login, logout, etc.)
-        resource_type: Type of resource (identity, auth, entity, etc.)
-        resource_id: ID of affected resource
-        success: Whether action succeeded
-        changes: Dict of changes made
+    ip_address and user_agent must be passed in from the async context
+    (request context is not available inside a threadpool).
     """
-    ip_address = request.remote_addr
-    user_agent = request.headers.get("User-Agent", "")[:512]
-
     now = datetime.now(timezone.utc)
     db.audit_logs.insert(
         identity_id=identity_id,
@@ -498,8 +515,8 @@ def _create_audit_log_sync(
         resource_type=resource_type,
         resource_id=resource_id,
         details=changes,  # PyDAL uses 'details' not 'changes'
-        ip_address=ip_address,
-        user_agent=user_agent,
+        ip_address=ip_address or "",
+        user_agent=(user_agent or "")[:512],
         success=success,
         created_at=now,
     )

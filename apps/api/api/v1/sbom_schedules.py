@@ -134,7 +134,7 @@ async def create_schedule():
     db = current_app.db
 
     # Validate JSON body
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -265,7 +265,7 @@ async def update_schedule(id: int):
     db = current_app.db
 
     # Validate JSON body
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

@@ -136,7 +136,7 @@ class TestCreateEndpointAuthentication:
             "name": "Test Data Store",
             "organization_id": organization_id,
             "data_classification": "public",
-            "storage_type": "relational",
+            "storage_type": "database",
         }
 
         response = requests.post(
@@ -156,8 +156,8 @@ class TestCreateEndpointAuthentication:
         cert_data = {
             "name": "Test Certificate",
             "organization_id": organization_id,
-            "creator": "test_user",
-            "cert_type": "tls",
+            "creator": "self_signed",
+            "cert_type": "server_cert",
             "issue_date": "2024-01-01",
             "expiration_date": "2025-01-01",
         }

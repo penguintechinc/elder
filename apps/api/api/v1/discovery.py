@@ -68,7 +68,7 @@ def list_discovery_jobs():
 @bp.route("/jobs", methods=["POST"])
 @login_required
 @admin_required
-def create_discovery_job():
+async def create_discovery_job():
     """
     Create a new discovery job.
 
@@ -92,7 +92,7 @@ def create_discovery_job():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -144,7 +144,7 @@ def get_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
-def update_discovery_job(job_id):
+async def update_discovery_job(job_id):
     """
     Update discovery job configuration.
 
@@ -162,7 +162,7 @@ def update_discovery_job(job_id):
         404: Job not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -365,7 +365,7 @@ def start_job(job_id):
 
 
 @bp.route("/jobs/<int:job_id>/complete", methods=["POST"])
-def complete_job(job_id):
+async def complete_job(job_id):
     """
     Submit job results and mark as completed.
 
@@ -383,7 +383,7 @@ def complete_job(job_id):
         404: Job not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

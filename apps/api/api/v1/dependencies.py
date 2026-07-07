@@ -496,7 +496,7 @@ async def create_bulk_dependencies():
     db = current_app.db
 
     try:
-        data = request.get_json()
+        data = await request.get_json()
         if not data:
             return jsonify({"error": "Request body must be JSON"}), 400
 

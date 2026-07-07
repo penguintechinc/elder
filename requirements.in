@@ -120,6 +120,7 @@ types-pytz==2024.2.0.20241003
 python-ldap==3.4.5
 
 # PenguinTech Shared Libraries (penguin-libs)
+penguin-aaa==0.1.0
 penguin-libs~=0.1.0
 penguin-licensing~=0.1.0
 penguin-utils~=0.1.0
