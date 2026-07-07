@@ -8,7 +8,7 @@ This module aggregates all on-call rotation endpoints from separate modules.
 
 from quart import Blueprint
 
-from apps.api.api.v1 import (
+from apps.api.modules.services_oncall.routes import (
     on_call_rotations_crud,
     on_call_rotations_history,
     on_call_rotations_participants,
