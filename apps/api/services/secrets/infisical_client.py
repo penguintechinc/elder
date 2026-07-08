@@ -58,24 +58,21 @@ class InfisicalClient(SecretProviderClient):
 
     def _init_client(self) -> None:
         """Initialize the Infisical client."""
+        from apps.api.common.providers.infisical import create_infisical_session
+
         try:
-            self.host = self.config["host"].rstrip("/")
-            self.service_token = self.config["service_token"]
             self.environment = self.config["environment"]
             self.secret_path = self.config.get("secret_path", "/")
             self.workspace_id = self.config.get("workspace_id")
 
-            # Set up headers for all requests
-            self.headers = {
-                "Authorization": f"Bearer {self.service_token}",
-                "Content-Type": "application/json",
-            }
+            session, api_base = create_infisical_session(self.config)
+            self.session = session
+            self.api_base = api_base
+            self.headers = dict(session.headers)
 
-            # API base URL
-            self.api_base = f"{self.host}/api/v3"
-
+            host = self.config["host"].rstrip("/")
             logger.info(
-                f"Initialized Infisical client for {self.host} (environment: {self.environment})"
+                f"Initialized Infisical client for {host} (environment: {self.environment})"
             )
 
         except Exception as e:
