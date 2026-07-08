@@ -11,11 +11,13 @@ Enterprise feature providing:
 
 import datetime
 import logging
-import secrets
 from datetime import timezone
 from typing import Any, Dict, List, Optional
 
+import redis
+
 from apps.api.services.audit.service import AuditService
+from shared.utils.village_id import generate_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +42,35 @@ class GroupMembershipService:
     PROVIDER_LDAP = "ldap"
     PROVIDER_OKTA = "okta"
 
-    def __init__(self, db):
-        """Initialize service with database connection."""
-        self.db = db
+    def __init__(self, db, redis_client: Optional[redis.Redis] = None):
+        """Initialize service with database connection.
 
-    def _generate_village_id(self) -> str:
-        """Generate a unique village ID for requests."""
-        return secrets.token_hex(16)
+        Args:
+            db: Database connection
+            redis_client: Redis client for allocating village IDs
+        """
+        self.db = db
+        self.redis_client = redis_client
+
+    def _generate_village_id(self, tenant_id: int) -> str:
+        """Generate a unique village ID for requests.
+
+        Uses AD-3 format: TTTTTTTT-OOOOOOOOOOOOOOOO
+
+        Args:
+            tenant_id: The tenant ID
+
+        Returns:
+            str: A 25-character village ID
+        """
+        if self.redis_client is None:
+            # Create sync redis client if not provided
+            from apps.api.config import Config
+
+            redis_url = getattr(Config, "REDIS_URL", "redis://localhost:6379/0")
+            self.redis_client = redis.from_url(redis_url)
+
+        return generate_village_id(tenant_id, self.redis_client)
 
     # ==================== Group Management ====================
 
@@ -235,7 +259,7 @@ class GroupMembershipService:
             status=self.STATUS_PENDING,
             reason=reason,
             expires_at=expires_at,
-            village_id=self._generate_village_id(),
+            village_id=self._generate_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

@@ -10,6 +10,7 @@ and usage statistics for the Super Admin Console.
 from datetime import datetime, timezone
 from typing import Optional
 
+import redis
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -17,6 +18,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from shared.utils.village_id import generate_village_id
 
 bp = Blueprint("tenants", __name__)
 
@@ -234,6 +236,15 @@ async def create_tenant():
             updated_at=now,
         )
         db.commit()
+
+        # Generate village_id for the tenant using its own ID
+        redis_client = redis.from_url(current_app.config.get("REDIS_URL", "redis://localhost:6379/0"))
+        village_id = generate_village_id(tenant_id, redis_client)
+
+        # Update tenant with village_id
+        db(db.tenants.id == tenant_id).update(village_id=village_id)
+        db.commit()
+
         return {"id": tenant_id, "name": body.name, "slug": body.slug}, None, None
 
     result, error, status = await run_in_threadpool(inner)
