@@ -11,7 +11,6 @@ from penguin_aaa.audit.emitter import Emitter
 from penguin_aaa.audit.sinks import StdoutSink
 from penguin_aaa.middleware.asgi import AuditMiddleware
 from penguin_aaa.middleware.tenant import TenantMiddleware
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 from quart import Quart, g, jsonify, make_response
 from quart_cors import cors
 
@@ -190,9 +189,6 @@ def _register_before_request(app: Quart) -> None:
         }
 
 
-_metrics_registry = CollectorRegistry(auto_describe=True)
-
-
 def _init_extensions(app: Quart) -> None:
     """Initialize Quart extensions."""
     cors(
@@ -204,19 +200,7 @@ def _init_extensions(app: Quart) -> None:
         expose_headers=app.config.get("CORS_EXPOSE_HEADERS", []),
     )
 
-    if app.config.get("METRICS_ENABLED"):
-        _register_metrics_endpoint(app)
-
     logger.info("extensions_initialized")
-
-
-def _register_metrics_endpoint(app: Quart) -> None:
-    @app.route("/metrics")
-    async def metrics_endpoint():
-        data = generate_latest(_metrics_registry)
-        response = await make_response(data)
-        response.headers["Content-Type"] = CONTENT_TYPE_LATEST
-        return response
 
 
 def _init_license_client(app: Quart) -> None:
