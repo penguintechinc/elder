@@ -139,18 +139,6 @@ worker:
   credentialsSecret:
     name: ""
 
-# Prometheus - Disabled in alpha
-prometheus:
-  enabled: false
-
-# Alertmanager - Disabled in alpha
-alertmanager:
-  enabled: false
-
-# Grafana - Disabled in alpha
-grafana:
-  enabled: false
-
 # Ingress - Disabled in alpha
 ingress:
   enabled: false

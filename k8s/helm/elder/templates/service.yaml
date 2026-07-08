@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "worker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 {{- if $componentConfig.service }}
@@ -40,21 +40,6 @@ spec:
   {{- else if eq $component "worker" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
-    protocol: TCP
-    name: http
-  {{- else if eq $component "prometheus" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 9090
-    protocol: TCP
-    name: http
-  {{- else if eq $component "alertmanager" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 9093
-    protocol: TCP
-    name: http
-  {{- else if eq $component "grafana" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 3000
     protocol: TCP
     name: http
   {{- end }}

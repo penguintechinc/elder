@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
@@ -83,23 +83,11 @@ spec:
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
-        {{- else if eq $component "prometheus" }}
-        - name: http
-          containerPort: 9090
-          protocol: TCP
-        {{- else if eq $component "alertmanager" }}
-        - name: http
-          containerPort: 9093
-          protocol: TCP
-        {{- else if eq $component "grafana" }}
-        - name: http
-          containerPort: 3000
-          protocol: TCP
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
         livenessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -120,7 +108,7 @@ spec:
           timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
           failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
         readinessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -169,15 +157,6 @@ spec:
         {{- else if eq $component "web" }}
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "prometheus" }}
-        - name: data
-          mountPath: /prometheus
-        {{- else if eq $component "alertmanager" }}
-        - name: data
-          mountPath: /alertmanager
-        {{- else if eq $component "grafana" }}
-        - name: data
-          mountPath: /var/lib/grafana
         {{- end }}
         {{- end }}
         securityContext:
