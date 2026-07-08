@@ -145,7 +145,7 @@ def _secrets_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _webhooks_alerting_blueprints() -> list[tuple[Blueprint, str]]:
     """Load webhooks and alerting blueprints."""
-    from apps.api.api.v1 import costs, webhooks
+    from apps.api.modules.webhooks_alerting.routes import costs, webhooks
 
     api_prefix = "/api/v1"
     return [
@@ -293,7 +293,11 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_webhooks_alerting_blueprints,
-        models_import=("apps.api.models.webhooks", "apps.api.models.alert_config"),
+        models_import=(
+            "apps.api.modules.webhooks_alerting.models.webhooks",
+            "apps.api.modules.webhooks_alerting.models.alert_config",
+            "apps.api.modules.webhooks_alerting.models.cost",
+        ),
         table_prefix=None,
         nav_id="nav_webhooks_alerting",
         scopes=(
