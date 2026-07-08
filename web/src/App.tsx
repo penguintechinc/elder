@@ -14,6 +14,7 @@ import AuditLogs from './pages/AuditLogs'
 import AdminSettings from './pages/AdminSettings'
 import SyncConfig from './pages/SyncConfig'
 import LicensePolicies from './pages/LicensePolicies'
+import ModuleToggles from './pages/ModuleToggles'
 // Village ID Redirect
 import VillageIdRedirect from './components/VillageIdRedirect'
 import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
@@ -100,6 +101,7 @@ export default function App() {
           <Route path="admin/settings" element={<AdminSettings />} />
           <Route path="admin/sync-config" element={<SyncConfig />} />
           <Route path="admin/license-policies" element={<LicensePolicies />} />
+          <Route path="admin/modules" element={<ModuleToggles />} />
         </Route>
         <Route path="*" element={<RouteNotFound />} />
       </Routes>

@@ -15,6 +15,7 @@ import {
   Shield,
   Repeat2,
   Lock,
+  Zap,
 } from 'lucide-react'
 import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import api from '@/lib/api'
@@ -39,6 +40,7 @@ const adminNavigation: MenuItem[] = [
   { name: 'Audit Logs', href: '/admin/audit-logs', icon: FileText, roles: ['admin', 'support', 'tenant_admin'] },
   { name: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
   { name: 'SSO Config', href: '/admin/sso', icon: Shield, roles: ['admin', 'tenant_admin'] },
+  { name: 'Module Toggles', href: '/admin/modules', icon: Zap, roles: ['admin'] },
   { name: 'Sync Config', href: '/admin/sync-config', icon: Repeat2, roles: ['admin'] },
   { name: 'License Policies', href: '/admin/license-policies', icon: Lock, roles: ['admin'] },
   { name: 'Tenants', href: '/admin/tenants', icon: Users, roles: ['admin'] },

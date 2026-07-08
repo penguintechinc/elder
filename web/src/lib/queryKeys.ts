@@ -172,6 +172,12 @@ export const queryKeys = {
     guestEnabled: ['guest-enabled'] as const,
   },
 
+  // Modules (tenant module toggles)
+  modules: {
+    all: ['modules'] as const,
+    tenant: (tenantId: string) => ['modules', 'tenant', tenantId] as const,
+  },
+
   // Vulnerabilities
   vulnerabilities: {
     all: ['vulnerabilities'] as const,

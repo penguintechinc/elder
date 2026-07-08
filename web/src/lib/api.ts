@@ -2387,6 +2387,24 @@ class ApiClient {
     const response = await this.client.get('/modules')
     return response.data
   }
+
+  // Module management (Phase 2) - tenant per-module toggles
+  async getTenantModules(tenantId: string) {
+    const response = await this.client.get(`/tenants/${tenantId}/modules`)
+    return response.data
+  }
+
+  async setTenantModule(
+    tenantId: string,
+    data: {
+      module_name: string
+      enabled: boolean
+      settings?: Record<string, unknown>
+    }
+  ) {
+    const response = await this.client.put(`/tenants/${tenantId}/modules`, data)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
