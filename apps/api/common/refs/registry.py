@@ -213,17 +213,20 @@ def get_type(type_name: str) -> Optional[ResolvableType]:
     return _REGISTRY.get(type_name)
 
 
-def resolve_by_village_id(db: Any, village_id: str) -> Optional[Dict[str, Any]]:
+def resolve_by_village_id(
+    db: Any, village_id: str, tenant_id: Optional[int] = None
+) -> Optional[Dict[str, Any]]:
     """Resolve a village_id to its resource type and ID.
 
-    Searches all registered types for a matching village_id.
+    Searches all registered types for a matching village_id, scoped to tenant if provided.
 
     Args:
         db: PyDAL database instance
         village_id: The village_id to resolve
+        tenant_id: Tenant ID for scoping (required for security)
 
     Returns:
-        Dict with type, id, table_name, or None if not found
+        Dict with type, id, table_name, or None if not found or tenant mismatch
     """
     for type_name, resolvable in _REGISTRY.items():
         # Check if table exists in database
@@ -236,9 +239,39 @@ def resolve_by_village_id(db: Any, village_id: str) -> Optional[Dict[str, Any]]:
         if not hasattr(table, resolvable.village_id_column):
             continue
 
-        # Search for the village_id
+        # Build query with tenant scoping
         village_id_field = getattr(table, resolvable.village_id_column)
-        row = db(village_id_field == village_id).select().first()
+
+        # Tenant scoping is mandatory for security
+        if tenant_id is not None:
+            if hasattr(table, "tenant_id"):
+                # Table has explicit tenant_id column
+                row = (
+                    db(
+                        (village_id_field == village_id)
+                        & (table.tenant_id == tenant_id)
+                    )
+                    .select()
+                    .first()
+                )
+            elif type_name == "tenant":
+                # Special case: tenants table — a tenant can only resolve itself
+                row = (
+                    db((village_id_field == village_id) & (table.id == tenant_id))
+                    .select()
+                    .first()
+                )
+            else:
+                # Table has no tenant_id and is not the tenant table
+                # Cannot safely scope — skip this table
+                continue
+        else:
+            # No tenant_id provided — cannot safely scope unscopable tables
+            if hasattr(table, "tenant_id") or type_name == "tenant":
+                row = db(village_id_field == village_id).select().first()
+            else:
+                # Cannot scope without tenant_id and no column available
+                continue
 
         if row:
             return {
@@ -251,7 +284,11 @@ def resolve_by_village_id(db: Any, village_id: str) -> Optional[Dict[str, Any]]:
 
 
 def resolve_ref(
-    db: Any, module: str, type_name: str, resource_id: Any
+    db: Any,
+    module: str,
+    type_name: str,
+    resource_id: Any,
+    tenant_id: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
     """Resolve a module:type:id reference to its resource row.
 
@@ -260,9 +297,10 @@ def resolve_ref(
         module: Module name
         type_name: Resource type
         resource_id: Resource ID value
+        tenant_id: Tenant ID for scoping (required for security)
 
     Returns:
-        Dict with id, title, type, module, or None if not found
+        Dict with id, title, type, module, or None if not found or tenant mismatch
     """
     resolvable = get_type(type_name)
     if not resolvable or resolvable.module != module:
@@ -275,8 +313,31 @@ def resolve_ref(
     table: Table = getattr(db, resolvable.table)
     id_field = getattr(table, resolvable.id_column)
 
-    # Query by ID
-    row = db(id_field == resource_id).select().first()
+    # Tenant scoping is mandatory for security
+    if tenant_id is not None:
+        if hasattr(table, "tenant_id"):
+            # Table has explicit tenant_id column (organizations, identities, software, etc.)
+            row = (
+                db((id_field == resource_id) & (table.tenant_id == tenant_id))
+                .select()
+                .first()
+            )
+        elif type_name == "tenant":
+            # Special case: tenants table — a tenant can only resolve itself
+            row = (
+                db((id_field == resource_id) & (table.id == tenant_id)).select().first()
+            )
+        else:
+            # Table has no tenant_id and is not the tenant table
+            # Cannot safely scope — return None to prevent cross-tenant leak
+            return None
+    else:
+        # No tenant_id provided — cannot safely scope unscopable tables
+        if hasattr(table, "tenant_id") or type_name == "tenant":
+            row = db(id_field == resource_id).select().first()
+        else:
+            # Cannot scope without tenant_id and no column available
+            return None
 
     if not row:
         return None

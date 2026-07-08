@@ -9,7 +9,7 @@ Provides registry-driven resolution of references by village_id or ref format
 import logging
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.common.refs.registry import get_type, resolve_by_village_id, resolve_ref
 from apps.api.common.refs.service import backlinks_for
@@ -20,29 +20,26 @@ bp = Blueprint("refs", __name__)
 logger = logging.getLogger(__name__)
 
 
-def _extract_tenant_id(request_obj) -> Optional[int]:
-    """Extract tenant ID from request claims (JWT).
+def _get_tenant_id() -> Optional[int]:
+    """Extract and validate tenant ID from authenticated JWT claims.
 
-    Args:
-        request_obj: Quart request object with g.claims
+    Reads from g.claims populated by before_request bridge in main.py.
+    Tenant claim is a string like "42", must be converted to int safely.
 
     Returns:
-        Tenant ID (int) or None if not authenticated
+        Tenant ID as int, or None if not authenticated / tenant claim invalid.
     """
-    from quart import g
+    claims = getattr(g, "claims", {}) or {}
+    tenant_str = claims.get("tenant", "")
 
-    from apps.api.auth.jwt_handler import get_token_from_header, verify_token
-
-    token = get_token_from_header()
-    if not token:
+    # Fail-closed: tenant must be present and convertible to int
+    if not tenant_str:
         return None
 
-    payload = verify_token(token)
-    if not payload:
+    try:
+        return int(tenant_str)
+    except (ValueError, TypeError):
         return None
-
-    # Extract tenant ID from JWT (stored as hex string from village_id)
-    return payload.get("tenant_id")
 
 
 def _build_resolve_response(
@@ -59,7 +56,7 @@ def _build_resolve_response(
         resource_type: Type identifier
         resource_id: Resource ID value
         village_id: Optional village_id to include
-        tenant_id: Tenant ID for scope check
+        tenant_id: Tenant ID for tenant-scoped resolution
 
     Returns:
         Dict with type, id, village_id, title, url, broken=false
@@ -68,8 +65,10 @@ def _build_resolve_response(
     if not resolvable:
         return {"error": "unknown_type", "broken": True}
 
-    # Resolve the reference to get title
-    ref_data = resolve_ref(db, resolvable.module, resource_type, resource_id)
+    # Resolve the reference to get title (tenant-scoped)
+    ref_data = resolve_ref(
+        db, resolvable.module, resource_type, resource_id, tenant_id=tenant_id
+    )
     if not ref_data:
         return {
             "type": resource_type,
@@ -104,14 +103,17 @@ async def resolve_reference():
     Returns:
         200: {type, id, village_id, title, url, broken}
         400: Missing or invalid parameters
-        403: Tenant mismatch (village_id tenant != JWT tenant)
+        401: Unauthenticated (no valid JWT claims)
+        403: Forbidden (tenant mismatch, invalid tenant claim)
     """
+    # Fail-closed: require authenticated caller with valid tenant claim
+    tenant_id = _get_tenant_id()
+    if tenant_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
+
     db = current_app.db
     village_id = request.args.get("village_id")
     ref = request.args.get("ref")
-
-    # Extract tenant from JWT
-    jwt_tenant_id = _extract_tenant_id(request)
 
     if not village_id and not ref:
         return (
@@ -132,13 +134,13 @@ async def resolve_reference():
             if not is_valid_village_id(village_id):
                 return {"error": "invalid_village_id_format"}
 
-            # Parse village_id to check tenant
+            # Parse village_id to check tenant — MUST match caller's tenant
             parsed = parse_village_id(village_id)
-            if jwt_tenant_id is not None and parsed.tenant_id != jwt_tenant_id:
+            if parsed.tenant_id != tenant_id:
                 return {"error": "tenant_mismatch", "code": 403}
 
-            # Resolve by village_id
-            result = resolve_by_village_id(db, village_id)
+            # Resolve by village_id (tenant-scoped)
+            result = resolve_by_village_id(db, village_id, tenant_id=tenant_id)
             if not result:
                 return {
                     "village_id": village_id,
@@ -167,7 +169,7 @@ async def resolve_reference():
                 return {"error": "unknown_type"}
 
             return _build_resolve_response(
-                db, type_name, resource_id, tenant_id=jwt_tenant_id
+                db, type_name, resource_id, tenant_id=tenant_id
             )
 
         return {"error": "no_ref"}
@@ -196,12 +198,16 @@ async def get_backlinks():
     Returns:
         200: [{source_module, source_type, source_id, title, url, broken, ref_type}, ...]
         400: Missing or invalid parameters
+        401: Unauthenticated (no valid JWT claims)
+        403: Forbidden (invalid tenant claim)
     """
+    # Fail-closed: require authenticated caller with valid tenant claim
+    tenant_id = _get_tenant_id()
+    if tenant_id is None:
+        return jsonify({"error": "Unauthorized"}), 401
+
     db = current_app.db
     target = request.args.get("target")
-
-    # Extract tenant from JWT
-    jwt_tenant_id = _extract_tenant_id(request)
 
     if not target:
         return (
@@ -220,17 +226,18 @@ async def get_backlinks():
         if not resolvable or resolvable.module != module:
             return {"error": "unknown_type"}
 
-        # Get backlinks for this target
-        if jwt_tenant_id is None:
-            return []
-
-        refs = backlinks_for(db, module, type_name, resource_id, jwt_tenant_id)
+        # Get backlinks for this target (tenant-scoped)
+        refs = backlinks_for(db, module, type_name, resource_id, tenant_id)
 
         results = []
         for ref in refs:
-            # Resolve source title
+            # Resolve source title (tenant-scoped)
             source_data = resolve_ref(
-                db, ref.source_module, ref.source_type, ref.source_id
+                db,
+                ref.source_module,
+                ref.source_type,
+                ref.source_id,
+                tenant_id=tenant_id,
             )
 
             results.append(
