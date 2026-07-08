@@ -2,7 +2,7 @@
 # Combines API, worker, and test dependencies with Postgres pgvector support
 
 # Builder stage
-FROM python:3.12-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb AS builder
+FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb AS builder
 
 WORKDIR /build
 
@@ -41,7 +41,7 @@ RUN sed 's/[[:space:]]*--hash=.*//' apps/worker/requirements.txt > /tmp/worker-r
     rm /tmp/worker-req-nohash.txt
 
 # Runtime stage
-FROM python:3.12-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
+FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
 WORKDIR /app
 
