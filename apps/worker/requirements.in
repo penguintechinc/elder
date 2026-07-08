@@ -48,7 +48,6 @@ schedule>=1.2.0
 apscheduler>=3.10.4
 
 # Logging & Monitoring
-prometheus-client>=0.19.0
 structlog>=24.1.0
 
 # Quart for health endpoint

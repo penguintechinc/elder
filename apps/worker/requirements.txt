@@ -1202,10 +1202,6 @@ priority==2.0.0 \
     --hash=sha256:6f8eefce5f3ad59baf2c080a664037bb4725cd0a790d53d59ab4059288faf6aa \
     --hash=sha256:c965d54f1b8d0d0b19479db3924c7c36cf672dbf2aec92d43fbdaf4492ba18c0
     # via hypercorn
-prometheus-client==0.24.1 \
-    --hash=sha256:150db128af71a5c2482b36e588fc8a6b95e498750da4b17065947c16070f4055 \
-    --hash=sha256:7e0ced7fbbd40f7b84962d5d2ab6f17ef88a72504dcf7c0b40737b43b2a461f9
-    # via -r apps/worker/requirements.in
 propcache==0.4.1 \
     --hash=sha256:0002004213ee1f36cfb3f9a42b5066100c44276b9b72b4e1504cddd3d692e86e \
     --hash=sha256:0013cb6f8dde4b2a2f66903b8ba740bdfe378c943c4377a200551ceb27f379e4 \

@@ -6,11 +6,11 @@
 import asyncio
 import signal
 import sys
+import time
 from typing import List
 
 import aiocron
 from quart import Quart, jsonify
-from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from apps.worker.config.settings import settings
 from apps.worker.connectors.authentik_connector import AuthentikConnector
@@ -27,46 +27,58 @@ from apps.worker.utils.logger import configure_logging, get_logger
 configure_logging()
 logger = get_logger(__name__)
 
-# Prometheus metrics
-discovery_jobs_executed = Counter(
-    "worker_discovery_jobs_executed_total",
-    "Total number of discovery jobs executed",
-    ["provider", "status"],
-)
-discovery_poll_duration = Histogram(
-    "worker_discovery_poll_duration_seconds",
-    "Discovery poll cycle duration",
-)
-sync_total = Counter(
-    "worker_sync_total",
-    "Total number of sync operations",
-    ["connector", "status"],
-)
-sync_duration = Histogram(
-    "worker_sync_duration_seconds",
-    "Sync operation duration",
-    ["connector"],
-)
-sync_errors = Counter(
-    "worker_sync_errors_total",
-    "Total number of sync errors",
-    ["connector"],
-)
-entities_synced = Gauge(
-    "worker_entities_synced",
-    "Number of entities synced",
-    ["connector", "operation"],
-)
-organizations_synced = Gauge(
-    "worker_organizations_synced",
-    "Number of organizations synced",
-    ["connector", "operation"],
-)
-last_sync_timestamp = Gauge(
-    "worker_last_sync_timestamp",
-    "Timestamp of last successful sync",
-    ["connector"],
-)
+
+# OpenTelemetry metrics (Phase 0.5 observability)
+def _init_otel_metrics():
+    """Initialize OTel metrics for worker sync/discovery operations."""
+    from shared.observability import get_meter
+
+    meter = get_meter("elder-worker")
+
+    # Counters for job/sync execution and errors
+    job_counter = meter.create_counter(
+        "worker.discovery.jobs.executed",
+        unit="1",
+        description="Total number of discovery jobs executed",
+    )
+    sync_counter = meter.create_counter(
+        "worker.sync.operations",
+        unit="1",
+        description="Total number of sync operations",
+    )
+    error_counter = meter.create_counter(
+        "worker.sync.errors",
+        unit="1",
+        description="Total number of sync errors",
+    )
+
+    # Histograms for duration measurements
+    poll_duration_histogram = meter.create_histogram(
+        "worker.discovery.poll.duration",
+        unit="s",
+        description="Discovery poll cycle duration",
+    )
+    sync_duration_histogram = meter.create_histogram(
+        "worker.sync.duration",
+        unit="s",
+        description="Sync operation duration",
+    )
+
+    return {
+        "job_counter": job_counter,
+        "sync_counter": sync_counter,
+        "error_counter": error_counter,
+        "poll_duration_histogram": poll_duration_histogram,
+        "sync_duration_histogram": sync_duration_histogram,
+    }
+
+
+# Initialize OTel metrics at module load
+try:
+    _otel_metrics = _init_otel_metrics()
+except Exception as e:
+    logger.warning(f"Failed to initialize OTel metrics: {e}")
+    _otel_metrics = None
 
 
 class WorkerService:
@@ -139,11 +151,6 @@ class WorkerService:
                 }
 
             return jsonify(health_status), 200
-
-        @self.health_app.route("/metrics")
-        def metrics():
-            """Prometheus metrics endpoint."""
-            return generate_latest(), 200
 
         @self.health_app.route("/status")
         def status():
@@ -226,66 +233,63 @@ class WorkerService:
         """
         logger.info(f"Starting sync for {connector.name}")
 
-        with sync_duration.labels(connector=connector.name).time():
-            try:
-                # Connect to connector
-                await connector.connect()
+        start_time = time.time()
+        try:
+            # Connect to connector
+            await connector.connect()
 
-                # Perform sync
-                result = await connector.sync()
+            # Perform sync
+            result = await connector.sync()
 
-                # Update metrics
+            # Update OTel metrics
+            duration = time.time() - start_time
+            if _otel_metrics:
+                _otel_metrics["sync_duration_histogram"].record(
+                    duration, {"connector": connector.name}
+                )
                 if result.has_errors:
-                    sync_total.labels(connector=connector.name, status="partial").inc()
-                    sync_errors.labels(connector=connector.name).inc(len(result.errors))
+                    _otel_metrics["sync_counter"].add(
+                        1, {"connector": connector.name, "status": "partial"}
+                    )
+                    _otel_metrics["error_counter"].add(
+                        len(result.errors), {"connector": connector.name}
+                    )
                 else:
-                    sync_total.labels(connector=connector.name, status="success").inc()
+                    _otel_metrics["sync_counter"].add(
+                        1, {"connector": connector.name, "status": "success"}
+                    )
 
-                entities_synced.labels(
-                    connector=connector.name,
-                    operation="created",
-                ).set(result.entities_created)
-                entities_synced.labels(
-                    connector=connector.name,
-                    operation="updated",
-                ).set(result.entities_updated)
-                organizations_synced.labels(
-                    connector=connector.name,
-                    operation="created",
-                ).set(result.organizations_created)
-                organizations_synced.labels(
-                    connector=connector.name,
-                    operation="updated",
-                ).set(result.organizations_updated)
+            logger.info(
+                f"Sync completed for {connector.name}",
+                **result.to_dict(),
+            )
 
-                import time
+            return result
 
-                last_sync_timestamp.labels(connector=connector.name).set(time.time())
-
-                logger.info(
-                    f"Sync completed for {connector.name}",
-                    **result.to_dict(),
+        except Exception as e:
+            logger.error(
+                f"Sync failed for {connector.name}",
+                error=str(e),
+                exc_info=True,
+            )
+            duration = time.time() - start_time
+            if _otel_metrics:
+                _otel_metrics["sync_counter"].add(
+                    1, {"connector": connector.name, "status": "failed"}
+                )
+                _otel_metrics["error_counter"].add(1, {"connector": connector.name})
+                _otel_metrics["sync_duration_histogram"].record(
+                    duration, {"connector": connector.name}
                 )
 
-                return result
+            return SyncResult(
+                connector_name=connector.name,
+                errors=[str(e)],
+            )
 
-            except Exception as e:
-                logger.error(
-                    f"Sync failed for {connector.name}",
-                    error=str(e),
-                    exc_info=True,
-                )
-                sync_total.labels(connector=connector.name, status="failed").inc()
-                sync_errors.labels(connector=connector.name).inc()
-
-                return SyncResult(
-                    connector_name=connector.name,
-                    errors=[str(e)],
-                )
-
-            finally:
-                # Disconnect connector
-                await connector.disconnect()
+        finally:
+            # Disconnect connector
+            await connector.disconnect()
 
     async def _run_sync_cycle(self):
         """Run a complete sync cycle for all connectors."""
@@ -313,15 +317,21 @@ class WorkerService:
             return
 
         try:
-            with discovery_poll_duration.time():
-                executed = self.discovery_executor.run_pending()
+            start_time = time.time()
+            executed = self.discovery_executor.run_pending()
+            duration = time.time() - start_time
+            if _otel_metrics:
+                _otel_metrics["poll_duration_histogram"].record(duration)
                 if executed > 0:
-                    discovery_jobs_executed.labels(
-                        provider="cloud", status="success"
-                    ).inc(executed)
-                    logger.info(f"Discovery poll completed: {executed} job(s) executed")
+                    _otel_metrics["job_counter"].add(
+                        executed, {"provider": "cloud", "status": "success"}
+                    )
+            logger.info(f"Discovery poll completed: {executed} job(s) executed")
         except Exception as e:
-            discovery_jobs_executed.labels(provider="cloud", status="failed").inc()
+            if _otel_metrics:
+                _otel_metrics["job_counter"].add(
+                    1, {"provider": "cloud", "status": "failed"}
+                )
             logger.error(f"Discovery poll failed: {e}", exc_info=True)
 
     def _setup_scheduled_syncs(self):
@@ -436,7 +446,9 @@ class WorkerService:
             config.bind = [f"0.0.0.0:{settings.health_check_port}"]
             config.loglevel = "WARNING"
             # Disable signal handlers — running in non-main thread
-            loop.run_until_complete(serve(self.health_app, config, shutdown_trigger=asyncio.Event().wait))
+            loop.run_until_complete(
+                serve(self.health_app, config, shutdown_trigger=asyncio.Event().wait)
+            )
 
         health_thread = threading.Thread(target=run_hypercorn, daemon=True)
         health_thread.start()
