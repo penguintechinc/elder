@@ -135,6 +135,9 @@ penguin-utils~=0.1.0
 # License Server Integration
 # Using requests/httpx for HTTP client (already included above)
 
+# PostHog Feature Flags & Analytics (Phase 2)
+posthog==7.22.0
+
 # Cloud Providers - Secrets Management (Phase 2)
 boto3==1.35.90
 google-cloud-secret-manager==2.21.1

@@ -169,6 +169,10 @@ authlib==1.7.1 \
     # via
     #   -r requirements.in
     #   penguin-aaa
+backoff==2.2.1 \
+    --hash=sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba \
+    --hash=sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8
+    # via posthog
 bandit==1.8.3 \
     --hash=sha256:28f04dc0d258e1dd0f99dee8eefa13d1cb5e3fde1a5ab0c523971f97b289bcd8 \
     --hash=sha256:f5847beb654d309422985c36644649924e0ea4425c76dec2e89110b87506193a
@@ -679,6 +683,10 @@ dill==0.4.1 \
     --hash=sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d \
     --hash=sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa
     # via pylint
+distro==1.9.0 \
+    --hash=sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed \
+    --hash=sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2
+    # via posthog
 dnspython==2.8.0 \
     --hash=sha256:01d9bbc4a2d76bf0db7c1f729812ded6d912bd318d3b1cf81d30c0f845dbf3af \
     --hash=sha256:181d3c6996452cb1189c4046c61599b84a5a86e099562ffde77d26984ff26d0f
@@ -1868,6 +1876,10 @@ pluggy==1.6.0 \
     --hash=sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3 \
     --hash=sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746
     # via pytest
+posthog==7.22.0 \
+    --hash=sha256:b734c83eeb9d9a2fc9e2b8f4f02d13441f6a0baa0ac53e27758608e773d8a01f \
+    --hash=sha256:e3d63fd67f19ff8b5b375824baea096e5cc71b5fdf92a9241b42efe56f228dbd
+    # via -r requirements.in
 priority==2.0.0 \
     --hash=sha256:6f8eefce5f3ad59baf2c080a664037bb4725cd0a790d53d59ab4059288faf6aa \
     --hash=sha256:c965d54f1b8d0d0b19479db3924c7c36cf672dbf2aec92d43fbdaf4492ba18c0
@@ -2485,6 +2497,7 @@ requests==2.33.0 \
     #   opentelemetry-exporter-otlp-proto-http
     #   penguin-licensing
     #   pip-audit
+    #   posthog
     #   requests-oauthlib
 requests-oauthlib==2.0.0 \
     --hash=sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36 \
@@ -2810,6 +2823,7 @@ typing-extensions==4.15.0 \
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
+    #   posthog
     #   pydantic
     #   pydantic-core
     #   sqlalchemy

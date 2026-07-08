@@ -143,6 +143,10 @@ class Config:
     )
     PRODUCT_NAME = "elder"
 
+    # PostHog Feature Flags & Analytics
+    POSTHOG_KEY = config("POSTHOG_KEY", default=None)
+    POSTHOG_HOST = config("POSTHOG_HOST", default="https://license.penguintech.io")
+
     # Logging
     LOG_LEVEL = config("LOG_LEVEL", default="INFO")
     LOG_FORMAT = config("LOG_FORMAT", default="json")  # json or text
