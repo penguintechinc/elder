@@ -19,6 +19,7 @@ CORE_MODELS = (
     "apps.api.models.auth_providers",
     "apps.api.models.identity",
     "apps.api.models.rbac",
+    "apps.api.models.references",
     "apps.api.models.security",
     "apps.api.models.tenant",
 )
