@@ -7,14 +7,12 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { invalidateCache } from '@/lib/invalidateCache'
 import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
+import { Issue, IssueStatus, IssuePriority, Organization, Entity, IssueLabel } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
-
-type IssueStatus = 'open' | 'in_progress' | 'closed'
-type IssuePriority = 'low' | 'medium' | 'high' | 'critical'
 
 export default function Issues() {
   const [search, setSearch] = useState('')
@@ -117,7 +115,7 @@ export default function Issues() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {data?.items?.map((issue: any) => (
+          {data?.items?.map((issue: Issue) => (
             <Card
               key={issue.id}
               className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -309,12 +307,12 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       defaultValue: defaultOrganizationId?.toString() || '',
       options: [
         { value: '', label: 'None' },
-        ...(organizations?.items?.map((org: any) => ({
+        ...(organizations?.items?.map((org: Organization) => ({
           value: org.id.toString(),
           label: org.name,
         })) || []),
       ],
-      showWhen: (values: Record<string, any>) => values.assignment_type === 'organization',
+      showWhen: (values: Record<string, unknown>) => values.assignment_type === 'organization',
     },
     {
       name: 'entity_ids',
@@ -322,18 +320,18 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
       label: 'Entities',
       helpText: 'Select one or more entities to assign this issue',
       defaultValue: defaultEntityId ? defaultEntityId.toString() : '',
-      options: entities?.items?.map((entity: any) => ({
+      options: entities?.items?.map((entity: Entity) => ({
         value: entity.id.toString(),
         label: entity.name,
       })) || [],
-      showWhen: (values: Record<string, any>) => values.assignment_type === 'entity',
+      showWhen: (values: Record<string, unknown>) => values.assignment_type === 'entity',
     },
     {
       name: 'label_ids',
       type: 'checkbox_multi' as const,
       label: 'Labels',
       helpText: 'Optionally select labels to categorize this issue',
-      options: labels?.items?.map((label: any) => ({
+      options: labels?.items?.map((label: IssueLabel) => ({
         value: label.id.toString(),
         label: label.name,
       })) || [],
@@ -346,25 +344,35 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
     },
   ], [organizations, entities, labels, defaultOrganizationId, defaultEntityId])
 
-  const handleSubmit = async (data: Record<string, any>) => {
+  const handleSubmit = async (data: Record<string, unknown>) => {
     // Convert form data to API format
-    const apiData: any = {
-      title: data.title,
-      description: data.description || undefined,
-      priority: data.priority,
-      is_incident: data.is_incident ? 1 : 0,
+    interface ApiIssueData {
+      title: string
+      description?: string
+      priority: string
+      is_incident: number
+      organization_id?: number
+      entity_ids?: number[]
+      label_ids?: number[]
+      parent_issue_id?: number
+    }
+    const apiData: ApiIssueData = {
+      title: data.title as string,
+      description: (data.description as string | undefined) || undefined,
+      priority: data.priority as string,
+      is_incident: (data.is_incident as boolean) ? 1 : 0,
     }
 
     // Handle assignment
     if (data.assignment_type === 'organization' && data.organization_id) {
-      apiData.organization_id = parseInt(data.organization_id)
-    } else if (data.assignment_type === 'entity' && data.entity_ids?.length > 0) {
-      apiData.entity_ids = data.entity_ids.map((id: string) => parseInt(id))
+      apiData.organization_id = parseInt(data.organization_id as string)
+    } else if (data.assignment_type === 'entity' && Array.isArray(data.entity_ids) && data.entity_ids.length > 0) {
+      apiData.entity_ids = data.entity_ids.map((id: unknown) => parseInt(id as string))
     }
 
     // Handle labels
-    if (data.label_ids?.length > 0) {
-      apiData.label_ids = data.label_ids.map((id: string) => parseInt(id))
+    if (Array.isArray(data.label_ids) && data.label_ids.length > 0) {
+      apiData.label_ids = data.label_ids.map((id: unknown) => parseInt(id as string))
     }
 
     // Handle parent issue for sub-tasks

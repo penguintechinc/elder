@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { getStatusColor } from '@/lib/colorHelpers'
 import { confirmDelete } from '@/lib/confirmActions'
+import { Organization } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -19,12 +20,22 @@ const PROJECT_STATUSES = [
   { value: 'on_hold', label: 'On Hold' },
 ]
 
+interface Project {
+  id: number
+  name: string
+  description?: string
+  status: string
+  organization_id: number
+  start_date?: string
+  end_date?: string
+}
+
 export default function Projects() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingProject, setEditingProject] = useState<any>(null)
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -52,7 +63,7 @@ export default function Projects() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createProject(data),
+    mutationFn: (data: Project) => api.createProject(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['projects'],
@@ -67,7 +78,10 @@ export default function Projects() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateProject(editingProject.id, data),
+    mutationFn: (data: Project) => {
+      if (!editingProject) throw new Error('No project selected')
+      return api.updateProject(editingProject.id, data)
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['projects'],
@@ -87,22 +101,26 @@ export default function Projects() {
     })
   }
 
-  const handleCreate = (data: Record<string, any>) => {
+  const handleCreate = (data: Record<string, unknown>) => {
     createMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
-    })
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      status: data.status as string,
+      organization_id: parseInt(data.organization_id as string),
+      start_date: (data.start_date as string) || undefined,
+      end_date: (data.end_date as string) || undefined,
+    } as Project)
   }
 
-  const handleUpdate = (data: Record<string, any>) => {
+  const handleUpdate = (data: Record<string, unknown>) => {
     updateMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-      start_date: data.start_date || undefined,
-      end_date: data.end_date || undefined,
-    })
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      status: data.status as string,
+      organization_id: parseInt(data.organization_id as string),
+      start_date: (data.start_date as string) || undefined,
+      end_date: (data.end_date as string) || undefined,
+    } as Project)
   }
 
   // Build organization options
@@ -113,7 +131,7 @@ export default function Projects() {
     if (!organizations?.items?.length) {
       return [{ value: '', label: 'No organizations found - create one first' }]
     }
-    return organizations.items.map((org: any) => ({
+    return organizations.items.map((org: Organization) => ({
       value: org.id.toString(),
       label: org.name,
     }))
@@ -272,7 +290,7 @@ export default function Projects() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((project: any) => (
+          {data?.items?.map((project: Project) => (
             <Card key={project.id} className="cursor-pointer hover:border-primary-500/50 transition-colors" onClick={() => navigate(`/projects/${project.id}`)}>
               <CardContent>
                 <div className="flex items-start justify-between mb-3">

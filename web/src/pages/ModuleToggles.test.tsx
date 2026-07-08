@@ -39,7 +39,7 @@ describe('ModuleToggles', () => {
     vi.mocked(api.getPortalProfile).mockResolvedValue({
       global_role: 'viewer',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     const queryClient = createQueryClient()
     render(
@@ -58,7 +58,7 @@ describe('ModuleToggles', () => {
       global_role: 'admin',
       tenant_id: 'test-tenant-1',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',
@@ -93,7 +93,7 @@ describe('ModuleToggles', () => {
       global_role: 'admin',
       tenant_id: 'test-tenant-1',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',
@@ -123,7 +123,7 @@ describe('ModuleToggles', () => {
       global_role: 'admin',
       tenant_id: 'test-tenant-1',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',
@@ -167,7 +167,7 @@ describe('ModuleToggles', () => {
       global_role: 'admin',
       tenant_id: 'test-tenant-1',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',
@@ -198,7 +198,7 @@ describe('ModuleToggles', () => {
       global_role: null,
       tenant_role: 'admin',
       tenant_id: 'test-tenant-1',
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',
@@ -226,7 +226,7 @@ describe('ModuleToggles', () => {
       global_role: 'admin',
       tenant_id: 'test-tenant-1',
       tenant_role: null,
-    } as any)
+    } as unknown)
 
     vi.mocked(api.getTenantModules).mockResolvedValue({
       status: 'success',

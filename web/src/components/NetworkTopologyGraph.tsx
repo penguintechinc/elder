@@ -17,6 +17,20 @@ interface NetworkTopologyGraphProps {
   organizationId: number
 }
 
+interface TopologyNode {
+  id: number
+  name: string
+  network_type: string
+  region?: string
+}
+
+interface TopologyEdge {
+  id: number
+  source: number
+  target: number
+  connection_type: string
+}
+
 const NODE_COLORS = {
   subnet: '#3b82f6',
   firewall: '#ef4444',
@@ -45,7 +59,7 @@ export default function NetworkTopologyGraph({ organizationId }: NetworkTopology
   useEffect(() => {
     if (graphData?.nodes && graphData?.edges) {
       // Convert API nodes to ReactFlow nodes
-      const flowNodes: Node[] = graphData.nodes.map((node: any, index: number) => {
+      const flowNodes: Node[] = graphData.nodes.map((node: TopologyNode, index: number) => {
         const color = NODE_COLORS[node.network_type as keyof typeof NODE_COLORS] || NODE_COLORS.other
 
         return {
@@ -76,7 +90,7 @@ export default function NetworkTopologyGraph({ organizationId }: NetworkTopology
       })
 
       // Convert API edges to ReactFlow edges
-      const flowEdges: Edge[] = graphData.edges.map((edge: any) => ({
+      const flowEdges: Edge[] = graphData.edges.map((edge: TopologyEdge) => ({
         id: edge.id.toString(),
         source: edge.source.toString(),
         target: edge.target.toString(),
@@ -123,7 +137,7 @@ export default function NetworkTopologyGraph({ organizationId }: NetworkTopology
         <Controls />
         <MiniMap
           nodeColor={(node) => {
-            const networkType = graphData.nodes.find((n: any) => n.id.toString() === node.id)?.network_type
+            const networkType = graphData.nodes.find((n: TopologyNode) => n.id.toString() === node.id)?.network_type
             return NODE_COLORS[networkType as keyof typeof NODE_COLORS] || NODE_COLORS.other
           }}
           maskColor="rgba(15, 23, 42, 0.8)"

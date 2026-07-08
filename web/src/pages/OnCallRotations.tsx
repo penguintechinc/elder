@@ -13,6 +13,27 @@ import Select from '@/components/Select'
 // ModalFormBuilder and FormConfig not currently used
 import CreateOnCallRotationModal from '@/components/CreateOnCallRotationModal'
 import OnCallRotationDetailModal from '@/components/OnCallRotationDetailModal'
+import { Organization } from '@/types'
+
+interface OnCallRotation {
+  id: number
+  name: string
+  description?: string
+  schedule_type: string
+  scope_type: string
+  is_active: boolean
+  organization_id?: number
+  service_id?: number
+}
+
+interface Service {
+  id: number
+  name: string
+}
+
+interface PaginatedResponse<T> {
+  items: T[]
+}
 
 const SCHEDULE_TYPES = [
   { value: 'weekly', label: 'Weekly Rotation' },
@@ -39,18 +60,18 @@ export default function OnCallRotations() {
   const [scopeTypeFilter, setScopeTypeFilter] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingRotation, setEditingRotation] = useState<any>(null)
-  const [viewingRotation, setViewingRotation] = useState<any>(null)
+  const [editingRotation, setEditingRotation] = useState<OnCallRotation | null>(null)
+  const [viewingRotation, setViewingRotation] = useState<OnCallRotation | null>(null)
   const queryClient = useQueryClient()
 
   const { data: organizations } = useQuery({
     queryKey: queryKeys.organizations.dropdown,
-    queryFn: () => api.getOrganizations({ per_page: 1000 }),
+    queryFn: () => api.getOrganizations({ per_page: 1000 }) as Promise<PaginatedResponse<Organization>>,
   })
 
   const { data: services } = useQuery({
     queryKey: queryKeys.services.all,
-    queryFn: () => api.getServices({ per_page: 1000 }),
+    queryFn: () => api.getServices({ per_page: 1000 }) as Promise<PaginatedResponse<Service>>,
   })
 
   const { data, isLoading } = useQuery({
@@ -89,13 +110,13 @@ export default function OnCallRotations() {
     })
   }
 
-  const getScopeLabel = (rotation: any) => {
+  const getScopeLabel = (rotation: OnCallRotation) => {
     if (rotation.scope_type === 'organization' && rotation.organization_id) {
-      const org = organizations?.items?.find((o: any) => o.id === rotation.organization_id)
+      const org = organizations?.items?.find((o: Organization) => o.id === rotation.organization_id)
       return org?.name || 'Unknown Org'
     }
     if (rotation.scope_type === 'service' && rotation.service_id) {
-      const svc = services?.items?.find((s: any) => s.id === rotation.service_id)
+      const svc = services?.items?.find((s: Service) => s.id === rotation.service_id)
       return svc?.name || 'Unknown Service'
     }
     return 'Unknown'
@@ -149,7 +170,7 @@ export default function OnCallRotations() {
           className="w-48"
         >
           <option value="">All Organizations</option>
-          {organizations?.items?.map((org: any) => (
+          {organizations?.items?.map((org: Organization) => (
             <option key={org.id} value={org.id}>
               {org.name}
             </option>
@@ -161,7 +182,7 @@ export default function OnCallRotations() {
           className="w-48"
         >
           <option value="">All Services</option>
-          {services?.items?.map((svc: any) => (
+          {services?.items?.map((svc: Service) => (
             <option key={svc.id} value={svc.id}>
               {svc.name}
             </option>
@@ -210,7 +231,7 @@ export default function OnCallRotations() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((rotation: any) => (
+          {data?.items?.map((rotation: OnCallRotation) => (
             <Card
               key={rotation.id}
               className="cursor-pointer hover:border-primary-500/50 transition-colors"

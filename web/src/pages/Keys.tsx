@@ -8,6 +8,25 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { Organization } from '@/types'
+
+interface KeyProvider {
+  id: number
+  name: string
+  provider_type: string
+  enabled: boolean
+  organization_id: number
+}
+
+interface KeyProvidersResponse {
+  providers: KeyProvider[]
+}
+
+interface OrganizationResponse {
+  items: Organization[]
+}
+
+type ApiError = { response?: { data?: { message?: string }, status?: number }, message?: string }
 
 const PROVIDER_TYPES = [
   { value: 'aws_kms', label: 'AWS KMS' },
@@ -24,7 +43,7 @@ export default function Keys() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['keyProviders'],
-    queryFn: () => api.getKeyProviders(),
+    queryFn: () => api.getKeyProviders() as Promise<KeyProvidersResponse>,
   })
 
   const testMutation = useMutation({
@@ -83,7 +102,7 @@ export default function Keys() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {data?.providers?.map((provider: any) => (
+          {data?.providers?.map((provider: KeyProvider) => (
             <Card key={provider.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -176,7 +195,12 @@ export default function Keys() {
   )
 }
 
-function CreateProviderModal({ onClose, onSuccess }: any) {
+interface CreateProviderModalProps {
+  onClose: () => void
+  onSuccess: () => Promise<void>
+}
+
+function CreateProviderModal({ onClose, onSuccess }: CreateProviderModalProps) {
   const [name, setName] = useState('')
   const [providerType, setProviderType] = useState('')
   const [config, setConfig] = useState('{}')
@@ -184,16 +208,16 @@ function CreateProviderModal({ onClose, onSuccess }: any) {
 
   const { data: orgs } = useQuery({
     queryKey: ['organizations'],
-    queryFn: () => api.getOrganizations(),
+    queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createKeyProvider(data),
+    mutationFn: (data: Record<string, unknown>) => api.createKeyProvider(data as Parameters<typeof api.createKeyProvider>[0]),
     onSuccess: () => {
       toast.success('Key provider created')
       onSuccess()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Failed to create provider')
     },
   })
@@ -202,14 +226,14 @@ function CreateProviderModal({ onClose, onSuccess }: any) {
     e.preventDefault()
     try {
       const configObj = JSON.parse(config)
-      createMutation.mutate({
+      const providerData: Parameters<typeof api.createKeyProvider>[0] = {
         name,
         provider_type: providerType,
         organization_id: parseInt(orgId),
         config: configObj,
-        enabled: true,
-      })
-    } catch (err) {
+      }
+      createMutation.mutate(providerData)
+    } catch {
       toast.error('Invalid JSON configuration')
     }
   }
@@ -246,7 +270,7 @@ function CreateProviderModal({ onClose, onSuccess }: any) {
               onChange={(e) => setOrgId(e.target.value)}
               options={[
                 { value: '', label: 'Select organization' },
-                ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+                ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
               ]}
             />
             <div>
@@ -272,7 +296,20 @@ function CreateProviderModal({ onClose, onSuccess }: any) {
   )
 }
 
-function EncryptModal({ providerId, onClose }: any) {
+interface CryptoModalProps {
+  providerId: number | null
+  onClose: () => void
+}
+
+interface EncryptResponse {
+  ciphertext: string
+}
+
+interface DecryptResponse {
+  plaintext: string
+}
+
+function EncryptModal({ providerId, onClose }: CryptoModalProps) {
   const [ciphertext, setCiphertext] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -294,13 +331,13 @@ function EncryptModal({ providerId, onClose }: any) {
   ], [])
 
   const encryptMutation = useMutation({
-    mutationFn: (data: any) => api.encryptData(
-      providerId,
-      data.key_id || '',
-      { plaintext: data.plaintext }
-    ),
-    onSuccess: (data) => {
-      setCiphertext(data.ciphertext)
+    mutationFn: (data: Record<string, unknown>) => api.encryptData(
+      providerId ?? 0,
+      (data.key_id as string) || '',
+      { plaintext: String(data.plaintext) }
+    ) as Promise<EncryptResponse>,
+    onSuccess: (response: EncryptResponse) => {
+      setCiphertext(response.ciphertext)
       toast.success('Data encrypted successfully')
     },
     onError: () => toast.error('Encryption failed'),
@@ -326,7 +363,7 @@ function EncryptModal({ providerId, onClose }: any) {
               onClose={onClose}
               title=""
               fields={encryptFields}
-              onSubmit={(data: any) => encryptMutation.mutate(data)}
+              onSubmit={(data: Record<string, unknown>) => encryptMutation.mutate(data)}
               submitButtonText="Encrypt"
             />
             {ciphertext && (
@@ -357,7 +394,7 @@ function EncryptModal({ providerId, onClose }: any) {
 }
 
 
-function DecryptModal({ providerId, onClose }: any) {
+function DecryptModal({ providerId, onClose }: CryptoModalProps) {
   const [plaintext, setPlaintext] = useState('')
   const [copied, setCopied] = useState(false)
 
@@ -379,13 +416,13 @@ function DecryptModal({ providerId, onClose }: any) {
   ], [])
 
   const decryptMutation = useMutation({
-    mutationFn: (data: any) => api.decryptData(
-      providerId,
-      data.key_id || '',
-      { ciphertext: data.ciphertext }
-    ),
-    onSuccess: (data) => {
-      setPlaintext(data.plaintext)
+    mutationFn: (data: Record<string, unknown>) => api.decryptData(
+      providerId ?? 0,
+      (data.key_id as string) || '',
+      { ciphertext: String(data.ciphertext) }
+    ) as Promise<DecryptResponse>,
+    onSuccess: (response: DecryptResponse) => {
+      setPlaintext(response.plaintext)
       toast.success('Data decrypted successfully')
     },
     onError: () => toast.error('Decryption failed'),
@@ -411,7 +448,7 @@ function DecryptModal({ providerId, onClose }: any) {
               onClose={onClose}
               title=""
               fields={decryptFields}
-              onSubmit={(data: any) => decryptMutation.mutate(data)}
+              onSubmit={(data: Record<string, unknown>) => decryptMutation.mutate(data)}
               submitButtonText="Decrypt"
             />
             {plaintext && (

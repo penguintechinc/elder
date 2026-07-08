@@ -7,14 +7,27 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { Entity, Identity, IssueLabel, Issue, IssueStatus, IssuePriority } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-// Input component not currently used
 import Select from '@/components/Select'
 import { CreateIssueModal } from '@/pages/Issues'
 
-type IssueStatus = 'open' | 'in_progress' | 'closed'
-type IssuePriority = 'low' | 'medium' | 'high' | 'critical'
+interface IssueComment {
+  id: number
+  body: string
+  created_at: string
+  author?: {
+    full_name?: string
+    username: string
+  }
+}
+
+interface IssueUpdatePayload {
+  status?: IssueStatus
+  priority?: IssuePriority
+  assignee_id?: number | null
+}
 
 export default function IssueDetail() {
   const { id } = useParams<{ id: string }>()
@@ -85,7 +98,7 @@ export default function IssueDetail() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: Partial<any>) => api.updateIssue(parseInt(id!), data),
+    mutationFn: (data: IssueUpdatePayload) => api.updateIssue(parseInt(id!), data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['issue', id],
@@ -388,7 +401,7 @@ export default function IssueDetail() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4 mb-6">
-                {comments?.items?.map((comment: any) => (
+                {comments?.items?.map((comment: IssueComment) => (
                   <div key={comment.id} className="bg-slate-800/30 p-4 rounded-lg">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -449,7 +462,7 @@ export default function IssueDetail() {
                 <p className="text-slate-500 text-center py-8">No sub-tasks</p>
               ) : (
                 <div className="space-y-3">
-                  {subtasks?.map((subtask: any) => (
+                  {subtasks?.map((subtask: Issue) => (
                     <div
                       key={subtask.id}
                       className="p-4 bg-slate-800/30 rounded-lg cursor-pointer hover:bg-slate-800/50 transition-colors"
@@ -491,7 +504,7 @@ export default function IssueDetail() {
               <Select
                 label="Status"
                 value={issue.status}
-                onChange={(e) => updateMutation.mutate({ status: e.target.value })}
+                onChange={(e) => updateMutation.mutate({ status: e.target.value as IssueStatus })}
               >
                 <option value="open">Open</option>
                 <option value="in_progress">In Progress</option>
@@ -500,7 +513,7 @@ export default function IssueDetail() {
               <Select
                 label="Priority"
                 value={issue.priority}
-                onChange={(e) => updateMutation.mutate({ priority: e.target.value })}
+                onChange={(e) => updateMutation.mutate({ priority: e.target.value as IssuePriority })}
               >
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
@@ -521,7 +534,7 @@ export default function IssueDetail() {
                 onChange={(e) => updateMutation.mutate({ assignee_id: e.target.value ? parseInt(e.target.value) : null })}
               >
                 <option value="">Unassigned</option>
-                {allIdentities?.items?.map((identity: any) => (
+                {allIdentities?.items?.map((identity: Identity) => (
                   <option key={identity.id} value={identity.id}>
                     {identity.full_name || identity.username}
                   </option>
@@ -550,8 +563,8 @@ export default function IssueDetail() {
               {showAddLabel && (
                 <div className="mb-4 space-y-2 max-h-48 overflow-y-auto">
                   {allLabels?.items
-                    ?.filter((label: any) => !labels?.items?.some((l: any) => l.id === label.id))
-                    .map((label: any) => (
+                    ?.filter((label: IssueLabel) => !labels?.items?.some((l: IssueLabel) => l.id === label.id))
+                    .map((label: IssueLabel) => (
                       <button
                         key={label.id}
                         onClick={() => {
@@ -570,7 +583,7 @@ export default function IssueDetail() {
                 </div>
               )}
               <div className="space-y-2">
-                {labels?.items?.map((label: any) => (
+                {labels?.items?.map((label: IssueLabel) => (
                   <div
                     key={label.id}
                     className="flex items-center justify-between px-3 py-2 rounded"
@@ -625,8 +638,8 @@ export default function IssueDetail() {
                   >
                     <option value="">Select entity...</option>
                     {allEntities?.items
-                      ?.filter((entity: any) => !linkedEntities?.items?.some((e: any) => e.id === entity.id))
-                      .map((entity: any) => (
+                      ?.filter((entity: Entity) => !linkedEntities?.items?.some((e: Entity) => e.id === entity.id))
+                      .map((entity: Entity) => (
                         <option key={entity.id} value={entity.id}>
                           {entity.name} ({entity.type})
                         </option>
@@ -635,7 +648,7 @@ export default function IssueDetail() {
                 </div>
               )}
               <div className="space-y-2">
-                {linkedEntities?.items?.map((entity: any) => (
+                {linkedEntities?.items?.map((entity: Entity) => (
                   <div
                     key={entity.id}
                     className="flex items-center justify-between p-2 bg-slate-800/30 rounded cursor-pointer hover:bg-slate-800/50 transition-colors"
@@ -691,7 +704,7 @@ export default function IssueDetail() {
                     value=""
                   >
                     <option value="">Select project...</option>
-                    {allProjects?.items?.map((project: any) => (
+                    {allProjects?.items?.map((project: { id: number; name: string }) => (
                       <option key={project.id} value={project.id}>
                         {project.name}
                       </option>
@@ -734,7 +747,7 @@ export default function IssueDetail() {
                     value=""
                   >
                     <option value="">Select milestone...</option>
-                    {allMilestones?.items?.map((milestone: any) => (
+                    {allMilestones?.items?.map((milestone: { id: number; title: string }) => (
                       <option key={milestone.id} value={milestone.id}>
                         {milestone.title}
                       </option>

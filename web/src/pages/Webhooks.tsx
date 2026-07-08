@@ -7,6 +7,24 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
+import { Organization } from '@/types'
+
+interface WebhookConfig {
+  id: number
+  name: string
+  url: string
+  organization_id: number
+  events: string[]
+  enabled: boolean
+}
+
+interface WebhooksResponse {
+  webhooks: WebhookConfig[]
+}
+
+interface OrganizationResponse {
+  items: Organization[]
+}
 
 const EVENT_TYPES = [
   { value: 'entity.created', label: 'Entity Created' },
@@ -25,7 +43,7 @@ export default function Webhooks() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['webhooks'],
-    queryFn: () => api.getWebhooks(),
+    queryFn: () => api.getWebhooks() as Promise<WebhooksResponse>,
   })
 
   const testMutation = useMutation({
@@ -74,7 +92,7 @@ export default function Webhooks() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {data?.webhooks?.map((webhook: any) => (
+          {data?.webhooks?.map((webhook: WebhookConfig) => (
             <Card key={webhook.id}>
               <CardContent>
                 <div className="flex items-start justify-between">
@@ -127,7 +145,12 @@ export default function Webhooks() {
   )
 }
 
-function CreateWebhookModal({ onClose, onSuccess }: any) {
+interface CreateWebhookModalProps {
+  onClose: () => void
+  onSuccess: () => Promise<void>
+}
+
+function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
   const [name, setName] = useState('')
   const [url, setUrl] = useState('')
   const [orgId, setOrgId] = useState('')
@@ -136,11 +159,11 @@ function CreateWebhookModal({ onClose, onSuccess }: any) {
 
   const { data: orgs } = useQuery({
     queryKey: ['organizations'],
-    queryFn: () => api.getOrganizations(),
+    queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createWebhook(data),
+    mutationFn: (data: Record<string, unknown>) => api.createWebhook(data as Parameters<typeof api.createWebhook>[0]),
     onSuccess: () => {
       toast.success('Webhook created')
       onSuccess()
@@ -155,14 +178,15 @@ function CreateWebhookModal({ onClose, onSuccess }: any) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    createMutation.mutate({
+    const webhookData: Parameters<typeof api.createWebhook>[0] = {
       name,
       url,
       organization_id: parseInt(orgId),
       events: selectedEvents,
       secret: secret || undefined,
       enabled: true,
-    })
+    }
+    createMutation.mutate(webhookData)
   }
 
   return (
@@ -195,7 +219,7 @@ function CreateWebhookModal({ onClose, onSuccess }: any) {
               onChange={(e) => setOrgId(e.target.value)}
               options={[
                 { value: '', label: 'Select organization' },
-                ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+                ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
               ]}
             />
             <div>

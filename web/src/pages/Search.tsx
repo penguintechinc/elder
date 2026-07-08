@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search as SearchIcon, Tag, Folder, Box, MessageSquare, User, X } from 'lucide-react'
+import type { Organization, Entity, Issue, Identity, IssueLabel } from '@/types'
 import api from '@/lib/api'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -153,7 +154,7 @@ export default function Search() {
               Filter by Labels
             </label>
             <div className="flex flex-wrap gap-2">
-              {labels.items.map((label: any) => (
+              {labels.items.map((label: IssueLabel) => (
                 <button
                   key={label.id}
                   type="button"
@@ -220,7 +221,7 @@ export default function Search() {
                 Organization Units ({orgResults.items.length})
               </h2>
               <div className="space-y-2">
-                {orgResults.items.map((org: any) => (
+                {orgResults.items.map((org: Organization) => (
                   <Card
                     key={org.id}
                     className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -252,7 +253,7 @@ export default function Search() {
                 Entities ({entityResults.items.length})
               </h2>
               <div className="space-y-2">
-                {entityResults.items.map((entity: any) => (
+                {entityResults.items.map((entity: Entity) => (
                   <Card
                     key={entity.id}
                     className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -289,7 +290,7 @@ export default function Search() {
                 Issues ({issueResults.items.length})
               </h2>
               <div className="space-y-2">
-                {issueResults.items.map((issue: any) => (
+                {issueResults.items.map((issue: Issue) => (
                   <Card
                     key={issue.id}
                     className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -332,7 +333,7 @@ export default function Search() {
                 Identities ({identityResults.items.length})
               </h2>
               <div className="space-y-2">
-                {identityResults.items.map((identity: any) => (
+                {identityResults.items.map((identity: Identity) => (
                   <Card
                     key={identity.id}
                     className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"

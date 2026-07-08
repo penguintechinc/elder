@@ -4,9 +4,14 @@ import type { MenuCategory } from '@penguintechinc/react-libs/components'
 import type { FrontendModule } from '../types'
 import { Package, Bug, Layers } from 'lucide-react'
 
+// eslint-disable react-refresh/only-export-components -- Intentional: exports both lazy components and module manifest
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Software = lazy(() => import('@/pages/Software'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Vulnerabilities = lazy(() => import('@/pages/Vulnerabilities'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const SBOMDashboard = lazy(() => import('@/pages/SBOMDashboard'))
+// eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
   {

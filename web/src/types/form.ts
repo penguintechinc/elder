@@ -37,15 +37,15 @@ export interface FormField {
   placeholder?: string
   options?: SelectOption[]
   rows?: number  // for textarea/multiline
-  defaultValue?: any
+  defaultValue?: unknown
   hidden?: boolean
   disabled?: boolean
   helpText?: string
   // For conditional visibility
   triggerField?: string  // Simple: show when this field is truthy
-  showWhen?: (values: Record<string, any>) => boolean  // Complex: custom condition
+  showWhen?: (values: Record<string, unknown>) => boolean  // Complex: custom condition
   // Custom validation (in addition to type-based validation)
-  validate?: (value: any) => string | undefined  // Return error message or undefined
+  validate?: (value: unknown) => string | undefined  // Return error message or undefined
 }
 
 /**
@@ -83,7 +83,7 @@ function containsDangerousPattern(value: string): string | undefined {
  * Validate a field value based on its type
  * Returns error message or undefined if valid
  */
-export function validateFieldValue(value: any, field: FormField): string | undefined {
+export function validateFieldValue(value: unknown, field: FormField): string | undefined {
   // Skip validation if empty and not required
   if ((value === '' || value === undefined || value === null) && !field.required) {
     return undefined
@@ -228,7 +228,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
 
   // Number validation
   if (field.type === 'number' && value !== '' && value !== undefined) {
-    const num = typeof value === 'string' ? parseFloat(value.replace(/\s+/g, '')) : value
+    const num = typeof value === 'string' ? parseFloat(value.replace(/\s+/g, '')) : (typeof value === 'number' ? value : NaN)
     if (isNaN(num)) {
       return 'Must be a valid number'
     }
@@ -248,7 +248,7 @@ export function validateFieldValue(value: any, field: FormField): string | undef
  * Skips validation for hidden fields (showWhen returns false)
  */
 export function validateForm(
-  values: Record<string, any>,
+  values: Record<string, unknown>,
   fields: FormField[]
 ): Record<string, string> {
   const errors: Record<string, string> = {}
@@ -278,7 +278,7 @@ export interface FormConfig {
  * Process a form value based on its field type
  * Applies appropriate space handling automatically
  */
-export function processFieldValue(value: any, type: FieldType): any {
+export function processFieldValue(value: unknown, type: FieldType): unknown {
   if (value === null || value === undefined) {
     return undefined
   }
@@ -351,10 +351,10 @@ export function processFieldValue(value: any, type: FieldType): any {
  * Process all form values based on field definitions
  */
 export function processFormData(
-  values: Record<string, any>,
+  values: Record<string, unknown>,
   fields: FormField[]
-): Record<string, any> {
-  const result: Record<string, any> = {}
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
 
   for (const field of fields) {
     const value = values[field.name]
@@ -372,8 +372,8 @@ export function processFormData(
 /**
  * Get default values from field definitions
  */
-export function getDefaultValues(fields: FormField[]): Record<string, any> {
-  const values: Record<string, any> = {}
+export function getDefaultValues(fields: FormField[]): Record<string, unknown> {
+  const values: Record<string, unknown> = {}
 
   for (const field of fields) {
     if (field.defaultValue !== undefined) {

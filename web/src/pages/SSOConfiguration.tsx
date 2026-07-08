@@ -9,6 +9,12 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import type { IdPConfiguration } from '@/types'
 
+type ApiError = { response?: { data?: { error?: string }, status?: number }, message?: string }
+
+interface IdPConfigsResponse {
+  items: IdPConfiguration[]
+}
+
 const idpFields: FormField[] = [
   {
     name: 'name',
@@ -85,32 +91,33 @@ export default function SSOConfiguration() {
   const [editingIdP, setEditingIdP] = useState<IdPConfiguration | null>(null)
   const queryClient = useQueryClient()
 
-  const { data: idpConfigs, isLoading: idpLoading } = useQuery({
+  const { data: idpResponse, isLoading: idpLoading } = useQuery({
     queryKey: ['idp-configs'],
-    queryFn: () => api.getIdPConfigs(),
+    queryFn: () => api.getIdPConfigs() as Promise<IdPConfigsResponse>,
   })
+  const idpConfigs = idpResponse?.items ?? []
 
   const createIdPMutation = useMutation({
-    mutationFn: (data: Record<string, any>) => api.createIdPConfig(data as Parameters<typeof api.createIdPConfig>[0]),
+    mutationFn: (data: Record<string, unknown>) => api.createIdPConfig(data as Parameters<typeof api.createIdPConfig>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['idp-configs'] })
       toast.success('IdP configuration created')
       setShowCreateIdP(false)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to create IdP config')
     },
   })
 
   const updateIdPMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
-      api.updateIdPConfig(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      api.updateIdPConfig(id, data as Parameters<typeof api.updateIdPConfig>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['idp-configs'] })
       toast.success('IdP configuration updated')
       setEditingIdP(null)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update IdP config')
     },
   })
@@ -121,7 +128,7 @@ export default function SSOConfiguration() {
       await queryClient.invalidateQueries({ queryKey: ['idp-configs'] })
       toast.success('IdP configuration deleted')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to delete IdP config')
     },
   })
@@ -130,11 +137,11 @@ export default function SSOConfiguration() {
     setEditingIdP(config)
   }
 
-  const handleCreateIdP = (data: Record<string, any>) => {
+  const handleCreateIdP = (data: Record<string, unknown>) => {
     createIdPMutation.mutate(data)
   }
 
-  const handleUpdateIdP = (data: Record<string, any>) => {
+  const handleUpdateIdP = (data: Record<string, unknown>) => {
     if (editingIdP) {
       updateIdPMutation.mutate({
         id: editingIdP.id,

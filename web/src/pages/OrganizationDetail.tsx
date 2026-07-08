@@ -243,15 +243,9 @@ export default function OrganizationDetail() {
     console.log('RelationshipGraphSection: isLoading:', isLoading);
     console.log('RelationshipGraphSection: graphData:', graphData);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- NetworkGraph expects a different GraphNode type
     const handleNodeClick = (node: any) => {
-      const nodeId = node.metadata?.id
-      if (!nodeId) return
-
-      if (node.type === 'organization') {
-        navigate(`/organizations/${nodeId}`)
-      } else {
-        navigate(`/entities/${nodeId}`)
-      }
+      navigate(`/entities/${node.id}`)
     }
 
     if (isLoading) {
@@ -620,7 +614,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {issues?.items && issues.items.length > 0 ? (
                 <div className="space-y-3">
-                  {issues.items.slice(0, 5).map((issue: any) => (
+                  {issues.items.slice(0, 5).map((issue: { id: number; title: string; status: string }) => (
                     <div
                       key={issue.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -680,7 +674,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {projects?.items && projects.items.length > 0 ? (
                 <div className="space-y-3">
-                  {projects.items.slice(0, 5).map((project: any) => (
+                  {projects.items.slice(0, 5).map((project: { id: number; name: string; status: string }) => (
                     <div
                       key={project.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -747,7 +741,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {identities?.items && identities.items.length > 0 ? (
                 <div className="space-y-3">
-                  {identities.items.slice(0, 5).map((identity: any) => (
+                  {identities.items.slice(0, 5).map((identity: { id: number; username: string; portal_role?: string; full_name?: string; email?: string }) => (
                     <div
                       key={identity.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -1040,8 +1034,15 @@ function CreateEntityModal({ organizationId, onClose, onSuccess }: CreateEntityM
     { value: 'security_issue', label: 'Security Issue' },
   ]
 
+  interface EntityData {
+    name: string
+    description?: string
+    entity_type: string
+    organization_id: number
+  }
+
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createEntity(data),
+    mutationFn: (data: EntityData) => api.createEntity(data),
     onSuccess: () => {
       toast.success('Entity created successfully')
       onSuccess()
@@ -1141,7 +1142,7 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   const metadata = metadataResponse?.metadata || {}
 
   const createMutation = useMutation({
-    mutationFn: (data: { key: string; field_type: string; value: any }) =>
+    mutationFn: (data: { key: string; field_type: string; value: unknown }) =>
       api.createOrganizationMetadata(organizationId, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
@@ -1156,7 +1157,7 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: any }) =>
+    mutationFn: ({ key, value }: { key: string; value: unknown }) =>
       api.updateOrganizationMetadata(organizationId, key, { value }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })

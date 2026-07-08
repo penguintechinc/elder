@@ -8,6 +8,19 @@ import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
+interface LicensePolicy {
+  id: number
+  name: string
+  description?: string
+  allowed_patterns?: string
+  denied_patterns?: string
+  is_active: boolean
+}
+
+interface LicensePoliciesResponse {
+  items: LicensePolicy[]
+}
+
 const licensePolicyFields: FormField[] = [
   {
     name: 'name',
@@ -48,16 +61,16 @@ const licensePolicyFields: FormField[] = [
 export default function LicensePolicies() {
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingPolicy, setEditingPolicy] = useState<any>(null)
+  const [editingPolicy, setEditingPolicy] = useState<LicensePolicy | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['license-policies', { search }],
-    queryFn: () => api.getLicensePolicies({ search }),
+    queryFn: () => api.getLicensePolicies({ search }) as Promise<LicensePoliciesResponse>,
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createLicensePolicy(data),
+    mutationFn: (data: Record<string, unknown>) => api.createLicensePolicy(data as Parameters<typeof api.createLicensePolicy>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['license-policies'],
@@ -72,8 +85,8 @@ export default function LicensePolicies() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
-      api.updateLicensePolicy(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      api.updateLicensePolicy(id, data as Parameters<typeof api.updateLicensePolicy>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['license-policies'],
@@ -107,11 +120,11 @@ export default function LicensePolicies() {
     }
   }
 
-  const handleCreate = (formData: Record<string, any>) => {
+  const handleCreate = (formData: Record<string, unknown>) => {
     createMutation.mutate(formData)
   }
 
-  const handleUpdate = (formData: Record<string, any>) => {
+  const handleUpdate = (formData: Record<string, unknown>) => {
     if (editingPolicy) {
       updateMutation.mutate({
         id: editingPolicy.id,
@@ -120,7 +133,7 @@ export default function LicensePolicies() {
     }
   }
 
-  const filteredPolicies = data?.items?.filter((policy: any) => {
+  const filteredPolicies = data?.items?.filter((policy: LicensePolicy) => {
     if (!search) return true
     return policy.name.toLowerCase().includes(search.toLowerCase()) ||
            policy.description?.toLowerCase().includes(search.toLowerCase())
@@ -193,7 +206,7 @@ export default function LicensePolicies() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredPolicies?.map((policy: any) => (
+          {filteredPolicies?.map((policy: LicensePolicy) => (
             <Card key={policy.id}>
               <CardContent>
                 <div className="flex items-start justify-between">

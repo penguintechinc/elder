@@ -138,7 +138,7 @@ test.describe('Elder Web UI - Navigation', () => {
           await tab.click();
           // Wait for tab content to load
           await page.waitForTimeout(300);
-        } catch (e) {
+        } catch {
           // Tab click might fail - that's ok
         }
       }
@@ -179,11 +179,11 @@ test.describe('Elder Web UI - Navigation', () => {
           try {
             await tabs.first().click();
             await page.waitForTimeout(200);
-          } catch (e) {
+          } catch {
             // Tab click failed
           }
         }
-      } catch (e) {
+      } catch {
         // Navigation failed
       }
     }
@@ -227,7 +227,7 @@ test.describe('Elder Web UI - Forms and Modals', () => {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // Page or modal might not exist
     }
 
@@ -256,7 +256,7 @@ test.describe('Elder Web UI - Forms and Modals', () => {
           await page.waitForTimeout(500);
         }
       }
-    } catch (e) {
+    } catch {
       // Form might not exist
     }
 
@@ -314,7 +314,7 @@ test.describe('Elder Web UI - Forms and Modals', () => {
           await closeButton.first().click();
         }
       }
-    } catch (e) {
+    } catch {
       // Modal might not exist
     }
 
@@ -335,7 +335,7 @@ test.describe('Elder Web UI - Page-Specific Tests', () => {
       const pageContent = page.locator('main, [role="main"], body');
       // Check if page loaded at all
       await expect(pageContent).toBeVisible({ timeout: 5000 });
-    } catch (e) {
+    } catch {
       // Services page might not exist in some deployments - just verify no errors
       test.info().annotations.push({
         type: 'info',
@@ -357,7 +357,7 @@ test.describe('Elder Web UI - Page-Specific Tests', () => {
 
       const pageContent = page.locator('main, [role="main"], body');
       await expect(pageContent).toBeVisible({ timeout: 5000 });
-    } catch (e) {
+    } catch {
       test.info().annotations.push({
         type: 'info',
         description: 'Issues page not available in this deployment',
@@ -377,7 +377,7 @@ test.describe('Elder Web UI - Page-Specific Tests', () => {
 
       const pageContent = page.locator('main, [role="main"], body');
       await expect(pageContent).toBeVisible({ timeout: 5000 });
-    } catch (e) {
+    } catch {
       test.info().annotations.push({
         type: 'info',
         description: 'Projects page not available in this deployment',
@@ -397,7 +397,7 @@ test.describe('Elder Web UI - Page-Specific Tests', () => {
 
       const pageContent = page.locator('main, [role="main"], body');
       await expect(pageContent).toBeVisible({ timeout: 5000 });
-    } catch (e) {
+    } catch {
       test.info().annotations.push({
         type: 'info',
         description: 'Settings page not available in this deployment',
@@ -455,7 +455,7 @@ test.describe('Elder Web UI - Error Handling', () => {
         await page.waitForLoadState('networkidle').catch(() => {
           // Timeout ok
         });
-      } catch (e) {
+      } catch {
         // Page might not exist - that's ok
       }
     }
@@ -492,7 +492,7 @@ test.describe('Elder Web UI - Error Handling', () => {
         // Verify page is still interactive
         const body = await page.locator('body');
         await expect(body).toBeVisible();
-      } catch (e) {
+      } catch {
         // Page might fail at this viewport
       }
     }
@@ -533,7 +533,7 @@ test.describe('Elder Web UI - Performance', () => {
           await page.waitForLoadState('networkidle').catch(() => {
             // Timeout ok
           });
-        } catch (e) {
+        } catch {
           // Navigation might fail - that's ok
         }
       }

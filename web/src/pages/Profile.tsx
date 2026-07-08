@@ -7,6 +7,15 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 
+interface ApiError {
+  response?: {
+    data?: {
+      error?: string
+    }
+  }
+  message?: string
+}
+
 export default function Profile() {
   const [isEditing, setIsEditing] = useState(false)
   const [isChangingPassword, setIsChangingPassword] = useState(false)
@@ -26,7 +35,7 @@ export default function Profile() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: Record<string, any>) => api.updateProfile(data),
+    mutationFn: (data: Record<string, unknown>) => api.updateProfile(data as Parameters<typeof api.updateProfile>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['profile'],
@@ -35,7 +44,7 @@ export default function Profile() {
       toast.success('Profile updated successfully')
       setIsEditing(false)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update profile')
     },
   })
@@ -50,7 +59,7 @@ export default function Profile() {
       setNewPassword('')
       setConfirmPassword('')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to change password')
     },
   })
@@ -188,7 +197,7 @@ export default function Profile() {
                   onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
                 >
                   <option value="">No Organization</option>
-                  {orgsData?.items?.map((org: any) => (
+                  {orgsData?.items?.map((org) => (
                     <option key={org.id} value={org.id.toString()}>
                       {org.name}
                     </option>

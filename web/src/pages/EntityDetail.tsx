@@ -4,10 +4,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Edit, Trash2, ArrowRight, Plus, X, Copy } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import type { Entity, Dependency, DependencyType } from '@/types'
+import type { Entity, Dependency, DependencyType, Issue } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
+
+interface MetadataField {
+  id: number
+  key: string
+  value: unknown
+}
 
 export default function EntityDetail() {
   const { id } = useParams<{ id: string }>()
@@ -266,7 +272,7 @@ export default function EntityDetail() {
             <CardContent>
               {metadata?.items && metadata.items.length > 0 ? (
                 <dl className="grid grid-cols-1 gap-4">
-                  {metadata.items.map((field: any) => (
+                  {metadata.items.map((field: MetadataField) => (
                     <div key={field.id}>
                       <dt className="text-sm font-medium text-slate-400">{field.key}</dt>
                       <dd className="mt-1 text-sm text-white">
@@ -401,7 +407,7 @@ export default function EntityDetail() {
             <CardContent>
               {issues?.items && issues.items.length > 0 ? (
                 <div className="space-y-2">
-                  {issues.items.slice(0, 5).map((issue: any) => (
+                  {issues.items.slice(0, 5).map((issue: Issue) => (
                     <div
                       key={issue.id}
                       className="p-2 bg-slate-800/30 rounded hover:bg-slate-800/50 cursor-pointer transition-colors"

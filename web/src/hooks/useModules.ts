@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
-import type { ModulesResponse, ModuleCapabilities } from '@/modules/types'
+import type { ModulesResponse, ModuleCapabilities, ModuleInfo } from '@/modules/types'
 
 /**
  * Hook to fetch module status and availability from the backend.
@@ -21,13 +21,13 @@ export function useModules() {
   // Build set of enabled module IDs (effective=true)
   const enabledModuleIds: Set<string> = new Set(
     data?.modules
-      ?.filter((m: any) => m.effective)
-      .map((m: any) => m.nav_id) ?? []
+      ?.filter((m: ModuleInfo) => m.effective)
+      .map((m: ModuleInfo) => m.nav_id) ?? []
   )
 
   // Build capabilities map: module nav_id -> capabilities
   const capabilitiesMap = new Map<string, ModuleCapabilities>()
-  data?.modules?.forEach((m: any) => {
+  data?.modules?.forEach((m: ModuleInfo) => {
     capabilitiesMap.set(m.nav_id, m.capabilities)
   })
 

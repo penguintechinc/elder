@@ -1,11 +1,28 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Map as MapIcon, Filter, RefreshCw } from 'lucide-react'
+import type { Organization } from '@/types'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 // Input component not currently used
 import { NetworkGraph } from '@/components/NetworkGraph'
+
+interface MapNode {
+  id: string
+  label: string
+  type: string
+  resource_id: number
+  resource_type: string
+  organization_id?: number
+  parent_id?: number
+}
+
+interface MapEdge {
+  from: string
+  to: string
+  type: string
+}
 
 // Resource type options
 const RESOURCE_TYPES = [
@@ -69,7 +86,7 @@ export default function Map() {
     if (!mapData) return { nodes: [], edges: [] }
 
     // Transform nodes - NetworkGraph expects id, label, type, metadata
-    const nodes = mapData.nodes.map((node: any) => ({
+    const nodes = mapData.nodes.map((node: MapNode) => ({
       id: node.id, // Already in format "type:id"
       label: node.label,
       type: node.type,
@@ -83,7 +100,7 @@ export default function Map() {
     }))
 
     // Transform edges - NetworkGraph expects from, to, label
-    const edges = mapData.edges.map((edge: any) => ({
+    const edges = mapData.edges.map((edge: MapEdge) => ({
       from: edge.from,
       to: edge.to,
       label: edge.type,
@@ -110,8 +127,15 @@ export default function Map() {
     )
   }
 
+  interface GraphNodeWithMetadata {
+    id: string
+    label: string
+    type: string
+    metadata?: Record<string, unknown>
+  }
+
   // Handle node click - could navigate to details
-  const handleNodeClick = (node: any) => {
+  const handleNodeClick = (node: GraphNodeWithMetadata) => {
     console.log('Node clicked:', node)
     // Could add navigation or modal here
   }
@@ -171,7 +195,7 @@ export default function Map() {
                   className="w-full px-3 py-2 bg-slate-800 text-white border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                 >
                   <option value="">All Organizations (Global)</option>
-                  {orgsData?.items?.map((org: any) => (
+                  {orgsData?.items?.map((org: Organization) => (
                     <option key={org.id} value={org.id}>
                       {org.name}
                     </option>

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Trash2, ArrowRight, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { Entity, Identity, Issue, Organization } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -30,6 +31,22 @@ const DEPENDENCY_TYPE_OPTIONS = [
   { value: 'other', label: 'Other' },
 ]
 
+interface SearchResource {
+  id: number
+  name?: string
+  title?: string
+  username?: string
+  type?: string
+  status?: string
+  identity_type?: string
+  organization_type?: string
+}
+
+interface QueryParams {
+  per_page: number
+  search?: string
+}
+
 interface PolymorphicDependency {
   id: number
   tenant_id: number
@@ -38,7 +55,7 @@ interface PolymorphicDependency {
   target_type: string
   target_id: number
   dependency_type: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -48,7 +65,7 @@ function useResourceSearch(type: string, searchQuery: string) {
   return useQuery({
     queryKey: ['resource-search', type, searchQuery],
     queryFn: () => {
-      const params: any = { per_page: 50 }
+      const params: QueryParams = { per_page: 50 }
       if (searchQuery) params.search = searchQuery
       switch (type) {
         case 'entity': return api.getEntities(params)
@@ -64,8 +81,8 @@ function useResourceSearch(type: string, searchQuery: string) {
   })
 }
 
-function formatResourceOptions(type: string, items: any[]) {
-  return (items || []).map((item: any) => {
+function formatResourceOptions(type: string, items: SearchResource[]) {
+  return (items || []).map((item: SearchResource) => {
     switch (type) {
       case 'entity':
         return { value: item.id, label: `${item.name}${item.type ? ` (${item.type})` : ''}` }
@@ -130,17 +147,17 @@ export default function Dependencies() {
   const getResourceName = (type: string, id: number): string => {
     switch (type) {
       case 'entity':
-        return entities?.items?.find((e: any) => e.id === id)?.name || `Entity #${id}`
+        return entities?.items?.find((e: Entity) => e.id === id)?.name || `Entity #${id}`
       case 'identity':
-        return identities?.items?.find((i: any) => i.id === id)?.username || `Identity #${id}`
+        return identities?.items?.find((i: Identity) => i.id === id)?.username || `Identity #${id}`
       case 'project':
-        return projects?.items?.find((p: any) => p.id === id)?.name || `Project #${id}`
+        return projects?.items?.find((p: SearchResource) => p.id === id)?.name || `Project #${id}`
       case 'milestone':
-        return milestones?.items?.find((m: any) => m.id === id)?.title || `Milestone #${id}`
+        return milestones?.items?.find((m: SearchResource) => m.id === id)?.title || `Milestone #${id}`
       case 'issue':
-        return issues?.items?.find((i: any) => i.id === id)?.title || `Issue #${id}`
+        return issues?.items?.find((i: Issue) => i.id === id)?.title || `Issue #${id}`
       case 'organization':
-        return organizations?.items?.find((o: any) => o.id === id)?.name || `Organization #${id}`
+        return organizations?.items?.find((o: Organization) => o.id === id)?.name || `Organization #${id}`
       default:
         return `${type} #${id}`
     }
