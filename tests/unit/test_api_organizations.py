@@ -8,7 +8,7 @@ No external network calls or real database required.
 import json
 from unittest.mock import patch
 
-from apps.api.models.organization import Organization
+from apps.api.modules.infrastructure.models.organization import Organization
 
 
 class TestOrganizationAPI:

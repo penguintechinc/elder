@@ -6,9 +6,10 @@ These tests verify end-to-end functionality with real database interactions
 """
 
 from apps.api import db
-from apps.api.models.dependency import Dependency
-from apps.api.models.entity import Entity, EntityType
-from apps.api.models.organization import Organization
+from apps.api.models.entity_types import EntityType
+from apps.api.modules.infrastructure.models.dependency import Dependency
+from apps.api.modules.infrastructure.models.entity import Entity
+from apps.api.modules.infrastructure.models.organization import Organization
 
 
 class TestCompleteWorkflow:
