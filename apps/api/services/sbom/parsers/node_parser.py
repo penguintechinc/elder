@@ -275,14 +275,19 @@ class NodeDependencyParser(BaseDependencyParser):
             Tuple of (name, version_spec) if parseable, None otherwise.
         """
         # Handle scoped packages: @scope/package@version-spec
+        # Example: "@angular/core@16.0.0" -> parts = ["", "angular", "core@16.0.0"]
         if key.startswith("@"):
-            # Find the second @ which separates scope from version
-            parts = key.split("@")
-            if len(parts) >= 3:
+            # Split on @, first part is empty, second is scope
+            parts = key.split("@", 2)  # Split into at most 3 parts
+            if len(parts) == 3:
                 scope = parts[1]
-                name = f"@{scope}/{parts[2]}"
-                version_spec = "@".join(parts[3:]) if len(parts) > 3 else "unknown"
-                return (name, version_spec)
+                rest = parts[2]
+                # Now split the rest on the last @ to separate package name from version
+                name_and_version = rest.rsplit("@", 1)
+                if len(name_and_version) == 2:
+                    name = f"@{scope}/{name_and_version[0]}"
+                    version_spec = name_and_version[1]
+                    return (name, version_spec)
 
         # Handle unscoped packages: package@version-spec
         if "@" in key:

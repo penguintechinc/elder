@@ -378,10 +378,12 @@ express@4.18.2:
 
     def test_parse_invalid_yaml_in_pnpm_lock(self, parser):
         """Test error handling for invalid YAML in pnpm-lock.yaml."""
+        # Use actually invalid YAML: unmatched quotes and bad indentation
         content = """
-        invalid:
-            yaml:
-            spacing:
+        invalid: unclosed "quote
+        bad:
+          - item1
+         - item2
         """
 
         with pytest.raises(ValueError):
