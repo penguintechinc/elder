@@ -30,7 +30,7 @@ RUN npm run build
 # Production stage — serve built files with a lightweight static server
 FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
 RUN npm install -g serve
-RUN useradd --create-home --shell /bin/bash appuser
+RUN useradd --create-home --shell /bin/bash --uid 1000 appuser
 WORKDIR /app
 COPY --chown=appuser:appuser --from=builder /app/dist ./dist
 RUN chown -R appuser:appuser /app

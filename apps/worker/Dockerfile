@@ -27,7 +27,6 @@ WORKDIR /app
 
 # Install runtime dependencies and create user
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     libldap-2.5-0 \
     libsasl2-2 \
     ca-certificates \
@@ -52,9 +51,9 @@ ENV PYTHONPATH=/app:/app/.local/lib/python3.13/site-packages:$PYTHONPATH
 # Switch to non-root user
 USER worker
 
-# Health check
+# Health check (native Python)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:${HEALTH_CHECK_PORT:-8000}/healthz || exit 1
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:${HEALTH_CHECK_PORT:-8000}/healthz'); import sys; sys.exit(0)" || exit 1
 
 # Run the connector service
 CMD ["python3", "apps/worker/main.py"]
