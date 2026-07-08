@@ -14,6 +14,7 @@ from quart import Blueprint, Response, jsonify, request
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
+from apps.api.utils.api_responses import ApiResponse
 
 bp = Blueprint("sso", __name__)
 
@@ -128,15 +129,15 @@ async def create_idp_config():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     name = data.get("name")
     if not name:
-        return jsonify({"error": "name is required"}), 400
+        return ApiResponse.bad_request("name is required")
 
     # Tenant admins can only create for their tenant
     tenant_id = data.get("tenant_id")
@@ -182,11 +183,11 @@ async def update_idp_config(config_id):
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     result = SAMLService.update_idp_config(config_id, **data)
 
@@ -212,7 +213,7 @@ def delete_idp_config(config_id):
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     result = SAMLService.delete_idp_config(config_id)
 
@@ -261,10 +262,10 @@ def saml_login(tenant_id):
     idp_config = SAMLService.get_idp_config(tenant_id)
 
     if not idp_config:
-        return jsonify({"error": "No IdP configured for this tenant"}), 404
+        return ApiResponse.error("No IdP configured for this tenant", 404)
 
     if not idp_config.get("sso_url"):
-        return jsonify({"error": "IdP SSO URL not configured"}), 400
+        return ApiResponse.bad_request("IdP SSO URL not configured")
 
     # In production, generate SAML AuthnRequest and redirect
     # For now, return the SSO URL for manual redirect
@@ -295,7 +296,7 @@ def saml_acs(tenant_id):
     relay_state = request.form.get("RelayState")
 
     if not saml_response:
-        return jsonify({"error": "SAMLResponse is required"}), 400
+        return ApiResponse.bad_request("SAMLResponse is required")
 
     result = SAMLService.process_saml_response(tenant_id, saml_response, relay_state)
 
@@ -351,7 +352,7 @@ def oidc_authorize(idp_id):
     """
     redirect_uri = request.args.get("redirect_uri")
     if not redirect_uri:
-        return jsonify({"error": "redirect_uri is required"}), 400
+        return ApiResponse.bad_request("redirect_uri is required")
 
     state = request.args.get("state")
 
@@ -383,11 +384,11 @@ def oidc_callback():
     redirect_uri = request.args.get("redirect_uri")
 
     if not code:
-        return jsonify({"error": "code is required"}), 400
+        return ApiResponse.bad_request("code is required")
     if not idp_id:
-        return jsonify({"error": "idp_id is required"}), 400
+        return ApiResponse.bad_request("idp_id is required")
     if not redirect_uri:
-        return jsonify({"error": "redirect_uri is required"}), 400
+        return ApiResponse.bad_request("redirect_uri is required")
 
     # Exchange code for tokens
     tokens = OIDCService.exchange_code_for_tokens(idp_id, code, redirect_uri)
@@ -409,7 +410,7 @@ def oidc_callback():
     # Get IdP config for JIT provisioning
     idp_config = OIDCService.get_idp_config(idp_id)
     if not idp_config:
-        return jsonify({"error": "IdP configuration not found"}), 404
+        return ApiResponse.error("IdP configuration not found", 404)
 
     tenant_id = idp_config.get("tenant_id", 1)  # Default to tenant 1 if global
 
@@ -438,7 +439,7 @@ def oidc_callback():
             200,
         )
 
-    return jsonify({"error": "JIT provisioning is disabled for this IdP"}), 403
+    return ApiResponse.forbidden("JIT provisioning is disabled for this IdP")
 
 
 @bp.route("/oidc/logout/<int:idp_id>", methods=["POST"])
@@ -485,7 +486,7 @@ def oidc_userinfo(idp_id):
     access_token = request.headers.get("X-OIDC-Access-Token")
 
     if not access_token:
-        return jsonify({"error": "X-OIDC-Access-Token header is required"}), 400
+        return ApiResponse.bad_request("X-OIDC-Access-Token header is required")
 
     result = OIDCService.get_userinfo(idp_id, access_token)
 
@@ -511,11 +512,11 @@ async def oidc_refresh(idp_id):
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     refresh_token = data.get("refresh_token")
     if not refresh_token:
-        return jsonify({"error": "refresh_token is required"}), 400
+        return ApiResponse.bad_request("refresh_token is required")
 
     result = OIDCService.refresh_tokens(idp_id, refresh_token)
 
@@ -547,7 +548,7 @@ async def create_scim_config():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     data = await request.get_json() or {}
 
@@ -557,7 +558,7 @@ async def create_scim_config():
         tenant_id = request.portal_user.get("tenant_id")
 
     if not tenant_id:
-        return jsonify({"error": "tenant_id is required"}), 400
+        return ApiResponse.bad_request("tenant_id is required")
 
     result = SCIMService.create_scim_config(tenant_id)
 
@@ -578,7 +579,7 @@ def get_scim_config(tenant_id):
     config = SCIMService.get_scim_config(tenant_id)
 
     if not config:
-        return jsonify({"error": "SCIM not configured"}), 404
+        return ApiResponse.error("SCIM not configured", 404)
 
     return jsonify(config), 200
 
@@ -599,7 +600,7 @@ def regenerate_scim_token(tenant_id):
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     result = SCIMService.regenerate_token(tenant_id)
 

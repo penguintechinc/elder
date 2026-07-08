@@ -7,16 +7,16 @@ import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, g, jsonify, make_response, request
-
-from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from pydantic import ValidationError
+from quart import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("auth", __name__)
@@ -44,7 +44,7 @@ async def register():
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate request using Pydantic schema
     try:
@@ -184,7 +184,7 @@ async def login():
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate request using Pydantic schema
     try:
@@ -335,7 +335,7 @@ async def get_current_user_info():
     identity = await run_in_threadpool(lambda: db.identities[g.current_user.id])
 
     if not identity:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     identity_dto = from_pydal_row(identity, IdentityDTO)
     return jsonify(asdict(identity_dto)), 200
@@ -362,17 +362,17 @@ async def change_password():
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate required fields
     if not data.get("current_password"):
-        return jsonify({"error": "current_password is required"}), 400
+        return ApiResponse.bad_request("current_password is required")
     if not data.get("new_password"):
-        return jsonify({"error": "new_password is required"}), 400
+        return ApiResponse.bad_request("new_password is required")
 
     # Validate new password length
     if len(data["new_password"]) < 8:
-        return jsonify({"error": "new_password must be at least 8 characters"}), 400
+        return ApiResponse.bad_request("new_password must be at least 8 characters")
 
     ip_address = request.remote_addr
     user_agent = request.headers.get("User-Agent", "")[:512]
@@ -436,19 +436,19 @@ async def refresh_token_endpoint():
     refresh_token_str = data.get("refresh_token")
 
     if not refresh_token_str:
-        return jsonify({"error": "Refresh token required"}), 400
+        return ApiResponse.bad_request("Refresh token required")
 
     # Verify refresh token
     payload = verify_token(refresh_token_str)
 
     if not payload or payload.get("type") != "refresh":
-        return jsonify({"error": "Invalid refresh token"}), 401
+        return ApiResponse.unauthorized("Invalid refresh token")
 
     # Get identity
     identity = await run_in_threadpool(lambda: db.identities[payload["sub"]])
 
     if not identity or not identity.is_active:
-        return jsonify({"error": "User not found or inactive"}), 401
+        return ApiResponse.unauthorized("User not found or inactive")
 
     # Generate new access token
     access_token = generate_token(identity, "access")

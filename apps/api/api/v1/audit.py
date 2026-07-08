@@ -11,6 +11,7 @@ from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
+from apps.api.utils.api_responses import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def get_retention_policy(policy_id):
         policy = db.audit_retention_policies[policy_id]
 
         if not policy:
-            return jsonify({"error": "Retention policy not found"}), 404
+            return ApiResponse.error("Retention policy not found", 404)
 
         return jsonify(policy.as_dict()), 200
 
@@ -107,7 +108,7 @@ async def create_retention_policy():
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         if "name" not in data or "retention_days" not in data:
             return (
@@ -179,7 +180,7 @@ async def update_retention_policy(policy_id):
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         def inner():
             db = current_app.db

@@ -11,6 +11,7 @@ from werkzeug.security import generate_password_hash
 
 from apps.api.auth.decorators import get_current_user, login_required, role_required
 from apps.api.models.dataclasses import IdentityDTO, PaginatedResponse, from_pydal_rows
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("users", __name__)
@@ -29,9 +30,9 @@ async def list_users():
 
     # Validate pagination
     if page < 1:
-        return jsonify({"error": "Page must be >= 1"}), 400
+        return ApiResponse.bad_request("Page must be >= 1")
     if per_page < 1 or per_page > 1000:
-        return jsonify({"error": "Per page must be between 1 and 1000"}), 400
+        return ApiResponse.bad_request("Per page must be between 1 and 1000")
 
     # Calculate pagination
     offset = (page - 1) * per_page
@@ -85,14 +86,14 @@ async def create_user():
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Validate required fields
     if "username" not in data or not data["username"].strip():
-        return jsonify({"error": "Username is required"}), 400
+        return ApiResponse.bad_request("Username is required")
 
     if "password" not in data or not data["password"].strip():
-        return jsonify({"error": "Password is required"}), 400
+        return ApiResponse.bad_request("Password is required")
 
     # Prepare insert data
     username = data["username"].strip()
@@ -186,7 +187,7 @@ async def update_user(user_id: int):
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Prepare update data
     update_data = {}
@@ -210,7 +211,7 @@ async def update_user(user_id: int):
         update_data["password_hash"] = generate_password_hash(data["password"])
 
     if not update_data:
-        return jsonify({"error": "No valid fields to update"}), 400
+        return ApiResponse.bad_request("No valid fields to update")
 
     # Update user
     def update():
@@ -258,7 +259,7 @@ async def delete_user(user_id: int):
 
     # Prevent self-deletion
     if current_user.id == user_id:
-        return jsonify({"error": "Cannot delete your own user account"}), 400
+        return ApiResponse.bad_request("Cannot delete your own user account")
 
     def delete():
         user = db.identities[user_id]
