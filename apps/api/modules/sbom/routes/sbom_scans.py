@@ -7,12 +7,8 @@ import fnmatch
 from dataclasses import asdict
 
 import structlog
-from quart import Blueprint, current_app, jsonify, request
-from apps.api.utils.quart_validation import (
-    ValidationErrorResponse,
-    validate_body,
-)
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import (
@@ -30,6 +26,7 @@ from apps.api.services.sbom.parsers import SBOMParser
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.quart_validation import ValidationErrorResponse, validate_body
 from apps.api.utils.validation_helpers import validate_resource_exists
 
 bp = Blueprint("sbom_scans", __name__)
