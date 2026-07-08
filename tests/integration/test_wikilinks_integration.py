@@ -8,8 +8,8 @@ Requires DATABASE_URL to be set and test database initialized.
 
 import pytest
 
-from apps.api.common.refs.wikilinks import rebuild_references_from_text
 from apps.api.common.refs.service import outbound_for
+from apps.api.common.refs.wikilinks import rebuild_references_from_text
 
 
 class TestRebuildReferencesFromText:
