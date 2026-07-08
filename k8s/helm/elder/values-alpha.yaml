@@ -83,6 +83,10 @@ api:
     LOG_LEVEL: DEBUG
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "false"
+    # Database (must match Service names from helm template)
+    DB_HOST: elder-postgres
+    DB_PASSWORD: elder_dev_password
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
   resources:
     requests:
       memory: "256Mi"
@@ -104,6 +108,7 @@ scanner:
   env:
     SCANNER_POLL_INTERVAL: "600"
     LOG_LEVEL: DEBUG
+    ELDER_API_URL: "http://elder-api:5000"
   resources:
     requests:
       memory: "128Mi"

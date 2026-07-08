@@ -130,6 +130,7 @@ scanner:
   env:
     SCANNER_POLL_INTERVAL: "300"
     LOG_LEVEL: INFO
+    ELDER_API_URL: "http://elder-api:5000"
   resources:
     requests:
       memory: "256Mi"
