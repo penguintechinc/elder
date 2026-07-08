@@ -48,7 +48,8 @@ spec:
             name: elder-otel
         {{- end }}
         {{- end }}
-        {{- if or $componentConfig.env $hasOtel }}
+        {{- $isWorker := eq $component "worker" }}
+        {{- if or $componentConfig.env $hasOtel $isWorker }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
@@ -57,6 +58,12 @@ spec:
         {{- if $hasOtel }}
         - name: OTEL_SERVICE_NAME
           value: {{ printf "elder-%s" $component | quote }}
+        {{- end }}
+        {{- if $isWorker }}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         {{- end }}
         {{- end }}
         ports:
