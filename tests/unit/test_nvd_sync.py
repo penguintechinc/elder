@@ -77,8 +77,16 @@ class TestGetVulnsNeedingSync:
 
     def test_get_vulns_no_results(self, nvd_sync_service, mock_db):
         """Test when no vulnerabilities need syncing."""
-        mock_db.return_value = MagicMock()
-        mock_db.return_value.select = MagicMock(return_value=[])
+        # Mock the PyDAL query chain properly
+        query_mock = MagicMock()
+        query_mock.select = MagicMock(return_value=[])
+        query_mock.__iand__ = MagicMock(return_value=query_mock)
+        query_mock.__or__ = MagicMock(return_value=query_mock)
+
+        mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync = MagicMock()
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
 
         result = nvd_sync_service._get_vulns_needing_sync(
             max_vulns=100, force_refresh=False
@@ -114,9 +122,14 @@ class TestGetVulnsNeedingSync:
             vuln.cve_id = f"CVE-2024-{i:05d}"
 
         query_mock = MagicMock()
-        mock_db.vulnerabilities.cve_id.startswith.return_value = query_mock
+        query_mock.select = MagicMock(return_value=mock_vulns)
         query_mock.__iand__ = MagicMock(return_value=query_mock)
-        mock_db.return_value.select.return_value = mock_vulns
+        query_mock.__or__ = MagicMock(return_value=query_mock)
+
+        mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync = MagicMock()
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
 
         result = nvd_sync_service._get_vulns_needing_sync(
             max_vulns=10, force_refresh=False
@@ -127,8 +140,14 @@ class TestGetVulnsNeedingSync:
     def test_get_vulns_filters_by_cve_id_prefix(self, nvd_sync_service, mock_db):
         """Test that only CVE-prefixed vulnerabilities are selected."""
         query_mock = MagicMock()
-        mock_db.vulnerabilities.cve_id.startswith.return_value = query_mock
-        mock_db.return_value.select.return_value = []
+        query_mock.select = MagicMock(return_value=[])
+        query_mock.__iand__ = MagicMock(return_value=query_mock)
+        query_mock.__or__ = MagicMock(return_value=query_mock)
+
+        mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync = MagicMock()
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
 
         nvd_sync_service._get_vulns_needing_sync(max_vulns=100, force_refresh=False)
 
@@ -137,9 +156,14 @@ class TestGetVulnsNeedingSync:
     def test_get_vulns_checks_sync_interval(self, nvd_sync_service, mock_db):
         """Test that sync interval is checked when force_refresh is False."""
         query_mock = MagicMock()
+        query_mock.select = MagicMock(return_value=[])
         query_mock.__iand__ = MagicMock(return_value=query_mock)
-        mock_db.vulnerabilities.cve_id.startswith.return_value = query_mock
-        mock_db.return_value.select.return_value = []
+        query_mock.__or__ = MagicMock(return_value=query_mock)
+
+        mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync = MagicMock()
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
 
         nvd_sync_service._get_vulns_needing_sync(
             max_vulns=100, force_refresh=False

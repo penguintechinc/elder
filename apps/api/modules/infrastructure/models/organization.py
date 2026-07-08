@@ -76,6 +76,13 @@ class Organization(Base, IDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    # Reverse of AlertConfiguration.organization (back_populates).
+    # No cascade: alert configs are not owned-lifecycle children of an org.
+    alert_configurations: Mapped[List["AlertConfiguration"]] = relationship(
+        "AlertConfiguration",
+        back_populates="organization",
+    )
+
     def __repr__(self) -> str:
         """String representation."""
         return f"<Organization(id={self.id}, name='{self.name}')>"

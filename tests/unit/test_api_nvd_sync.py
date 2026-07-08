@@ -5,19 +5,24 @@ No external network calls or real database required.
 """
 
 import json
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestNVDSyncAPI:
     """Test NVD sync API endpoints."""
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    @patch("apps.api.auth.decorators.check_resource_role")
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    def test_trigger_nvd_sync_success(self, mock_service_class, mock_check_role, mock_jwt, client):
+    async def test_trigger_nvd_sync_success(self, mock_service_class, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with successful sync."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
-        mock_check_role.return_value = None
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
         # Setup mock service
         mock_service = AsyncMock()
@@ -33,27 +38,30 @@ class TestNVDSyncAPI:
 
         payload = {"max_vulns": 100, "force_refresh": False}
 
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps(payload),
-            content_type="application/json",
+            json=payload,
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 202
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         assert data["message"] == "NVD sync completed"
         assert "stats" in data
         assert data["stats"]["processed"] == 5
         assert data["stats"]["updated"] == 3
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    @patch("apps.api.auth.decorators.check_resource_role")
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    def test_trigger_nvd_sync_with_defaults(self, mock_service_class, mock_check_role, mock_jwt, client):
+    async def test_trigger_nvd_sync_with_defaults(self, mock_service_class, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with default parameters."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
-        mock_check_role.return_value = None
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
         # Setup mock service
         mock_service = AsyncMock()
@@ -68,25 +76,28 @@ class TestNVDSyncAPI:
         mock_service_class.return_value = mock_service
 
         # Empty body - should use defaults
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps({}),
-            content_type="application/json",
+            json={},
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 202
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         assert "message" in data
         assert "stats" in data
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    @patch("apps.api.auth.decorators.check_resource_role")
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    def test_trigger_nvd_sync_force_refresh(self, mock_service_class, mock_check_role, mock_jwt, client):
+    async def test_trigger_nvd_sync_force_refresh(self, mock_service_class, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with force_refresh."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
-        mock_check_role.return_value = None
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
         # Setup mock service
         mock_service = AsyncMock()
@@ -102,56 +113,66 @@ class TestNVDSyncAPI:
 
         payload = {"max_vulns": 200, "force_refresh": True}
 
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps(payload),
-            content_type="application/json",
+            json=payload,
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 202
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         assert data["stats"]["processed"] == 10
         assert data["stats"]["updated"] == 8
         assert data["stats"]["errors"] == 2
 
-    def test_trigger_nvd_sync_unauthorized(self, client):
+    @pytest.mark.asyncio
+    async def test_trigger_nvd_sync_unauthorized(self, async_client):
         """Test unauthorized access to POST /api/v1/vulnerabilities/nvd-sync."""
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps({}),
-            content_type="application/json",
+            json={},
         )
 
         assert response.status_code in [401, 403]
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    def test_trigger_nvd_sync_insufficient_permissions(self, mock_jwt, client):
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_trigger_nvd_sync_insufficient_permissions(self, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with insufficient permissions."""
-        mock_jwt.return_value = {"user_id": 1, "username": "viewer"}
+        # Mock a user without superuser status (will fail resource_role_required)
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "viewer"
+        mock_user.is_superuser = False
+        mock_get_user.return_value = mock_user
 
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps({}),
-            content_type="application/json",
+            json={},
             headers={"Authorization": "Bearer fake-token"},
         )
 
         # Should fail due to resource_role_required decorator
         assert response.status_code == 403
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    def test_get_nvd_sync_status_success(self, mock_jwt, client, app):
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_nvd_sync_status_success(self, mock_get_user, async_client, app):
         """Test GET /api/v1/vulnerabilities/nvd-sync/status."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
-        response = client.get(
+        response = await async_client.get(
             "/api/v1/vulnerabilities/nvd-sync/status",
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 200
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         assert "total_cves" in data
         assert "never_synced" in data
         assert "stale_sync" in data
@@ -160,35 +181,46 @@ class TestNVDSyncAPI:
         assert isinstance(data["total_cves"], int)
         assert isinstance(data["never_synced"], int)
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    def test_get_nvd_sync_status_counts(self, mock_jwt, client, app):
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_nvd_sync_status_counts(self, mock_get_user, async_client, app):
         """Test GET /api/v1/vulnerabilities/nvd-sync/status returns correct counts."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
-        response = client.get(
+        response = await async_client.get(
             "/api/v1/vulnerabilities/nvd-sync/status",
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 200
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         # Verify needs_sync is sum of never_synced and stale_sync
         expected_needs = data["never_synced"] + data["stale_sync"]
         assert data["needs_sync"] == expected_needs
 
-    def test_get_nvd_sync_status_unauthorized(self, client):
+    @pytest.mark.asyncio
+    async def test_get_nvd_sync_status_unauthorized(self, async_client):
         """Test unauthorized access to GET /api/v1/vulnerabilities/nvd-sync/status."""
-        response = client.get("/api/v1/vulnerabilities/nvd-sync/status")
+        response = await async_client.get("/api/v1/vulnerabilities/nvd-sync/status")
 
         assert response.status_code in [401, 403]
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    @patch("apps.api.auth.decorators.check_resource_role")
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    def test_trigger_nvd_sync_error_handling(self, mock_service_class, mock_check_role, mock_jwt, client):
+    async def test_trigger_nvd_sync_error_handling(self, mock_service_class, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with service error."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
-        mock_check_role.return_value = None
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
         # Setup mock service to raise error
         mock_service = AsyncMock()
@@ -197,23 +229,26 @@ class TestNVDSyncAPI:
         )
         mock_service_class.return_value = mock_service
 
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps({}),
-            content_type="application/json",
+            json={},
             headers={"Authorization": "Bearer fake-token"},
         )
 
         # Should handle error gracefully
         assert response.status_code in [500, 202]  # Either 500 or graceful 202
 
-    @patch("apps.api.auth.decorators.verify_jwt")
-    @patch("apps.api.auth.decorators.check_resource_role")
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    def test_trigger_nvd_sync_no_vulns(self, mock_service_class, mock_check_role, mock_jwt, client):
+    async def test_trigger_nvd_sync_no_vulns(self, mock_service_class, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with no vulnerabilities to sync."""
-        mock_jwt.return_value = {"user_id": 1, "username": "admin"}
-        mock_check_role.return_value = None
+        # Mock current user
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.username = "admin"
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
 
         # Setup mock service with empty stats
         mock_service = AsyncMock()
@@ -227,13 +262,12 @@ class TestNVDSyncAPI:
         )
         mock_service_class.return_value = mock_service
 
-        response = client.post(
+        response = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
-            data=json.dumps({}),
-            content_type="application/json",
+            json={},
             headers={"Authorization": "Bearer fake-token"},
         )
 
         assert response.status_code == 202
-        data = json.loads(response.data)
+        data = json.loads(await response.get_data())
         assert data["stats"]["processed"] == 0
