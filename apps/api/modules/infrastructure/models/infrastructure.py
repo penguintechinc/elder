@@ -14,7 +14,13 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
 
 
 class NetworkingResource(Base, IDMixin, TimestampMixin):
@@ -65,14 +71,12 @@ class NetworkTopology(Base, IDMixin, TimestampMixin):
     extra_metadata = Column("metadata", JSON, nullable=True)
 
 
-class DataStore(Base, IDMixin, TimestampMixin):
+class DataStore(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """Data inventory management."""
 
     __tablename__ = "data_stores"
 
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
-    village_id = Column(String(32), unique=True, nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     storage_type = Column(String(50), nullable=True)

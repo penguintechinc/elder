@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, relationship, validates
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class MetadataFieldType(enum.Enum):
@@ -33,7 +33,7 @@ class MetadataFieldType(enum.Enum):
     JSON = "json"
 
 
-class MetadataField(Base, IDMixin, TimestampMixin):
+class MetadataField(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Typed metadata field for entities and organizations.
 
@@ -106,9 +106,6 @@ class MetadataField(Base, IDMixin, TimestampMixin):
         "Identity",
         backref="created_metadata_fields",
     )
-
-    # village_id for cross-system reference
-    village_id = Column(String(32), unique=True, nullable=True, index=True)
 
     # Ensure unique field keys per resource
     __table_args__ = (

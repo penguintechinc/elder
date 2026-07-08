@@ -13,10 +13,10 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class Project(Base, IDMixin, TimestampMixin):
+class Project(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Project management."""
 
     __tablename__ = "projects"
@@ -27,10 +27,9 @@ class Project(Base, IDMixin, TimestampMixin):
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    village_id = Column(String(32), unique=True, nullable=True)
 
 
-class Milestone(Base, IDMixin, TimestampMixin):
+class Milestone(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Project milestones."""
 
     __tablename__ = "milestones"
@@ -42,7 +41,6 @@ class Milestone(Base, IDMixin, TimestampMixin):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     due_date = Column(Date, nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
-    village_id = Column(String(32), unique=True, nullable=True)
 
 
 class Label(Base, IDMixin, TimestampMixin):

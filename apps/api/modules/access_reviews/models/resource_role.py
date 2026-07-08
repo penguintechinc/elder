@@ -9,7 +9,7 @@ from typing import List, Optional
 from sqlalchemy import Column, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class ResourceType(enum.Enum):
@@ -27,7 +27,7 @@ class ResourceRoleType(enum.Enum):
     VIEWER = "viewer"  # Read access, can create issues/comments
 
 
-class ResourceRole(Base, IDMixin, TimestampMixin):
+class ResourceRole(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Resource-level role assignment model.
 
@@ -50,9 +50,6 @@ class ResourceRole(Base, IDMixin, TimestampMixin):
         index=True,
         comment="Identity group with this role (alternative to identity_id)",
     )
-
-    # village_id for cross-system reference
-    village_id = Column(String(32), unique=True, nullable=True, index=True)
 
     # Identity who has this role
     identity_id = Column(
