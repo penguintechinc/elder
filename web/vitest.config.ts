@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Unit tests live in src/; Playwright e2e specs (tests/e2e) run via `playwright test`.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    exclude: ['node_modules', 'dist', 'tests/e2e/**'],
   },
   resolve: {
     alias: {

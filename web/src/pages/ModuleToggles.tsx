@@ -3,7 +3,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { AlertCircle, Zap, Lock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import Card, { CardHeader, CardContent } from '@/components/Card'
+import Card, { CardContent } from '@/components/Card'
 import { queryKeys } from '@/lib/queryKeys'
 
 interface TenantModule {
@@ -16,6 +16,14 @@ interface ModuleStatusInfo extends TenantModule {
   licensed?: boolean
   effective?: boolean
   title?: string
+}
+
+interface ModuleInfo {
+  name?: string
+  nav_id?: string
+  title?: string
+  licensed?: boolean
+  effective?: boolean
 }
 
 /**
@@ -75,7 +83,9 @@ export default function ModuleToggles() {
     const allModules = moduleInfoData?.modules || []
 
     return tenantModules.map(tm => {
-      const info = allModules.find((m: any) => m.name === tm.module_name || m.nav_id === tm.module_name)
+      const info = (allModules as ModuleInfo[]).find(
+        m => m.name === tm.module_name || m.nav_id === tm.module_name
+      )
       return {
         ...tm,
         title: info?.title || tm.module_name,
@@ -99,23 +109,27 @@ export default function ModuleToggles() {
         enabled: !currentModule.enabled,
       })
     },
-    onSuccess: (response) => {
+    onSuccess: () => {
       if (!selectedTenantId) return
       // Invalidate both the tenant modules and general modules queries
       queryClient.invalidateQueries({ queryKey: queryKeys.modules.tenant(selectedTenantId) })
       queryClient.invalidateQueries({ queryKey: ['modules'] })
       toast.success('Module updated successfully')
     },
-    onError: (error: any) => {
-      const message = error.response?.data?.error || error.message
+    onError: (error, moduleName) => {
+      const err = error as {
+        response?: { data?: { error?: string }; status?: number }
+        message?: string
+      }
+      const message = err.response?.data?.error || err.message
       if (message === 'unknown_module') {
         toast.error('Unknown module name')
-      } else if (error.response?.status === 403) {
+      } else if (err.response?.status === 403) {
         toast.error('Permission denied: only admins can toggle modules for other tenants')
       } else {
         toast.error(`Failed to update module: ${message}`)
       }
-      console.error(`[ModuleToggles] Error { moduleName: "${error}", status: ${error.response?.status} }`)
+      console.error(`[ModuleToggles] Error { moduleName: "${moduleName}", status: ${err.response?.status} }`)
     },
   })
 
