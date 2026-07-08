@@ -7,7 +7,7 @@ completion, and scheduling.
 
 import datetime
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, PropertyMock
 
 from apps.api.services.access_review.service import AccessReviewService
 
@@ -31,12 +31,37 @@ class TestAccessReviewService:
         # Mock commit
         db.commit = MagicMock()
 
+        # Create query expression mocks for field comparisons
+        # These allow comparisons like db.access_reviews.due_date < now
+        query_expr_mock = MagicMock()
+        query_expr_mock.__and__ = MagicMock(return_value=query_expr_mock)
+        query_expr_mock.__rand__ = MagicMock(return_value=query_expr_mock)
+
+        # Mock the field attributes to return comparison expressions
+        db.access_reviews.due_date = MagicMock()
+        db.access_reviews.due_date.__lt__ = MagicMock(return_value=query_expr_mock)
+        db.access_reviews.due_date.__le__ = MagicMock(return_value=query_expr_mock)
+        db.access_reviews.due_date.__gt__ = MagicMock(return_value=query_expr_mock)
+        db.access_reviews.due_date.__ge__ = MagicMock(return_value=query_expr_mock)
+
+        db.access_reviews.status = MagicMock()
+        db.access_reviews.status.belongs = MagicMock(return_value=query_expr_mock)
+
+        db.identity_groups.next_review_date = MagicMock()
+        db.identity_groups.next_review_date.__le__ = MagicMock(return_value=query_expr_mock)
+
         return db
 
     @pytest.fixture
     def service(self, mock_db):
         """Create AccessReviewService instance."""
         return AccessReviewService(mock_db)
+
+    @pytest.fixture(autouse=True)
+    def mock_audit_service(self):
+        """Mock AuditService to avoid current_app context issues."""
+        with patch("apps.api.services.access_review.service.AuditService") as mock:
+            yield mock
 
     def test_create_review_creates_items_for_members(self, service, mock_db):
         """Test that create_review creates items for all group members."""
@@ -104,9 +129,12 @@ class TestAccessReviewService:
         mock_item.review_id = 500
         mock_item.membership_id = 101
 
-        # Mock the query chain for first()
+        # Mock the query chain: db(...).select().first()
+        select_result_mock = MagicMock()
+        select_result_mock.first = MagicMock(return_value=mock_item)
+
         query_mock = MagicMock()
-        query_mock.first = MagicMock(return_value=mock_item)
+        query_mock.select = MagicMock(return_value=select_result_mock)
         mock_db.side_effect = lambda *args, **kwargs: query_mock
 
         # Mock review for progress update
@@ -115,7 +143,7 @@ class TestAccessReviewService:
         mock_review_item2 = MagicMock()
         mock_review_item2.decision = None
 
-        query_mock.select = MagicMock(return_value=[mock_review_item1, mock_review_item2])
+        select_result_mock.select = MagicMock(return_value=[mock_review_item1, mock_review_item2])
 
         with patch.object(service, "_review_item_to_dict") as mock_to_dict:
             mock_to_dict.return_value = {"id": 700, "decision": "keep"}
@@ -254,7 +282,7 @@ class TestAccessReviewService:
         mock_db.__call__ = MagicMock(return_value=query_mock)
 
         with patch(
-            "apps.api.services.access_review.service.GroupMembershipService"
+            "apps.api.services.group_membership.service.GroupMembershipService"
         ):
             # Apply decisions
             service.apply_review_decisions(review_id=500, applied_by=10)
