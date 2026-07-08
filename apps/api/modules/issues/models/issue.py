@@ -11,7 +11,6 @@ from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Tabl
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
-from shared.utils.village_id import generate_village_id
 
 
 class IssueStatus(enum.Enum):

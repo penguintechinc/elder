@@ -1,97 +1,129 @@
 """Village ID generator for Elder application.
 
-Generates unique hierarchical 64-bit hexadecimal identifiers for all trackable resources.
-Format: TTTT-OOOO-IIIIIIII (tenant-org-item)
-- Tenant: 16-bit (4 hex chars)
-- Organization: 16-bit (4 hex chars)
-- Item: 32-bit (8 hex chars)
+Generates unique hierarchical identifiers for all trackable resources.
+Format: TTTTTTTT-OOOOOOOOOOOOOOOO (tenant-object)
+- Tenant: 32-bit (8 hex chars) = hex(tenant_id)
+- Object: 64-bit (16 hex chars) = sequential per tenant via Redis INCR
+- Total: 25 chars, fits String(32)
 """
 
 # flake8: noqa: E501
 
+import asyncio
+import re
+from dataclasses import dataclass
+from typing import Optional
 
-import secrets
+import redis.asyncio as aioredis
+from redis import Redis
+from redis.asyncio import Redis as AsyncRedis
 
-
-def generate_segment(bits: int = 16) -> str:
-    """Generate a random hex segment.
-
-    Args:
-        bits: Number of bits (16 for 4 chars, 32 for 8 chars)
-
-    Returns:
-        str: Lowercase hex string
-    """
-    return secrets.token_hex(bits // 8)
+VILLAGE_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{16}$")
 
 
-def generate_tenant_village_id() -> str:
-    """Generate a Village ID for a tenant.
+@dataclass(slots=True)
+class VillageId:
+    """Parsed village ID components."""
 
-    Format: TTTT-0000-00000000
-
-    Returns:
-        str: 18-character Village ID with dashes
-    """
-    tenant_segment = generate_segment(16)
-    return f"{tenant_segment}-0000-00000000"
+    tenant_id: int
+    object_seq: int
 
 
-def generate_org_village_id(tenant_segment: str) -> str:
-    """Generate a Village ID for an organization.
+def generate_village_id(tenant_id: int, redis_client: Optional[Redis] = None) -> str:
+    """Generate a village ID for the given tenant.
 
-    Format: TTTT-OOOO-00000000
+    Uses the AD-3 format: TTTTTTTT-OOOOOOOOOOOOOOOO
+    - tenant: 8 hex chars = hex(tenant_id)
+    - object: 16 hex chars = sequential per tenant via Redis INCR
 
     Args:
-        tenant_segment: The 4-char tenant segment from parent tenant
+        tenant_id: The integer tenant ID (32-bit)
+        redis_client: Sync redis.StrictRedis client for allocating sequence
 
     Returns:
-        str: 18-character Village ID with dashes
+        str: 25-character village ID (TTTTTTTT-OOOOOOOOOOOOOOOO)
+
+    Raises:
+        ValueError: If tenant_id is invalid or redis_client is None/unavailable
     """
-    org_segment = generate_segment(16)
-    return f"{tenant_segment}-{org_segment}-00000000"
+    if not isinstance(tenant_id, int) or tenant_id < 0:
+        raise ValueError(f"tenant_id must be non-negative int, got {tenant_id}")
+
+    if redis_client is None:
+        raise ValueError("redis_client required for village_id generation")
+
+    # Allocate next sequence for this tenant
+    counter_key = f"elder:vid:{tenant_id:08x}"
+    seq = redis_client.incr(counter_key)
+
+    # Format: tenant (8 hex) + object (16 hex)
+    return f"{tenant_id:08x}-{seq:016x}"
 
 
-def generate_item_village_id(tenant_segment: str, org_segment: str) -> str:
-    """Generate a Village ID for an item (resource, entity, element).
+async def agenerate_village_id(
+    tenant_id: int, redis_client: Optional[AsyncRedis] = None
+) -> str:
+    """Generate a village ID asynchronously.
 
-    Format: TTTT-OOOO-IIIIIIII
+    Async variant for use in Quart handlers with an async redis client.
 
     Args:
-        tenant_segment: The 4-char tenant segment
-        org_segment: The 4-char organization segment
+        tenant_id: The integer tenant ID (32-bit)
+        redis_client: Async redis.asyncio.Redis client for allocating sequence
 
     Returns:
-        str: 18-character Village ID with dashes
+        str: 25-character village ID (TTTTTTTT-OOOOOOOOOOOOOOOO)
+
+    Raises:
+        ValueError: If tenant_id is invalid or redis_client is None/unavailable
     """
-    item_segment = generate_segment(32)
-    return f"{tenant_segment}-{org_segment}-{item_segment}"
+    if not isinstance(tenant_id, int) or tenant_id < 0:
+        raise ValueError(f"tenant_id must be non-negative int, got {tenant_id}")
+
+    if redis_client is None:
+        raise ValueError("redis_client required for village_id generation")
+
+    # Allocate next sequence for this tenant
+    counter_key = f"elder:vid:{tenant_id:08x}"
+    seq = await redis_client.incr(counter_key)
+
+    # Format: tenant (8 hex) + object (16 hex)
+    return f"{tenant_id:08x}-{seq:016x}"
 
 
-def parse_village_id(village_id: str) -> dict:
-    """Parse a Village ID into its components.
+def parse_village_id(village_id: str) -> VillageId:
+    """Parse a village ID into its components.
 
     Args:
-        village_id: The full Village ID (e.g., "a1b2-c3d4-e5f67890")
+        village_id: The full village ID (e.g., "0000002a-000000000000f3c1")
 
     Returns:
-        dict: {'tenant': str, 'org': str, 'item': str}
+        VillageId: Dataclass with tenant_id and object_seq
+
+    Raises:
+        ValueError: If format is invalid
     """
-    parts = village_id.split("-")
-    if len(parts) != 3:
-        raise ValueError(f"Invalid Village ID format: {village_id}")
+    if not is_valid_village_id(village_id):
+        raise ValueError(f"Invalid village ID format: {village_id}")
 
-    return {"tenant": parts[0], "org": parts[1], "item": parts[2]}
+    tenant_hex, object_hex = village_id.split("-")
+    tenant_id = int(tenant_hex, 16)
+    object_seq = int(object_hex, 16)
+
+    return VillageId(tenant_id=tenant_id, object_seq=object_seq)
 
 
-# Legacy function for backward compatibility during transition
-def generate_village_id() -> str:
-    """Generate a legacy flat Village ID.
+def is_valid_village_id(village_id: str) -> bool:
+    """Check if a village ID is valid.
 
-    DEPRECATED: Use generate_tenant_village_id, generate_org_village_id,
-    or generate_item_village_id instead.
+    Valid format: TTTTTTTT-OOOOOOOOOOOOOOOO (25 chars, lowercase hex)
+
+    Args:
+        village_id: The village ID to validate
 
     Returns:
-        str: 18-character Village ID (uses 0000 for tenant/org)
+        bool: True if valid, False otherwise
     """
-    return f"0000-0000-{generate_segment(32)}"
+    if not isinstance(village_id, str):
+        return False
+    return bool(VILLAGE_ID_RE.match(village_id))
