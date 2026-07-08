@@ -165,66 +165,6 @@ worker:
   credentialsSecret:
     name: ""
 
-# Prometheus - Enabled in beta
-prometheus:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: prom/prometheus
-    tag: latest
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "250m"
-    limits:
-      memory: "2Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: "longhorn"
-
-# Alertmanager - Enabled in beta
-alertmanager:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: prom/alertmanager
-    tag: latest
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "128Mi"
-      cpu: "100m"
-    limits:
-      memory: "512Mi"
-      cpu: "500m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: "longhorn"
-
-# Grafana - Enabled in beta
-grafana:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: grafana/grafana
-    tag: latest
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "250m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: "longhorn"
-
 # Ingress - Disabled in beta (migrated to Cilium Gateway API)
 ingress:
   enabled: false
