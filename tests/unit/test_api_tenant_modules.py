@@ -154,6 +154,27 @@ class TestTenantModulesAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
+    async def test_set_tenant_module_unknown_module_rejected(
+        self, mock_get_user, async_client, generate_token
+    ):
+        """PUT with a module_name not in the registry must 400 before any
+        store/log (regression: unknown-module data-integrity + log-injection)."""
+        mock_user = MagicMock()
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
+
+        token = generate_token(tenant_id=1, scopes=["admin:write"])
+
+        response = await async_client.put(
+            "/api/v1/tenants/1/modules",
+            json={"module_name": "bogus_module\ninjected-line", "enabled": True},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     async def test_set_tenant_module_invalid_body(
         self, mock_get_user, async_client, generate_token
     ):

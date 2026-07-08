@@ -159,6 +159,13 @@ async def set_tenant_module(tenant_id: int):
         except Exception as e:
             return jsonify({"error": "Invalid JSON", "details": str(e)}), 400
 
+        # Only accept toggles for modules that actually exist in the registry.
+        # Rejecting unknown names before any store/log prevents storing bogus
+        # rows and avoids logging arbitrary user-controlled strings.
+        known_modules = current_app.extensions.get("elder_modules", {})
+        if req.module_name not in known_modules:
+            return jsonify({"error": "unknown_module"}), 400
+
         db = current_app.db
         redis_client = redis.from_url(
             current_app.config.get("REDIS_URL", "redis://localhost:6379/0")
