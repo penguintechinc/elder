@@ -3,10 +3,10 @@
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class AccessReview(Base, IDMixin, TimestampMixin):
+class AccessReview(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Periodic group membership access reviews."""
 
     __tablename__ = "access_reviews"
@@ -24,7 +24,6 @@ class AccessReview(Base, IDMixin, TimestampMixin):
     members_kept = Column(Integer, nullable=True)
     members_removed = Column(Integer, nullable=True)
     auto_apply_decisions = Column(Boolean, nullable=False)
-    village_id = Column(String(32), unique=True, nullable=True)
 
 
 class AccessReviewItem(Base, IDMixin):
@@ -59,7 +58,7 @@ class AccessReviewAssignment(Base, IDMixin):
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class GroupAccessRequest(Base, IDMixin, TimestampMixin):
+class GroupAccessRequest(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Requests for group membership access."""
 
     __tablename__ = "group_access_requests"
@@ -73,7 +72,6 @@ class GroupAccessRequest(Base, IDMixin, TimestampMixin):
     decided_at = Column(DateTime(timezone=True), nullable=True)
     decided_by_id = Column(Integer, nullable=True)
     decision_comment = Column(Text, nullable=True)
-    village_id = Column(String(32), unique=True, nullable=True)
 
 
 class GroupAccessApproval(Base, IDMixin):

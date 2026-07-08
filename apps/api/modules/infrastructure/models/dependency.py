@@ -5,10 +5,10 @@
 
 from sqlalchemy import JSON, Column, ForeignKey, Integer, String
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class Dependency(Base, IDMixin, TimestampMixin):
+class Dependency(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Dependency relationship between any two resources.
 
@@ -29,7 +29,6 @@ class Dependency(Base, IDMixin, TimestampMixin):
     target_type = Column(String(64), nullable=False, index=True)
     target_id = Column(Integer, nullable=False, index=True)
     dependency_type = Column(String(64), nullable=True, index=True)
-    village_id = Column(String(32), unique=True, nullable=True, index=True)
     dep_metadata = Column("metadata", JSON, nullable=True)
 
     def __repr__(self) -> str:

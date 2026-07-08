@@ -13,16 +13,20 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
 
 
-class OnCallRotation(Base, IDMixin, TimestampMixin):
+class OnCallRotation(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """On-call rotation configuration."""
 
     __tablename__ = "on_call_rotations"
 
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
-    village_id = Column(String(32), unique=True, nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False)

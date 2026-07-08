@@ -12,15 +12,20 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
 
 
-class Service(Base, IDMixin, TimestampMixin):
+class Service(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """Microservice tracking."""
 
     __tablename__ = "services"
 
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
@@ -40,15 +45,13 @@ class Service(Base, IDMixin, TimestampMixin):
     notes = Column(Text, nullable=True)
     tags = Column(JSON, nullable=True)
     status = Column(String(50), nullable=True)
-    village_id = Column(String(32), unique=True, nullable=True)
 
 
-class Software(Base, IDMixin, TimestampMixin):
+class Software(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """Software inventory tracking."""
 
     __tablename__ = "software"
 
-    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
@@ -65,4 +68,3 @@ class Software(Base, IDMixin, TimestampMixin):
     notes = Column(Text, nullable=True)
     tags = Column(JSON, nullable=True)
     is_active = Column(Boolean, nullable=False)
-    village_id = Column(String(32), unique=True, nullable=True)

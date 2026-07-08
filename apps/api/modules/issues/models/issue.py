@@ -10,7 +10,7 @@ from typing import List, Optional
 from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 from shared.utils.village_id import generate_village_id
 
 
@@ -75,7 +75,7 @@ issue_label_assignments = Table(
 )
 
 
-class Issue(Base, IDMixin, TimestampMixin):
+class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     GitHub-style issue model for tracking problems and tasks.
 
@@ -196,15 +196,6 @@ class Issue(Base, IDMixin, TimestampMixin):
         ForeignKey("identities.id", ondelete="SET NULL"),
         nullable=True,
         comment="User who closed this issue",
-    )
-
-    village_id = Column(
-        String(32),
-        unique=True,
-        nullable=True,
-        index=True,
-        default=generate_village_id,
-        comment="Unique cross-system reference ID",
     )
 
     # Relationships
