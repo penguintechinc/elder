@@ -7,9 +7,9 @@ No external network calls or real database required.
 
 import json
 import pytest
+from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
-
-from apps.api.modules.infrastructure.models.organization import Organization
+from quart import current_app
 
 
 class TestOrganizationAPI:
@@ -27,13 +27,13 @@ class TestOrganizationAPI:
         mock_get_user.return_value = mock_user
 
         async with app.app_context():
-            # Create test organizations
-            org1 = Organization(name="Org 1")
-            org2 = Organization(name="Org 2")
-            from apps.api import db
+            # Create test organizations using penguin-dal API
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
-            db.session.add_all([org1, org2])
-            db.session.commit()
+            db.organizations.insert(name="Org 1", created_at=now, updated_at=now)
+            db.organizations.insert(name="Org 2", created_at=now, updated_at=now)
+            db.commit()
 
             response = await async_client.get(
                 "/api/v1/organizations", headers={"Authorization": "Bearer fake-token"}
@@ -80,12 +80,13 @@ class TestOrganizationAPI:
         mock_get_user.return_value = mock_user
 
         async with app.app_context():
-            org = Organization(name="Get Me", description="Test org")
-            from apps.api import db
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
-            db.session.add(org)
-            db.session.commit()
-            org_id = org.id
+            org_id = db.organizations.insert(
+                name="Get Me", description="Test org", created_at=now, updated_at=now
+            )
+            db.commit()
 
             response = await async_client.get(
                 f"/api/v1/organizations/{org_id}",
@@ -109,12 +110,13 @@ class TestOrganizationAPI:
         mock_get_user.return_value = mock_user
 
         async with app.app_context():
-            org = Organization(name="Original Name")
-            from apps.api import db
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
-            db.session.add(org)
-            db.session.commit()
-            org_id = org.id
+            org_id = db.organizations.insert(
+                name="Original Name", created_at=now, updated_at=now
+            )
+            db.commit()
 
             payload = {"name": "Updated Name", "description": "Updated description"}
 
@@ -141,12 +143,13 @@ class TestOrganizationAPI:
         mock_get_user.return_value = mock_user
 
         async with app.app_context():
-            org = Organization(name="Delete Me")
-            from apps.api import db
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
-            db.session.add(org)
-            db.session.commit()
-            org_id = org.id
+            org_id = db.organizations.insert(
+                name="Delete Me", created_at=now, updated_at=now
+            )
+            db.commit()
 
             response = await async_client.delete(
                 f"/api/v1/organizations/{org_id}",
@@ -155,41 +158,59 @@ class TestOrganizationAPI:
 
             assert response.status_code in [200, 204]
 
-            # Verify deletion
-            deleted = Organization.query.get(org_id)
+            # Verify deletion using penguin-dal
+            deleted = db(db.organizations.id == org_id).select().first()
             assert deleted is None
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_get_organization_children(self, mock_get_user, async_client, app):
-        """Test GET /api/v1/organizations/:id/children."""
-        # Mock current user
-        mock_user = MagicMock()
-        mock_user.id = 1
-        mock_user.username = "test"
-        mock_user.is_superuser = True
-        mock_get_user.return_value = mock_user
-
+        """Test GET /api/v1/organizations/:id/children with tenant scoping."""
         async with app.app_context():
-            parent = Organization(name="Parent")
-            from apps.api import db
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
-            db.session.add(parent)
-            db.session.commit()
+            # Get or create default tenant
+            tenant = db(db.tenants.slug == "system").select().first()
+            if not tenant:
+                tenant = db(db.tenants.slug == "default").select().first()
+            tenant_id = tenant.id if tenant else None
 
-            child1 = Organization(name="Child 1", parent_id=parent.id)
-            child2 = Organization(name="Child 2", parent_id=parent.id)
-            db.session.add_all([child1, child2])
-            db.session.commit()
+            # Mock current user with tenant_id to match test data
+            mock_user = MagicMock()
+            mock_user.id = 1
+            mock_user.username = "test"
+            mock_user.is_superuser = True
+            mock_user.tenant_id = tenant_id  # Must match tenant_id of organizations
+            mock_get_user.return_value = mock_user
+
+            parent_id = db.organizations.insert(
+                name="Parent", tenant_id=tenant_id, created_at=now, updated_at=now
+            )
+            db.commit()
+
+            # Verify parent exists
+            parent = db.organizations[parent_id]
+            assert parent is not None, f"Parent organization {parent_id} not found after insert"
+
+            db.organizations.insert(
+                name="Child 1", parent_id=parent_id, tenant_id=tenant_id, created_at=now, updated_at=now
+            )
+            db.organizations.insert(
+                name="Child 2", parent_id=parent_id, tenant_id=tenant_id, created_at=now, updated_at=now
+            )
+            db.commit()
 
             response = await async_client.get(
-                f"/api/v1/organizations/{parent.id}/children",
+                f"/api/v1/organizations/{parent_id}/children",
                 headers={"Authorization": "Bearer fake-token"},
             )
 
-            assert response.status_code == 200
+            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {await response.get_data()}"
             data = json.loads(await response.get_data())
-            assert len(data.get("items", data.get("children", []))) == 2
+            # The endpoint returns a list directly, not wrapped in a dict
+            assert isinstance(data, list)
+            assert len(data) == 2
 
     @pytest.mark.asyncio
     async def test_list_organizations_unauthorized(self, async_client):
@@ -250,12 +271,14 @@ class TestOrganizationAPI:
 
         async with app.app_context():
             # Create multiple organizations
-            from apps.api import db
+            db = current_app.db
+            now = datetime.now(timezone.utc)
 
             for i in range(15):
-                org = Organization(name=f"Org {i}")
-                db.session.add(org)
-            db.session.commit()
+                db.organizations.insert(
+                    name=f"Org {i}", created_at=now, updated_at=now
+                )
+            db.commit()
 
             response = await async_client.get(
                 "/api/v1/organizations?page=1&per_page=10",

@@ -5,9 +5,11 @@ These tests use mocking to avoid external dependencies.
 No network calls or real database required.
 """
 
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
+from werkzeug.datastructures import MultiDict
 from flask import Flask
 
 from apps.api.utils.pydal_helpers import (
@@ -31,14 +33,6 @@ def app():
     app = Flask(__name__)
     app.config["TESTING"] = True
     return app
-
-
-@pytest.fixture
-def mock_request():
-    """Mock Flask request for pagination testing."""
-    with patch("apps.api.utils.pydal_helpers.request") as mock_req:
-        mock_req.args = Mock()
-        yield mock_req
 
 
 class TestPyDALHelpers:
@@ -230,49 +224,43 @@ class TestPaginationParams:
         assert pagination.per_page == 25
         assert pagination.offset == 25
 
-    def test_from_request_defaults(self, mock_request):
-        """Test from_request with default values."""
-        mock_request.args.get = Mock(side_effect=[None, None])
-
-        pagination = PaginationParams.from_request()
+    # NOTE: quart.request is a LocalProxy that raises if merely introspected
+    # outside a request context, so mock.patch(...) as-context-manager fails at
+    # patch time. Pass the replacement positionally (new=) with a real MultiDict
+    # so from_request()'s actual parse/cap/offset logic runs against real args.
+    def test_from_request_defaults(self):
+        """from_request applies defaults when no query args are present."""
+        with patch(
+            "apps.api.utils.pydal_helpers.request",
+            SimpleNamespace(args=MultiDict()),
+        ):
+            pagination = PaginationParams.from_request()
 
         assert pagination.page == 1
         assert pagination.per_page == 50
         assert pagination.offset == 0
 
-    def test_from_request_custom_values(self, mock_request):
-        """Test from_request with custom values."""
-
-        def mock_get(key, default, type=None):
-            if key == "page":
-                return 3
-            elif key == "per_page":
-                return 100
-            return default
-
-        mock_request.args.get = mock_get
-
-        pagination = PaginationParams.from_request()
+    def test_from_request_custom_values(self):
+        """from_request parses page/per_page from args and computes offset."""
+        with patch(
+            "apps.api.utils.pydal_helpers.request",
+            SimpleNamespace(args=MultiDict([("page", "3"), ("per_page", "100")])),
+        ):
+            pagination = PaginationParams.from_request()
 
         assert pagination.page == 3
         assert pagination.per_page == 100
         assert pagination.offset == 200  # (3-1) * 100
 
-    def test_from_request_max_per_page(self, mock_request):
-        """Test from_request enforces max per_page."""
+    def test_from_request_max_per_page(self):
+        """from_request caps per_page at max_per_page (1000)."""
+        with patch(
+            "apps.api.utils.pydal_helpers.request",
+            SimpleNamespace(args=MultiDict([("per_page", "5000")])),
+        ):
+            pagination = PaginationParams.from_request()
 
-        def mock_get(key, default, type=None):
-            if key == "page":
-                return 1
-            elif key == "per_page":
-                return 2000  # Exceeds max
-            return default
-
-        mock_request.args.get = mock_get
-
-        pagination = PaginationParams.from_request(max_per_page=1000)
-
-        assert pagination.per_page == 1000  # Capped at max
+        assert pagination.per_page == 1000  # real capping: 5000 clamped to 1000
 
     def test_calculate_pages_empty(self):
         """Test calculate_pages with 0 total."""

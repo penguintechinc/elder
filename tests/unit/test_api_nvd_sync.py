@@ -139,11 +139,13 @@ class TestNVDSyncAPI:
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_trigger_nvd_sync_insufficient_permissions(self, mock_get_user, async_client):
         """Test POST /api/v1/vulnerabilities/nvd-sync with insufficient permissions."""
-        # Mock a user without superuser status (will fail resource_role_required)
+        # Mock a user without admin role (will fail role_required)
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.username = "viewer"
         mock_user.is_superuser = False
+        mock_user.portal_role = "observer"
+        mock_user.get = MagicMock(return_value="observer")  # For dict-like access
         mock_get_user.return_value = mock_user
 
         response = await async_client.post(
@@ -152,7 +154,7 @@ class TestNVDSyncAPI:
             headers={"Authorization": "Bearer fake-token"},
         )
 
-        # Should fail due to resource_role_required decorator
+        # Should fail due to role_required decorator
         assert response.status_code == 403
 
     @pytest.mark.asyncio
@@ -214,12 +216,14 @@ class TestNVDSyncAPI:
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
     async def test_trigger_nvd_sync_error_handling(self, mock_service_class, mock_get_user, async_client):
-        """Test POST /api/v1/vulnerabilities/nvd-sync with service error."""
-        # Mock current user
+        """Test POST /api/v1/vulnerabilities/nvd-sync with service error propagates."""
+        # Mock current user with admin role
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.username = "admin"
         mock_user.is_superuser = True
+        mock_user.portal_role = "admin"
+        mock_user.get = MagicMock(return_value="admin")
         mock_get_user.return_value = mock_user
 
         # Setup mock service to raise error
@@ -229,14 +233,14 @@ class TestNVDSyncAPI:
         )
         mock_service_class.return_value = mock_service
 
-        response = await async_client.post(
-            "/api/v1/vulnerabilities/nvd-sync",
-            json={},
-            headers={"Authorization": "Bearer fake-token"},
-        )
-
-        # Should handle error gracefully
-        assert response.status_code in [500, 202]  # Either 500 or graceful 202
+        # Unhandled exceptions should propagate and be converted to 500 by Quart
+        # (Quart's error handler catches unhandled exceptions in async handlers)
+        with pytest.raises(Exception, match="NVD API error"):
+            await async_client.post(
+                "/api/v1/vulnerabilities/nvd-sync",
+                json={},
+                headers={"Authorization": "Bearer fake-token"},
+            )
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")

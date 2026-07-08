@@ -8,7 +8,7 @@ from dataclasses import asdict
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import login_required, resource_role_required, role_required
 from apps.api.models.dataclasses import (
     ComponentVulnerabilityDTO,
     PaginatedResponse,
@@ -493,7 +493,7 @@ async def update_component_vulnerability(id: int):
 
 @bp.route("/nvd-sync", methods=["POST"])
 @login_required
-@resource_role_required("maintainer")
+@role_required("admin")
 async def trigger_nvd_sync():
     """
     Trigger NVD sync to enrich vulnerability CVSS data.
@@ -534,7 +534,7 @@ async def trigger_nvd_sync():
     # Get NVD API key from config if available
     nvd_api_key = current_app.config.get("NVD_API_KEY")
 
-    # Run the sync
+    # Run the sync - let exceptions propagate for proper error handling (500 response)
     service = NVDSyncService(db, nvd_api_key)
     stats = await service.sync_vulnerabilities(
         max_vulns=max_vulns,
