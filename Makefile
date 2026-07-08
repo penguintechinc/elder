@@ -90,28 +90,28 @@ lock-api: ## Compile root requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling requirements.txt (api)...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip --no-emit-package setuptools requirements.in -o requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip requirements.in -o requirements.txt"
 	@echo "$(GREEN)requirements.txt compiled$(RESET)"
 
 lock-worker: ## Compile apps/worker/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/worker/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip --no-emit-package setuptools apps/worker/requirements.in -o apps/worker/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/worker/requirements.in -o apps/worker/requirements.txt"
 	@echo "$(GREEN)apps/worker/requirements.txt compiled$(RESET)"
 
 lock-scanner: ## Compile apps/scanner/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/scanner/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip --no-emit-package setuptools apps/scanner/requirements.in -o apps/scanner/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/scanner/requirements.in -o apps/scanner/requirements.txt"
 	@echo "$(GREEN)apps/scanner/requirements.txt compiled$(RESET)"
 
 lock-mcp: ## Compile apps/mcp/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/mcp/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip --no-emit-package setuptools apps/mcp/requirements.in -o apps/mcp/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/mcp/requirements.in -o apps/mcp/requirements.txt"
 	@echo "$(GREEN)apps/mcp/requirements.txt compiled$(RESET)"
 
 # ── Development ────────────────────────────────────────────────────────────

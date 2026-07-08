@@ -28,17 +28,11 @@ COPY apps/mcp/requirements.txt apps/mcp/
 
 # Install dependencies
 # Step 1: Install root API requirements (includes test deps: pytest, pytest-cov, pytest-mock, pytest-asyncio)
-# Note: uv generated hashes but grpcio-tools transitive setuptools is unpinned.
-# Workaround: strip hashes and install without --require-hashes (lockfile itself is pinned)
-RUN sed 's/[[:space:]]*--hash=.*//' requirements.txt > requirements-nohash.txt && \
-    pip install --user --no-cache-dir -r requirements-nohash.txt && \
-    rm requirements-nohash.txt
+# All hashes now verified (setuptools included with hash in lockfile)
+RUN pip install --user --no-cache-dir --require-hashes -r requirements.txt
 
 # Step 2: Install worker requirements (aiocron, backoff)
-# Same approach: strip hashes if present
-RUN sed 's/[[:space:]]*--hash=.*//' apps/worker/requirements.txt > /tmp/worker-req-nohash.txt && \
-    pip install --user --no-cache-dir -r /tmp/worker-req-nohash.txt && \
-    rm /tmp/worker-req-nohash.txt
+RUN pip install --user --no-cache-dir --require-hashes -r apps/worker/requirements.txt
 
 # Runtime stage
 FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
