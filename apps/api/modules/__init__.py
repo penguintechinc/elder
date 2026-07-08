@@ -22,6 +22,7 @@ CORE_MODELS = (
     "apps.api.models.references",
     "apps.api.models.security",
     "apps.api.models.tenant",
+    "apps.api.models.tenant_modules",
 )
 
 
