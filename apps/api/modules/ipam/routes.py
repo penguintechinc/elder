@@ -20,6 +20,7 @@ from apps.api.models.pydantic import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import ValidationErrorResponse
 
 bp = Blueprint("ipam", __name__)
@@ -54,8 +55,7 @@ async def list_prefixes():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     def get_prefixes():
@@ -80,13 +80,11 @@ async def list_prefixes():
                 db.ipam_prefixes.description.ilike(search_pattern)
             )
 
-        # Calculate pagination
-        offset = (page - 1) * per_page
-
         # Get count and rows
         total = db(query).count()
         rows = db(query).select(
-            orderby=~db.ipam_prefixes.created_at, limitby=(offset, offset + per_page)
+            orderby=~db.ipam_prefixes.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
         return total, rows
@@ -94,7 +92,7 @@ async def list_prefixes():
     total, rows = await run_in_threadpool(get_prefixes)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert to dicts
     items = [dict(row) for row in rows]
@@ -103,8 +101,8 @@ async def list_prefixes():
     response = PaginatedResponse(
         items=items,
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 
@@ -401,8 +399,7 @@ async def list_addresses():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     def get_addresses():
@@ -423,13 +420,11 @@ async def list_addresses():
                 db.ipam_addresses.description.ilike(search_pattern)
             )
 
-        # Calculate pagination
-        offset = (page - 1) * per_page
-
         # Get count and rows
         total = db(query).count()
         rows = db(query).select(
-            orderby=~db.ipam_addresses.created_at, limitby=(offset, offset + per_page)
+            orderby=~db.ipam_addresses.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
         return total, rows
@@ -437,7 +432,7 @@ async def list_addresses():
     total, rows = await run_in_threadpool(get_addresses)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert to dicts
     items = [dict(row) for row in rows]
@@ -446,8 +441,8 @@ async def list_addresses():
     response = PaginatedResponse(
         items=items,
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 
@@ -685,8 +680,7 @@ async def list_vlans():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     def get_vlans():
@@ -707,13 +701,11 @@ async def list_vlans():
                 db.ipam_vlans.description.ilike(search_pattern)
             )
 
-        # Calculate pagination
-        offset = (page - 1) * per_page
-
         # Get count and rows
         total = db(query).count()
         rows = db(query).select(
-            orderby=~db.ipam_vlans.created_at, limitby=(offset, offset + per_page)
+            orderby=~db.ipam_vlans.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
         return total, rows
@@ -721,7 +713,7 @@ async def list_vlans():
     total, rows = await run_in_threadpool(get_vlans)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert to dicts
     items = [dict(row) for row in rows]
@@ -730,8 +722,8 @@ async def list_vlans():
     response = PaginatedResponse(
         items=items,
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 

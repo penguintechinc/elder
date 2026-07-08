@@ -14,6 +14,7 @@ from apps.api.schemas.organization import (
     OrganizationUpdateSchema,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 from shared.api_utils import (
     handle_validation_error,
     make_error_response,
@@ -40,8 +41,7 @@ def list_organizations():
     """
     db = current_app.db
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build PyDAL query
     query = db.organizations.id > 0
@@ -61,12 +61,12 @@ def list_organizations():
     total = db(query).count()
 
     # Calculate pagination
-    offset = (page - 1) * per_page
-    pages = (total + per_page - 1) // per_page
+    pages = pagination.calculate_pages(total)
 
     # Execute query with pagination and ordering
     rows = db(query).select(
-        orderby=db.organizations.name, limitby=(offset, offset + per_page)
+        orderby=db.organizations.name,
+        limitby=(pagination.offset, pagination.offset + pagination.per_page),
     )
 
     # Convert to dict list
@@ -76,8 +76,8 @@ def list_organizations():
     result = {
         "items": items,
         "total": total,
-        "page": page,
-        "per_page": per_page,
+        "page": pagination.page,
+        "per_page": pagination.per_page,
         "pages": pages,
     }
 

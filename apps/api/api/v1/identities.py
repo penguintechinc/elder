@@ -26,6 +26,7 @@ from apps.api.models.pydantic.identity import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("identities", __name__)
@@ -71,8 +72,7 @@ async def list_identities():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     query = db.identities.id > 0
@@ -104,9 +104,6 @@ async def list_identities():
     if auth_provider_id:
         query &= db.identities.auth_provider_id == auth_provider_id
 
-    # Calculate pagination
-    offset = (page - 1) * per_page
-
     # Execute database queries in a single thread pool task to avoid cursor issues
     def get_identities():
         total = db(query).count()
@@ -125,14 +122,14 @@ async def list_identities():
             db.identities.created_at,
             db.identities.updated_at,
             orderby=db.identities.username,
-            limitby=(offset, offset + per_page),
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
         return total, rows
 
     total, rows = await run_in_threadpool(get_identities)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     items = [_identity_row_to_dto(row) for row in rows]
 
@@ -140,8 +137,8 @@ async def list_identities():
     response = PaginatedResponse(
         items=[asdict(item) for item in items],
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 
@@ -366,14 +363,10 @@ async def list_groups():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     query = db.identity_groups.id > 0
-
-    # Calculate pagination
-    offset = (page - 1) * per_page
 
     # Use asyncio TaskGroup for concurrent queries (Python 3.12)
     async with asyncio.TaskGroup() as tg:
@@ -381,7 +374,11 @@ async def list_groups():
         rows_task = tg.create_task(
             run_in_threadpool(
                 lambda: db(query).select(
-                    orderby=db.identity_groups.name, limitby=(offset, offset + per_page)
+                    orderby=db.identity_groups.name,
+                    limitby=(
+                        pagination.offset,
+                        pagination.offset + pagination.per_page,
+                    ),
                 )
             )
         )
@@ -390,7 +387,7 @@ async def list_groups():
     rows = rows_task.result()
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert PyDAL rows to DTOs
     items = from_pydal_rows(rows, IdentityGroupDTO)
@@ -399,8 +396,8 @@ async def list_groups():
     response = PaginatedResponse(
         items=[asdict(item) for item in items],
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 
