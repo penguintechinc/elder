@@ -188,6 +188,124 @@ def _register_before_request(app: Quart) -> None:
             "scope": payload.get("scope", []),
         }
 
+    @app.before_request
+    async def enforce_module_access():
+        """Enforce module licensing and tenant enablement (layers 2-3).
+
+        Resolves the current request blueprint to its module manifest and checks:
+        - Layer 2 (license): Is the module licensed? If not → 403 MODULE_UNLICENSED
+        - Layer 3 (tenant): Is the module enabled for this tenant? If not → 403 MODULE_DISABLED
+
+        Core (non-module) routes are unaffected.
+
+        Runs after populate_claims so g.claims is available.
+        Fails gracefully on infra errors (never crashes, never hard-denies).
+        """
+        from quart import request
+
+        try:
+            # Resolve blueprint → module name
+            blueprint_name = request.blueprint
+            if not blueprint_name:
+                return  # No blueprint, allow (core route)
+
+            elder_module_by_blueprint = app.extensions.get("elder_module_by_blueprint", {})
+            module_name = elder_module_by_blueprint.get(blueprint_name)
+            if not module_name:
+                return  # Not a module route, allow (core route)
+
+            # Resolve module manifest
+            elder_modules = app.extensions.get("elder_modules", {})
+            manifest = elder_modules.get(module_name)
+            if not manifest:
+                logger.warning(
+                    "module_manifest_not_found",
+                    module=module_name,
+                    blueprint=blueprint_name,
+                )
+                return  # Manifest missing, allow (shouldn't happen)
+
+            # Layer 2: Check if module is licensed
+            from apps.api.common.modules.licensing import module_licensed
+
+            if not module_licensed(app, manifest):
+                logger.info(
+                    "module_access_denied_unlicensed",
+                    module=module_name,
+                    feature=manifest.license_feature,
+                )
+                return (
+                    jsonify(
+                        {
+                            "error": "MODULE_UNLICENSED",
+                            "module": module_name,
+                            "message": f"Module '{module_name}' is not licensed",
+                        }
+                    ),
+                    403,
+                )
+
+            # Layer 3: Check if module is enabled for this tenant
+            claims = getattr(g, "claims", {}) or {}
+            tenant_str = claims.get("tenant", "")
+
+            if tenant_str:
+                # Tenant is present; check if module is enabled for them
+                try:
+                    tenant_id = int(tenant_str)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "invalid_tenant_claim",
+                        tenant_str=tenant_str,
+                    )
+                    return  # Invalid tenant claim, allow to let auth decorators handle
+
+                try:
+                    import redis
+
+                    redis_client = redis.from_url(app.config.get("REDIS_URL", ""))
+                    db = app.db
+
+                    from apps.api.common.modules.tenant_toggle import is_module_enabled
+
+                    if not is_module_enabled(
+                        db, redis_client, tenant_id, module_name, manifest.default_enabled
+                    ):
+                        logger.info(
+                            "module_access_denied_disabled",
+                            module=module_name,
+                            tenant_id=tenant_id,
+                        )
+                        return (
+                            jsonify(
+                                {
+                                    "error": "MODULE_DISABLED",
+                                    "module": module_name,
+                                    "message": f"Module '{module_name}' is not enabled for your tenant",
+                                }
+                            ),
+                            403,
+                        )
+                except Exception as e:
+                    # Fail-soft: if toggle check fails, allow the request
+                    logger.warning(
+                        "module_toggle_check_failed",
+                        module=module_name,
+                        tenant_id=tenant_id,
+                        error=str(e),
+                        fallback="allow",
+                    )
+                    return  # Allow on infra failure
+
+        except Exception as e:
+            # Outermost catch: log and allow
+            logger.error(
+                "module_enforcement_unexpected_error",
+                error=str(e),
+                fallback="allow",
+            )
+            return  # Allow on unexpected error
+
 
 def _init_extensions(app: Quart) -> None:
     """Initialize Quart extensions."""
@@ -215,6 +333,8 @@ def _init_license_client(app: Quart) -> None:
 
         client = get_license_client()
         validation = client.validate()
+        # Persist client on app.extensions for use in module enforcement
+        app.extensions["license_client"] = client
         logger.info(
             "license_client_initialized",
             tier=validation.tier,
@@ -226,6 +346,8 @@ def _init_license_client(app: Quart) -> None:
             error=str(e),
             fallback="community",
         )
+        # Stash None to signal licensing unavailable (graceful degradation)
+        app.extensions["license_client"] = None
 
 
 def _init_access_review_scheduler(app: Quart) -> None:
