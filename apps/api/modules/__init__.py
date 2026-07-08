@@ -114,7 +114,7 @@ def _issues_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _discovery_blueprints() -> list[tuple[Blueprint, str]]:
     """Load discovery and sync blueprints (discovery, sync, connectors, IAM)."""
-    from apps.api.api.v1 import discovery, google_workspace, iam, sync
+    from apps.api.modules.discovery.routes import discovery, google_workspace, iam, sync
 
     api_prefix = "/api/v1"
     return [
@@ -265,7 +265,7 @@ MODULES = (
         license_feature=None,
         depends_on=("infrastructure",),
         blueprints=_discovery_blueprints,
-        models_import=("apps.api.models.discovery",),
+        models_import=("apps.api.modules.discovery.models",),
         table_prefix=None,
         nav_id="nav_discovery",
         scopes=("discovery:read", "discovery:write", "discovery:admin"),
