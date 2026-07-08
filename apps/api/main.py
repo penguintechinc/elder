@@ -100,6 +100,9 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize license client
     _init_license_client(app)
 
+    # Initialize module-enforcement Redis client (cached for all requests)
+    _init_redis_client(app)
+
     # Initialize access review scheduler (v3.1.0)
     _init_access_review_scheduler(app)
 
@@ -261,9 +264,8 @@ def _register_before_request(app: Quart) -> None:
                     return  # Invalid tenant claim, allow to let auth decorators handle
 
                 try:
-                    import redis
-
-                    redis_client = redis.from_url(app.config.get("REDIS_URL", ""))
+                    # Use cached Redis client (initialized at app startup)
+                    redis_client = app.extensions.get("module_redis")
                     db = app.db
 
                     from apps.api.common.modules.tenant_toggle import is_module_enabled
@@ -348,6 +350,44 @@ def _init_license_client(app: Quart) -> None:
         )
         # Stash None to signal licensing unavailable (graceful degradation)
         app.extensions["license_client"] = None
+
+
+def _init_redis_client(app: Quart) -> None:
+    """
+    Initialize Redis client for module enforcement (tenant toggles).
+
+    Caches a single Redis client at app startup for reuse across all requests.
+    Fail-soft: if Redis unavailable, enforcement queries will catch the error
+    and allow the request (graceful degradation).
+
+    Args:
+        app: Quart application
+    """
+    try:
+        import redis
+
+        redis_url = app.config.get("REDIS_URL", "")
+        if not redis_url:
+            logger.warning(
+                "module_redis_init_skipped",
+                reason="REDIS_URL not configured",
+            )
+            app.extensions["module_redis"] = None
+            return
+
+        redis_client = redis.from_url(redis_url)
+        # Test connectivity
+        redis_client.ping()
+        app.extensions["module_redis"] = redis_client
+        logger.info("module_redis_initialized")
+    except Exception as e:
+        logger.warning(
+            "module_redis_init_failed",
+            error=str(e),
+            fallback="defer_to_request_time",
+        )
+        # Stash None; enforcement will fail-soft at request time
+        app.extensions["module_redis"] = None
 
 
 def _init_access_review_scheduler(app: Quart) -> None:
