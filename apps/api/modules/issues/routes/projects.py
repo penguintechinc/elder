@@ -16,6 +16,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 
 bp = Blueprint("projects", __name__)
 
@@ -43,8 +44,7 @@ async def list_projects():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     def get_projects():
@@ -65,13 +65,11 @@ async def list_projects():
                 db.projects.description.ilike(search_pattern)
             )
 
-        # Calculate pagination
-        offset = (page - 1) * per_page
-
         # Get count and rows
         total = db(query).count()
         rows = db(query).select(
-            orderby=~db.projects.created_at, limitby=(offset, offset + per_page)
+            orderby=~db.projects.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
         return total, rows
@@ -79,7 +77,7 @@ async def list_projects():
     total, rows = await run_in_threadpool(get_projects)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert to DTOs
     items = from_pydal_rows(rows, ProjectDTO)
@@ -88,8 +86,8 @@ async def list_projects():
     response = PaginatedResponse(
         items=[asdict(item) for item in items],
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 

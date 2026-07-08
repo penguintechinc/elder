@@ -24,6 +24,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
@@ -124,8 +125,7 @@ async def list_issues():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     def get_issues():
@@ -151,13 +151,11 @@ async def list_issues():
             reporter_id = request.args.get("reporter_id", type=int)
             query &= db.issues.created_by_id == reporter_id
 
-        # Calculate pagination
-        offset = (page - 1) * per_page
-
         # Get count and rows
         total = db(query).count()
         rows = db(query).select(
-            orderby=~db.issues.created_at, limitby=(offset, offset + per_page)
+            orderby=~db.issues.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
 
         return total, rows
@@ -165,7 +163,7 @@ async def list_issues():
     total, rows = await run_in_threadpool(get_issues)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert to DTOs
     items = from_pydal_rows(rows, IssueDTO)
@@ -174,8 +172,8 @@ async def list_issues():
     response = PaginatedResponse(
         items=[asdict(item) for item in items],
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
     )
 
