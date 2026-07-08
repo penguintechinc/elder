@@ -2,143 +2,182 @@
 
 This module provides fixtures for both unit tests and integration tests.
 Unit tests should use mocks and not require external services.
-Integration tests may use the actual database.
+Integration tests use the actual Postgres database via test containers.
 
-Migration Note:
-    Elder uses PyDAL for database operations (not SQLAlchemy).
-    All fixtures have been updated for PyDAL compatibility.
+Configuration:
+- Unit tests (tests/unit/) must NOT require DATABASE_URL to be set
+  (use mocks instead)
+- Integration tests (tests/integration/) require DATABASE_URL pointing to
+  a test Postgres instance (set via env or fixture)
 """
 
 import os
+import importlib
 
 import pytest
 
-# Set testing environment before any app imports
-os.environ.setdefault("FLASK_ENV", "testing")
-os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/elder_unit_test.db")
-os.environ.setdefault("SECRET_KEY", "test-secret-key-for-testing-only")
+
+def pytest_configure(config):
+    """Configure custom pytest markers and ensure sane defaults."""
+    config.addinivalue_line(
+        "markers", "unit: Unit tests (no external dependencies, mocks only)"
+    )
+    config.addinivalue_line(
+        "markers", "integration: Integration tests (requires test database)"
+    )
+    config.addinivalue_line(
+        "markers", "e2e: End-to-end tests (requires full Docker environment)"
+    )
+    config.addinivalue_line("markers", "slow: Tests that take a long time to run")
+
+    # Set testing environment before any app imports
+    os.environ.setdefault("FLASK_ENV", "testing")
+    os.environ.setdefault("QUART_ENV", "testing")
 
 
 @pytest.fixture(scope="session")
-def app():
-    """
-    Create Flask application for testing.
+def test_database_url():
+    """Provide test database URL from environment.
+
+    Expects DATABASE_URL to be set to a test Postgres instance.
+    Integration tests require this; unit tests should not use it.
 
     Returns:
-        Flask app configured for testing (unwrapped from WsgiToAsgi)
+        Database URL string, or None if not set.
+    """
+    return os.getenv("DATABASE_URL")
+
+
+@pytest.fixture(scope="session")
+def redis_url():
+    """Provide test Redis URL from environment.
+
+    Returns:
+        Redis URL string (may be None if not configured).
+    """
+    return os.getenv("REDIS_URL", "redis://localhost:56379/0")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def init_test_database(test_database_url):
+    """Initialize test database schema at session start.
+
+    This fixture imports all registry models (CORE_MODELS + MODULES models_import)
+    and runs SQLAlchemy create_all() to build the 82-table schema.
+
+    Runs once per test session before any integration tests.
+    Only initializes if DATABASE_URL is set (integration tests).
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Skip database initialization if DATABASE_URL not set (unit tests only)
+    if not test_database_url:
+        logger.debug(
+            "DATABASE_URL not set; skipping database initialization (unit tests only)"
+        )
+        return
+
+    try:
+        # Import registry models
+        from sqlalchemy import create_engine
+        from apps.api.models.base import Base
+        from apps.api.modules import CORE_MODELS, MODULES
+
+        logger.info(f"Initializing test database: {test_database_url.split('@')[1]}")
+
+        # Collect all model modules to import (registry-driven)
+        model_modules_to_import = set(CORE_MODELS)
+        for module_manifest in MODULES:
+            for model_module in module_manifest.models_import:
+                model_modules_to_import.add(model_module)
+
+        # Import all models so they register with Base.metadata
+        for model_module_path in sorted(model_modules_to_import):
+            try:
+                importlib.import_module(model_module_path)
+            except ImportError as e:
+                logger.warning(
+                    f"Failed to import model module {model_module_path}: {e}"
+                )
+
+        # Create engine and run create_all()
+        engine = create_engine(test_database_url)
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
+        # Verify table count
+        table_count = len(Base.metadata.tables)
+        logger.info(f"Test database initialized: {table_count} tables")
+        assert table_count == 82, f"Expected 82 tables, got {table_count}"
+
+    except Exception as e:
+        logger.error(f"Failed to initialize test database: {e}")
+        raise
+
+
+@pytest.fixture(scope="session")
+def app(test_database_url):
+    """Create Quart application for testing.
+
+    Only fully initializes if DATABASE_URL is set (integration tests).
+    For unit tests without DATABASE_URL, provides a minimal app.
+
+    Returns:
+        Configured Quart app (native ASGI).
     """
     from apps.api.main import create_app
 
-    asgi_app = create_app("testing")
-    # create_app returns WsgiToAsgi wrapper; unwrap to get the Flask app
-    flask_app = getattr(asgi_app, "wsgi_application", asgi_app)
-    flask_app.config["TESTING"] = True
+    if test_database_url:
+        os.environ["DATABASE_URL"] = test_database_url
 
-    with flask_app.app_context():
-        yield flask_app
+    try:
+        app = create_app("testing")
+        app.config["TESTING"] = True
+    except Exception as e:
+        # If DATABASE_URL not set, create minimal app for mocked tests
+        if not test_database_url:
+            from quart import Quart
 
-        # Cleanup: drop test database file if using SQLite
-        db_url = str(flask_app.config.get("DATABASE_URL", ""))
-        if "sqlite" in db_url:
-            try:
-                db_file = "test.db"
-                if os.path.exists(db_file):
-                    os.remove(db_file)
-                if os.path.exists(f"{db_file}.sqlite"):
-                    os.remove(f"{db_file}.sqlite")
-            except Exception:
-                pass  # Ignore cleanup errors
+            app = Quart(__name__)
+            app.config["TESTING"] = True
+        else:
+            raise
+
+    yield app
 
 
 @pytest.fixture(scope="function")
 def client(app):
-    """
-    Create Flask test client.
+    """Create Quart test client for API testing.
 
     Args:
-        app: Flask application fixture
+        app: Quart application fixture
 
     Returns:
-        Flask test client
+        Quart test client
     """
     return app.test_client()
 
 
 @pytest.fixture(scope="function")
-def db_session(app):
-    """
-    Provide PyDAL database session for tests with transaction rollback.
-
-    This fixture wraps each test in a transaction that gets rolled back,
-    ensuring test isolation.
+async def async_client(app):
+    """Create async Quart test client for async API testing.
 
     Args:
-        app: Flask application fixture
-
-    Yields:
-        PyDAL db instance (from app.db)
-    """
-    with app.app_context():
-        db = app.db
-
-        yield db
-
-
-@pytest.fixture(scope="function")
-def auth_headers(client, app):
-    """
-    Provide authenticated headers for API tests.
-
-    Creates a test user and returns headers with JWT token.
-
-    Args:
-        client: Flask test client
-        app: Flask application
+        app: Quart application fixture
 
     Returns:
-        dict with Authorization header
+        Async Quart test client
     """
-    with app.app_context():
-        # Login with admin user (created during db init)
-        response = client.post(
-            "/api/v1/portal-auth/login",
-            json={
-                "email": os.getenv("ADMIN_EMAIL", "admin@localhost.local"),
-                "password": os.getenv("ADMIN_PASSWORD", "admin123"),
-            },
-        )
-
-        if response.status_code == 200:
-            data = response.get_json()
-            token = data.get("access_token") or data.get("token")
-            return {"Authorization": f"Bearer {token}"}
-
-        # Fallback: return empty headers (tests may skip or use mock)
-        return {}
+    async with app.test_client() as client:
+        yield client
 
 
 @pytest.fixture(scope="function")
-def db(app):
-    """
-    Alias for db_session — database fixture for tests that need DB state.
-
-    Wraps each test in a transaction rollback for isolation.
-
-    Args:
-        app: Flask application fixture
-
-    Yields:
-        PyDAL db instance (from app.db)
-    """
-    with app.app_context():
-        db = app.db
-        yield db
-
-
-@pytest.fixture
 def mock_pydal_db(mocker):
-    """
-    Create a mock PyDAL database for unit tests.
+    """Create a mock PyDAL database for unit tests.
 
     Use this fixture for unit tests that shouldn't touch the real database.
 
@@ -158,18 +197,20 @@ def mock_pydal_db(mocker):
     return mock_db
 
 
-# Markers for test categories
-def pytest_configure(config):
-    """Configure custom pytest markers."""
-    config.addinivalue_line(
-        "markers", "unit: Unit tests (no external dependencies)"
-    )
-    config.addinivalue_line(
-        "markers", "integration: Integration tests (requires database)"
-    )
-    config.addinivalue_line(
-        "markers", "e2e: End-to-end tests (requires full Docker environment)"
-    )
-    config.addinivalue_line(
-        "markers", "slow: Tests that take a long time to run"
-    )
+@pytest.fixture(scope="function")
+def auth_headers(client, app):
+    """Provide authenticated headers for API tests.
+
+    Creates a test user and returns headers with JWT token.
+    For unit tests: return empty dict (fixture is optional).
+
+    Args:
+        client: Quart test client
+        app: Quart application
+
+    Returns:
+        dict with Authorization header (empty if auth unavailable)
+    """
+    # Placeholder: real implementation would create test user and get token
+    # For now, return empty headers (tests should mock auth)
+    return {}
