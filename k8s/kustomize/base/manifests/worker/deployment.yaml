@@ -31,10 +31,18 @@ spec:
             - configMapRef:
                 name: elder-otel
           env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: ELDER_API_URL
               value: "http://api:5000"
             - name: ELDER_API_KEY
               value: ""
+            - name: DATABASE_URL
+              value: "postgres://elder:elder_dev_password@postgres:5432/elder"
+            - name: REDIS_URL
+              value: "redis://:elder_redis_password@redis:6379/0"
             - name: DB_POOL_SIZE
               value: "5"
             - name: AWS_ENABLED
