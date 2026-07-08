@@ -6,7 +6,7 @@
 import enum
 from typing import List
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -234,8 +234,8 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
     # Access review configuration (Enterprise feature)
     review_enabled = Column(Boolean, nullable=False, default=False)
     review_interval_days = Column(Integer, nullable=True, default=90)
-    last_review_date = Column(String(255), nullable=True)
-    next_review_date = Column(String(255), nullable=True)
+    last_review_date = Column(DateTime(timezone=True), nullable=True)
+    next_review_date = Column(DateTime(timezone=True), nullable=True)
     review_assignment_mode = Column(String(20), nullable=True, default="all_owners")
     review_due_days = Column(Integer, nullable=True, default=14)
     review_auto_apply = Column(Boolean, nullable=False, default=True)
