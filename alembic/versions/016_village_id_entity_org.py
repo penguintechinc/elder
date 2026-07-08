@@ -1,15 +1,15 @@
 """Add village_id column to Entity and Organization models (Phase 2)
 
-Revision ID: 015
-Revises: 014
+Revision ID: 016
+Revises: 015
 Create Date: 2026-07-08
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "015"
-down_revision = "014"
+revision = "016"
+down_revision = "015"
 branch_labels = None
 depends_on = None
 
