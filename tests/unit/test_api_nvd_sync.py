@@ -1,4 +1,3 @@
-import pytest
 """Unit tests for NVD sync API endpoints.
 
 These tests use mocked authentication and NVDSyncService.
@@ -9,7 +8,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-@pytest.mark.xfail(reason="Quart migration: app.app_context() does not support context manager protocol in sync context")
 class TestNVDSyncAPI:
     """Test NVD sync API endpoints."""
 

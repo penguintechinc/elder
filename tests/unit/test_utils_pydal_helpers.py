@@ -41,7 +41,6 @@ def mock_request():
         yield mock_req
 
 
-@pytest.mark.xfail(reason="Quart migration: stale patches referencing module paths that moved")
 class TestPyDALHelpers:
     """Test PyDAL helper functions."""
 
@@ -220,8 +219,6 @@ class TestPyDALHelpers:
         mock_threadpool.assert_called_once()
 
 
-
-@pytest.mark.xfail(reason="Quart migration: stale patches referencing module paths that moved")
 class TestPaginationParams:
     """Test PaginationParams class."""
 

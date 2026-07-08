@@ -3,19 +3,11 @@ Unit tests for Entity model (PyDAL runtime layer).
 
 These tests verify CRUD operations on the entities table
 using the PyDAL database layer that the application actually uses at runtime.
-
-NOTE: These tests are marked xfail due to Quart migration incompatibility.
-The tests use Flask's synchronous `with app.app_context():` pattern, which is
-incompatible with Quart's async-only AppContext. Requires refactoring to use
-async context managers or test_client().
 """
 
 import pytest
 
 
-@pytest.mark.xfail(
-    reason="Quart migration: app.app_context() does not support context manager protocol in sync context"
-)
 class TestEntityModel:
     """Test Entity model functionality via PyDAL."""
 

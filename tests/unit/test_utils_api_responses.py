@@ -20,7 +20,6 @@ def app():
     return app
 
 
-@pytest.mark.xfail(reason="Quart migration: app.app_context() does not support context manager protocol in sync context")
 class TestApiResponse:
     """Test ApiResponse helper methods."""
 

@@ -3,11 +3,6 @@ Unit tests for CRUD helper utilities.
 
 These tests use extensive mocking to avoid external dependencies.
 No network calls or real database required.
-
-NOTE: These test classes are marked xfail due to Quart migration incompatibility.
-The tests use Flask's synchronous `with app.app_context():` pattern inside async
-test functions, which is incompatible with Quart's async-only AppContext. Requires
-refactoring to use async context managers or test_client().
 """
 
 import json
@@ -44,9 +39,6 @@ def mock_db(mock_table):
     return db
 
 
-@pytest.mark.xfail(
-    reason="Quart migration: app.app_context() in async tests incompatible with Quart"
-)
 class TestCrudHelperList:
     """Test CrudHelper.list_resources method."""
 
@@ -124,8 +116,6 @@ class TestCrudHelperList:
             assert len(data["items"]) == 0
 
 
-
-@pytest.mark.xfail(reason="Quart migration: app.app_context() in async tests incompatible with Quart")
 class TestCrudHelperCreate:
     """Test CrudHelper.create_resource method."""
 
@@ -203,8 +193,6 @@ class TestCrudHelperCreate:
             assert "type" in data["error"]
 
 
-
-@pytest.mark.xfail(reason="Quart migration: app.app_context() in async tests incompatible with Quart")
 class TestCrudHelperGet:
     """Test CrudHelper.get_resource method."""
 
@@ -245,8 +233,6 @@ class TestCrudHelperGet:
 
 class TestCrudHelperUpdate:
     """Test CrudHelper.update_resource method."""
-
-@pytest.mark.xfail(reason="Quart migration: app.app_context() in async tests incompatible with Quart")
 
     @pytest.mark.asyncio
     @patch("apps.api.utils.crud_helpers.current_app")
@@ -309,8 +295,6 @@ class TestCrudHelperUpdate:
 
 class TestCrudHelperDelete:
     """Test CrudHelper.delete_resource method."""
-
-@pytest.mark.xfail(reason="Quart migration: app.app_context() in async tests incompatible with Quart")
 
     @pytest.mark.asyncio
     @patch("apps.api.utils.crud_helpers.current_app")
