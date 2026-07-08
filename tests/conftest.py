@@ -214,3 +214,42 @@ def auth_headers(client, app):
     # Placeholder: real implementation would create test user and get token
     # For now, return empty headers (tests should mock auth)
     return {}
+
+
+@pytest.fixture(scope="function")
+def generate_token(app):
+    """Generate JWT token with tenant claim for security tests.
+
+    Args:
+        app: Quart application
+        tenant_id: Tenant ID to include in token (required)
+
+    Returns:
+        Function that takes (tenant_id, scopes=[]) and returns JWT token string
+    """
+    from datetime import datetime, timedelta, timezone
+
+    import jwt
+
+    def _generate_token(tenant_id: int, scopes: list = None):
+        """Generate a JWT token with the given tenant_id and scopes."""
+        if scopes is None:
+            scopes = []
+
+        secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
+        algorithm = app.config.get("JWT_ALGORITHM", "HS256")
+
+        now = datetime.now(timezone.utc)
+        payload = {
+            "sub": "test-user-123",
+            "tenant": str(tenant_id),  # Important: tenant claim as string
+            "iat": now,
+            "exp": now + timedelta(hours=1),
+            "scope": scopes,
+            "roles": ["test"],
+        }
+
+        token = jwt.encode(payload, secret, algorithm=algorithm)
+        return token
+
+    return _generate_token
