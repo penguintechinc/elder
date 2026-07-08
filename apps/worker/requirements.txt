@@ -1680,6 +1680,10 @@ quart-cors==0.8.0 \
     --hash=sha256:62dc811768e2e1704d2b99d5880e3eb26fc776832305a19ea53db66f63837767 \
     --hash=sha256:ac32c4931da6fba944e9e2d3f856f2db4fd82e3fb905a09646086780c221a118
     # via -r apps/worker/requirements.in
+redis==5.2.1 \
+    --hash=sha256:16f2e22dff21d5125e8481515e386711a34cbec50f0e44413dd7d9c060a54e0f \
+    --hash=sha256:ee7e1056b9aea0f04c6c2ed59452947f34c4940ee025f5dd83e6a6418b6989e4
+    # via -r apps/worker/requirements.in
 requests==2.33.0 \
     --hash=sha256:3324635456fa185245e24865e810cecec7b4caf933d7eb133dcde67d48cee69b \
     --hash=sha256:c7ebc5e8b0f21837386ad0e1c8fe8b829fa5f544d8df3b2253bff14ef29d7652
