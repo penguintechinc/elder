@@ -519,3 +519,46 @@ class TestRefsQueryLayerTenantScoping:
         )
         # Backlinks are stored with tenant_id, so tenant 2 sees nothing
         assert len(refs_t2) == 0
+
+
+class TestRefsEndpointAuthGate:
+    """HTTP-endpoint-level regression tests for the fail-open IDOR.
+
+    The original vulnerability was that the /refs endpoints served
+    UNAUTHENTICATED callers. These tests exercise the actual HTTP layer
+    (not just the service functions) so a future removal of the auth gate
+    is caught.
+
+    regression: commit security review — refs fail-open IDOR
+    """
+
+    @pytest.mark.asyncio
+    async def test_resolve_unauthenticated_returns_401(self, app):
+        """Unauthenticated GET /refs/resolve must be 401, never resolve."""
+        client = app.test_client()
+        resp = await client.get(
+            "/api/v1/refs/resolve?village_id=0000002a-0000000000000001"
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_backlinks_unauthenticated_returns_401(self, app):
+        """Unauthenticated GET /refs/backlinks must be 401, never leak."""
+        client = app.test_client()
+        resp = await client.get(
+            "/api/v1/refs/backlinks?target=infrastructure:entity:1"
+        )
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_resolve_cross_tenant_village_id_returns_403(
+        self, app, generate_token
+    ):
+        """A tenant-42 token resolving a tenant-255 village_id must be 403."""
+        token = generate_token(tenant_id=42)
+        client = app.test_client()
+        resp = await client.get(
+            "/api/v1/refs/resolve?village_id=000000ff-0000000000000001",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 403
