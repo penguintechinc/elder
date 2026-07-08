@@ -8,11 +8,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-try:
-    import requests
-except ImportError:
-    requests = None
-
+from apps.api.common.providers.infisical import create_infisical_session
 from apps.api.services.keys.base import BaseKeyProvider
 
 
@@ -31,29 +27,15 @@ class InfisicalClient(BaseKeyProvider):
         """
         super().__init__(config)
 
-        if requests is None:
-            raise ImportError(
-                "requests is required for Infisical. Install with: pip install requests"
-            )
-
-        self.host = config.get("host", "https://app.infisical.com").rstrip("/")
-        self.token = config.get("token")
         self.workspace_id = config.get("workspace_id")
-
-        if not self.token:
-            raise ValueError("token is required for Infisical")
 
         if not self.workspace_id:
             raise ValueError("workspace_id is required for Infisical")
 
-        self.headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
-
-        # Infisical API version
-        self.api_version = "v3"
-        self.base_url = f"{self.host}/api/{self.api_version}"
+        session, api_base = create_infisical_session(config)
+        self.session = session
+        self.headers = dict(session.headers)
+        self.base_url = api_base
 
     def create_key(
         self,

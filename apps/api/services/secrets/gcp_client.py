@@ -9,8 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from google.api_core import exceptions as google_exceptions
 from google.cloud import secretmanager
-from google.oauth2 import service_account
 
+from apps.api.common.providers.gcp import resolve_gcp_credentials
 from .base import (
     InvalidSecretConfigException,
     SecretAccessDeniedException,
@@ -53,19 +53,8 @@ class GCPSecretManagerClient(SecretProviderClient):
         """Initialize the GCP Secret Manager client."""
         try:
             self.project_id = self.config["project_id"]
+            credentials = resolve_gcp_credentials(self.config)
 
-            # Initialize credentials
-            credentials = None
-            if "credentials_json" in self.config:
-                credentials = service_account.Credentials.from_service_account_info(
-                    self.config["credentials_json"]
-                )
-            elif "credentials_file" in self.config:
-                credentials = service_account.Credentials.from_service_account_file(
-                    self.config["credentials_file"]
-                )
-
-            # Create client with credentials or use default application credentials
             if credentials:
                 self.client = secretmanager.SecretManagerServiceClient(
                     credentials=credentials

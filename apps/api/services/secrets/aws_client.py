@@ -8,9 +8,9 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-import boto3
 from botocore.exceptions import ClientError
 
+from apps.api.common.providers.aws import create_aws_session_and_client
 from .base import (
     InvalidSecretConfigException,
     SecretAccessDeniedException,
@@ -58,29 +58,8 @@ class AWSSecretsManagerClient(SecretProviderClient):
     def _init_client(self) -> None:
         """Initialize the boto3 Secrets Manager client."""
         try:
-            session_params = {"region_name": self.config["region"]}
-
-            # Add credentials if provided (otherwise use IAM role/instance profile)
-            if "access_key_id" in self.config and "secret_access_key" in self.config:
-                session_params["aws_access_key_id"] = self.config["access_key_id"]
-                session_params["aws_secret_access_key"] = self.config[
-                    "secret_access_key"
-                ]
-
-            session = boto3.session.Session(**session_params)
-
-            client_params = {}
-            if "endpoint_url" in self.config:
-                client_params["endpoint_url"] = self.config["endpoint_url"]
-
-            self.client = session.client("secretsmanager", **client_params)
-
-            logger.info(
-                f"Initialized AWS Secrets Manager client for region {self.config['region']}"
-            )
-
+            self.client = create_aws_session_and_client(self.config, "secretsmanager")
         except Exception as e:
-            logger.error(f"Failed to initialize AWS Secrets Manager client: {str(e)}")
             raise SecretProviderException(f"Failed to initialize AWS client: {str(e)}")
 
     def test_connection(self) -> bool:

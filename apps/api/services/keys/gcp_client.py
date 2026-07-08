@@ -11,12 +11,11 @@ from typing import Any, Dict, Optional
 try:
     from google.api_core import exceptions as google_exceptions
     from google.cloud import kms
-    from google.oauth2 import service_account
 except ImportError:
     kms = None
     google_exceptions = None
-    service_account = None
 
+from apps.api.common.providers.gcp import resolve_gcp_credentials
 from apps.api.services.keys.base import BaseKeyProvider
 
 
@@ -50,10 +49,8 @@ class GCPKMSClient(BaseKeyProvider):
             raise ValueError("project_id is required for GCP KMS")
 
         # Initialize client with credentials if provided
-        if config.get("credentials_json"):
-            credentials = service_account.Credentials.from_service_account_info(
-                json.loads(config["credentials_json"])
-            )
+        credentials = resolve_gcp_credentials(config)
+        if credentials:
             self.client = kms.KeyManagementServiceClient(credentials=credentials)
         else:
             # Use default credentials (from GOOGLE_APPLICATION_CREDENTIALS env var)

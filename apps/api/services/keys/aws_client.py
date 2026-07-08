@@ -7,13 +7,12 @@ import base64
 from typing import Any, Dict, Optional
 
 try:
-    import boto3
     from botocore.exceptions import BotoCoreError, ClientError
 except ImportError:
-    boto3 = None
     ClientError = Exception
     BotoCoreError = Exception
 
+from apps.api.common.providers.aws import create_aws_session_and_client
 from apps.api.services.keys.base import BaseKeyProvider
 
 
@@ -33,30 +32,7 @@ class AWSKMSClient(BaseKeyProvider):
                 - endpoint_url: Optional custom KMS endpoint
         """
         super().__init__(config)
-
-        if boto3 is None:
-            raise ImportError(
-                "boto3 is required for AWS KMS. Install with: pip install boto3"
-            )
-
-        self.region = config.get("region", "us-east-1")
-
-        # Build client configuration
-        client_config = {"region_name": self.region}
-
-        # Add credentials if provided (otherwise uses IAM role/environment)
-        if config.get("access_key_id") and config.get("secret_access_key"):
-            client_config["aws_access_key_id"] = config["access_key_id"]
-            client_config["aws_secret_access_key"] = config["secret_access_key"]
-
-            if config.get("session_token"):
-                client_config["aws_session_token"] = config["session_token"]
-
-        # Add custom endpoint if provided (for LocalStack, MinIO, etc.)
-        if config.get("endpoint_url"):
-            client_config["endpoint_url"] = config["endpoint_url"]
-
-        self.client = boto3.client("kms", **client_config)
+        self.client = create_aws_session_and_client(config, "kms")
 
     def create_key(
         self,

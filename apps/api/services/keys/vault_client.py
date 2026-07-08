@@ -39,33 +39,12 @@ class VaultTransitClient(BaseKeyProvider):
 
     def _init_client(self) -> None:
         """Initialize Vault client session."""
+        from apps.api.common.providers.vault import create_vault_session
+
         self.base_url = self.config["url"].rstrip("/")
-        self.token = self.config["token"]
-        self.namespace = self.config.get("namespace")
         self.mount_point = self.config.get("mount_point", "transit")
-        self.verify_tls = self.config.get("verify_tls", True)
 
-        # Setup session
-        self.session = requests.Session()
-        self.session.headers.update(
-            {"X-Vault-Token": self.token, "Content-Type": "application/json"}
-        )
-
-        if self.namespace:
-            self.session.headers.update({"X-Vault-Namespace": self.namespace})
-
-        # Setup TLS verification
-        if isinstance(self.verify_tls, str):
-            self.session.verify = self.verify_tls
-        elif self.verify_tls and self.config.get("ca_cert"):
-            self.session.verify = self.config["ca_cert"]
-        else:
-            self.session.verify = self.verify_tls
-
-        # Setup mTLS if provided
-        if self.config.get("client_cert") and self.config.get("client_key"):
-            self.session.cert = (self.config["client_cert"], self.config["client_key"])
-
+        self.session = create_vault_session(self.config)
         logger.info(f"Initialized Vault Transit client for {self.base_url}")
 
     def _make_request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
