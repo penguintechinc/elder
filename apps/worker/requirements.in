@@ -47,6 +47,9 @@ aiocron>=1.8
 schedule>=1.2.0
 apscheduler>=3.10.4
 
+# Redis job queue
+redis==5.2.1
+
 # Logging & Monitoring
 structlog>=24.1.0
 

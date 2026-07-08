@@ -4,12 +4,15 @@
 
 
 import asyncio
+import os
 import signal
+import socket
 import sys
 import time
 from typing import List
 
 import aiocron
+import redis.asyncio
 from quart import Quart, jsonify
 
 from apps.worker.config.settings import settings
@@ -21,7 +24,10 @@ from apps.worker.connectors.google_workspace_connector import GoogleWorkspaceCon
 from apps.worker.connectors.ldap_connector import LDAPConnector
 from apps.worker.connectors.lxd_connector import LXDConnector
 from apps.worker.connectors.okta_connector import OktaConnector
+from apps.worker.jobs.groups import resolve_worker_groups
+from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
+from shared.jobbus import JobBus
 
 # Configure logging
 configure_logging()
@@ -91,6 +97,12 @@ class WorkerService:
         self.sync_tasks: List[asyncio.Task] = []
         self.db_manager = None
         self.discovery_executor = None
+        # Job-bus consumer components
+        self.redis = None
+        self.jobbus = None
+        self.worker_groups: set[str] = set()
+        self.consumer_task: asyncio.Task | None = None
+        self.consumer_name: str = os.environ.get("POD_NAME") or socket.gethostname()
         self.health_app = Quart(__name__)
         self._setup_health_endpoints()
         self._init_database()
@@ -334,9 +346,256 @@ class WorkerService:
                 )
             logger.error(f"Discovery poll failed: {e}", exc_info=True)
 
+    async def _init_jobbus(self) -> None:
+        """Initialize Redis and JobBus consumer.
+
+        Connects to Redis, creates JobBus instance, resolves worker groups,
+        and ensures consumer groups exist in Redis Streams.
+        """
+        try:
+            # Connect to Redis
+            self.redis = redis.asyncio.from_url(settings.redis_url)
+            logger.info("redis_connected", url=settings.redis_url)
+
+            # Create JobBus instance
+            self.jobbus = JobBus(self.redis, max_deliveries=5, group="workers")
+            logger.info("jobbus_initialized")
+
+            # Resolve worker groups from enabled modules
+            self.worker_groups = resolve_worker_groups(os.environ)
+
+            if not self.worker_groups:
+                logger.warning("no_worker_groups_enabled")
+                return
+
+            # Ensure consumer groups exist for each worker group
+            for group in self.worker_groups:
+                try:
+                    await self.jobbus.ensure_group(group)
+                    logger.info("consumer_group_ensured", group=group)
+                except Exception as e:
+                    logger.error(
+                        "consumer_group_ensure_failed",
+                        group=group,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            logger.error(
+                "jobbus_init_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            # Continue without job-bus; worker can still run sync connectors
+
+    async def _consumer_loop(self) -> None:
+        """Main job-bus consumer loop.
+
+        Reads messages from all registered worker groups, dispatches to handlers,
+        and acknowledges on success. On handler exception, leaves the message un-acked
+        (will be reclaimed by XAUTOCLAIM for retry).
+        """
+        if not self.jobbus:
+            logger.warning("consumer_loop: JobBus not initialized; exiting")
+            return
+
+        logger.info(
+            "consumer_loop_starting",
+            consumer_name=self.consumer_name,
+            groups=sorted(self.worker_groups),
+        )
+
+        while self.running:
+            try:
+                for group in self.worker_groups:
+                    try:
+                        # Read from job-bus with 5s block timeout
+                        messages = await self.jobbus.read(
+                            group,
+                            self.consumer_name,
+                            count=10,
+                            block_ms=5000,
+                        )
+
+                        if not messages:
+                            continue
+
+                        logger.debug(
+                            "messages_read",
+                            group=group,
+                            count=len(messages),
+                        )
+
+                        for msg_id, envelope in messages:
+                            await self._process_job(group, msg_id, envelope)
+
+                    except Exception as e:
+                        logger.error(
+                            "consumer_read_failed",
+                            group=group,
+                            error=str(e),
+                            exc_info=True,
+                        )
+                        # Continue to next group on error
+
+            except Exception as e:
+                logger.error(
+                    "consumer_loop_error",
+                    error=str(e),
+                    exc_info=True,
+                )
+                # Sleep briefly before retry to avoid spin-loop
+                await asyncio.sleep(1)
+
+        logger.info("consumer_loop_stopped")
+
+    async def _process_job(
+        self, group: str, msg_id: str, envelope
+    ) -> None:
+        """Process a single job message.
+
+        Args:
+            group: Worker task group name
+            msg_id: Message ID from Redis Streams
+            envelope: JobEnvelope object
+
+        On success:
+        - mark_processed (idempotency)
+        - publish_result (success)
+        - ack (remove from pending)
+
+        On error:
+        - Log exception
+        - Do NOT ack (message stays pending for XAUTOCLAIM reclaim)
+        """
+        job_id = envelope.job_id
+
+        try:
+            # Check idempotency
+            if await self.jobbus.is_duplicate(job_id):
+                logger.debug(
+                    "job_duplicate_skipped",
+                    job_id=job_id,
+                    group=group,
+                    msg_id=msg_id,
+                )
+                await self.jobbus.ack(group, msg_id)
+                return
+
+            # Get handler for this group
+            handler = get_handler(group)
+            if not handler:
+                logger.error(
+                    "no_handler_found",
+                    group=group,
+                    job_id=job_id,
+                )
+                # ACK anyway to avoid replay loop
+                await self.jobbus.ack(group, msg_id)
+                return
+
+            # Execute handler
+            logger.info(
+                "job_executing",
+                job_id=job_id,
+                group=group,
+                job_type=envelope.job_type,
+            )
+
+            result = await handler(envelope)
+
+            # Mark processed (idempotency)
+            await self.jobbus.mark_processed(job_id)
+
+            # Publish result
+            await self.jobbus.publish_result(
+                group,
+                job_id,
+                "success",
+                result or {},
+            )
+
+            # Acknowledge
+            await self.jobbus.ack(group, msg_id)
+
+            logger.info(
+                "job_completed",
+                job_id=job_id,
+                group=group,
+            )
+
+        except Exception as e:
+            logger.error(
+                "job_failed",
+                job_id=job_id,
+                group=group,
+                msg_id=msg_id,
+                error=str(e),
+                exc_info=True,
+            )
+            # Do NOT ack; message stays pending for XAUTOCLAIM
+
+    async def _sweeper_task(self) -> None:
+        """XAUTOCLAIM sweeper: reclaim stale messages every minute.
+
+        Runs every minute via aiocron. For each group, calls reclaim_stale()
+        to identify messages stuck on this consumer for >= 60 seconds.
+        Messages at max_deliveries are auto-routed to DLQ.
+        Others are re-dispatched through _process_job.
+        """
+        if not self.jobbus:
+            logger.warning("sweeper_task: JobBus not initialized; exiting")
+            return
+
+        for group in self.worker_groups:
+            try:
+                logger.debug("sweeper_running", group=group)
+
+                reclaimed = await self.jobbus.reclaim_stale(
+                    group,
+                    self.consumer_name,
+                    min_idle_ms=60000,
+                    count=10,
+                )
+
+                if not reclaimed:
+                    continue
+
+                logger.info(
+                    "messages_reclaimed",
+                    group=group,
+                    count=len(reclaimed),
+                )
+
+                # Re-dispatch reclaimed messages through handler
+                for reclaimed_msg in reclaimed:
+                    await self._process_job(
+                        group,
+                        reclaimed_msg.msg_id,
+                        reclaimed_msg.envelope,
+                    )
+
+            except Exception as e:
+                logger.error(
+                    "sweeper_failed",
+                    group=group,
+                    error=str(e),
+                    exc_info=True,
+                )
+                # Continue to next group; fail-soft
+
     def _setup_scheduled_syncs(self):
         """Setup scheduled sync tasks using aiocron."""
         logger.info("Setting up scheduled syncs")
+
+        # Schedule XAUTOCLAIM sweeper (every minute) for job-bus consumer
+        if self.jobbus and self.worker_groups:
+
+            @aiocron.crontab("* * * * *")
+            async def xautoclaim_sweeper():
+                await self._sweeper_task()
+
+            logger.info("Scheduled XAUTOCLAIM sweeper (every minute)")
 
         # Schedule discovery job polling (every 5 minutes)
         if self.discovery_executor:
@@ -398,6 +657,9 @@ class WorkerService:
         # Initialize connectors
         self._initialize_connectors()
 
+        # Initialize job-bus consumer
+        await self._init_jobbus()
+
         # Run initial sync if configured
         if settings.sync_on_startup:
             logger.info("Running initial sync on startup")
@@ -405,8 +667,17 @@ class WorkerService:
             # Also run initial discovery poll
             await self._run_discovery_poll()
 
-        # Setup scheduled syncs (includes discovery polling)
+        # Setup scheduled syncs (includes discovery polling and XAUTOCLAIM sweeper)
         self._setup_scheduled_syncs()
+
+        # Launch consumer task (keeps running in background)
+        if self.jobbus and self.worker_groups:
+            self.consumer_task = asyncio.create_task(self._consumer_loop())
+            logger.info(
+                "job_bus_consumer_launched",
+                consumer_name=self.consumer_name,
+                groups=sorted(self.worker_groups),
+            )
 
         logger.info(
             "Elder Worker Service started",
@@ -418,12 +689,25 @@ class WorkerService:
         logger.info("Stopping Elder Worker Service")
         self.running = False
 
+        # Cancel consumer task if running
+        if self.consumer_task and not self.consumer_task.done():
+            self.consumer_task.cancel()
+            try:
+                await self.consumer_task
+            except asyncio.CancelledError:
+                pass
+
         # Cancel all sync tasks
         for task in self.sync_tasks:
             task.cancel()
 
         # Wait for tasks to complete
         await asyncio.gather(*self.sync_tasks, return_exceptions=True)
+
+        # Close Redis connection
+        if self.redis:
+            await self.redis.close()
+            logger.info("redis_connection_closed")
 
         # Close database connections
         if self.db_manager:

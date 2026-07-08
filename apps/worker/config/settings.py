@@ -356,6 +356,12 @@ class Settings(BaseSettings):
         description="Use HTTP3/QUIC for KillKrill (fallback to HTTP/2 if False)",
     )
 
+    # Redis Configuration (job queue)
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL for job queue (redis://host:port/db)",
+    )
+
     # Database Configuration (direct DB access for discovery jobs)
     database_url: Optional[str] = Field(
         default=None,
