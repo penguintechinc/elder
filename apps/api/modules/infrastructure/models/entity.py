@@ -6,10 +6,10 @@
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class Entity(Base, IDMixin, TimestampMixin):
+class Entity(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Entity model for tracking various infrastructure and organizational resources.
 

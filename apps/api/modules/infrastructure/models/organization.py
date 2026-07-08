@@ -8,10 +8,10 @@ from typing import List, Optional
 from sqlalchemy import JSON, Boolean, Column, ForeignKey, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class Organization(Base, IDMixin, TimestampMixin):
+class Organization(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Hierarchical organization model.
 
