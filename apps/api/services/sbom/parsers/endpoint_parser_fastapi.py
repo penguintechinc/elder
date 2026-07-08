@@ -120,31 +120,34 @@ class FastAPIEndpointParser(BaseDependencyParser):
         while i < len(lines):
             line = lines[i]
 
-            # Check for route decorator
-            route_match = route_pattern.search(line)
-            if route_match:
-                path = route_match.group(1)
-                methods_str = route_match.group(2)
+            # Skip lines that are inside string literals (decorated string values)
+            # Check if this line starts with a decorator pattern
+            if line.strip().startswith("@"):
+                # Check for route decorator
+                route_match = route_pattern.search(line)
+                if route_match:
+                    path = route_match.group(1)
+                    methods_str = route_match.group(2)
 
-                # Parse methods list
-                methods = self._parse_methods(methods_str, line)
+                    # Parse methods list
+                    methods = self._parse_methods(methods_str, line)
 
-                # Check for Depends() in function signature
-                auth_required = self._check_auth_dependencies(lines, i, depends_pattern)
+                    # Check for Depends() in function signature
+                    auth_required = self._check_auth_dependencies(lines, i, depends_pattern)
 
-                # Find the function name
-                function_name = self._find_function_name(lines, i)
+                    # Find the function name
+                    function_name = self._find_function_name(lines, i)
 
-                endpoint = {
-                    "path": path,
-                    "methods": methods,
-                    "function_name": function_name,
-                    "line_number": i + 1,
-                    "framework": "fastapi",
-                    "source_file": filename,
-                    "auth_required": auth_required,
-                }
-                endpoints.append(endpoint)
+                    endpoint = {
+                        "path": path,
+                        "methods": methods,
+                        "function_name": function_name,
+                        "line_number": i + 1,
+                        "framework": "fastapi",
+                        "source_file": filename,
+                        "auth_required": auth_required,
+                    }
+                    endpoints.append(endpoint)
 
             i += 1
 
