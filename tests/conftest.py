@@ -111,7 +111,7 @@ def init_test_database(test_database_url):
         # Verify table count
         table_count = len(Base.metadata.tables)
         logger.info(f"Test database initialized: {table_count} tables")
-        assert table_count == 83, f"Expected 83 tables, got {table_count}"
+        assert table_count == 84, f"Expected 84 tables, got {table_count}"
 
     except Exception as e:
         logger.error(f"Failed to initialize test database: {e}")

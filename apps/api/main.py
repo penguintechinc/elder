@@ -270,6 +270,7 @@ def _register_blueprints(app: Quart) -> None:
         refs,
         search,
         sso,
+        tenant_modules,
         tenants,
         users,
     )
@@ -286,6 +287,7 @@ def _register_blueprints(app: Quart) -> None:
 
     # Tenancy and administration
     app.register_blueprint(tenants.bp, url_prefix=f"{api_prefix}/tenants")
+    app.register_blueprint(tenant_modules.bp, url_prefix=f"{api_prefix}")
     app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
     app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
 
