@@ -48,7 +48,7 @@ interface GraphNode {
   id: string;
   label: string;
   type: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface GraphEdge {
@@ -65,7 +65,13 @@ interface NetworkGraphProps {
 }
 
 // Custom node component for better styling
-const CustomNode: React.FC<{ data: any }> = ({ data }) => {
+interface CustomNodeData {
+  nodeType: string;
+  label: string;
+  metadata?: Record<string, unknown>;
+}
+
+const CustomNode: React.FC<{ data: CustomNodeData }> = ({ data }) => {
   const color = entityTypeColors[data.nodeType] || entityTypeColors.default;
 
   return (
@@ -277,7 +283,7 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           id: node.id,
           label: node.data.label as string,
           type: node.data.nodeType as string,
-          metadata: node.data.metadata as Record<string, any> | undefined,
+          metadata: node.data.metadata as Record<string, unknown> | undefined,
         };
         onNodeClick(graphNode);
       }

@@ -8,6 +8,31 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 
+interface BackupJob {
+  id: number
+  name: string
+  schedule: string
+  retention_days: number
+  enabled: boolean
+}
+
+interface Backup {
+  id: number
+  status: string
+  created_at: string
+  size_bytes: number
+}
+
+interface Organization {
+  id: number
+  name: string
+}
+
+interface CreateJobModalProps {
+  onClose: () => void
+  onSuccess: () => Promise<void>
+}
+
 export default function Backups() {
   const [showCreateJobModal, setShowCreateJobModal] = useState(false)
   const queryClient = useQueryClient()
@@ -79,7 +104,7 @@ export default function Backups() {
             </div>
           ) : (
             <div className="space-y-4">
-              {jobs?.jobs?.map((job: any) => (
+              {jobs?.jobs?.map((job: BackupJob) => (
                 <Card key={job.id}>
                   <CardContent>
                     <div className="flex items-start justify-between mb-3">
@@ -119,7 +144,7 @@ export default function Backups() {
         <div>
           <h2 className="text-xl font-semibold text-white mb-4">Available Backups</h2>
           <div className="space-y-4">
-            {backups?.backups?.map((backup: any) => (
+            {backups?.backups?.map((backup: Backup) => (
               <Card key={backup.id}>
                 <CardContent>
                   <div className="flex items-start justify-between mb-3">
@@ -183,7 +208,7 @@ export default function Backups() {
   )
 }
 
-function CreateJobModal({ onClose, onSuccess }: any) {
+function CreateJobModal({ onClose, onSuccess }: CreateJobModalProps) {
   const [name, setName] = useState('')
   const [schedule, setSchedule] = useState('0 2 * * *')
   const [retentionDays, setRetentionDays] = useState('30')
@@ -202,7 +227,7 @@ function CreateJobModal({ onClose, onSuccess }: any) {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createBackupJob(data),
+    mutationFn: (data: unknown) => api.createBackupJob(data as Parameters<typeof api.createBackupJob>[0]),
     onSuccess: () => {
       toast.success('Backup job created')
       onSuccess()
@@ -211,20 +236,14 @@ function CreateJobModal({ onClose, onSuccess }: any) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    createMutation.mutate({
+    const backupData: Parameters<typeof api.createBackupJob>[0] = {
       name,
       schedule,
       retention_days: parseInt(retentionDays),
       organization_id: orgId ? parseInt(orgId) : undefined,
       enabled: true,
-      s3_enabled: s3Enabled,
-      s3_endpoint: s3Enabled ? s3Endpoint : undefined,
-      s3_bucket: s3Enabled ? s3Bucket : undefined,
-      s3_region: s3Enabled ? s3Region : undefined,
-      s3_access_key: s3Enabled ? s3AccessKey : undefined,
-      s3_secret_key: s3Enabled ? s3SecretKey : undefined,
-      s3_prefix: s3Enabled ? s3Prefix : undefined,
-    })
+    }
+    createMutation.mutate(backupData)
   }
 
   return (
@@ -262,7 +281,7 @@ function CreateJobModal({ onClose, onSuccess }: any) {
               onChange={(e) => setOrgId(e.target.value)}
               options={[
                 { value: '', label: 'All organizations' },
-                ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+                ...(orgs?.items || []).map((o: Organization) => ({ value: o.id, label: o.name })),
               ]}
             />
 

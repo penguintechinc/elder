@@ -2,12 +2,30 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Compass, Play, Trash2, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { Organization } from '@/types'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import { getStatusColor } from '@/lib/colorHelpers'
 import { confirmDelete } from '@/lib/confirmActions'
+
+interface DiscoveryJob {
+  id: number
+  name: string
+  discovery_type: string
+  schedule?: string
+  enabled: boolean
+}
+
+interface DiscoveryRun {
+  id: number
+  status: string
+  started_at: string
+  completed_at?: string
+  entities_discovered: number
+  error_message?: string
+}
 
 // Authenticated integration discovery (requires credentials)
 const INTEGRATION_DISCOVERY_TYPES = [
@@ -74,8 +92,25 @@ export default function Discovery() {
     },
   })
 
+  interface CreateJobData {
+    name: string
+    provider_type: string
+    organization_id: number
+    config: Record<string, unknown>
+    schedule?: string
+    enabled: boolean
+  }
+
+  interface ApiError {
+    response?: {
+      data?: { message?: string }
+      status?: number
+    }
+    message?: string
+  }
+
   const createJobMutation = useMutation({
-    mutationFn: (data: any) => api.createDiscoveryJob(data),
+    mutationFn: (data: CreateJobData) => api.createDiscoveryJob(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['discoveryJobs'],
@@ -85,7 +120,7 @@ export default function Discovery() {
       setShowIntegrationModal(false)
       setShowScanModal(false)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Failed to create job')
     },
   })
@@ -130,7 +165,7 @@ export default function Discovery() {
       required: true,
       options: [
         { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+        ...(orgs?.items || []).map((o: Organization) => ({ value: o.id, label: o.name })),
       ],
     },
     {
@@ -174,7 +209,7 @@ export default function Discovery() {
       required: true,
       options: [
         { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+        ...(orgs?.items || []).map((o: Organization) => ({ value: o.id, label: o.name })),
       ],
     },
     {
@@ -193,36 +228,36 @@ export default function Discovery() {
     },
   ], [orgs?.items])
 
-  const handleIntegrationSubmit = (data: Record<string, any>) => {
+  const handleIntegrationSubmit = (data: Record<string, unknown>) => {
     try {
-      const configObj = JSON.parse(data.config || '{}')
-      const submitData = {
-        name: data.name,
-        provider_type: data.provider_type,
-        organization_id: parseInt(data.organization_id),
+      const configObj = JSON.parse((data.config as string) || '{}')
+      const submitData: CreateJobData = {
+        name: data.name as string,
+        provider_type: data.provider_type as string,
+        organization_id: parseInt(data.organization_id as string),
         config: configObj,
-        schedule: data.schedule || undefined,
+        schedule: (data.schedule as string) || undefined,
         enabled: true,
       }
       createJobMutation.mutate(submitData)
-    } catch (err) {
+    } catch {
       toast.error('Invalid JSON configuration')
     }
   }
 
-  const handleScanSubmit = (data: Record<string, any>) => {
+  const handleScanSubmit = (data: Record<string, unknown>) => {
     try {
-      const configObj = JSON.parse(data.config || '{}')
-      const submitData = {
-        name: data.name,
-        provider_type: data.provider_type,
-        organization_id: parseInt(data.organization_id),
+      const configObj = JSON.parse((data.config as string) || '{}')
+      const submitData: CreateJobData = {
+        name: data.name as string,
+        provider_type: data.provider_type as string,
+        organization_id: parseInt(data.organization_id as string),
         config: configObj,
-        schedule: data.schedule || '0',
+        schedule: (data.schedule as string) || '0',
         enabled: true,
       }
       createJobMutation.mutate(submitData)
-    } catch (err) {
+    } catch {
       toast.error('Invalid JSON configuration')
     }
   }
@@ -273,7 +308,7 @@ export default function Discovery() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {jobs?.jobs?.map((job: any) => (
+              {jobs?.jobs?.map((job: DiscoveryJob) => (
                 <Card
                   key={job.id}
                   className={selectedJob === job.id ? 'ring-2 ring-primary-500' : ''}
@@ -334,7 +369,7 @@ export default function Discovery() {
                   </CardContent>
                 </Card>
               ) : (
-                history?.runs?.map((run: any) => (
+                history?.runs?.map((run: DiscoveryRun) => (
                   <Card key={run.id}>
                     <CardContent>
                       <div className="flex items-start justify-between mb-3">

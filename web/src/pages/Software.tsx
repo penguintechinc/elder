@@ -12,6 +12,40 @@ import Input from '@/components/Input'
 import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
+interface Organization {
+  id: number
+  name: string
+}
+
+interface Software {
+  id: number
+  name: string
+  vendor?: string
+  organization_id: number
+  software_type?: string
+  version?: string
+  seats?: number
+  cost_monthly?: number | null
+  renewal_date?: string
+  license_url?: string
+}
+
+interface SBOMSchedule {
+  id: number
+  schedule_cron: string
+  is_active: boolean
+  next_run_at?: string
+  last_run_at?: string
+}
+
+interface SBOMScan {
+  id: number
+  status: string
+  components_found?: number
+  created_at: string
+}
+
+
 const SOFTWARE_TYPES = [
   { value: 'saas', label: 'SaaS' },
   { value: 'on_premise', label: 'On-Premise' },
@@ -31,8 +65,8 @@ export default function Software() {
   const [organizationFilter, setOrganizationFilter] = useState<string>('')
   const [typeFilter, setTypeFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingSoftware, setEditingSoftware] = useState<any>(null)
-  const [viewingSoftware, setViewingSoftware] = useState<any>(null)
+  const [editingSoftware, setEditingSoftware] = useState<Software | null>(null)
+  const [viewingSoftware, setViewingSoftware] = useState<Software | null>(null)
   const queryClient = useQueryClient()
 
   const { data: organizations } = useQuery({
@@ -50,7 +84,7 @@ export default function Software() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createSoftware(data),
+    mutationFn: (data: Record<string, unknown>) => api.createSoftware(data as Parameters<typeof api.createSoftware>[0]),
     onSuccess: async () => {
       await invalidateCache.software(queryClient)
       toast.success('Software added successfully')
@@ -62,7 +96,7 @@ export default function Software() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateSoftware(editingSoftware.id, data),
+    mutationFn: (data: Record<string, unknown>) => api.updateSoftware(editingSoftware!.id, data as Parameters<typeof api.updateSoftware>[1]),
     onSuccess: async () => {
       await invalidateCache.software(queryClient)
       toast.success('Software updated successfully')
@@ -99,10 +133,13 @@ export default function Software() {
     return typeMap[type] || 'bg-slate-500/20 text-slate-400'
   }
 
-  const organizationOptions = organizations?.items?.map((org: any) => ({
-    value: org.id.toString(),
-    label: org.name,
-  })) || []
+  const organizationOptions = useMemo(
+    () => organizations?.items?.map((org: Organization) => ({
+      value: org.id.toString(),
+      label: org.name,
+    })) || [],
+    [organizations?.items]
+  )
 
   // Form fields for software creation
   const createFields: FormField[] = useMemo(() => [
@@ -237,32 +274,32 @@ export default function Software() {
     ]
   }, [editingSoftware, organizationOptions, createFields])
 
-  const handleCreateSubmit = (data: Record<string, any>) => {
+  const handleCreateSubmit = (data: Record<string, unknown>) => {
     createMutation.mutate({
-      name: data.name?.trim(),
-      vendor: data.vendor?.trim() || undefined,
+      name: (data.name as string)?.trim(),
+      vendor: (data.vendor as string)?.trim() || undefined,
       software_type: data.software_type,
-      version: data.version?.trim() || undefined,
-      seats: data.seats ? parseInt(data.seats) : undefined,
-      cost_monthly: data.cost_monthly ? parseFloat(data.cost_monthly) : undefined,
+      version: (data.version as string)?.trim() || undefined,
+      seats: data.seats ? parseInt(data.seats as string) : undefined,
+      cost_monthly: data.cost_monthly ? parseFloat(data.cost_monthly as string) : undefined,
       renewal_date: data.renewal_date || undefined,
-      license_url: data.license_url?.replace(/\s+/g, '') || undefined,
-      organization_id: parseInt(data.organization_id),
-    })
+      license_url: (data.license_url as string)?.replace(/\s+/g, '') || undefined,
+      organization_id: parseInt(data.organization_id as string),
+    } as Parameters<typeof api.createSoftware>[0])
   }
 
-  const handleEditSubmit = (data: Record<string, any>) => {
-    updateMutation.mutate({
-      name: data.name?.trim(),
-      vendor: data.vendor?.trim() || undefined,
-      software_type: data.software_type,
-      version: data.version?.trim() || undefined,
-      seats: data.seats ? parseInt(data.seats) : undefined,
-      cost_monthly: data.cost_monthly ? parseFloat(data.cost_monthly) : undefined,
-      renewal_date: data.renewal_date || undefined,
-      license_url: data.license_url?.replace(/\s+/g, '') || undefined,
-      organization_id: parseInt(data.organization_id),
-    })
+  const handleEditSubmit = (data: Record<string, unknown>) => {
+    const updateData: Parameters<typeof api.updateSoftware>[1] = {
+      name: (data.name as string)?.trim(),
+      vendor: (data.vendor as string)?.trim() || undefined,
+      software_type: data.software_type as string,
+      version: (data.version as string)?.trim() || undefined,
+      seats: data.seats ? parseInt(data.seats as string) : undefined,
+      cost_monthly: data.cost_monthly ? parseFloat(data.cost_monthly as string) : undefined,
+      renewal_date: data.renewal_date as string | undefined,
+      license_url: (data.license_url as string)?.replace(/\s+/g, '') || undefined,
+    }
+    updateMutation.mutate(updateData)
   }
 
   return (
@@ -301,7 +338,7 @@ export default function Software() {
           className="w-48"
         >
           <option value="">All Organizations</option>
-          {organizations?.items?.map((org: any) => (
+          {organizations?.items?.map((org: Organization) => (
             <option key={org.id} value={org.id}>
               {org.name}
             </option>
@@ -338,7 +375,7 @@ export default function Software() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((software: any) => (
+          {data?.items?.map((software: Software) => (
             <Card
               key={software.id}
               className="cursor-pointer hover:border-primary-500/50 transition-colors"
@@ -450,7 +487,7 @@ export default function Software() {
 }
 
 interface SoftwareDetailModalProps {
-  software: any
+  software: Software
   onClose: () => void
   onEdit: () => void
 }
@@ -509,7 +546,7 @@ function SoftwareDetailModal({ software, onClose, onEdit }: SoftwareDetailModalP
   )
 }
 
-function SoftwareDetailsTab({ software }: { software: any }) {
+function SoftwareDetailsTab({ software }: { software: Software }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -561,7 +598,7 @@ function SoftwareDetailsTab({ software }: { software: any }) {
   )
 }
 
-function SoftwareSchedulesTab({ software }: { software: any }) {
+function SoftwareSchedulesTab({ software }: { software: Software }) {
   const [showCreateSchedule, setShowCreateSchedule] = useState(false)
   const queryClient = useQueryClient()
 
@@ -585,11 +622,11 @@ function SoftwareSchedulesTab({ software }: { software: any }) {
   })
 
   const createScheduleMutation = useMutation({
-    mutationFn: (data: any) => api.createSBOMSchedule({
+    mutationFn: (data: Record<string, unknown>) => api.createSBOMSchedule({
       parent_type: 'software',
       parent_id: software.id,
-      schedule_cron: data.schedule_cron,
-      is_active: data.is_active !== false,
+      schedule_cron: data.schedule_cron as string,
+      is_active: (data.is_active as boolean) !== false,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sbom-schedules', 'software', software.id] })
@@ -666,7 +703,7 @@ function SoftwareSchedulesTab({ software }: { software: any }) {
       {scans?.items && scans.items.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-slate-400">Recent Scans</h4>
-          {scans.items.map((scan: any) => (
+          {scans.items.map((scan: SBOMScan) => (
             <div key={scan.id} className="flex items-center justify-between p-2 bg-slate-800/30 rounded text-sm">
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${
@@ -707,7 +744,7 @@ function SoftwareSchedulesTab({ software }: { software: any }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {schedules.items.map((schedule: any) => (
+            {schedules.items.map((schedule: SBOMSchedule) => (
               <div key={schedule.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded border border-slate-700">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">

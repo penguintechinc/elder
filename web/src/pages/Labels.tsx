@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { IssueLabel } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -37,7 +38,7 @@ const labelFields: FormField[] = [
 export default function Labels() {
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingLabel, setEditingLabel] = useState<any>(null)
+  const [editingLabel, setEditingLabel] = useState<IssueLabel | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -97,11 +98,11 @@ export default function Labels() {
     }
   }
 
-  const handleCreate = (formData: Record<string, any>) => {
+  const handleCreate = (formData: Record<string, unknown>) => {
     createMutation.mutate(formData as { name: string; description?: string; color?: string })
   }
 
-  const handleUpdate = (formData: Record<string, any>) => {
+  const handleUpdate = (formData: Record<string, unknown>) => {
     if (editingLabel) {
       updateMutation.mutate({
         id: editingLabel.id,
@@ -110,7 +111,7 @@ export default function Labels() {
     }
   }
 
-  const filteredLabels = data?.items?.filter((label: any) => {
+  const filteredLabels = data?.items?.filter((label: IssueLabel) => {
     if (!search) return true
     return label.name.toLowerCase().includes(search.toLowerCase()) ||
            label.description?.toLowerCase().includes(search.toLowerCase())
@@ -193,7 +194,7 @@ export default function Labels() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredLabels?.map((label: any) => (
+          {filteredLabels?.map((label: IssueLabel) => (
             <Card key={label.id}>
               <CardContent>
                 <div className="flex items-start justify-between mb-3">

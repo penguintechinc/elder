@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Flag, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
+import { Organization } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -14,12 +15,29 @@ const MILESTONE_STATUSES = [
   { value: 'closed', label: 'Closed' },
 ]
 
+interface Milestone {
+  id: number
+  title: string
+  description?: string
+  status: string
+  organization_id: number
+  project_id?: number
+  due_date?: string
+  created_at: string
+}
+
+interface Project {
+  id: number
+  name: string
+  status?: string
+}
+
 export default function Milestones() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [projectFilter, setProjectFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingMilestone, setEditingMilestone] = useState<any>(null)
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null)
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -55,8 +73,17 @@ export default function Milestones() {
     },
   })
 
+  interface MilestoneData {
+    title: string
+    description?: string
+    status: string
+    organization_id: number
+    project_id?: number
+    due_date?: string
+  }
+
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createMilestone(data),
+    mutationFn: (data: MilestoneData) => api.createMilestone(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['milestones'],
@@ -71,7 +98,7 @@ export default function Milestones() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateMilestone(id, data),
+    mutationFn: ({ id, data }: { id: number; data: MilestoneData }) => api.updateMilestone(id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['milestones'],
@@ -91,29 +118,31 @@ export default function Milestones() {
     }
   }
 
-  const handleCreate = (formData: Record<string, any>) => {
+  const handleCreate = (formData: Record<string, unknown>) => {
     createMutation.mutate({
-      title: formData.title,
-      description: formData.description || undefined,
-      status: formData.status,
-      organization_id: parseInt(formData.organization_id),
-      project_id: formData.project_id ? parseInt(formData.project_id) : undefined,
-      due_date: formData.due_date || undefined,
+      title: formData.title as string,
+      description: (formData.description as string) || undefined,
+      status: formData.status as string,
+      organization_id: parseInt(formData.organization_id as string),
+      project_id: formData.project_id ? parseInt(formData.project_id as string) : undefined,
+      due_date: (formData.due_date as string) || undefined,
     })
   }
 
-  const handleUpdate = (formData: Record<string, any>) => {
-    updateMutation.mutate({
-      id: editingMilestone.id,
-      data: {
-        title: formData.title,
-        description: formData.description || undefined,
-        status: formData.status,
-        organization_id: parseInt(formData.organization_id),
-        project_id: formData.project_id ? parseInt(formData.project_id) : undefined,
-        due_date: formData.due_date || undefined,
-      },
-    })
+  const handleUpdate = (formData: Record<string, unknown>) => {
+    if (editingMilestone) {
+      updateMutation.mutate({
+        id: editingMilestone.id,
+        data: {
+          title: formData.title as string,
+          description: (formData.description as string) || undefined,
+          status: formData.status as string,
+          organization_id: parseInt(formData.organization_id as string),
+          project_id: formData.project_id ? parseInt(formData.project_id as string) : undefined,
+          due_date: (formData.due_date as string) || undefined,
+        },
+      })
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -156,7 +185,7 @@ export default function Milestones() {
       required: true,
       options: [
         { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
-        ...(organizations?.items?.map((org: any) => ({
+        ...(organizations?.items?.map((org: Organization) => ({
           value: org.id.toString(),
           label: org.name,
         })) || []),
@@ -168,7 +197,7 @@ export default function Milestones() {
       type: 'select',
       options: [
         { value: '', label: 'No project' },
-        ...(projects?.items?.map((project: any) => ({
+        ...(projects?.items?.map((project: Project) => ({
           value: project.id.toString(),
           label: project.name,
         })) || []),
@@ -219,7 +248,7 @@ export default function Milestones() {
         defaultValue: editingMilestone.organization_id?.toString() || '',
         options: [
           { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
-          ...(organizations?.items?.map((org: any) => ({
+          ...(organizations?.items?.map((org: Organization) => ({
             value: org.id.toString(),
             label: org.name,
           })) || []),
@@ -232,7 +261,7 @@ export default function Milestones() {
         defaultValue: editingMilestone.project_id?.toString() || '',
         options: [
           { value: '', label: 'No project' },
-          ...(projects?.items?.map((project: any) => ({
+          ...(projects?.items?.map((project: Project) => ({
             value: project.id.toString(),
             label: project.name,
           })) || []),
@@ -293,7 +322,7 @@ export default function Milestones() {
           className="w-48"
         >
           <option value="">All Projects</option>
-          {projects?.items?.map((project: any) => (
+          {projects?.items?.map((project: Project) => (
             <option key={project.id} value={project.id}>
               {project.name}
             </option>
@@ -330,7 +359,7 @@ export default function Milestones() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((milestone: any) => (
+          {data?.items?.map((milestone: Milestone) => (
             <Card key={milestone.id}>
               <CardContent>
                 <div className="flex items-start justify-between mb-3">
@@ -386,7 +415,7 @@ export default function Milestones() {
 
                   {milestone.project_id && (
                     <div className="text-xs text-slate-500">
-                      Project: {projects?.items?.find((p: any) => p.id === milestone.project_id)?.name || milestone.project_id}
+                      Project: {projects?.items?.find((p: Project) => p.id === milestone.project_id)?.name || milestone.project_id}
                     </div>
                   )}
                 </div>

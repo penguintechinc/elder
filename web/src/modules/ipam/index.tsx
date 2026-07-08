@@ -4,6 +4,7 @@ import type { MenuCategory } from '@penguintechinc/react-libs/components'
 import type { FrontendModule } from '../types'
 import { Globe } from 'lucide-react'
 
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: exports both lazy component and module manifest
 const IPAM = lazy(() => import('@/pages/IPAM'))
 
 const navigation: MenuCategory[] = [

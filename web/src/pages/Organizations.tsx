@@ -120,10 +120,10 @@ export default function Organizations() {
     ]
   }, [editingOrg])
 
-  const handleCreate = (formData: Record<string, any>) => {
+  const handleCreate = (formData: Record<string, unknown>) => {
     const data: { name: string; description?: string; parent_id?: number } = {
-      name: formData.name,
-      description: formData.description || undefined,
+      name: formData.name as string,
+      description: (formData.description as string) || undefined,
     }
     if (initialParentId) {
       data.parent_id = parseInt(initialParentId)
@@ -131,13 +131,13 @@ export default function Organizations() {
     createMutation.mutate(data)
   }
 
-  const handleUpdate = (formData: Record<string, any>) => {
+  const handleUpdate = (formData: Record<string, unknown>) => {
     if (!editingOrg) return
     updateMutation.mutate({
       id: editingOrg.id,
       data: {
-        name: formData.name,
-        description: formData.description || undefined,
+        name: formData.name as string,
+        description: (formData.description as string) || undefined,
       }
     })
   }

@@ -13,15 +13,26 @@ import {
 } from 'lucide-react'
 
 // Lazy-load page components
+// eslint-disable react-refresh/only-export-components -- Intentional: exports both lazy components and module manifest
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Entities = lazy(() => import('@/pages/Entities'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const EntityDetail = lazy(() => import('@/pages/EntityDetail'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Organizations = lazy(() => import('@/pages/Organizations'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const OrganizationDetail = lazy(() => import('@/pages/OrganizationDetail'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Dependencies = lazy(() => import('@/pages/Dependencies'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Map = lazy(() => import('@/pages/Map'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Compute = lazy(() => import('@/pages/Compute'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Networking = lazy(() => import('@/pages/Networking'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const RelationshipGraph = lazy(() => import('@/pages/RelationshipGraph'))
+// eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
   {

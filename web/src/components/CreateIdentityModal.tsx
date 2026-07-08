@@ -4,6 +4,15 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
+interface ApiError {
+  response?: {
+    data?: {
+      error?: string
+    }
+  }
+  message?: string
+}
+
 const IDENTITY_TYPES = [
   { value: 'employee', label: 'Employee' },
   { value: 'vendor', label: 'Vendor' },
@@ -52,7 +61,7 @@ export default function CreateIdentityModal({
 
   // Create identity mutation
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createIdentity(data),
+    mutationFn: (data: Record<string, unknown>) => api.createIdentity(data as Parameters<typeof api.createIdentity>[0]),
     onSuccess: async () => {
       // Invalidate all specified query keys
       for (const queryKey of invalidateQueryKeys) {
@@ -65,7 +74,7 @@ export default function CreateIdentityModal({
       onClose()
       onSuccess?.()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to create identity')
     },
   })
@@ -73,7 +82,7 @@ export default function CreateIdentityModal({
   // Build organization options from fetched data
   const organizationOptions = useMemo(() => {
     if (!organizations?.items) return []
-    return organizations.items.map((org: any) => ({
+    return organizations.items.map((org) => ({
       value: org.id,
       label: org.name,
     }))
@@ -185,8 +194,8 @@ export default function CreateIdentityModal({
     },
   ], [organizationOptions, defaultOrganizationId, defaultIdentityType, defaultIsPortalUser, defaultPortalRole, defaultPermissionScope])
 
-  const handleSubmit = (data: Record<string, any>) => {
-    const identityData: any = {
+  const handleSubmit = (data: Record<string, unknown>) => {
+    const identityData: Record<string, unknown> = {
       username: data.username,
       email: data.email,
       full_name: data.full_name,
@@ -210,7 +219,7 @@ export default function CreateIdentityModal({
       identityData.organization_id = organizationId
       // Get tenant_id from the selected organization if not already set
       if (!defaultTenantId) {
-        const selectedOrg = organizations?.items?.find((org: any) => org.id === organizationId)
+        const selectedOrg = organizations?.items?.find((org) => org.id === organizationId)
         if (selectedOrg?.tenant_id) {
           identityData.tenant_id = selectedOrg.tenant_id
         }

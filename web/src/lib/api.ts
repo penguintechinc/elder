@@ -1,5 +1,10 @@
 import axios from 'axios'
-import type { AxiosInstance, AxiosError } from 'axios'
+import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios'
+
+// Extend AxiosRequestConfig with _retry flag for token refresh logic
+interface RetryableAxiosRequestConfig extends AxiosRequestConfig {
+  _retry?: boolean
+}
 
 // Use relative URL by default - nginx proxies /api/* to the API server
 // Only use VITE_API_URL for local development outside Docker
@@ -39,7 +44,7 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as any
+        const originalRequest = error.config as RetryableAxiosRequestConfig | undefined
 
         // Redirect to login on 401 Unauthorized, but try refresh first
         if (error.response?.status === 401 && !originalRequest._retry) {
@@ -254,12 +259,12 @@ class ApiClient {
     return response.data
   }
 
-  async createOrganization(data: { name: string; description?: string; parent_id?: number; metadata?: any }) {
+  async createOrganization(data: { name: string; description?: string; parent_id?: number; metadata?: Record<string, unknown> }) {
     const response = await this.client.post('/organizations', data)
     return response.data
   }
 
-  async updateOrganization(id: number, data: Partial<{ name: string; description: string; metadata: any }>) {
+  async updateOrganization(id: number, data: Partial<{ name: string; description: string; metadata: Record<string, unknown> }>) {
     const response = await this.client.put(`/organizations/${id}`, data)
     return response.data
   }
@@ -305,7 +310,7 @@ class ApiClient {
     entity_type: string
     sub_type?: string
     organization_id: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/entities', data)
     return response.data
@@ -314,7 +319,7 @@ class ApiClient {
   async updateEntity(id: number, data: Partial<{
     name: string
     description: string
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/entities/${id}`, data)
     return response.data
@@ -362,7 +367,7 @@ class ApiClient {
     target_type?: string
     target_id?: number
     dependency_type: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/dependencies', data)
     return response.data
@@ -894,12 +899,12 @@ class ApiClient {
     return response.data
   }
 
-  async createOrganizationMetadata(id: number, data: { key: string; field_type: string; value: any }) {
+  async createOrganizationMetadata(id: number, data: { key: string; field_type: string; value: unknown }) {
     const response = await this.client.post(`/metadata/organizations/${id}/metadata`, data)
     return response.data
   }
 
-  async updateOrganizationMetadata(id: number, key: string, data: { value: any; field_type?: string }) {
+  async updateOrganizationMetadata(id: number, key: string, data: { value: unknown; field_type?: string }) {
     const response = await this.client.patch(`/metadata/organizations/${id}/metadata/${key}`, data)
     return response.data
   }
@@ -915,12 +920,12 @@ class ApiClient {
     return response.data
   }
 
-  async createEntityMetadata(id: number, data: { key: string; field_type: string; value: any }) {
+  async createEntityMetadata(id: number, data: { key: string; field_type: string; value: unknown }) {
     const response = await this.client.post(`/metadata/entities/${id}/metadata`, data)
     return response.data
   }
 
-  async updateEntityMetadata(id: number, key: string, data: { value: any; field_type?: string }) {
+  async updateEntityMetadata(id: number, key: string, data: { value: unknown; field_type?: string }) {
     const response = await this.client.patch(`/metadata/entities/${id}/metadata/${key}`, data)
     return response.data
   }
@@ -949,14 +954,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/secrets/providers', data)
     return response.data
   }
 
-  async updateSecretProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateSecretProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/secrets/providers/${id}`, data)
     return response.data
   }
@@ -996,14 +1001,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/keys/providers', data)
     return response.data
   }
 
-  async updateKeyProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateKeyProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/keys/providers/${id}`, data)
     return response.data
   }
@@ -1018,12 +1023,12 @@ class ApiClient {
     return response.data
   }
 
-  async encryptData(providerId: number, keyId: string, data: { plaintext: string; context?: any }) {
+  async encryptData(providerId: number, keyId: string, data: { plaintext: string; context?: Record<string, unknown> }) {
     const response = await this.client.post(`/keys/${keyId}/encrypt`, data)
     return response.data
   }
 
-  async decryptData(providerId: number, keyId: string, data: { ciphertext: string; context?: any }) {
+  async decryptData(providerId: number, keyId: string, data: { ciphertext: string; context?: Record<string, unknown> }) {
     const response = await this.client.post(`/keys/${keyId}/decrypt`, data)
     return response.data
   }
@@ -1043,14 +1048,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/iam/providers', data)
     return response.data
   }
 
-  async updateIAMProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateIAMProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/iam/providers/${id}`, data)
     return response.data
   }
@@ -1090,7 +1095,7 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     schedule?: string
     enabled?: boolean
   }) {
@@ -1107,7 +1112,7 @@ class ApiClient {
     return response.data
   }
 
-  async updateDiscoveryJob(id: number, data: Partial<{ name: string; config: any; schedule: string; enabled: boolean }>) {
+  async updateDiscoveryJob(id: number, data: Partial<{ name: string; config: Record<string, unknown>; schedule: string; enabled: boolean }>) {
     const response = await this.client.put(`/discovery/jobs/${id}`, data)
     return response.data
   }
@@ -1143,7 +1148,7 @@ class ApiClient {
     organization_id: number
     customer_id: string
     admin_email: string
-    service_account_json: any
+    service_account_json: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/google-workspace/providers', data)
@@ -1154,7 +1159,7 @@ class ApiClient {
     name: string
     customer_id: string
     admin_email: string
-    service_account_json: any
+    service_account_json: Record<string, unknown>
     description: string
     enabled: boolean
   }>) {
@@ -1303,7 +1308,7 @@ class ApiClient {
     parent_id?: number
     poc?: string
     organizational_unit?: string
-    attributes?: any
+    attributes?: Record<string, unknown>
     tags?: string[]
   }) {
     const response = await this.client.post('/networking/networks', data)
@@ -1315,7 +1320,7 @@ class ApiClient {
     description: string
     region: string
     location: string
-    attributes: any
+    attributes: Record<string, unknown>
     tags: string[]
   }>) {
     const response = await this.client.put(`/networking/networks/${id}`, data)
@@ -1343,7 +1348,7 @@ class ApiClient {
     connection_type: string
     bandwidth?: string
     latency?: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/networking/topology/connections', data)
     return response.data
@@ -1363,7 +1368,7 @@ class ApiClient {
     network_id: number
     entity_id: number
     relationship_type: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/networking/mappings', data)
     return response.data
@@ -1515,7 +1520,7 @@ class ApiClient {
     domain?: string
     subscription_tier?: string
     license_key?: string
-    settings?: Record<string, any>
+    settings?: Record<string, unknown>
     feature_flags?: Record<string, boolean>
     data_retention_days?: number
     storage_quota_gb?: number
@@ -1530,7 +1535,7 @@ class ApiClient {
     domain: string
     subscription_tier: string
     license_key: string
-    settings: Record<string, any>
+    settings: Record<string, unknown>
     feature_flags: Record<string, boolean>
     data_retention_days: number
     storage_quota_gb: number
@@ -2217,7 +2222,7 @@ class ApiClient {
     timezone?: string
     enabled?: boolean
     escalation_policy_id?: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/on-call/rotations', data)
     return response.data
@@ -2230,7 +2235,7 @@ class ApiClient {
     timezone: string
     enabled: boolean
     escalation_policy_id: number
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/on-call/rotations/${id}`, data)
     return response.data
@@ -2256,7 +2261,7 @@ class ApiClient {
     order: number
     start_date?: string
     end_date?: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post(`/on-call/rotations/${rotationId}/participants`, data)
     return response.data
@@ -2267,7 +2272,7 @@ class ApiClient {
     start_date: string
     end_date: string
     is_active: boolean
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/on-call/rotations/${rotationId}/participants/${participantId}`, data)
     return response.data

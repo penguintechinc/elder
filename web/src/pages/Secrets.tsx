@@ -10,6 +10,11 @@ import Select from '@/components/Select'
 // ModalFormBuilder not currently used
 import { FormConfig } from '@/types/form'
 
+interface ProviderFormData {
+  provider?: string
+  [key: string]: unknown
+}
+
 const PROVIDER_TYPES = [
   { value: 'aws_secrets_manager', label: 'AWS Secrets Manager' },
   { value: 'gcp_secret_manager', label: 'GCP Secret Manager' },
@@ -84,7 +89,7 @@ export default function Secrets() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {data?.providers?.map((provider: any) => (
+          {data?.providers?.map((provider) => (
             <Card key={provider.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -170,8 +175,13 @@ export default function Secrets() {
   )
 }
 
-function CreateSecretProviderModal({ onClose, onSuccess }: any) {
-  const [formValues, setFormValues] = useState<Record<string, any>>({
+interface CreateSecretProviderModalProps {
+  onClose: () => void
+  onSuccess: () => Promise<void>
+}
+
+function CreateSecretProviderModal({ onClose, onSuccess }: CreateSecretProviderModalProps) {
+  const [formValues, setFormValues] = useState<ProviderFormData>({
     provider: 'aws_secrets_manager',
   })
   const [showModal, setShowModal] = useState(true)
@@ -182,7 +192,16 @@ function CreateSecretProviderModal({ onClose, onSuccess }: any) {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createSecretProvider(data),
+    mutationFn: (data: ProviderFormData) => {
+      const providerData: Parameters<typeof api.createSecretProvider>[0] = {
+        name: String(data.name || ''),
+        provider_type: String(data.provider || ''),
+        organization_id: typeof data.organization_id === 'string' ? parseInt(data.organization_id, 10) : (data.organization_id as number),
+        config: typeof data.config_json === 'string' ? JSON.parse(data.config_json) : (data.config as Record<string, unknown>),
+        description: data.description ? String(data.description) : undefined,
+      }
+      return api.createSecretProvider(providerData)
+    },
     onSuccess: () => {
       toast.success('Provider created successfully')
       setShowModal(false)
@@ -238,7 +257,7 @@ function CreateSecretProviderModal({ onClose, onSuccess }: any) {
         required: true,
         options: [
           { value: '', label: 'Select organization' },
-          ...(orgs?.items || []).map((o: any) => ({
+          ...(orgs?.items || []).map((o) => ({
             value: String(o.id),
             label: o.name,
           })),
@@ -252,7 +271,7 @@ function CreateSecretProviderModal({ onClose, onSuccess }: any) {
         rows: 8,
         placeholder: '{\n  "region": "us-east-1",\n  "access_key_id": "...",\n  "secret_access_key": "..."\n}',
         helpText: getConfigHelpText(formValues.provider || 'aws_secrets_manager'),
-        validate: (value: any) => {
+        validate: (value: string): string | undefined => {
           if (!value) return undefined
           try {
             JSON.parse(value)
@@ -272,16 +291,21 @@ function CreateSecretProviderModal({ onClose, onSuccess }: any) {
     onClose()
   }
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: ProviderFormData) => {
     try {
-      const parsedConfig = JSON.parse(data.config_json)
+      const configJson = data.config_json as string | undefined
+      if (!configJson) {
+        toast.error('Configuration JSON is required')
+        return
+      }
+      const parsedConfig = JSON.parse(configJson)
       createMutation.mutate({
         name: data.name,
         provider_type: data.provider,
-        organization_id: parseInt(data.organization_id),
+        organization_id: parseInt(data.organization_id as string),
         config: parsedConfig,
       })
-    } catch (err) {
+    } catch {
       toast.error('Invalid JSON configuration')
     }
   }
@@ -298,8 +322,17 @@ function CreateSecretProviderModal({ onClose, onSuccess }: any) {
   )
 }
 
+interface SecretProviderFormModalProps {
+  isOpen: boolean
+  onClose: () => void
+  config: FormConfig
+  onSubmit: (data: ProviderFormData) => void
+  isLoading: boolean
+  onValuesChange: (values: ProviderFormData) => void
+}
+
 // Wrapper component that handles dynamic help text by re-rendering the config
-function SecretProviderFormModal({ isOpen, onClose, config, onSubmit, isLoading, onValuesChange }: any) {
+function SecretProviderFormModal({ isOpen, onClose, config, onSubmit, isLoading, onValuesChange }: SecretProviderFormModalProps) {
   if (!isOpen) return null
 
   return (
@@ -310,7 +343,7 @@ function SecretProviderFormModal({ isOpen, onClose, config, onSubmit, isLoading,
         </CardHeader>
         <CardContent>
           <ModalFormBuilderWithDynamicHelp
-            config={config}
+            config={config as FormConfig & { fields: FormField[] }}
             onSubmit={onSubmit}
             onCancel={onClose}
             isLoading={isLoading}
@@ -322,18 +355,39 @@ function SecretProviderFormModal({ isOpen, onClose, config, onSubmit, isLoading,
   )
 }
 
+interface FormField {
+  name: string
+  label: string
+  type: string
+  required?: boolean
+  placeholder?: string
+  defaultValue?: string
+  helpText?: string
+  rows?: number
+  options?: Array<{ value: string; label: string }>
+  validate?: (value: string) => string | undefined
+}
+
+interface ModalFormBuilderProps {
+  config: FormConfig & { fields: FormField[] }
+  onSubmit: (data: ProviderFormData) => void
+  onCancel: () => void
+  isLoading: boolean
+  onValuesChange: (values: ProviderFormData) => void
+}
+
 // FormBuilder wrapper that updates config based on form values
-function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading, onValuesChange }: any) {
-  const [values, setValues] = useState<Record<string, any>>(() => {
-    const defaults: Record<string, any> = {}
-    config.fields.forEach((f: any) => {
+function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading, onValuesChange }: ModalFormBuilderProps) {
+  const [values, setValues] = useState<ProviderFormData>(() => {
+    const defaults: ProviderFormData = {}
+    config.fields.forEach((f) => {
       defaults[f.name] = f.defaultValue || ''
     })
     return defaults
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleChange = (name: string, value: any) => {
+  const handleChange = (name: string, value: string) => {
     const newValues = { ...values, [name]: value }
     setValues(newValues)
     onValuesChange(newValues)
@@ -344,12 +398,12 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
     e.preventDefault()
     const newErrors: Record<string, string> = {}
 
-    config.fields.forEach((field: any) => {
+    config.fields.forEach((field) => {
       if (field.required && !values[field.name]) {
         newErrors[field.name] = `${field.label} is required`
       }
       if (field.validate && values[field.name]) {
-        const error = field.validate(values[field.name])
+        const error = field.validate(values[field.name] as string)
         if (error) newErrors[field.name] = error
       }
     })
@@ -364,7 +418,7 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {config.fields.map((field: any) => {
+      {config.fields.map((field) => {
         const value = values[field.name]
         const error = errors[field.name]
         const helpText = field.type === 'textarea' && field.helpText ? field.helpText : undefined
@@ -375,7 +429,7 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
               <Select
                 label={field.label}
                 required={field.required}
-                value={value}
+                value={String(value || '')}
                 onChange={(e) => handleChange(field.name, e.target.value)}
                 options={field.options}
               />
@@ -390,7 +444,7 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
               <label className="text-sm font-medium text-yellow-500">{field.label}</label>
               <textarea
                 required={field.required}
-                value={value || ''}
+                value={String(value || '')}
                 onChange={(e) => handleChange(field.name, e.target.value)}
                 placeholder={field.placeholder}
                 rows={field.rows || 4}
@@ -407,7 +461,7 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
             <Input
               label={field.label}
               required={field.required}
-              value={value || ''}
+              value={String(value || '')}
               onChange={(e) => handleChange(field.name, e.target.value)}
               placeholder={field.placeholder}
             />
@@ -436,7 +490,12 @@ function ModalFormBuilderWithDynamicHelp({ config, onSubmit, onCancel, isLoading
   )
 }
 
-function SecretsListModal({ providerId, onClose }: any) {
+interface SecretsListModalProps {
+  providerId: number
+  onClose: () => void
+}
+
+function SecretsListModal({ providerId, onClose }: SecretsListModalProps) {
   const [showValues, setShowValues] = useState<Record<string, boolean>>({})
 
   const { data, isLoading } = useQuery({
@@ -456,7 +515,7 @@ function SecretsListModal({ providerId, onClose }: any) {
       try {
         await getSecretMutation.mutateAsync({ secretName })
         setShowValues(prev => ({ ...prev, [secretName]: true }))
-      } catch (err) {
+      } catch {
         toast.error('Failed to fetch secret value')
       }
     }
@@ -482,7 +541,7 @@ function SecretsListModal({ providerId, onClose }: any) {
             <p className="text-center text-slate-400 py-8">No secrets found</p>
           ) : (
             <div className="space-y-2">
-              {data?.secrets?.map((secret: any) => (
+              {data?.secrets?.map((secret) => (
                 <div
                   key={secret.name}
                   className="flex items-center justify-between p-3 bg-slate-800 rounded-lg"

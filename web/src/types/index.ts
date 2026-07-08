@@ -4,7 +4,7 @@ export interface Organization {
   description?: string
   organization_type?: string
   parent_id?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   village_id?: string
   village_segment?: string
   tenant_id?: number
@@ -20,9 +20,10 @@ export interface Entity {
   name: string
   description?: string
   type: EntityType
+  sub_type?: string
   organization_id: number
   owner_identity_id?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   village_id?: string
   created_at: string
   updated_at: string
@@ -44,8 +45,13 @@ export interface Dependency {
   source_id: number
   target_type: string
   target_id: number
+  // Enriched fields returned by the dependencies API (joined entity refs).
+  source_entity_id?: number
+  target_entity_id?: number
+  source_entity?: { id: number; name: string }
+  target_entity?: { id: number; name: string }
   dependency_type: DependencyType
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   created_at: string
 }
 
@@ -80,6 +86,7 @@ export interface Issue {
   priority: IssuePriority
   organization_id?: number
   assigned_to?: number
+  assignee_id?: number
   created_by: number
   village_id?: string
   tenant_id?: number
@@ -89,6 +96,8 @@ export interface Issue {
   labels?: IssueLabel[]
   entity_links?: Entity[]
   assignee?: Identity
+  is_incident?: number | boolean
+  issue_type?: string
 }
 
 export type IssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed'
@@ -161,7 +170,7 @@ export interface Tenant {
   domain?: string
   subscription_tier: 'community' | 'professional' | 'enterprise'
   license_key?: string
-  settings?: Record<string, any>
+  settings?: Record<string, unknown>
   feature_flags?: Record<string, boolean>
   data_retention_days: number
   storage_quota_gb: number
@@ -233,7 +242,7 @@ export interface AuditLog {
   action: string
   resource_type: string
   resource_id?: number
-  details?: Record<string, any>
+  details?: Record<string, unknown>
   success: boolean
   ip_address?: string
   user_agent?: string

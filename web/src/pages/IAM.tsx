@@ -12,6 +12,38 @@ import GroupMembershipManager from '@/components/GroupMembershipManager'
 import AccessReviewManager from '@/components/AccessReviewManager'
 import { getStatusColor } from '@/lib/colorHelpers'
 
+interface ApiError {
+  response?: {
+    data?: {
+      error?: string
+    }
+  }
+  message?: string
+}
+
+interface AccessRequest {
+  id: number
+  identity_id: number
+  group_id: number
+  status: 'pending' | 'approved' | 'denied'
+  created_at: string
+  requester_name?: string
+  group_name?: string
+  reason?: string
+}
+
+interface Dependency {
+  id: number
+  source_type: string
+  source_id: number
+  target_type: string
+  target_id: number
+  dependency_type: string
+  source_name?: string
+  target_name?: string
+  created_at: string
+}
+
 const TABS = ['All Identities', 'Providers', 'Groups & Roles', 'Pending Approvals', 'Access Reviews', 'Relationships'] as const
 type Tab = typeof TABS[number]
 
@@ -49,7 +81,7 @@ function PendingApprovalsTab() {
       await queryClient.invalidateQueries({ queryKey: ['pending-group-requests'], refetchType: 'all' })
       toast.success('Request approved')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to approve request')
     },
   })
@@ -60,13 +92,13 @@ function PendingApprovalsTab() {
       await queryClient.invalidateQueries({ queryKey: ['pending-group-requests'], refetchType: 'all' })
       toast.success('Request denied')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to deny request')
     },
   })
 
   const requests = pendingRequests?.requests || []
-  const pendingCount = requests.filter((r: any) => r.status === 'pending').length
+  const pendingCount = requests.filter((r) => r.status === 'pending').length
 
   return (
     <div className="space-y-4">
@@ -100,7 +132,7 @@ function PendingApprovalsTab() {
             </div>
           ) : (
             <div className="space-y-2">
-              {requests.map((request: any) => (
+              {requests.map((request) => (
                 <div key={request.id} className="flex items-center justify-between p-4 bg-slate-800/50 rounded-lg hover:bg-slate-800 transition-colors">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
@@ -230,13 +262,13 @@ function IdentityRelationshipsTab() {
       // Get dependencies where target is identity
       const targetResp = await api.getDependencies({ target_type: 'identity', per_page: 100 })
 
-      const sourceItems = sourceResp?.items || []
-      const targetItems = targetResp?.items || []
+      const sourceItems = (sourceResp?.items || []) as Dependency[]
+      const targetItems = (targetResp?.items || []) as Dependency[]
 
       // Combine and deduplicate
-      const allItems = [...sourceItems]
-      targetItems.forEach((item: any) => {
-        if (!allItems.find((existing: any) => existing.id === item.id)) {
+      const allItems: Dependency[] = [...sourceItems]
+      targetItems.forEach((item) => {
+        if (!allItems.find((existing) => existing.id === item.id)) {
           allItems.push(item)
         }
       })
@@ -255,7 +287,7 @@ function IdentityRelationshipsTab() {
   })
 
   // Filter relationships
-  const filteredRelationships = (relationships || []).filter((rel: any) => {
+  const filteredRelationships = (relationships || []).filter((rel) => {
     const matchesSearch = !searchQuery ||
       rel.source_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       rel.target_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -307,7 +339,7 @@ function IdentityRelationshipsTab() {
               <div>
                 <p className="text-slate-400 text-sm">Entity Links</p>
                 <p className="text-2xl font-bold text-white">
-                  {(relationships || []).filter((r: any) => r.source_type === 'entity' || r.target_type === 'entity').length}
+                  {(relationships || []).filter((r) => r.source_type === 'entity' || r.target_type === 'entity').length}
                 </p>
               </div>
               <Server className="w-8 h-8 text-green-400" />
@@ -320,7 +352,7 @@ function IdentityRelationshipsTab() {
               <div>
                 <p className="text-slate-400 text-sm">Organization Links</p>
                 <p className="text-2xl font-bold text-white">
-                  {(relationships || []).filter((r: any) => r.source_type === 'organization' || r.target_type === 'organization').length}
+                  {(relationships || []).filter((r) => r.source_type === 'organization' || r.target_type === 'organization').length}
                 </p>
               </div>
               <Building2 className="w-8 h-8 text-purple-400" />
@@ -377,7 +409,7 @@ function IdentityRelationshipsTab() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredRelationships.map((rel: any) => {
+              {filteredRelationships.map((rel) => {
                 const SourceIcon = getTypeIcon(rel.source_type)
                 const TargetIcon = getTypeIcon(rel.target_type)
                 return (
@@ -460,7 +492,7 @@ export default function IAM() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [selectedIdentity, setSelectedIdentity] = useState<any>(null)
+  const [selectedIdentity, setSelectedIdentity] = useState<Record<string, unknown> | null>(null)
   const [modalType, setModalType] = useState<'identity' | 'provider'>('identity')
   const queryClient = useQueryClient()
 
@@ -469,7 +501,7 @@ export default function IAM() {
     queryKey: ['pending-group-requests'],
     queryFn: () => api.getPendingGroupAccessRequests({ limit: 100 }),
   })
-  const pendingCount = (pendingRequests?.requests || []).filter((r: any) => r.status === 'pending').length
+  const pendingCount = ((pendingRequests?.requests || []) as AccessRequest[]).filter((r) => r.status === 'pending').length
 
   // Provider form state (keeping these for provider modal which has complex conditional fields)
   const [providerName, setProviderName] = useState('')
@@ -585,7 +617,7 @@ export default function IAM() {
       required: true,
       options: [
         { value: '', label: 'Select organization' },
-        ...(organizations?.items?.map((org: any) => ({
+        ...(organizations?.items?.map((org) => ({
           value: org.id,
           label: org.name,
         })) || []),
@@ -621,30 +653,30 @@ export default function IAM() {
   ], [organizations?.items])
 
   // Form fields for editing identity (with defaultValue set from selectedIdentity)
-  const editIdentityFields: FormField[] = useMemo(() => [
+  const editIdentityFields: FormField[] = useMemo(() => ([
     {
       name: 'email',
       label: 'Email',
       type: 'email',
       placeholder: 'user@example.com',
-      defaultValue: selectedIdentity?.email || '',
+      defaultValue: (selectedIdentity?.email || '') as string,
     },
     {
       name: 'full_name',
       label: 'Full Name',
       type: 'text',
       placeholder: 'John Doe',
-      defaultValue: selectedIdentity?.displayName || selectedIdentity?.full_name || '',
+      defaultValue: (selectedIdentity?.displayName || selectedIdentity?.full_name || '') as string,
     },
     {
       name: 'organization_id',
       label: 'Organization',
       type: 'select',
       required: true,
-      defaultValue: selectedIdentity?.organization_id || '',
+      defaultValue: String(selectedIdentity?.organization_id || ''),
       options: [
         { value: '', label: 'Select organization' },
-        ...(organizations?.items?.map((org: any) => ({
+        ...(organizations?.items?.map((org) => ({
           value: org.id,
           label: org.name,
         })) || []),
@@ -669,11 +701,11 @@ export default function IAM() {
       type: 'checkbox',
       defaultValue: selectedIdentity?.mfa_enabled || false,
     },
-  ], [organizations?.items, selectedIdentity])
+  ] as FormField[]), [organizations?.items, selectedIdentity])
 
   // Create identity mutation
   const createIdentityMutation = useMutation({
-    mutationFn: (data: any) => api.createIdentity(data),
+    mutationFn: (data: Record<string, unknown>) => api.createIdentity(data as Parameters<typeof api.createIdentity>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['identities'],
@@ -682,14 +714,14 @@ export default function IAM() {
       toast.success('Identity created successfully')
       setShowCreateModal(false)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to create identity')
     },
   })
 
   // Update identity mutation
   const updateIdentityMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => api.updateIdentity(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => api.updateIdentity(id, data as Parameters<typeof api.updateIdentity>[1]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['identities'],
@@ -699,14 +731,14 @@ export default function IAM() {
       setShowEditModal(false)
       setSelectedIdentity(null)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update identity')
     },
   })
 
   // Create IAM provider mutation
   const createProviderMutation = useMutation({
-    mutationFn: (data: any) => api.createIAMProvider(data),
+    mutationFn: (data: Record<string, unknown>) => api.createIAMProvider(data as Parameters<typeof api.createIAMProvider>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['iamProviders'],
@@ -718,13 +750,13 @@ export default function IAM() {
       setProviderName('')
       setProviderType('aws_iam')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to create provider')
     },
   })
 
-  const handleCreateIdentity = (formData: Record<string, any>) => {
-    const identityData: any = {
+  const handleCreateIdentity = (formData: Record<string, unknown>) => {
+    const identityData: Record<string, unknown> = {
       username: formData.username,
       email: formData.email,
       full_name: formData.full_name,
@@ -741,7 +773,7 @@ export default function IAM() {
     if (formData.organization_id) {
       identityData.organization_id = formData.organization_id
       // Get tenant_id from the selected organization
-      const selectedOrg = organizations?.items?.find((org: any) => org.id === formData.organization_id)
+      const selectedOrg = organizations?.items?.find((org) => org.id === formData.organization_id)
       if (selectedOrg?.tenant_id) {
         identityData.tenant_id = selectedOrg.tenant_id
       }
@@ -757,10 +789,10 @@ export default function IAM() {
     createIdentityMutation.mutate(identityData)
   }
 
-  const handleUpdateIdentity = (formData: Record<string, any>) => {
+  const handleUpdateIdentity = (formData: Record<string, unknown>) => {
     if (!selectedIdentity) return
 
-    const updateData: any = {}
+    const updateData: Record<string, unknown> = {}
 
     // Only include fields that have been changed
     if (formData.email !== (selectedIdentity.email || '')) {
@@ -785,7 +817,7 @@ export default function IAM() {
       updateData.organization_id = formData.organization_id || null
       // Derive tenant_id from the selected organization
       if (formData.organization_id) {
-        const selectedOrg = organizations?.items?.find((org: any) => org.id === formData.organization_id)
+        const selectedOrg = organizations?.items?.find((org) => org.id === formData.organization_id)
         if (selectedOrg?.tenant_id) {
           updateData.tenant_id = selectedOrg.tenant_id
         }
@@ -798,12 +830,12 @@ export default function IAM() {
       return
     }
 
-    updateIdentityMutation.mutate({ id: selectedIdentity.id, data: updateData })
+    updateIdentityMutation.mutate({ id: selectedIdentity.id as number, data: updateData })
   }
 
   const handleCreateProvider = (e: React.FormEvent) => {
     e.preventDefault()
-    let config: any = {}
+    let config: Record<string, unknown> = {}
 
     // Build config based on provider type
     switch (providerType) {
@@ -820,7 +852,7 @@ export default function IAM() {
             project_id: gcpProjectId,
             service_account_key: JSON.parse(gcpServiceAccountKey),
           }
-        } catch (error) {
+        } catch {
           toast.error('Invalid GCP Service Account Key JSON')
           return
         }
@@ -839,7 +871,7 @@ export default function IAM() {
             customer_id: googleCustomerId,
             service_account_key: JSON.parse(googleServiceAccountKey),
           }
-        } catch (error) {
+        } catch {
           toast.error('Invalid Google Service Account Key JSON')
           return
         }
@@ -866,11 +898,11 @@ export default function IAM() {
 
   // Aggregate all identities from all sources
   const getAllIdentities = () => {
-    const identities: any[] = []
+    const identities: Record<string, unknown>[] = []
 
     // Local identities
     if (localIdentities?.items) {
-      localIdentities.items.forEach((identity: any) => {
+      localIdentities.items.forEach((identity) => {
         identities.push({
           ...identity,
           source: 'local',
@@ -922,8 +954,12 @@ export default function IAM() {
 
   const filteredIdentities = getAllIdentities().filter(identity => {
     if (providerFilter && identity.source !== providerFilter) return false
-    if (searchQuery && !identity.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !identity.email?.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    if (searchQuery) {
+      const displayName = typeof identity.displayName === 'string' ? identity.displayName : ''
+      const email = typeof identity.email === 'string' ? identity.email : ''
+      if (!displayName.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !email.toLowerCase().includes(searchQuery.toLowerCase())) return false
+    }
     return true
   })
 
@@ -1097,25 +1133,25 @@ export default function IAM() {
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
                         <div className="mt-1">
-                          {getIdentityIcon(identity.type)}
+                          {getIdentityIcon(identity.type as string)}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
                             <h3 className="text-lg font-semibold text-white">
-                              {identity.displayName}
+                              {identity.displayName as string}
                             </h3>
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${getIdentityTypeColor(identity.type)}`}>
-                              {IDENTITY_TYPES.find(t => t.value === identity.type)?.label || identity.type}
+                            <span className={`px-2 py-1 text-xs font-medium rounded ${getIdentityTypeColor(identity.type as string)}`}>
+                              {IDENTITY_TYPES.find(t => t.value === identity.type)?.label || (identity.type as string)}
                             </span>
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${getSourceBadge(identity.source)}`}>
-                              {identity.sourceLabel}
+                            <span className={`px-2 py-1 text-xs font-medium rounded ${getSourceBadge(identity.source as string)}`}>
+                              {identity.sourceLabel as string}
                             </span>
                           </div>
                           {identity.email && (
-                            <p className="text-sm text-slate-400">{identity.email}</p>
+                            <p className="text-sm text-slate-400">{identity.email as string}</p>
                           )}
                           {identity.username && identity.username !== identity.email && (
-                            <p className="text-sm text-slate-500">@{identity.username}</p>
+                            <p className="text-sm text-slate-500">@{identity.username as string}</p>
                           )}
                         </div>
                       </div>
@@ -1186,7 +1222,7 @@ export default function IAM() {
           </Card>
 
           {/* IAM Providers */}
-          {iamProviders?.providers?.map((provider: any) => (
+          {iamProviders?.providers?.map((provider) => (
             <Card key={provider.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1219,7 +1255,7 @@ export default function IAM() {
           ))}
 
           {/* Google Workspace Providers */}
-          {googleWorkspaceProviders?.providers?.map((provider: any) => (
+          {googleWorkspaceProviders?.providers?.map((provider) => (
             <Card key={provider.id}>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -1548,25 +1584,25 @@ export default function IAM() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-slate-400">Display Name</p>
-                    <p className="text-white font-medium">{selectedIdentity.displayName}</p>
+                    <p className="text-white font-medium">{selectedIdentity.displayName as string}</p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-400">Username</p>
-                    <p className="text-white font-medium">{selectedIdentity.username}</p>
+                    <p className="text-white font-medium">{selectedIdentity.username as string}</p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-400">Email</p>
-                    <p className="text-white font-medium">{selectedIdentity.email || 'N/A'}</p>
+                    <p className="text-white font-medium">{(selectedIdentity.email as string) || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-400">Type</p>
                     <p className="text-white font-medium">
-                      {IDENTITY_TYPES.find(t => t.value === selectedIdentity.type)?.label || selectedIdentity.type}
+                      {IDENTITY_TYPES.find(t => t.value === selectedIdentity.type)?.label || (selectedIdentity.type as string)}
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-400">Source</p>
-                    <p className="text-white font-medium">{selectedIdentity.sourceLabel}</p>
+                    <p className="text-white font-medium">{selectedIdentity.sourceLabel as string}</p>
                   </div>
                   <div>
                     <p className="text-sm text-slate-400">Status</p>
@@ -1580,7 +1616,7 @@ export default function IAM() {
                   <div>
                     <p className="text-sm text-slate-400">Last Login</p>
                     <p className="text-white font-medium">
-                      {new Date(selectedIdentity.last_login_at).toLocaleString()}
+                      {new Date(selectedIdentity.last_login_at as string | number).toLocaleString()}
                     </p>
                   </div>
                 )}
@@ -1589,7 +1625,7 @@ export default function IAM() {
                   <div>
                     <p className="text-sm text-slate-400">Created</p>
                     <p className="text-white font-medium">
-                      {new Date(selectedIdentity.created_at).toLocaleString()}
+                      {new Date(selectedIdentity.created_at as string | number).toLocaleString()}
                     </p>
                   </div>
                 )}

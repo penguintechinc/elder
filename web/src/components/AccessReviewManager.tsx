@@ -39,6 +39,14 @@ interface ReviewItem {
   membership_id: number
 }
 
+interface ApiErrorResponse {
+  response?: {
+    data?: { error?: string }
+    status?: number
+  }
+  message?: string
+}
+
 export default function AccessReviewManager({ organizationId: _organizationId }: AccessReviewManagerProps) {
   const [selectedReview, setSelectedReview] = useState<Review | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>('in_progress')
@@ -74,7 +82,7 @@ export default function AccessReviewManager({ organizationId: _organizationId }:
       queryClient.invalidateQueries({ queryKey: ['access-reviews'] })
       toast.success('Decision saved')
     },
-    onError: (error: any) => {
+    onError: (error: ApiErrorResponse) => {
       toast.error(error.response?.data?.error || 'Failed to save decision')
     },
   })
@@ -87,7 +95,7 @@ export default function AccessReviewManager({ organizationId: _organizationId }:
       setSelectedReview(null)
       toast.success('Review completed and decisions applied')
     },
-    onError: (error: any) => {
+    onError: (error: ApiErrorResponse) => {
       toast.error(error.response?.data?.error || 'Failed to complete review')
     },
   })

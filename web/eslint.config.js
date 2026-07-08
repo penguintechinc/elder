@@ -27,4 +27,14 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // Playwright fixtures use a `use` callback and empty-destructure `({}, use)`
+    // that trip React-hook and empty-pattern rules — neither applies to Playwright.
+    files: ['tests/e2e/**/*.{ts,tsx}'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'no-empty-pattern': 'off',
+    },
+  },
 )
