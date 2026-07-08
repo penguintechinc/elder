@@ -2,7 +2,7 @@
 
 .PHONY: help \
         setup setup-env setup-python \
-        dev dev-api dev-stop generate-grpc \
+        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
         smoke-test smoke-test-beta seed-mock-data screenshots \
         lint format format-check \
@@ -134,6 +134,30 @@ dev-api: ## Start Flask API (requires 'make dev' backing services)
 dev-stop: ## Stop local backing services
 	@docker stop elder-postgres elder-redis 2>/dev/null || true
 	@echo "$(GREEN)Backing services stopped$(RESET)"
+
+# ── Test Infrastructure ────────────────────────────────────────────────────────
+test-db-up: ## Start test Postgres (pgvector) + Redis containers (non-default ports)
+	@echo "$(BLUE)Starting test database containers...$(RESET)"
+	@docker run -d --name elder-test-postgres -p 55432:5432 \
+		-e POSTGRES_DB=elder_test -e POSTGRES_USER=elder_test \
+		-e POSTGRES_PASSWORD=elder_test_password \
+		-e PGDATA=/var/lib/postgresql/data/pgdata \
+		pgvector/pgvector:pg16 2>/dev/null || docker start elder-test-postgres
+	@docker run -d --name elder-test-redis -p 56379:6379 \
+		redis:7-bookworm redis-server 2>/dev/null || docker start elder-test-redis
+	@echo "$(GREEN)Test databases ready:$(RESET)"
+	@echo "  DATABASE_URL=postgresql://elder_test:elder_test_password@localhost:55432/elder_test"
+	@echo "  REDIS_URL=redis://localhost:56379/0"
+
+test-db-down: ## Stop test Postgres + Redis containers
+	@docker stop elder-test-postgres elder-test-redis 2>/dev/null || true
+	@docker rm elder-test-postgres elder-test-redis 2>/dev/null || true
+	@echo "$(GREEN)Test databases stopped$(RESET)"
+
+build-test-image: ## Build test image (elder-test:3.13) with all deps
+	@echo "$(BLUE)Building test image...$(RESET)"
+	@docker build -f tests/Dockerfile -t elder-test:3.13 .
+	@echo "$(GREEN)Test image built: elder-test:3.13$(RESET)"
 
 generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
 	@echo "$(BLUE)Generating gRPC stubs...$(RESET)"
