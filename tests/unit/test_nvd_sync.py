@@ -126,10 +126,17 @@ class TestGetVulnsNeedingSync:
         query_mock.__iand__ = MagicMock(return_value=query_mock)
         query_mock.__or__ = MagicMock(return_value=query_mock)
 
+        # Mock db.vulnerabilities.cve_id.startswith to return query_mock
         mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
+
+        # Mock db.vulnerabilities.nvd_last_sync comparisons
         mock_db.vulnerabilities.nvd_last_sync = MagicMock()
         mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
         mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
+
+        # Mock db(query) to return query_mock which has select method
+        mock_db.return_value = query_mock
+        mock_db.__call__ = MagicMock(return_value=query_mock)
 
         result = nvd_sync_service._get_vulns_needing_sync(
             max_vulns=10, force_refresh=False

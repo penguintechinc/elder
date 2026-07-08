@@ -473,3 +473,70 @@ async def get_organization_graph(id: int):
         ),
         200,
     )
+
+
+@bp.route("/<int:id>/children", methods=["GET"])
+@login_required
+async def get_organization_children(id: int):
+    """
+    Get all child organizations scoped to the caller's tenant.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Query Parameters:
+        - recursive: Include all descendants (default: false)
+
+    Returns:
+        200: List of child organizations
+        404: Organization not found
+    """
+    db = current_app.db
+
+    # Get current user's tenant_id for scoping
+    tenant_id = (
+        getattr(g.current_user, "tenant_id", None)
+        if hasattr(g, "current_user")
+        else None
+    )
+
+    # Verify organization exists and belongs to current tenant
+    def get_org_in_tenant():
+        query = db.organizations.id == id
+        if tenant_id is not None:
+            query &= db.organizations.tenant_id == tenant_id
+        return db(query).select().first()
+
+    org = await run_in_threadpool(get_org_in_tenant)
+    if not org:
+        return jsonify({"error": "Organization not found"}), 404
+
+    # Get children
+    recursive = request.args.get("recursive", "false").lower() == "true"
+
+    if recursive:
+        # Recursively get all descendants within the same tenant
+        def get_descendants(parent_id):
+            query = db.organizations.parent_id == parent_id
+            if tenant_id is not None:
+                query &= db.organizations.tenant_id == tenant_id
+            children = db(query).select()
+            result = []
+            for child in children:
+                result.append(asdict(from_pydal_row(child, OrganizationDTO)))
+                result.extend(get_descendants(child.id))
+            return result
+
+        children = await run_in_threadpool(lambda: get_descendants(id))
+    else:
+        # Just direct children within the same tenant
+        def get_direct_children():
+            query = db.organizations.parent_id == id
+            if tenant_id is not None:
+                query &= db.organizations.tenant_id == tenant_id
+            rows = db(query).select()
+            return [asdict(from_pydal_row(row, OrganizationDTO)) for row in rows]
+
+        children = await run_in_threadpool(get_direct_children)
+
+    return jsonify(children), 200
