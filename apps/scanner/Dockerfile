@@ -23,7 +23,6 @@ ARG SCANNER_POLL_INTERVAL=300
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     masscan \
-    curl \
     libldap-2.5-0 \
     libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*

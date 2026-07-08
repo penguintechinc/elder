@@ -50,7 +50,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libldap-2.5-0 \
     libxml2 \
     libxmlsec1-openssl \
-    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -79,9 +78,9 @@ COPY --chown=elder:elder alembic /app/alembic
 # Expose ports
 EXPOSE 5000 50051
 
-# Health check
+# Health check (native Python)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:5000/healthz || exit 1
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz'); import sys; sys.exit(0)" || exit 1
 
 # Set environment variables
 ENV FLASK_APP=apps.api.main:create_app
