@@ -15,6 +15,7 @@ import os
 import importlib
 
 import pytest
+import pytest_asyncio
 
 
 def pytest_configure(config):
@@ -161,7 +162,7 @@ def client(app):
     return app.test_client()
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 async def async_client(app):
     """Create async Quart test client for async API testing.
 
