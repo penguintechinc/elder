@@ -17,6 +17,7 @@ from apps.api.models.dataclasses import (
     PaginatedResponse,
     from_pydal_rows,
 )
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("api_keys", __name__)
@@ -53,9 +54,9 @@ async def list_api_keys():
 
     # Validate pagination
     if page < 1:
-        return jsonify({"error": "Page must be >= 1"}), 400
+        return ApiResponse.bad_request("Page must be >= 1")
     if per_page < 1 or per_page > 1000:
-        return jsonify({"error": "Per page must be between 1 and 1000"}), 400
+        return ApiResponse.bad_request("Per page must be between 1 and 1000")
 
     # Calculate pagination
     offset = (page - 1) * per_page
@@ -112,11 +113,11 @@ async def create_api_key():
     # Parse request data
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Validate required fields
     if "name" not in data or not data["name"].strip():
-        return jsonify({"error": "Name is required"}), 400
+        return ApiResponse.bad_request("Name is required")
 
     # Generate API key
     full_key, key_hash, prefix = generate_api_key()

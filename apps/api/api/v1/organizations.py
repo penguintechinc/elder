@@ -5,8 +5,8 @@
 
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, jsonify, request
 from marshmallow import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.schemas.organization import (

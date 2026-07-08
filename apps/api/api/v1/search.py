@@ -11,6 +11,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.search import SearchService
+from apps.api.utils.api_responses import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ def search_all():
         return jsonify(results), 200
 
     except json.JSONDecodeError:
-        return jsonify({"error": "Invalid filters JSON"}), 400
+        return ApiResponse.bad_request("Invalid filters JSON")
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
@@ -137,7 +138,7 @@ def search_entities():
         return jsonify(results), 200
 
     except json.JSONDecodeError:
-        return jsonify({"error": "Invalid filters JSON"}), 400
+        return ApiResponse.bad_request("Invalid filters JSON")
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
 
@@ -271,7 +272,7 @@ async def search_graph():
         data = await request.get_json()
 
         if not data or "start_entity_id" not in data:
-            return jsonify({"error": "start_entity_id is required"}), 400
+            return ApiResponse.bad_request("start_entity_id is required")
 
         service = get_search_service()
 
@@ -343,7 +344,7 @@ async def create_saved_search():
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         required = ["name", "query", "resource_type"]
         missing = [f for f in required if f not in data]
@@ -449,7 +450,7 @@ async def update_saved_search(search_id):
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         service = get_search_service()
 

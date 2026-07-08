@@ -10,11 +10,12 @@ and usage statistics for the Super Admin Console.
 from datetime import datetime, timezone
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("tenants", __name__)
@@ -57,7 +58,7 @@ def global_admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if request.portal_user.get("global_role") != "admin":
-            return jsonify({"error": "Global admin permission required"}), 403
+            return ApiResponse.forbidden("Global admin permission required")
         return f(*args, **kwargs)
 
     return decorated
@@ -79,7 +80,7 @@ def list_tenants():
     """
     # Check permissions
     if request.portal_user.get("global_role") not in ["admin", "support"]:
-        return jsonify({"error": "Global admin or support role required"}), 403
+        return ApiResponse.forbidden("Global admin or support role required")
 
     db = current_app.db
     query = db.tenants.id > 0
@@ -132,12 +133,12 @@ def get_tenant(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     tenant = db.tenants[tenant_id]
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Get usage statistics
     org_count = db(db.organizations.tenant_id == tenant_id).count()
@@ -260,12 +261,12 @@ async def update_tenant(tenant_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     tenant = db.tenants[tenant_id]
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     try:
         body = UpdateTenantRequest.model_validate(await request.get_json())
@@ -319,12 +320,12 @@ def delete_tenant(tenant_id):
         Success status
     """
     if tenant_id == 1:
-        return jsonify({"error": "Cannot delete system tenant"}), 400
+        return ApiResponse.bad_request("Cannot delete system tenant")
 
     db = current_app.db
     tenant = db.tenants[tenant_id]
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Soft delete - deactivate instead
     db(db.tenants.id == tenant.id).update(is_active=False)
@@ -349,7 +350,7 @@ def list_tenant_users(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     users = db(db.portal_users.tenant_id == tenant_id).select(
@@ -400,7 +401,7 @@ async def update_tenant_user(tenant_id, user_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     user = (
@@ -410,11 +411,11 @@ async def update_tenant_user(tenant_id, user_id):
     )
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Allowed update fields
     allowed_fields = {"full_name", "tenant_role", "is_active"}
@@ -449,7 +450,7 @@ def delete_tenant_user(tenant_id, user_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     user = (
@@ -459,7 +460,7 @@ def delete_tenant_user(tenant_id, user_id):
     )
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     # Soft delete
     db(db.portal_users.id == user.id).update(is_active=False)
@@ -484,12 +485,12 @@ def get_tenant_stats(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     tenant = db.tenants[tenant_id]
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Gather statistics
     stats = {

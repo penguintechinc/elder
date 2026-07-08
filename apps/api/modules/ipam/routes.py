@@ -6,9 +6,8 @@
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, jsonify, request
-from apps.api.utils.quart_validation import ValidationErrorResponse
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import PaginatedResponse
@@ -19,7 +18,9 @@ from apps.api.models.pydantic import (
     UpdateIPAMAddressRequest,
     UpdateIPAMPrefixRequest,
 )
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import ValidationErrorResponse
 
 bp = Blueprint("ipam", __name__)
 
@@ -150,9 +151,9 @@ async def create_prefix():
 
     org = await run_in_threadpool(get_org)
     if not org:
-        return jsonify({"error": "Organization not found"}), 404
+        return ApiResponse.error("Organization not found", 404)
     if not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
+        return ApiResponse.bad_request("Organization must have a tenant")
 
     def create():
         # Create prefix
@@ -199,7 +200,7 @@ async def get_prefix(id: int):
     prefix = await run_in_threadpool(lambda: db.ipam_prefixes[id])
 
     if not prefix:
-        return jsonify({"error": "Prefix not found"}), 404
+        return ApiResponse.error("Prefix not found", 404)
 
     return jsonify(dict(prefix)), 200
 
@@ -243,7 +244,7 @@ async def get_prefix_tree(id: int):
     tree = await run_in_threadpool(get_tree)
 
     if not tree:
-        return jsonify({"error": "Prefix not found"}), 404
+        return ApiResponse.error("Prefix not found", 404)
 
     return jsonify(tree), 200
 
@@ -291,9 +292,9 @@ async def update_prefix(id: int):
 
         org = await run_in_threadpool(get_org)
         if not org:
-            return jsonify({"error": "Organization not found"}), 404
+            return ApiResponse.error("Organization not found", 404)
         if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
+            return ApiResponse.bad_request("Organization must have a tenant")
         org_tenant_id = org.tenant_id
 
     def update():
@@ -328,7 +329,7 @@ async def update_prefix(id: int):
     prefix = await run_in_threadpool(update)
 
     if not prefix:
-        return jsonify({"error": "Prefix not found"}), 404
+        return ApiResponse.error("Prefix not found", 404)
 
     return jsonify(dict(prefix)), 200
 
@@ -367,7 +368,7 @@ async def delete_prefix(id: int):
     success = await run_in_threadpool(delete)
 
     if not success:
-        return jsonify({"error": "Prefix not found"}), 404
+        return ApiResponse.error("Prefix not found", 404)
 
     return "", 204
 
@@ -491,7 +492,7 @@ async def create_address():
 
     prefix = await run_in_threadpool(get_prefix)
     if not prefix:
-        return jsonify({"error": "Prefix not found"}), 404
+        return ApiResponse.error("Prefix not found", 404)
 
     def create():
         # Create address
@@ -536,7 +537,7 @@ async def get_address(id: int):
     address = await run_in_threadpool(lambda: db.ipam_addresses[id])
 
     if not address:
-        return jsonify({"error": "Address not found"}), 404
+        return ApiResponse.error("Address not found", 404)
 
     return jsonify(dict(address)), 200
 
@@ -583,7 +584,7 @@ async def update_address(id: int):
 
         prefix = await run_in_threadpool(get_prefix)
         if not prefix:
-            return jsonify({"error": "Prefix not found"}), 404
+            return ApiResponse.error("Prefix not found", 404)
 
     def update():
         address = db.ipam_addresses[id]
@@ -612,7 +613,7 @@ async def update_address(id: int):
     address = await run_in_threadpool(update)
 
     if not address:
-        return jsonify({"error": "Address not found"}), 404
+        return ApiResponse.error("Address not found", 404)
 
     return jsonify(dict(address)), 200
 
@@ -651,7 +652,7 @@ async def delete_address(id: int):
     success = await run_in_threadpool(delete)
 
     if not success:
-        return jsonify({"error": "Address not found"}), 404
+        return ApiResponse.error("Address not found", 404)
 
     return "", 204
 
@@ -775,9 +776,9 @@ async def create_vlan():
 
     org = await run_in_threadpool(get_org)
     if not org:
-        return jsonify({"error": "Organization not found"}), 404
+        return ApiResponse.error("Organization not found", 404)
     if not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
+        return ApiResponse.bad_request("Organization must have a tenant")
 
     def create():
         # Create VLAN
@@ -822,7 +823,7 @@ async def get_vlan(id: int):
     vlan = await run_in_threadpool(lambda: db.ipam_vlans[id])
 
     if not vlan:
-        return jsonify({"error": "VLAN not found"}), 404
+        return ApiResponse.error("VLAN not found", 404)
 
     return jsonify(dict(vlan)), 200
 
@@ -858,7 +859,7 @@ async def update_vlan(id: int):
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # If organization is being changed, validate and get tenant
     org_tenant_id = None
@@ -869,9 +870,9 @@ async def update_vlan(id: int):
 
         org = await run_in_threadpool(get_org)
         if not org:
-            return jsonify({"error": "Organization not found"}), 404
+            return ApiResponse.error("Organization not found", 404)
         if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
+            return ApiResponse.bad_request("Organization must have a tenant")
         org_tenant_id = org.tenant_id
 
     def update():
@@ -902,7 +903,7 @@ async def update_vlan(id: int):
     vlan = await run_in_threadpool(update)
 
     if not vlan:
-        return jsonify({"error": "VLAN not found"}), 404
+        return ApiResponse.error("VLAN not found", 404)
 
     return jsonify(dict(vlan)), 200
 
@@ -941,6 +942,6 @@ async def delete_vlan(id: int):
     success = await run_in_threadpool(delete)
 
     if not success:
-        return jsonify({"error": "VLAN not found"}), 404
+        return ApiResponse.error("VLAN not found", 404)
 
     return "", 204

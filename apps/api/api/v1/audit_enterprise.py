@@ -13,6 +13,7 @@ from quart import Blueprint, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.services.audit import AuditService
+from apps.api.utils.api_responses import ApiResponse
 
 bp = Blueprint("audit_enterprise", __name__)
 
@@ -55,7 +56,7 @@ def query_logs():
                 request.args.get("start_date").replace("Z", "+00:00")
             )
         except ValueError:
-            return jsonify({"error": "Invalid start_date format"}), 400
+            return ApiResponse.bad_request("Invalid start_date format")
 
     if request.args.get("end_date"):
         try:
@@ -63,7 +64,7 @@ def query_logs():
                 request.args.get("end_date").replace("Z", "+00:00")
             )
         except ValueError:
-            return jsonify({"error": "Invalid end_date format"}), 400
+            return ApiResponse.bad_request("Invalid end_date format")
 
     # Parse success filter
     success = None
@@ -113,7 +114,7 @@ def get_compliance_report(report_type):
         request.portal_user.get("global_role") not in ["admin", "support"]
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     # Get tenant ID
     tenant_id = request.args.get("tenant_id", type=int)
@@ -141,7 +142,7 @@ def get_compliance_report(report_type):
                 end_date_str.replace("Z", "+00:00")
             )
     except ValueError:
-        return jsonify({"error": "Invalid date format"}), 400
+        return ApiResponse.bad_request("Invalid date format")
 
     result = AuditService.get_compliance_report(
         tenant_id=tenant_id,
@@ -201,7 +202,7 @@ async def cleanup_old_logs():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     data = await request.get_json() or {}
     tenant_id = data.get("tenant_id")
@@ -240,7 +241,7 @@ def export_logs():
         request.portal_user.get("global_role") not in ["admin", "support"]
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     tenant_id = request.args.get("tenant_id", type=int)
     if not tenant_id:
@@ -265,7 +266,7 @@ def export_logs():
         else:
             end_date = None
     except ValueError:
-        return jsonify({"error": "Invalid date format"}), 400
+        return ApiResponse.bad_request("Invalid date format")
 
     # Query all logs for export (no pagination)
     result = AuditService.query_logs(

@@ -6,6 +6,7 @@
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("profile", __name__)
@@ -102,7 +103,7 @@ async def update_profile():
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     def update_user_profile(uid):
         # Get user from database

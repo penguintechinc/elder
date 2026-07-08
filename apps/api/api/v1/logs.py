@@ -10,6 +10,7 @@ from quart import Blueprint, g, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import DEFAULT_LOG_FILE, FALLBACK_LOG_FILE
+from apps.api.utils.api_responses import ApiResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -40,7 +41,7 @@ def get_logs():
     """
     log_file = _get_log_file_path()
     if not log_file:
-        return jsonify({"error": "Log file not found"}), 404
+        return ApiResponse.error("Log file not found", 404)
 
     try:
         with open(log_file, "r") as f:
@@ -62,7 +63,7 @@ def get_logs():
         )
     except Exception as e:
         logger.error("logs_read_error", error=str(e))
-        return jsonify({"error": "Unable to read logs"}), 500
+        return ApiResponse.internal_error("Unable to read logs")
 
 
 @bp.route("/search", methods=["GET"])
@@ -83,11 +84,11 @@ def search_logs():
     """
     query = request.args.get("q", "").strip()
     if not query:
-        return jsonify({"error": "Search query required"}), 400
+        return ApiResponse.bad_request("Search query required")
 
     log_file = _get_log_file_path()
     if not log_file:
-        return jsonify({"error": "Log file not found"}), 404
+        return ApiResponse.error("Log file not found", 404)
 
     try:
         with open(log_file, "r") as f:
@@ -116,4 +117,4 @@ def search_logs():
         )
     except Exception as e:
         logger.error("logs_search_error", error=str(e))
-        return jsonify({"error": "Unable to search logs"}), 500
+        return ApiResponse.internal_error("Unable to search logs")

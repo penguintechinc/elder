@@ -8,7 +8,6 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
-from apps.api.utils.quart_validation import validated_request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
@@ -25,7 +24,9 @@ from apps.api.models.pydantic.identity import (
     UpdateIdentityGroupRequest,
     UpdateIdentityRequest,
 )
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("identities", __name__)
 
@@ -241,7 +242,7 @@ async def get_identity(id: int):
     identity = await run_in_threadpool(lambda: db.identities[id])
 
     if not identity:
-        return jsonify({"error": "Identity not found"}), 404
+        return ApiResponse.error("Identity not found", 404)
 
     identity_dto = _identity_row_to_dto(identity)
     return jsonify(asdict(identity_dto)), 200
@@ -279,7 +280,7 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
     # Check if identity exists
     existing = await run_in_threadpool(lambda: db.identities[id])
     if not existing:
-        return jsonify({"error": "Identity not found"}), 404
+        return ApiResponse.error("Identity not found", 404)
 
     # Update identity
     def update():
@@ -464,7 +465,7 @@ async def get_group(id: int):
     group = await run_in_threadpool(lambda: db.identity_groups[id])
 
     if not group:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
     return jsonify(asdict(group_dto)), 200
@@ -499,7 +500,7 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
     # Check if group exists
     existing = await run_in_threadpool(lambda: db.identity_groups[id])
     if not existing:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     # Update group
     def update():
@@ -536,7 +537,7 @@ async def delete_group(id: int):
     # Check if group exists
     existing = await run_in_threadpool(lambda: db.identity_groups[id])
     if not existing:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     # Delete group
     await run_in_threadpool(

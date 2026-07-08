@@ -12,6 +12,7 @@ from dataclasses import asdict
 from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.models.dataclasses import EntityDTO, from_pydal_row
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("lookup", __name__)
@@ -57,7 +58,7 @@ async def lookup_entity(entity_id: int):
     entity = await run_in_threadpool(lambda: db.entities[entity_id])
 
     if not entity:
-        return jsonify({"error": f"Entity with id {entity_id} not found"}), 404
+        return ApiResponse.error(f"Entity with id {entity_id} not found", 404)
 
     # Convert to DTO
     entity_dto = from_pydal_row(entity, EntityDTO)
@@ -109,15 +110,15 @@ async def lookup_entities_batch():
     data = await request.get_json() or {}
 
     if "ids" not in data or not isinstance(data["ids"], list):
-        return jsonify({"error": "Request must include 'ids' array"}), 400
+        return ApiResponse.bad_request("Request must include 'ids' array")
 
     entity_ids = data["ids"]
 
     if len(entity_ids) == 0:
-        return jsonify({"error": "At least one id required"}), 400
+        return ApiResponse.bad_request("At least one id required")
 
     if len(entity_ids) > 100:
-        return jsonify({"error": "Maximum 100 entities per batch lookup"}), 400
+        return ApiResponse.bad_request("Maximum 100 entities per batch lookup")
 
     # Query all entities
     def batch_lookup():

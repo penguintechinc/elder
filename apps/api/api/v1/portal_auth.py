@@ -11,11 +11,12 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import jwt
-from quart import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService
+from apps.api.utils.api_responses import ApiResponse
 
 bp = Blueprint("portal_auth", __name__)
 
@@ -32,7 +33,7 @@ def portal_token_required(f):
             token = auth_header.split(" ")[1]
 
         if not token:
-            return jsonify({"error": "Token is missing"}), 401
+            return ApiResponse.unauthorized("Token is missing")
 
         try:
             secret_key = current_app.config.get(
@@ -41,13 +42,13 @@ def portal_token_required(f):
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
 
             if payload.get("type") != "portal_user":
-                return jsonify({"error": "Invalid token type"}), 401
+                return ApiResponse.unauthorized("Invalid token type")
 
             request.portal_user = payload
         except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token has expired"}), 401
+            return ApiResponse.unauthorized("Token has expired")
         except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
+            return ApiResponse.unauthorized("Invalid token")
 
         return f(*args, **kwargs)
 
@@ -106,7 +107,7 @@ async def register():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Validate request using Pydantic schema
     try:
@@ -223,7 +224,7 @@ async def login():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Validate request using Pydantic schema
     try:
@@ -270,7 +271,7 @@ async def login():
             tenant_id = default_tenant.id
 
     if not tenant_id:
-        return jsonify({"error": "Valid tenant is required"}), 400
+        return ApiResponse.bad_request("Valid tenant is required")
 
     result = PortalAuthService.authenticate(
         tenant_id, validated_data.email, validated_data.password
@@ -342,13 +343,13 @@ async def verify_mfa():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     user_id = data.get("user_id")
     totp_code = data.get("totp_code")
 
     if not all([user_id, totp_code]):
-        return jsonify({"error": "user_id and totp_code are required"}), 400
+        return ApiResponse.bad_request("user_id and totp_code are required")
 
     result = PortalAuthService.verify_mfa(user_id, totp_code)
 
@@ -437,13 +438,13 @@ async def change_password():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     current_password = data.get("current_password")
     new_password = data.get("new_password")
 
     if not all([current_password, new_password]):
-        return jsonify({"error": "current_password and new_password are required"}), 400
+        return ApiResponse.bad_request("current_password and new_password are required")
 
     user_id = int(request.portal_user["sub"])
     result = PortalAuthService.change_password(user_id, current_password, new_password)
@@ -467,13 +468,13 @@ async def reset_password():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     tenant_id = data.get("tenant_id")
     email = data.get("email")
 
     if not all([tenant_id, email]):
-        return jsonify({"error": "tenant_id and email are required"}), 400
+        return ApiResponse.bad_request("tenant_id and email are required")
 
     result = PortalAuthService.reset_password(email, tenant_id)
 
@@ -492,11 +493,11 @@ async def refresh_token():
     """
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     refresh_token = data.get("refresh_token")
     if not refresh_token:
-        return jsonify({"error": "refresh_token is required"}), 400
+        return ApiResponse.bad_request("refresh_token is required")
 
     try:
         secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
@@ -505,14 +506,14 @@ async def refresh_token():
         payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":
-            return jsonify({"error": "Invalid token type"}), 401
+            return ApiResponse.unauthorized("Invalid token type")
 
         # Get user
         user_id = int(payload["sub"])
         user = current_app.db.portal_users[user_id]
 
         if not user or not user.is_active:
-            return jsonify({"error": "User not found or inactive"}), 401
+            return ApiResponse.unauthorized("User not found or inactive")
 
         # Generate new tokens (with refresh token rotation for security)
         user_dict = {
@@ -527,9 +528,9 @@ async def refresh_token():
         return jsonify(tokens), 200
 
     except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Refresh token has expired"}), 401
+        return ApiResponse.unauthorized("Refresh token has expired")
     except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid refresh token"}), 401
+        return ApiResponse.unauthorized("Invalid refresh token")
 
 
 @bp.route("/me", methods=["GET"])
@@ -544,7 +545,7 @@ def get_current_user():
     user = current_app.db.portal_users[user_id]
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     permissions = PortalAuthService.get_user_permissions(user_id)
 
@@ -581,7 +582,7 @@ def update_current_user():
     user = current_app.db.portal_users[user_id]
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     data = request.get_json(silent=True) or {}
 
@@ -633,11 +634,11 @@ async def assign_org_role():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     portal_user_id = data.get("portal_user_id")
     organization_id = data.get("organization_id")
@@ -652,7 +653,7 @@ async def assign_org_role():
         )
 
     if role not in ["admin", "maintainer", "reader"]:
-        return jsonify({"error": "Invalid role"}), 400
+        return ApiResponse.bad_request("Invalid role")
 
     result = PortalAuthService.assign_org_role(portal_user_id, organization_id, role)
 

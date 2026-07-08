@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.backup import BackupService
+from apps.api.utils.api_responses import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,10 @@ async def create_backup_job():
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         if "name" not in data:
-            return jsonify({"error": "name is required"}), 400
+            return ApiResponse.bad_request("name is required")
 
         service = get_backup_service()
 
@@ -159,7 +160,7 @@ async def update_backup_job(job_id):
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         service = get_backup_service()
 
@@ -393,7 +394,7 @@ async def export_data():
         data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         required = ["format", "resource_types"]
         missing = [f for f in required if f not in data]
@@ -433,7 +434,7 @@ def download_export(filename):
         filepath = os.path.join(tempfile.gettempdir(), filename)
 
         if not os.path.exists(filepath):
-            return jsonify({"error": "Export file not found"}), 404
+            return ApiResponse.error("Export file not found", 404)
 
         return send_file(filepath, as_attachment=True, download_name=filename)
 
@@ -462,12 +463,12 @@ def import_data():
     """
     try:
         if "file" not in request.files:
-            return jsonify({"error": "No file provided"}), 400
+            return ApiResponse.bad_request("No file provided")
 
         file = request.files["file"]
 
         if file.filename == "":
-            return jsonify({"error": "Empty filename"}), 400
+            return ApiResponse.bad_request("Empty filename")
 
         # Secure the filename
         filename = secure_filename(file.filename)
