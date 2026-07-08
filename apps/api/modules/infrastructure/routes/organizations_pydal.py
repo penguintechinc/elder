@@ -7,7 +7,6 @@ import logging
 from dataclasses import asdict
 
 from quart import Blueprint, current_app, g, jsonify, request
-from apps.api.utils.quart_validation import validated_request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
@@ -29,6 +28,7 @@ from apps.api.utils.pydal_helpers import (
     get_by_id,
     insert_record,
 )
+from apps.api.utils.quart_validation import validated_request
 
 logger = logging.getLogger(__name__)
 

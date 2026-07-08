@@ -3,15 +3,7 @@
 # flake8: noqa: E501
 
 
-from sqlalchemy import (
-    JSON,
-    Boolean,
-    Column,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-)
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin

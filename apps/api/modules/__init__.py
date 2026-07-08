@@ -26,7 +26,7 @@ CORE_MODELS = (
 
 def _infrastructure_blueprints() -> list[tuple[Blueprint, str]]:
     """Load infrastructure module blueprints (entities, compute, storage, deps, graph)."""
-    from apps.api.api.v1 import (
+    from apps.api.modules.infrastructure.routes import (
         data_stores,
         dependencies,
         entities,
@@ -179,10 +179,10 @@ MODULES = (
         depends_on=(),
         blueprints=_infrastructure_blueprints,
         models_import=(
-            "apps.api.models.entity",
-            "apps.api.models.organization",
-            "apps.api.models.infrastructure",
-            "apps.api.models.dependency",
+            "apps.api.modules.infrastructure.models.entity",
+            "apps.api.modules.infrastructure.models.organization",
+            "apps.api.modules.infrastructure.models.infrastructure",
+            "apps.api.modules.infrastructure.models.dependency",
         ),
         table_prefix=None,
         nav_id="nav_infrastructure",

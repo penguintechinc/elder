@@ -5,14 +5,14 @@
 
 import logging
 
-from quart import Blueprint, jsonify, request
-from apps.api.utils.quart_validation import ValidationErrorResponse
 from pydantic import ValidationError
+from quart import Blueprint, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from apps.api.services.networking import NetworkingService
+from apps.api.utils.quart_validation import ValidationErrorResponse
 
 logger = logging.getLogger(__name__)
 
