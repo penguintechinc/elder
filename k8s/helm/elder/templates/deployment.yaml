@@ -144,7 +144,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -166,6 +166,9 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
+        {{- else if eq $component "web" }}
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "prometheus" }}
         - name: data
           mountPath: /prometheus
@@ -183,7 +186,7 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") }}
       volumes:
       {{- if eq $component "scanner" }}
       - name: screenshots
@@ -199,6 +202,9 @@ spec:
         secret:
           secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
           optional: true
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "web" }}
       - name: tmp
         emptyDir: {}
       {{- else }}
