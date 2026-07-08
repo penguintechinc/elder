@@ -1,0 +1,263 @@
+"""Cross-reference resolution and backlink endpoints.
+
+Provides registry-driven resolution of references by village_id or ref format
+(module:type:id), with tenant isolation and breakage detection.
+"""
+
+# flake8: noqa: E501
+
+import logging
+from typing import Optional
+
+from quart import Blueprint, current_app, jsonify, request
+
+from apps.api.common.refs.registry import get_type, resolve_by_village_id, resolve_ref
+from apps.api.common.refs.service import backlinks_for
+from apps.api.utils.async_utils import run_in_threadpool
+from shared.utils.village_id import parse_village_id
+
+bp = Blueprint("refs", __name__)
+logger = logging.getLogger(__name__)
+
+
+def _extract_tenant_id(request_obj) -> Optional[int]:
+    """Extract tenant ID from request claims (JWT).
+
+    Args:
+        request_obj: Quart request object with g.claims
+
+    Returns:
+        Tenant ID (int) or None if not authenticated
+    """
+    from quart import g
+
+    from apps.api.auth.jwt_handler import get_token_from_header, verify_token
+
+    token = get_token_from_header()
+    if not token:
+        return None
+
+    payload = verify_token(token)
+    if not payload:
+        return None
+
+    # Extract tenant ID from JWT (stored as hex string from village_id)
+    return payload.get("tenant_id")
+
+
+def _build_resolve_response(
+    db,
+    resource_type: str,
+    resource_id,
+    village_id: Optional[str] = None,
+    tenant_id: Optional[int] = None,
+) -> dict:
+    """Build a resolve response for a found resource.
+
+    Args:
+        db: PyDAL database instance
+        resource_type: Type identifier
+        resource_id: Resource ID value
+        village_id: Optional village_id to include
+        tenant_id: Tenant ID for scope check
+
+    Returns:
+        Dict with type, id, village_id, title, url, broken=false
+    """
+    resolvable = get_type(resource_type)
+    if not resolvable:
+        return {"error": "unknown_type", "broken": True}
+
+    # Resolve the reference to get title
+    ref_data = resolve_ref(db, resolvable.module, resource_type, resource_id)
+    if not ref_data:
+        return {
+            "type": resource_type,
+            "id": resource_id,
+            "village_id": village_id or "",
+            "title": None,
+            "url": resolvable.url_pattern.format(id=resource_id),
+            "broken": True,
+        }
+
+    # Build URL
+    url = resolvable.url_pattern.format(id=resource_id)
+
+    return {
+        "type": resource_type,
+        "id": resource_id,
+        "village_id": village_id or "",
+        "title": ref_data.get("title"),
+        "url": url,
+        "broken": False,
+    }
+
+
+@bp.route("/refs/resolve", methods=["GET"])
+async def resolve_reference():
+    """Resolve a reference by village_id or module:type:id.
+
+    Query Parameters:
+        - village_id: 25-char village ID (e.g., "0000002a-000000000000f3c1")
+        - ref: module:type:id format (e.g., "infrastructure:entity:123")
+
+    Returns:
+        200: {type, id, village_id, title, url, broken}
+        400: Missing or invalid parameters
+        403: Tenant mismatch (village_id tenant != JWT tenant)
+    """
+    db = current_app.db
+    village_id = request.args.get("village_id")
+    ref = request.args.get("ref")
+
+    # Extract tenant from JWT
+    jwt_tenant_id = _extract_tenant_id(request)
+
+    if not village_id and not ref:
+        return (
+            jsonify(
+                {
+                    "error": "missing_parameters",
+                    "message": "Provide either ?village_id or ?ref",
+                }
+            ),
+            400,
+        )
+
+    def search():
+        if village_id:
+            # Validate village_id format
+            from shared.utils.village_id import is_valid_village_id
+
+            if not is_valid_village_id(village_id):
+                return {"error": "invalid_village_id_format"}
+
+            # Parse village_id to check tenant
+            parsed = parse_village_id(village_id)
+            if jwt_tenant_id is not None and parsed.tenant_id != jwt_tenant_id:
+                return {"error": "tenant_mismatch", "code": 403}
+
+            # Resolve by village_id
+            result = resolve_by_village_id(db, village_id)
+            if not result:
+                return {
+                    "village_id": village_id,
+                    "type": None,
+                    "id": None,
+                    "broken": True,
+                }
+
+            return _build_resolve_response(
+                db,
+                result["type"],
+                result["id"],
+                village_id=village_id,
+                tenant_id=parsed.tenant_id,
+            )
+
+        elif ref:
+            # Parse module:type:id format
+            parts = ref.split(":")
+            if len(parts) != 3:
+                return {"error": "invalid_ref_format"}
+
+            module, type_name, resource_id = parts
+            resolvable = get_type(type_name)
+            if not resolvable or resolvable.module != module:
+                return {"error": "unknown_type"}
+
+            return _build_resolve_response(
+                db, type_name, resource_id, tenant_id=jwt_tenant_id
+            )
+
+        return {"error": "no_ref"}
+
+    result = await run_in_threadpool(search)
+
+    # Handle error codes
+    if isinstance(result, dict):
+        if result.get("error") == "tenant_mismatch":
+            return jsonify({"error": "Tenant mismatch"}), 403
+        if result.get("error") in ("invalid_village_id_format", "invalid_ref_format"):
+            return jsonify({"error": result["error"]}), 400
+        if result.get("error") in ("unknown_type", "no_ref", "missing_parameters"):
+            return jsonify({"error": result["error"]}), 400
+
+    return jsonify(result), 200
+
+
+@bp.route("/refs/backlinks", methods=["GET"])
+async def get_backlinks():
+    """Get all references pointing to a target resource.
+
+    Query Parameters:
+        - target: module:type:id format (e.g., "infrastructure:entity:123")
+
+    Returns:
+        200: [{source_module, source_type, source_id, title, url, broken, ref_type}, ...]
+        400: Missing or invalid parameters
+    """
+    db = current_app.db
+    target = request.args.get("target")
+
+    # Extract tenant from JWT
+    jwt_tenant_id = _extract_tenant_id(request)
+
+    if not target:
+        return (
+            jsonify({"error": "missing_target_parameter"}),
+            400,
+        )
+
+    def search():
+        # Parse module:type:id format
+        parts = target.split(":")
+        if len(parts) != 3:
+            return {"error": "invalid_target_format"}
+
+        module, type_name, resource_id = parts
+        resolvable = get_type(type_name)
+        if not resolvable or resolvable.module != module:
+            return {"error": "unknown_type"}
+
+        # Get backlinks for this target
+        if jwt_tenant_id is None:
+            return []
+
+        refs = backlinks_for(db, module, type_name, resource_id, jwt_tenant_id)
+
+        results = []
+        for ref in refs:
+            # Resolve source title
+            source_data = resolve_ref(
+                db, ref.source_module, ref.source_type, ref.source_id
+            )
+
+            results.append(
+                {
+                    "source_module": ref.source_module,
+                    "source_type": ref.source_type,
+                    "source_id": ref.source_id,
+                    "title": source_data.get("title") if source_data else None,
+                    "url": (
+                        get_type(ref.source_type).url_pattern.format(id=ref.source_id)
+                        if get_type(ref.source_type)
+                        else None
+                    ),
+                    "broken": source_data is None,
+                    "ref_type": ref.ref_type,
+                }
+            )
+
+        return results
+
+    result = await run_in_threadpool(search)
+
+    # Handle error codes
+    if isinstance(result, dict):
+        if result.get("error") == "invalid_target_format":
+            return jsonify({"error": result["error"]}), 400
+        if result.get("error") == "unknown_type":
+            return jsonify({"error": result["error"]}), 400
+
+    return jsonify({"backlinks": result}), 200

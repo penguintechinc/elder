@@ -63,7 +63,7 @@ def init_test_database(test_database_url):
     """Initialize test database schema at session start.
 
     This fixture imports all registry models (CORE_MODELS + MODULES models_import)
-    and runs SQLAlchemy create_all() to build the 82-table schema.
+    and runs SQLAlchemy create_all() to build the 83-table schema (references added).
 
     Runs once per test session before any integration tests.
     Only initializes if DATABASE_URL is set (integration tests).
@@ -110,7 +110,7 @@ def init_test_database(test_database_url):
         # Verify table count
         table_count = len(Base.metadata.tables)
         logger.info(f"Test database initialized: {table_count} tables")
-        assert table_count == 82, f"Expected 82 tables, got {table_count}"
+        assert table_count == 83, f"Expected 83 tables, got {table_count}"
 
     except Exception as e:
         logger.error(f"Failed to initialize test database: {e}")

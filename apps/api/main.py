@@ -267,6 +267,7 @@ def _register_blueprints(app: Quart) -> None:
         modules,
         portal_auth,
         profile,
+        refs,
         search,
         sso,
         tenants,
@@ -302,6 +303,9 @@ def _register_blueprints(app: Quart) -> None:
     # Module registry endpoint
     app.register_blueprint(modules.bp, url_prefix=f"{api_prefix}")
 
+    # Cross-reference resolution
+    app.register_blueprint(refs.bp, url_prefix=f"{api_prefix}")
+
     # Special-prefix endpoints
     app.register_blueprint(lookup.bp, url_prefix="/lookup")
     app.register_blueprint(lookup_village_id.bp, url_prefix="")
@@ -312,7 +316,7 @@ def _register_blueprints(app: Quart) -> None:
     logger.info(
         "core_blueprints_registered",
         api_prefix=api_prefix,
-        count=13,
+        count=14,
     )
 
 
