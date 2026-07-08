@@ -60,7 +60,7 @@ def _ipam_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _sbom_blueprints() -> list[tuple[Blueprint, str]]:
     """Load SBOM module blueprints (software, SBOM, vulnerabilities, licenses)."""
-    from apps.api.api.v1 import (
+    from apps.api.modules.sbom.routes import (
         license_policies,
         sbom,
         sbom_scans,
@@ -215,7 +215,7 @@ MODULES = (
         license_feature=None,
         depends_on=(),
         blueprints=_sbom_blueprints,
-        models_import=(),  # TODO: add sbom-related model imports
+        models_import=("apps.api.modules.sbom.models.assets",),
         table_prefix=None,
         nav_id="nav_sbom",
         scopes=("sbom:read", "sbom:write", "sbom:admin"),
