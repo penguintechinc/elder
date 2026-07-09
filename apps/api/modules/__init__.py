@@ -372,7 +372,7 @@ MODULES = (
         table_prefix="hd_",
         nav_id="nav_helpdesk",
         scopes=("helpdesk:read", "helpdesk:write", "helpdesk:admin"),
-        worker_task_groups=(),
+        worker_task_groups=("helpdesk_email_send", "helpdesk_email_poll", "helpdesk_sla_breach"),
         optional_services=(),
         default_enabled=True,
     ),
