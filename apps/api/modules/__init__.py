@@ -172,6 +172,12 @@ def _access_reviews_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load helpdesk module blueprints (tickets, SLA, email, teams, forms, CRM)."""
+    # TODO(3c): Helpdesk routes — tickets, SLA policies, email accounts, teams, forms, companies, contacts
+    return []
+
+
 # Explicit module registry — Phase 0 modules
 MODULES = (
     ModuleManifest(
@@ -331,6 +337,20 @@ MODULES = (
         worker_task_groups=(),
         optional_services=(),
         default_enabled=True,
+    ),
+    ModuleManifest(
+        name="helpdesk",
+        title="Helpdesk & Support",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_helpdesk_blueprints,
+        models_import=("apps.api.modules.helpdesk.models.helpdesk",),
+        table_prefix="hd_",
+        nav_id="nav_helpdesk",
+        scopes=("helpdesk:read", "helpdesk:write", "helpdesk:admin"),
+        worker_task_groups=(),
+        optional_services=(),
+        default_enabled=False,
     ),
 )
 
