@@ -108,10 +108,16 @@ def init_test_database(test_database_url):
         Base.metadata.create_all(engine)
         engine.dispose()
 
-        # Verify table count
+        # Sanity-check that all core + module models loaded. This is a floor,
+        # not an exact count, so it survives additive schema growth per phase
+        # (helpdesk +12 = 96, references/issue-links reconciliation +2 = 98, ...);
+        # it still catches catastrophic under-loading (models failing to import).
         table_count = len(Base.metadata.tables)
         logger.info(f"Test database initialized: {table_count} tables")
-        assert table_count == 84, f"Expected 84 tables, got {table_count}"
+        assert table_count >= 96, (
+            f"Expected >= 96 tables (core + modules); got {table_count} "
+            "— a model module likely failed to load"
+        )
 
     except Exception as e:
         logger.error(f"Failed to initialize test database: {e}")
