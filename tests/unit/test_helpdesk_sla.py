@@ -164,6 +164,11 @@ class TestSlaIntegration:
                 auth_provider="local",
                 is_active=True,
                 is_superuser=False,
+                # penguin-dal (pyDAL) inserts do NOT apply SQLAlchemy Python-side
+                # defaults, so nullable=False columns must be set explicitly.
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="observer",
             )
 
             # Insert test SLA policies

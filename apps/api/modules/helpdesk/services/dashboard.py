@@ -103,14 +103,18 @@ async def get_dashboard_stats(db: Any, tenant_id: int) -> dict:
 
         sla_compliant = 0
         if sla_total_tickets > 0:
-            compliant_rows = db(
+            # penguin-dal cannot compare two columns in a WHERE clause
+            # (resolved_at <= sla_breach_at binds the RHS field as a value),
+            # so fetch the resolved-with-SLA rows and compare in Python.
+            sla_rows = db(
                 (db.hd_tickets.tenant_id == tenant_id)
                 & (db.hd_tickets.sla_breach_at != None)  # noqa: E711
                 & (db.hd_tickets.resolved_at != None)  # noqa: E711
-                & (db.hd_tickets.resolved_at <= db.hd_tickets.sla_breach_at)
                 & (db.hd_tickets.status.belongs(["resolved", "closed"]))
-            ).count()
-            sla_compliant = compliant_rows
+            ).select()
+            sla_compliant = sum(
+                1 for t in sla_rows if t.resolved_at <= t.sla_breach_at
+            )
 
         sla_compliance_percent = round((sla_compliant / sla_total_tickets) * 100, 2) if sla_total_tickets > 0 else 0.0
 
