@@ -826,6 +826,9 @@ class TestHelpDeskTicketFormsAPI:
                 "subject": "Test issue from form",
                 "description": "This is a test",
                 "priority": "high",
+                "email": "Guest.User@Example.com",
+                "first_name": "Guest",
+                "last_name": "User",
             }
         }
 
@@ -840,6 +843,19 @@ class TestHelpDeskTicketFormsAPI:
         assert data["status"] == "new"
         assert data["village_id"] is not None
         assert "id" in data
+
+        # Anonymous submission must NOT be attributed to any internal identity;
+        # a tenant-scoped CRM contact is created (email normalized) and linked.
+        async with app.app_context():
+            db = current_app.db
+            ticket = db(db.hd_tickets.id == data["id"]).select().first()
+            assert ticket.requester_identity_id is None
+            assert ticket.requester_contact_id is not None
+            contact = (
+                db(db.hd_contacts.id == ticket.requester_contact_id).select().first()
+            )
+            assert contact.email == "guest.user@example.com"
+            assert contact.tenant_id == 1
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")

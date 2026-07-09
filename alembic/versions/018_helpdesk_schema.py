@@ -38,7 +38,9 @@ def upgrade():
         sa.Column("priority", sa.String(20), nullable=False),
         sa.Column("first_response_hours", sa.Integer(), nullable=False),
         sa.Column("resolution_hours", sa.Integer(), nullable=False),
-        sa.Column("business_hours_only", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column(
+            "business_hours_only", sa.Boolean(), nullable=False, server_default="1"
+        ),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -99,7 +101,11 @@ def upgrade():
             server_default="web",
             comment="web, email, api",
         ),
-        sa.Column("requester_identity_id", sa.Integer(), nullable=False),
+        # Requester is an internal identity OR an external CRM contact (public
+        # form submissions); both nullable, FK to hd_contacts added after that
+        # table is created below.
+        sa.Column("requester_identity_id", sa.Integer(), nullable=True),
+        sa.Column("requester_contact_id", sa.Integer(), nullable=True),
         sa.Column("assignee_identity_id", sa.Integer(), nullable=True),
         sa.Column("hd_team_id", sa.Integer(), nullable=True),
         sa.Column("category", sa.String(100), nullable=True),
@@ -123,17 +129,29 @@ def upgrade():
             onupdate=sa.func.now(),
         ),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["requester_identity_id"], ["identities.id"], ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["assignee_identity_id"], ["identities.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["requester_identity_id"], ["identities.id"], ondelete="RESTRICT"
+        ),
+        sa.ForeignKeyConstraint(
+            ["assignee_identity_id"], ["identities.id"], ondelete="SET NULL"
+        ),
         sa.ForeignKeyConstraint(["hd_team_id"], ["hd_teams.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["hd_sla_policy_id"], ["hd_sla_policies.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["hd_sla_policy_id"], ["hd_sla_policies.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_hd_tickets_tenant_id", "hd_tickets", ["tenant_id"])
-    op.create_index("ix_hd_tickets_requester_identity_id", "hd_tickets", ["requester_identity_id"])
-    op.create_index("ix_hd_tickets_assignee_identity_id", "hd_tickets", ["assignee_identity_id"])
+    op.create_index(
+        "ix_hd_tickets_requester_identity_id", "hd_tickets", ["requester_identity_id"]
+    )
+    op.create_index(
+        "ix_hd_tickets_assignee_identity_id", "hd_tickets", ["assignee_identity_id"]
+    )
     op.create_index("ix_hd_tickets_hd_team_id", "hd_tickets", ["hd_team_id"])
-    op.create_index("ix_hd_tickets_hd_sla_policy_id", "hd_tickets", ["hd_sla_policy_id"])
+    op.create_index(
+        "ix_hd_tickets_hd_sla_policy_id", "hd_tickets", ["hd_sla_policy_id"]
+    )
 
     # hd_ticket_messages — FK to hd_tickets, identities
     op.create_table(
@@ -150,7 +168,12 @@ def upgrade():
         sa.Column("body_text", sa.Text(), nullable=True),
         sa.Column("body_html", sa.Text(), nullable=True),
         sa.Column("is_internal", sa.Boolean(), nullable=False, server_default="0"),
-        sa.Column("email_message_id", sa.String(255), nullable=True, comment="RFC 2822 Message-ID"),
+        sa.Column(
+            "email_message_id",
+            sa.String(255),
+            nullable=True,
+            comment="RFC 2822 Message-ID",
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -164,11 +187,17 @@ def upgrade():
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(["hd_ticket_id"], ["hd_tickets.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["sender_identity_id"], ["identities.id"], ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["hd_ticket_id"], ["hd_tickets.id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["sender_identity_id"], ["identities.id"], ondelete="RESTRICT"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_hd_ticket_messages_hd_ticket_id", "hd_ticket_messages", ["hd_ticket_id"])
+    op.create_index(
+        "ix_hd_ticket_messages_hd_ticket_id", "hd_ticket_messages", ["hd_ticket_id"]
+    )
 
     # hd_ticket_attachments — FK to hd_tickets, hd_ticket_messages
     op.create_table(
@@ -193,13 +222,19 @@ def upgrade():
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
         ),
-        sa.ForeignKeyConstraint(["hd_ticket_id"], ["hd_tickets.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["hd_ticket_id"], ["hd_tickets.id"], ondelete="CASCADE"
+        ),
         sa.ForeignKeyConstraint(
             ["hd_message_id"], ["hd_ticket_messages.id"], ondelete="CASCADE"
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_hd_ticket_attachments_hd_ticket_id", "hd_ticket_attachments", ["hd_ticket_id"])
+    op.create_index(
+        "ix_hd_ticket_attachments_hd_ticket_id",
+        "hd_ticket_attachments",
+        ["hd_ticket_id"],
+    )
 
     # hd_canned_responses — FK to identities
     op.create_table(
@@ -230,7 +265,9 @@ def upgrade():
         ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_hd_canned_responses_tenant_id", "hd_canned_responses", ["tenant_id"])
+    op.create_index(
+        "ix_hd_canned_responses_tenant_id", "hd_canned_responses", ["tenant_id"]
+    )
 
     # hd_email_accounts — FK to identities (optional)
     op.create_table(
@@ -249,13 +286,33 @@ def upgrade():
         sa.Column("smtp_port", sa.Integer(), nullable=True),
         sa.Column("smtp_mode", sa.String(20), nullable=True, comment="ssl or starttls"),
         sa.Column("smtp_username", sa.String(255), nullable=True),
-        sa.Column("smtp_password_ref", sa.String(255), nullable=True, comment="penguin-sal reference"),
+        sa.Column(
+            "smtp_password_ref",
+            sa.String(255),
+            nullable=True,
+            comment="penguin-sal reference",
+        ),
         sa.Column("imap_host", sa.String(255), nullable=True),
         sa.Column("imap_port", sa.Integer(), nullable=True, server_default="993"),
         sa.Column("imap_username", sa.String(255), nullable=True),
-        sa.Column("imap_password_ref", sa.String(255), nullable=True, comment="penguin-sal reference"),
-        sa.Column("gmail_credentials_ref", sa.String(255), nullable=True, comment="penguin-sal reference"),
-        sa.Column("gmail_token_ref", sa.String(255), nullable=True, comment="penguin-sal reference"),
+        sa.Column(
+            "imap_password_ref",
+            sa.String(255),
+            nullable=True,
+            comment="penguin-sal reference",
+        ),
+        sa.Column(
+            "gmail_credentials_ref",
+            sa.String(255),
+            nullable=True,
+            comment="penguin-sal reference",
+        ),
+        sa.Column(
+            "gmail_token_ref",
+            sa.String(255),
+            nullable=True,
+            comment="penguin-sal reference",
+        ),
         sa.Column("gmail_watch_expiry", sa.DateTime(timezone=True), nullable=True),
         sa.Column("is_default", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
@@ -276,7 +333,9 @@ def upgrade():
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_hd_email_accounts_tenant_id", "hd_email_accounts", ["tenant_id"])
+    op.create_index(
+        "ix_hd_email_accounts_tenant_id", "hd_email_accounts", ["tenant_id"]
+    )
 
     # hd_email_logs — FK to hd_email_accounts, hd_tickets
     op.create_table(
@@ -311,10 +370,14 @@ def upgrade():
         sa.ForeignKeyConstraint(
             ["hd_email_account_id"], ["hd_email_accounts.id"], ondelete="RESTRICT"
         ),
-        sa.ForeignKeyConstraint(["hd_ticket_id"], ["hd_tickets.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["hd_ticket_id"], ["hd_tickets.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_hd_email_logs_hd_email_account_id", "hd_email_logs", ["hd_email_account_id"])
+    op.create_index(
+        "ix_hd_email_logs_hd_email_account_id", "hd_email_logs", ["hd_email_account_id"]
+    )
 
     # hd_ticket_forms — FK to identities (optional)
     op.create_table(
@@ -334,7 +397,12 @@ def upgrade():
             comment="none, turnstile, recaptcha",
         ),
         sa.Column("captcha_site_key", sa.String(255), nullable=True),
-        sa.Column("captcha_secret_ref", sa.String(255), nullable=True, comment="penguin-sal reference"),
+        sa.Column(
+            "captcha_secret_ref",
+            sa.String(255),
+            nullable=True,
+            comment="penguin-sal reference",
+        ),
         sa.Column("fields", sa.JSON(), nullable=False, server_default="{}"),
         sa.Column(
             "created_at",
@@ -397,7 +465,12 @@ def upgrade():
         sa.Column("tenant_id", sa.Integer(), nullable=False),
         sa.Column("village_id", sa.String(32), nullable=True, unique=True),
         sa.Column("hd_company_id", sa.Integer(), nullable=True),
-        sa.Column("identity_id", sa.Integer(), nullable=True, comment="Optional link to identities table"),
+        sa.Column(
+            "identity_id",
+            sa.Integer(),
+            nullable=True,
+            comment="Optional link to identities table",
+        ),
         sa.Column("first_name", sa.String(100), nullable=True),
         sa.Column("last_name", sa.String(100), nullable=True),
         sa.Column("email", sa.String(255), nullable=False),
@@ -418,13 +491,30 @@ def upgrade():
             onupdate=sa.func.now(),
         ),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["hd_company_id"], ["hd_companies.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["identity_id"], ["identities.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["hd_company_id"], ["hd_companies.id"], ondelete="SET NULL"
+        ),
+        sa.ForeignKeyConstraint(
+            ["identity_id"], ["identities.id"], ondelete="SET NULL"
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("ix_hd_contacts_tenant_id", "hd_contacts", ["tenant_id"])
     op.create_index("ix_hd_contacts_hd_company_id", "hd_contacts", ["hd_company_id"])
     op.create_index("ix_hd_contacts_email", "hd_contacts", ["email"])
+
+    # hd_tickets.requester_contact_id FK — deferred until hd_contacts exists.
+    op.create_foreign_key(
+        "fk_hd_tickets_requester_contact_id",
+        "hd_tickets",
+        "hd_contacts",
+        ["requester_contact_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.create_index(
+        "ix_hd_tickets_requester_contact_id", "hd_tickets", ["requester_contact_id"]
+    )
 
     # hd_team_members — M:N between hd_teams and identities
     op.create_table(
@@ -439,6 +529,10 @@ def upgrade():
 
 def downgrade():
     """Drop all helpdesk tables in FK-safe order."""
+    # Drop the deferred hd_tickets->hd_contacts FK before hd_contacts goes away.
+    op.drop_constraint(
+        "fk_hd_tickets_requester_contact_id", "hd_tickets", type_="foreignkey"
+    )
     # Drop leaf tables first (no other hd_ tables depend on them)
     op.drop_table("hd_team_members")
     op.drop_table("hd_contacts")

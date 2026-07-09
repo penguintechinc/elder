@@ -12,7 +12,13 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-from apps.api.models.base import Base, IDMixin, TenantScopedMixin, TimestampMixin, VillageIDMixin
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
 
 
 class HdTicket(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
@@ -39,10 +45,18 @@ class HdTicket(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin)
         nullable=False,
         comment="web, email, api",
     )
+    # Requester is either an internal identity (portal/agent-created) OR an
+    # external CRM contact (e.g. anonymous public-form submission). Both nullable;
+    # app-level create paths set exactly one.
     requester_identity_id = Column(
         Integer,
         ForeignKey("identities.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
+    )
+    requester_contact_id = Column(
+        Integer,
+        ForeignKey("hd_contacts.id", ondelete="SET NULL"),
+        nullable=True,
     )
     assignee_identity_id = Column(
         Integer,
@@ -161,13 +175,21 @@ class HdEmailAccount(Base, IDMixin, TenantScopedMixin, TimestampMixin):
     smtp_port = Column(Integer, nullable=True)
     smtp_mode = Column(String(20), nullable=True, comment="ssl or starttls")
     smtp_username = Column(String(255), nullable=True)
-    smtp_password_ref = Column(String(255), nullable=True, comment="penguin-sal reference")
+    smtp_password_ref = Column(
+        String(255), nullable=True, comment="penguin-sal reference"
+    )
     imap_host = Column(String(255), nullable=True)
     imap_port = Column(Integer, default=993, nullable=True)
     imap_username = Column(String(255), nullable=True)
-    imap_password_ref = Column(String(255), nullable=True, comment="penguin-sal reference")
-    gmail_credentials_ref = Column(String(255), nullable=True, comment="penguin-sal reference")
-    gmail_token_ref = Column(String(255), nullable=True, comment="penguin-sal reference")
+    imap_password_ref = Column(
+        String(255), nullable=True, comment="penguin-sal reference"
+    )
+    gmail_credentials_ref = Column(
+        String(255), nullable=True, comment="penguin-sal reference"
+    )
+    gmail_token_ref = Column(
+        String(255), nullable=True, comment="penguin-sal reference"
+    )
     gmail_watch_expiry = Column(DateTime(timezone=True), nullable=True)
     is_default = Column(Boolean, default=False, nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
@@ -219,10 +241,14 @@ class HdTicketForm(Base, IDMixin, TenantScopedMixin, TimestampMixin):
         comment="none, turnstile, recaptcha",
     )
     captcha_site_key = Column(String(255), nullable=True)
-    captcha_secret_ref = Column(String(255), nullable=True, comment="penguin-sal reference")
+    captcha_secret_ref = Column(
+        String(255), nullable=True, comment="penguin-sal reference"
+    )
     fields = Column(JSON, nullable=False, server_default="{}")
 
-    __table_args__ = (UniqueConstraint("tenant_id", "slug", name="uq_tenant_form_slug"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "slug", name="uq_tenant_form_slug"),
+    )
 
 
 class HdCompany(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
@@ -233,7 +259,9 @@ class HdCompany(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin
     name = Column(String(255), nullable=False)
     domain = Column(String(255), nullable=True)
     industry = Column(String(100), nullable=True)
-    size = Column(String(50), nullable=True, comment="startup, smb, mid-market, enterprise")
+    size = Column(
+        String(50), nullable=True, comment="startup, smb, mid-market, enterprise"
+    )
     website = Column(String(500), nullable=True)
     notes = Column(Text, nullable=True)
 

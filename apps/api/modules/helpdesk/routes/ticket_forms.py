@@ -611,12 +611,39 @@ async def submit_public_form(slug):
         subject = submitted_fields.get("subject", "Form Submission")
         body = submitted_fields.get("description", "")
 
-        # Create guest requester if needed—use a system identity or guest identity
-        # For now, use identity_id 1 which should exist in all environments
-        # In practice, you'd look up or create a specific guest identity per tenant
-        requester_id = 1
+        # An anonymous public submission has no internal identity. Resolve (or
+        # create) a tenant-scoped CRM contact from the submitted email and make
+        # the ticket's requester that contact — never a hardcoded admin identity.
+        requester_contact_id = None
+        requester_email = (submitted_fields.get("email") or "").strip().lower()
+        if requester_email:
+            existing = (
+                db(
+                    (db.hd_contacts.tenant_id == tenant_id)
+                    & (db.hd_contacts.email == requester_email)
+                )
+                .select()
+                .first()
+            )
+            if existing:
+                requester_contact_id = existing.id
+            else:
+                if redis_client:
+                    contact_vid = generate_village_id(tenant_id, redis_client)
+                else:
+                    contact_vid = f"test-c-{uuid4().hex[:8]}"
+                requester_contact_id = db.hd_contacts.insert(
+                    tenant_id=tenant_id,
+                    village_id=contact_vid,
+                    email=requester_email,
+                    first_name=submitted_fields.get("first_name"),
+                    last_name=submitted_fields.get("last_name"),
+                    created_at=now,
+                    updated_at=now,
+                )
+                db.commit()
 
-        # Insert ticket
+        # Insert ticket — requester_identity_id stays NULL for guest submissions.
         ticket_id = db.hd_tickets.insert(
             tenant_id=tenant_id,
             village_id=village_id,
@@ -624,7 +651,8 @@ async def submit_public_form(slug):
             status="new",
             priority=submitted_fields.get("priority", "medium"),
             channel="web",
-            requester_identity_id=requester_id,
+            requester_identity_id=None,
+            requester_contact_id=requester_contact_id,
             category=submitted_fields.get("category"),
             tags=json.dumps(submitted_fields.get("tags", [])),
             created_at=now,
