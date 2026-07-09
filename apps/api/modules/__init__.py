@@ -184,6 +184,16 @@ def _documents_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _pages_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load pages module blueprints (wiki-style pages, collections)."""
+    from apps.api.modules.pages.routes import pages
+
+    api_prefix = "/api/v1"
+    return [
+        (pages.bp, f"{api_prefix}/pages"),
+    ]
+
+
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
     from apps.api.modules.helpdesk.routes import (
@@ -384,6 +394,20 @@ MODULES = (
         table_prefix="doc_",
         nav_id="nav_documents",
         scopes=("documents:read", "documents:write", "documents:admin"),
+        worker_task_groups=(),
+        optional_services=(),
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="pages",
+        title="Pages & Documentation",
+        license_feature=None,
+        depends_on=("documents",),
+        blueprints=_pages_blueprints,
+        models_import=("apps.api.modules.pages.models.pages",),
+        table_prefix="pg_",
+        nav_id="nav_pages",
+        scopes=("pages:read", "pages:write", "pages:admin"),
         worker_task_groups=(),
         optional_services=(),
         default_enabled=True,

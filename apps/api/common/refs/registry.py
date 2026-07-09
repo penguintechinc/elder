@@ -200,6 +200,18 @@ def _init_registry() -> None:
         )
     )
 
+    # Pages
+    register(
+        ResolvableType(
+            type="page",
+            module="pages",
+            table="pg_pages",
+            id_column="slug",
+            url_pattern="/pages/{id}",
+            title_column="title",
+        )
+    )
+
 
 # Initialize on module import
 _init_registry()
