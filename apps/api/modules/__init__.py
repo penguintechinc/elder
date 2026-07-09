@@ -199,14 +199,25 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
 
     Phase 4b-1: CRUD + version save/load.
     Phase 4b-2: Sharing + collections.
+    Phase 4b-3: Comments, templates, shape libraries.
     """
-    from apps.api.modules.diagrams.routes import collections, diagrams, shares
+    from apps.api.modules.diagrams.routes import (
+        collections,
+        comments,
+        diagrams,
+        libraries,
+        shares,
+        templates,
+    )
 
     api_prefix = "/api/v1"
     return [
         (diagrams.bp, f"{api_prefix}/diagrams"),
         (shares.bp, f"{api_prefix}/diagrams"),
         (collections.bp, f"{api_prefix}/diagram-collections"),
+        (comments.bp, f"{api_prefix}/diagrams"),
+        (templates.bp, f"{api_prefix}/diagram-templates"),
+        (libraries.bp, f"{api_prefix}/diagram-libraries"),
     ]
 
 
