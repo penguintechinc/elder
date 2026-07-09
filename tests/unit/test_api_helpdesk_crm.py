@@ -7,10 +7,23 @@ Module enablement via ELDER_MODULE_HELPDESK=true in conftest.
 
 import json
 import pytest
+import pytest_asyncio
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 from uuid import uuid4
 from quart import current_app
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _clean_crm_tables(app):
+    """Isolate each CRM test on the shared test DB by truncating the CRM
+    tables first (these tests seed per-test, so no class-scoped seed is lost)."""
+    async with app.app_context():
+        db = current_app.db
+        db(db.hd_contacts.id > 0).delete()
+        db(db.hd_companies.id > 0).delete()
+        db.commit()
+    yield
 
 
 class TestHelpDeskCompaniesAPI:
@@ -45,7 +58,6 @@ class TestHelpDeskCompaniesAPI:
         assert data["items"] == []
         assert data["pagination"]["total"] == 0
 
-    @pytest.mark.skip(reason="redis_client not available in test fixture")
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_company(
@@ -68,11 +80,24 @@ class TestHelpDeskCompaniesAPI:
             "notes": "Major client",
         }
 
-        response = await async_client.post(
-            "/api/v1/companies",
-            json=payload,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+        async with app.app_context():
+            # Mirror Wave 1 tickets create test: provide redis_client + mint
+            # village_id deterministically (test app has no real redis).
+            with patch(
+                "apps.api.modules.helpdesk.routes.companies.current_app"
+            ) as mock_app:
+                with patch(
+                    "shared.utils.village_id.generate_village_id"
+                ) as mock_village_id:
+                    mock_app.db = current_app.db
+                    mock_app.redis_client = MagicMock()
+                    mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
+
+                    response = await async_client.post(
+                        "/api/v1/companies",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
 
         assert response.status_code == 201
         data = json.loads(await response.get_data())
@@ -361,7 +386,6 @@ class TestHelpDeskContactsAPI:
         assert data["items"] == []
         assert data["pagination"]["total"] == 0
 
-    @pytest.mark.skip(reason="redis_client not available in test fixture")
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_contact(
@@ -389,21 +413,31 @@ class TestHelpDeskContactsAPI:
             )
             db.commit()
 
-        payload = {
-            "email": "john@example.com",
-            "first_name": "John",
-            "last_name": "Doe",
-            "phone": "+1-555-0123",
-            "job_title": "Manager",
-            "company_id": company_id,
-            "notes": "Primary contact",
-        }
+            payload = {
+                "email": "john@example.com",
+                "first_name": "John",
+                "last_name": "Doe",
+                "phone": "+1-555-0123",
+                "job_title": "Manager",
+                "company_id": company_id,
+                "notes": "Primary contact",
+            }
 
-        response = await async_client.post(
-            "/api/v1/contacts",
-            json=payload,
-            headers={"Authorization": f"Bearer {token}"},
-        )
+            with patch(
+                "apps.api.modules.helpdesk.routes.contacts.current_app"
+            ) as mock_app:
+                with patch(
+                    "shared.utils.village_id.generate_village_id"
+                ) as mock_village_id:
+                    mock_app.db = current_app.db
+                    mock_app.redis_client = MagicMock()
+                    mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
+
+                    response = await async_client.post(
+                        "/api/v1/contacts",
+                        json=payload,
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
 
         assert response.status_code == 201
         data = json.loads(await response.get_data())
