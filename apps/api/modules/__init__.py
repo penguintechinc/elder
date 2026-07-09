@@ -201,8 +201,10 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     Phase 4b-2: Sharing + collections.
     Phase 4b-3: Comments, templates, shape libraries.
     Phase 4b-4: Storage providers + export (JSON, SVG, raster).
+    Phase 4d-1: Real-time collaboration (WebSocket + Redis pub/sub).
     """
     from apps.api.modules.diagrams.routes import (
+        collab,
         collections,
         comments,
         diagrams,
@@ -217,6 +219,7 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     return [
         (diagrams.bp, f"{api_prefix}/diagrams"),
         (shares.bp, f"{api_prefix}/diagrams"),
+        (collab.collab_bp, f"{api_prefix}/diagrams"),
         (collections.bp, f"{api_prefix}/diagram-collections"),
         (comments.bp, f"{api_prefix}/diagrams"),
         (templates.bp, f"{api_prefix}/diagram-templates"),
