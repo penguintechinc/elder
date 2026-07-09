@@ -173,14 +173,24 @@ def _access_reviews_blueprints() -> list[tuple[Blueprint, str]]:
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
-    """Load helpdesk module blueprints (tickets, messages, dashboard)."""
-    from apps.api.modules.helpdesk.routes import dashboard, messages, tickets
+    """Load helpdesk module blueprints (tickets, messages, dashboard, settings)."""
+    from apps.api.modules.helpdesk.routes import (
+        dashboard,
+        messages,
+        tickets,
+        sla_policies,
+        canned_responses,
+        teams,
+    )
 
     api_prefix = "/api/v1"
     return [
         (tickets.bp, f"{api_prefix}/tickets"),
         (messages.bp, f"{api_prefix}/tickets"),
         (dashboard.bp, f"{api_prefix}/dashboard"),
+        (sla_policies.bp, f"{api_prefix}/sla-policies"),
+        (canned_responses.bp, f"{api_prefix}/canned-responses"),
+        (teams.bp, f"{api_prefix}/teams"),
     ]
 
 
