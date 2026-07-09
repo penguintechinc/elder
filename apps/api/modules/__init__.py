@@ -197,12 +197,17 @@ def _pages_blueprints() -> list[tuple[Blueprint, str]]:
 def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     """Load diagrams module blueprints (drawings, versioning, sharing, collaboration).
 
-    Phase 4b-1: CRUD + version save/load only.
+    Phase 4b-1: CRUD + version save/load.
+    Phase 4b-2: Sharing + collections.
     """
-    from apps.api.modules.diagrams.routes import diagrams
+    from apps.api.modules.diagrams.routes import collections, diagrams, shares
 
     api_prefix = "/api/v1"
-    return [(diagrams.bp, f"{api_prefix}/diagrams")]
+    return [
+        (diagrams.bp, f"{api_prefix}/diagrams"),
+        (shares.bp, f"{api_prefix}/diagrams"),
+        (collections.bp, f"{api_prefix}/diagram-collections"),
+    ]
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:

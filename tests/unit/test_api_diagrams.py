@@ -73,6 +73,77 @@ class TestDiagrams:
         return jwt.encode(payload, secret, algorithm="HS256")
 
     @pytest.mark.asyncio
+    async def test_public_diagram_reader_cannot_edit(self, app):
+        """Priv-esc regression: a non-owner who can READ a public diagram must
+        NOT be able to update/delete/save it (read-ability != edit-ability).
+
+        regression: security-review-diagrams-write-auth
+        """
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        db = app.db
+        t = self.fixtures["tenant_id"]
+        owner = self.fixtures["identity_id"]
+
+        def _mk_attacker():
+            now = datetime.now(timezone.utc)
+            email = f"dg-attacker-{uuid.uuid4().hex[:8]}@test.local"
+            aid = db.identities.insert(
+                tenant_id=t,
+                username=email,
+                email=email,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            return aid
+
+        attacker_id = await run_in_threadpool(_mk_attacker)
+
+        client = app.test_client()
+        owner_token = self._token(app, t, owner)
+        resp = await client.post(
+            "/api/v1/diagrams",
+            json={"title": "Public Diagram", "is_public": True},
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert resp.status_code == 201
+        diagram_id = (await resp.get_json())["id"]
+
+        attacker = self._token(app, t, attacker_id, ["diagrams:read", "diagrams:write"])
+        # Attacker CAN read the public diagram...
+        got = await client.get(
+            f"/api/v1/diagrams/{diagram_id}",
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert got.status_code == 200
+        # ...but must NOT be able to modify it.
+        patched = await client.patch(
+            f"/api/v1/diagrams/{diagram_id}",
+            json={"title": "Hijacked"},
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert patched.status_code in (403, 404)
+        deleted = await client.delete(
+            f"/api/v1/diagrams/{diagram_id}",
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert deleted.status_code in (403, 404)
+        saved = await client.post(
+            f"/api/v1/diagrams/{diagram_id}/versions",
+            json={"content": {"nodes": [], "edges": []}},
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert saved.status_code in (403, 404)
+
+    @pytest.mark.asyncio
     async def test_create_diagram_draft(self, app):
         """Test creating a diagram in draft status."""
         tenant_id = self.fixtures["tenant_id"]

@@ -74,6 +74,47 @@ def _can_read_diagram(db, diagram_row, tenant_id, identity_id=None) -> bool:
     return False
 
 
+def _can_edit_diagram(db, diagram_row, tenant_id, identity_id=None) -> bool:
+    """Write authorization for a diagram — STRICTER than read.
+
+    Only the owner, or a user holding an ``editor``-permission share, may
+    mutate a diagram. Public visibility and ``viewer`` shares grant read only;
+    gating writes on read-ability would let any reader of a public diagram (or
+    a viewer-shared user) edit or delete it.
+
+    Args:
+        db: PyDAL database instance
+        diagram_row: Diagram row from database
+        tenant_id: Current tenant ID
+        identity_id: Current identity ID (from token)
+
+    Returns:
+        True if the caller may modify this diagram, False otherwise.
+    """
+    # Cross-tenant isolation.
+    if diagram_row.tenant_id != tenant_id:
+        return False
+
+    if identity_id is None:
+        return False
+
+    # Owner always has write access.
+    if diagram_row.owner_identity_id == identity_id:
+        return True
+
+    # Editor-permission share grants write; viewer shares and is_public do not.
+    share_row = (
+        db(
+            (db.dg_shares.diagram_id == diagram_row.id)
+            & (db.dg_shares.shared_with_identity_id == identity_id)
+            & (db.dg_shares.permission == "editor")
+        )
+        .select()
+        .first()
+    )
+    return bool(share_row)
+
+
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("diagrams:read")
@@ -396,8 +437,8 @@ async def update_diagram(diagram_id):
         if not diagram:
             return None
 
-        # Visibility precondition: caller must be able to READ before modifying
-        if not _can_read_diagram(db, diagram, tenant_id, identity_id):
+        # Write authorization: only owner or an editor-permission share may modify.
+        if not _can_edit_diagram(db, diagram, tenant_id, identity_id):
             return None
 
         now = datetime.now(timezone.utc)
@@ -476,8 +517,8 @@ async def delete_diagram(diagram_id):
         if not diagram:
             return False
 
-        # Visibility precondition: caller must be able to READ before delete
-        if not _can_read_diagram(db, diagram, tenant_id, identity_id):
+        # Write authorization: only owner or an editor-permission share may delete.
+        if not _can_edit_diagram(db, diagram, tenant_id, identity_id):
             return False
 
         # Cascade delete versions (dg_diagram_versions has FK with CASCADE)
@@ -545,7 +586,7 @@ async def save_version(diagram_id):
     )
     if pre_diagram is None:
         return ApiResponse.not_found("Diagram")
-    if not _can_read_diagram(db, pre_diagram, tenant_id, identity_id):
+    if not _can_edit_diagram(db, pre_diagram, tenant_id, identity_id):
         return ApiResponse.not_found("Diagram")
 
     def save():
@@ -798,7 +839,7 @@ async def restore_version(diagram_id, version_number):
     )
     if pre_diagram is None:
         return ApiResponse.not_found("Diagram")
-    if not _can_read_diagram(db, pre_diagram, tenant_id, identity_id):
+    if not _can_edit_diagram(db, pre_diagram, tenant_id, identity_id):
         return ApiResponse.not_found("Diagram")
 
     def restore():
