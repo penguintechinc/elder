@@ -2725,6 +2725,80 @@ class ApiClient {
     const response = await this.client.delete(`/helpdesk/contacts/${id}`)
     return response.data
   }
+
+  // ===========================
+  // Diagrams (Phase 4c)
+  // ===========================
+
+  async getDiagrams(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    q?: string
+    is_template?: boolean
+  }) {
+    const response = await this.client.get('/diagrams', { params })
+    return response.data
+  }
+
+  async getDiagram(id: number) {
+    const response = await this.client.get(`/diagrams/${id}`)
+    return response.data
+  }
+
+  async createDiagram(data: {
+    title: string
+    description?: string
+    tags?: string[]
+    is_public?: boolean
+    is_template?: boolean
+    status?: string
+    content?: { nodes: unknown[]; edges: unknown[] }
+  }) {
+    const response = await this.client.post('/diagrams', data)
+    return response.data
+  }
+
+  async updateDiagram(id: number, data: Partial<{
+    title: string
+    description: string
+    tags: string[]
+    status: string
+    is_public: boolean
+    is_template: boolean
+    thumbnail_url: string
+  }>) {
+    const response = await this.client.patch(`/diagrams/${id}`, data)
+    return response.data
+  }
+
+  async deleteDiagram(id: number) {
+    const response = await this.client.delete(`/diagrams/${id}`)
+    return response.data
+  }
+
+  async saveDiagramVersion(id: number, data: {
+    content: { nodes: unknown[]; edges: unknown[] }
+    change_summary?: string
+  }) {
+    const response = await this.client.post(`/diagrams/${id}/versions`, data)
+    return response.data
+  }
+
+  async getDiagramVersions(id: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/diagrams/${id}/versions`, { params })
+    return response.data
+  }
+
+  async getDiagramVersion(id: number, versionNumber: number) {
+    const response = await this.client.get(`/diagrams/${id}/versions/${versionNumber}`)
+    return response.data
+  }
+
+  async restoreDiagramVersion(id: number, versionNumber: number) {
+    const response = await this.client.post(`/diagrams/${id}/versions/${versionNumber}/restore`)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
