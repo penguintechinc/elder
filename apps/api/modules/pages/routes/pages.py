@@ -4,18 +4,19 @@
 
 import logging
 import re
-import uuid
 from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.html_sanitize import sanitize_html
 from apps.api.common.refs.service import backlinks_for
 from apps.api.common.refs.wikilinks import rebuild_references_from_text
 from apps.api.logging_config import log_error_and_respond
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams, commit_db
+from shared.utils.village_id import generate_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,40 @@ def _get_user_id() -> int:
     return None
 
 
+def _get_user_roles() -> list:
+    """Extract the caller's roles from g.claims (for role-based visibility)."""
+    claims = getattr(g, "claims", {}) or {}
+    return claims.get("roles") or []
+
+
+def _can_read_page(page, user_id, user_roles) -> bool:
+    """Visibility ACL for a page row. Tenant scoping is enforced by the query.
+
+    Fails closed: unknown visibility, or 'roles'/'users' with no allow-list, deny.
+    """
+    if page.is_public or page.visibility == "public":
+        return True
+    # Everything below requires authentication.
+    if user_id is None:
+        return False
+    if page.visibility == "authenticated":
+        return True
+    if page.visibility == "roles":
+        allowed = set(page.visibility_roles or [])
+        return bool(allowed and (set(user_roles or []) & allowed))
+    if page.visibility == "users":
+        allowed_users = page.visibility_users
+        if isinstance(allowed_users, str):
+            try:
+                import json
+
+                allowed_users = json.loads(allowed_users)
+            except Exception:
+                return False
+        return bool(allowed_users and user_id in allowed_users)
+    return False
+
+
 def _slugify(title: str) -> str:
     """Convert title to URL-safe slug."""
     slug = title.lower().strip()
@@ -56,75 +91,8 @@ def _slugify(title: str) -> str:
 
 
 def _sanitize_html(html: str) -> str:
-    """
-    Minimal HTML sanitization without external bleach dependency.
-
-    Allowlist: h1-h6, p, br, div, span, strong, em, u, sub, sup, s, ul, ol, li,
-    blockquote, pre, code, table/thead/tbody/tr/th/td, a, img, hr, section, article.
-
-    Attrs: a[href,title,target], img[src,alt,width,height,title], div/span[class,data-*],
-    code/pre[class], *[id].
-
-    Note: This is a placeholder. In production with bleach installed, use:
-        import bleach
-        return bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRS, strip=True)
-    """
-    ALLOWED_TAGS = {
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "p",
-        "br",
-        "div",
-        "span",
-        "strong",
-        "em",
-        "u",
-        "sub",
-        "sup",
-        "s",
-        "ul",
-        "ol",
-        "li",
-        "blockquote",
-        "pre",
-        "code",
-        "table",
-        "thead",
-        "tbody",
-        "tr",
-        "th",
-        "td",
-        "a",
-        "img",
-        "hr",
-        "section",
-        "article",
-    }
-
-    # Remove script/style tags and their content
-    html = re.sub(
-        r"<(script|style)[^>]*>.*?</\1>", "", html, flags=re.IGNORECASE | re.DOTALL
-    )
-
-    # Remove event handlers and dangerous attributes
-    html = re.sub(
-        r'\s+on\w+\s*=\s*["\']?[^"\'>\s]+["\']?', "", html, flags=re.IGNORECASE
-    )
-
-    # Remove all tags not in allowlist
-    def replace_tag(match):
-        tag = match.group(1).lower().split()[0]
-        if tag in ALLOWED_TAGS:
-            return match.group(0)
-        return ""
-
-    html = re.sub(r"</?([a-zA-Z][a-zA-Z0-9]*)[^>]*>", replace_tag, html)
-
-    return html
+    """Sanitize page body HTML via the shared bleach allow-list sanitizer."""
+    return sanitize_html(html)
 
 
 @bp.route("", methods=["GET"])
@@ -175,34 +143,8 @@ async def list_pages():
     total, rows = await run_in_threadpool(get_pages)
 
     # Post-filter visibility ACL
-    def check_visibility(row):
-        if row.is_public:
-            return True
-        if row.visibility == "public":
-            return True
-        if row.visibility == "authenticated":
-            return user_id is not None
-        if row.visibility == "roles":
-            # TODO: Check user roles against visibility_roles
-            return user_id is not None
-        if row.visibility == "users":
-            # Check if user is in visibility_users
-            if row.visibility_users and user_id:
-                try:
-                    import json
-
-                    allowed_users = (
-                        json.loads(row.visibility_users)
-                        if isinstance(row.visibility_users, str)
-                        else row.visibility_users
-                    )
-                    return user_id in allowed_users
-                except Exception:
-                    return False
-            return False
-        return False
-
-    visible_rows = [r for r in rows if check_visibility(r)]
+    user_roles = _get_user_roles()
+    visible_rows = [r for r in rows if _can_read_page(r, user_id, user_roles)]
 
     pages = [
         {
@@ -293,6 +235,9 @@ async def create_page():
     if not slug:
         return ApiResponse.error("title does not produce a valid slug", 400)
 
+    # Mint the village_id in request context (needs current_app.redis_client).
+    village_id = generate_village_id(tenant_id, current_app.redis_client)
+
     # Check per-tenant slug uniqueness
     def create_and_rebuild():
         existing = (
@@ -303,9 +248,6 @@ async def create_page():
 
         if existing:
             return None, "slug_conflict"
-
-        # Mint village_id
-        village_id = str(uuid.uuid4())
 
         # Insert page
         page_id = db.pg_pages.insert(
@@ -402,27 +344,9 @@ async def get_page_by_slug(slug: str):
     if not page:
         return ApiResponse.error("Page not found", 404)
 
-    # Visibility ACL
-    if not page.is_public and page.visibility == "public":
+    # Visibility ACL (public/authenticated/roles/users), fail-closed.
+    if not _can_read_page(page, user_id, _get_user_roles()):
         return ApiResponse.error("Not found", 403)
-    if page.visibility == "authenticated" and user_id is None:
-        return ApiResponse.error("Not found", 403)
-    if page.visibility == "users" and user_id:
-        if page.visibility_users:
-            try:
-                import json
-
-                allowed_users = (
-                    json.loads(page.visibility_users)
-                    if isinstance(page.visibility_users, str)
-                    else page.visibility_users
-                )
-                if user_id not in allowed_users:
-                    return ApiResponse.error("Not found", 403)
-            except Exception:
-                return ApiResponse.error("Not found", 403)
-        else:
-            return ApiResponse.error("Not found", 403)
 
     return (
         jsonify(
@@ -479,6 +403,8 @@ async def update_page(slug: str):
     except Exception:
         return ApiResponse.error("Invalid JSON", 400)
 
+    user_roles = _get_user_roles()
+
     def update_and_rebuild():
         page = (
             db((db.pg_pages.tenant_id == tenant_id) & (db.pg_pages.slug == slug))
@@ -487,6 +413,11 @@ async def update_page(slug: str):
         )
 
         if not page:
+            return None, 404
+
+        # Visibility precondition: caller must be able to READ the page before
+        # modifying it (prevents same-tenant IDOR on restricted pages).
+        if not _can_read_page(page, user_id, user_roles):
             return None, 404
 
         # Update fields
@@ -605,9 +536,12 @@ async def delete_page(slug: str):
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
+    user_id = _get_user_id()
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
+
+    user_roles = _get_user_roles()
 
     def delete_page_impl():
         page = (
@@ -617,6 +551,10 @@ async def delete_page(slug: str):
         )
 
         if not page:
+            return None, 404
+
+        # Visibility precondition: caller must be able to READ before delete.
+        if not _can_read_page(page, user_id, user_roles):
             return None, 404
 
         db(db.pg_pages.id == page.id).delete()
@@ -644,9 +582,12 @@ async def attach_collection(slug: str, collection_id: int):
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
+    user_id = _get_user_id()
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
+
+    user_roles = _get_user_roles()
 
     def attach_impl():
         page = (
@@ -656,6 +597,10 @@ async def attach_collection(slug: str, collection_id: int):
         )
 
         if not page:
+            return None, 404
+
+        # Visibility precondition: caller must be able to READ before mutating.
+        if not _can_read_page(page, user_id, user_roles):
             return None, 404
 
         collection = (
@@ -710,9 +655,12 @@ async def detach_collection(slug: str, collection_id: int):
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
+    user_id = _get_user_id()
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
+
+    user_roles = _get_user_roles()
 
     def detach_impl():
         page = (
@@ -722,6 +670,10 @@ async def detach_collection(slug: str, collection_id: int):
         )
 
         if not page:
+            return None, 404
+
+        # Visibility precondition: caller must be able to READ before mutating.
+        if not _can_read_page(page, user_id, user_roles):
             return None, 404
 
         db(
@@ -753,9 +705,12 @@ async def get_backlinks(slug: str):
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
+    user_id = _get_user_id()
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
+
+    user_roles = _get_user_roles()
 
     def fetch_backlinks():
         page = (
@@ -764,7 +719,9 @@ async def get_backlinks(slug: str):
             .first()
         )
 
-        if not page:
+        # Return 404 when the page is missing OR not visible to the caller, so
+        # backlinks can't be enumerated for a page restricted away from them.
+        if not page or not _can_read_page(page, user_id, user_roles):
             return None
 
         refs = backlinks_for(

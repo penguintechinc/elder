@@ -11,8 +11,8 @@ Configuration:
   a test Postgres instance (set via env or fixture)
 """
 
-import os
 import importlib
+import os
 
 import pytest
 import pytest_asyncio
@@ -87,10 +87,15 @@ def init_test_database(test_database_url):
     try:
         # Import registry models
         from sqlalchemy import create_engine
+
         from apps.api.models.base import Base
         from apps.api.modules import CORE_MODELS, MODULES
 
-        logger.info(f"Initializing test database: {test_database_url.split('@')[1]}")
+        # rsplit is robust to credential-less URLs (e.g. sqlite:///path) that
+        # have no '@' — never IndexErrors, just logs the whole URL in that case.
+        logger.info(
+            f"Initializing test database: {test_database_url.rsplit('@', 1)[-1]}"
+        )
 
         # Collect all model modules to import (registry-driven)
         model_modules_to_import = set(CORE_MODELS)
@@ -122,7 +127,6 @@ def init_test_database(test_database_url):
             f"Expected >= 102 tables (core + modules); got {table_count} "
             "— a model module likely failed to load"
         )
-
 
     except Exception as e:
         logger.error(f"Failed to initialize test database: {e}")
@@ -284,14 +288,20 @@ def enable_helpdesk_module(app):
                     db = ctx_app.db
                     # Insert or update tenant_modules to enable helpdesk for tenant 1
                     try:
-                        db.tenant_modules.insert(tenant_id=1, module_name="helpdesk", is_enabled=True)
+                        db.tenant_modules.insert(
+                            tenant_id=1, module_name="helpdesk", is_enabled=True
+                        )
                     except:
                         # If row already exists, update it
-                        db((db.tenant_modules.tenant_id == 1) & (db.tenant_modules.module_name == "helpdesk")).update(is_enabled=True)
+                        db(
+                            (db.tenant_modules.tenant_id == 1)
+                            & (db.tenant_modules.module_name == "helpdesk")
+                        ).update(is_enabled=True)
                     db.commit()
 
             # Run the async function synchronously
             import asyncio
+
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_closed():

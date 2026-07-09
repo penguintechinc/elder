@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from markdown_it import MarkdownIt
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.modules.documents.common import (
     identity_in_tenant,
@@ -19,6 +19,7 @@ from apps.api.modules.documents.common import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from shared.utils.village_id import generate_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,9 @@ def _render_and_sanitize_body(markdown_text: str) -> tuple[str, str]:
     return plaintext, sanitized
 
 
-def _can_read_document(db, doc_row, tenant_id, identity_id=None) -> bool:
+def _can_read_document(
+    db, doc_row, tenant_id, identity_id=None, user_roles=None
+) -> bool:
     """Check if current user can read this document based on visibility.
 
     Args:
@@ -104,12 +107,12 @@ def _can_read_document(db, doc_row, tenant_id, identity_id=None) -> bool:
     if visibility == "authenticated":
         return True
 
-    # Role-based visibility
+    # Role-based visibility: caller must hold at least one of the document's roles.
     if visibility == "roles":
-        # Get user roles from token (would need to pass from request)
-        # For now, simplified: allow if visibility_roles is set
-        # Real implementation would check JWT scopes
-        return bool(doc_row.visibility_roles)
+        allowed_roles = set(doc_row.visibility_roles or [])
+        if not allowed_roles:
+            return False  # fail closed: 'roles' visibility with no roles configured
+        return bool(set(user_roles or []) & allowed_roles)
 
     # User-based visibility
     if visibility == "users":
@@ -121,6 +124,7 @@ def _can_read_document(db, doc_row, tenant_id, identity_id=None) -> bool:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def list_documents():
     """List documents with optional filtering and pagination.
 
@@ -164,9 +168,8 @@ async def list_documents():
 
         # Full-text search
         if q:
-            query &= (
-                (db.doc_documents.title.like(f"%{q}%"))
-                | (db.doc_documents.body_text.like(f"%{q}%"))
+            query &= (db.doc_documents.title.like(f"%{q}%")) | (
+                db.doc_documents.body_text.like(f"%{q}%")
             )
 
         total = db(query).count()
@@ -186,7 +189,7 @@ async def list_documents():
     # Post-filter by visibility
     documents = []
     for r in rows:
-        if _can_read_document(db, r, tenant_id, identity_id):
+        if _can_read_document(db, r, tenant_id, identity_id, claims.get("roles") or []):
             documents.append(
                 {
                     "id": r.id,
@@ -198,7 +201,9 @@ async def list_documents():
                     "is_public": r.is_public,
                     "visibility": r.visibility,
                     "tags": r.tags,
-                    "published_at": r.published_at.isoformat() if r.published_at else None,
+                    "published_at": (
+                        r.published_at.isoformat() if r.published_at else None
+                    ),
                     "created_at": r.created_at.isoformat(),
                     "updated_at": r.updated_at.isoformat(),
                 }
@@ -222,6 +227,7 @@ async def list_documents():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("documents:write")
 async def create_document():
     """Create a new document.
 
@@ -264,12 +270,16 @@ async def create_document():
     if not identity_id:
         return ApiResponse.error("Identity not found in token", 403)
 
-    def create():
-        from shared.utils.village_id import generate_village_id
+    # Mint the village_id in request context (generate_village_id needs
+    # current_app.redis_client, which is unavailable inside the threadpool).
+    village_id = generate_village_id(tenant_id, current_app.redis_client)
 
+    def create():
         # Validate that visibility_users (if provided) belong to this tenant
         visibility_users = data.get("visibility_users", [])
-        if visibility_users and not visibility_users_in_tenant(db, visibility_users, tenant_id):
+        if visibility_users and not visibility_users_in_tenant(
+            db, visibility_users, tenant_id
+        ):
             return "visibility_users_not_in_tenant"
 
         # Generate slug from title
@@ -277,7 +287,11 @@ async def create_document():
         if not slug:
             return "invalid_title_for_slug"
 
-        # Check global slug uniqueness
+        # Global slug uniqueness is intentional: public documents are served at
+        # /public/<slug> with no tenant context, so slugs form a single global
+        # namespace and must resolve deterministically. (This means the
+        # uniqueness check is a weak cross-tenant existence oracle by design —
+        # accepted as inherent to the tenant-less public-URL scheme.)
         existing = db(db.doc_documents.slug == slug).select().first()
         if existing:
             return "slug_already_exists"
@@ -286,8 +300,6 @@ async def create_document():
         body_text, body_html = _render_and_sanitize_body(body)
 
         now = datetime.now(timezone.utc)
-        redis_client = current_app.redis_client
-        village_id = generate_village_id(tenant_id, redis_client)
 
         # Parse visibility settings
         visibility = data.get("visibility", "authenticated")
@@ -329,7 +341,9 @@ async def create_document():
         from apps.api.common.refs.wikilinks import rebuild_references_from_text
 
         try:
-            rebuild_references_from_text(db, tenant_id, "documents", "document", slug, body)
+            rebuild_references_from_text(
+                db, tenant_id, "documents", "document", slug, body
+            )
             db.commit()
         except Exception as e:
             logger.error(f"Failed to rebuild references for doc {doc_id}: {e}")
@@ -350,9 +364,13 @@ async def create_document():
         elif result == "invalid_visibility":
             return ApiResponse.error("Invalid visibility value", 400)
         elif result == "visibility_roles_required":
-            return ApiResponse.error("visibility_roles required for role-based visibility", 400)
+            return ApiResponse.error(
+                "visibility_roles required for role-based visibility", 400
+            )
         elif result == "visibility_users_required":
-            return ApiResponse.error("visibility_users required for user-based visibility", 400)
+            return ApiResponse.error(
+                "visibility_users required for user-based visibility", 400
+            )
         else:
             return ApiResponse.error(result, 400)
 
@@ -370,7 +388,9 @@ async def create_document():
                 "is_public": doc.is_public,
                 "visibility": doc.visibility,
                 "tags": doc.tags,
-                "published_at": doc.published_at.isoformat() if doc.published_at else None,
+                "published_at": (
+                    doc.published_at.isoformat() if doc.published_at else None
+                ),
                 "created_at": doc.created_at.isoformat(),
                 "updated_at": doc.updated_at.isoformat(),
             }
@@ -381,6 +401,7 @@ async def create_document():
 
 @bp.route("/<slug>", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def get_document(slug):
     """Get a document by slug.
 
@@ -399,16 +420,23 @@ async def get_document(slug):
     identity_id = claims.get("identity_id")
 
     def fetch():
-        return db(db.doc_documents.slug == slug).select().first()
+        return (
+            db(
+                (db.doc_documents.slug == slug)
+                & (db.doc_documents.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
 
     doc = await run_in_threadpool(fetch)
 
-    if not doc:
+    # Return 404 for both "does not exist" and "not visible to caller" so a
+    # cross-tenant or role-restricted slug is indistinguishable from a missing one.
+    if not doc or not _can_read_document(
+        db, doc, tenant_id, identity_id, claims.get("roles") or []
+    ):
         return ApiResponse.not_found("Document")
-
-    # Check visibility
-    if not _can_read_document(db, doc, tenant_id, identity_id):
-        return ApiResponse.error("Access denied", 403)
 
     return jsonify(
         {
@@ -434,6 +462,7 @@ async def get_document(slug):
 
 @bp.route("/<int:doc_id>", methods=["PATCH"])
 @login_required
+@require_scope("documents:write")
 async def update_document(doc_id):
     """Update a document.
 
@@ -451,14 +480,27 @@ async def update_document(doc_id):
 
     data = await request.get_json() or {}
 
+    claims = getattr(g, "claims", {}) or {}
+    identity_id = claims.get("identity_id")
+    user_roles = claims.get("roles") or []
+
     def update():
         doc = (
-            db((db.doc_documents.id == doc_id) & (db.doc_documents.tenant_id == tenant_id))
+            db(
+                (db.doc_documents.id == doc_id)
+                & (db.doc_documents.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
 
         if not doc:
+            return None
+
+        # Visibility precondition: caller must be able to READ the document
+        # before they may modify it (prevents same-tenant IDOR on role/user
+        # restricted docs held by a documents:write caller).
+        if not _can_read_document(db, doc, tenant_id, identity_id, user_roles):
             return None
 
         # Validate visibility_users if provided
@@ -575,6 +617,7 @@ async def update_document(doc_id):
 
 @bp.route("/<int:doc_id>", methods=["DELETE"])
 @login_required
+@require_scope("documents:write")
 async def delete_document(doc_id):
     """Delete a document.
 
@@ -590,14 +633,25 @@ async def delete_document(doc_id):
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
 
+    claims = getattr(g, "claims", {}) or {}
+    identity_id = claims.get("identity_id")
+    user_roles = claims.get("roles") or []
+
     def delete():
         doc = (
-            db((db.doc_documents.id == doc_id) & (db.doc_documents.tenant_id == tenant_id))
+            db(
+                (db.doc_documents.id == doc_id)
+                & (db.doc_documents.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
 
         if not doc:
+            return False
+
+        # Visibility precondition: caller must be able to READ before delete.
+        if not _can_read_document(db, doc, tenant_id, identity_id, user_roles):
             return False
 
         # Delete versions
@@ -626,6 +680,7 @@ async def delete_document(doc_id):
 
 @bp.route("/<int:doc_id>/publish", methods=["POST"])
 @login_required
+@require_scope("documents:write")
 async def publish_document(doc_id):
     """Publish a document (set status=published, set published_at).
 
@@ -641,14 +696,25 @@ async def publish_document(doc_id):
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
 
+    claims = getattr(g, "claims", {}) or {}
+    identity_id = claims.get("identity_id")
+    user_roles = claims.get("roles") or []
+
     def publish():
         doc = (
-            db((db.doc_documents.id == doc_id) & (db.doc_documents.tenant_id == tenant_id))
+            db(
+                (db.doc_documents.id == doc_id)
+                & (db.doc_documents.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
 
         if not doc:
+            return None
+
+        # Visibility precondition: caller must be able to READ before publish.
+        if not _can_read_document(db, doc, tenant_id, identity_id, user_roles):
             return None
 
         now = datetime.now(timezone.utc)
@@ -694,9 +760,8 @@ async def list_public_documents():
     q = request.args.get("q", "").strip()
 
     def list_public():
-        query = (
-            (db.doc_documents.is_public == True)
-            & (db.doc_documents.status == "published")
+        query = (db.doc_documents.is_public == True) & (
+            db.doc_documents.status == "published"
         )
 
         # Apply filters
@@ -704,9 +769,8 @@ async def list_public_documents():
             query &= db.doc_documents.category == category
 
         if q:
-            query &= (
-                (db.doc_documents.title.like(f"%{q}%"))
-                | (db.doc_documents.body_text.like(f"%{q}%"))
+            query &= (db.doc_documents.title.like(f"%{q}%")) | (
+                db.doc_documents.body_text.like(f"%{q}%")
             )
 
         total = db(query).count()

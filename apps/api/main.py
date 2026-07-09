@@ -184,11 +184,20 @@ def _register_before_request(app: Quart) -> None:
         payload = verify_token(token)
         if not payload:
             return
+        sub = payload.get("sub", "")
+        try:
+            identity_id = int(sub)
+        except (TypeError, ValueError):
+            identity_id = None
         g.claims = {
-            "sub": payload.get("sub", ""),
+            "sub": sub,
             "tenant": payload.get("tenant", ""),
             "roles": payload.get("roles", []),
             "scope": payload.get("scope", []),
+            # The subject IS the authenticated identity id; expose it under the
+            # keys module handlers read (documents: identity_id, pages: user_identity_id).
+            "identity_id": identity_id,
+            "user_identity_id": identity_id,
         }
 
     @app.before_request
@@ -212,7 +221,9 @@ def _register_before_request(app: Quart) -> None:
             if not blueprint_name:
                 return  # No blueprint, allow (core route)
 
-            elder_module_by_blueprint = app.extensions.get("elder_module_by_blueprint", {})
+            elder_module_by_blueprint = app.extensions.get(
+                "elder_module_by_blueprint", {}
+            )
             module_name = elder_module_by_blueprint.get(blueprint_name)
             if not module_name:
                 return  # Not a module route, allow (core route)
@@ -271,7 +282,11 @@ def _register_before_request(app: Quart) -> None:
                     from apps.api.common.modules.tenant_toggle import is_module_enabled
 
                     if not is_module_enabled(
-                        db, redis_client, tenant_id, module_name, manifest.default_enabled
+                        db,
+                        redis_client,
+                        tenant_id,
+                        module_name,
+                        manifest.default_enabled,
                     ):
                         logger.info(
                             "module_access_denied_disabled",
@@ -373,12 +388,15 @@ def _init_redis_client(app: Quart) -> None:
                 reason="REDIS_URL not configured",
             )
             app.extensions["module_redis"] = None
+            app.redis_client = None
             return
 
         redis_client = redis.from_url(redis_url)
         # Test connectivity
         redis_client.ping()
         app.extensions["module_redis"] = redis_client
+        # Alias used by modules that mint village_ids (documents, pages).
+        app.redis_client = redis_client
         logger.info("module_redis_initialized")
     except Exception as e:
         logger.warning(
@@ -388,6 +406,7 @@ def _init_redis_client(app: Quart) -> None:
         )
         # Stash None; enforcement will fail-soft at request time
         app.extensions["module_redis"] = None
+        app.redis_client = None
 
 
 def _init_access_review_scheduler(app: Quart) -> None:

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
@@ -78,6 +78,7 @@ def _build_collection_tree(db, rows_by_id: dict) -> list[dict]:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def list_collections():
     """List document collections as a hierarchical tree.
 
@@ -107,6 +108,7 @@ async def list_collections():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("documents:write")
 async def create_collection():
     """Create a new collection.
 
@@ -207,6 +209,7 @@ async def create_collection():
 
 @bp.route("/<int:coll_id>", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def get_collection(coll_id):
     """Get a single collection by ID.
 
@@ -251,6 +254,7 @@ async def get_collection(coll_id):
 
 @bp.route("/<int:coll_id>", methods=["PATCH"])
 @login_required
+@require_scope("documents:write")
 async def update_collection(coll_id):
     """Update a collection.
 
@@ -343,6 +347,7 @@ async def update_collection(coll_id):
 
 @bp.route("/<int:coll_id>", methods=["DELETE"])
 @login_required
+@require_scope("documents:write")
 async def delete_collection(coll_id):
     """Delete a collection.
 
@@ -391,9 +396,13 @@ async def delete_collection(coll_id):
 
     if isinstance(result, str):
         if result == "collection_not_empty":
-            return ApiResponse.error("Collection contains documents; delete them first", 400)
+            return ApiResponse.error(
+                "Collection contains documents; delete them first", 400
+            )
         elif result == "collection_has_children":
-            return ApiResponse.error("Collection has child collections; delete them first", 400)
+            return ApiResponse.error(
+                "Collection has child collections; delete them first", 400
+            )
         else:
             return ApiResponse.error(result, 400)
 
@@ -406,6 +415,7 @@ async def delete_collection(coll_id):
 # Collection document attachment endpoints
 @bp.route("/<int:coll_id>/documents/<int:doc_id>", methods=["POST"])
 @login_required
+@require_scope("documents:write")
 async def attach_document_to_collection(coll_id, doc_id):
     """Attach a document to a collection.
 
@@ -448,10 +458,14 @@ async def attach_document_to_collection(coll_id, doc_id):
             return ("document_not_found", None)
 
         # Check if already attached
-        existing = db(
-            (db.doc_document_collections.doc_document_id == doc_id)
-            & (db.doc_document_collections.doc_collection_id == coll_id)
-        ).select().first()
+        existing = (
+            db(
+                (db.doc_document_collections.doc_document_id == doc_id)
+                & (db.doc_document_collections.doc_collection_id == coll_id)
+            )
+            .select()
+            .first()
+        )
 
         if existing:
             return ("already_attached", None)
@@ -479,6 +493,7 @@ async def attach_document_to_collection(coll_id, doc_id):
 
 @bp.route("/<int:coll_id>/documents/<int:doc_id>", methods=["DELETE"])
 @login_required
+@require_scope("documents:write")
 async def detach_document_from_collection(coll_id, doc_id):
     """Detach a document from a collection.
 
@@ -508,10 +523,14 @@ async def detach_document_from_collection(coll_id, doc_id):
             return False
 
         # Check if attachment exists
-        existing = db(
-            (db.doc_document_collections.doc_document_id == doc_id)
-            & (db.doc_document_collections.doc_collection_id == coll_id)
-        ).select().first()
+        existing = (
+            db(
+                (db.doc_document_collections.doc_document_id == doc_id)
+                & (db.doc_document_collections.doc_collection_id == coll_id)
+            )
+            .select()
+            .first()
+        )
 
         if not existing:
             return False

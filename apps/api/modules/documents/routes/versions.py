@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.modules.documents.routes.documents import _can_read_document
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -31,6 +32,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("/<int:doc_id>/versions", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def list_versions(doc_id):
     """List all versions of a document.
 
@@ -76,6 +78,12 @@ async def list_versions(doc_id):
     if doc is None:
         return ApiResponse.not_found("Document")
 
+    claims = getattr(g, "claims", {}) or {}
+    if not _can_read_document(
+        db, doc, tenant_id, claims.get("identity_id"), claims.get("roles") or []
+    ):
+        return ApiResponse.not_found("Document")
+
     versions = [
         {
             "id": r.id,
@@ -106,6 +114,7 @@ async def list_versions(doc_id):
 
 @bp.route("/<int:doc_id>/versions/<int:version_number>", methods=["GET"])
 @login_required
+@require_scope("documents:read")
 async def get_version(doc_id, version_number):
     """Get a specific version of a document.
 
@@ -151,6 +160,12 @@ async def get_version(doc_id, version_number):
     if doc is None:
         return ApiResponse.not_found("Document")
 
+    claims = getattr(g, "claims", {}) or {}
+    if not _can_read_document(
+        db, doc, tenant_id, claims.get("identity_id"), claims.get("roles") or []
+    ):
+        return ApiResponse.not_found("Document")
+
     if version is None:
         return ApiResponse.not_found("Version")
 
@@ -170,6 +185,7 @@ async def get_version(doc_id, version_number):
 
 @bp.route("/<int:doc_id>/versions/<int:version_number>/restore", methods=["POST"])
 @login_required
+@require_scope("documents:write")
 async def restore_version(doc_id, version_number):
     """Restore a document from a specific version.
 
@@ -193,6 +209,21 @@ async def restore_version(doc_id, version_number):
     identity_id = claims.get("identity_id")
     if not identity_id:
         return ApiResponse.error("Identity not found in token", 403)
+
+    # Authorization: caller must be able to read the parent document before mutating it.
+    pre_doc = await run_in_threadpool(
+        lambda: db(
+            (db.doc_documents.id == doc_id) & (db.doc_documents.tenant_id == tenant_id)
+        )
+        .select()
+        .first()
+    )
+    if pre_doc is None:
+        return ApiResponse.not_found("Document")
+    if not _can_read_document(
+        db, pre_doc, tenant_id, identity_id, claims.get("roles") or []
+    ):
+        return ApiResponse.not_found("Document")
 
     def restore():
         # Verify document exists and belongs to tenant
@@ -243,9 +274,7 @@ async def restore_version(doc_id, version_number):
         db.commit()
 
         # Fetch the updated document
-        updated_doc = (
-            db(db.doc_documents.id == doc_id).select().first()
-        )
+        updated_doc = db(db.doc_documents.id == doc_id).select().first()
 
         return (updated_doc, new_version_number, source_version)
 

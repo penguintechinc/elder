@@ -30,11 +30,7 @@ class TestPagesAPI:
         db = app.db
 
         def _setup():
-            from sqlalchemy import text
-            from sqlalchemy.orm import Session
-
-            # Get the DB engine from the DAL
-            session = db._db.session if hasattr(db, "_db") else None
+            now = datetime.now(timezone.utc)
 
             # Create tenant 1
             tenant1_id = db.tenants.insert(
@@ -54,59 +50,39 @@ class TestPagesAPI:
                 updated_at=datetime.now(timezone.utc),
             )
 
-            # Create identity for tenant 1 (author) - use INSERT with explicit DEFAULT for missing columns
+            # Create identity for tenant 1 (author)
             email1 = f"author1-{uuid.uuid4().hex[:8]}@test.local"
-            conn = db._db if hasattr(db, "_db") else db
-            stmt1 = text("""
-                INSERT INTO identities (
-                    tenant_id, username, email, identity_type, auth_provider,
-                    is_active, is_superuser, mfa_enabled, must_change_password,
-                    portal_role, created_at, updated_at
-                ) VALUES (
-                    :tenant_id, :username, :email, :identity_type, :auth_provider,
-                    :is_active, :is_superuser, :mfa_enabled, :must_change_password,
-                    :portal_role, :created_at, :updated_at
-                ) RETURNING id
-            """)
-            result1 = conn.execute(
-                stmt1,
-                {
-                    "tenant_id": tenant1_id,
-                    "username": email1,
-                    "email": email1,
-                    "identity_type": "human",
-                    "auth_provider": "local",
-                    "is_active": True,
-                    "is_superuser": False,
-                    "mfa_enabled": False,
-                    "must_change_password": False,
-                    "portal_role": "viewer",
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
-                },
+            author1_id = db.identities.insert(
+                tenant_id=tenant1_id,
+                username=email1,
+                email=email1,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
             )
-            author1_id = result1.scalar()
 
             # Create identity for tenant 2
             email2 = f"author2-{uuid.uuid4().hex[:8]}@test.local"
-            result2 = conn.execute(
-                stmt1,
-                {
-                    "tenant_id": tenant2_id,
-                    "username": email2,
-                    "email": email2,
-                    "identity_type": "human",
-                    "auth_provider": "local",
-                    "is_active": True,
-                    "is_superuser": False,
-                    "mfa_enabled": False,
-                    "must_change_password": False,
-                    "portal_role": "viewer",
-                    "created_at": datetime.now(timezone.utc),
-                    "updated_at": datetime.now(timezone.utc),
-                },
+            author2_id = db.identities.insert(
+                tenant_id=tenant2_id,
+                username=email2,
+                email=email2,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
             )
-            author2_id = result2.scalar()
 
             db.commit()
 
@@ -121,9 +97,12 @@ class TestPagesAPI:
 
         self.fixtures = await run_in_threadpool(_setup)
 
-    def generate_token(self, app, tenant_id: int, user_id: int, scopes=None):
+    def generate_token(
+        self, app, tenant_id: int, user_id: int, scopes=None, roles=None
+    ):
         """Generate a test JWT token."""
         from datetime import datetime, timedelta, timezone
+
         import jwt
 
         if scopes is None:
@@ -131,18 +110,17 @@ class TestPagesAPI:
 
         payload = {
             "sub": str(user_id),
-            "iss": "test",
-            "aud": "test",
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
-            "scope": " ".join(scopes),
+            "scope": scopes,
             "tenant": str(tenant_id),
             "user_identity_id": user_id,
-            "roles": ["admin"],
+            "roles": ["admin"] if roles is None else roles,
             "teams": [],
         }
 
-        token = jwt.encode(payload, "test-secret", algorithm="HS256")
+        secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
+        token = jwt.encode(payload, secret, algorithm="HS256")
         return token
 
     @pytest.mark.asyncio
@@ -349,6 +327,53 @@ class TestPagesAPI:
         assert response.status_code == 403
 
     @pytest.mark.asyncio
+    async def test_write_blocked_when_not_readable(self, app):
+        """IDOR regression: a pages:write/admin caller who cannot READ a
+        role-restricted page must not be able to update or delete it.
+
+        regression: security-review-idor-pages-write
+        """
+        client = app.test_client()
+        tenant_id = self.fixtures["tenant1_id"]
+        author_id = self.fixtures["author1_id"]
+        attacker_id = self.fixtures["author2_id"]
+
+        # Author (admin) creates a page restricted to the 'editor' role.
+        owner_token = self.generate_token(app, tenant_id, author_id)
+        create_response = await client.post(
+            "/api/v1/pages",
+            json={
+                "title": "Editors Only Page",
+                "body_html": "<p>secret</p>",
+                "visibility": "roles",
+                "visibility_roles": ["editor"],
+            },
+            headers={"Authorization": f"Bearer {owner_token}"},
+        )
+        assert create_response.status_code == 201
+        slug = json.loads(await create_response.get_data())["slug"]
+
+        # Attacker holds write+admin scope but only the 'viewer' role.
+        attacker = self.generate_token(
+            app,
+            tenant_id,
+            attacker_id,
+            scopes=["pages:read", "pages:write", "pages:admin"],
+            roles=["viewer"],
+        )
+        put = await client.put(
+            f"/api/v1/pages/{slug}",
+            json={"title": "Hijacked"},
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert put.status_code in (403, 404)
+        deleted = await client.delete(
+            f"/api/v1/pages/{slug}",
+            headers={"Authorization": f"Bearer {attacker}"},
+        )
+        assert deleted.status_code in (403, 404)
+
+    @pytest.mark.asyncio
     async def test_bleach_strips_script(self, app):
         """Test bleach sanitization strips <script> tags."""
         client = app.test_client()
@@ -521,12 +546,16 @@ class TestPagesAPI:
         data = json.loads(await response.get_data())
         assert len([p for p in data["items"] if p["title"] == "Tenant 1 Page"]) == 1
 
-        # Tenant 2 user should not see tenant 1's pages
+        # Both tenants share the slug; tenant 2 requesting it gets its OWN page,
+        # never tenant 1's — proving cross-tenant isolation.
         response = await client.get(
             f"/api/v1/pages/{page1_data['slug']}",
             headers={"Authorization": f"Bearer {token2}"},
         )
-        assert response.status_code == 404
+        assert response.status_code == 200
+        seen = json.loads(await response.get_data())
+        assert seen["village_id"] == page2_data["village_id"]
+        assert seen["village_id"] != page1_data["village_id"]
 
     @pytest.mark.asyncio
     async def test_update_page(self, app):
