@@ -10,7 +10,7 @@ from uuid import uuid4
 import httpx
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -73,6 +73,7 @@ async def _verify_captcha(
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:admin")
 async def list_forms():
     """
     List ticket forms for tenant with pagination.
@@ -146,6 +147,7 @@ async def list_forms():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:admin")
 async def create_form():
     """
     Create a new ticket form.
@@ -253,6 +255,7 @@ async def create_form():
 
 @bp.route("/<int:form_id>", methods=["GET"])
 @login_required
+@require_scope("helpdesk:admin")
 async def get_form(form_id):
     """
     Get a single ticket form by ID.
@@ -310,6 +313,7 @@ async def get_form(form_id):
 
 @bp.route("/<int:form_id>", methods=["PATCH"])
 @login_required
+@require_scope("helpdesk:admin")
 async def update_form(form_id):
     """
     Update a ticket form.
@@ -410,6 +414,7 @@ async def update_form(form_id):
 
 @bp.route("/<int:form_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:admin")
 async def delete_form(form_id):
     """
     Delete a ticket form.

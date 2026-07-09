@@ -12,7 +12,7 @@ from penguin_libs.pydantic import RequestModel, validated_request
 from pydantic import Field
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.dataclasses import (
     DependencyDTO,
@@ -145,6 +145,7 @@ def get_resource(db, resource_type: str, resource_id: int):
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def list_dependencies():
     """
     List all dependencies with pagination and filtering.
@@ -227,6 +228,7 @@ async def list_dependencies():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=CreateDependencyRequest)
 async def create_dependency(body: CreateDependencyRequest):
     """
@@ -349,6 +351,7 @@ async def create_dependency(body: CreateDependencyRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_dependency(id: int):
     """
     Get a single dependency by ID.
@@ -373,6 +376,7 @@ async def get_dependency(id: int):
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
 @login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=UpdateDependencyRequest)
 async def update_dependency(id: int, body: UpdateDependencyRequest):
     """
@@ -444,6 +448,7 @@ async def update_dependency(id: int, body: UpdateDependencyRequest):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 async def delete_dependency(id: int):
     """
     Delete a dependency relationship.
@@ -472,6 +477,7 @@ async def delete_dependency(id: int):
 
 @bp.route("/bulk", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def create_bulk_dependencies():
     """
     Create multiple dependencies at once.
@@ -547,6 +553,7 @@ async def create_bulk_dependencies():
 
 @bp.route("/bulk", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=BulkDeleteDependenciesRequest)
 async def delete_bulk_dependencies(body: BulkDeleteDependenciesRequest):
     """
@@ -576,6 +583,7 @@ async def delete_bulk_dependencies(body: BulkDeleteDependenciesRequest):
 
 @bp.route("/resource/<resource_type>/<int:resource_id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_resource_dependencies(resource_type: str, resource_id: int):
     """
     Get all dependencies for a specific resource.

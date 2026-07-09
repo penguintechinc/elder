@@ -8,7 +8,11 @@ from datetime import date, datetime
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -111,6 +115,7 @@ def calculate_certificate_status(expiration_date, renewal_days_before, is_revoke
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 async def list_certificates():
     """List certificates with optional filtering."""
     db = current_app.db
@@ -182,6 +187,7 @@ async def list_certificates():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def create_certificate():
     """Create a new certificate entry."""
     db = current_app.db
@@ -329,6 +335,7 @@ async def create_certificate():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 async def get_certificate(id: int):
     """Get a single certificate entry by ID."""
     db = current_app.db
@@ -353,6 +360,7 @@ async def get_certificate(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("secrets:write")
 @resource_role_required("maintainer")
 async def update_certificate(id: int):
     """Update a certificate entry."""
@@ -538,6 +546,7 @@ async def update_certificate(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:write")
 @resource_role_required("maintainer")
 async def delete_certificate(id: int):
     """Delete a certificate entry."""

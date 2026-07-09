@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from quart import Blueprint, current_app, g, jsonify, request
 from quart_cors import route_cors
 
-from apps.api.auth.decorators import admin_required, login_required
+from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
@@ -21,6 +21,7 @@ bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
 @bp.route("/configs", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def list_sync_configs():
     """List all sync configurations."""
     db = current_app.db
@@ -33,6 +34,7 @@ def list_sync_configs():
 @bp.route("/configs", methods=["POST"])
 @route_cors()
 @login_required
+@require_scope("discovery:admin")
 @admin_required
 async def create_sync_config():
     """Create a new sync configuration."""
@@ -73,6 +75,7 @@ async def create_sync_config():
 @bp.route("/configs/<int:config_id>", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def get_sync_config(config_id):
     """Get sync configuration details."""
     db = current_app.db
@@ -88,6 +91,7 @@ def get_sync_config(config_id):
 @bp.route("/configs/<int:config_id>", methods=["PATCH"])
 @route_cors()
 @admin_required
+@require_scope("discovery:admin")
 async def update_sync_config(config_id):
     """Update sync configuration."""
     db = current_app.db
@@ -125,6 +129,7 @@ async def update_sync_config(config_id):
 @bp.route("/configs/<int:config_id>", methods=["DELETE"])
 @route_cors()
 @admin_required
+@require_scope("discovery:admin")
 async def delete_sync_config(config_id):
     """Delete sync configuration."""
     db = current_app.db
@@ -147,6 +152,7 @@ async def delete_sync_config(config_id):
 @bp.route("/history", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def list_sync_history():
     """List sync history with pagination."""
     db = current_app.db
@@ -195,6 +201,7 @@ def list_sync_history():
 @bp.route("/conflicts", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def list_sync_conflicts():
     """List unresolved sync conflicts."""
     db = current_app.db
@@ -214,6 +221,7 @@ def list_sync_conflicts():
 @bp.route("/conflicts/<int:conflict_id>/resolve", methods=["POST"])
 @route_cors()
 @admin_required
+@require_scope("discovery:admin")
 async def resolve_conflict(conflict_id):
     """Resolve a sync conflict manually."""
     db = current_app.db
@@ -246,6 +254,7 @@ async def resolve_conflict(conflict_id):
 @bp.route("/mappings", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def list_sync_mappings():
     """List sync mappings."""
     db = current_app.db
@@ -270,6 +279,7 @@ def list_sync_mappings():
 @bp.route("/status", methods=["GET"])
 @route_cors()
 @login_required
+@require_scope("discovery:read")
 def sync_status():
     """Get overall sync status summary."""
     db = current_app.db

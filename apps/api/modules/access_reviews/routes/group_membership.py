@@ -10,7 +10,7 @@ import logging
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.group_membership import GroupMembershipService
@@ -32,6 +32,7 @@ def get_service():
 
 @bp.route("/groups", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def list_groups():
     """
@@ -69,6 +70,7 @@ def list_groups():
 
 @bp.route("/groups/<int:group_id>", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def get_group(group_id):
     """
@@ -93,6 +95,7 @@ def get_group(group_id):
 
 @bp.route("/groups/<int:group_id>", methods=["PATCH"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def update_group(group_id):
     """
@@ -154,6 +157,7 @@ async def update_group(group_id):
 
 @bp.route("/groups/<int:group_id>/requests", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def create_access_request(group_id):
     """
@@ -206,6 +210,7 @@ async def create_access_request(group_id):
 
 @bp.route("/groups/<int:group_id>/requests", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def list_group_requests(group_id):
     """
@@ -248,6 +253,7 @@ def list_group_requests(group_id):
 
 @bp.route("/requests/pending", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def list_pending_requests():
     """
@@ -284,6 +290,7 @@ def list_pending_requests():
 
 @bp.route("/requests/<int:request_id>/approve", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def approve_request(request_id):
     """
@@ -330,6 +337,7 @@ async def approve_request(request_id):
 
 @bp.route("/requests/<int:request_id>/deny", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def deny_request(request_id):
     """
@@ -376,6 +384,7 @@ async def deny_request(request_id):
 
 @bp.route("/requests/<int:request_id>", methods=["DELETE"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 def cancel_request(request_id):
     """
@@ -411,6 +420,7 @@ def cancel_request(request_id):
 
 @bp.route("/requests/bulk-approve", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def bulk_approve_requests():
     """
@@ -455,6 +465,7 @@ async def bulk_approve_requests():
 
 @bp.route("/groups/<int:group_id>/members", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def list_group_members(group_id):
     """
@@ -488,6 +499,7 @@ def list_group_members(group_id):
 
 @bp.route("/groups/<int:group_id>/members", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def add_group_member(group_id):
     """
@@ -544,6 +556,7 @@ async def add_group_member(group_id):
 
 @bp.route("/groups/<int:group_id>/members/<int:identity_id>", methods=["DELETE"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 def remove_group_member(group_id, identity_id):
     """

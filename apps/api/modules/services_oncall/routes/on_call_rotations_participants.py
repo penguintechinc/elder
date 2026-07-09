@@ -9,7 +9,11 @@ from datetime import timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -25,6 +29,7 @@ bp = Blueprint("on_call_rotations_participants", __name__)
 
 @bp.route("/<int:rotation_id>/participants", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def list_participants(rotation_id: int):
     """
     List all participants in a rotation.
@@ -107,6 +112,7 @@ async def list_participants(rotation_id: int):
 
 @bp.route("/<int:rotation_id>/participants", methods=["POST"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def add_participant(rotation_id: int):
     """
@@ -218,6 +224,7 @@ async def add_participant(rotation_id: int):
 
 @bp.route("/<int:rotation_id>/participants/<int:participant_id>", methods=["PUT"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def update_participant(rotation_id: int, participant_id: int):
     """
@@ -323,6 +330,7 @@ async def update_participant(rotation_id: int, participant_id: int):
 
 @bp.route("/<int:rotation_id>/participants/<int:participant_id>", methods=["DELETE"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def remove_participant(rotation_id: int, participant_id: int):
     """
@@ -364,6 +372,7 @@ async def remove_participant(rotation_id: int, participant_id: int):
 
 @bp.route("/<int:rotation_id>/overrides", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def list_overrides(rotation_id: int):
     """
     List all overrides for a rotation.
@@ -439,6 +448,7 @@ async def list_overrides(rotation_id: int):
 
 @bp.route("/<int:rotation_id>/overrides", methods=["POST"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def create_override(rotation_id: int):
     """
@@ -583,6 +593,7 @@ async def create_override(rotation_id: int):
 
 @bp.route("/overrides/<int:override_id>", methods=["PUT"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def update_override(override_id: int):
     """
@@ -669,6 +680,7 @@ async def update_override(override_id: int):
 
 @bp.route("/overrides/<int:override_id>", methods=["DELETE"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def delete_override(override_id: int):
     """

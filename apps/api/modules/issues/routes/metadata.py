@@ -11,7 +11,11 @@ from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import RequestModel
 from apps.api.utils.quart_validation import validated_request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    resource_role_required,
+    require_scope,
+)
 from apps.api.licensing_fallback import license_required
 from apps.api.utils.async_utils import run_in_threadpool
 
@@ -98,6 +102,7 @@ def _parse_value(value_str: str, field_type: str):
 
 @bp.route("/entities/<int:id>/metadata", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 @resource_role_required("viewer", resource_param="id")
 async def get_entity_metadata(id: int):
@@ -159,6 +164,7 @@ async def get_entity_metadata(id: int):
 
 @bp.route("/entities/<int:id>/metadata", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=CreateMetadataRequest)
@@ -257,6 +263,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
 
 @bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=UpdateMetadataRequest)
@@ -350,6 +357,7 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
 
 @bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 async def delete_entity_metadata(id: int, field_key: str):
@@ -417,6 +425,7 @@ async def delete_entity_metadata(id: int, field_key: str):
 
 @bp.route("/organizations/<int:id>/metadata", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 @resource_role_required("viewer", resource_param="id")
 async def get_organization_metadata(id: int):
@@ -476,6 +485,7 @@ async def get_organization_metadata(id: int):
 
 @bp.route("/organizations/<int:id>/metadata", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=CreateMetadataRequest)
@@ -571,6 +581,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
 
 @bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=UpdateMetadataRequest)
@@ -666,6 +677,7 @@ async def update_organization_metadata(
 
 @bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @resource_role_required("maintainer", resource_param="id")
 async def delete_organization_metadata(id: int, field_key: str):

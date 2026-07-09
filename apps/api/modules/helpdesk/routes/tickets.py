@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.helpdesk.services.sla import apply_sla_policy
@@ -34,6 +34,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def list_tickets():
     """
     List tickets with optional filtering and pagination.
@@ -136,6 +137,7 @@ async def list_tickets():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def create_ticket():
     """
     Create a new ticket.
@@ -267,6 +269,7 @@ async def create_ticket():
 
 @bp.route("/<int:ticket_id>", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def get_ticket(ticket_id):
     """
     Get a single ticket by ID.
@@ -333,6 +336,7 @@ async def get_ticket(ticket_id):
 
 @bp.route("/<int:ticket_id>", methods=["PATCH"])
 @login_required
+@require_scope("helpdesk:write")
 async def update_ticket(ticket_id):
     """
     Update a ticket.
@@ -445,6 +449,7 @@ async def update_ticket(ticket_id):
 
 @bp.route("/<int:ticket_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:write")
 async def delete_ticket(ticket_id):
     """
     Delete a ticket.
@@ -486,6 +491,7 @@ async def delete_ticket(ticket_id):
 
 @bp.route("/<int:ticket_id>/assign", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def assign_ticket(ticket_id):
     """
     Assign a ticket to a user.
@@ -582,6 +588,7 @@ async def assign_ticket(ticket_id):
 
 @bp.route("/<int:ticket_id>/merge", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def merge_tickets(ticket_id):
     """
     Merge two tickets (keep primary, mark secondary as merged).

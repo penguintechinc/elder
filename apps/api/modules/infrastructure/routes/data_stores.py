@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -51,6 +55,7 @@ VALID_DATA_CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def list_data_stores():
     """List data stores with optional filtering."""
     db = current_app.db
@@ -115,6 +120,7 @@ async def list_data_stores():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def create_data_store():
     """Create a new data store entry."""
     db = current_app.db
@@ -192,6 +198,7 @@ async def create_data_store():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_data_store(id: int):
     """Get a single data store entry by ID."""
     db = current_app.db
@@ -205,6 +212,7 @@ async def get_data_store(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("infrastructure:write")
 @resource_role_required("maintainer")
 async def update_data_store(id: int):
     """Update a data store entry."""
@@ -298,6 +306,7 @@ async def update_data_store(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 @resource_role_required("maintainer")
 async def delete_data_store(id: int):
     """Delete a data store entry."""
@@ -318,6 +327,7 @@ async def delete_data_store(id: int):
 
 @bp.route("/<int:id>/labels", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_data_store_labels(id: int):
     """Get labels for a data store."""
     db = current_app.db
@@ -341,6 +351,7 @@ async def get_data_store_labels(id: int):
 
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 @resource_role_required("viewer")
 async def add_data_store_label(id: int):
     """Add a label to a data store."""
@@ -389,6 +400,7 @@ async def add_data_store_label(id: int):
 
 @bp.route("/<int:id>/labels/<int:label_id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 @resource_role_required("maintainer")
 async def remove_data_store_label(id: int, label_id: int):
     """Remove a label from a data store."""

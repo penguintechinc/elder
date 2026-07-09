@@ -8,7 +8,11 @@ from dataclasses import asdict
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -56,6 +60,7 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
 
 @bp.route("/current/organization/<int:org_id>", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def get_current_oncall_for_org(org_id: int):
     """
     Get current on-call person for all rotations in an organization.
@@ -102,6 +107,7 @@ async def get_current_oncall_for_org(org_id: int):
 
 @bp.route("/current/service/<int:service_id>", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def get_current_oncall_for_service(service_id: int):
     """
     Get current on-call person for all rotations associated with a service.
@@ -146,6 +152,7 @@ async def get_current_oncall_for_service(service_id: int):
 
 @bp.route("/<int:rotation_id>/history", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def get_shift_history(rotation_id: int):
     """
     Get shift history for a rotation.
@@ -246,6 +253,7 @@ async def get_shift_history(rotation_id: int):
 
 @bp.route("/<int:rotation_id>/escalations", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def list_escalations(rotation_id: int):
     """
     List escalation policies for a rotation.
@@ -327,6 +335,7 @@ async def list_escalations(rotation_id: int):
 
 @bp.route("/<int:rotation_id>/escalations", methods=["POST"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def create_escalation(rotation_id: int):
     """
@@ -443,6 +452,7 @@ async def create_escalation(rotation_id: int):
 
 @bp.route("/escalations/<int:policy_id>", methods=["PUT"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def update_escalation(policy_id: int):
     """
@@ -525,6 +535,7 @@ async def update_escalation(policy_id: int):
 
 @bp.route("/escalations/<int:policy_id>", methods=["DELETE"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def delete_escalation(policy_id: int):
     """

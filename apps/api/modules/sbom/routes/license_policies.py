@@ -11,7 +11,11 @@ import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.models.pydantic import (
     CreateLicensePolicyRequest,
@@ -112,6 +116,7 @@ def _check_component_against_policy(component: dict, policy: dict) -> dict:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_policies():
     """
     List license policies with optional filtering.
@@ -178,6 +183,7 @@ async def list_policies():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 async def create_policy():
     """
     Create a new license policy.
@@ -264,6 +270,7 @@ async def create_policy():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_policy(id: int):
     """
     Get a single license policy by ID.
@@ -293,6 +300,7 @@ async def get_policy(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def update_policy(id: int):
     """
@@ -379,6 +387,7 @@ async def update_policy(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_policy(id: int):
     """
@@ -418,6 +427,7 @@ async def delete_policy(id: int):
 
 @bp.route("/check", methods=["POST"])
 @login_required
+@require_scope("sbom:read")
 async def check_components():
     """
     Check components against all active license policies.

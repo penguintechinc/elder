@@ -8,7 +8,7 @@ import logging
 from pydantic import ValidationError
 from quart import Blueprint, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from apps.api.services.networking import NetworkingService
@@ -24,6 +24,7 @@ bp = Blueprint("networking", __name__, url_prefix="/api/v1/networking")
 
 @bp.route("/networks", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def list_networks():
     """List networking resources with filters."""
     try:
@@ -53,6 +54,7 @@ def list_networks():
 
 @bp.route("/networks/<int:network_id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_network(network_id):
     """Get networking resource by ID."""
     try:
@@ -68,6 +70,7 @@ def get_network(network_id):
 
 @bp.route("/networks", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def create_network():
     """Create a new networking resource."""
     try:
@@ -103,6 +106,7 @@ async def create_network():
 
 @bp.route("/networks/<int:network_id>", methods=["PUT", "PATCH"])
 @login_required
+@require_scope("infrastructure:write")
 async def update_network(network_id):
     """Update networking resource."""
     try:
@@ -136,6 +140,7 @@ async def update_network(network_id):
 
 @bp.route("/networks/<int:network_id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 def delete_network(network_id):
     """Delete networking resource."""
     try:
@@ -158,6 +163,7 @@ def delete_network(network_id):
 
 @bp.route("/topology/connections", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def list_topology_connections():
     """List topology connections."""
     try:
@@ -180,6 +186,7 @@ def list_topology_connections():
 
 @bp.route("/topology/connections/<int:connection_id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_topology_connection(connection_id):
     """Get topology connection by ID."""
     try:
@@ -196,6 +203,7 @@ def get_topology_connection(connection_id):
 
 @bp.route("/topology/connections", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def create_topology_connection():
     """Create a network topology connection."""
     try:
@@ -234,6 +242,7 @@ async def create_topology_connection():
 
 @bp.route("/topology/connections/<int:connection_id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 def delete_topology_connection(connection_id):
     """Delete a topology connection."""
     try:
@@ -253,6 +262,7 @@ def delete_topology_connection(connection_id):
 
 @bp.route("/mappings", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def list_entity_mappings():
     """List entity-network mappings."""
     try:
@@ -277,6 +287,7 @@ def list_entity_mappings():
 
 @bp.route("/mappings/<int:mapping_id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_entity_mapping(mapping_id):
     """Get entity-network mapping by ID."""
     try:
@@ -293,6 +304,7 @@ def get_entity_mapping(mapping_id):
 
 @bp.route("/mappings", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def create_entity_mapping():
     """Map an entity to a network."""
     try:
@@ -329,6 +341,7 @@ async def create_entity_mapping():
 
 @bp.route("/mappings/<int:mapping_id>", methods=["DELETE"])
 @login_required
+@require_scope("infrastructure:write")
 def delete_entity_mapping(mapping_id):
     """Delete an entity-network mapping."""
     try:
@@ -348,6 +361,7 @@ def delete_entity_mapping(mapping_id):
 
 @bp.route("/topology/graph", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_topology_graph():
     """Get network topology as a graph for visualization."""
     try:

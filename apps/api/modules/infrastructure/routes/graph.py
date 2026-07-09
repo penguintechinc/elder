@@ -8,7 +8,7 @@ from typing import Dict
 import networkx as nx
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("graph", __name__)
@@ -25,6 +25,8 @@ VALID_RESOURCE_TYPES = [
 
 
 @bp.route("", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
 async def get_graph():
     """
     Get full dependency graph or filtered subgraph.
@@ -155,6 +157,8 @@ async def get_graph():
 
 
 @bp.route("/analyze", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
 async def analyze_graph():
     """
     Analyze dependency graph and return insights.
@@ -282,6 +286,8 @@ async def analyze_graph():
 
 
 @bp.route("/path", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
 async def find_path():
     """
     Find dependency path between two entities.
@@ -370,6 +376,7 @@ async def find_path():
 
 @bp.route("/map", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_map():
     """
     Get global map of all resources and relationships for visualization.

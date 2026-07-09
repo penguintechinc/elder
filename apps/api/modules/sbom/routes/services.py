@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMComponentDTO,
@@ -32,6 +36,7 @@ bp = Blueprint("services", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_services():
     """
     List services with optional filtering.
@@ -108,6 +113,7 @@ async def list_services():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @validated_request(body_model=CreateServiceRequest)
 async def create_service(body: CreateServiceRequest):
     """
@@ -189,6 +195,7 @@ async def create_service(body: CreateServiceRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_service(id: int):
     """
     Get a single service by ID.
@@ -216,6 +223,7 @@ async def get_service(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 @validated_request(body_model=UpdateServiceRequest)
 async def update_service(id: int, body: UpdateServiceRequest):
@@ -290,6 +298,7 @@ async def update_service(id: int, body: UpdateServiceRequest):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_service(id: int):
     """
@@ -326,6 +335,7 @@ async def delete_service(id: int):
 
 @bp.route("/<int:id>/sbom", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_service_sbom(id: int):
     """
     Get SBOM components for a service.
@@ -364,6 +374,7 @@ async def get_service_sbom(id: int):
 
 @bp.route("/<int:id>/sbom/scan", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("viewer")
 async def trigger_service_sbom_scan(id: int):
     """
@@ -433,6 +444,7 @@ async def trigger_service_sbom_scan(id: int):
 
 @bp.route("/endpoints", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_service_endpoints():
     """
     List all service endpoints across services.
@@ -527,6 +539,7 @@ async def list_service_endpoints():
 
 @bp.route("/<int:id>/sbom/export", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def export_service_sbom(id: int):
     """
     Export service SBOM in standard format.

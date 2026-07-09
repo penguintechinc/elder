@@ -162,3 +162,6 @@ google-auth-oauthlib==1.2.1
 
 # Cloud Logging (optional)
 # google-cloud-logging==3.11.4
+
+# HTML Sanitization (Phase 3b — Documents/Pages WYSIWYG bodies)
+bleach==6.2.0

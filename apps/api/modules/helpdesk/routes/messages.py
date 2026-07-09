@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -32,6 +32,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("/<int:ticket_id>/messages", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def list_messages(ticket_id):
     """
     List messages for a ticket with pagination.
@@ -112,6 +113,7 @@ async def list_messages(ticket_id):
 
 @bp.route("/<int:ticket_id>/messages", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def add_message(ticket_id):
     """
     Add a message to a ticket.

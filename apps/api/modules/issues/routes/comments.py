@@ -10,7 +10,7 @@ from penguin_libs.pydantic import Description1000, RequestModel
 from penguin_licensing.decorators import license_required
 from quart import Blueprint, current_app, g, jsonify
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.dataclasses import IssueCommentDTO, from_pydal_row, from_pydal_rows
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
@@ -37,6 +37,7 @@ class UpdateCommentRequest(RequestModel):
 
 @bp.route("/<int:id>/comments", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 async def list_issue_comments(id: int):
     """
@@ -84,6 +85,7 @@ async def list_issue_comments(id: int):
 
 @bp.route("/<int:id>/comments", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=CreateCommentRequest)
 async def create_issue_comment(id: int, body: CreateCommentRequest):
@@ -139,6 +141,7 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
 
 @bp.route("/<int:id>/comments/<int:comment_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def delete_issue_comment(id: int, comment_id: int):
     """
@@ -189,6 +192,7 @@ async def delete_issue_comment(id: int, comment_id: int):
 
 @bp.route("/<int:id>/comments/<int:comment_id>", methods=["PATCH"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=UpdateCommentRequest)
 async def update_issue_comment(id: int, comment_id: int, body: UpdateCommentRequest):

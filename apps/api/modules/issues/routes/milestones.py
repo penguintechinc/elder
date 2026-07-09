@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    resource_role_required,
+    require_scope,
+)
 from apps.api.models.dataclasses import (
     MilestoneDTO,
     PaginatedResponse,
@@ -23,6 +27,7 @@ bp = Blueprint("milestones", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def list_milestones():
     """
     List milestones with optional filtering.
@@ -101,6 +106,7 @@ async def list_milestones():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 async def create_milestone():
     """
     Create a new milestone.
@@ -172,6 +178,7 @@ async def create_milestone():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def get_milestone(id: int):
     """
     Get a single milestone by ID.
@@ -199,6 +206,7 @@ async def get_milestone(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("issues:write")
 @resource_role_required("maintainer")
 async def update_milestone(id: int):
     """
@@ -286,6 +294,7 @@ async def update_milestone(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @resource_role_required("maintainer")
 async def delete_milestone(id: int):
     """
@@ -325,6 +334,7 @@ async def delete_milestone(id: int):
 
 @bp.route("/<int:id>/issues", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def get_milestone_issues(id: int):
     """
     Get all issues linked to a milestone.

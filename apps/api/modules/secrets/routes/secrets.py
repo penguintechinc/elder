@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.secrets import SecretsService
 from apps.api.services.secrets.base import (
@@ -27,6 +27,7 @@ def get_secrets_service():
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def list_secrets():
     """
     List all secrets accessible by current user/organization.
@@ -60,6 +61,7 @@ def list_secrets():
 
 @bp.route("/<int:secret_id>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_secret(secret_id):
     """
     Get a specific secret (masked by default).
@@ -103,6 +105,7 @@ def get_secret(secret_id):
 
 @bp.route("/<int:secret_id>/unmask", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 def unmask_secret(secret_id):
     """
     Unmask a secret and retrieve its actual value.
@@ -144,6 +147,7 @@ def unmask_secret(secret_id):
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def create_secret():
     """
     Register a new secret from a provider.
@@ -221,6 +225,7 @@ async def create_secret():
 
 @bp.route("/<int:secret_id>", methods=["PUT"])
 @login_required
+@require_scope("secrets:write")
 async def update_secret(secret_id):
     """
     Update secret metadata (not the actual value in provider).
@@ -265,6 +270,7 @@ async def update_secret(secret_id):
 
 @bp.route("/<int:secret_id>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:write")
 def delete_secret(secret_id):
     """
     Remove secret registration (does not delete from provider).
@@ -291,6 +297,7 @@ def delete_secret(secret_id):
 
 @bp.route("/<int:secret_id>/sync", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 def sync_secret(secret_id):
     """
     Force sync secret metadata from provider.
@@ -324,6 +331,7 @@ def sync_secret(secret_id):
 
 @bp.route("/<int:secret_id>/access-log", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_secret_access_log(secret_id):
     """
     Get access log for a secret.
@@ -363,6 +371,7 @@ def get_secret_access_log(secret_id):
 # Secret Provider endpoints
 @bp.route("/providers", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def list_secret_providers():
     """
     List all secret providers.
@@ -393,6 +402,7 @@ def list_secret_providers():
 
 @bp.route("/providers", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 async def create_secret_provider():
     """
     Register a new secret provider.
@@ -453,6 +463,7 @@ async def create_secret_provider():
 
 @bp.route("/providers/<int:provider_id>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_secret_provider(provider_id):
     """
     Get secret provider details.
@@ -477,6 +488,7 @@ def get_secret_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
+@require_scope("secrets:admin")
 async def update_secret_provider(provider_id):
     """
     Update secret provider configuration.
@@ -518,6 +530,7 @@ async def update_secret_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:admin")
 def delete_secret_provider(provider_id):
     """
     Delete secret provider.
@@ -546,6 +559,7 @@ def delete_secret_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>/sync", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 def sync_secret_provider(provider_id):
     """
     Sync all secrets from provider.
@@ -572,6 +586,7 @@ def sync_secret_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>/test", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 def test_secret_provider(provider_id):
     """
     Test provider connection.
