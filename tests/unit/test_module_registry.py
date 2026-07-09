@@ -257,7 +257,8 @@ class TestPhaseZeroModules:
         assert "infrastructure" in discovery.depends_on
 
     def test_phase_zero_count(self):
-        """Test Phase 0 has expected module count (9)."""
-        # Phase 0: infrastructure, ipam, sbom, services_oncall,
+        """Test the registered-module count (bump when a module is added)."""
+        # Phase 0 (9): infrastructure, ipam, sbom, services_oncall,
         # issues, discovery, secrets, webhooks_alerting, access_reviews
-        assert len(MODULES) == 9
+        # Phase 3 (+1): helpdesk
+        assert len(MODULES) == 10
