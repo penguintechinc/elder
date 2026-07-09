@@ -12,6 +12,7 @@ import discoveryModule from './discovery'
 import secretsModule from './secrets'
 import webhooksAlertingModule from './webhooks_alerting'
 import accessReviewsModule from './access_reviews'
+import helpdeskModule from './helpdesk'
 
 /**
  * Module registry: all available feature modules.
@@ -27,6 +28,7 @@ export const MODULES: FrontendModule[] = [
   secretsModule,
   webhooksAlertingModule,
   accessReviewsModule,
+  helpdeskModule,
 ]
 
 /**

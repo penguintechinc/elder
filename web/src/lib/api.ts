@@ -2410,6 +2410,321 @@ class ApiClient {
     const response = await this.client.put(`/tenants/${tenantId}/modules`, data)
     return response.data
   }
+
+  // ===========================
+  // Helpdesk (Phase 3)
+  // ===========================
+
+  // Helpdesk Dashboard
+  async getHelpdeskDashboardStats() {
+    const response = await this.client.get('/helpdesk/dashboard/stats')
+    return response.data
+  }
+
+  // Helpdesk Tickets
+  async getHelpdeskTickets(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    priority?: string
+    assigned_to?: number
+    search?: string
+  }) {
+    const response = await this.client.get('/helpdesk/tickets', { params })
+    return response.data
+  }
+
+  async getHelpdeskTicket(id: string) {
+    const response = await this.client.get(`/helpdesk/tickets/${id}`)
+    return response.data
+  }
+
+  async createHelpdeskTicket(data: {
+    subject: string
+    description?: string
+    priority?: string
+    assigned_to?: number
+    company_id?: number
+    contact_id?: number
+  }) {
+    const response = await this.client.post('/helpdesk/tickets', data)
+    return response.data
+  }
+
+  async updateHelpdeskTicket(id: string, data: Partial<{
+    subject: string
+    description: string
+    status: string
+    priority: string
+    assigned_to: number | null
+  }>) {
+    const response = await this.client.patch(`/helpdesk/tickets/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskTicket(id: string) {
+    const response = await this.client.delete(`/helpdesk/tickets/${id}`)
+    return response.data
+  }
+
+  async assignHelpdeskTicket(id: string, data: { assigned_to: number }) {
+    const response = await this.client.post(`/helpdesk/tickets/${id}/assign`, data)
+    return response.data
+  }
+
+  async mergeHelpdeskTickets(id: string, data: { merge_into_id: string }) {
+    const response = await this.client.post(`/helpdesk/tickets/${id}/merge`, data)
+    return response.data
+  }
+
+  // Helpdesk Messages
+  async getHelpdeskMessages(ticketId: string, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/helpdesk/tickets/${ticketId}/messages`, { params })
+    return response.data
+  }
+
+  async createHelpdeskMessage(ticketId: string, data: {
+    body: string
+    is_internal: boolean
+  }) {
+    const response = await this.client.post(`/helpdesk/tickets/${ticketId}/messages`, data)
+    return response.data
+  }
+
+  // Helpdesk Settings - SLA Policies
+  async getHelpdeskSlaPolicies(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/helpdesk/sla-policies', { params })
+    return response.data
+  }
+
+  async createHelpdeskSlaPolicy(data: {
+    name: string
+    description?: string
+    priority: string
+    response_time_hours: number
+    resolution_time_hours: number
+  }) {
+    const response = await this.client.post('/helpdesk/sla-policies', data)
+    return response.data
+  }
+
+  async updateHelpdeskSlaPolicy(id: string, data: Partial<{
+    name: string
+    description: string
+    response_time_hours: number
+    resolution_time_hours: number
+  }>) {
+    const response = await this.client.patch(`/helpdesk/sla-policies/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskSlaPolicy(id: string) {
+    const response = await this.client.delete(`/helpdesk/sla-policies/${id}`)
+    return response.data
+  }
+
+  // Helpdesk Settings - Canned Responses
+  async getHelpdeskCannedResponses(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/helpdesk/canned-responses', { params })
+    return response.data
+  }
+
+  async createHelpdeskCannedResponse(data: {
+    title: string
+    body: string
+    category?: string
+  }) {
+    const response = await this.client.post('/helpdesk/canned-responses', data)
+    return response.data
+  }
+
+  async updateHelpdeskCannedResponse(id: string, data: Partial<{
+    title: string
+    body: string
+    category: string
+  }>) {
+    const response = await this.client.patch(`/helpdesk/canned-responses/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskCannedResponse(id: string) {
+    const response = await this.client.delete(`/helpdesk/canned-responses/${id}`)
+    return response.data
+  }
+
+  // Helpdesk Settings - Teams
+  async getHelpdeskTeams(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/helpdesk/teams', { params })
+    return response.data
+  }
+
+  async createHelpdeskTeam(data: {
+    name: string
+    description?: string
+    members?: number[]
+  }) {
+    const response = await this.client.post('/helpdesk/teams', data)
+    return response.data
+  }
+
+  async updateHelpdeskTeam(id: string, data: Partial<{
+    name: string
+    description: string
+    members: number[]
+  }>) {
+    const response = await this.client.patch(`/helpdesk/teams/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskTeam(id: string) {
+    const response = await this.client.delete(`/helpdesk/teams/${id}`)
+    return response.data
+  }
+
+  // Helpdesk Settings - Email Accounts
+  async getHelpdeskEmailAccounts(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/helpdesk/email-accounts', { params })
+    return response.data
+  }
+
+  async createHelpdeskEmailAccount(data: {
+    name: string
+    email: string
+    imap_host?: string
+    imap_port?: number
+    smtp_host?: string
+    smtp_port?: number
+    username: string
+    password: string
+  }) {
+    const response = await this.client.post('/helpdesk/email-accounts', data)
+    return response.data
+  }
+
+  async updateHelpdeskEmailAccount(id: string, data: Partial<{
+    name: string
+    email: string
+    imap_host: string
+    imap_port: number
+    smtp_host: string
+    smtp_port: number
+  }>) {
+    const response = await this.client.patch(`/helpdesk/email-accounts/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskEmailAccount(id: string) {
+    const response = await this.client.delete(`/helpdesk/email-accounts/${id}`)
+    return response.data
+  }
+
+  async testHelpdeskEmailAccount(id: string) {
+    const response = await this.client.post(`/helpdesk/email-accounts/${id}/test-connection`)
+    return response.data
+  }
+
+  // Helpdesk Settings - Ticket Forms
+  async getHelpdeskTicketForms(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/helpdesk/ticket-forms', { params })
+    return response.data
+  }
+
+  async createHelpdeskTicketForm(data: {
+    name: string
+    description?: string
+    fields?: Array<{ name: string; type: string; required: boolean }>
+  }) {
+    const response = await this.client.post('/helpdesk/ticket-forms', data)
+    return response.data
+  }
+
+  async updateHelpdeskTicketForm(id: string, data: Partial<{
+    name: string
+    description: string
+    fields: Array<{ name: string; type: string; required: boolean }>
+  }>) {
+    const response = await this.client.patch(`/helpdesk/ticket-forms/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskTicketForm(id: string) {
+    const response = await this.client.delete(`/helpdesk/ticket-forms/${id}`)
+    return response.data
+  }
+
+  // Helpdesk CRM - Companies
+  async getHelpdeskCompanies(params?: { page?: number; per_page?: number; search?: string }) {
+    const response = await this.client.get('/helpdesk/companies', { params })
+    return response.data
+  }
+
+  async getHelpdeskCompany(id: string) {
+    const response = await this.client.get(`/helpdesk/companies/${id}`)
+    return response.data
+  }
+
+  async createHelpdeskCompany(data: {
+    name: string
+    description?: string
+    website?: string
+    phone?: string
+    email?: string
+  }) {
+    const response = await this.client.post('/helpdesk/companies', data)
+    return response.data
+  }
+
+  async updateHelpdeskCompany(id: string, data: Partial<{
+    name: string
+    description: string
+    website: string
+    phone: string
+    email: string
+  }>) {
+    const response = await this.client.patch(`/helpdesk/companies/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskCompany(id: string) {
+    const response = await this.client.delete(`/helpdesk/companies/${id}`)
+    return response.data
+  }
+
+  // Helpdesk CRM - Contacts
+  async getHelpdeskContacts(params?: { page?: number; per_page?: number; search?: string; company_id?: string }) {
+    const response = await this.client.get('/helpdesk/contacts', { params })
+    return response.data
+  }
+
+  async getHelpdeskContact(id: string) {
+    const response = await this.client.get(`/helpdesk/contacts/${id}`)
+    return response.data
+  }
+
+  async createHelpdeskContact(data: {
+    name: string
+    email: string
+    phone?: string
+    company_id?: string
+  }) {
+    const response = await this.client.post('/helpdesk/contacts', data)
+    return response.data
+  }
+
+  async updateHelpdeskContact(id: string, data: Partial<{
+    name: string
+    email: string
+    phone: string
+    company_id: string
+  }>) {
+    const response = await this.client.patch(`/helpdesk/contacts/${id}`, data)
+    return response.data
+  }
+
+  async deleteHelpdeskContact(id: string) {
+    const response = await this.client.delete(`/helpdesk/contacts/${id}`)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
