@@ -76,9 +76,10 @@ class TestRebuildReferencesFromText:
             None,
         )
         assert ref is not None
-        assert (
-            ref.target_module == "document"
-        )  # Should use type as module when not in registry
+        # The 'document' type is registered in the refs registry (→ the
+        # 'documents' module), so the resolver records the real module name
+        # rather than falling back to the raw type string.
+        assert ref.target_module == "documents"
 
     def test_rebuild_stores_alias_in_context(self, app):
         """Should store alias in reference context."""

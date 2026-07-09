@@ -165,3 +165,9 @@ google-auth-oauthlib==1.2.1
 
 # HTML Sanitization (Phase 3b — Documents/Pages WYSIWYG bodies)
 bleach==6.2.0
+
+# Markdown rendering (Phase 3b — Documents module body → HTML)
+# markdown-it-py was previously satisfied transitively; documents imports it
+# directly, and gfm-like enables linkify which requires linkify-it-py.
+markdown-it-py==4.0.0
+linkify-it-py==2.0.3

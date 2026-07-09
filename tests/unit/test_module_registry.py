@@ -1,11 +1,10 @@
 """Unit tests for module registry and resolution logic."""
 
-import os
 import pytest
 from quart import Quart
 
-from apps.api.modules.registry import ModuleManifest, resolve_enabled, mount
 from apps.api.modules import MODULES
+from apps.api.modules.registry import ModuleManifest, mount, resolve_enabled
 
 
 class TestModuleManifest:
@@ -13,6 +12,7 @@ class TestModuleManifest:
 
     def test_manifest_creation(self):
         """Test creating a module manifest."""
+
         def dummy_blueprints():
             return []
 
@@ -38,6 +38,7 @@ class TestModuleManifest:
 
     def test_manifest_frozen(self):
         """Test that manifests are frozen (immutable)."""
+
         def dummy_blueprints():
             return []
 
@@ -261,4 +262,5 @@ class TestPhaseZeroModules:
         # Phase 0 (9): infrastructure, ipam, sbom, services_oncall,
         # issues, discovery, secrets, webhooks_alerting, access_reviews
         # Phase 3 (+2): helpdesk, documents
-        assert len(MODULES) == 11
+        # Phase 3b (+1): pages
+        assert len(MODULES) == 12
