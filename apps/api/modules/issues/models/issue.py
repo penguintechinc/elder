@@ -7,7 +7,17 @@ import enum
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
@@ -71,6 +81,48 @@ issue_label_assignments = Table(
         ForeignKey("issue_labels.id", ondelete="CASCADE"),
         primary_key=True,
     ),
+)
+
+# Association table for issue-milestone links (many-to-many)
+issue_milestone_links = Table(
+    "issue_milestone_links",
+    Base.metadata,
+    Column("id", Integer, autoincrement=True, nullable=False, primary_key=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "milestone_id",
+        Integer,
+        ForeignKey("milestones.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "milestone_id", name="uix_issue_milestone"),
+)
+
+# Association table for issue-project links (many-to-many)
+issue_project_links = Table(
+    "issue_project_links",
+    Base.metadata,
+    Column("id", Integer, autoincrement=True, nullable=False, primary_key=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "project_id",
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "project_id", name="uix_issue_project"),
 )
 
 
