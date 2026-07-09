@@ -345,7 +345,7 @@ MODULES = (
         default_enabled=True,
     ),
     ModuleManifest(
-        name="helpdesk",
+        name="helpdesk",  # default_enabled=True like all modules; prod rollout gated OFF via base ConfigMap ELDER_MODULE_HELPDESK=false
         title="Helpdesk & Support",
         license_feature=None,
         depends_on=(),
@@ -356,7 +356,7 @@ MODULES = (
         scopes=("helpdesk:read", "helpdesk:write", "helpdesk:admin"),
         worker_task_groups=(),
         optional_services=(),
-        default_enabled=False,
+        default_enabled=True,
     ),
 )
 

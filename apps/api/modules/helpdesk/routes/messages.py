@@ -58,7 +58,11 @@ async def list_messages(ticket_id):
 
     def fetch():
         # Verify ticket exists and belongs to tenant
-        ticket = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        ticket = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not ticket:
             return (None, None)
@@ -153,7 +157,11 @@ async def add_message(ticket_id):
 
     def create():
         # Verify ticket exists and belongs to tenant
-        ticket = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        ticket = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not ticket:
             return None

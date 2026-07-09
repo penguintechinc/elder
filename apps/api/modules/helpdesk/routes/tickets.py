@@ -106,7 +106,9 @@ async def list_tickets():
             "category": r.category,
             "tags": r.tags,
             "sla_breach_at": r.sla_breach_at.isoformat() if r.sla_breach_at else None,
-            "first_response_at": r.first_response_at.isoformat() if r.first_response_at else None,
+            "first_response_at": (
+                r.first_response_at.isoformat() if r.first_response_at else None
+            ),
             "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
             "closed_at": r.closed_at.isoformat() if r.closed_at else None,
             "created_at": r.created_at.isoformat(),
@@ -227,10 +229,24 @@ async def create_ticket():
                 "team_id": ticket_row.hd_team_id,
                 "category": ticket_row.category,
                 "tags": ticket_row.tags,
-                "sla_breach_at": ticket_row.sla_breach_at.isoformat() if ticket_row.sla_breach_at else None,
-                "first_response_at": ticket_row.first_response_at.isoformat() if ticket_row.first_response_at else None,
-                "resolved_at": ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None,
-                "closed_at": ticket_row.closed_at.isoformat() if ticket_row.closed_at else None,
+                "sla_breach_at": (
+                    ticket_row.sla_breach_at.isoformat()
+                    if ticket_row.sla_breach_at
+                    else None
+                ),
+                "first_response_at": (
+                    ticket_row.first_response_at.isoformat()
+                    if ticket_row.first_response_at
+                    else None
+                ),
+                "resolved_at": (
+                    ticket_row.resolved_at.isoformat()
+                    if ticket_row.resolved_at
+                    else None
+                ),
+                "closed_at": (
+                    ticket_row.closed_at.isoformat() if ticket_row.closed_at else None
+                ),
                 "created_at": ticket_row.created_at.isoformat(),
                 "updated_at": ticket_row.updated_at.isoformat(),
             }
@@ -259,7 +275,11 @@ async def get_ticket(ticket_id):
         return ApiResponse.error("Tenant not found", 403)
 
     def fetch():
-        return db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        return (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
     ticket_row = await run_in_threadpool(fetch)
 
@@ -279,10 +299,22 @@ async def get_ticket(ticket_id):
             "team_id": ticket_row.hd_team_id,
             "category": ticket_row.category,
             "tags": ticket_row.tags,
-            "sla_breach_at": ticket_row.sla_breach_at.isoformat() if ticket_row.sla_breach_at else None,
-            "first_response_at": ticket_row.first_response_at.isoformat() if ticket_row.first_response_at else None,
-            "resolved_at": ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None,
-            "closed_at": ticket_row.closed_at.isoformat() if ticket_row.closed_at else None,
+            "sla_breach_at": (
+                ticket_row.sla_breach_at.isoformat()
+                if ticket_row.sla_breach_at
+                else None
+            ),
+            "first_response_at": (
+                ticket_row.first_response_at.isoformat()
+                if ticket_row.first_response_at
+                else None
+            ),
+            "resolved_at": (
+                ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None
+            ),
+            "closed_at": (
+                ticket_row.closed_at.isoformat() if ticket_row.closed_at else None
+            ),
             "created_at": ticket_row.created_at.isoformat(),
             "updated_at": ticket_row.updated_at.isoformat(),
         }
@@ -321,7 +353,11 @@ async def update_ticket(ticket_id):
     data = await request.get_json() or {}
 
     def update():
-        ticket_row = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        ticket_row = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not ticket_row:
             return None
@@ -366,10 +402,22 @@ async def update_ticket(ticket_id):
             "team_id": ticket_row.hd_team_id,
             "category": ticket_row.category,
             "tags": ticket_row.tags,
-            "sla_breach_at": ticket_row.sla_breach_at.isoformat() if ticket_row.sla_breach_at else None,
-            "first_response_at": ticket_row.first_response_at.isoformat() if ticket_row.first_response_at else None,
-            "resolved_at": ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None,
-            "closed_at": ticket_row.closed_at.isoformat() if ticket_row.closed_at else None,
+            "sla_breach_at": (
+                ticket_row.sla_breach_at.isoformat()
+                if ticket_row.sla_breach_at
+                else None
+            ),
+            "first_response_at": (
+                ticket_row.first_response_at.isoformat()
+                if ticket_row.first_response_at
+                else None
+            ),
+            "resolved_at": (
+                ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None
+            ),
+            "closed_at": (
+                ticket_row.closed_at.isoformat() if ticket_row.closed_at else None
+            ),
             "created_at": ticket_row.created_at.isoformat(),
             "updated_at": ticket_row.updated_at.isoformat(),
         }
@@ -396,7 +444,11 @@ async def delete_ticket(ticket_id):
         return ApiResponse.error("Tenant not found", 403)
 
     def delete():
-        ticket_row = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        ticket_row = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not ticket_row:
             return False
@@ -444,7 +496,11 @@ async def assign_ticket(ticket_id):
         return ApiResponse.validation_error("assignee_id", "is required")
 
     def assign():
-        ticket_row = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        ticket_row = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not ticket_row:
             return None
@@ -476,10 +532,22 @@ async def assign_ticket(ticket_id):
             "team_id": ticket_row.hd_team_id,
             "category": ticket_row.category,
             "tags": ticket_row.tags,
-            "sla_breach_at": ticket_row.sla_breach_at.isoformat() if ticket_row.sla_breach_at else None,
-            "first_response_at": ticket_row.first_response_at.isoformat() if ticket_row.first_response_at else None,
-            "resolved_at": ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None,
-            "closed_at": ticket_row.closed_at.isoformat() if ticket_row.closed_at else None,
+            "sla_breach_at": (
+                ticket_row.sla_breach_at.isoformat()
+                if ticket_row.sla_breach_at
+                else None
+            ),
+            "first_response_at": (
+                ticket_row.first_response_at.isoformat()
+                if ticket_row.first_response_at
+                else None
+            ),
+            "resolved_at": (
+                ticket_row.resolved_at.isoformat() if ticket_row.resolved_at else None
+            ),
+            "closed_at": (
+                ticket_row.closed_at.isoformat() if ticket_row.closed_at else None
+            ),
             "created_at": ticket_row.created_at.isoformat(),
             "updated_at": ticket_row.updated_at.isoformat(),
         }
@@ -518,15 +586,24 @@ async def merge_tickets(ticket_id):
 
     def merge():
         # Fetch primary ticket
-        primary = db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id)).select().first()
+        primary = (
+            db((db.hd_tickets.id == ticket_id) & (db.hd_tickets.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
         if not primary:
             return (None, None, "primary_not_found")
 
         # Fetch secondary ticket
-        secondary = db(
-            (db.hd_tickets.id == merge_from_id) & (db.hd_tickets.tenant_id == tenant_id)
-        ).select().first()
+        secondary = (
+            db(
+                (db.hd_tickets.id == merge_from_id)
+                & (db.hd_tickets.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
 
         if not secondary:
             return (None, None, "secondary_not_found")

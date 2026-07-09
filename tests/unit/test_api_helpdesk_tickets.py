@@ -18,7 +18,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_list_tickets_empty(self, mock_get_user, async_client, generate_token, app):
+    async def test_list_tickets_empty(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test GET /api/v1/tickets with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -47,7 +49,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_create_ticket(self, mock_get_user, async_client, generate_token, app):
+    async def test_create_ticket(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test POST /api/v1/tickets."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -83,8 +87,12 @@ class TestHelpDeskTicketsAPI:
                 "requester_id": identity_id,
             }
 
-            with patch("apps.api.modules.helpdesk.routes.tickets.current_app") as mock_app:
-                with patch("shared.utils.village_id.generate_village_id") as mock_village_id:
+            with patch(
+                "apps.api.modules.helpdesk.routes.tickets.current_app"
+            ) as mock_app:
+                with patch(
+                    "shared.utils.village_id.generate_village_id"
+                ) as mock_village_id:
                     mock_app.db = current_app.db
                     mock_app.redis_client = MagicMock()
                     mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
@@ -105,7 +113,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_create_ticket_missing_subject(self, mock_get_user, async_client, generate_token):
+    async def test_create_ticket_missing_subject(
+        self, mock_get_user, async_client, generate_token
+    ):
         """Test POST /api/v1/tickets with missing subject."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -167,7 +177,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_get_ticket_not_found(self, mock_get_user, async_client, generate_token):
+    async def test_get_ticket_not_found(
+        self, mock_get_user, async_client, generate_token
+    ):
         """Test GET /api/v1/tickets/:id with non-existent ticket."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -185,7 +197,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_update_ticket(self, mock_get_user, async_client, generate_token, app):
+    async def test_update_ticket(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test PATCH /api/v1/tickets/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -224,7 +238,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_delete_ticket(self, mock_get_user, async_client, generate_token, app):
+    async def test_delete_ticket(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test DELETE /api/v1/tickets/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -259,7 +275,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_assign_ticket(self, mock_get_user, async_client, generate_token, app):
+    async def test_assign_ticket(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test POST /api/v1/tickets/:id/assign."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -327,7 +345,9 @@ class TestHelpDeskTicketsAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_merge_tickets(self, mock_get_user, async_client, generate_token, app):
+    async def test_merge_tickets(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test POST /api/v1/tickets/:id/merge."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -386,7 +406,9 @@ class TestHelpDeskMessagesAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_list_messages_empty(self, mock_get_user, async_client, generate_token, app):
+    async def test_list_messages_empty(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test GET /api/v1/tickets/:id/messages."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -470,7 +492,9 @@ class TestHelpDeskDashboardAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_dashboard_stats_empty(self, mock_get_user, async_client, generate_token, app):
+    async def test_dashboard_stats_empty(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test GET /api/v1/dashboard/stats."""
         mock_user = MagicMock()
         mock_user.id = 1
@@ -498,7 +522,9 @@ class TestHelpDeskDashboardAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_dashboard_stats_with_tickets(self, mock_get_user, async_client, generate_token, app):
+    async def test_dashboard_stats_with_tickets(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         """Test GET /api/v1/dashboard/stats with tickets."""
         mock_user = MagicMock()
         mock_user.id = 1
