@@ -263,4 +263,5 @@ class TestPhaseZeroModules:
         # issues, discovery, secrets, webhooks_alerting, access_reviews
         # Phase 3 (+2): helpdesk, documents
         # Phase 3b (+1): pages
-        assert len(MODULES) == 12
+        # Phase 4 (+1): diagrams
+        assert len(MODULES) == 13

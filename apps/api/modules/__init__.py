@@ -194,6 +194,15 @@ def _pages_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load diagrams module blueprints (drawings, versioning, sharing, collaboration).
+
+    Phase 4b: diagram routes (TBD).
+    """
+    # Phase 4b: diagram routes
+    return []
+
+
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
     from apps.api.modules.helpdesk.routes import (
@@ -413,6 +422,20 @@ MODULES = (
         default_enabled=True,
     ),
     ModuleManifest(
+        name="diagrams",
+        title="Diagrams & Drawing",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_diagrams_blueprints,
+        models_import=("apps.api.modules.diagrams.models.diagrams",),
+        table_prefix="dg_",
+        nav_id="nav_diagrams",
+        scopes=("diagrams:read", "diagrams:write", "diagrams:admin"),
+        worker_task_groups=(),
+        optional_services=("minio",),
+        default_enabled=True,
+    ),
+    ModuleManifest(
         name="helpdesk",  # default_enabled=True like all modules; prod rollout gated OFF via base ConfigMap ELDER_MODULE_HELPDESK=false
         title="Helpdesk & Support",
         license_feature=None,
@@ -422,7 +445,11 @@ MODULES = (
         table_prefix="hd_",
         nav_id="nav_helpdesk",
         scopes=("helpdesk:read", "helpdesk:write", "helpdesk:admin"),
-        worker_task_groups=("helpdesk_email_send", "helpdesk_email_poll", "helpdesk_sla_breach"),
+        worker_task_groups=(
+            "helpdesk_email_send",
+            "helpdesk_email_poll",
+            "helpdesk_sla_breach",
+        ),
         optional_services=(),
         default_enabled=True,
     ),
