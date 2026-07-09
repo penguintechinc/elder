@@ -34,6 +34,10 @@ def pytest_configure(config):
     # Set testing environment before any app imports
     os.environ.setdefault("FLASK_ENV", "testing")
     os.environ.setdefault("QUART_ENV", "testing")
+    # Enable all modules for testing (including default_enabled=False modules like helpdesk)
+    os.environ.setdefault("ELDER_MODULES_ENABLED", "all")
+    # Explicitly enable helpdesk (default_enabled=False, requires per-module override)
+    os.environ.setdefault("ELDER_MODULE_HELPDESK", "true")
 
 
 @pytest.fixture(scope="session")
@@ -118,6 +122,7 @@ def init_test_database(test_database_url):
             f"Expected >= 96 tables (core + modules); got {table_count} "
             "— a model module likely failed to load"
         )
+
 
     except Exception as e:
         logger.error(f"Failed to initialize test database: {e}")
@@ -260,3 +265,44 @@ def generate_token(app):
         return token
 
     return _generate_token
+
+
+@pytest.fixture(scope="function", autouse=True)
+def enable_helpdesk_module(app):
+    """Enable helpdesk module for tenant 1 for all tests.
+
+    This fixture runs for every test function and ensures that the helpdesk
+    module is enabled for tenant 1 in the test database via direct SQL.
+    """
+    if app.config.get("TESTING"):
+        try:
+            from quart import current_app as ctx_app
+
+            # Enable helpdesk for tenant 1 in the database
+            async def enable():
+                async with app.app_context():
+                    db = ctx_app.db
+                    # Insert or update tenant_modules to enable helpdesk for tenant 1
+                    try:
+                        db.tenant_modules.insert(tenant_id=1, module_name="helpdesk", is_enabled=True)
+                    except:
+                        # If row already exists, update it
+                        db((db.tenant_modules.tenant_id == 1) & (db.tenant_modules.module_name == "helpdesk")).update(is_enabled=True)
+                    db.commit()
+
+            # Run the async function synchronously
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_closed():
+                    raise RuntimeError("Loop is closed")
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            loop.run_until_complete(enable())
+        except Exception as e:
+            # Silently fail—module may already be enabled or DB unavailable
+            pass
+
+    yield
