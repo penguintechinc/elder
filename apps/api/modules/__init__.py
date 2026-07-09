@@ -174,8 +174,14 @@ def _access_reviews_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _documents_blueprints() -> list[tuple[Blueprint, str]]:
     """Load documents module blueprints (knowledge base, collections, versions)."""
-    # Routes coming in phase 3b-b; schema only for now.
-    return []
+    from apps.api.modules.documents.routes import collections, documents, versions
+
+    api_prefix = "/api/v1"
+    return [
+        (documents.bp, f"{api_prefix}/documents"),
+        (collections.bp, f"{api_prefix}/collections"),
+        (versions.bp, f"{api_prefix}/documents"),  # Versions share doc prefix
+    ]
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
