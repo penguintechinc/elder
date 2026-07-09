@@ -18,7 +18,6 @@ from apps.api.modules.helpdesk.worker.poll import (
 )
 from apps.api.modules.helpdesk.worker.send import SmtpConfig
 
-
 # ============================================================================
 # Email Parser Tests (Port of Ruffled's parity test)
 # ============================================================================
@@ -198,6 +197,7 @@ class TestEmailSendHandler:
     @patch("apps.api.modules.helpdesk.worker.send.asyncio.to_thread")
     async def test_send_email_logs_to_database(self, mock_to_thread):
         """Test that email send result is logged to hd_email_logs."""
+
         # Mock the sync SMTP operation
         async def mock_send_sync():
             return {
@@ -231,6 +231,7 @@ class TestEmailPollHandler:
     @patch("apps.api.modules.helpdesk.worker.poll.asyncio.to_thread")
     async def test_poll_creates_new_ticket_from_email(self, mock_to_thread):
         """Test that new email creates a new ticket."""
+
         # Mock the sync IMAP poll
         async def mock_poll_sync():
             return {
@@ -285,6 +286,7 @@ class TestSlaBreaChecker:
     @patch("apps.api.modules.helpdesk.worker.sla_breach.asyncio.to_thread")
     async def test_sla_breach_finder_detects_breached_tickets(self, mock_to_thread):
         """Test that SLA breach checker detects breached tickets."""
+
         # Mock the sync SLA check
         async def mock_check_breaches():
             return {
@@ -335,7 +337,9 @@ class TestSlaBreaChecker:
 
         # First call should flag
         result1 = await check_sla_breaches(db=mock_db, tenant_id=1)
-        assert result1["newly_flagged_count"] == 1 or result1["newly_flagged_count"] == 0
+        assert (
+            result1["newly_flagged_count"] == 1 or result1["newly_flagged_count"] == 0
+        )
 
 
 # ============================================================================

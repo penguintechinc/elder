@@ -72,14 +72,18 @@ def parse_email(raw: bytes) -> ParsedEmail:
 
     in_reply_to = msg.get("In-Reply-To", "").strip("<>") or None
     references_str = msg.get("References", "")
-    references = [ref.strip("<>") for ref in references_str.split()] if references_str else []
+    references = (
+        [ref.strip("<>") for ref in references_str.split()] if references_str else []
+    )
 
     from_addr = msg.get("From", "")
     if not from_addr:
         raise ValueError("Email missing From header")
 
     to_addrs_str = msg.get("To", "")
-    to_addrs = [addr.strip() for addr in to_addrs_str.split(",")] if to_addrs_str else []
+    to_addrs = (
+        [addr.strip() for addr in to_addrs_str.split(",")] if to_addrs_str else []
+    )
 
     subject = msg.get("Subject", "")
 
@@ -279,7 +283,9 @@ async def poll_email_account(
             raise ValueError("No IMAP password reference")
         imap_password = secrets.get_sync(account.imap_password_ref)
         if not imap_password:
-            raise ValueError(f"Failed to resolve IMAP password: {account.imap_password_ref}")
+            raise ValueError(
+                f"Failed to resolve IMAP password: {account.imap_password_ref}"
+            )
 
         # Connect to IMAP
         conn = _connect_imap(
@@ -292,7 +298,9 @@ async def poll_email_account(
         try:
             # Fetch unseen emails
             raw_emails = _fetch_unseen_emails(conn)
-            logger.info("emails_fetched", count=len(raw_emails), account_id=email_account_id)
+            logger.info(
+                "emails_fetched", count=len(raw_emails), account_id=email_account_id
+            )
 
             tickets_created = 0
             messages_appended = 0
@@ -337,7 +345,9 @@ async def poll_email_account(
                         else:
                             # Create guest contact (pattern from ticket_forms.py)
                             # Use simple village_id format since we don't have redis
-                            contact_vid = f"email-c-{hash(parsed.from_addr) % 1000000:06d}"
+                            contact_vid = (
+                                f"email-c-{hash(parsed.from_addr) % 1000000:06d}"
+                            )
                             contact_id = db.hd_contacts.insert(
                                 tenant_id=tenant_id,
                                 village_id=contact_vid,
@@ -383,7 +393,8 @@ async def poll_email_account(
 
                     msg_id = db.hd_ticket_messages.insert(
                         hd_ticket_id=ticket_id_for_msg,
-                        sender_identity_id=sender_identity_id or 1,  # Fallback to system user
+                        sender_identity_id=sender_identity_id
+                        or 1,  # Fallback to system user
                         message_type="reply",
                         body_text=parsed.body_text,
                         body_html=parsed.body_html,

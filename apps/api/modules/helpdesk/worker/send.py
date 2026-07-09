@@ -171,9 +171,9 @@ async def send_email(
         if email_account_id:
             account = db.hd_email_accounts[email_account_id]
         else:
-            rows = db(
-                (db.hd_email_accounts.is_active == True)  # noqa: E712
-            ).select(limitby=(0, 1))
+            rows = db((db.hd_email_accounts.is_active == True)).select(  # noqa: E712
+                limitby=(0, 1)
+            )
             account = rows[0] if rows else None
 
         if not account:
