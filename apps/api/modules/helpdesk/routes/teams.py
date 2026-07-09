@@ -323,9 +323,15 @@ async def add_team_member(team_id: int):
         if not team_row:
             return "team_not_found"
 
-        # Verify identity exists
-        identity_query = db.identities.id == identity_id
-        identity_row = db(identity_query).select().first()
+        # Verify identity exists AND belongs to this tenant (cross-tenant IDOR guard)
+        identity_row = (
+            db(
+                (db.identities.id == identity_id)
+                & (db.identities.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
 
         if not identity_row:
             return "identity_not_found"

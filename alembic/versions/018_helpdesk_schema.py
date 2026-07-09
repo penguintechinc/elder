@@ -419,7 +419,9 @@ def upgrade():
         ),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("tenant_id", "slug", name="uq_tenant_form_slug"),
+        # Global slug uniqueness — public URL /public/<slug> has no tenant
+        # component, so slugs must not collide across tenants (see model).
+        sa.UniqueConstraint("slug", name="uq_form_slug"),
     )
     op.create_index("ix_hd_ticket_forms_tenant_id", "hd_ticket_forms", ["tenant_id"])
 

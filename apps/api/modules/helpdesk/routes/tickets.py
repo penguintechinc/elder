@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
+from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.helpdesk.services.sla import apply_sla_policy
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -181,6 +182,12 @@ async def create_ticket():
     def create():
         from shared.utils.village_id import generate_village_id
 
+        # Cross-tenant IDOR guard: body-provided identities must be in this tenant
+        if not identity_in_tenant(
+            db, requester_id, tenant_id
+        ) or not identity_in_tenant(db, assignee_id, tenant_id):
+            return "identity_not_in_tenant"
+
         now = datetime.now(timezone.utc)
 
         # Generate village_id
@@ -214,6 +221,9 @@ async def create_ticket():
         return db(db.hd_tickets.id == ticket_id).select().first()
 
     ticket_row = await run_in_threadpool(create)
+
+    if ticket_row == "identity_not_in_tenant":
+        return ApiResponse.error("requester_id/assignee_id not found in tenant", 400)
 
     return (
         jsonify(
@@ -362,6 +372,12 @@ async def update_ticket(ticket_id):
         if not ticket_row:
             return None
 
+        # Cross-tenant IDOR guard: assignee must belong to this tenant
+        if "assignee_id" in data and not identity_in_tenant(
+            db, data["assignee_id"], tenant_id
+        ):
+            return "identity_not_in_tenant"
+
         now = datetime.now(timezone.utc)
         updates = {"updated_at": now}
 
@@ -385,6 +401,9 @@ async def update_ticket(ticket_id):
         return db(db.hd_tickets.id == ticket_id).select().first()
 
     ticket_row = await run_in_threadpool(update)
+
+    if ticket_row == "identity_not_in_tenant":
+        return ApiResponse.error("assignee_id not found in tenant", 400)
 
     if not ticket_row:
         return ApiResponse.not_found("Ticket")
@@ -505,6 +524,10 @@ async def assign_ticket(ticket_id):
         if not ticket_row:
             return None
 
+        # Cross-tenant IDOR guard: assignee must belong to this tenant
+        if not identity_in_tenant(db, assignee_id, tenant_id):
+            return "identity_not_in_tenant"
+
         now = datetime.now(timezone.utc)
         db(db.hd_tickets.id == ticket_id).update(
             assignee_identity_id=assignee_id,
@@ -515,6 +538,9 @@ async def assign_ticket(ticket_id):
         return db(db.hd_tickets.id == ticket_id).select().first()
 
     ticket_row = await run_in_threadpool(assign)
+
+    if ticket_row == "identity_not_in_tenant":
+        return ApiResponse.error("assignee_id not found in tenant", 400)
 
     if not ticket_row:
         return ApiResponse.not_found("Ticket")

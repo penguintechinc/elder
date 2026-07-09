@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
+from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -165,6 +166,20 @@ async def create_contact():
     def create():
         from shared.utils.village_id import generate_village_id
 
+        # Cross-tenant IDOR guard: linked identity/company must be in this tenant
+        if not identity_in_tenant(db, identity_id, tenant_id):
+            return "identity_not_in_tenant"
+        if (
+            company_id is not None
+            and not db(
+                (db.hd_companies.id == company_id)
+                & (db.hd_companies.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        ):
+            return "company_not_in_tenant"
+
         now = datetime.now(timezone.utc)
 
         # Generate village_id
@@ -191,6 +206,11 @@ async def create_contact():
         return db(db.hd_contacts.id == contact_id).select().first()
 
     contact_row = await run_in_threadpool(create)
+
+    if contact_row == "identity_not_in_tenant":
+        return ApiResponse.error("identity_id not found in tenant", 400)
+    if contact_row == "company_not_in_tenant":
+        return ApiResponse.error("company_id not found in tenant", 400)
 
     return (
         jsonify(
@@ -311,6 +331,23 @@ async def update_contact(contact_id):
         if not contact_row:
             return None
 
+        # Cross-tenant IDOR guard: linked identity/company must be in this tenant
+        if "identity_id" in data and not identity_in_tenant(
+            db, data["identity_id"], tenant_id
+        ):
+            return "identity_not_in_tenant"
+        if (
+            "company_id" in data
+            and data["company_id"] is not None
+            and not db(
+                (db.hd_companies.id == data["company_id"])
+                & (db.hd_companies.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        ):
+            return "company_not_in_tenant"
+
         now = datetime.now(timezone.utc)
         updates = {"updated_at": now}
 
@@ -340,6 +377,11 @@ async def update_contact(contact_id):
         return db(db.hd_contacts.id == contact_id).select().first()
 
     contact_row = await run_in_threadpool(update)
+
+    if contact_row == "identity_not_in_tenant":
+        return ApiResponse.error("identity_id not found in tenant", 400)
+    if contact_row == "company_not_in_tenant":
+        return ApiResponse.error("company_id not found in tenant", 400)
 
     if not contact_row:
         return ApiResponse.not_found("Contact")

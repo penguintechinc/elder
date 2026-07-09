@@ -246,9 +246,11 @@ class HdTicketForm(Base, IDMixin, TenantScopedMixin, TimestampMixin):
     )
     fields = Column(JSON, nullable=False, server_default="{}")
 
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "slug", name="uq_tenant_form_slug"),
-    )
+    # Slug is GLOBALLY unique: the public form URL is /public/<slug> with no
+    # tenant component, so a per-tenant slug would let two tenants collide and
+    # make anonymous submissions resolve to an arbitrary tenant (cross-tenant
+    # hijacking). Global uniqueness makes public resolution unambiguous.
+    __table_args__ = (UniqueConstraint("slug", name="uq_form_slug"),)
 
 
 class HdCompany(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):

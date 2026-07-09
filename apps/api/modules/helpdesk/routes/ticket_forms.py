@@ -190,15 +190,9 @@ async def create_form():
     def create():
         now = datetime.now(timezone.utc)
 
-        # Check for duplicate slug within tenant
-        existing = (
-            db(
-                (db.hd_ticket_forms.tenant_id == tenant_id)
-                & (db.hd_ticket_forms.slug == slug)
-            )
-            .select()
-            .first()
-        )
+        # Slug must be GLOBALLY unique (public URL /public/<slug> has no tenant
+        # component). Reject collisions across ALL tenants before insert.
+        existing = db(db.hd_ticket_forms.slug == slug).select().first()
 
         if existing:
             return None, "duplicate_slug"
@@ -229,7 +223,7 @@ async def create_form():
     form_row, error = await run_in_threadpool(create)
 
     if error == "duplicate_slug":
-        return ApiResponse.error("Form slug must be unique within tenant", 409)
+        return ApiResponse.error("Form slug must be globally unique", 409)
 
     if not form_row:
         return ApiResponse.error("Failed to create form", 400)
