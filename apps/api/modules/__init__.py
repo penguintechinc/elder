@@ -197,10 +197,12 @@ def _pages_blueprints() -> list[tuple[Blueprint, str]]:
 def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     """Load diagrams module blueprints (drawings, versioning, sharing, collaboration).
 
-    Phase 4b: diagram routes (TBD).
+    Phase 4b-1: CRUD + version save/load only.
     """
-    # Phase 4b: diagram routes
-    return []
+    from apps.api.modules.diagrams.routes import diagrams
+
+    api_prefix = "/api/v1"
+    return [(diagrams.bp, f"{api_prefix}/diagrams")]
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
