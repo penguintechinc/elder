@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    resource_role_required,
+    require_scope,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     ProjectDTO,
@@ -23,6 +27,7 @@ bp = Blueprint("projects", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def list_projects():
     """
     List projects with optional filtering.
@@ -96,6 +101,7 @@ async def list_projects():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 async def create_project():
     """
     Create a new project.
@@ -165,6 +171,7 @@ async def create_project():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def get_project(id: int):
     """
     Get a single project by ID.
@@ -192,6 +199,7 @@ async def get_project(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("issues:write")
 @resource_role_required("maintainer")
 async def update_project(id: int):
     """
@@ -266,6 +274,7 @@ async def update_project(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @resource_role_required("maintainer")
 async def delete_project(id: int):
     """

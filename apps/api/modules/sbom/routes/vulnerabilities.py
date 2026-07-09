@@ -8,7 +8,12 @@ from dataclasses import asdict
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required, role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+    role_required,
+)
 from apps.api.models.dataclasses import (
     ComponentVulnerabilityDTO,
     PaginatedResponse,
@@ -34,6 +39,7 @@ bp = Blueprint("vulnerabilities", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_vulnerabilities():
     """
     List vulnerabilities with optional filtering.
@@ -169,6 +175,7 @@ async def list_vulnerabilities():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_vulnerability(id: int):
     """
     Get a single vulnerability by ID.
@@ -198,6 +205,7 @@ async def get_vulnerability(id: int):
 
 @bp.route("/sync", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def sync_vulnerabilities():
     """
@@ -341,6 +349,7 @@ async def sync_vulnerabilities():
 
 @bp.route("/dashboard", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_dashboard():
     """
     Get vulnerability dashboard summary statistics.
@@ -409,6 +418,7 @@ async def get_dashboard():
 
 @bp.route("/component-vulnerabilities/<int:id>", methods=["PATCH"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def update_component_vulnerability(id: int):
     """
@@ -493,6 +503,7 @@ async def update_component_vulnerability(id: int):
 
 @bp.route("/nvd-sync", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @role_required("admin")
 async def trigger_nvd_sync():
     """
@@ -554,6 +565,7 @@ async def trigger_nvd_sync():
 
 @bp.route("/nvd-sync/status", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_nvd_sync_status():
     """
     Get NVD sync status - how many vulnerabilities need syncing.
@@ -601,6 +613,7 @@ async def get_nvd_sync_status():
 
 @bp.route("/<int:id>/assign", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def assign_vulnerability(id: int):
     """

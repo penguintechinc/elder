@@ -5,6 +5,7 @@
 from datetime import datetime, timezone
 
 from quart import Blueprint, g, jsonify, request
+from apps.api.auth.decorators import login_required, require_scope
 
 bp = Blueprint("costs", __name__)
 
@@ -17,6 +18,8 @@ def _get_cost_service():
 
 
 @bp.route("/<resource_type>/<int:resource_id>", methods=["GET"])
+@login_required
+@require_scope("webhooks_alerting:read")
 def get_resource_costs(resource_type, resource_id):
     """Get cost data for a specific resource."""
     valid_types = [
@@ -42,6 +45,8 @@ def get_resource_costs(resource_type, resource_id):
 
 
 @bp.route("/<resource_type>/<int:resource_id>", methods=["POST"])
+@login_required
+@require_scope("webhooks_alerting:write")
 async def update_resource_costs(resource_type, resource_id):
     """Create or update cost entry for a resource."""
     valid_types = [
@@ -71,6 +76,8 @@ async def update_resource_costs(resource_type, resource_id):
 
 
 @bp.route("/sync-jobs", methods=["GET"])
+@login_required
+@require_scope("webhooks_alerting:read")
 def list_sync_jobs():
     """List cost sync jobs."""
     db = g.db
@@ -79,6 +86,8 @@ def list_sync_jobs():
 
 
 @bp.route("/sync-jobs", methods=["POST"])
+@login_required
+@require_scope("webhooks_alerting:write")
 async def create_sync_job():
     """Create a cost sync job."""
     data = await request.get_json()
@@ -110,6 +119,8 @@ async def create_sync_job():
 
 
 @bp.route("/sync-jobs/<int:job_id>/run", methods=["POST"])
+@login_required
+@require_scope("webhooks_alerting:write")
 def run_sync_job(job_id):
     """Trigger a manual cost sync."""
     service = _get_cost_service()

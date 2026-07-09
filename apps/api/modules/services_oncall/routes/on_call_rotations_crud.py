@@ -10,7 +10,11 @@ from datetime import timezone
 from croniter import croniter
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     OnCallRotationDTO,
     PaginatedResponse,
@@ -74,6 +78,7 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def list_rotations():
     """
     List on-call rotations with optional filtering.
@@ -145,6 +150,7 @@ async def list_rotations():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("services_oncall:write")
 async def create_rotation():
     """
     Create a new on-call rotation.
@@ -281,6 +287,7 @@ async def create_rotation():
 
 @bp.route("/<int:rotation_id>", methods=["GET"])
 @login_required
+@require_scope("services_oncall:read")
 async def get_rotation(rotation_id: int):
     """
     Get a single on-call rotation with participants and current on-call.
@@ -356,6 +363,7 @@ async def get_rotation(rotation_id: int):
 
 @bp.route("/<int:rotation_id>", methods=["PUT"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def update_rotation(rotation_id: int):
     """
@@ -442,6 +450,7 @@ async def update_rotation(rotation_id: int):
 
 @bp.route("/<int:rotation_id>", methods=["DELETE"])
 @login_required
+@require_scope("services_oncall:write")
 @resource_role_required("maintainer")
 async def delete_rotation(rotation_id: int):
     """

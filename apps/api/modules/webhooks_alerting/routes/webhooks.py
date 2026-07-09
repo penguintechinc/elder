@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import admin_required, login_required
+from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.webhooks import WebhookService
 
@@ -28,6 +28,7 @@ def get_webhook_service():
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("webhooks_alerting:read")
 def list_webhooks():
     """
     List all webhooks.
@@ -62,6 +63,7 @@ def list_webhooks():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("webhooks_alerting:admin")
 @admin_required
 async def create_webhook():
     """
@@ -115,6 +117,7 @@ async def create_webhook():
 
 @bp.route("/<int:webhook_id>", methods=["GET"])
 @login_required
+@require_scope("webhooks_alerting:read")
 def get_webhook(webhook_id):
     """
     Get webhook details.
@@ -136,6 +139,7 @@ def get_webhook(webhook_id):
 
 @bp.route("/<int:webhook_id>", methods=["PUT"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 async def update_webhook(webhook_id):
     """
     Update webhook configuration.
@@ -183,6 +187,7 @@ async def update_webhook(webhook_id):
 
 @bp.route("/<int:webhook_id>", methods=["DELETE"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 def delete_webhook(webhook_id):
     """
     Delete webhook.
@@ -204,6 +209,7 @@ def delete_webhook(webhook_id):
 
 @bp.route("/<int:webhook_id>/test", methods=["POST"])
 @login_required
+@require_scope("webhooks_alerting:write")
 def test_webhook(webhook_id):
     """
     Send a test event to webhook.
@@ -228,6 +234,7 @@ def test_webhook(webhook_id):
 
 @bp.route("/<int:webhook_id>/deliveries", methods=["GET"])
 @login_required
+@require_scope("webhooks_alerting:read")
 def get_webhook_deliveries(webhook_id):
     """
     Get webhook delivery history.
@@ -263,6 +270,7 @@ def get_webhook_deliveries(webhook_id):
 
 @bp.route("/<int:webhook_id>/deliveries/<int:delivery_id>/redeliver", methods=["POST"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 def redeliver_webhook(webhook_id, delivery_id):
     """
     Retry a failed webhook delivery.
@@ -291,6 +299,7 @@ def redeliver_webhook(webhook_id, delivery_id):
 
 @bp.route("/notification-rules", methods=["GET"])
 @login_required
+@require_scope("webhooks_alerting:read")
 def list_notification_rules():
     """
     List all notification rules.
@@ -320,6 +329,7 @@ def list_notification_rules():
 
 @bp.route("/notification-rules", methods=["POST"])
 @login_required
+@require_scope("webhooks_alerting:admin")
 @admin_required
 async def create_notification_rule():
     """
@@ -374,6 +384,7 @@ async def create_notification_rule():
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["GET"])
 @login_required
+@require_scope("webhooks_alerting:read")
 def get_notification_rule(rule_id):
     """
     Get notification rule details.
@@ -395,6 +406,7 @@ def get_notification_rule(rule_id):
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["PUT"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 async def update_notification_rule(rule_id):
     """
     Update notification rule.
@@ -438,6 +450,7 @@ async def update_notification_rule(rule_id):
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["DELETE"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 def delete_notification_rule(rule_id):
     """
     Delete notification rule.
@@ -459,6 +472,7 @@ def delete_notification_rule(rule_id):
 
 @bp.route("/notification-rules/<int:rule_id>/test", methods=["POST"])
 @login_required
+@require_scope("webhooks_alerting:write")
 def test_notification_rule(rule_id):
     """
     Test a notification rule.
@@ -488,6 +502,7 @@ def test_notification_rule(rule_id):
 
 @bp.route("/broadcast", methods=["POST"])
 @admin_required
+@require_scope("webhooks_alerting:admin")
 async def broadcast_event():
     """
     Broadcast an event to all applicable webhooks and notification rules.

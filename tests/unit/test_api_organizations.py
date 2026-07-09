@@ -51,6 +51,7 @@ class TestOrganizationAPI:
         # Mock current user
         mock_user = MagicMock()
         mock_user.id = 1
+        mock_user.tenant_id = 1
         mock_user.username = "admin"
         mock_user.is_superuser = True
         mock_get_user.return_value = mock_user
@@ -105,6 +106,7 @@ class TestOrganizationAPI:
         # Mock current user
         mock_user = MagicMock()
         mock_user.id = 1
+        mock_user.tenant_id = 1
         mock_user.username = "admin"
         mock_user.is_superuser = True
         mock_get_user.return_value = mock_user
@@ -138,6 +140,7 @@ class TestOrganizationAPI:
         # Mock current user
         mock_user = MagicMock()
         mock_user.id = 1
+        mock_user.tenant_id = 1
         mock_user.username = "admin"
         mock_user.is_superuser = True
         mock_get_user.return_value = mock_user
@@ -191,13 +194,23 @@ class TestOrganizationAPI:
 
             # Verify parent exists
             parent = db.organizations[parent_id]
-            assert parent is not None, f"Parent organization {parent_id} not found after insert"
+            assert (
+                parent is not None
+            ), f"Parent organization {parent_id} not found after insert"
 
             db.organizations.insert(
-                name="Child 1", parent_id=parent_id, tenant_id=tenant_id, created_at=now, updated_at=now
+                name="Child 1",
+                parent_id=parent_id,
+                tenant_id=tenant_id,
+                created_at=now,
+                updated_at=now,
             )
             db.organizations.insert(
-                name="Child 2", parent_id=parent_id, tenant_id=tenant_id, created_at=now, updated_at=now
+                name="Child 2",
+                parent_id=parent_id,
+                tenant_id=tenant_id,
+                created_at=now,
+                updated_at=now,
             )
             db.commit()
 
@@ -206,7 +219,9 @@ class TestOrganizationAPI:
                 headers={"Authorization": "Bearer fake-token"},
             )
 
-            assert response.status_code == 200, f"Expected 200, got {response.status_code}: {await response.get_data()}"
+            assert (
+                response.status_code == 200
+            ), f"Expected 200, got {response.status_code}: {await response.get_data()}"
             data = json.loads(await response.get_data())
             # The endpoint returns a list directly, not wrapped in a dict
             assert isinstance(data, list)
@@ -225,6 +240,7 @@ class TestOrganizationAPI:
         # Mock current user
         mock_user = MagicMock()
         mock_user.id = 1
+        mock_user.tenant_id = 1
         mock_user.username = "admin"
         mock_user.is_superuser = True
         mock_get_user.return_value = mock_user
@@ -275,9 +291,7 @@ class TestOrganizationAPI:
             now = datetime.now(timezone.utc)
 
             for i in range(15):
-                db.organizations.insert(
-                    name=f"Org {i}", created_at=now, updated_at=now
-                )
+                db.organizations.insert(name=f"Org {i}", created_at=now, updated_at=now)
             db.commit()
 
             response = await async_client.get(

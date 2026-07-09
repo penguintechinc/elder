@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -32,6 +32,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def list_contacts():
     """
     List contacts with optional filtering and pagination.
@@ -120,6 +121,7 @@ async def list_contacts():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def create_contact():
     """
     Create a new contact.
@@ -235,6 +237,7 @@ async def create_contact():
 
 @bp.route("/<int:contact_id>", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def get_contact(contact_id):
     """
     Get a single contact by ID.
@@ -287,6 +290,7 @@ async def get_contact(contact_id):
 
 @bp.route("/<int:contact_id>", methods=["PATCH"])
 @login_required
+@require_scope("helpdesk:write")
 async def update_contact(contact_id):
     """
     Update a contact.
@@ -406,6 +410,7 @@ async def update_contact(contact_id):
 
 @bp.route("/<int:contact_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:write")
 async def delete_contact(contact_id):
     """
     Delete a contact.
@@ -450,6 +455,7 @@ async def delete_contact(contact_id):
 
 @bp.route("/<int:contact_id>/timeline", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def get_contact_timeline(contact_id):
     """
     Get contact timeline (linked tickets).

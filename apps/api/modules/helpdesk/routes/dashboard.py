@@ -6,7 +6,7 @@ import logging
 
 from quart import Blueprint, current_app, g, jsonify
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.modules.helpdesk.services.dashboard import get_dashboard_stats
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -30,6 +30,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("/stats", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def dashboard_stats():
     """
     Get ticket metrics and dashboard statistics.

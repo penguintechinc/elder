@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import admin_required, login_required
+from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.discovery import DiscoveryService
 
@@ -31,6 +31,7 @@ def get_discovery_service(read_only=False):
 
 @bp.route("/jobs", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def list_discovery_jobs():
     """
     List all discovery jobs.
@@ -67,6 +68,7 @@ def list_discovery_jobs():
 
 @bp.route("/jobs", methods=["POST"])
 @login_required
+@require_scope("discovery:admin")
 @admin_required
 async def create_discovery_job():
     """
@@ -123,6 +125,7 @@ async def create_discovery_job():
 
 @bp.route("/jobs/<int:job_id>", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_discovery_job(job_id):
     """
     Get discovery job details.
@@ -144,6 +147,7 @@ def get_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>", methods=["PUT"])
 @admin_required
+@require_scope("discovery:admin")
 async def update_discovery_job(job_id):
     """
     Update discovery job configuration.
@@ -187,6 +191,7 @@ async def update_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>", methods=["DELETE"])
 @admin_required
+@require_scope("discovery:admin")
 def delete_discovery_job(job_id):
     """
     Delete discovery job.
@@ -208,6 +213,7 @@ def delete_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>/test", methods=["POST"])
 @login_required
+@require_scope("discovery:write")
 def test_discovery_job(job_id):
     """
     Test discovery job connectivity.
@@ -229,6 +235,7 @@ def test_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>/run", methods=["POST"])
 @admin_required
+@require_scope("discovery:admin")
 def run_discovery_job(job_id):
     """
     Manually trigger a discovery job.
@@ -270,6 +277,7 @@ def run_discovery_job(job_id):
 
 @bp.route("/jobs/<int:job_id>/history", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_discovery_job_history(job_id):
     """
     Get discovery job execution history.
@@ -295,6 +303,7 @@ def get_discovery_job_history(job_id):
 
 @bp.route("/history", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_all_discovery_history():
     """
     Get all discovery execution history.

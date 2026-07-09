@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -31,6 +31,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def list_companies():
     """
     List companies with optional filtering and pagination.
@@ -114,6 +115,7 @@ async def list_companies():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:write")
 async def create_company():
     """
     Create a new company.
@@ -202,6 +204,7 @@ async def create_company():
 
 @bp.route("/<int:company_id>", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def get_company(company_id):
     """
     Get a single company by ID.
@@ -252,6 +255,7 @@ async def get_company(company_id):
 
 @bp.route("/<int:company_id>", methods=["PATCH"])
 @login_required
+@require_scope("helpdesk:write")
 async def update_company(company_id):
     """
     Update a company.
@@ -341,6 +345,7 @@ async def update_company(company_id):
 
 @bp.route("/<int:company_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:write")
 async def delete_company(company_id):
     """
     Delete a company.

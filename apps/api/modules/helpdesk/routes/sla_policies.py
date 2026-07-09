@@ -6,7 +6,7 @@ import logging
 
 from quart import Blueprint, current_app, g, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -30,6 +30,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:read")
 async def list_sla_policies():
     """
     List SLA policies with pagination.
@@ -92,6 +93,7 @@ async def list_sla_policies():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:admin")
 async def create_sla_policy():
     """
     Create a new SLA policy.
@@ -173,6 +175,7 @@ async def create_sla_policy():
 
 @bp.route("/<int:policy_id>", methods=["PUT"])
 @login_required
+@require_scope("helpdesk:admin")
 async def update_sla_policy(policy_id: int):
     """
     Update SLA policy properties.
@@ -268,6 +271,7 @@ async def update_sla_policy(policy_id: int):
 
 @bp.route("/<int:policy_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:admin")
 async def delete_sla_policy(policy_id: int):
     """
     Delete an SLA policy.

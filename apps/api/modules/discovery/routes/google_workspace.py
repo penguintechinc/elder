@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import admin_required, login_required
+from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.google_workspace import GoogleWorkspaceService
 
@@ -28,6 +28,7 @@ def get_google_workspace_service():
 
 @bp.route("/providers", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def list_providers():
     """
     List Google Workspace providers.
@@ -53,6 +54,7 @@ def list_providers():
 
 @bp.route("/providers", methods=["POST"])
 @login_required
+@require_scope("discovery:admin")
 @admin_required
 async def create_provider():
     """
@@ -111,6 +113,7 @@ async def create_provider():
 
 @bp.route("/providers/<int:provider_id>", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_provider(provider_id):
     """
     Get provider details.
@@ -132,6 +135,7 @@ def get_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @admin_required
+@require_scope("discovery:admin")
 async def update_provider(provider_id):
     """
     Update provider configuration.
@@ -178,6 +182,7 @@ async def update_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["DELETE"])
 @admin_required
+@require_scope("discovery:admin")
 def delete_provider(provider_id):
     """
     Delete provider.
@@ -199,6 +204,7 @@ def delete_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>/test", methods=["POST"])
 @login_required
+@require_scope("discovery:write")
 def test_provider(provider_id):
     """
     Test provider connectivity.
@@ -227,6 +233,7 @@ def test_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>/users", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def list_users(provider_id):
     """
     List Google Workspace users.
@@ -257,6 +264,7 @@ def list_users(provider_id):
 
 @bp.route("/providers/<int:provider_id>/users/<path:user_key>", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_user(provider_id, user_key):
     """
     Get user details.
@@ -278,6 +286,7 @@ def get_user(provider_id, user_key):
 
 @bp.route("/providers/<int:provider_id>/users", methods=["POST"])
 @login_required
+@require_scope("discovery:admin")
 @admin_required
 async def create_user(provider_id):
     """
@@ -332,6 +341,7 @@ async def create_user(provider_id):
 
 @bp.route("/providers/<int:provider_id>/users/<path:user_key>", methods=["PUT"])
 @admin_required
+@require_scope("discovery:admin")
 async def update_user(provider_id, user_key):
     """
     Update user details.
@@ -375,6 +385,7 @@ async def update_user(provider_id, user_key):
 
 @bp.route("/providers/<int:provider_id>/users/<path:user_key>", methods=["DELETE"])
 @admin_required
+@require_scope("discovery:admin")
 def delete_user(provider_id, user_key):
     """
     Delete Google Workspace user.
@@ -401,6 +412,7 @@ def delete_user(provider_id, user_key):
 
 @bp.route("/providers/<int:provider_id>/groups", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def list_groups(provider_id):
     """
     List Google Workspace groups.
@@ -433,6 +445,7 @@ def list_groups(provider_id):
 
 @bp.route("/providers/<int:provider_id>/groups/<path:group_key>", methods=["GET"])
 @login_required
+@require_scope("discovery:read")
 def get_group(provider_id, group_key):
     """
     Get group details.
@@ -454,6 +467,7 @@ def get_group(provider_id, group_key):
 
 @bp.route("/providers/<int:provider_id>/groups", methods=["POST"])
 @login_required
+@require_scope("discovery:admin")
 @admin_required
 async def create_group(provider_id):
     """
@@ -504,6 +518,7 @@ async def create_group(provider_id):
 
 @bp.route("/providers/<int:provider_id>/groups/<path:group_key>", methods=["DELETE"])
 @admin_required
+@require_scope("discovery:admin")
 def delete_group(provider_id, group_key):
     """
     Delete Google Workspace group.
@@ -527,6 +542,7 @@ def delete_group(provider_id, group_key):
     "/providers/<int:provider_id>/groups/<path:group_key>/members", methods=["GET"]
 )
 @login_required
+@require_scope("discovery:read")
 def list_group_members(provider_id, group_key):
     """
     List group members.
@@ -559,6 +575,7 @@ def list_group_members(provider_id, group_key):
     "/providers/<int:provider_id>/groups/<path:group_key>/members", methods=["POST"]
 )
 @admin_required
+@require_scope("discovery:admin")
 async def add_group_member(provider_id, group_key):
     """
     Add member to group.
@@ -602,6 +619,7 @@ async def add_group_member(provider_id, group_key):
     methods=["DELETE"],
 )
 @admin_required
+@require_scope("discovery:admin")
 def remove_group_member(provider_id, group_key, member_email):
     """
     Remove member from group.

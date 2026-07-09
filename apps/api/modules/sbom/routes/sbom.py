@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMComponentDTO,
@@ -29,6 +33,7 @@ bp = Blueprint("sbom", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_components():
     """
     List SBOM components with optional filtering.
@@ -115,6 +120,7 @@ async def list_components():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("viewer")
 async def create_component():
     """
@@ -200,6 +206,7 @@ async def create_component():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_component(id: int):
     """
     Get a single SBOM component by ID.
@@ -229,6 +236,7 @@ async def get_component(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def update_component(id: int):
     """
@@ -306,6 +314,7 @@ async def update_component(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_component(id: int):
     """
@@ -344,6 +353,7 @@ async def delete_component(id: int):
 
 @bp.route("/<int:id>/vulnerabilities", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_component_vulnerabilities(id: int):
     """
     Get vulnerabilities affecting a specific SBOM component.

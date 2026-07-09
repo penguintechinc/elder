@@ -8,7 +8,7 @@ import logging
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.access_review import AccessReviewService
@@ -30,6 +30,7 @@ def get_service():
 
 @bp.route("/access-reviews", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def list_reviews():
     """
@@ -68,6 +69,7 @@ def list_reviews():
 
 @bp.route("/access-reviews/<int:review_id>", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def get_review(review_id):
     """
@@ -92,6 +94,7 @@ def get_review(review_id):
 
 @bp.route("/access-reviews/<int:review_id>/items", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def get_review_items(review_id):
     """
@@ -119,6 +122,7 @@ def get_review_items(review_id):
 
 @bp.route("/access-reviews/<int:review_id>/decisions", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def submit_decisions(review_id):
     """
@@ -182,6 +186,7 @@ async def submit_decisions(review_id):
 
 @bp.route("/access-reviews/<int:review_id>/complete", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 def complete_review(review_id):
     """
@@ -210,6 +215,7 @@ def complete_review(review_id):
 
 @bp.route("/access-reviews/my-reviews", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 def get_my_reviews():
     """
@@ -238,6 +244,7 @@ def get_my_reviews():
 
 @bp.route("/access-reviews", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def create_review():
     """

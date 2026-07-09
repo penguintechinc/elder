@@ -31,14 +31,17 @@ def test_schema_initialization(app, test_database_url):
     # Import and verify table count
     from apps.api.models.base import Base
 
+    # Floor grows as modules are merged (Elder core 82 + documents doc_* = 100;
+    # pages/diagrams/etc. add more). Use a floor so new modules don't break this,
+    # while still catching accidental table drops.
     table_count = len(Base.metadata.tables)
-    assert table_count == 82, f"Expected 82 tables, got {table_count}"
+    assert table_count >= 100, f"Expected >=100 tables, got {table_count}"
 
     # List table names for audit (useful for debugging)
     table_names = sorted([name for name in Base.metadata.tables.keys()])
     assert (
-        len(table_names) == 82
-    ), f"Table name count mismatch: {len(table_names)} != 82"
+        len(table_names) >= 100
+    ), f"Table name count too low: {len(table_names)} < 100"
 
     print(f"\n✓ Schema validation passed: {table_count} tables")
     print(

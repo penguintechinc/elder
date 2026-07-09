@@ -10,7 +10,11 @@ import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMScanDTO,
@@ -140,6 +144,7 @@ def _check_component_against_policy(component: dict, policy: dict) -> dict:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_scans():
     """
     List SBOM scans with optional filtering.
@@ -213,6 +218,7 @@ async def list_scans():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("viewer")
 async def create_scan():
     """
@@ -296,6 +302,7 @@ async def create_scan():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_scan(id: int):
     """
     Get a single SBOM scan by ID.
@@ -323,6 +330,7 @@ async def get_scan(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_scan(id: int):
     """
@@ -359,6 +367,7 @@ async def delete_scan(id: int):
 
 @bp.route("/pending", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_pending_scans():
     """
     Get pending SBOM scans (for scanner worker).
@@ -413,6 +422,7 @@ async def get_pending_scans():
 
 @bp.route("/<int:id>/start", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 async def start_scan(id: int):
     """
     Mark an SBOM scan as running (for scanner worker).
@@ -458,6 +468,7 @@ async def start_scan(id: int):
 
 @bp.route("/<int:id>/results", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 async def submit_results(id: int):
     """
     Submit SBOM scan results (for scanner worker).
@@ -749,6 +760,7 @@ async def submit_results(id: int):
 
 @bp.route("/upload", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("viewer")
 async def upload_sbom():
     """

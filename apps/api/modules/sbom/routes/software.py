@@ -8,7 +8,11 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMComponentDTO,
@@ -33,6 +37,7 @@ bp = Blueprint("software", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_software():
     """List software with optional filtering."""
     db = current_app.db
@@ -79,6 +84,7 @@ async def list_software():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 @validated_request(body_model=CreateSoftwareRequest)
 async def create_software(body: CreateSoftwareRequest):
     """Create a new software entry."""
@@ -129,6 +135,7 @@ async def create_software(body: CreateSoftwareRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_software(id: int):
     """Get a single software entry by ID."""
     db = current_app.db
@@ -142,6 +149,7 @@ async def get_software(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 @validated_request(body_model=UpdateSoftwareRequest)
 async def update_software(id: int, body: UpdateSoftwareRequest):
@@ -212,6 +220,7 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_software(id: int):
     """Delete a software entry."""
@@ -232,6 +241,7 @@ async def delete_software(id: int):
 
 @bp.route("/<int:id>/sbom", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_software_sbom(id: int):
     """
     Get SBOM components for a software.
@@ -270,6 +280,7 @@ async def get_software_sbom(id: int):
 
 @bp.route("/<int:id>/sbom/export", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def export_software_sbom(id: int):
     """
     Export software SBOM in standard format.

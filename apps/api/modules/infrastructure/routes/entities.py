@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.dataclasses import (
     EntityDTO,
     PaginatedResponse,
@@ -31,6 +31,7 @@ bp = Blueprint("entities", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def list_entities():
     """
     List all entities with pagination and filtering.
@@ -108,6 +109,7 @@ async def list_entities():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=CreateEntityRequest)
 async def create_entity(body: CreateEntityRequest):
     """
@@ -159,6 +161,7 @@ async def create_entity(body: CreateEntityRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_entity(id: int):
     """
     Get a single entity by ID.
@@ -182,6 +185,8 @@ async def get_entity(id: int):
 
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
+@login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=UpdateEntityRequest)
 async def update_entity(id: int, body: UpdateEntityRequest):
     """
@@ -247,6 +252,8 @@ async def update_entity(id: int, body: UpdateEntityRequest):
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("infrastructure:write")
 async def delete_entity(id: int):
     """
     Delete an entity.
@@ -303,6 +310,7 @@ async def delete_entity(id: int):
 
 @bp.route("/<int:id>/dependencies", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_entity_dependencies(id: int):
     """
     Get all dependencies for an entity.
@@ -373,6 +381,8 @@ async def get_entity_dependencies(id: int):
 
 
 @bp.route("/<int:id>/attributes", methods=["PATCH"])
+@login_required
+@require_scope("infrastructure:write")
 async def update_entity_attributes(id: int):
     """
     Update entity attributes (JSON field for type-specific fields).

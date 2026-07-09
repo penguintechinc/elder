@@ -5,7 +5,7 @@
 
 from quart import Blueprint, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.entity_types import (
     DEFAULT_METADATA_TEMPLATES,
     get_all_entity_types,
@@ -18,6 +18,7 @@ bp = Blueprint("entity_types", __name__)
 
 @bp.route("/", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def list_entity_types():
     """
     List all entity types with their sub-types.
@@ -38,6 +39,7 @@ def list_entity_types():
 
 @bp.route("/<entity_type>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_entity_type(entity_type):
     """
     Get details for a specific entity type including all sub-types.
@@ -64,6 +66,7 @@ def get_entity_type(entity_type):
 
 @bp.route("/<entity_type>/subtypes", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def list_subtypes(entity_type):
     """
     List all sub-types for a given entity type.
@@ -90,6 +93,7 @@ def list_subtypes(entity_type):
 
 @bp.route("/<entity_type>/metadata", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_type_metadata_templates(entity_type):
     """
     Get default metadata templates for all sub-types of an entity type.
@@ -114,6 +118,7 @@ def get_type_metadata_templates(entity_type):
 
 @bp.route("/<entity_type>/<sub_type>/metadata", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 def get_subtype_metadata_template(entity_type, sub_type):
     """
     Get default metadata template for a specific sub-type.
@@ -149,6 +154,7 @@ def get_subtype_metadata_template(entity_type, sub_type):
 
 @bp.route("/validate", methods=["POST"])
 @login_required
+@require_scope("infrastructure:write")
 async def validate_entity_type():
     """
     Validate an entity type and sub-type combination.

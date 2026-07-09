@@ -8,7 +8,7 @@ from dataclasses import asdict
 from quart import Blueprint, current_app, g, jsonify, request
 from pydantic import ValidationError
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import ResourceRoleDTO, from_pydal_rows
 from apps.api.models.pydantic import CreateResourceRoleRequest, ResourceRoleResponse
@@ -19,6 +19,7 @@ bp = Blueprint("resource_roles", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 async def list_resource_roles():
     """
@@ -119,6 +120,7 @@ async def list_resource_roles():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def create_resource_role():
     """
@@ -252,6 +254,7 @@ async def create_resource_role():
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("access_reviews:write")
 @license_required("enterprise")
 async def revoke_resource_role(id: int):
     """
@@ -315,6 +318,7 @@ async def revoke_resource_role(id: int):
 
 @bp.route("/entities/<int:id>/roles", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 async def list_entity_roles(id: int):
     """
@@ -373,6 +377,7 @@ async def list_entity_roles(id: int):
 
 @bp.route("/organizations/<int:id>/roles", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 async def list_organization_roles(id: int):
     """
@@ -431,6 +436,7 @@ async def list_organization_roles(id: int):
 
 @bp.route("/identities/<int:id>/resource-roles", methods=["GET"])
 @login_required
+@require_scope("access_reviews:read")
 @license_required("enterprise")
 async def list_identity_resource_roles(id: int):
     """

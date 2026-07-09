@@ -13,7 +13,7 @@ from penguin_libs.pydantic import RequestModel
 from apps.api.utils.quart_validation import validated_request
 from pydantic import Field
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import (
     IssueCommentDTO,
@@ -101,6 +101,7 @@ class LinkIssueToMilestoneRequest(RequestModel):
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def list_issues():
     """
     List issues with optional filtering.
@@ -182,6 +183,7 @@ async def list_issues():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @validated_request(body_model=CreateIssueRequest)
 async def create_issue(body: CreateIssueRequest):
     """
@@ -265,6 +267,7 @@ async def create_issue(body: CreateIssueRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def get_issue(id: int):
     """
     Get a single issue by ID.
@@ -293,6 +296,7 @@ async def get_issue(id: int):
 
 @bp.route("/<int:id>", methods=["PATCH"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=UpdateIssueRequest)
 async def update_issue(id: int, body: UpdateIssueRequest):
@@ -384,6 +388,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def delete_issue(id: int):
     """
@@ -430,6 +435,7 @@ async def delete_issue(id: int):
 
 @bp.route("/<int:id>/comments", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 async def list_issue_comments(id: int):
     """
@@ -477,6 +483,7 @@ async def list_issue_comments(id: int):
 
 @bp.route("/<int:id>/comments", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=CreateIssueCommentRequest)
 async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
@@ -532,6 +539,7 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
 
 @bp.route("/<int:id>/comments/<int:comment_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def delete_issue_comment(id: int, comment_id: int):
     """
@@ -587,6 +595,7 @@ async def delete_issue_comment(id: int, comment_id: int):
 
 @bp.route("/labels", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 async def list_issue_labels():
     """
@@ -616,6 +625,7 @@ async def list_issue_labels():
 
 @bp.route("/labels", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=CreateIssueLabelRequest)
 async def create_issue_label(body: CreateIssueLabelRequest):
@@ -669,6 +679,7 @@ async def create_issue_label(body: CreateIssueLabelRequest):
 
 @bp.route("/<int:id>/labels", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 async def list_issue_labels_for_issue(id: int):
     """
@@ -713,6 +724,7 @@ async def list_issue_labels_for_issue(id: int):
 
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=AddIssueLabelRequest)
 async def add_issue_label(id: int, body: AddIssueLabelRequest):
@@ -784,6 +796,7 @@ async def add_issue_label(id: int, body: AddIssueLabelRequest):
 
 @bp.route("/<int:id>/labels/<int:label_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def remove_issue_label(id: int, label_id: int):
     """
@@ -837,6 +850,7 @@ async def remove_issue_label(id: int, label_id: int):
 
 @bp.route("/<int:id>/links", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @license_required("enterprise")
 async def list_issue_entity_links(id: int):
     """
@@ -889,6 +903,7 @@ async def list_issue_entity_links(id: int):
 
 @bp.route("/<int:id>/links", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 @validated_request(body_model=CreateIssueEntityLinkRequest)
 async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
@@ -971,6 +986,7 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
 
 @bp.route("/<int:id>/links/<int:link_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def delete_issue_entity_link(id: int, link_id: int):
     """
@@ -1017,6 +1033,7 @@ async def delete_issue_entity_link(id: int, link_id: int):
 
 @bp.route("/<int:id>/links/by-entity/<int:entity_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 @license_required("enterprise")
 async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
     """
@@ -1074,6 +1091,7 @@ async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
 
 @bp.route("/<int:id>/projects", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @validated_request(body_model=LinkIssueToProjectRequest)
 async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
     """
@@ -1142,6 +1160,7 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
 
 @bp.route("/<int:id>/projects/<int:project_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 async def unlink_issue_from_project(id: int, project_id: int):
     """
     Remove a project link from an issue.
@@ -1192,6 +1211,7 @@ async def unlink_issue_from_project(id: int, project_id: int):
 
 @bp.route("/<int:id>/milestones", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @validated_request(body_model=LinkIssueToMilestoneRequest)
 async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
     """
@@ -1266,6 +1286,7 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
 
 @bp.route("/<int:id>/milestones/<int:milestone_id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 async def unlink_issue_from_milestone(id: int, milestone_id: int):
     """
     Remove a milestone link from an issue.

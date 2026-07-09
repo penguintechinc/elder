@@ -9,7 +9,11 @@ from datetime import datetime, timezone
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.models.pydantic import (
     CreateIPAMAddressRequest,
@@ -33,6 +37,7 @@ bp = Blueprint("ipam", __name__)
 
 @bp.route("/prefixes", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def list_prefixes():
     """
     List IPAM prefixes with optional filtering.
@@ -111,6 +116,7 @@ async def list_prefixes():
 
 @bp.route("/prefixes", methods=["POST"])
 @login_required
+@require_scope("ipam:write")
 async def create_prefix():
     """
     Create a new IPAM prefix.
@@ -179,6 +185,7 @@ async def create_prefix():
 
 @bp.route("/prefixes/<int:id>", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def get_prefix(id: int):
     """
     Get a single IPAM prefix by ID.
@@ -205,6 +212,7 @@ async def get_prefix(id: int):
 
 @bp.route("/prefixes/<int:id>/tree", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def get_prefix_tree(id: int):
     """
     Get an IPAM prefix with all children (hierarchical tree).
@@ -249,6 +257,7 @@ async def get_prefix_tree(id: int):
 
 @bp.route("/prefixes/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def update_prefix(id: int):
     """
@@ -334,6 +343,7 @@ async def update_prefix(id: int):
 
 @bp.route("/prefixes/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def delete_prefix(id: int):
     """
@@ -378,6 +388,7 @@ async def delete_prefix(id: int):
 
 @bp.route("/addresses", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def list_addresses():
     """
     List IPAM addresses with optional filtering.
@@ -451,6 +462,7 @@ async def list_addresses():
 
 @bp.route("/addresses", methods=["POST"])
 @login_required
+@require_scope("ipam:write")
 async def create_address():
     """
     Create a new IPAM address.
@@ -513,6 +525,7 @@ async def create_address():
 
 @bp.route("/addresses/<int:id>", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def get_address(id: int):
     """
     Get a single IPAM address by ID.
@@ -539,6 +552,7 @@ async def get_address(id: int):
 
 @bp.route("/addresses/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def update_address(id: int):
     """
@@ -615,6 +629,7 @@ async def update_address(id: int):
 
 @bp.route("/addresses/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def delete_address(id: int):
     """
@@ -659,6 +674,7 @@ async def delete_address(id: int):
 
 @bp.route("/vlans", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def list_vlans():
     """
     List IPAM VLANs with optional filtering.
@@ -732,6 +748,7 @@ async def list_vlans():
 
 @bp.route("/vlans", methods=["POST"])
 @login_required
+@require_scope("ipam:write")
 async def create_vlan():
     """
     Create a new IPAM VLAN.
@@ -796,6 +813,7 @@ async def create_vlan():
 
 @bp.route("/vlans/<int:id>", methods=["GET"])
 @login_required
+@require_scope("ipam:read")
 async def get_vlan(id: int):
     """
     Get a single IPAM VLAN by ID.
@@ -822,6 +840,7 @@ async def get_vlan(id: int):
 
 @bp.route("/vlans/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def update_vlan(id: int):
     """
@@ -902,6 +921,7 @@ async def update_vlan(id: int):
 
 @bp.route("/vlans/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("ipam:write")
 @resource_role_required("maintainer")
 async def delete_vlan(id: int):
     """

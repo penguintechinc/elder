@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -31,6 +31,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:admin")
 async def list_canned_responses():
     """
     List canned responses with optional filtering and pagination.
@@ -99,6 +100,7 @@ async def list_canned_responses():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:admin")
 async def create_canned_response():
     """
     Create a new canned response.
@@ -167,6 +169,7 @@ async def create_canned_response():
 
 @bp.route("/<int:response_id>", methods=["PUT"])
 @login_required
+@require_scope("helpdesk:admin")
 async def update_canned_response(response_id: int):
     """
     Update canned response properties.
@@ -250,6 +253,7 @@ async def update_canned_response(response_id: int):
 
 @bp.route("/<int:response_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:admin")
 async def delete_canned_response(response_id: int):
     """
     Delete a canned response.

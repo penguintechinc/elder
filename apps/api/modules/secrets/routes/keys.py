@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.keys import KeysService
 
@@ -26,6 +26,7 @@ def get_keys_service():
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def list_keys():
     """
     List all keys accessible by current user/organization.
@@ -57,6 +58,7 @@ def list_keys():
 
 @bp.route("/<int:key_id>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_key(key_id):
     """
     Get a specific key details.
@@ -78,6 +80,7 @@ def get_key(key_id):
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def create_key():
     """
     Create a new encryption key.
@@ -132,6 +135,7 @@ async def create_key():
 
 @bp.route("/<int:key_id>/enable", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 def enable_key(key_id):
     """
     Enable a disabled key.
@@ -153,6 +157,7 @@ def enable_key(key_id):
 
 @bp.route("/<int:key_id>/disable", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 def disable_key(key_id):
     """
     Disable a key.
@@ -174,6 +179,7 @@ def disable_key(key_id):
 
 @bp.route("/<int:key_id>/rotate", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 def rotate_key(key_id):
     """
     Rotate a key (enable automatic rotation or rotate immediately).
@@ -195,6 +201,7 @@ def rotate_key(key_id):
 
 @bp.route("/<int:key_id>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:write")
 def delete_key(key_id):
     """
     Schedule key deletion.
@@ -224,6 +231,7 @@ def delete_key(key_id):
 
 @bp.route("/<int:key_id>/encrypt", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def encrypt_data(key_id):
     """
     Encrypt data using this key.
@@ -259,6 +267,7 @@ async def encrypt_data(key_id):
 
 @bp.route("/<int:key_id>/decrypt", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def decrypt_data(key_id):
     """
     Decrypt data using this key.
@@ -294,6 +303,7 @@ async def decrypt_data(key_id):
 
 @bp.route("/<int:key_id>/generate-data-key", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def generate_data_key(key_id):
     """
     Generate a data encryption key.
@@ -328,6 +338,7 @@ async def generate_data_key(key_id):
 
 @bp.route("/<int:key_id>/sign", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def sign_data(key_id):
     """
     Sign data using this key (asymmetric keys only).
@@ -368,6 +379,7 @@ async def sign_data(key_id):
 
 @bp.route("/<int:key_id>/verify", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def verify_signature(key_id):
     """
     Verify a message signature (asymmetric keys only).
@@ -418,6 +430,7 @@ async def verify_signature(key_id):
 
 @bp.route("/<int:key_id>/access-log", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_key_access_log(key_id):
     """
     Get access log for a key.
@@ -461,6 +474,7 @@ def get_key_access_log(key_id):
 
 @bp.route("/providers", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def list_key_providers():
     """
     List all key providers.
@@ -485,6 +499,7 @@ def list_key_providers():
 
 @bp.route("/providers", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 async def create_key_provider():
     """
     Register a new key provider.
@@ -536,6 +551,7 @@ async def create_key_provider():
 
 @bp.route("/providers/<int:provider_id>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_key_provider(provider_id):
     """
     Get key provider details.
@@ -557,6 +573,7 @@ def get_key_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
+@require_scope("secrets:admin")
 async def update_key_provider(provider_id):
     """
     Update key provider configuration.
@@ -599,6 +616,7 @@ async def update_key_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:admin")
 def delete_key_provider(provider_id):
     """
     Delete key provider.
@@ -623,6 +641,7 @@ def delete_key_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>/test", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 def test_key_provider(provider_id):
     """
     Test provider connectivity.

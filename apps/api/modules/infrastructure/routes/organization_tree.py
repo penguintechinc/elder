@@ -5,7 +5,7 @@
 
 from quart import Blueprint, current_app, jsonify
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("organization_tree", __name__)
@@ -13,6 +13,7 @@ bp = Blueprint("organization_tree", __name__)
 
 @bp.route("/organizations/<int:org_id>/tree-stats", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_organization_tree_stats(org_id: int):
     """
     Get recursive statistics for an organization and all its descendants.

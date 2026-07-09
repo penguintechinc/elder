@@ -10,7 +10,11 @@ from datetime import timezone
 from croniter import croniter
 from quart import Blueprint, current_app, jsonify, request
 
-from apps.api.auth.decorators import login_required, resource_role_required
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMScanScheduleDTO,
@@ -31,6 +35,7 @@ bp = Blueprint("sbom_schedules", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def list_schedules():
     """
     List SBOM scan schedules with optional filtering.
@@ -103,6 +108,7 @@ async def list_schedules():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("sbom:write")
 async def create_schedule():
     """
     Create a new SBOM scan schedule.
@@ -202,6 +208,7 @@ async def create_schedule():
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_schedule(id: int):
     """
     Get a single SBOM scan schedule by ID.
@@ -231,6 +238,7 @@ async def get_schedule(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def update_schedule(id: int):
     """
@@ -332,6 +340,7 @@ async def update_schedule(id: int):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("sbom:write")
 @resource_role_required("maintainer")
 async def delete_schedule(id: int):
     """
@@ -370,6 +379,7 @@ async def delete_schedule(id: int):
 
 @bp.route("/due", methods=["GET"])
 @login_required
+@require_scope("sbom:read")
 async def get_due_schedules():
     """
     Get due SBOM scan schedules (for scanner worker).

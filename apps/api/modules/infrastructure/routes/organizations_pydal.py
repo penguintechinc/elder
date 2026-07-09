@@ -8,7 +8,7 @@ from dataclasses import asdict
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.dataclasses import (
     OrganizationDTO,
@@ -37,6 +37,7 @@ bp = Blueprint("organizations", __name__)
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def list_organizations():
     """
     List all Organization Units (OUs) with pagination and filtering.
@@ -111,6 +112,8 @@ async def list_organizations():
 
 
 @bp.route("", methods=["POST"])
+@login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=CreateOrganizationRequest)
 async def create_organization(body: CreateOrganizationRequest):
     """
@@ -172,6 +175,7 @@ async def create_organization(body: CreateOrganizationRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_organization(id: int):
     """
     Get a single Organization Unit (OU) by ID.
@@ -214,6 +218,8 @@ async def get_organization(id: int):
 
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
+@login_required
+@require_scope("infrastructure:write")
 @validated_request(body_model=UpdateOrganizationRequest)
 async def update_organization(id: int, body: UpdateOrganizationRequest):
     """
@@ -263,6 +269,8 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("infrastructure:write")
 async def delete_organization(id: int):
     """
     Delete an Organization Unit (OU).
@@ -302,6 +310,7 @@ async def delete_organization(id: int):
 
 @bp.route("/<int:id>/graph", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_organization_graph(id: int):
     """
     Get relationship graph for an organization and its nearby entities.
@@ -477,6 +486,7 @@ async def get_organization_graph(id: int):
 
 @bp.route("/<int:id>/children", methods=["GET"])
 @login_required
+@require_scope("infrastructure:read")
 async def get_organization_children(id: int):
     """
     Get all child organizations scoped to the caller's tenant.

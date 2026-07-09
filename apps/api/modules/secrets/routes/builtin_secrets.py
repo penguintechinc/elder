@@ -7,7 +7,7 @@ import logging
 
 from quart import Blueprint, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.secrets import BuiltinSecretsClient
 
@@ -18,6 +18,7 @@ bp = Blueprint("builtin_secrets", __name__, url_prefix="/api/v1/builtin-secrets"
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def list_secrets():
     """List built-in secrets for an organization."""
     try:
@@ -40,6 +41,7 @@ def list_secrets():
 
 @bp.route("/<path:secret_path>", methods=["GET"])
 @login_required
+@require_scope("secrets:read")
 def get_secret(secret_path):
     """Get a built-in secret by path."""
     try:
@@ -64,6 +66,7 @@ def get_secret(secret_path):
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("secrets:write")
 async def create_secret():
     """Create a new built-in secret."""
     try:
@@ -107,6 +110,7 @@ async def create_secret():
 
 @bp.route("/<path:secret_path>", methods=["PUT", "PATCH"])
 @login_required
+@require_scope("secrets:write")
 async def update_secret(secret_path):
     """Update a built-in secret."""
     try:
@@ -142,6 +146,7 @@ async def update_secret(secret_path):
 
 @bp.route("/<path:secret_path>", methods=["DELETE"])
 @login_required
+@require_scope("secrets:write")
 def delete_secret(secret_path):
     """Delete a built-in secret."""
     try:
@@ -166,6 +171,7 @@ def delete_secret(secret_path):
 
 @bp.route("/test-connection", methods=["POST"])
 @login_required
+@require_scope("secrets:admin")
 async def test_connection():
     """Test built-in secrets database connection."""
     try:

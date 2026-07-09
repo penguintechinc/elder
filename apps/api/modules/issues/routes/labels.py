@@ -11,7 +11,7 @@ from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import Description1000, Name255, RequestModel
 from apps.api.utils.quart_validation import validated_request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.dataclasses import (
     IssueLabelDTO,
     PaginatedResponse,
@@ -55,6 +55,7 @@ class UpdateLabelRequest(RequestModel):
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 @validated_request(query_model=ListLabelsQuery)
 async def list_labels(query: ListLabelsQuery):
     """
@@ -121,6 +122,7 @@ async def list_labels(query: ListLabelsQuery):
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("issues:write")
 @validated_request(body_model=CreateLabelRequest)
 async def create_label(body: CreateLabelRequest):
     """
@@ -173,6 +175,7 @@ async def create_label(body: CreateLabelRequest):
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
+@require_scope("issues:read")
 async def get_label(id: int):
     """
     Get a single label by ID.
@@ -200,6 +203,7 @@ async def get_label(id: int):
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
+@require_scope("issues:write")
 @validated_request(body_model=UpdateLabelRequest)
 async def update_label(id: int, body: UpdateLabelRequest):
     """
@@ -264,6 +268,7 @@ async def update_label(id: int, body: UpdateLabelRequest):
 
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
+@require_scope("issues:write")
 async def delete_label(id: int):
     """
     Delete a label.

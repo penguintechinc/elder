@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -32,6 +32,7 @@ def _get_tenant_id() -> int:
 
 @bp.route("", methods=["GET"])
 @login_required
+@require_scope("helpdesk:admin")
 async def list_email_accounts():
     """
     List email accounts with optional filtering and pagination.
@@ -107,6 +108,7 @@ async def list_email_accounts():
 
 @bp.route("", methods=["POST"])
 @login_required
+@require_scope("helpdesk:admin")
 async def create_email_account():
     """
     Create a new email account.
@@ -226,6 +228,7 @@ async def create_email_account():
 
 @bp.route("/<int:account_id>", methods=["GET"])
 @login_required
+@require_scope("helpdesk:admin")
 async def get_email_account(account_id):
     """
     Get a single email account by ID.
@@ -294,6 +297,7 @@ async def get_email_account(account_id):
 
 @bp.route("/<int:account_id>", methods=["PATCH"])
 @login_required
+@require_scope("helpdesk:admin")
 async def update_email_account(account_id):
     """
     Update an email account.
@@ -374,6 +378,7 @@ async def update_email_account(account_id):
 
 @bp.route("/<int:account_id>", methods=["DELETE"])
 @login_required
+@require_scope("helpdesk:admin")
 async def delete_email_account(account_id):
     """
     Delete an email account.
@@ -418,6 +423,7 @@ async def delete_email_account(account_id):
 
 @bp.route("/<int:account_id>/test-connection", methods=["POST"])
 @login_required
+@require_scope("helpdesk:admin")
 async def test_email_account(account_id):
     """
     Test email account connectivity (SMTP/IMAP).
