@@ -200,13 +200,16 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     Phase 4b-1: CRUD + version save/load.
     Phase 4b-2: Sharing + collections.
     Phase 4b-3: Comments, templates, shape libraries.
+    Phase 4b-4: Storage providers + export (JSON, SVG, raster).
     """
     from apps.api.modules.diagrams.routes import (
         collections,
         comments,
         diagrams,
+        export,
         libraries,
         shares,
+        storage_providers,
         templates,
     )
 
@@ -218,6 +221,8 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
         (comments.bp, f"{api_prefix}/diagrams"),
         (templates.bp, f"{api_prefix}/diagram-templates"),
         (libraries.bp, f"{api_prefix}/diagram-libraries"),
+        (storage_providers.storage_bp, f"{api_prefix}/diagram-storage"),
+        (export.export_bp, f"{api_prefix}/diagrams"),
     ]
 
 
