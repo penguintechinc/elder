@@ -187,6 +187,19 @@ def _init_registry() -> None:
         )
     )
 
+    # Documents (knowledge base)
+    # slug is the resolvable id for wiki-link resolution: [[slug]] or [[document:slug]]
+    register(
+        ResolvableType(
+            type="document",
+            module="documents",
+            table="doc_documents",
+            id_column="slug",
+            url_pattern="/documents/{id}",
+            title_column="title",
+        )
+    )
+
 
 # Initialize on module import
 _init_registry()
