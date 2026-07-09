@@ -172,6 +172,12 @@ def _access_reviews_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _documents_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load documents module blueprints (knowledge base, collections, versions)."""
+    # Routes coming in phase 3b-b; schema only for now.
+    return []
+
+
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
     from apps.api.modules.helpdesk.routes import (
@@ -358,6 +364,20 @@ MODULES = (
             "access_reviews:write",
             "access_reviews:admin",
         ),
+        worker_task_groups=(),
+        optional_services=(),
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="documents",
+        title="Documents & Knowledge Base",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_documents_blueprints,
+        models_import=("apps.api.modules.documents.models.documents",),
+        table_prefix="doc_",
+        nav_id="nav_documents",
+        scopes=("documents:read", "documents:write", "documents:admin"),
         worker_task_groups=(),
         optional_services=(),
         default_enabled=True,
