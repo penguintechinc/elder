@@ -22,8 +22,9 @@ import {
   MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Save, Trash2, ArrowLeft } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Users } from 'lucide-react'
 import api from '@/lib/api'
+import { useDiagramCollaboration } from '@/hooks/useDiagramCollaboration'
 
 const handleStyle = '!w-3 !h-3 !bg-amber-500 !border-2 !border-amber-600'
 
@@ -117,6 +118,48 @@ const shapeOptions = [
   { type: 'diamond', label: 'Diamond' },
 ]
 
+interface RemoteCursor {
+  identity_id: string
+  x: number
+  y: number
+}
+
+function RemoteCursors({ cursors }: { cursors: RemoteCursor[] }) {
+  const colors = ['#fbbf24', '#60a5fa', '#34d399', '#f87171', '#c084fc']
+
+  return (
+    <div className="pointer-events-none fixed inset-0">
+      {cursors.map((cursor, idx) => {
+        const color = colors[idx % colors.length]
+        return (
+          <div
+            key={cursor.identity_id}
+            className="absolute w-4 h-6 pointer-events-none"
+            style={{
+              left: `${cursor.x}px`,
+              top: `${cursor.y}px`,
+              transform: 'translate(-4px, -2px)',
+            }}
+          >
+            <svg className="w-4 h-6" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M5.5 1.5l12 18-4-6.5 6.5-4-12-6.5z"
+                fill={color}
+                stroke="currentColor"
+                strokeWidth="1"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <div className="absolute left-4 top-4 bg-slate-900 text-white text-xs px-1 py-0.5 rounded whitespace-nowrap" style={{ color }}>
+              {cursor.identity_id.slice(0, 8)}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 const colorOptions = [
   { color: '#3B82F6', label: 'Blue' },
   { color: '#10B981', label: 'Green' },
@@ -128,18 +171,31 @@ const colorOptions = [
   { color: '#1F2937', label: 'Dark' },
 ]
 
-export default function DiagramEditor() {
+function DiagramEditorContent() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [nodes, setNodes] = useState<Node[]>([])
   const [edges, setEdges] = useState<Edge[]>([])
   const [selectedColor, setSelectedColor] = useState('#3B82F6')
   const nodeIdCounter = useRef(1)
+  const drawingChangeTimeoutRef = useRef<number | null>(null)
 
   const { data: diagram, isLoading, error } = useQuery({
     queryKey: ['diagram', id],
     queryFn: () => api.getDiagram(Number(id)),
     enabled: !!id && id !== 'new',
+  })
+
+  // Handle remote drawing changes
+  const handleRemoteChange = useCallback((remoteNodes: Node[], remoteEdges: Edge[]) => {
+    setNodes(remoteNodes)
+    setEdges(remoteEdges)
+  }, [])
+
+  // Collaboration hook
+  const { collaborators, sendCursor, sendDrawingChange } = useDiagramCollaboration(Number(id) || 0, {
+    enabled: !!id && id !== 'new',
+    onRemoteChange: handleRemoteChange,
   })
 
   const saveMutation = useMutation({
@@ -167,8 +223,29 @@ export default function DiagramEditor() {
     }
   }, [diagram, isLoading])
 
-  const onNodesChange: OnNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), [])
-  const onEdgesChange: OnEdgesChange = useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), [])
+  const onNodesChange: OnNodesChange = useCallback((changes) => {
+    setNodes((nds) => {
+      const updated = applyNodeChanges(changes, nds)
+      // Debounce drawing change broadcast
+      if (drawingChangeTimeoutRef.current) clearTimeout(drawingChangeTimeoutRef.current)
+      drawingChangeTimeoutRef.current = window.setTimeout(() => {
+        sendDrawingChange(updated, edges)
+      }, 300)
+      return updated
+    })
+  }, [edges, sendDrawingChange])
+
+  const onEdgesChange: OnEdgesChange = useCallback((changes) => {
+    setEdges((eds) => {
+      const updated = applyEdgeChanges(changes, eds)
+      // Debounce drawing change broadcast
+      if (drawingChangeTimeoutRef.current) clearTimeout(drawingChangeTimeoutRef.current)
+      drawingChangeTimeoutRef.current = window.setTimeout(() => {
+        sendDrawingChange(nodes, updated)
+      }, 300)
+      return updated
+    })
+  }, [nodes, sendDrawingChange])
   const onConnect: OnConnect = useCallback(
     (connection) =>
       setEdges((eds) =>
@@ -227,9 +304,10 @@ export default function DiagramEditor() {
   }
 
   return (
-    <div className="h-screen bg-slate-900 flex flex-col">
+    <div className="h-screen bg-slate-900 flex flex-col relative">
+      <RemoteCursors cursors={collaborators} />
       {/* Toolbar */}
-      <div className="bg-slate-800 border-b border-slate-700 p-4 flex items-center justify-between gap-4">
+      <div className="bg-slate-800 border-b border-slate-700 p-4 flex items-center justify-between gap-4 relative z-10">
         <div className="flex items-center gap-4">
           <button
             onClick={() => navigate('/diagrams')}
@@ -243,6 +321,12 @@ export default function DiagramEditor() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Collaboration status */}
+          <div className="flex items-center gap-2 text-sm px-3 py-1 bg-slate-700 rounded">
+            <Users className="w-4 h-4 text-amber-400" />
+            <span className="text-slate-200">{collaborators.length + 1}</span>
+          </div>
+
           {/* Node palette */}
           <div className="flex gap-2 border-r border-slate-600 pr-4">
             <button
@@ -298,7 +382,13 @@ export default function DiagramEditor() {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 relative">
+      <div
+        className="flex-1 relative"
+        onMouseMove={(e) => {
+          // Send cursor position in screen coordinates
+          sendCursor(e.clientX, e.clientY)
+        }}
+      >
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -326,4 +416,8 @@ export default function DiagramEditor() {
       </div>
     </div>
   )
+}
+
+export default function DiagramEditor() {
+  return <DiagramEditorContent />
 }

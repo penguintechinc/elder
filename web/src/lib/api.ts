@@ -2799,6 +2799,12 @@ class ApiClient {
     const response = await this.client.post(`/diagrams/${id}/versions/${versionNumber}/restore`)
     return response.data
   }
+
+  // Diagram Collaboration (Phase 4d-2)
+  async getCollabTicket(id: number) {
+    const response = await this.client.post(`/diagrams/${id}/collab/ticket`)
+    return response.data as { ticket: string; ws_path: string }
+  }
 }
 
 export const api = new ApiClient()
