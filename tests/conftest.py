@@ -114,12 +114,12 @@ def init_test_database(test_database_url):
 
         # Sanity-check that all core + module models loaded. This is a floor,
         # not an exact count, so it survives additive schema growth per phase
-        # (helpdesk +12 = 96, references/issue-links reconciliation +2 = 98, ...);
+        # (helpdesk +12 = 96, documents +4 = 100, references/issue-links reconciliation +2 = 102, ...);
         # it still catches catastrophic under-loading (models failing to import).
         table_count = len(Base.metadata.tables)
         logger.info(f"Test database initialized: {table_count} tables")
-        assert table_count >= 96, (
-            f"Expected >= 96 tables (core + modules); got {table_count} "
+        assert table_count >= 100, (
+            f"Expected >= 100 tables (core + modules); got {table_count} "
             "— a model module likely failed to load"
         )
 

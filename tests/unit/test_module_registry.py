@@ -260,5 +260,5 @@ class TestPhaseZeroModules:
         """Test the registered-module count (bump when a module is added)."""
         # Phase 0 (9): infrastructure, ipam, sbom, services_oncall,
         # issues, discovery, secrets, webhooks_alerting, access_reviews
-        # Phase 3 (+1): helpdesk
-        assert len(MODULES) == 10
+        # Phase 3 (+2): helpdesk, documents
+        assert len(MODULES) == 11
