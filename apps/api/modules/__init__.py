@@ -243,9 +243,23 @@ def _streams_blueprints() -> list[tuple[Blueprint, str]]:
 
 
 def _flows_blueprints() -> list[tuple[Blueprint, str]]:
-    """Load flows module blueprints (Phase 4a: CI/CD pipeline orchestration — schema only, routes follow)."""
-    # Routes reserved for Phase 4a-2; for now return empty list
-    return []
+    """Load flows module blueprints (CI/CD pipeline orchestration: pipelines, stages, credentials, promotions, webhooks)."""
+    from apps.api.modules.flows.routes import (
+        credentials,
+        hooks,
+        pipelines,
+        promotions,
+        stages,
+    )
+
+    api_prefix = "/api/v1"
+    return [
+        (pipelines.bp, f"{api_prefix}/flows"),
+        (stages.bp, f"{api_prefix}/flows"),
+        (credentials.bp, f"{api_prefix}/flows/credentials"),
+        (promotions.bp, f"{api_prefix}/flows"),
+        (hooks.bp, f"{api_prefix}/flows-hooks"),
+    ]
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
