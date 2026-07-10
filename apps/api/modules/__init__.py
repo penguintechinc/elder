@@ -229,6 +229,14 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _streams_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load streams module blueprints (Phase 4b-a: stub; Phase 4b-b: CRUD + execution).
+
+    TODO Phase 4b-b: Add routes for playbooks, executions, approvals, forms.
+    """
+    return []
+
+
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
     from apps.api.modules.helpdesk.routes import (
@@ -459,6 +467,20 @@ MODULES = (
         scopes=("diagrams:read", "diagrams:write", "diagrams:admin"),
         worker_task_groups=(),
         optional_services=("minio",),
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="streams",
+        title="Streams (Workflows)",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_streams_blueprints,
+        models_import=("apps.api.modules.streams.models.streams",),
+        table_prefix="stream_",
+        nav_id="nav_streams",
+        scopes=("streams:read", "streams:write", "streams:admin", "streams:execute"),
+        worker_task_groups=(),
+        optional_services=(),
         default_enabled=True,
     ),
     ModuleManifest(
