@@ -15,7 +15,9 @@ from shared.jobbus import JobEnvelope
 logger = structlog.get_logger(__name__)
 
 # Type alias for handler functions
-JobHandler = Callable[[JobEnvelope], Any]  # Returns dict or None on success, raises on error
+JobHandler = Callable[
+    [JobEnvelope], Any
+]  # Returns dict or None on success, raises on error
 
 
 async def handle_discovery(envelope: JobEnvelope) -> dict[str, Any]:
@@ -49,7 +51,9 @@ async def handle_discovery(envelope: JobEnvelope) -> dict[str, Any]:
     from apps.worker.config.settings import settings
 
     if not settings.database_url:
-        raise ValueError("DATABASE_URL not configured; discovery jobs require database access")
+        raise ValueError(
+            "DATABASE_URL not configured; discovery jobs require database access"
+        )
 
     def _run_discovery_sync() -> int:
         """Run discovery jobs synchronously in thread pool."""
@@ -152,7 +156,9 @@ async def handle_helpdesk_email_send(envelope: JobEnvelope) -> dict[str, Any]:
     from apps.worker.config.settings import settings
 
     if not settings.database_url:
-        raise ValueError("DATABASE_URL not configured; email send requires database access")
+        raise ValueError(
+            "DATABASE_URL not configured; email send requires database access"
+        )
 
     payload = envelope.payload
     ticket_id = payload.get("ticket_id")
@@ -233,7 +239,9 @@ async def handle_helpdesk_email_poll(envelope: JobEnvelope) -> dict[str, Any]:
     from apps.worker.config.settings import settings
 
     if not settings.database_url:
-        raise ValueError("DATABASE_URL not configured; email poll requires database access")
+        raise ValueError(
+            "DATABASE_URL not configured; email poll requires database access"
+        )
 
     payload = envelope.payload
     email_account_id = payload.get("email_account_id")
@@ -307,7 +315,9 @@ async def handle_helpdesk_sla_breach(envelope: JobEnvelope) -> dict[str, Any]:
     from apps.worker.config.settings import settings
 
     if not settings.database_url:
-        raise ValueError("DATABASE_URL not configured; SLA check requires database access")
+        raise ValueError(
+            "DATABASE_URL not configured; SLA check requires database access"
+        )
 
     tenant_id = envelope.tenant_id
     if not tenant_id:
@@ -350,6 +360,235 @@ async def handle_helpdesk_sla_breach(envelope: JobEnvelope) -> dict[str, Any]:
         db_manager.close()
 
 
+async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
+    """Handle Streams playbook execution job.
+
+    Loads the playbook, nodes, edges, and execution record from the database,
+    runs the PlaybookExecutor, and updates the execution status.
+
+    Args:
+        envelope: JobEnvelope with execution_id, playbook_id, tenant_id in payload
+
+    Returns:
+        Result dict with status and execution results
+
+    Raises:
+        Exception: If execution fails (job remains pending for XAUTOCLAIM reclaim)
+    """
+    from datetime import datetime, timezone
+
+    from apps.worker.config.settings import settings
+    from apps.worker.streams.executor.node_registry import discover_nodes
+    from apps.worker.streams.executor.playbook_executor import PlaybookExecutor
+
+    logger.info(
+        "streams_job_received",
+        job_id=envelope.job_id,
+        payload=envelope.payload,
+    )
+
+    if not settings.database_url:
+        raise ValueError(
+            "DATABASE_URL not configured; streams execution requires database access"
+        )
+
+    payload = envelope.payload
+    execution_id = payload.get("execution_id")
+    playbook_id = payload.get("playbook_id")
+    tenant_id = envelope.tenant_id or payload.get("tenant_id")
+
+    if not execution_id or not playbook_id or not tenant_id:
+        raise ValueError("Missing execution_id, playbook_id, or tenant_id in payload")
+
+    def _load_execution_and_playbook():
+        """Sync function to load execution and playbook from DB."""
+        from penguin_dal import DAL
+
+        # penguin-dal reflects existing tables (schema owned by Alembic), same
+        # construction the API uses in shared/database/__init__.py.
+        db = DAL(settings.database_url, pool_size=10, migrate=False)
+        try:
+            # Load queued execution (scope to tenant)
+            execution = (
+                db(
+                    (db.stream_executions.execution_id == execution_id)
+                    & (db.stream_executions.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
+            )
+            if not execution:
+                raise ValueError(
+                    f"Execution {execution_id} not found in tenant {tenant_id}"
+                )
+
+            # Idempotency: if already terminal, no-op
+            if execution.status not in ("pending", "queued"):
+                logger.info(
+                    "streams_execution_already_terminal",
+                    execution_id=execution_id,
+                    status=execution.status,
+                )
+                return execution, None, None, None
+
+            # Load playbook
+            playbook = (
+                db(
+                    (db.stream_playbooks.id == playbook_id)
+                    & (db.stream_playbooks.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
+            )
+            if not playbook:
+                raise ValueError(
+                    f"Playbook {playbook_id} not found in tenant {tenant_id}"
+                )
+
+            # Load nodes
+            nodes = db(
+                (db.stream_nodes.playbook_id == playbook_id)
+                & (db.stream_nodes.tenant_id == tenant_id)
+            ).select()
+            nodes_list = [
+                {
+                    "id": n.node_id,
+                    "type": n.node_type,
+                    "category": n.node_category,
+                    "label": n.label,
+                    "config": n.config or {},
+                    "data": {
+                        "label": n.label,
+                        "category": n.node_category,
+                        "nodeType": n.node_type,
+                    },
+                }
+                for n in nodes
+            ]
+
+            # Load edges
+            edges = db(
+                (db.stream_edges.playbook_id == playbook_id)
+                & (db.stream_edges.tenant_id == tenant_id)
+            ).select()
+            edges_list = [
+                {
+                    "source": e.source_node_id,
+                    "target": e.target_node_id,
+                    "sourceHandle": e.source_handle,
+                    "targetHandle": e.target_handle,
+                }
+                for e in edges
+            ]
+
+            return execution, nodes_list, edges_list, db
+
+        except Exception:
+            raise
+
+    try:
+        # Discover nodes at startup (idempotent)
+        discover_nodes()
+
+        # Load execution, playbook, nodes, edges
+        execution, nodes_list, edges_list, db = _load_execution_and_playbook()
+
+        if execution.status not in ("pending", "queued"):
+            # Already terminal, return cached result
+            return {
+                "status": "skipped",
+                "message": "Execution already terminal",
+                "execution_id": execution_id,
+            }
+
+        # Update execution to "running"
+        now = datetime.now(timezone.utc)
+        db(db.stream_executions.id == execution.id).update(
+            status="running",
+            started_at=now,
+            updated_at=now,
+        )
+        db.commit()
+
+        # Prepare playbook data for executor
+        playbook_data = {
+            "nodes": nodes_list,
+            "edges": edges_list,
+            "config": {},
+            "trigger_output": execution.input_json or {},
+        }
+
+        # Execute playbook
+        executor = PlaybookExecutor(
+            execution_id=execution_id,
+            playbook_id=playbook_id,
+            node_timeout_seconds=30.0,
+        )
+        result = await executor.execute(playbook_data)
+
+        # Update execution with result
+        db(db.stream_executions.id == execution.id).update(
+            status="success" if result.success else "failed",
+            output_json=result.to_dict(),
+            error_message=result.error,
+            completed_at=datetime.now(timezone.utc),
+            duration_ms=int(result.execution_time_ms),
+            updated_at=datetime.now(timezone.utc),
+        )
+        db.commit()
+
+        # Insert stream_node_executions for each node that ran
+        for node_id, node_result in result.node_results.items():
+            db.stream_node_executions.insert(
+                tenant_id=tenant_id,
+                execution_id=execution_id,
+                node_id=node_id,
+                node_type=(
+                    node_result.node_id.split("_")[0]
+                    if "_" in node_result.node_id
+                    else node_result.node_id
+                ),
+                playbook_id=playbook_id,
+                status=node_result.status.value,
+                input_json={},
+                output_json=node_result.to_dict().get("outputs", {}),
+                error_message=node_result.error,
+                started_at=node_result.started_at,
+                completed_at=node_result.completed_at,
+                duration_ms=int(node_result.execution_time_ms),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+        db.commit()
+
+        logger.info(
+            "streams_execution_completed",
+            execution_id=execution_id,
+            playbook_id=playbook_id,
+            success=result.success,
+            duration_ms=result.execution_time_ms,
+        )
+
+        return {
+            "status": "success" if result.success else "failed",
+            "execution_id": execution_id,
+            "success": result.success,
+            "duration_ms": result.execution_time_ms,
+            "completed_nodes": result.completed_nodes,
+            "failed_nodes": result.failed_nodes,
+        }
+
+    except Exception as e:
+        logger.error(
+            "streams_execution_failed",
+            execution_id=execution_id,
+            playbook_id=playbook_id,
+            error=str(e),
+            exc_info=True,
+        )
+        raise
+
+
 # Handler registry: group name -> async handler
 HANDLER_REGISTRY: dict[str, JobHandler] = {
     "discovery": handle_discovery,
@@ -357,6 +596,7 @@ HANDLER_REGISTRY: dict[str, JobHandler] = {
     "helpdesk_email_send": handle_helpdesk_email_send,
     "helpdesk_email_poll": handle_helpdesk_email_poll,
     "helpdesk_sla_breach": handle_helpdesk_sla_breach,
+    "streams": handle_streams,
 }
 
 

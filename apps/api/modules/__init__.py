@@ -484,7 +484,7 @@ MODULES = (
         table_prefix="stream_",
         nav_id="nav_streams",
         scopes=("streams:read", "streams:write", "streams:admin", "streams:execute"),
-        worker_task_groups=(),
+        worker_task_groups=("streams",),
         optional_services=(),
         default_enabled=True,
     ),

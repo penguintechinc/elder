@@ -1020,15 +1020,20 @@ async def execute_stream(stream_id):
             .first()
         )
         if not stream:
-            return None, 404
+            return None, 404, None, None
 
         # Check edit access (execute is a write operation)
         if not _can_edit_stream(db, stream, tenant_id, identity_id):
-            return None, 403
+            return None, 403, None, None
 
         if data.get("dry_run"):
             # Dry run - just validate
-            return {"dry_run": True, "message": "Stream validation successful"}, 200
+            return (
+                {"dry_run": True, "message": "Stream validation successful"},
+                200,
+                None,
+                None,
+            )
 
         # Create execution record
         execution_uuid = str(uuid.uuid4())
@@ -1055,16 +1060,54 @@ async def execute_stream(stream_id):
         )
         db.commit()
 
-        # TODO Phase 4b-Streams-d: Enqueue job to Redis Streams job bus if helper exists
         logger.info(
             f"Execution created: execution_id={execution_uuid}, "
             f"stream_id={stream_id}, triggered_by={identity_id}"
         )
 
         execution = db(db.stream_executions.id == exec_id).select().first()
-        return _serialize_execution(execution), 202
+        return _serialize_execution(execution), 202, execution_uuid, now
 
-    result, status_code = await run_in_threadpool(execute)
+    result, status_code, execution_uuid, enqueue_time = await run_in_threadpool(execute)
+
+    # Phase 4b-Streams-d: Enqueue job to Redis Streams job bus (async)
+    # (Enqueue failures do NOT fail the request — row exists for reconciliation)
+    if execution_uuid and enqueue_time and status_code == 202:
+        try:
+            import redis.asyncio
+
+            from apps.worker.config.settings import settings
+            from shared.jobbus import JobBus
+
+            if settings.redis_url:
+                redis_client = redis.asyncio.from_url(settings.redis_url)
+                jobbus = JobBus(redis_client)
+                await jobbus.ensure_group("streams")
+                await jobbus.enqueue(
+                    "streams",
+                    "execute_playbook",
+                    {
+                        "execution_id": execution_uuid,
+                        "playbook_id": stream_id,
+                        "tenant_id": tenant_id,
+                    },
+                    enqueued_at=enqueue_time.isoformat(),
+                    tenant_id=tenant_id,
+                    idempotency_key=execution_uuid,
+                )
+                await redis_client.close()
+                logger.info(
+                    f"Execution enqueued to job bus: execution_id={execution_uuid}"
+                )
+            else:
+                logger.warning(
+                    f"REDIS_URL not configured; execution {execution_uuid} queued in DB but not enqueued to job bus"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to enqueue execution {execution_uuid} to job bus; "
+                f"worker will pick it up via reconcile: {e}"
+            )
 
     if status_code == 404:
         return ApiResponse.not_found("Stream")

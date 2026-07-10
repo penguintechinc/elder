@@ -85,20 +85,18 @@ async def trigger_webhook(token: str):
 
     def trigger(token, method, remote_addr, request_body, signature_header, input_data):
         # Find webhook by token (public lookup, safe because token is cryptographically secure)
+        # Uniform 404 for ALL of: unknown token, disabled webhook, missing or
+        # disabled playbook. Distinct codes/messages here would let an
+        # unauthenticated caller distinguish a real-but-disabled token from a
+        # bogus one (a token-enumeration oracle) and learn playbook state.
         webhook = db(db.stream_webhooks.token == token).select().first()
-        if not webhook:
-            return None, None, 404, "Invalid webhook token"
-
-        if not webhook.is_enabled:
-            return None, None, 403, "Webhook is disabled"
+        if not webhook or not webhook.is_enabled:
+            return None, None, 404, "Not found"
 
         # Get playbook and tenant from webhook row
         playbook = db(db.stream_playbooks.id == webhook.playbook_id).select().first()
-        if not playbook:
-            return None, None, 404, "Playbook not found"
-
-        if not playbook.is_enabled:
-            return None, None, 403, "Playbook is disabled"
+        if not playbook or not playbook.is_enabled:
+            return None, None, 404, "Not found"
 
         tenant_id = playbook.tenant_id
 
@@ -115,9 +113,11 @@ async def trigger_webhook(token: str):
                 ),
             )
 
-        # Validate signature if required
-        if webhook.validate_signature and webhook.signature_secret:
-            if not verify_hmac_signature(
+        # Validate signature if required — FAIL CLOSED. If validation is enabled
+        # but the secret is missing (misconfiguration) we reject rather than
+        # skip the check and accept an unsigned request.
+        if webhook.validate_signature:
+            if not webhook.signature_secret or not verify_hmac_signature(
                 request_body, signature_header, webhook.signature_secret
             ):
                 return None, None, 401, "Invalid signature"
@@ -175,6 +175,58 @@ async def trigger_webhook(token: str):
     elif status_code == 401:
         return ApiResponse.error(error_msg, 401)
 
+    # Phase 4b-Streams-d: Enqueue job to Redis Streams job bus
+    # (Enqueue failures do NOT fail the request — row exists for reconciliation)
+    if execution_id and webhook_id:
+        try:
+            import redis.asyncio
+
+            from apps.worker.config.settings import settings
+            from shared.jobbus import JobBus
+
+            if settings.redis_url:
+                redis_client = redis.asyncio.from_url(settings.redis_url)
+                jobbus = JobBus(redis_client)
+                await jobbus.ensure_group("streams")
+
+                # Get tenant_id from webhook playbook (set in trigger function)
+                webhook_row = db(db.stream_webhooks.id == webhook_id).select().first()
+                playbook_row = (
+                    db(db.stream_playbooks.id == webhook_row.playbook_id)
+                    .select()
+                    .first()
+                )
+                tenant_id = playbook_row.tenant_id if playbook_row else None
+
+                if tenant_id:
+                    now = datetime.now(timezone.utc)
+
+                    await jobbus.enqueue(
+                        "streams",
+                        "execute_playbook",
+                        {
+                            "execution_id": execution_id,
+                            "playbook_id": webhook_row.playbook_id,
+                            "tenant_id": tenant_id,
+                        },
+                        enqueued_at=now.isoformat(),
+                        tenant_id=tenant_id,
+                        idempotency_key=execution_id,
+                    )
+                await redis_client.close()
+                logger.info(
+                    f"Webhook execution enqueued to job bus: execution_id={execution_id}"
+                )
+            else:
+                logger.warning(
+                    f"REDIS_URL not configured; webhook execution {execution_id} queued in DB but not enqueued to job bus"
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to enqueue webhook execution {execution_id} to job bus; "
+                f"worker will pick it up via reconcile: {e}"
+            )
+
     # 202: Execution queued for processing (do NOT execute inline)
     return ApiResponse.success(
         data={
@@ -206,15 +258,17 @@ async def test_webhook(token: str):
 
         playbook = db(db.stream_playbooks.id == webhook.playbook_id).select().first()
 
-        # Validate signature if provided and required
+        # Validate signature if required — fail closed (missing secret or
+        # missing/invalid signature => not valid).
         signature_valid = None
-        if webhook.validate_signature and webhook.signature_secret:
-            if signature_header:
-                signature_valid = verify_hmac_signature(
+        if webhook.validate_signature:
+            signature_valid = bool(
+                webhook.signature_secret
+                and signature_header
+                and verify_hmac_signature(
                     request_body, signature_header, webhook.signature_secret
                 )
-            else:
-                signature_valid = False
+            )
 
         return (
             {
