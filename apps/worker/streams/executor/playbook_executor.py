@@ -67,6 +67,21 @@ def _serialize_output(value: Any) -> Dict[str, Any]:
     return {"data": value, "metadata": {}, "source_node_id": "", "timestamp": None}
 
 
+def _unwrap_output(value: Any) -> Any:
+    """Extract the raw payload from a node output port for downstream input.
+
+    Nodes emit dict-wrapped ports ({"data", "metadata", "source_node_id"}) but
+    consume RAW input values (inputs.get("field") -> the value itself). Unwrap
+    the "data" field so a chained node receives the raw payload, not the
+    envelope. NodeData objects and bare values pass through unchanged.
+    """
+    if isinstance(value, NodeData):
+        return value.data
+    if isinstance(value, dict) and "data" in value:
+        return value["data"]
+    return value
+
+
 @dataclass(slots=True)
 class NodeResult:
     """Result of a single node execution."""
@@ -382,7 +397,9 @@ class PlaybookExecutor:
             if source_node_id in node_outputs:
                 source_outputs = node_outputs[source_node_id]
                 if source_handle in source_outputs:
-                    inputs[target_handle] = source_outputs[source_handle]
+                    inputs[target_handle] = _unwrap_output(
+                        source_outputs[source_handle]
+                    )
                     logger.debug(
                         f"Gathered input for {node_id}[{target_handle}] "
                         f"from {source_node_id}[{source_handle}]"

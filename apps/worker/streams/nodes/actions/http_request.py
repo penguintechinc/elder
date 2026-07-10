@@ -9,80 +9,24 @@ Ported from icestreams-worker.
 from __future__ import annotations
 
 import asyncio
-import ipaddress
 import json
 import logging
 import random
-import socket
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 import httpx
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
 
+# Re-exported under the historical private names so existing importers keep
+# working; the canonical home for the SSRF guard is nodes/net_guard.py.
+from ..net_guard import guard_ssrf as _guard_ssrf  # noqa: F401
+from ..net_guard import is_blocked_ip as _is_blocked_ip  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-# RFC 6598 carrier-grade NAT space is NOT flagged by ipaddress.is_private.
-_CGNAT_NET = ipaddress.ip_network("100.64.0.0/10")
-
-
-def _is_blocked_ip(ip_str: str) -> bool:
-    """True if an IP is loopback/private/link-local/reserved/multicast/CGNAT.
-
-    Blocks the whole internal/reserved space, including the cloud metadata
-    endpoint 169.254.169.254 (link-local) and IPv4-mapped IPv6 forms.
-    """
-    try:
-        ip = ipaddress.ip_address(ip_str)
-    except ValueError:
-        return True  # unparseable → block (fail closed)
-    if getattr(ip, "ipv4_mapped", None):
-        return _is_blocked_ip(str(ip.ipv4_mapped))
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip in _CGNAT_NET
-    )
-
-
-def _guard_ssrf(url: str) -> None:
-    """Reject SSRF-prone URLs before any request is issued.
-
-    Rejects non-http(s) schemes and any host that resolves to an
-    internal/reserved address. Raises ValueError on a blocked URL.
-
-    NOTE: this validates at resolve time; a determined attacker could still
-    attempt DNS-rebinding between this check and the connect. Auto-redirects
-    are disabled by the caller so redirect-based SSRF is not possible. A future
-    hardening pass can pin the connection to the validated IP.
-    """
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(
-            f"Blocked URL scheme: {parsed.scheme!r} (only http/https allowed)"
-        )
-    host = parsed.hostname
-    if not host:
-        raise ValueError("URL has no host")
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    try:
-        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ValueError(f"Cannot resolve host {host!r}: {exc}")
-    for info in infos:
-        ip_str = info[4][0]
-        if _is_blocked_ip(ip_str):
-            raise ValueError(
-                f"Blocked request to internal/reserved address {ip_str} (host {host!r})"
-            )
 
 
 @dataclass(slots=True, frozen=True)
