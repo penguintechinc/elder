@@ -1,0 +1,241 @@
+# WaddleAI Connector Manifest for IceCharts
+# AI proxy service for unified AI model access and routing
+connector:
+  id: waddleai
+  name: WaddleAI
+  description: AI proxy service for unified AI model access and routing
+  icon: "waddleai-logo"
+  color: "#8B5CF6"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: WADDLEAI_API_KEY
+
+  connection:
+    base_url_env: WADDLEAI_URL
+    default_url: http://localhost:8000
+    health_endpoint: /health
+
+  # ============================================================================
+  # TRIGGERS - Webhook events from WaddleAI
+  # ============================================================================
+  triggers:
+    # Completion Received
+    - id: completion_received
+      name: Completion Received
+      description: Triggered when an AI completion is received
+      icon: "🧠"
+      webhook_path: /webhooks/waddleai/completion
+      outputs:
+        - name: out
+          type: object
+          description: Completion data with model, content, and usage
+      config_schema:
+        - field: model_filter
+          type: string
+          label: Model Filter
+          placeholder: "llama3.2, gpt-4"
+          description: Comma-separated model names to filter (empty for all)
+        - field: min_tokens
+          type: number
+          label: Min Tokens
+          default: 0
+          description: Only trigger if response has at least this many tokens
+
+  # ============================================================================
+  # ACTIONS - Execute operations via WaddleAI APIs
+  # ============================================================================
+  actions:
+    # Chat Completion
+    - id: chat_completion
+      name: Chat Completion
+      description: Generate chat completion
+      icon: "💬"
+      endpoint: /api/v1/chat/completions
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Input data for variable interpolation
+      outputs:
+        - name: out
+          type: object
+          description: Chat completion response with content and usage
+      config_schema:
+        - field: model
+          type: string
+          label: Model
+          placeholder: "llama3.2"
+          supports_variables: true
+          required: true
+          description: Model name (provider-specific)
+        - field: messages
+          type: textarea
+          label: Messages (JSON)
+          placeholder: '[{"role": "user", "content": "Hello"}]'
+          supports_variables: true
+          required: true
+          description: JSON array of chat messages
+        - field: temperature
+          type: number
+          label: Temperature
+          default: 0.7
+          description: Sampling temperature (0-2)
+        - field: max_tokens
+          type: number
+          label: Max Tokens
+          default: 1024
+          description: Maximum tokens to generate
+        - field: system_prompt
+          type: textarea
+          label: System Prompt
+          placeholder: "You are a helpful assistant..."
+          supports_variables: true
+          description: Optional system prompt
+
+    # Text Completion
+    - id: text_completion
+      name: Text Completion
+      description: Generate text completion
+      icon: "📝"
+      endpoint: /api/v1/completions
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: model
+          type: string
+          label: Model
+          placeholder: "llama3.2"
+          supports_variables: true
+          required: true
+        - field: prompt
+          type: textarea
+          label: Prompt
+          supports_variables: true
+          required: true
+          description: Text prompt to complete
+        - field: temperature
+          type: number
+          label: Temperature
+          default: 0.7
+        - field: max_tokens
+          type: number
+          label: Max Tokens
+          default: 1024
+
+    # Create Embedding
+    - id: create_embedding
+      name: Create Embedding
+      description: Create text embeddings
+      icon: "🔢"
+      endpoint: /api/v1/embeddings
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Embedding vectors
+      config_schema:
+        - field: model
+          type: string
+          label: Model
+          placeholder: "text-embedding-ada-002"
+          supports_variables: true
+          required: true
+        - field: input_text
+          type: textarea
+          label: Input Text
+          supports_variables: true
+          required: true
+          description: Text to generate embeddings for
+
+    # List Models
+    - id: list_models
+      name: List Models
+      description: List available models
+      icon: "📋"
+      endpoint: /api/v1/models
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: List of available models
+      config_schema:
+        - field: provider
+          type: select
+          label: Provider
+          options: [ollama, openai, anthropic]
+          description: Filter by provider (empty for all)
+
+  # ============================================================================
+  # TRANSFORMS - Data lookups and statistics
+  # ============================================================================
+  transforms:
+    # Get Routing Stats
+    - id: get_routing_stats
+      name: Get Routing Stats
+      description: Get model routing statistics
+      icon: "📊"
+      endpoint: /api/v1/stats/routing
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Routing statistics by model and provider
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          options: [1h, 24h, 7d, 30d]
+          default: 24h
+          description: Time range for statistics
+
+    # Get Usage
+    - id: get_usage
+      name: Get Usage
+      description: Get usage statistics
+      icon: "📈"
+      endpoint: /api/v1/stats/usage
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Usage statistics with token counts
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          options: [1h, 24h, 7d, 30d]
+          default: 24h
+        - field: group_by
+          type: select
+          label: Group By
+          options: [model, provider, user]
+          default: model
+          description: How to group usage statistics

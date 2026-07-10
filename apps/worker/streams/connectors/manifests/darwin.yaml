@@ -1,0 +1,336 @@
+# Darwin Connector Manifest for IceCharts
+# Code review platform with AI-powered analysis and remediation
+connector:
+  id: darwin
+  name: Darwin
+  description: Code review platform with AI-powered analysis and remediation
+  icon: "darwin-logo"
+  color: "#10B981"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: DARWIN_API_KEY
+
+  connection:
+    base_url_env: DARWIN_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/health
+
+  # ============================================================================
+  # TRIGGERS - Webhook events from Darwin
+  # ============================================================================
+  triggers:
+    # Review Completed
+    - id: review_completed
+      name: Review Completed
+      description: Triggered when a code review is completed
+      icon: "✅"
+      webhook_path: /webhooks/darwin/review/completed
+      outputs:
+        - name: out
+          type: object
+          description: Completed review data with issues
+      config_schema:
+        - field: severity_filter
+          type: multiselect
+          label: Severity Filter
+          options: [critical, high, medium, low]
+          description: Only trigger for issues of these severities
+        - field: repository
+          type: string
+          label: Repository
+          placeholder: "org/repo"
+          description: Filter by repository (empty for all)
+
+    # Issue Detected
+    - id: issue_detected
+      name: Issue Detected
+      description: Triggered when a code issue is detected
+      icon: "🐛"
+      webhook_path: /webhooks/darwin/issue/detected
+      outputs:
+        - name: out
+          type: object
+          description: Issue details with location and recommendation
+      config_schema:
+        - field: issue_types
+          type: multiselect
+          label: Issue Types
+          options: [security, performance, style, bug, complexity]
+          description: Filter by issue types
+        - field: min_severity
+          type: select
+          label: Min Severity
+          options: [critical, high, medium, low]
+          default: medium
+          description: Only trigger for issues at or above this severity
+
+    # Webhook Event
+    - id: webhook_event
+      name: Webhook Event
+      description: Generic webhook receiver for Darwin events
+      icon: "🪝"
+      webhook_path: /webhooks/darwin/event
+      outputs:
+        - name: out
+          type: object
+          description: Raw webhook payload
+      config_schema:
+        - field: event_types
+          type: string
+          label: Event Types
+          placeholder: "review.completed, issue.detected"
+          description: Comma-separated event types to listen for
+
+  # ============================================================================
+  # ACTIONS - Execute operations via Darwin APIs
+  # ============================================================================
+  actions:
+    # Create Review
+    - id: create_review
+      name: Create Review
+      description: Create a code review
+      icon: "🔍"
+      endpoint: /api/v1/reviews
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Review data for variable interpolation
+      outputs:
+        - name: out
+          type: object
+          description: Created review with ID
+      config_schema:
+        - field: repository
+          type: string
+          label: Repository
+          placeholder: "org/repo"
+          supports_variables: true
+          required: true
+          description: Repository to review
+        - field: branch
+          type: string
+          label: Branch
+          placeholder: "main"
+          supports_variables: true
+          default: main
+        - field: commit_sha
+          type: string
+          label: Commit SHA
+          supports_variables: true
+          description: Specific commit to review (optional)
+        - field: review_type
+          type: select
+          label: Review Type
+          options: [full, diff, file]
+          default: full
+          description: Type of review to perform
+
+    # Trigger Repo Review
+    - id: trigger_repo_review
+      name: Trigger Repository Review
+      description: Trigger repository-wide review
+      icon: "📂"
+      endpoint: /api/v1/reviews/repository
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Repository review job details
+      config_schema:
+        - field: repository
+          type: string
+          label: Repository
+          placeholder: "org/repo"
+          supports_variables: true
+          required: true
+        - field: scan_depth
+          type: select
+          label: Scan Depth
+          options: [shallow, standard, deep]
+          default: standard
+          description: Depth of analysis to perform
+
+    # Create Issue Plan
+    - id: create_issue_plan
+      name: Create Issue Plan
+      description: Create an issue remediation plan
+      icon: "🛠️"
+      endpoint: /api/v1/issues/plan
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Remediation plan with steps
+      config_schema:
+        - field: issue_id
+          type: string
+          label: Issue ID
+          supports_variables: true
+          required: true
+          description: Issue to create plan for
+        - field: auto_fix
+          type: checkbox
+          label: Auto Fix
+          default: false
+          description: Automatically apply fixes if possible
+
+    # Export Analytics
+    - id: export_analytics
+      name: Export Analytics
+      description: Export analytics report
+      icon: "📊"
+      endpoint: /api/v1/analytics/export
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Analytics export data
+      config_schema:
+        - field: format
+          type: select
+          label: Format
+          options: [json, csv, pdf]
+          default: json
+          description: Export format
+        - field: date_range
+          type: string
+          label: Date Range
+          placeholder: "2025-01-01..2025-12-31"
+          supports_variables: true
+          description: Date range for analytics
+        - field: repositories
+          type: string
+          label: Repositories
+          placeholder: "org/repo1, org/repo2"
+          supports_variables: true
+          description: Comma-separated repositories (empty for all)
+
+  # ============================================================================
+  # TRANSFORMS - Data lookups and analytics
+  # ============================================================================
+  transforms:
+    # Get Review
+    - id: get_review
+      name: Get Review
+      description: Get review details
+      icon: "🔍"
+      endpoint: /api/v1/reviews/{{review_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include review_id
+      outputs:
+        - name: out
+          type: object
+          description: Full review with issues and recommendations
+      config_schema:
+        - field: review_id
+          type: string
+          label: Review ID
+          supports_variables: true
+          required: true
+          description: Review ID to lookup (or from input)
+        - field: include_issues
+          type: checkbox
+          label: Include Issues
+          default: true
+
+    # List Reviews
+    - id: list_reviews
+      name: List Reviews
+      description: List reviews
+      icon: "📋"
+      endpoint: /api/v1/reviews
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: List of reviews
+      config_schema:
+        - field: repository
+          type: string
+          label: Repository
+          placeholder: "org/repo"
+          supports_variables: true
+          description: Filter by repository
+        - field: status
+          type: select
+          label: Status
+          options: [any, pending, in_progress, completed]
+          default: any
+          description: Filter by status
+        - field: limit
+          type: number
+          label: Limit
+          default: 50
+          description: Maximum number of reviews to return
+
+    # Get Analytics Summary
+    - id: get_analytics_summary
+      name: Get Analytics Summary
+      description: Get analytics summary
+      icon: "📈"
+      endpoint: /api/v1/analytics/summary
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Analytics summary with trends
+      config_schema:
+        - field: repository
+          type: string
+          label: Repository
+          placeholder: "org/repo"
+          supports_variables: true
+          description: Filter by repository (empty for all)
+        - field: time_range
+          type: select
+          label: Time Range
+          options: [7d, 30d, 90d, 1y]
+          default: 30d
+
+    # Get Provider Health
+    - id: get_provider_health
+      name: Get Provider Health
+      description: Get provider health status
+      icon: "💚"
+      endpoint: /api/v1/providers/health
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Health status of all providers
+      config_schema: []

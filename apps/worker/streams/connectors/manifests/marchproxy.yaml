@@ -1,0 +1,350 @@
+# MarchProxy Connector Manifest
+# Proxy and load balancer management platform
+# Version: 1.0.0
+# Vendor: PenguinTech
+
+connector:
+  id: marchproxy
+  name: MarchProxy
+  description: Proxy and load balancer management with support for HTTP, TCP, UDP, and gRPC protocols
+  icon: "marchproxy-logo"
+  color: "#A855F7"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: MARCHPROXY_API_KEY
+
+  connection:
+    base_url_env: MARCHPROXY_URL
+    default_url: http://localhost:9090
+    health_endpoint: /health
+
+  triggers:
+    - id: module_registered
+      name: Module Registered
+      description: Triggered when a new service module registers with the proxy
+      icon: "📦"
+      webhook_path: /webhooks/marchproxy/module/registered
+      outputs:
+        - name: out
+          type: object
+          description: Registered module information including type, endpoints, and configuration
+      config_schema:
+        - field: module_types
+          type: multiselect
+          label: Module Types
+          description: Filter by module protocol type
+          options:
+            - value: http
+              label: HTTP
+            - value: tcp
+              label: TCP
+            - value: udp
+              label: UDP
+            - value: grpc
+              label: gRPC
+          required: false
+
+    - id: route_changed
+      name: Route Changed
+      description: Triggered when routing configuration is modified
+      icon: "🔄"
+      webhook_path: /webhooks/marchproxy/route/changed
+      outputs:
+        - name: out
+          type: object
+          description: Route change details including affected routes and configuration
+      config_schema:
+        - field: change_types
+          type: multiselect
+          label: Change Types
+          description: Filter by change type
+          options:
+            - value: added
+              label: Added
+            - value: updated
+              label: Updated
+            - value: removed
+              label: Removed
+          required: false
+
+  actions:
+    - id: register_module
+      name: Register Module
+      description: Register a service module with the proxy
+      icon: "➕"
+      endpoint: /api/v1/modules
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Registered module details including module ID and health status
+      config_schema:
+        - field: name
+          type: string
+          label: Module Name
+          description: Descriptive name for the service module
+          supports_variables: true
+          required: true
+        - field: module_type
+          type: select
+          label: Module Type
+          description: Protocol type for the module
+          options:
+            - value: http
+              label: HTTP
+            - value: tcp
+              label: TCP
+            - value: udp
+              label: UDP
+            - value: grpc
+              label: gRPC
+          required: true
+        - field: upstream_url
+          type: string
+          label: Upstream URL
+          description: Backend service URL or address
+          supports_variables: true
+          required: true
+        - field: health_check_path
+          type: string
+          label: Health Check Path
+          description: Path for health check endpoint
+          default: "/health"
+          required: false
+        - field: weight
+          type: number
+          label: Weight
+          description: Load balancing weight for this module
+          default: 100
+          required: false
+
+    - id: update_routes
+      name: Update Routes
+      description: Update routing rules for a module
+      icon: "✏️"
+      endpoint: /api/v1/routes
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Updated routing configuration
+      config_schema:
+        - field: module_id
+          type: string
+          label: Module ID
+          description: ID of the module to update routes for
+          supports_variables: true
+          required: true
+        - field: routes
+          type: textarea
+          label: Routes
+          description: JSON array of route rules
+          supports_variables: true
+          required: true
+        - field: strategy
+          type: select
+          label: Load Balancing Strategy
+          description: Strategy for distributing traffic
+          options:
+            - value: round_robin
+              label: Round Robin
+            - value: least_conn
+              label: Least Connections
+            - value: ip_hash
+              label: IP Hash
+            - value: weighted
+              label: Weighted
+          default: round_robin
+          required: false
+
+    - id: delete_route
+      name: Delete Route
+      description: Delete a routing rule
+      icon: "🗑️"
+      endpoint: /api/v1/routes/{{route_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Deletion confirmation
+      config_schema:
+        - field: route_id
+          type: string
+          label: Route ID
+          description: ID of the route to delete
+          supports_variables: true
+          required: true
+
+    - id: route_request
+      name: Route Request
+      description: Route a request to a module through the proxy
+      icon: "🚀"
+      endpoint: /api/v1/proxy/route
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Proxied request response
+      config_schema:
+        - field: target_module
+          type: string
+          label: Target Module
+          description: Module ID or name to route request to
+          supports_variables: true
+          required: true
+        - field: path
+          type: string
+          label: Path
+          description: Request path
+          supports_variables: true
+          required: true
+        - field: method
+          type: select
+          label: HTTP Method
+          description: HTTP method for the request
+          options:
+            - value: GET
+              label: GET
+            - value: POST
+              label: POST
+            - value: PUT
+              label: PUT
+            - value: DELETE
+              label: DELETE
+            - value: PATCH
+              label: PATCH
+          default: GET
+          required: false
+        - field: headers
+          type: textarea
+          label: Headers
+          description: JSON object of HTTP headers
+          supports_variables: true
+          required: false
+
+  transforms:
+    - id: list_modules
+      name: List Modules
+      description: List registered service modules
+      icon: "📋"
+      endpoint: /api/v1/modules
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: List of registered modules with status and configuration
+      config_schema:
+        - field: module_type
+          type: select
+          label: Module Type
+          description: Filter by module protocol type
+          options:
+            - value: any
+              label: Any
+            - value: http
+              label: HTTP
+            - value: tcp
+              label: TCP
+            - value: udp
+              label: UDP
+            - value: grpc
+              label: gRPC
+          default: any
+          required: false
+        - field: status
+          type: select
+          label: Status
+          description: Filter by module health status
+          options:
+            - value: any
+              label: Any
+            - value: healthy
+              label: Healthy
+            - value: unhealthy
+              label: Unhealthy
+            - value: draining
+              label: Draining
+          default: any
+          required: false
+
+    - id: get_routes
+      name: Get Routes
+      description: Get routing configuration for modules
+      icon: "🗺️"
+      endpoint: /api/v1/routes
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Routing configuration including rules and strategies
+      config_schema:
+        - field: module_id
+          type: string
+          label: Module ID
+          description: Filter routes by module ID, leave empty for all routes
+          supports_variables: true
+          required: false
+
+    - id: get_module_stats
+      name: Get Module Stats
+      description: Get traffic statistics for a module
+      icon: "📊"
+      endpoint: /api/v1/modules/{{module_id}}/stats
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Module traffic statistics including request count, latency, and errors
+      config_schema:
+        - field: module_id
+          type: string
+          label: Module ID
+          description: ID of the module to get statistics for
+          supports_variables: true
+          required: true
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for statistics
+          options:
+            - value: 1h
+              label: Last 1 Hour
+            - value: 24h
+              label: Last 24 Hours
+            - value: 7d
+              label: Last 7 Days
+          default: 24h
+          required: false

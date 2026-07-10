@@ -1,0 +1,441 @@
+# SkausWatch Service Connector Manifest
+# Security scanner and monitoring platform
+# Provides vulnerability scanning, compliance checks, secret detection, and security monitoring
+
+connector:
+  id: skauswatch
+  name: SkausWatch
+  description: Security scanner and monitoring platform for continuous vulnerability assessment and compliance
+  icon: "skauswatch-logo"
+  color: "#F59E0B"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: SKAUSWATCH_API_KEY
+
+  connection:
+    base_url_env: SKAUSWATCH_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/health
+
+  triggers:
+    - id: scan_completed
+      name: Scan Completed
+      description: Triggered when a security scan completes
+      icon: "✅"
+      webhook_path: /webhooks/skauswatch/scan/completed
+      outputs:
+        - name: scan_result
+          type: object
+          description: Scan results including findings, severity distribution, and scan metadata
+      config_schema:
+        - field: scan_types
+          type: multiselect
+          label: Scan Types
+          description: Filter by scan type
+          options:
+            - vulnerability
+            - compliance
+            - configuration
+            - secret_detection
+          required: false
+        - field: min_severity
+          type: select
+          label: Minimum Severity
+          description: Trigger only for scans with findings at or above this severity
+          options:
+            - critical
+            - high
+            - medium
+            - low
+          default: medium
+          required: false
+
+    - id: finding_detected
+      name: Finding Detected
+      description: Triggered when a security finding is detected during a scan
+      icon: "⚠️"
+      webhook_path: /webhooks/skauswatch/finding/detected
+      outputs:
+        - name: finding
+          type: object
+          description: Security finding details including type, severity, location, and remediation
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Filter by finding severity
+          options:
+            - critical
+            - high
+            - medium
+            - low
+          required: false
+        - field: categories
+          type: multiselect
+          label: Finding Categories
+          description: Filter by finding category
+          options:
+            - cve
+            - misconfiguration
+            - exposed_secret
+            - compliance_violation
+          required: false
+
+    - id: schedule_triggered
+      name: Schedule Triggered
+      description: Triggered when a scheduled scan starts execution
+      icon: "⏰"
+      webhook_path: /webhooks/skauswatch/schedule/triggered
+      outputs:
+        - name: schedule_event
+          type: object
+          description: Schedule trigger event with scan job details
+      config_schema:
+        - field: schedule_ids
+          type: string
+          label: Schedule IDs
+          description: Filter by specific schedule IDs (comma-separated)
+          placeholder: "schedule-1, schedule-2"
+          required: false
+
+  actions:
+    - id: create_target
+      name: Create Scan Target
+      description: Create a new scan target for security scanning
+      icon: "🎯"
+      endpoint: /api/v1/targets
+      method: POST
+      inputs:
+        - name: target_config
+          type: any
+          required: false
+          description: Target configuration from previous step
+      outputs:
+        - name: target
+          type: object
+          description: Created scan target with ID and configuration
+      config_schema:
+        - field: name
+          type: string
+          label: Target Name
+          description: Name for the scan target
+          supports_variables: true
+          required: true
+        - field: target_type
+          type: select
+          label: Target Type
+          description: Type of scan target
+          options:
+            - repository
+            - container
+            - host
+            - network
+            - cloud_account
+          required: true
+        - field: target_url
+          type: string
+          label: Target URL
+          description: URL or identifier for the target (e.g., git URL, container image, hostname)
+          supports_variables: true
+          required: true
+        - field: tags
+          type: string
+          label: Tags
+          description: Comma-separated tags for organizing targets
+          supports_variables: true
+          placeholder: "env:prod, team:platform"
+          required: false
+
+    - id: create_scan_job
+      name: Create Scan Job
+      description: Create and run a security scan job
+      icon: "🔍"
+      endpoint: /api/v1/scans
+      method: POST
+      inputs:
+        - name: scan_config
+          type: any
+          required: false
+          description: Scan configuration from previous step
+      outputs:
+        - name: scan_job
+          type: object
+          description: Created scan job with ID and status
+      config_schema:
+        - field: target_id
+          type: string
+          label: Target ID
+          description: ID of the target to scan
+          supports_variables: true
+          required: true
+        - field: scan_type
+          type: select
+          label: Scan Type
+          description: Type of security scan to perform
+          options:
+            - vulnerability
+            - compliance
+            - configuration
+            - secret_detection
+            - full
+          required: true
+        - field: priority
+          type: select
+          label: Priority
+          description: Scan job priority level
+          options:
+            - low
+            - normal
+            - high
+            - critical
+          default: normal
+          required: false
+
+    - id: create_schedule
+      name: Create Scan Schedule
+      description: Create a recurring scan schedule
+      icon: "📅"
+      endpoint: /api/v1/schedules
+      method: POST
+      inputs:
+        - name: schedule_config
+          type: any
+          required: false
+          description: Schedule configuration from previous step
+      outputs:
+        - name: schedule
+          type: object
+          description: Created schedule with ID and configuration
+      config_schema:
+        - field: target_id
+          type: string
+          label: Target ID
+          description: ID of the target to scan on schedule
+          supports_variables: true
+          required: true
+        - field: scan_type
+          type: select
+          label: Scan Type
+          description: Type of security scan to perform
+          options:
+            - vulnerability
+            - compliance
+            - configuration
+            - secret_detection
+            - full
+          required: true
+        - field: cron_expression
+          type: string
+          label: Cron Expression
+          description: Cron expression for schedule timing
+          required: true
+          placeholder: "0 2 * * *"
+        - field: enabled
+          type: checkbox
+          label: Enabled
+          description: Enable the schedule immediately
+          default: true
+          required: false
+
+    - id: export_findings
+      name: Export Findings Report
+      description: Export security findings to a report file
+      icon: "📄"
+      endpoint: /api/v1/findings/export
+      method: POST
+      inputs:
+        - name: export_config
+          type: any
+          required: false
+          description: Export configuration from previous step
+      outputs:
+        - name: report
+          type: object
+          description: Generated report with download URL and metadata
+      config_schema:
+        - field: target_id
+          type: string
+          label: Target ID
+          description: Filter findings for a specific target (optional)
+          supports_variables: true
+          required: false
+        - field: format
+          type: select
+          label: Export Format
+          description: Report file format
+          options:
+            - json
+            - csv
+            - pdf
+            - sarif
+          default: json
+          required: false
+        - field: min_severity
+          type: select
+          label: Minimum Severity
+          description: Include findings at or above this severity
+          options:
+            - critical
+            - high
+            - medium
+            - low
+          default: low
+          required: false
+        - field: date_range
+          type: string
+          label: Date Range
+          description: Filter findings by date range
+          placeholder: "2025-01-01..2025-12-31"
+          required: false
+
+  transforms:
+    - id: list_targets
+      name: List Scan Targets
+      description: Retrieve a list of scan targets with optional filtering
+      icon: "📋"
+      endpoint: /api/v1/targets
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: targets
+          type: object
+          description: Array of scan targets matching filter criteria
+      config_schema:
+        - field: target_type
+          type: select
+          label: Target Type
+          description: Filter by target type
+          options:
+            - any
+            - repository
+            - container
+            - host
+            - network
+            - cloud_account
+          default: any
+          required: false
+        - field: limit
+          type: number
+          label: Result Limit
+          description: Maximum number of targets to return
+          default: 50
+          required: false
+
+    - id: list_jobs
+      name: List Scan Jobs
+      description: Retrieve a list of scan jobs with optional filtering
+      icon: "📊"
+      endpoint: /api/v1/scans
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: scan_jobs
+          type: object
+          description: Array of scan jobs matching filter criteria
+      config_schema:
+        - field: target_id
+          type: string
+          label: Target ID
+          description: Filter jobs for a specific target (optional)
+          supports_variables: true
+          required: false
+        - field: status
+          type: select
+          label: Job Status
+          description: Filter by scan job status
+          options:
+            - any
+            - pending
+            - running
+            - completed
+            - failed
+          default: any
+          required: false
+        - field: limit
+          type: number
+          label: Result Limit
+          description: Maximum number of jobs to return
+          default: 50
+          required: false
+
+    - id: get_job_findings
+      name: Get Scan Job Findings
+      description: Retrieve findings from a specific scan job
+      icon: "🔎"
+      endpoint: /api/v1/scans/{{scan_id}}/findings
+      method: GET
+      inputs:
+        - name: scan_id
+          type: any
+          required: true
+          description: Scan job ID from previous step
+      outputs:
+        - name: findings
+          type: object
+          description: Array of security findings from the scan job
+      config_schema:
+        - field: scan_id
+          type: string
+          label: Scan Job ID
+          description: ID of the scan job to get findings for
+          supports_variables: true
+          required: true
+        - field: min_severity
+          type: select
+          label: Minimum Severity
+          description: Filter findings by minimum severity
+          options:
+            - critical
+            - high
+            - medium
+            - low
+            - info
+          default: low
+          required: false
+
+    - id: get_findings_stats
+      name: Get Findings Statistics
+      description: Retrieve aggregated statistics for security findings
+      icon: "📈"
+      endpoint: /api/v1/findings/stats
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: stats
+          type: object
+          description: Aggregated finding statistics with severity distribution and trends
+      config_schema:
+        - field: target_id
+          type: string
+          label: Target ID
+          description: Filter stats for a specific target (optional)
+          supports_variables: true
+          required: false
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for statistics
+          options:
+            - 7d
+            - 30d
+            - 90d
+            - 1y
+          default: 30d
+          required: false

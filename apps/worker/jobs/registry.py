@@ -378,6 +378,7 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
     from datetime import datetime, timezone
 
     from apps.worker.config.settings import settings
+    from apps.worker.streams.connectors.registry import discover_connectors
     from apps.worker.streams.executor.node_registry import discover_nodes
     from apps.worker.streams.executor.playbook_executor import PlaybookExecutor
 
@@ -489,6 +490,9 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
     try:
         # Discover nodes at startup (idempotent)
         discover_nodes()
+
+        # Discover connector nodes (idempotent)
+        discover_connectors()
 
         # Load execution, playbook, nodes, edges
         execution, nodes_list, edges_list, db = _load_execution_and_playbook()

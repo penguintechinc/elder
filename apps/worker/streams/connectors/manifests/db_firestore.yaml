@@ -1,0 +1,308 @@
+# Google Firestore Connector Manifest for IceCharts
+connector:
+  id: db_firestore
+  name: Google Firestore
+  description: Google Firestore database connector for IceCharts workflows
+  icon: "🔥"
+  color: "#FFCA28"
+  version: "1.0.0"
+  vendor: database
+
+  auth:
+    methods:
+      - type: api_key
+        env_var: FIRESTORE_SERVICE_ACCOUNT
+
+  connection:
+    base_url_env: ICECHARTS_API_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/database-ops/health
+
+  triggers:
+    - id: data_changed
+      name: Data Changed
+      description: Poll for data changes in a Firestore collection
+      icon: "🔄"
+      webhook_path: /webhooks/database/firestore/data_changed
+      outputs:
+        - name: out
+          type: object
+          description: Changed data with operation type
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection Name
+          required: true
+        - field: poll_interval
+          type: number
+          label: Poll Interval (seconds)
+          default: 60
+        - field: track_column
+          type: string
+          label: Track Field
+          placeholder: "updated_at"
+
+    - id: scheduled_query
+      name: Scheduled Query
+      description: Run a query on a schedule
+      icon: "⏰"
+      webhook_path: /webhooks/database/firestore/scheduled
+      outputs:
+        - name: out
+          type: object
+          description: Query results
+      config_schema:
+        - field: query
+          type: textarea
+          label: Query
+          required: true
+        - field: schedule
+          type: string
+          label: Cron Schedule
+          required: true
+          placeholder: "*/5 * * * *"
+
+  actions:
+    - id: execute_query
+      name: Execute Query
+      description: Execute a query against Firestore
+      icon: "🔍"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Query results
+      config_schema:
+        - field: project_id
+          type: string
+          label: Project ID
+          required: true
+          supports_variables: true
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: fields
+          type: string
+          label: Fields
+          placeholder: "id, name, email"
+          description: Comma-separated fields (empty for all)
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+          placeholder: '{"status": "active"}'
+        - field: limit
+          type: number
+          label: Limit
+          default: 100
+
+    - id: insert_row
+      name: Insert Document
+      description: Insert a document into a Firestore collection
+      icon: "➕"
+      endpoint: /api/v1/database-ops/insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: data
+          type: textarea
+          label: Document Data (JSON)
+          required: true
+          supports_variables: true
+          placeholder: '{"name": "John", "email": "john@example.com"}'
+
+    - id: update_rows
+      name: Update Documents
+      description: Update documents matching conditions
+      icon: "✏️"
+      endpoint: /api/v1/database-ops/update
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+          placeholder: '{"id": 1}'
+        - field: data
+          type: textarea
+          label: Update Data (JSON)
+          required: true
+          supports_variables: true
+
+    - id: delete_rows
+      name: Delete Documents
+      description: Delete documents matching conditions
+      icon: "🗑️"
+      endpoint: /api/v1/database-ops/delete
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: bulk_insert
+      name: Bulk Insert
+      description: Insert multiple documents at once
+      icon: "📥"
+      endpoint: /api/v1/database-ops/bulk-insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: rows
+          type: textarea
+          label: Documents (JSON Array)
+          required: true
+          supports_variables: true
+
+  transforms:
+    - id: query_lookup
+      name: Query Lookup
+      description: Lookup data from a Firestore collection
+      icon: "🔎"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+        - field: limit
+          type: number
+          label: Limit
+          default: 1
+
+    - id: count_rows
+      name: Count Documents
+      description: Count documents matching criteria
+      icon: "🔢"
+      endpoint: /api/v1/database-ops/count
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+
+    - id: check_exists
+      name: Check Exists
+      description: Check if a document exists
+      icon: "❓"
+      endpoint: /api/v1/database-ops/exists
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: get_schema
+      name: Get Schema
+      description: Get collection schema information
+      icon: "📋"
+      endpoint: /api/v1/database-ops/schema
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: collection
+          type: string
+          label: Collection Name
+          supports_variables: true

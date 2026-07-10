@@ -1,0 +1,1074 @@
+# Elder Connector Manifest for IceCharts
+# Infrastructure discovery, dependency mapping, and entity management platform
+connector:
+  id: elder
+  name: Elder
+  description: Infrastructure discovery, documentation, and dependency mapping platform
+  icon: "elder-logo"
+  color: "#F59E0B"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: ELDER_API_KEY
+      - type: oauth
+        token_header: Authorization
+        token_prefix: Bearer
+        env_var: ELDER_TOKEN
+
+  connection:
+    base_url_env: ELDER_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/health
+
+  # ============================================================================
+  # TRIGGERS - Webhook events from Elder
+  # ============================================================================
+  triggers:
+    # Entity Created
+    - id: entity_created
+      name: Entity Created
+      description: Triggered when a new entity is discovered or created
+      icon: "🆕"
+      webhook_path: /webhooks/elder/entity/created
+      outputs:
+        - name: out
+          type: object
+          description: Created entity data with metadata
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+          description: Filter by entity types (empty for all)
+        - field: organizations
+          type: string
+          label: Organizations
+          placeholder: "org-1, org-2"
+          description: Comma-separated organization IDs to filter
+
+    # Entity Updated
+    - id: entity_updated
+      name: Entity Updated
+      description: Triggered when an entity is modified
+      icon: "📝"
+      webhook_path: /webhooks/elder/entity/updated
+      outputs:
+        - name: out
+          type: object
+          description: Updated entity with changes
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+        - field: track_fields
+          type: string
+          label: Track Fields
+          placeholder: "status, metadata.version"
+          description: Specific fields to track (empty for any change)
+
+    # Entity Deleted
+    - id: entity_deleted
+      name: Entity Deleted
+      description: Triggered when an entity is removed
+      icon: "🗑️"
+      webhook_path: /webhooks/elder/entity/deleted
+      outputs:
+        - name: out
+          type: object
+          description: Deleted entity info
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+
+    # Issue Created
+    - id: issue_created
+      name: Issue Created
+      description: Triggered when a new issue is reported
+      icon: "🚨"
+      webhook_path: /webhooks/elder/issue/created
+      outputs:
+        - name: out
+          type: object
+          description: Issue data with entity references
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          options: [critical, high, medium, low, info]
+          description: Filter by severity
+        - field: issue_types
+          type: multiselect
+          label: Issue Types
+          options: [security, performance, compliance, configuration, availability, deprecated]
+
+    # Issue Status Changed
+    - id: issue_status_changed
+      name: Issue Status Changed
+      description: Triggered when issue status changes
+      icon: "🔄"
+      webhook_path: /webhooks/elder/issue/status
+      outputs:
+        - name: out
+          type: object
+          description: Issue with old and new status
+      config_schema:
+        - field: from_status
+          type: multiselect
+          label: From Status
+          options: [open, acknowledged, in_progress, resolved, closed, wont_fix]
+        - field: to_status
+          type: multiselect
+          label: To Status
+          options: [open, acknowledged, in_progress, resolved, closed, wont_fix]
+
+    # Webhook Event
+    - id: webhook_event
+      name: Webhook Event
+      description: Generic webhook receiver for Elder events
+      icon: "🪝"
+      webhook_path: /webhooks/elder/event
+      outputs:
+        - name: out
+          type: object
+          description: Raw webhook payload
+      config_schema:
+        - field: event_types
+          type: string
+          label: Event Types
+          placeholder: "entity.created, dependency.added"
+          description: Comma-separated event types to listen for
+
+    # Discovery Completed
+    - id: discovery_completed
+      name: Discovery Completed
+      description: Triggered when a discovery job finishes
+      icon: "🔍"
+      webhook_path: /webhooks/elder/discovery/completed
+      outputs:
+        - name: out
+          type: object
+          description: Discovery results summary
+      config_schema:
+        - field: discovery_types
+          type: multiselect
+          label: Discovery Types
+          options: [network, cloud, kubernetes, docker, git, api]
+        - field: min_entities
+          type: number
+          label: Min Entities Found
+          default: 0
+          description: Only trigger if at least N entities found
+
+    # Vulnerability Detected
+    - id: vulnerability_detected
+      name: Vulnerability Detected
+      description: Triggered when SBOM scan finds vulnerability
+      icon: "⚠️"
+      webhook_path: /webhooks/elder/vulnerability
+      outputs:
+        - name: out
+          type: object
+          description: Vulnerability details with CVE info
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity
+          options: [critical, high, medium, low]
+          default: [critical, high]
+        - field: has_fix
+          type: select
+          label: Fix Available
+          options: [any, yes, no]
+          default: any
+
+    # Dependency Change
+    - id: dependency_changed
+      name: Dependency Changed
+      description: Triggered when entity dependencies change
+      icon: "🔗"
+      webhook_path: /webhooks/elder/dependency/changed
+      outputs:
+        - name: added
+          type: object
+          description: Newly added dependencies
+        - name: removed
+          type: object
+          description: Removed dependencies
+        - name: out
+          type: object
+          description: Full dependency change data
+      config_schema:
+        - field: change_types
+          type: multiselect
+          label: Change Types
+          options: [added, removed, modified]
+          default: [added, removed]
+
+  # ============================================================================
+  # ACTIONS - Elder API operations
+  # ============================================================================
+  actions:
+    # Create Entity
+    - id: create_entity
+      name: Create Entity
+      description: Create a new entity in Elder
+      icon: "➕"
+      endpoint: /api/v1/entities
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Entity data for variable interpolation
+      outputs:
+        - name: out
+          type: object
+          description: Created entity with ID
+      config_schema:
+        - field: name
+          type: string
+          label: Entity Name
+          supports_variables: true
+          required: true
+        - field: entity_type
+          type: select
+          label: Type
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+          required: true
+        - field: organization_id
+          type: string
+          label: Organization ID
+          supports_variables: true
+          required: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          placeholder: '{"env": "production", "team": "platform"}'
+          supports_variables: true
+          description: JSON object with custom metadata
+
+    # Update Entity
+    - id: update_entity
+      name: Update Entity
+      description: Update an existing entity
+      icon: "✏️"
+      endpoint: /api/v1/entities/{{entity_id}}
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include entity_id
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: name
+          type: string
+          label: Name
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [active, inactive, deprecated, maintenance, unknown]
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          supports_variables: true
+
+    # Delete Entity
+    - id: delete_entity
+      name: Delete Entity
+      description: Remove an entity from Elder
+      icon: "🗑️"
+      endpoint: /api/v1/entities/{{entity_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: cascade
+          type: checkbox
+          label: Cascade Delete
+          default: false
+          description: Also delete related dependencies
+
+    # Create Dependency
+    - id: create_dependency
+      name: Create Dependency
+      description: Create a dependency relationship between entities
+      icon: "🔗"
+      endpoint: /api/v1/dependencies
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: source_id
+          type: string
+          label: Source Entity ID
+          supports_variables: true
+          required: true
+          description: Entity that depends on another
+        - field: target_id
+          type: string
+          label: Target Entity ID
+          supports_variables: true
+          required: true
+          description: Entity being depended on
+        - field: dependency_type
+          type: select
+          label: Dependency Type
+          options: [runtime, buildtime, network, data, api, configuration]
+          default: runtime
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          supports_variables: true
+
+    # Remove Dependency
+    - id: remove_dependency
+      name: Remove Dependency
+      description: Remove a dependency relationship
+      icon: "✂️"
+      endpoint: /api/v1/dependencies/{{dependency_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: dependency_id
+          type: string
+          label: Dependency ID
+          supports_variables: true
+          required: true
+
+    # Create Issue
+    - id: create_issue
+      name: Create Issue
+      description: Report a new issue for an entity
+      icon: "🚨"
+      endpoint: /api/v1/issues
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: title
+          type: string
+          label: Title
+          supports_variables: true
+          required: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: severity
+          type: select
+          label: Severity
+          options: [critical, high, medium, low, info]
+          default: medium
+        - field: issue_type
+          type: select
+          label: Issue Type
+          options: [security, performance, compliance, configuration, availability, deprecated]
+          default: configuration
+
+    # Update Issue
+    - id: update_issue
+      name: Update Issue
+      description: Update an existing issue
+      icon: "📝"
+      endpoint: /api/v1/issues/{{issue_id}}
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: issue_id
+          type: string
+          label: Issue ID
+          supports_variables: true
+          required: true
+        - field: status
+          type: select
+          label: Status
+          options: [open, acknowledged, in_progress, resolved, closed, wont_fix]
+        - field: severity
+          type: select
+          label: Severity
+          options: [critical, high, medium, low, info]
+        - field: assignee_id
+          type: string
+          label: Assignee ID
+          supports_variables: true
+        - field: resolution_notes
+          type: textarea
+          label: Resolution Notes
+          supports_variables: true
+
+    # Add Comment
+    - id: add_comment
+      name: Add Comment
+      description: Add a comment to an issue
+      icon: "💬"
+      endpoint: /api/v1/issues/{{issue_id}}/comments
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: issue_id
+          type: string
+          label: Issue ID
+          supports_variables: true
+          required: true
+        - field: content
+          type: textarea
+          label: Comment
+          supports_variables: true
+          required: true
+        - field: internal
+          type: checkbox
+          label: Internal Only
+          default: false
+          description: Hide from external users
+
+    # Link Entity to Issue
+    - id: link_entity_issue
+      name: Link Entity to Issue
+      description: Associate an entity with an existing issue
+      icon: "🔗"
+      endpoint: /api/v1/issues/{{issue_id}}/entities
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: issue_id
+          type: string
+          label: Issue ID
+          supports_variables: true
+          required: true
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: relationship
+          type: select
+          label: Relationship
+          options: [affected, root_cause, related, dependency]
+          default: affected
+
+    # Create Project
+    - id: create_project
+      name: Create Project
+      description: Create a new project
+      icon: "📁"
+      endpoint: /api/v1/projects
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: name
+          type: string
+          label: Project Name
+          supports_variables: true
+          required: true
+        - field: organization_id
+          type: string
+          label: Organization ID
+          supports_variables: true
+          required: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [planning, active, on_hold, completed, archived]
+          default: active
+
+    # Create Milestone
+    - id: create_milestone
+      name: Create Milestone
+      description: Create a project milestone
+      icon: "🎯"
+      endpoint: /api/v1/projects/{{project_id}}/milestones
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: project_id
+          type: string
+          label: Project ID
+          supports_variables: true
+          required: true
+        - field: name
+          type: string
+          label: Milestone Name
+          supports_variables: true
+          required: true
+        - field: due_date
+          type: string
+          label: Due Date
+          placeholder: "2025-12-31"
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    # Trigger Discovery Job
+    - id: trigger_discovery
+      name: Trigger Discovery
+      description: Start an infrastructure discovery job
+      icon: "🔍"
+      endpoint: /api/v1/discovery/jobs
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Job ID and status
+      config_schema:
+        - field: discovery_type
+          type: select
+          label: Discovery Type
+          options: [network, cloud_aws, cloud_gcp, cloud_azure, kubernetes, docker, git, api_scan]
+          required: true
+        - field: target
+          type: string
+          label: Target
+          supports_variables: true
+          placeholder: "192.168.1.0/24 or cluster-name"
+          description: Discovery target (varies by type)
+        - field: organization_id
+          type: string
+          label: Organization ID
+          supports_variables: true
+          required: true
+        - field: credentials_id
+          type: string
+          label: Credentials ID
+          supports_variables: true
+          description: Stored credentials to use
+
+    # Run SBOM Scan
+    - id: run_sbom_scan
+      name: Run SBOM Scan
+      description: Scan entity for software bill of materials
+      icon: "📋"
+      endpoint: /api/v1/sbom/scan
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Scan results with vulnerabilities
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: scan_type
+          type: select
+          label: Scan Type
+          options: [container, repository, filesystem]
+          default: container
+        - field: include_dev
+          type: checkbox
+          label: Include Dev Dependencies
+          default: false
+
+    # Add Identity
+    - id: add_identity
+      name: Add Identity
+      description: Add an identity/credential to an entity
+      icon: "🔑"
+      endpoint: /api/v1/identities
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: identity_type
+          type: select
+          label: Identity Type
+          options: [user, service_account, api_key, certificate, ssh_key, oauth_app]
+          required: true
+        - field: name
+          type: string
+          label: Name
+          supports_variables: true
+          required: true
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          supports_variables: true
+
+    # Send Notification
+    - id: send_notification
+      name: Send Notification
+      description: Send notification via Elder's notification system
+      icon: "🔔"
+      endpoint: /api/v1/notifications
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: channel
+          type: select
+          label: Channel
+          options: [email, slack, teams, webhook, pagerduty]
+          required: true
+        - field: recipients
+          type: string
+          label: Recipients
+          supports_variables: true
+          placeholder: "user@example.com, #channel"
+          required: true
+        - field: subject
+          type: string
+          label: Subject
+          supports_variables: true
+          required: true
+        - field: message
+          type: textarea
+          label: Message
+          supports_variables: true
+          required: true
+        - field: priority
+          type: select
+          label: Priority
+          options: [low, normal, high, urgent]
+          default: normal
+
+    # Allocate IP Address
+    - id: allocate_ip
+      name: Allocate IP Address
+      description: Allocate an IP from IPAM
+      icon: "🌐"
+      endpoint: /api/v1/ipam/allocate
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Allocated IP address details
+      config_schema:
+        - field: network_id
+          type: string
+          label: Network ID
+          supports_variables: true
+          required: true
+        - field: hostname
+          type: string
+          label: Hostname
+          supports_variables: true
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          description: Entity to associate IP with
+        - field: description
+          type: string
+          label: Description
+          supports_variables: true
+
+    # Release IP Address
+    - id: release_ip
+      name: Release IP Address
+      description: Release an IP back to IPAM pool
+      icon: "🔓"
+      endpoint: /api/v1/ipam/release
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: ip_address
+          type: string
+          label: IP Address
+          supports_variables: true
+          required: true
+        - field: network_id
+          type: string
+          label: Network ID
+          supports_variables: true
+          required: true
+
+    # Create Webhook
+    - id: create_webhook
+      name: Create Webhook
+      description: Register a new webhook subscription
+      icon: "🪝"
+      endpoint: /api/v1/webhooks
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: url
+          type: string
+          label: Webhook URL
+          supports_variables: true
+          required: true
+          placeholder: "https://example.com/webhook"
+        - field: events
+          type: multiselect
+          label: Events
+          options: [entity.created, entity.updated, entity.deleted, dependency.added, dependency.removed, issue.created, issue.updated, discovery.completed, vulnerability.detected]
+          required: true
+        - field: secret
+          type: string
+          label: Secret Key
+          description: HMAC signing secret
+        - field: active
+          type: checkbox
+          label: Active
+          default: true
+
+  # ============================================================================
+  # TRANSFORMS - Data lookups and validations
+  # ============================================================================
+  transforms:
+    # Entity Lookup
+    - id: entity_lookup
+      name: Lookup Entity
+      description: Fetch entity details by ID
+      icon: "🔍"
+      endpoint: /api/v1/entities/{{entity_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include entity_id
+      outputs:
+        - name: out
+          type: object
+          description: Full entity with metadata and relationships
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          description: Entity ID to lookup (or from input)
+        - field: include_dependencies
+          type: checkbox
+          label: Include Dependencies
+          default: true
+        - field: include_issues
+          type: checkbox
+          label: Include Issues
+          default: false
+        - field: include_identities
+          type: checkbox
+          label: Include Identities
+          default: false
+
+    # Search Entities
+    - id: search_entities
+      name: Search Entities
+      description: Search entities by criteria
+      icon: "🔎"
+      endpoint: /api/v1/entities/search
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: List of matching entities
+      config_schema:
+        - field: query
+          type: string
+          label: Search Query
+          supports_variables: true
+          placeholder: "name:*api* OR type:service"
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+        - field: organization_id
+          type: string
+          label: Organization ID
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [any, active, inactive, deprecated, maintenance]
+          default: any
+        - field: limit
+          type: number
+          label: Limit
+          default: 50
+
+    # Get Dependencies
+    - id: get_dependencies
+      name: Get Dependencies
+      description: Get entity dependencies (upstream/downstream)
+      icon: "🔗"
+      endpoint: /api/v1/entities/{{entity_id}}/dependencies
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: upstream
+          type: object
+          description: Entities this depends on
+        - name: downstream
+          type: object
+          description: Entities that depend on this
+        - name: out
+          type: object
+          description: Full dependency data
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: direction
+          type: select
+          label: Direction
+          options: [both, upstream, downstream]
+          default: both
+        - field: depth
+          type: number
+          label: Depth
+          default: 1
+          description: Levels of dependencies to traverse
+
+    # Graph Traversal
+    - id: graph_traverse
+      name: Traverse Graph
+      description: Traverse the entity dependency graph
+      icon: "🕸️"
+      endpoint: /api/v1/graph/traverse
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Graph traversal results
+      config_schema:
+        - field: start_entity_id
+          type: string
+          label: Start Entity ID
+          supports_variables: true
+          required: true
+        - field: max_depth
+          type: number
+          label: Max Depth
+          default: 3
+        - field: direction
+          type: select
+          label: Direction
+          options: [outbound, inbound, both]
+          default: outbound
+        - field: filter_types
+          type: multiselect
+          label: Filter Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+
+    # Impact Analysis
+    - id: impact_analysis
+      name: Impact Analysis
+      description: Analyze impact of an entity change
+      icon: "💥"
+      endpoint: /api/v1/entities/{{entity_id}}/impact
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Impact analysis with affected entities
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: change_type
+          type: select
+          label: Change Type
+          options: [outage, degradation, maintenance, removal]
+          default: outage
+        - field: include_indirect
+          type: checkbox
+          label: Include Indirect Impact
+          default: true
+
+    # Get Issue Details
+    - id: issue_lookup
+      name: Lookup Issue
+      description: Fetch issue details by ID
+      icon: "🎫"
+      endpoint: /api/v1/issues/{{issue_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: issue_id
+          type: string
+          label: Issue ID
+          supports_variables: true
+          required: true
+        - field: include_comments
+          type: checkbox
+          label: Include Comments
+          default: true
+        - field: include_entities
+          type: checkbox
+          label: Include Linked Entities
+          default: true
+
+    # Check SBOM Vulnerabilities
+    - id: check_vulnerabilities
+      name: Check Vulnerabilities
+      description: Check entity for known vulnerabilities
+      icon: "🛡️"
+      endpoint: /api/v1/sbom/{{entity_id}}/vulnerabilities
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: List of vulnerabilities with CVE details
+      config_schema:
+        - field: entity_id
+          type: string
+          label: Entity ID
+          supports_variables: true
+          required: true
+        - field: min_severity
+          type: select
+          label: Min Severity
+          options: [critical, high, medium, low, all]
+          default: all
+        - field: fixable_only
+          type: checkbox
+          label: Fixable Only
+          default: false

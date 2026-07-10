@@ -1,0 +1,437 @@
+# WaddlePerf Connector Manifest
+# Performance testing and benchmarking platform
+# Version: 1.0.0
+# Vendor: PenguinTech
+
+connector:
+  id: waddleperf
+  name: WaddlePerf
+  description: Performance testing and benchmarking platform for latency, throughput, stress, soak, and spike testing
+  icon: "waddleperf-logo"
+  color: "#EF4444"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: WADDLEPERF_API_KEY
+
+  connection:
+    base_url_env: WADDLEPERF_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/health
+
+  triggers:
+    - id: test_completed
+      name: Test Completed
+      description: Triggered when a performance test completes execution
+      icon: "✅"
+      webhook_path: /webhooks/waddleperf/test/completed
+      outputs:
+        - name: out
+          type: object
+          description: Test completion details including results, metrics, and status
+      config_schema:
+        - field: test_types
+          type: multiselect
+          label: Test Types
+          description: Filter by test type
+          options:
+            - value: latency
+              label: Latency Test
+            - value: throughput
+              label: Throughput Test
+            - value: stress
+              label: Stress Test
+            - value: soak
+              label: Soak Test
+            - value: spike
+              label: Spike Test
+          required: false
+        - field: min_score
+          type: number
+          label: Minimum Score
+          description: Only trigger for tests with score above this threshold
+          default: 0
+          required: false
+
+    - id: device_enrolled
+      name: Device Enrolled
+      description: Triggered when a new device is enrolled in the testing platform
+      icon: "📱"
+      webhook_path: /webhooks/waddleperf/device/enrolled
+      outputs:
+        - name: out
+          type: object
+          description: Enrolled device information including type, capabilities, and metadata
+      config_schema:
+        - field: device_types
+          type: multiselect
+          label: Device Types
+          description: Filter by device type
+          options:
+            - value: server
+              label: Server
+            - value: desktop
+              label: Desktop
+            - value: mobile
+              label: Mobile
+            - value: iot
+              label: IoT Device
+            - value: network
+              label: Network Device
+          required: false
+
+  actions:
+    - id: create_test
+      name: Create Test
+      description: Create and schedule a performance test
+      icon: "🚀"
+      endpoint: /api/v1/tests
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Created test details including test ID and scheduled execution time
+      config_schema:
+        - field: name
+          type: string
+          label: Test Name
+          description: Descriptive name for the performance test
+          supports_variables: true
+          required: true
+        - field: test_type
+          type: select
+          label: Test Type
+          description: Type of performance test to execute
+          options:
+            - value: latency
+              label: Latency Test
+            - value: throughput
+              label: Throughput Test
+            - value: stress
+              label: Stress Test
+            - value: soak
+              label: Soak Test
+            - value: spike
+              label: Spike Test
+          required: true
+        - field: target_url
+          type: string
+          label: Target URL
+          description: URL or endpoint to test
+          supports_variables: true
+          required: true
+        - field: duration
+          type: number
+          label: Duration
+          description: Test duration in seconds
+          default: 60
+          required: false
+        - field: concurrent_users
+          type: number
+          label: Concurrent Users
+          description: Number of concurrent users to simulate
+          default: 10
+          required: false
+        - field: schedule
+          type: string
+          label: Schedule
+          description: Schedule expression (use 'now' for immediate execution or cron format)
+          placeholder: "now or cron expression"
+          required: false
+
+    - id: enroll_device
+      name: Enroll Device
+      description: Enroll a device for performance testing
+      icon: "📋"
+      endpoint: /api/v1/devices
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Enrolled device information including device ID and enrollment status
+      config_schema:
+        - field: name
+          type: string
+          label: Device Name
+          description: Descriptive name for the device
+          supports_variables: true
+          required: true
+        - field: device_type
+          type: select
+          label: Device Type
+          description: Type of device being enrolled
+          options:
+            - value: server
+              label: Server
+            - value: desktop
+              label: Desktop
+            - value: mobile
+              label: Mobile
+            - value: iot
+              label: IoT Device
+            - value: network
+              label: Network Device
+          required: true
+        - field: hostname
+          type: string
+          label: Hostname
+          description: Device hostname or IP address
+          supports_variables: true
+          required: true
+        - field: tags
+          type: string
+          label: Tags
+          description: Comma-separated tags for device classification
+          supports_variables: true
+          placeholder: "env:prod, region:us-east"
+          required: false
+
+    - id: update_device
+      name: Update Device
+      description: Update device information and configuration
+      icon: "✏️"
+      endpoint: /api/v1/devices/{{device_id}}
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Updated device information
+      config_schema:
+        - field: device_id
+          type: string
+          label: Device ID
+          description: ID of the device to update
+          supports_variables: true
+          required: true
+        - field: name
+          type: string
+          label: Device Name
+          description: Updated device name
+          supports_variables: true
+          required: false
+        - field: status
+          type: select
+          label: Status
+          description: Device operational status
+          options:
+            - value: active
+              label: Active
+            - value: inactive
+              label: Inactive
+            - value: maintenance
+              label: Maintenance
+          required: false
+        - field: tags
+          type: string
+          label: Tags
+          description: Updated comma-separated tags
+          supports_variables: true
+          required: false
+
+    - id: delete_test
+      name: Delete Test
+      description: Delete a test and optionally its results
+      icon: "🗑️"
+      endpoint: /api/v1/tests/{{test_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Deletion confirmation and affected records count
+      config_schema:
+        - field: test_id
+          type: string
+          label: Test ID
+          description: ID of the test to delete
+          supports_variables: true
+          required: true
+        - field: delete_results
+          type: checkbox
+          label: Delete Results
+          description: Also delete test results data
+          default: false
+          required: false
+
+  transforms:
+    - id: list_tests
+      name: List Tests
+      description: List performance tests with optional filtering
+      icon: "📋"
+      endpoint: /api/v1/tests
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: List of tests matching filter criteria
+      config_schema:
+        - field: test_type
+          type: select
+          label: Test Type
+          description: Filter by test type
+          options:
+            - value: any
+              label: Any
+            - value: latency
+              label: Latency Test
+            - value: throughput
+              label: Throughput Test
+            - value: stress
+              label: Stress Test
+            - value: soak
+              label: Soak Test
+            - value: spike
+              label: Spike Test
+          default: any
+          required: false
+        - field: status
+          type: select
+          label: Status
+          description: Filter by test status
+          options:
+            - value: any
+              label: Any
+            - value: pending
+              label: Pending
+            - value: running
+              label: Running
+            - value: completed
+              label: Completed
+            - value: failed
+              label: Failed
+          default: any
+          required: false
+        - field: limit
+          type: number
+          label: Limit
+          description: Maximum number of tests to return
+          default: 50
+          required: false
+
+    - id: get_test
+      name: Get Test
+      description: Get detailed test information and results
+      icon: "🔍"
+      endpoint: /api/v1/tests/{{test_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Detailed test information including configuration and results
+      config_schema:
+        - field: test_id
+          type: string
+          label: Test ID
+          description: ID of the test to retrieve
+          supports_variables: true
+          required: true
+        - field: include_results
+          type: checkbox
+          label: Include Results
+          description: Include detailed test results data
+          default: true
+          required: false
+
+    - id: get_stats_summary
+      name: Get Stats Summary
+      description: Get performance statistics summary over a time range
+      icon: "📊"
+      endpoint: /api/v1/stats/summary
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Aggregated performance statistics summary
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for statistics
+          options:
+            - value: 24h
+              label: Last 24 Hours
+            - value: 7d
+              label: Last 7 Days
+            - value: 30d
+              label: Last 30 Days
+            - value: 90d
+              label: Last 90 Days
+          default: 7d
+          required: false
+
+    - id: get_trends
+      name: Get Trends
+      description: Get performance trends for a specific metric
+      icon: "📈"
+      endpoint: /api/v1/stats/trends
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Time-series performance trend data
+      config_schema:
+        - field: metric
+          type: select
+          label: Metric
+          description: Performance metric to analyze
+          options:
+            - value: latency_p50
+              label: Latency P50
+            - value: latency_p95
+              label: Latency P95
+            - value: latency_p99
+              label: Latency P99
+            - value: throughput
+              label: Throughput
+            - value: error_rate
+              label: Error Rate
+          default: latency_p95
+          required: false
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for trend analysis
+          options:
+            - value: 7d
+              label: Last 7 Days
+            - value: 30d
+              label: Last 30 Days
+            - value: 90d
+              label: Last 90 Days
+          default: 30d
+          required: false
