@@ -264,5 +264,6 @@ class TestPhaseZeroModules:
         # Phase 3 (+2): helpdesk, documents
         # Phase 3b (+1): pages
         # Phase 4 (+1): diagrams
+        # Phase 4a (+1): flows (CI/CD)
         # Phase 4b (+1): streams
-        assert len(MODULES) == 14
+        assert len(MODULES) == 15

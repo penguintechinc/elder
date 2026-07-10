@@ -242,6 +242,12 @@ def _streams_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _flows_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load flows module blueprints (Phase 4a: CI/CD pipeline orchestration — schema only, routes follow)."""
+    # Routes reserved for Phase 4a-2; for now return empty list
+    return []
+
+
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
     from apps.api.modules.helpdesk.routes import (
@@ -485,6 +491,26 @@ MODULES = (
         nav_id="nav_streams",
         scopes=("streams:read", "streams:write", "streams:admin", "streams:execute"),
         worker_task_groups=("streams",),
+        optional_services=(),
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="flows",
+        title="Flows (CI/CD)",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_flows_blueprints,
+        models_import=("apps.api.modules.flows.models.flows",),
+        table_prefix="iceflows_",
+        nav_id="nav_flows",
+        scopes=(
+            "flows:read",
+            "flows:write",
+            "flows:admin",
+            "flows:approve",
+            "flows:execute",
+        ),
+        worker_task_groups=(),
         optional_services=(),
         default_enabled=True,
     ),
