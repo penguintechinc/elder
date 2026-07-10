@@ -249,6 +249,7 @@ def _flows_blueprints() -> list[tuple[Blueprint, str]]:
         hooks,
         pipelines,
         promotions,
+        stage_children,
         stages,
     )
 
@@ -256,6 +257,7 @@ def _flows_blueprints() -> list[tuple[Blueprint, str]]:
     return [
         (pipelines.bp, f"{api_prefix}/flows"),
         (stages.bp, f"{api_prefix}/flows"),
+        (stage_children.bp, f"{api_prefix}/flows"),
         (credentials.bp, f"{api_prefix}/flows/credentials"),
         (promotions.bp, f"{api_prefix}/flows"),
         (hooks.bp, f"{api_prefix}/flows-hooks"),
