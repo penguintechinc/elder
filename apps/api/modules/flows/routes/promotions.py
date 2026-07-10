@@ -57,7 +57,7 @@ def _serialize_promotion(promotion):
         "status": promotion.status,
         "requested_by_identity_id": promotion.requested_by_identity_id,
         "merged_by_identity_id": promotion.merged_by_identity_id,
-        "commit_sha": promotion.commit_sha,
+        "source_commit": promotion.source_commit,
         "created_at": (
             promotion.created_at.isoformat() if promotion.created_at else None
         ),
@@ -75,7 +75,7 @@ def _serialize_approval(approval):
         "promotion_id": approval.promotion_id,
         "approver_identity_id": approval.approver_identity_id,
         "decision": approval.decision,
-        "comments": approval.comments,
+        "comment": approval.comment,
         "can_override": approval.can_override,
         "created_at": approval.created_at.isoformat() if approval.created_at else None,
     }
@@ -220,6 +220,40 @@ async def approve_promotion(promotion_id: str):
         if not promotion:
             return None, 404
 
+        # State guard: only a pending promotion can be acted on. Approving an
+        # already merged/rejected/cancelled promotion is an invalid transition.
+        if promotion.status != "pending":
+            return None, 409
+
+        # Load the target (approval-gate) stage.
+        stage = (
+            db(
+                (db.iceflows_stages.id == promotion.target_stage_id)
+                & (db.iceflows_stages.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not stage:
+            return None, 404
+
+        # AuthZ (fail-closed): the caller must be a configured approver for this
+        # stage. flows:approve scope alone is NOT sufficient — an approver row
+        # must exist. Group-based approvers are not yet supported (no groups
+        # table in Elder), so match on identity_id only. If no approvers are
+        # configured for a stage, nobody can approve (secure default).
+        is_approver = (
+            db(
+                (db.iceflows_stage_approvers.stage_id == stage.id)
+                & (db.iceflows_stage_approvers.identity_id == identity_id)
+                & (db.iceflows_stage_approvers.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not is_approver:
+            return None, 403
+
         # Check if already approved by this user
         existing = (
             db(
@@ -237,7 +271,7 @@ async def approve_promotion(promotion_id: str):
             # Update decision
             db(db.iceflows_approvals.id == existing.id).update(
                 decision="approve",
-                comments=data.get("comments", ""),
+                comment=data.get("comments", ""),
                 updated_at=now,
             )
             db.commit()
@@ -250,15 +284,29 @@ async def approve_promotion(promotion_id: str):
                 promotion_id=promotion.id,
                 approver_identity_id=identity_id,
                 decision="approve",
-                comments=data.get("comments", ""),
+                comment=data.get("comments", ""),
                 can_override=False,
                 created_at=now,
                 updated_at=now,
             )
             db.commit()
 
-        # Update promotion status if all approvals received
+        # Tally distinct "approve" decisions. Only advance the promotion to
+        # "approved" once the stage's min_approvers threshold is met — a single
+        # approver must never unilaterally flip the state.
+        approve_count = db(
+            (db.iceflows_approvals.promotion_id == promotion.id)
+            & (db.iceflows_approvals.decision == "approve")
+            & (db.iceflows_approvals.tenant_id == tenant_id)
+        ).count()
+
+        required = stage.min_approvers if stage.min_approvers else 1
+        new_status = promotion.status
+        if stage.require_approval and approve_count >= required:
+            new_status = "approved"
+
         db(db.iceflows_promotions.id == promotion.id).update(
+            status=new_status,
             updated_at=now,
         )
         db.commit()
@@ -267,12 +315,19 @@ async def approve_promotion(promotion_id: str):
             db(db.iceflows_promotions.id == promotion.id).select().first()
         )
 
-        return _serialize_promotion(updated_promotion), 200
+        result = _serialize_promotion(updated_promotion)
+        result["approvals_received"] = approve_count
+        result["approvals_required"] = required
+        return result, 200
 
     result = await run_in_threadpool(approve)
 
     if result[1] == 404:
         return ApiResponse.error("Not found", 404)
+    if result[1] == 403:
+        return ApiResponse.error("Not an authorized approver for this stage", 403)
+    if result[1] == 409:
+        return ApiResponse.error("Promotion is not in a pending state", 409)
 
     return result
 
@@ -315,6 +370,36 @@ async def reject_promotion(promotion_id: str):
         if not promotion:
             return None, 404
 
+        # State guard: only a pending promotion can be rejected.
+        if promotion.status != "pending":
+            return None, 409
+
+        # Load the target (approval-gate) stage.
+        stage = (
+            db(
+                (db.iceflows_stages.id == promotion.target_stage_id)
+                & (db.iceflows_stages.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not stage:
+            return None, 404
+
+        # AuthZ (fail-closed): the caller must be a configured approver for this
+        # stage. flows:approve scope alone is NOT sufficient.
+        is_approver = (
+            db(
+                (db.iceflows_stage_approvers.stage_id == stage.id)
+                & (db.iceflows_stage_approvers.identity_id == identity_id)
+                & (db.iceflows_stage_approvers.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not is_approver:
+            return None, 403
+
         # Check if already rejected by this user
         existing = (
             db(
@@ -332,7 +417,7 @@ async def reject_promotion(promotion_id: str):
             # Update decision
             db(db.iceflows_approvals.id == existing.id).update(
                 decision="reject",
-                comments=data.get("comments", ""),
+                comment=data.get("comments", ""),
                 updated_at=now,
             )
             db.commit()
@@ -345,7 +430,7 @@ async def reject_promotion(promotion_id: str):
                 promotion_id=promotion.id,
                 approver_identity_id=identity_id,
                 decision="reject",
-                comments=data.get("comments", ""),
+                comment=data.get("comments", ""),
                 can_override=False,
                 created_at=now,
                 updated_at=now,
@@ -369,5 +454,9 @@ async def reject_promotion(promotion_id: str):
 
     if result[1] == 404:
         return ApiResponse.error("Not found", 404)
+    if result[1] == 403:
+        return ApiResponse.error("Not an authorized approver for this stage", 403)
+    if result[1] == 409:
+        return ApiResponse.error("Promotion is not in a pending state", 409)
 
     return result

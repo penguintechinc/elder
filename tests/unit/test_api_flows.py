@@ -306,3 +306,215 @@ class TestFlows:
         # Should return 403 (insufficient scope) or 404 (not found)
         # Depending on implementation, scope check might come first
         assert response.status_code in [403, 404]
+
+    async def _scaffold_promotion(
+        self,
+        app,
+        tenant_id,
+        identity_id,
+        *,
+        min_approvers=1,
+        require_approval=True,
+        add_approver=True,
+        status="pending",
+    ):
+        """Insert a pipeline + gate stage (+ optional approver) + promotion.
+
+        Returns the promotion's DB id. Approvers can't yet be created via the
+        API (deferred, gh stage-children re-port), so they are seeded directly.
+        """
+        db = app.db
+
+        def _mk():
+            now = datetime.now(timezone.utc)
+            flow_id = db.iceflows.insert(
+                tenant_id=tenant_id,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                flow_id=str(uuid.uuid4()),
+                name="Promo Pipeline",
+                description="",
+                repository_url="https://github.com/test/repo",
+                repository_provider="github",
+                repository_name="repo",
+                default_branch="main",
+                status="active",
+                is_enabled=True,
+                created_by_identity_id=identity_id,
+                tags=[],
+                created_at=now,
+                updated_at=now,
+            )
+            stage_id = db.iceflows_stages.insert(
+                tenant_id=tenant_id,
+                stage_id=str(uuid.uuid4()),
+                flow_id=flow_id,
+                stage_order=1,
+                branch_name="prod",
+                display_name="Production",
+                is_production=True,
+                auto_promote=False,
+                require_approval=require_approval,
+                min_approvers=min_approvers,
+                override_min_approvers=2,
+                is_enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+            if add_approver:
+                db.iceflows_stage_approvers.insert(
+                    tenant_id=tenant_id,
+                    approver_id=str(uuid.uuid4()),
+                    stage_id=stage_id,
+                    identity_id=identity_id,
+                    role="approver",
+                    can_override=False,
+                    created_at=now,
+                    updated_at=now,
+                )
+            promo_id = db.iceflows_promotions.insert(
+                tenant_id=tenant_id,
+                promotion_id=str(uuid.uuid4()),
+                flow_id=flow_id,
+                source_stage_id=stage_id,
+                target_stage_id=stage_id,
+                source_commit="deadbeef",
+                status=status,
+                requested_by_identity_id=identity_id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            return promo_id
+
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        return await run_in_threadpool(_mk)
+
+    @pytest.mark.asyncio
+    async def test_promotions_approve_non_approver_forbidden(self, app, client):
+        """regression: approver-membership fail-closed.
+
+        A caller with flows:approve who is NOT a configured stage approver is
+        rejected with 403 (scope alone must not authorize an approval).
+        """
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(
+            app, t, identity_id, add_approver=False
+        )
+        token = self._token(app, t, identity_id, scopes=["flows:approve"])
+
+        response = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/approve",
+            json={"comments": "lgtm"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_promotions_single_approve_does_not_flip(self, app, client):
+        """regression: unilateral-state-change prevented.
+
+        With min_approvers=2, one approval must NOT advance the promotion to
+        'approved' — it stays pending until the threshold is met.
+        """
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id, min_approvers=2)
+        token = self._token(app, t, identity_id, scopes=["flows:approve"])
+
+        response = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/approve",
+            json={"comments": "one of two"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = await response.get_json()
+        assert data["status"] == "pending"
+        assert data["approvals_received"] == 1
+        assert data["approvals_required"] == 2
+
+    @pytest.mark.asyncio
+    async def test_promotions_approve_meets_threshold(self, app, client):
+        """regression: approval advances once min_approvers is met."""
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id, min_approvers=1)
+        token = self._token(app, t, identity_id, scopes=["flows:approve"])
+
+        response = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/approve",
+            json={"comments": "ship it"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = await response.get_json()
+        assert data["status"] == "approved"
+
+    @pytest.mark.asyncio
+    async def test_promotions_approve_non_pending_conflict(self, app, client):
+        """regression: missing-state-guard — non-pending promotion → 409."""
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id, status="merged")
+        token = self._token(app, t, identity_id, scopes=["flows:approve"])
+
+        response = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/approve",
+            json={"comments": "too late"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_stage_policy_fields_require_admin(self, app, client):
+        """regression: policy-tampering — flows:write cannot weaken the gate."""
+        db = app.db
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+
+        def _mk_flow():
+            now = datetime.now(timezone.utc)
+            fid = db.iceflows.insert(
+                tenant_id=t,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                flow_id=str(uuid.uuid4()),
+                name="Policy Pipeline",
+                description="",
+                repository_url="https://github.com/test/repo",
+                repository_provider="github",
+                repository_name="repo",
+                default_branch="main",
+                status="draft",
+                is_enabled=False,
+                created_by_identity_id=identity_id,
+                tags=[],
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            return fid
+
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        flow_id = await run_in_threadpool(_mk_flow)
+
+        # flows:write only → setting require_approval is forbidden
+        write_token = self._token(app, t, identity_id, scopes=["flows:write"])
+        resp = await client.post(
+            f"/api/v1/flows/{flow_id}/stages",
+            json={"branch_name": "prod", "require_approval": False},
+            headers={"Authorization": f"Bearer {write_token}"},
+        )
+        assert resp.status_code == 403
+
+        # flows:admin → allowed
+        admin_token = self._token(
+            app, t, identity_id, scopes=["flows:write", "flows:admin"]
+        )
+        resp = await client.post(
+            f"/api/v1/flows/{flow_id}/stages",
+            json={"branch_name": "prod", "require_approval": False},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+        assert resp.status_code == 201

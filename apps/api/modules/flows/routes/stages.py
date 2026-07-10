@@ -29,6 +29,31 @@ def _get_tenant_id() -> int:
         return None
 
 
+def _has_scope(scope: str) -> bool:
+    """True if the current request carries ``scope`` (or is a superuser)."""
+    from quart import g
+
+    if getattr(g, "current_user", None) and getattr(
+        g.current_user, "is_superuser", False
+    ):
+        return True
+    claims = getattr(g, "claims", {}) or {}
+    return scope in set(claims.get("scope", []))
+
+
+# Fields that control the approval gate. Changing them is a policy change
+# (separation of duties) and requires flows:admin — plain flows:write, which a
+# normal pipeline editor holds, must not be able to weaken the gate (e.g. flip
+# require_approval off or lower min_approvers).
+_POLICY_FIELDS = (
+    "require_approval",
+    "min_approvers",
+    "override_min_approvers",
+    "is_production",
+    "auto_promote",
+)
+
+
 def _serialize_stage(stage):
     """Serialize stage database row to JSON-friendly dict."""
     return {
@@ -110,6 +135,12 @@ async def create_stage(flow_id: str):
     if not data.get("branch_name"):
         return ApiResponse.error("branch_name is required", 400)
 
+    # Separation of duties: only flows:admin may set approval-gate policy.
+    if any(k in data for k in _POLICY_FIELDS) and not _has_scope("flows:admin"):
+        return ApiResponse.error(
+            "Setting approval-policy fields requires the 'flows:admin' scope", 403
+        )
+
     # Capture db in request context BEFORE threadpool
     db = current_app.db
 
@@ -126,13 +157,13 @@ async def create_stage(flow_id: str):
         if not flow:
             return None, 404
 
-        # Get max stage_order
-        max_order = (
+        # Get max stage_order (penguin-dal has no field .max(); order desc + take 1)
+        last_stage = (
             db(db.iceflows_stages.flow_id == flow.id)
-            .select(db.iceflows_stages.stage_order.max())
+            .select(orderby=~db.iceflows_stages.stage_order, limitby=(0, 1))
             .first()
         )
-        next_order = (max_order[db.iceflows_stages.stage_order.max()] or 0) + 1
+        next_order = (last_stage.stage_order if last_stage else 0) + 1
 
         # Create stage
         stage_id = str(uuid.uuid4())
@@ -234,6 +265,12 @@ async def update_stage(flow_id: str, stage_id: str):
     data = await request.get_json()
     if not data:
         data = {}
+
+    # Separation of duties: only flows:admin may change approval-gate policy.
+    if any(k in data for k in _POLICY_FIELDS) and not _has_scope("flows:admin"):
+        return ApiResponse.error(
+            "Changing approval-policy fields requires the 'flows:admin' scope", 403
+        )
 
     # Capture db in request context BEFORE threadpool
     db = current_app.db

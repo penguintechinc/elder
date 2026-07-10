@@ -537,12 +537,13 @@ async def update_stream(stream_id):
 
         # If canvas_data is provided, create new version
         if "canvas_data" in data:
-            max_version = (
+            # penguin-dal has no field .max(); order desc + take 1
+            last_version = (
                 db(db.stream_versions.playbook_id == stream_id)
-                .select(db.stream_versions.version_number.max())
-                .first()[db.stream_versions.version_number.max()]
-                or 0
+                .select(orderby=~db.stream_versions.version_number, limitby=(0, 1))
+                .first()
             )
+            max_version = last_version.version_number if last_version else 0
 
             new_version = max_version + 1
             canvas = data.get("canvas_data", {})
