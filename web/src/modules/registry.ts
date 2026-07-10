@@ -16,6 +16,7 @@ import helpdeskModule from './helpdesk'
 import diagramsModule from './diagrams'
 import documentsModule from './documents'
 import pagesModule from './pages'
+import streamsModule from './streams'
 
 /**
  * Module registry: all available feature modules.
@@ -35,6 +36,7 @@ export const MODULES: FrontendModule[] = [
   diagramsModule,
   documentsModule,
   pagesModule,
+  streamsModule,
 ]
 
 /**

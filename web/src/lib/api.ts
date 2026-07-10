@@ -2982,6 +2982,100 @@ class ApiClient {
     const response = await this.client.get(`/pages/${slug}/backlinks`)
     return response.data
   }
+
+  // ===========================
+  // Streams (Phase 4g)
+  // ===========================
+
+  async listStreams(params?: { page?: number; per_page?: number; search?: string }) {
+    const response = await this.client.get('/streams', { params })
+    return response.data
+  }
+
+  async getStream(id: number) {
+    const response = await this.client.get(`/streams/${id}`)
+    return response.data
+  }
+
+  async createStream(data: {
+    name: string
+    description?: string
+    trigger_type?: string
+    is_enabled?: boolean
+  }) {
+    const response = await this.client.post('/streams', data)
+    return response.data
+  }
+
+  async updateStream(id: number, data: Partial<{
+    name: string
+    description: string
+    trigger_type: string
+    is_enabled: boolean
+  }>) {
+    const response = await this.client.patch(`/streams/${id}`, data)
+    return response.data
+  }
+
+  async deleteStream(id: number) {
+    const response = await this.client.delete(`/streams/${id}`)
+    return response.data
+  }
+
+  async duplicateStream(id: number, data?: { name?: string }) {
+    const response = await this.client.post(`/streams/${id}/duplicate`, data || {})
+    return response.data
+  }
+
+  async getStreamLock(id: number) {
+    const response = await this.client.get(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async acquireStreamLock(id: number) {
+    const response = await this.client.post(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async releaseStreamLock(id: number) {
+    const response = await this.client.delete(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async executeStream(id: number, data?: Record<string, unknown>) {
+    const response = await this.client.post(`/streams/${id}/execute`, data || {})
+    return response.data
+  }
+
+  async listStreamExecutions(id: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/streams/${id}/executions`, { params })
+    return response.data
+  }
+
+  async getStreamExecution(id: number, executionId: string) {
+    const response = await this.client.get(`/streams/${id}/executions/${executionId}`)
+    return response.data
+  }
+
+  async listMyApprovals(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/streams/my-approvals', { params })
+    return response.data
+  }
+
+  async approveExecution(executionId: string, data?: { comment?: string }) {
+    const response = await this.client.post(`/streams/executions/${executionId}/approve`, data || {})
+    return response.data
+  }
+
+  async rejectExecution(executionId: string, data?: { comment?: string }) {
+    const response = await this.client.post(`/streams/executions/${executionId}/reject`, data || {})
+    return response.data
+  }
+
+  async getApprovalStatus(executionId: string) {
+    const response = await this.client.get(`/streams/executions/${executionId}/approval-status`)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
