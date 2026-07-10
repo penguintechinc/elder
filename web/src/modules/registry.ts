@@ -15,6 +15,7 @@ import accessReviewsModule from './access_reviews'
 import helpdeskModule from './helpdesk'
 import diagramsModule from './diagrams'
 import documentsModule from './documents'
+import pagesModule from './pages'
 
 /**
  * Module registry: all available feature modules.
@@ -33,6 +34,7 @@ export const MODULES: FrontendModule[] = [
   helpdeskModule,
   diagramsModule,
   documentsModule,
+  pagesModule,
 ]
 
 /**

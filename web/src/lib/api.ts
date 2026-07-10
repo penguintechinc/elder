@@ -2916,6 +2916,72 @@ class ApiClient {
     const response = await this.client.post(`/documents/${docId}/versions/${versionNumber}/restore`)
     return response.data
   }
+
+  // ===========================
+  // Pages (Phase 4f)
+  // ===========================
+
+  async getPages(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    visibility?: string
+    search?: string
+  }) {
+    const response = await this.client.get('/pages', { params })
+    return response.data
+  }
+
+  async getPage(slug: string) {
+    const response = await this.client.get(`/pages/${slug}`)
+    return response.data
+  }
+
+  async createPage(data: {
+    title: string
+    body_html: string
+    status?: 'draft' | 'published'
+    visibility?: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles?: string[]
+    visibility_users?: number[]
+    is_public?: boolean
+  }) {
+    const response = await this.client.post('/pages', data)
+    return response.data
+  }
+
+  async updatePage(slug: string, data: Partial<{
+    title: string
+    body_html: string
+    status: 'draft' | 'published'
+    visibility: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles: string[]
+    visibility_users: number[]
+    is_public: boolean
+  }>) {
+    const response = await this.client.put(`/pages/${slug}`, data)
+    return response.data
+  }
+
+  async deletePage(slug: string) {
+    const response = await this.client.delete(`/pages/${slug}`)
+    return response.data
+  }
+
+  async attachPageToCollection(slug: string, collectionId: number) {
+    const response = await this.client.post(`/pages/${slug}/collections/${collectionId}`)
+    return response.data
+  }
+
+  async detachPageFromCollection(slug: string, collectionId: number) {
+    const response = await this.client.delete(`/pages/${slug}/collections/${collectionId}`)
+    return response.data
+  }
+
+  async getPageBacklinks(slug: string) {
+    const response = await this.client.get(`/pages/${slug}/backlinks`)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()
