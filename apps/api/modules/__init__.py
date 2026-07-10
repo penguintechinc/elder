@@ -230,13 +230,15 @@ def _diagrams_blueprints() -> list[tuple[Blueprint, str]]:
 
 
 def _streams_blueprints() -> list[tuple[Blueprint, str]]:
-    """Load streams module blueprints (Phase 4b-a: stub; Phase 4b-b: CRUD + execution)."""
-    from apps.api.modules.streams.routes import streams, webhooks
+    """Load streams module blueprints (Phase 4b: CRUD + execution + webhooks + approvals + hooks)."""
+    from apps.api.modules.streams.routes import approvals, hooks, streams, webhooks
 
     api_prefix = "/api/v1"
     return [
         (streams.bp, f"{api_prefix}/streams"),
         (webhooks.bp, f"{api_prefix}/streams"),
+        (approvals.bp, f"{api_prefix}/streams"),
+        (hooks.bp, f"{api_prefix}/hooks"),
     ]
 
 
