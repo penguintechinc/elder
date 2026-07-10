@@ -52,7 +52,10 @@ async def get_node_metadata(stream_id, node_id):
 
     def get():
         stream = (
-            db((db.stream_playbooks.id == stream_id) & (db.stream_playbooks.tenant_id == tenant_id))
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
@@ -94,7 +97,9 @@ async def get_node_metadata(stream_id, node_id):
             "node_id": node_id,
             "comments": metadata.comments,
             "metadata": metadata.metadata_json or {},
-            "updated_at": (metadata.updated_at.isoformat() if metadata.updated_at else None),
+            "updated_at": (
+                metadata.updated_at.isoformat() if metadata.updated_at else None
+            ),
         }
     )
 
@@ -131,7 +136,10 @@ async def update_node_metadata(stream_id, node_id):
 
     def update():
         stream = (
-            db((db.stream_playbooks.id == stream_id) & (db.stream_playbooks.tenant_id == tenant_id))
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
@@ -221,7 +229,10 @@ async def list_webhooks(stream_id):
 
     def list_wh():
         stream = (
-            db((db.stream_playbooks.id == stream_id) & (db.stream_playbooks.tenant_id == tenant_id))
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
@@ -232,6 +243,13 @@ async def list_webhooks(stream_id):
         if not _can_read_stream(db, stream, tenant_id, identity_id):
             return None, None
 
+        # The webhook token is an inbound-trigger credential: anyone holding it
+        # can POST /api/v1/hooks/<token> to launch executions. Only callers with
+        # EDIT rights (owner/editor) may see the raw token + URL; read-only
+        # viewers see that a webhook exists but not the secret (prevents a
+        # read→execute privilege escalation).
+        can_edit = _can_edit_stream(db, stream, tenant_id, identity_id)
+
         webhooks = db(
             (db.stream_webhooks.playbook_id == stream_id)
             & (db.stream_webhooks.tenant_id == tenant_id)
@@ -241,8 +259,8 @@ async def list_webhooks(stream_id):
             {
                 "id": w.id,
                 "name": w.name,
-                "token": w.token,
-                "url": f"/api/v1/hooks/{w.token}",
+                "token": w.token if can_edit else None,
+                "url": (f"/api/v1/hooks/{w.token}" if can_edit else None),
                 "allowed_methods": w.allowed_methods or ["POST"],
                 "validate_signature": w.validate_signature,
                 "is_enabled": w.is_enabled,
@@ -294,7 +312,10 @@ async def create_webhook(stream_id):
 
     def create():
         stream = (
-            db((db.stream_playbooks.id == stream_id) & (db.stream_playbooks.tenant_id == tenant_id))
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
@@ -368,7 +389,10 @@ async def delete_webhook(stream_id, webhook_id):
 
     def delete():
         stream = (
-            db((db.stream_playbooks.id == stream_id) & (db.stream_playbooks.tenant_id == tenant_id))
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
             .select()
             .first()
         )
