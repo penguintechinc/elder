@@ -177,6 +177,7 @@ async def get_version(doc_id, version_number):
             "title": version.title,
             "body_html": version.body_html,
             "body_text": version.body_text,
+            "body_markdown": version.body_markdown,
             "author_identity_id": version.author_identity_id,
             "created_at": version.created_at.isoformat(),
         }
@@ -260,6 +261,7 @@ async def restore_version(doc_id, version_number):
             title=doc.title,
             body_html=doc.body_html,
             body_text=doc.body_text,
+            body_markdown=doc.body_markdown,
             author_identity_id=identity_id,
             created_at=now,
         )
@@ -269,6 +271,7 @@ async def restore_version(doc_id, version_number):
             title=source_version.title,
             body_html=source_version.body_html,
             body_text=source_version.body_text,
+            body_markdown=source_version.body_markdown,
             updated_at=now,
         )
         db.commit()

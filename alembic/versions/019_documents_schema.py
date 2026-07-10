@@ -16,6 +16,7 @@ village_id: VillageIDMixin on doc_documents, doc_collections only.
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "019"
@@ -38,6 +39,12 @@ def upgrade():
         sa.Column("body_html", sa.Text(), nullable=False),
         sa.Column(
             "body_text", sa.Text(), nullable=True, comment="Plaintext for search"
+        ),
+        sa.Column(
+            "body_markdown",
+            sa.Text(),
+            nullable=True,
+            comment="Raw markdown source for editing round-trip",
         ),
         sa.Column("category", sa.String(100), nullable=True),
         sa.Column("tags", sa.JSON(), nullable=True, comment="JSON array of tags"),
@@ -192,6 +199,12 @@ def upgrade():
         sa.Column("body_html", sa.Text(), nullable=False),
         sa.Column(
             "body_text", sa.Text(), nullable=True, comment="Plaintext for search"
+        ),
+        sa.Column(
+            "body_markdown",
+            sa.Text(),
+            nullable=True,
+            comment="Raw markdown source for editing round-trip",
         ),
         sa.Column("author_identity_id", sa.Integer(), nullable=True),
         sa.Column(

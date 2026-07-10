@@ -31,6 +31,9 @@ class DocDocument(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMix
     slug = Column(String(500), nullable=False)
     body_html = Column(Text, nullable=False)
     body_text = Column(Text, nullable=True, comment="Plaintext extraction for search")
+    body_markdown = Column(
+        Text, nullable=True, comment="Raw markdown source for editing round-trip"
+    )
     category = Column(String(100), nullable=True)
     tags = Column(JSON, nullable=True, comment="JSON array of tags")
     status = Column(
@@ -126,6 +129,9 @@ class DocVersion(Base, IDMixin, TimestampMixin):
     title = Column(String(500), nullable=False)
     body_html = Column(Text, nullable=False)
     body_text = Column(Text, nullable=True, comment="Plaintext extraction for search")
+    body_markdown = Column(
+        Text, nullable=True, comment="Raw markdown source for editing round-trip"
+    )
     author_identity_id = Column(
         Integer,
         ForeignKey("identities.id", ondelete="RESTRICT"),

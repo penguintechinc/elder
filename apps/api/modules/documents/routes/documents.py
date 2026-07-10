@@ -324,6 +324,7 @@ async def create_document():
             slug=slug,
             body_html=body_html,
             body_text=body_text,
+            body_markdown=body,
             category=data.get("category"),
             tags=data.get("tags", []),
             status="draft",
@@ -446,6 +447,7 @@ async def get_document(slug):
             "slug": doc.slug,
             "body_html": doc.body_html,
             "body_text": doc.body_text,
+            "body_markdown": doc.body_markdown,
             "category": doc.category,
             "status": doc.status,
             "is_public": doc.is_public,
@@ -534,6 +536,7 @@ async def update_document(doc_id):
                 body_text, body_html = _render_and_sanitize_body(body)
                 updates["body_html"] = body_html
                 updates["body_text"] = body_text
+                updates["body_markdown"] = body
 
         # Update other fields
         if "category" in data:
@@ -557,6 +560,7 @@ async def update_document(doc_id):
             title=doc.title,
             body_html=doc.body_html,
             body_text=doc.body_text,
+            body_markdown=doc.body_markdown,
             author_identity_id=doc.author_identity_id,
             created_at=now,
         )

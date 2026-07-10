@@ -2805,6 +2805,117 @@ class ApiClient {
     const response = await this.client.post(`/diagrams/${id}/collab/ticket`)
     return response.data as { ticket: string; ws_path: string }
   }
+
+  // ===========================
+  // Documents (Phase 4e)
+  // ===========================
+
+  async getDocuments(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    category?: string
+    q?: string
+  }) {
+    const response = await this.client.get('/documents', { params })
+    return response.data
+  }
+
+  async getDocument(slug: string) {
+    const response = await this.client.get(`/documents/${slug}`)
+    return response.data
+  }
+
+  async createDocument(data: {
+    title: string
+    body: string
+    category?: string
+    tags?: string[]
+    visibility?: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles?: string[]
+    visibility_users?: number[]
+  }) {
+    const response = await this.client.post('/documents', data)
+    return response.data
+  }
+
+  async updateDocument(docId: number, data: Partial<{
+    title: string
+    body: string
+    category: string
+    tags: string[]
+    visibility: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles: string[]
+    visibility_users: number[]
+  }>) {
+    const response = await this.client.patch(`/documents/${docId}`, data)
+    return response.data
+  }
+
+  async deleteDocument(docId: number) {
+    const response = await this.client.delete(`/documents/${docId}`)
+    return response.data
+  }
+
+  async publishDocument(docId: number) {
+    const response = await this.client.post(`/documents/${docId}/publish`)
+    return response.data
+  }
+
+  async getCollections() {
+    const response = await this.client.get('/collections')
+    return response.data
+  }
+
+  async createCollection(data: {
+    name: string
+    slug?: string
+    description?: string
+    parent_id?: number
+  }) {
+    const response = await this.client.post('/collections', data)
+    return response.data
+  }
+
+  async updateCollection(collId: number, data: Partial<{
+    name: string
+    slug: string
+    description: string
+    parent_id: number
+  }>) {
+    const response = await this.client.patch(`/collections/${collId}`, data)
+    return response.data
+  }
+
+  async deleteCollection(collId: number) {
+    const response = await this.client.delete(`/collections/${collId}`)
+    return response.data
+  }
+
+  async attachDocumentToCollection(collId: number, docId: number) {
+    const response = await this.client.post(`/collections/${collId}/documents/${docId}`)
+    return response.data
+  }
+
+  async detachDocumentFromCollection(collId: number, docId: number) {
+    const response = await this.client.delete(`/collections/${collId}/documents/${docId}`)
+    return response.data
+  }
+
+  async getDocumentVersions(docId: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/documents/${docId}/versions`, { params })
+    return response.data
+  }
+
+  async getDocumentVersion(docId: number, versionNumber: number) {
+    const response = await this.client.get(`/documents/${docId}/versions/${versionNumber}`)
+    return response.data
+  }
+
+  async restoreDocumentVersion(docId: number, versionNumber: number) {
+    const response = await this.client.post(`/documents/${docId}/versions/${versionNumber}/restore`)
+    return response.data
+  }
 }
 
 export const api = new ApiClient()

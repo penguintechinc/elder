@@ -210,3 +210,58 @@ class TestDocumentsAPI:
         data = json.loads(await resp.get_data())
         assert "items" in data
         assert "pagination" in data
+
+    @pytest.mark.asyncio
+    async def test_body_markdown_round_trip(self, app):
+        """Regression: body_markdown must persist and round-trip through GET.
+
+        regression: gh-markdown-persistence
+        """
+        client = app.test_client()
+        t, a = self.fixtures["tenant_id"], self.fixtures["author_id"]
+        token = self._token(app, t, a, ["documents:write", "documents:read"])
+
+        # Create document with formatted markdown
+        markdown_source = (
+            "# Heading\n\n" "- Item 1\n" "- Item 2\n\n" "**bold** and *italic*"
+        )
+        resp = await client.post(
+            "/api/v1/documents",
+            json={
+                "title": "Markdown Test",
+                "body": markdown_source,
+                "category": "test",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201
+        create_data = json.loads(await resp.get_data())
+        slug = create_data["slug"]
+        doc_id = create_data["id"]
+
+        # GET the document and verify body_markdown matches source
+        get_resp = await client.get(
+            f"/api/v1/documents/{slug}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_resp.status_code == 200
+        doc_data = json.loads(await get_resp.get_data())
+        assert doc_data.get("body_markdown") == markdown_source
+
+        # Edit the document and verify new body_markdown persists
+        updated_markdown = "# Updated Heading\n\nNew content here."
+        patch_resp = await client.patch(
+            f"/api/v1/documents/{doc_id}",
+            json={"body": updated_markdown},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert patch_resp.status_code == 200
+
+        # Verify the update persisted
+        get_updated = await client.get(
+            f"/api/v1/documents/{slug}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_updated.status_code == 200
+        updated_data = json.loads(await get_updated.get_data())
+        assert updated_data.get("body_markdown") == updated_markdown

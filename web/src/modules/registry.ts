@@ -14,6 +14,7 @@ import webhooksAlertingModule from './webhooks_alerting'
 import accessReviewsModule from './access_reviews'
 import helpdeskModule from './helpdesk'
 import diagramsModule from './diagrams'
+import documentsModule from './documents'
 
 /**
  * Module registry: all available feature modules.
@@ -31,6 +32,7 @@ export const MODULES: FrontendModule[] = [
   accessReviewsModule,
   helpdeskModule,
   diagramsModule,
+  documentsModule,
 ]
 
 /**
