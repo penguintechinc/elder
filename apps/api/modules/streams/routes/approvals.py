@@ -458,6 +458,7 @@ async def get_approval_status(execution_id: str):
     """
     db = current_app.db
     tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
@@ -474,6 +475,21 @@ async def get_approval_status(execution_id: str):
         )
 
         if not execution:
+            return None, 404
+
+        # Authorization: approval status exposes approver identities, decisions
+        # and comments, so require read access to the underlying stream. Without
+        # this, any tenant user could enumerate approver PII for streams they
+        # cannot see. Unified 404 on deny (don't leak existence).
+        playbook = (
+            db(
+                (db.stream_playbooks.id == execution.playbook_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not playbook or not _can_read_stream(db, playbook, tenant_id, identity_id):
             return None, 404
 
         # Get all approvals for this execution
