@@ -235,11 +235,13 @@ async def approve_execution(execution_id: str):
         # Verify user is an approver
         user_can_approve = False
         gate_id = None
+        required_approvers = 1
         for gate in gates:
             approvers = gate.approvers or []
             if identity_id in approvers:
                 user_can_approve = True
                 gate_id = gate.id
+                required_approvers = gate.min_approvers or 1
                 break
 
         if not user_can_approve:
@@ -275,16 +277,35 @@ async def approve_execution(execution_id: str):
         )
         db.commit()
 
-        # Advance execution status to running (resume from paused)
-        db(db.stream_executions.execution_id == execution_id).update(
-            status="running",
-            updated_at=now,
-        )
-        db.commit()
+        # Only resume once the gate's min_approvers threshold is met. Counting
+        # distinct approve decisions for this gate (the per-approver "already
+        # decided" check above enforces distinctness). A single approver must
+        # NOT be able to resume a multi-approver gate.
+        approve_count = db(
+            (db.stream_execution_approvals.execution_id == execution_id)
+            & (db.stream_execution_approvals.gate_id == gate_id)
+            & (db.stream_execution_approvals.decision == "approve")
+            & (db.stream_execution_approvals.tenant_id == tenant_id)
+        ).count()
+
+        threshold_met = approve_count >= required_approvers
+        if threshold_met:
+            db(db.stream_executions.execution_id == execution_id).update(
+                status="running",
+                updated_at=now,
+            )
+            db.commit()
 
         return {
-            "message": "Execution approved and resumed",
+            "message": (
+                "Execution approved and resumed"
+                if threshold_met
+                else "Approval recorded; awaiting additional approvers"
+            ),
             "approval_id": approval_id,
+            "approvals": approve_count,
+            "required": required_approvers,
+            "resumed": threshold_met,
         }, 200
 
     result, status_code = await run_in_threadpool(approve)
