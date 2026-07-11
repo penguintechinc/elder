@@ -741,3 +741,99 @@ class TestFlows:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 404
+
+    # -- Flows invoker (slice 1) --------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_invoker_executor_records_execution(self, app, client):
+        """regression: executor writes an iceflows_executions lifecycle row."""
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id)
+        db = app.db
+
+        def _add_test_and_run():
+            # Add a configured test to the promotion's target stage so the
+            # execution plan is non-empty.
+            promo = db(db.iceflows_promotions.id == promo_id).select().first()
+            now = datetime.now(timezone.utc)
+            db.iceflows_stage_tests.insert(
+                tenant_id=t,
+                test_id=str(uuid.uuid4()),
+                stage_id=promo.target_stage_id,
+                name="unit",
+                test_type="unit",
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            from apps.flows_invoker.executor import execute_promotion_pipeline
+
+            res = execute_promotion_pipeline(db, t, promo_id, identity_id)
+            row = (
+                db(db.iceflows_executions.execution_id == res["execution_id"])
+                .select()
+                .first()
+            )
+            return res, row
+
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        res, row = await run_in_threadpool(_add_test_and_run)
+        assert res["status"] == "success"
+        assert row is not None
+        assert row.status == "success"
+        assert row.promotion_id == promo_id
+        # Plan step recorded the single configured test.
+        plan = [e for e in (row.execution_log or []) if e.get("step") == "plan"]
+        assert plan and plan[0]["test_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_invoker_executor_missing_promotion(self, app, client):
+        """regression: unknown promotion → failed result, no crash."""
+        t = self.fixtures["tenant_id"]
+        db = app.db
+
+        def _run():
+            from apps.flows_invoker.executor import execute_promotion_pipeline
+
+            return execute_promotion_pipeline(db, t, 999999, None)
+
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        res = await run_in_threadpool(_run)
+        assert res["status"] == "failed"
+        assert res["execution_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_flow_execute_endpoint_queues(self, app, client):
+        """regression: execute endpoint enqueues on a pending promotion (202)."""
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id)
+        token = self._token(app, t, identity_id, scopes=["flows:execute"])
+
+        resp = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/execute",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 202
+        data = await resp.get_json()
+        assert data["promotion_id"] == promo_id
+        assert data["status"] == "queued"
+
+    @pytest.mark.asyncio
+    async def test_flow_execute_endpoint_non_executable(self, app, client):
+        """regression: execute on a merged promotion → 409."""
+        t = self.fixtures["tenant_id"]
+        identity_id = self.fixtures["identity_id"]
+        promo_id = await self._scaffold_promotion(app, t, identity_id, status="merged")
+        token = self._token(app, t, identity_id, scopes=["flows:execute"])
+
+        resp = await client.post(
+            f"/api/v1/flows/promotions/{promo_id}/execute",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 409

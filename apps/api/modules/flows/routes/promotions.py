@@ -460,3 +460,91 @@ async def reject_promotion(promotion_id: str):
         return ApiResponse.error("Promotion is not in a pending state", 409)
 
     return result
+
+
+@bp.route("/promotions/<promotion_id>/execute", methods=["POST"])
+@login_required
+@require_scope("flows:execute")
+async def execute_promotion(promotion_id: str):
+    """Trigger CI/CD execution for a promotion (enqueues a flows-invoker job).
+
+    The isolated flows invoker consumes the job and records an
+    ``iceflows_executions`` row. Only a pending or approved promotion may be
+    executed. Enqueue failure does not fail the request — the invoker's
+    reconcile/sweeper path can pick it up.
+    """
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    db = current_app.db
+
+    def _validate():
+        promotion = (
+            db(
+                (
+                    db.iceflows_promotions.id == int(promotion_id)
+                    if promotion_id.isdigit()
+                    else False
+                )
+                & (db.iceflows_promotions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not promotion:
+            return None, 404
+        if promotion.status not in ("pending", "approved"):
+            return None, 409
+        return promotion.id, 202
+
+    result = await run_in_threadpool(_validate)
+    if result[1] == 404:
+        return ApiResponse.error("Not found", 404)
+    if result[1] == 409:
+        return ApiResponse.error("Promotion is not in an executable state", 409)
+
+    promo_db_id = result[0]
+    enqueue_time = datetime.now(timezone.utc)
+    enqueued = False
+    try:
+        import redis.asyncio
+
+        from apps.worker.config.settings import settings
+        from shared.jobbus import JobBus
+
+        if settings.redis_url:
+            redis_client = redis.asyncio.from_url(settings.redis_url)
+            jobbus = JobBus(redis_client)
+            await jobbus.ensure_group("flows")
+            await jobbus.enqueue(
+                "flows",
+                "execute_promotion",
+                {
+                    "promotion_id": promo_db_id,
+                    "tenant_id": tenant_id,
+                    "started_by_identity_id": identity_id,
+                },
+                enqueued_at=enqueue_time.isoformat(),
+                tenant_id=tenant_id,
+            )
+            await redis_client.close()
+            enqueued = True
+        else:
+            logger.warning(
+                "REDIS_URL not configured; promotion %s not enqueued", promo_db_id
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "Failed to enqueue flow execution for promotion %s: %s",
+            promo_db_id,
+            e,
+        )
+
+    return {
+        "promotion_id": promo_db_id,
+        "status": "queued",
+        "enqueued": enqueued,
+    }, 202
