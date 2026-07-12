@@ -98,10 +98,14 @@ def set_module_enabled(
     """
     try:
         # Try to update existing row
-        existing = db(
-            (db.tenant_modules.tenant_id == tenant_id)
-            & (db.tenant_modules.module_name == module_name)
-        ).select().first()
+        existing = (
+            db(
+                (db.tenant_modules.tenant_id == tenant_id)
+                & (db.tenant_modules.module_name == module_name)
+            )
+            .select()
+            .first()
+        )
 
         if existing:
             db(

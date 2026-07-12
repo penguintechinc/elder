@@ -10,7 +10,7 @@ penguin-dal handles runtime queries via reflection.
 
 from sqlalchemy import JSON, Boolean, Column, Integer, String, UniqueConstraint
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin, TenantScopedMixin
+from apps.api.models.base import Base, IDMixin, TenantScopedMixin, TimestampMixin
 
 
 class TenantModule(Base, IDMixin, TimestampMixin, TenantScopedMixin):

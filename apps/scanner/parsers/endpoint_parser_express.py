@@ -27,7 +27,7 @@ class ExpressEndpointParser:
         self.route_chain_pattern = re.compile(
             r'(?:app|router)\.route\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'
             r"((?:\s*\.\s*(?:get|post|put|delete|patch|options|head)\s*\([^)]*\))+)",
-            re.DOTALL
+            re.DOTALL,
         )
 
         # Pattern for chained methods
@@ -136,9 +136,7 @@ class ExpressEndpointParser:
 
         return endpoints
 
-    def _parse_chained_routes(
-        self, content: str, filename: str
-    ) -> List[Dict]:
+    def _parse_chained_routes(self, content: str, filename: str) -> List[Dict]:
         """Parse chained routes like app.route('/path').get().post()."""
         endpoints = []
 
@@ -155,7 +153,7 @@ class ExpressEndpointParser:
 
             if methods:
                 # Find line number from position in content
-                line_num = content[:match.start()].count('\n') + 1
+                line_num = content[: match.start()].count("\n") + 1
 
                 endpoint = {
                     "path": path,
@@ -219,9 +217,9 @@ class ExpressEndpointParser:
         call_end = -1
 
         for i, char in enumerate(remainder):
-            if char == '(':
+            if char == "(":
                 paren_depth += 1
-            elif char == ')':
+            elif char == ")":
                 paren_depth -= 1
                 if paren_depth == 0:
                     call_end = i
@@ -238,20 +236,20 @@ class ExpressEndpointParser:
         paren_depth = 0
         bracket_depth = 0
         for char in args_str:
-            if char == '(':
+            if char == "(":
                 paren_depth += 1
                 current_arg.append(char)
-            elif char == ')':
+            elif char == ")":
                 paren_depth -= 1
                 current_arg.append(char)
-            elif char == '[':
+            elif char == "[":
                 bracket_depth += 1
                 current_arg.append(char)
-            elif char == ']':
+            elif char == "]":
                 bracket_depth -= 1
                 current_arg.append(char)
-            elif char == ',' and paren_depth == 0 and bracket_depth == 0:
-                arg_text = ''.join(current_arg).strip()
+            elif char == "," and paren_depth == 0 and bracket_depth == 0:
+                arg_text = "".join(current_arg).strip()
                 if arg_text:  # Skip empty args
                     args.append(arg_text)
                 current_arg = []
@@ -259,7 +257,7 @@ class ExpressEndpointParser:
                 current_arg.append(char)
 
         # Add last argument
-        arg_text = ''.join(current_arg).strip()
+        arg_text = "".join(current_arg).strip()
         if arg_text:
             args.append(arg_text)
 
@@ -270,19 +268,19 @@ class ExpressEndpointParser:
         last_arg = args[-1]
 
         # Check if last arg is an anonymous arrow function: (req, res) => ...
-        if '=>' in last_arg:
+        if "=>" in last_arg:
             return None
 
         # Check if last arg is an anonymous function: function(...) or function(...){}
-        if last_arg.startswith('function'):
+        if last_arg.startswith("function"):
             return None
 
         # Check if last arg is an inline arrow function: (req, res) => or (something) =>
-        if last_arg.startswith('(') and '=>' in last_arg:
+        if last_arg.startswith("(") and "=>" in last_arg:
             return None
 
         # Check if last arg is a bare identifier (a handler name)
-        match = re.match(r'^(\w+)$', last_arg)
+        match = re.match(r"^(\w+)$", last_arg)
         if match:
             return match.group(1)
 

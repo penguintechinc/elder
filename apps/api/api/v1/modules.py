@@ -37,9 +37,10 @@ async def list_modules() -> tuple[dict[str, Any], int]:
             ]
         }
     """
+    import redis
+
     from apps.api.common.modules.licensing import module_licensed
     from apps.api.common.modules.tenant_toggle import is_module_enabled
-    import redis
 
     enabled_modules = current_app.extensions.get("elder_modules", {})
 

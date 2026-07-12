@@ -30,12 +30,14 @@ RUN npm run build
 # Production stage — serve built files with a lightweight static server
 FROM node:24-bookworm-slim@sha256:b506e7321f176aae77317f99d67a24b272c1f09f1d10f1761f2773447d8da26c AS runner
 RUN npm install -g serve
-RUN useradd --create-home --shell /bin/bash --uid 1000 appuser
+# The node image already ships a non-root `node` user at uid 1000 — creating
+# another user at that uid fails (useradd exit 4, "UID already in use") and
+# broke every multi-arch build. Reuse it; rootless requirement is satisfied.
 WORKDIR /app
-COPY --chown=appuser:appuser --from=builder /app/dist ./dist
-RUN chown -R appuser:appuser /app
+COPY --chown=node:node --from=builder /app/dist ./dist
+RUN chown -R node:node /app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
-USER appuser
+USER node
 CMD ["serve", "-s", "dist", "-l", "3000"]

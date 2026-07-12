@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from botocore.exceptions import ClientError
 
 from apps.api.common.providers.aws import create_aws_session_and_client
+
 from .base import (
     InvalidSecretConfigException,
     SecretAccessDeniedException,

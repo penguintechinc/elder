@@ -449,9 +449,7 @@ class WorkerService:
 
         logger.info("consumer_loop_stopped")
 
-    async def _process_job(
-        self, group: str, msg_id: str, envelope
-    ) -> None:
+    async def _process_job(self, group: str, msg_id: str, envelope) -> None:
         """Process a single job message.
 
         Args:
@@ -629,7 +627,8 @@ class WorkerService:
                         try:
                             # Fetch all active email accounts
                             rows = db_manager.write(
-                                db_manager.write.hd_email_accounts.is_active == True  # noqa: E712
+                                db_manager.write.hd_email_accounts.is_active
+                                == True  # noqa: E712
                             ).select()
 
                             jobs_to_enqueue = []

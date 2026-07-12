@@ -11,7 +11,7 @@ Design:
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -127,9 +127,7 @@ class JobBus:
         """
         key = self.stream_key(stream_group)
         try:
-            await self.redis.xgroup_create(
-                key, self.group, id="0", mkstream=True
-            )
+            await self.redis.xgroup_create(key, self.group, id="0", mkstream=True)
             logger.debug(
                 "consumer_group_created",
                 stream_key=key,
@@ -476,9 +474,7 @@ class JobBus:
             reason=reason,
         )
 
-    async def _get_delivery_count(
-        self, stream_group: str, msg_id: str
-    ) -> int:
+    async def _get_delivery_count(self, stream_group: str, msg_id: str) -> int:
         """Get delivery count of a message via counter key.
 
         Uses a Redis counter key elder:jobs:delivery:{stream_group}:{msg_id}
@@ -503,9 +499,7 @@ class JobBus:
             )
             return 0
 
-    async def _increment_delivery_count(
-        self, stream_group: str, msg_id: str
-    ) -> int:
+    async def _increment_delivery_count(self, stream_group: str, msg_id: str) -> int:
         """Increment the delivery count for a message.
 
         Args:

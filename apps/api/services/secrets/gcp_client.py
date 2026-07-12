@@ -11,6 +11,7 @@ from google.api_core import exceptions as google_exceptions
 from google.cloud import secretmanager
 
 from apps.api.common.providers.gcp import resolve_gcp_credentials
+
 from .base import (
     InvalidSecretConfigException,
     SecretAccessDeniedException,

@@ -7,7 +7,11 @@ import os
 
 from quart import Blueprint, flash, redirect, render_template, url_for
 
-from apps.api.auth.web_auth import clear_session_cookie, get_web_user, web_login_required
+from apps.api.auth.web_auth import (
+    clear_session_cookie,
+    get_web_user,
+    web_login_required,
+)
 from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
@@ -160,7 +164,9 @@ async def create_entity():
 @web_login_required
 async def view_entity(id):
     """View entity details."""
-    return await render_template("entities/view.html", entity_id=id, **get_template_context())
+    return await render_template(
+        "entities/view.html", entity_id=id, **get_template_context()
+    )
 
 
 @bp.route("/entities/<int:id>/edit")
@@ -220,6 +226,7 @@ async def spa_catch_all(path):
     """Catch-all route for SPA client-side routing."""
     if path.startswith("api/"):
         from quart import jsonify
+
         return jsonify({"error": "Not found"}), 404
     return await render_template("dashboard.html", **get_template_context())
 
@@ -233,8 +240,10 @@ async def spa_catch_all(path):
 async def not_found(error):
     """404 error handler."""
     from quart import request
+
     if request.path.startswith("/api/"):
         from quart import jsonify
+
         return jsonify({"error": "Not found"}), 404
     return await render_template("dashboard.html", **get_template_context()), 404
 
@@ -242,7 +251,8 @@ async def not_found(error):
 @bp.errorhandler(500)
 async def internal_error(error):
     """500 error handler."""
-    from quart import request, jsonify
+    from quart import jsonify, request
+
     if request.path.startswith("/api/"):
         return jsonify({"error": "Internal server error"}), 500
     return await render_template("dashboard.html", **get_template_context()), 500

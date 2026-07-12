@@ -31,7 +31,8 @@ async def check_sla_breaches(db: Any, tenant_id: int) -> dict[str, Any]:
 
     def _check_breaches_sync() -> dict[str, Any]:
         """Synchronous SLA breach check and flagging."""
-        from datetime import datetime, timezone as tz
+        from datetime import datetime
+        from datetime import timezone as tz
 
         now = datetime.now(tz.utc)
 

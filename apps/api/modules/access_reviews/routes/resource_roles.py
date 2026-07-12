@@ -5,8 +5,8 @@
 
 from dataclasses import asdict
 
-from quart import Blueprint, current_app, g, jsonify, request
 from pydantic import ValidationError
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.licensing_fallback import license_required

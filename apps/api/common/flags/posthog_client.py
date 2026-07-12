@@ -15,6 +15,7 @@ import structlog
 
 try:
     import posthog
+
     POSTHOG_AVAILABLE = True
 except ImportError:
     POSTHOG_AVAILABLE = False
@@ -64,9 +65,7 @@ class PostHogClient:
         else:
             log.debug("posthog_not_configured", fallback="cache_or_default")
 
-    def flag_enabled(
-        self, key: str, distinct_id: str, default: bool = False
-    ) -> bool:
+    def flag_enabled(self, key: str, distinct_id: str, default: bool = False) -> bool:
         """Evaluate a feature flag with graceful degradation.
 
         Attempts to evaluate the flag via PostHog. On any error or unavailability,
@@ -95,7 +94,11 @@ class PostHogClient:
         if self.enabled and self._posthog_client:
             try:
                 result = self._posthog_client.feature_enabled(
-                    key, distinct_id, groups={}, person_properties={}, group_properties={}
+                    key,
+                    distinct_id,
+                    groups={},
+                    person_properties={},
+                    group_properties={},
                 )
                 # Cache the result
                 self._flag_cache[key] = result

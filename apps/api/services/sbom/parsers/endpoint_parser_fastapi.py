@@ -133,7 +133,9 @@ class FastAPIEndpointParser(BaseDependencyParser):
                     methods = self._parse_methods(methods_str, line)
 
                     # Check for Depends() in function signature
-                    auth_required = self._check_auth_dependencies(lines, i, depends_pattern)
+                    auth_required = self._check_auth_dependencies(
+                        lines, i, depends_pattern
+                    )
 
                     # Find the function name
                     function_name = self._find_function_name(lines, i)

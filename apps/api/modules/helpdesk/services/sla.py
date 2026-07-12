@@ -55,14 +55,18 @@ def calculate_breach_time(
         if breach_time.weekday() >= 5:
             # Jump to Monday 9am
             days_until_monday = 7 - breach_time.weekday()
-            breach_time = breach_time.replace(hour=9, minute=0, second=0) + timedelta(days=days_until_monday)
+            breach_time = breach_time.replace(hour=9, minute=0, second=0) + timedelta(
+                days=days_until_monday
+            )
             continue
 
         # Skip outside business hours (before 9am or at/after 5pm)
         if breach_time.hour < 9 or breach_time.hour >= 17:
             if breach_time.hour >= 17:
                 # Jump to next day 9am
-                breach_time = breach_time.replace(hour=9, minute=0, second=0) + timedelta(days=1)
+                breach_time = breach_time.replace(
+                    hour=9, minute=0, second=0
+                ) + timedelta(days=1)
             else:
                 # Jump to 9am today
                 breach_time = breach_time.replace(hour=9, minute=0, second=0)
@@ -106,7 +110,9 @@ async def apply_sla_policy(db: Any, tenant_id: int, ticket_id: int) -> Optional[
         ).select(limitby=(0, 1))
 
         if not policies:
-            log.info("no_sla_policy_found", priority=ticket.priority, tenant_id=tenant_id)
+            log.info(
+                "no_sla_policy_found", priority=ticket.priority, tenant_id=tenant_id
+            )
             return None
 
         policy = policies[0]

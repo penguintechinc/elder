@@ -6,7 +6,7 @@ from functools import wraps
 from typing import Any, TypeVar
 
 from pydantic import BaseModel, ValidationError
-from quart import current_app, jsonify, request
+from quart import jsonify, request
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -25,9 +25,12 @@ class ValidationErrorResponse:
                     "type": err["type"],
                 }
             )
-        return jsonify(
-            {"error": "Validation failed", "validation_errors": validation_errors}
-        ), 400
+        return (
+            jsonify(
+                {"error": "Validation failed", "validation_errors": validation_errors}
+            ),
+            400,
+        )
 
 
 async def _validate_body(model_class: type[T]) -> T:

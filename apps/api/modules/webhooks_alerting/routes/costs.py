@@ -5,6 +5,7 @@
 from datetime import datetime, timezone
 
 from quart import Blueprint, g, jsonify, request
+
 from apps.api.auth.decorators import login_required, require_scope
 
 bp = Blueprint("costs", __name__)

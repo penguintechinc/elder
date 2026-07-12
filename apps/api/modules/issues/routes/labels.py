@@ -7,9 +7,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import Description1000, Name255, RequestModel
-from apps.api.utils.quart_validation import validated_request
+from quart import Blueprint, current_app, jsonify
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.dataclasses import (
@@ -19,6 +18,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("labels", __name__)
 

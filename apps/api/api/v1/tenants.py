@@ -238,7 +238,9 @@ async def create_tenant():
         db.commit()
 
         # Generate village_id for the tenant using its own ID
-        redis_client = redis.from_url(current_app.config.get("REDIS_URL", "redis://localhost:6379/0"))
+        redis_client = redis.from_url(
+            current_app.config.get("REDIS_URL", "redis://localhost:6379/0")
+        )
         village_id = generate_village_id(tenant_id, redis_client)
 
         # Update tenant with village_id

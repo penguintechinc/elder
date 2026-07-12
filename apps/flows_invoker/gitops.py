@@ -142,7 +142,7 @@ def create_workspace(token: Optional[str] = None) -> GitWorkspace:
     # 0o700 is owner-only rwx — a DIRECTORY needs the exec bit to be
     # traversable, and group/other get nothing. (The rule's 0o644 suggestion
     # applies to plain files.)
-    os.chmod(root, 0o700)  # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(root, 0o700)  # nosemgrep
     repo_dir = os.path.join(root, "repo")
     askpass_path = os.path.join(root, "askpass.sh")
     with open(askpass_path, "w", encoding="utf-8") as f:

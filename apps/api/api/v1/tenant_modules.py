@@ -7,10 +7,10 @@ guarded by admin scope and tenant isolation.
 # flake8: noqa: E501
 
 
-import structlog
 from typing import Optional
 
 import redis
+import structlog
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field, ValidationError
 from quart import Blueprint, current_app, g, jsonify, request
@@ -104,7 +104,9 @@ async def list_tenant_modules(tenant_id: int):
                 module_response["settings"] = module_settings[module_name]
             response.append(module_response)
 
-        logger.info("list_tenant_modules", tenant_id=tenant_id, module_count=len(response))
+        logger.info(
+            "list_tenant_modules", tenant_id=tenant_id, module_count=len(response)
+        )
 
         return jsonify({"status": "success", "data": response}), 200
 
@@ -151,9 +153,7 @@ async def set_tenant_module(tenant_id: int):
             req = SetModuleRequest(**req_data)
         except ValidationError as e:
             return (
-                jsonify(
-                    {"error": "Invalid request", "validation_errors": e.errors()}
-                ),
+                jsonify({"error": "Invalid request", "validation_errors": e.errors()}),
                 400,
             )
         except Exception as e:
@@ -206,8 +206,6 @@ async def set_tenant_module(tenant_id: int):
     except Exception as e:
         logger.error("set_tenant_module_failed", error=str(e))
         return (
-            jsonify(
-                {"error": "Failed to set tenant module", "details": str(e)}
-            ),
+            jsonify({"error": "Failed to set tenant module", "details": str(e)}),
             500,
         )

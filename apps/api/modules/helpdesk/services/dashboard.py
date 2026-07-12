@@ -60,25 +60,38 @@ async def get_dashboard_stats(db: Any, tenant_id: int) -> dict:
         # Tickets by status
         status_counts = {}
         for status in VALID_STATUSES:
-            count = db((db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.status == status)).count()
+            count = db(
+                (db.hd_tickets.tenant_id == tenant_id)
+                & (db.hd_tickets.status == status)
+            ).count()
             status_counts[status] = count
 
         # Tickets by priority
         priority_counts = {}
         for priority in VALID_PRIORITIES:
-            count = db((db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.priority == priority)).count()
+            count = db(
+                (db.hd_tickets.tenant_id == tenant_id)
+                & (db.hd_tickets.priority == priority)
+            ).count()
             priority_counts[priority] = count
 
         # Open tickets (not resolved/closed)
         open_tickets = db(
-            (db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.status.belongs(OPEN_STATUSES))
+            (db.hd_tickets.tenant_id == tenant_id)
+            & (db.hd_tickets.status.belongs(OPEN_STATUSES))
         ).count()
 
         # New tickets created today
-        new_today = db((db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.created_at >= today_start)).count()
+        new_today = db(
+            (db.hd_tickets.tenant_id == tenant_id)
+            & (db.hd_tickets.created_at >= today_start)
+        ).count()
 
         # Resolved tickets
-        resolved_tickets = db((db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.status == "resolved")).count()
+        resolved_tickets = db(
+            (db.hd_tickets.tenant_id == tenant_id)
+            & (db.hd_tickets.status == "resolved")
+        ).count()
 
         # Average resolution time (only tickets with resolved_at)
         resolved_with_times = db(
@@ -98,7 +111,8 @@ async def get_dashboard_stats(db: Any, tenant_id: int) -> dict:
 
         # SLA compliance: resolved before sla_breach_at / total with SLA policy
         sla_total_tickets = db(
-            (db.hd_tickets.tenant_id == tenant_id) & (db.hd_tickets.sla_breach_at != None)  # noqa: E711
+            (db.hd_tickets.tenant_id == tenant_id)
+            & (db.hd_tickets.sla_breach_at != None)  # noqa: E711
         ).count()
 
         sla_compliant = 0
@@ -112,11 +126,13 @@ async def get_dashboard_stats(db: Any, tenant_id: int) -> dict:
                 & (db.hd_tickets.resolved_at != None)  # noqa: E711
                 & (db.hd_tickets.status.belongs(["resolved", "closed"]))
             ).select()
-            sla_compliant = sum(
-                1 for t in sla_rows if t.resolved_at <= t.sla_breach_at
-            )
+            sla_compliant = sum(1 for t in sla_rows if t.resolved_at <= t.sla_breach_at)
 
-        sla_compliance_percent = round((sla_compliant / sla_total_tickets) * 100, 2) if sla_total_tickets > 0 else 0.0
+        sla_compliance_percent = (
+            round((sla_compliant / sla_total_tickets) * 100, 2)
+            if sla_total_tickets > 0
+            else 0.0
+        )
 
         result = {
             "total_tickets": total_tickets,

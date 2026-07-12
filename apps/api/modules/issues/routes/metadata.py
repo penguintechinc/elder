@@ -7,17 +7,17 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, Union
 
-from quart import Blueprint, current_app, jsonify
 from penguin_libs.pydantic import RequestModel
-from apps.api.utils.quart_validation import validated_request
+from quart import Blueprint, current_app, jsonify
 
 from apps.api.auth.decorators import (
     login_required,
-    resource_role_required,
     require_scope,
+    resource_role_required,
 )
 from apps.api.licensing_fallback import license_required
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("metadata", __name__)
 
