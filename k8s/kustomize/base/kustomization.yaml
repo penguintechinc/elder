@@ -16,3 +16,5 @@ resources:
   - ./manifests/scanner/deployment.yaml
   - ./manifests/worker/deployment.yaml
   - ./manifests/worker/service.yaml
+  - ./manifests/flows-invoker/deployment.yaml
+  - ./manifests/flows-invoker/networkpolicy.yaml

@@ -468,10 +468,11 @@ async def reject_promotion(promotion_id: str):
 async def execute_promotion(promotion_id: str):
     """Trigger CI/CD execution for a promotion (enqueues a flows-invoker job).
 
-    The isolated flows invoker consumes the job and records an
-    ``iceflows_executions`` row. Only a pending or approved promotion may be
-    executed. Enqueue failure does not fail the request — the invoker's
-    reconcile/sweeper path can pick it up.
+    A pending ``iceflows_executions`` row is created BEFORE enqueue so a
+    dropped job is always visible/reconcilable (streams parity). Only a
+    pending or approved promotion may be executed. If the job cannot be
+    enqueued, the row is marked failed and the request returns 503 — a 202
+    always means the job is actually on the bus.
     """
     tenant_id = _get_tenant_id()
     identity_id = _get_identity_id()
@@ -495,10 +496,27 @@ async def execute_promotion(promotion_id: str):
             .first()
         )
         if not promotion:
-            return None, 404
+            return None, 404, None
         if promotion.status not in ("pending", "approved"):
-            return None, 409
-        return promotion.id, 202
+            return None, 409, None
+
+        # Create the execution row BEFORE enqueue so a dropped job is always
+        # visible (status stays "pending") instead of silently lost.
+        execution_uuid = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+        db.iceflows_executions.insert(
+            tenant_id=tenant_id,
+            execution_id=execution_uuid,
+            promotion_id=promotion.id,
+            flow_id=promotion.flow_id,
+            status="pending",
+            started_by_identity_id=identity_id,
+            execution_log=[],
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+        return promotion.id, 202, execution_uuid
 
     result = await run_in_threadpool(_validate)
     if result[1] == 404:
@@ -507,16 +525,19 @@ async def execute_promotion(promotion_id: str):
         return ApiResponse.error("Promotion is not in an executable state", 409)
 
     promo_db_id = result[0]
+    execution_uuid = result[2]
     enqueue_time = datetime.now(timezone.utc)
-    enqueued = False
+    enqueue_error = None
     try:
         import redis.asyncio
 
         from apps.worker.config.settings import settings
         from shared.jobbus import JobBus
 
-        if settings.redis_url:
-            redis_client = redis.asyncio.from_url(settings.redis_url)
+        if not settings.redis_url:
+            raise RuntimeError("REDIS_URL not configured")
+        redis_client = redis.asyncio.from_url(settings.redis_url)
+        try:
             jobbus = JobBus(redis_client)
             await jobbus.ensure_group("flows")
             await jobbus.enqueue(
@@ -526,25 +547,44 @@ async def execute_promotion(promotion_id: str):
                     "promotion_id": promo_db_id,
                     "tenant_id": tenant_id,
                     "started_by_identity_id": identity_id,
+                    "execution_id": execution_uuid,
                 },
                 enqueued_at=enqueue_time.isoformat(),
                 tenant_id=tenant_id,
+                idempotency_key=execution_uuid,
             )
+        finally:
             await redis_client.close()
-            enqueued = True
-        else:
-            logger.warning(
-                "REDIS_URL not configured; promotion %s not enqueued", promo_db_id
-            )
     except Exception as e:  # noqa: BLE001
+        enqueue_error = str(e)
         logger.warning(
             "Failed to enqueue flow execution for promotion %s: %s",
             promo_db_id,
             e,
         )
 
+    if enqueue_error:
+
+        def _mark_failed():
+            db(
+                (db.iceflows_executions.execution_id == execution_uuid)
+                & (db.iceflows_executions.tenant_id == tenant_id)
+            ).update(
+                status="failed",
+                error_message="job enqueue failed",
+                completed_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+            )
+            db.commit()
+
+        await run_in_threadpool(_mark_failed)
+        return ApiResponse.error(
+            "Execution could not be queued (job bus unavailable)", 503
+        )
+
     return {
         "promotion_id": promo_db_id,
+        "execution_id": execution_uuid,
         "status": "queued",
-        "enqueued": enqueued,
+        "enqueued": True,
     }, 202

@@ -101,6 +101,7 @@ class FlowsInvokerService:
         tenant_id = envelope.tenant_id or payload.get("tenant_id")
         promotion_id = payload.get("promotion_id")
         started_by = payload.get("started_by_identity_id")
+        execution_id = payload.get("execution_id")
         if tenant_id is None or promotion_id is None:
             raise ValueError("flow job payload missing tenant_id/promotion_id")
 
@@ -111,6 +112,7 @@ class FlowsInvokerService:
             int(tenant_id),
             int(promotion_id),
             started_by,
+            execution_id,
         )
 
     async def _process(self, msg_id: str, envelope) -> None:

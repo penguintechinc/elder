@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" }}
+{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
@@ -48,8 +48,8 @@ spec:
             name: elder-otel
         {{- end }}
         {{- end }}
-        {{- $isWorker := eq $component "worker" }}
-        {{- if or $componentConfig.env $hasOtel $isWorker }}
+        {{- $needsPodName := or (eq $component "worker") (eq $component "flows-invoker") }}
+        {{- if or $componentConfig.env $hasOtel $needsPodName }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
@@ -59,7 +59,7 @@ spec:
         - name: OTEL_SERVICE_NAME
           value: {{ printf "elder-%s" $component | quote }}
         {{- end }}
-        {{- if $isWorker }}
+        {{- if $needsPodName }}
         - name: POD_NAME
           valueFrom:
             fieldRef:
@@ -109,6 +109,13 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "flows-invoker" }}
+          # No HTTP server in this service (pure Redis Streams consumer) —
+          # health is verified via a native Python exec probe.
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
           initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
           periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
@@ -130,6 +137,11 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "flows-invoker" }}
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
           initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
           periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
@@ -139,7 +151,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -164,6 +176,11 @@ spec:
         {{- else if eq $component "web" }}
         - name: tmp
           mountPath: /tmp
+        {{- else if eq $component "flows-invoker" }}
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
         {{- end }}
         {{- end }}
         securityContext:
@@ -172,7 +189,7 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
       volumes:
       {{- if eq $component "scanner" }}
       - name: screenshots
@@ -191,6 +208,11 @@ spec:
       - name: tmp
         emptyDir: {}
       {{- else if eq $component "web" }}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "flows-invoker" }}
+      - name: workspace
+        emptyDir: {}
       - name: tmp
         emptyDir: {}
       {{- else }}

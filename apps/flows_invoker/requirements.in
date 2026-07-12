@@ -1,0 +1,23 @@
+# Elder Flows Invoker Service Dependencies
+#
+# Deliberately minimal — this service executes user-defined CI commands inside
+# a hardened process sandbox (see sandbox.py) and is deployed as its own
+# isolated image (its own NetworkPolicy, no shared attack surface with the
+# consolidated worker's connector SDKs). Do NOT add the worker's cloud SDK /
+# LDAP / scanner dependencies here — pull in only what apps/flows_invoker and
+# shared/jobbus + shared/database actually import.
+
+# Database (penguin-dal + postgres driver) — matches root/worker pin
+penguin-dal==0.3.0
+psycopg2-binary==2.9.10
+
+# Redis job-bus (Streams consumer) — matches root/worker pin
+redis==5.2.1
+
+# Structured logging (shared/jobbus/core.py uses structlog)
+structlog==25.4.0
+
+# Configuration (apps.worker.config.settings — shared pydantic Settings model)
+pydantic==2.12.5
+pydantic-settings==2.14.2
+python-dotenv==1.2.2

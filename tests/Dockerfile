@@ -39,13 +39,15 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies (git: flows-invoker gitops/sandbox tests)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     libsasl2-2 \
     libldap-2.5-0 \
     libxml2 \
     libxmlsec1-openssl \
+    git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root test user

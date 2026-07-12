@@ -145,6 +145,29 @@ worker:
   credentialsSecret:
     name: ""
 
+# Flows Invoker Service - Single replica for alpha
+flows-invoker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-flows-invoker
+    tag: alpha-latest
+    pullPolicy: Never
+  env:
+    LOG_LEVEL: DEBUG
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "2"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
 # Ingress - Disabled in alpha
 ingress:
   enabled: false

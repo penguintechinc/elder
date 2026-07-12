@@ -407,6 +407,58 @@ worker:
       drop:
         - ALL
 
+# Flows Invoker Service — dedicated, isolated Redis Streams consumer that
+# executes user-defined CI/CD stage commands inside a hardened process
+# sandbox (see apps/flows_invoker/sandbox.py). No HTTP port; health is
+# checked via a native Python exec probe. Deliberately network-isolated —
+# see templates/networkpolicy-flows-invoker.yaml.
+flows-invoker:
+  enabled: true
+  image:
+    repository: elder-flows-invoker
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  env:
+    # Database (direct access for flow execution records)
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
+
+    # Redis (job-bus streams; XREADGROUP consumer id set via POD_NAME downward API)
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+
+    # Sandboxed CI workspace — writable emptyDir mount (readOnlyRootFilesystem stays true)
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+
+    # Logging
+    LOG_LEVEL: INFO
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  healthcheck:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  # Default-deny egress except DNS, Postgres, Redis, and HTTPS (git clone/push
+  # + external CI calls). Set to false only with explicit approval.
+  networkPolicy:
+    enabled: true
+
 # Ingress configuration
 ingress:
   enabled: false

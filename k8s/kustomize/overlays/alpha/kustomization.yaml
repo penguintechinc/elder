@@ -17,6 +17,9 @@ images:
   - name: elder-worker:alpha-latest
     newName: localhost:32000/elder-worker
     newTag: alpha-latest
+  - name: elder-flows-invoker:alpha-latest
+    newName: localhost:32000/elder-flows-invoker
+    newTag: alpha-latest
 labels:
   - includeSelectors: true
     pairs:
