@@ -20,11 +20,17 @@ API_BASE_URL = os.environ.get("ELDER_API_URL", "http://localhost:4000")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin@localhost.local")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-# AWS credentials from environment
-AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "AKIASRNBOYQD2HUFIEPL")
-AWS_SECRET_ACCESS_KEY = os.environ.get(
-    "AWS_SECRET_ACCESS_KEY", "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"
-)
+# AWS credentials from environment — REQUIRED, never hardcoded.
+# (A real key pair was previously committed here; it must be considered
+# compromised and rotated in AWS IAM — removing it from the file does not
+# remove it from git history.)
+AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
+    sys.exit(
+        "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set in the "
+        "environment to run this e2e script."
+    )
 AWS_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-2")
 AWS_ROLE_ARN = os.environ.get("AWS_ROLE_ARN", "")
 AWS_WEB_IDENTITY_TOKEN_FILE = os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE", "")
