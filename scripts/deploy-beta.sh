@@ -125,6 +125,7 @@ IMAGES[api]="apps/api/Dockerfile:."
 IMAGES[web]="web/Dockerfile:."
 IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner"
 IMAGES[worker]="apps/worker/Dockerfile:."
+IMAGES[flows-invoker]="apps/flows_invoker/Dockerfile:."
 
 build_and_push_image() {
     local name=$1
@@ -192,7 +193,7 @@ helm_upgrade() {
         "${set_args[@]}"
 
     log_info "Waiting for rollout to complete..."
-    local services=("api" "web" "scanner" "worker")
+    local services=("api" "web" "scanner" "worker" "flows-invoker")
     if [ "$TARGET_IMAGE" != "all" ]; then
         services=("$TARGET_IMAGE")
     fi
@@ -212,7 +213,7 @@ helm_upgrade() {
 
 # Determine which images to build
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web" "scanner" "worker")
+    TARGETS=("api" "web" "scanner" "worker" "flows-invoker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi
