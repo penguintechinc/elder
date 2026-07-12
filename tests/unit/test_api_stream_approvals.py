@@ -716,8 +716,13 @@ class TestStreamWebhookHooks:
         assert status == "queued"
 
     @pytest.mark.asyncio
-    async def test_webhook_disabled_returns_403(self, app, client):
-        """Test that disabled webhooks return 403."""
+    async def test_webhook_disabled_returns_404(self, app, client):
+        """Disabled webhooks return a uniform 404 (anti-enumeration).
+
+        The hooks route deliberately returns the same 404 for unknown,
+        disabled, and orphaned webhook tokens so callers cannot probe which
+        tokens exist (see apps/api/modules/streams/routes/hooks.py).
+        """
         db = app.db
         token = self.fixtures["token"]
 
@@ -735,7 +740,7 @@ class TestStreamWebhookHooks:
             json={"test": "data"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_webhook_trigger_all_methods(self, app, client):
