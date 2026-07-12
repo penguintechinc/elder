@@ -40,6 +40,9 @@ jobs:
           - name: worker
             dockerfile: apps/worker/Dockerfile
             context: .
+          - name: flows-invoker
+            dockerfile: apps/flows_invoker/Dockerfile
+            context: .
         platform:
           - linux/amd64
           - linux/arm64
@@ -110,7 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [api, web, scanner, worker]
+        service: [api, web, scanner, worker, flows-invoker]
 
     steps:
     - name: Checkout code
@@ -222,6 +225,6 @@ jobs:
     if: false
     strategy:
       matrix:
-        service: [api, web, scanner, worker]
+        service: [api, web, scanner, worker, flows-invoker]
     steps:
     - run: echo "Container security scan disabled — see ci.yml for filesystem scan"
