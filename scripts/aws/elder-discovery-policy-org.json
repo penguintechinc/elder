@@ -68,7 +68,111 @@
         "iam:GetRole",
         "iam:ListAttachedUserPolicies",
         "iam:ListAttachedRolePolicies",
-        "iam:ListAccountAliases"
+        "iam:ListAccountAliases",
+        "iam:ListUserTags",
+        "iam:ListRoleTags",
+        "iam:ListAccessKeys",
+        "iam:ListGroupsForUser"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryDynamoDBReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:ListTables",
+        "dynamodb:DescribeTable",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoverySQSReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:ListQueues",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoverySNSReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "sns:ListTopics",
+        "sns:GetTopicAttributes"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryECRReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:DescribeRepositories"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryLogsReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryStepFunctionsReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "states:ListStateMachines"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryEventsReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "events:ListRules"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryAPIGatewayReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "apigateway:GET"
+      ],
+      "Resource": "arn:aws:apigateway:*::/restapis*"
+    },
+    {
+      "Sid": "ElderDiscoveryEFSReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:DescribeFileSystems"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryElastiCacheReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "elasticache:DescribeCacheClusters"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryCloudFrontReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:ListDistributions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ElderDiscoveryRoute53ReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZones"
       ],
       "Resource": "*"
     },

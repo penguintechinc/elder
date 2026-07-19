@@ -502,6 +502,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                         "issuer_ref": spec.get("issuerRef", {}),
                         "secret_name": spec.get("secretName"),
                         "not_after": status.get("notAfter"),
+                        "not_before": status.get("notBefore"),
                         "conditions": conditions,
                     },
                     region="N/A",

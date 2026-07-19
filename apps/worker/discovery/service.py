@@ -14,6 +14,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
 from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
+from shared.certificates import calculate_certificate_status
 
 
 class DiscoveryService:
@@ -257,11 +258,12 @@ class DiscoveryService:
             history_id = self.db.discovery_history.insert(
                 job_id=job_id,
                 started_at=now,
+                completed_at=now,
                 entities_discovered=results["resources_count"],
+                entities_created=0,
+                entities_updated=0,
                 status="completed",
                 results_json=results_for_storage,
-                created_at=now,
-                updated_at=now,
             )
 
             # Update job's last_run timestamp
@@ -294,11 +296,12 @@ class DiscoveryService:
             self.db.discovery_history.insert(
                 job_id=job_id,
                 started_at=now,
+                completed_at=now,
                 entities_discovered=0,
+                entities_created=0,
+                entities_updated=0,
                 status="failed",
                 error_message=str(e),
-                created_at=now,
-                updated_at=now,
             )
             self.db.commit()
 
@@ -308,6 +311,34 @@ class DiscoveryService:
                 "success": False,
                 "error": str(e),
             }
+
+    def queue_job_for_worker(self, job_id: int) -> Dict[str, Any]:
+        """Queue a discovery job for the worker service by setting next_run_at = now.
+
+        The worker polls discovery_jobs and will pick this up on its next cycle.
+
+        Args:
+            job_id: Discovery job ID
+
+        Returns:
+            Status dict with job_id and queued message
+        """
+        job = self.db.discovery_jobs[job_id]
+        if not job:
+            raise Exception(f"Discovery job not found: {job_id}")
+
+        self.db(self.db.discovery_jobs.id == job_id).update(
+            next_run_at=datetime.now(timezone.utc),
+        )
+        self.db.commit()
+
+        logger.info(f"Discovery job {job_id} queued for worker execution")
+        return {
+            "job_id": job_id,
+            "success": True,
+            "message": "Job queued for worker execution",
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        }
 
     def get_discovery_history(
         self, job_id: Optional[int] = None, limit: int = 50
@@ -388,10 +419,10 @@ class DiscoveryService:
         now = datetime.now(timezone.utc)
         entity_id = self.db.entities.insert(
             name=name,
-            entity_type="compute",
+            type="compute",
             sub_type=sub_type,
             organization_id=organization_id,
-            attributes={
+            metadata={
                 "provider": provider,
                 "discovered_at": now.isoformat(),
             },
@@ -564,10 +595,7 @@ class DiscoveryService:
         try:
             existing = (
                 self.db(
-                    (
-                        self.db.network_entity_mappings.networking_resource_id
-                        == network_id
-                    )
+                    (self.db.network_entity_mappings.network_id == network_id)
                     & (self.db.network_entity_mappings.entity_id == entity_id)
                 )
                 .select()
@@ -576,7 +604,7 @@ class DiscoveryService:
             if not existing:
                 now = datetime.now(timezone.utc)
                 self.db.network_entity_mappings.insert(
-                    networking_resource_id=network_id,
+                    network_id=network_id,
                     entity_id=entity_id,
                     relationship_type=relationship_type,
                     created_at=now,
@@ -590,7 +618,7 @@ class DiscoveryService:
     def _store_as_service(
         self, organization_id: int, resource: Dict[str, Any], provider: str
     ) -> Optional[int]:
-        """Store a K8s Service or Lambda function in the services table."""
+        """Store a K8s Service, Lambda function, or messaging service in the services table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
         resource_type = resource.get("resource_type", "")
@@ -603,16 +631,27 @@ class DiscoveryService:
         elif resource_type == "lambda_function":
             deployment_method = "serverless"
             port = None
-            runtime = metadata.get("runtime", "")
-            lang_map = {
-                "python": "python",
-                "nodejs": "nodejs",
-                "java": "java",
-                "go": "go",
-                "ruby": "ruby",
-                "dotnet": "dotnet",
-            }
             status = "active" if metadata.get("state") == "Active" else "active"
+        elif resource_type == "sqs_queue":
+            deployment_method = "aws_sqs"
+            port = None
+            status = "active"
+        elif resource_type == "sns_topic":
+            deployment_method = "aws_sns"
+            port = None
+            status = "active"
+        elif resource_type == "step_function":
+            deployment_method = "aws_stepfunctions"
+            port = None
+            status = "active"
+        elif resource_type == "eventbridge_rule":
+            deployment_method = "aws_eventbridge"
+            port = None
+            status = "active"
+        elif resource_type == "api_gateway_rest_api":
+            deployment_method = "api_gateway"
+            port = None
+            status = "active"
         else:
             return None
 
@@ -636,10 +675,12 @@ class DiscoveryService:
             now = datetime.now(timezone.utc)
             svc_id = self.db.services.insert(
                 name=name,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 deployment_method=deployment_method,
                 port=port,
                 status=status,
+                is_public=False,
                 tags=[provider, "discovered"],
                 notes=f"Discovered from {provider} discovery",
                 created_at=now,
@@ -653,7 +694,7 @@ class DiscoveryService:
     def _store_as_data_store(
         self, organization_id: int, resource: Dict[str, Any], provider: str
     ) -> Optional[int]:
-        """Store S3/EBS/GCS/RDS/PV in the data_stores table."""
+        """Store S3/EBS/GCS/RDS/DynamoDB/ECR/Logs/EFS/ElastiCache/PV in the data_stores table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
         resource_type = resource.get("resource_type", "")
@@ -665,6 +706,11 @@ class DiscoveryService:
             "gcs_bucket": ("gcs", "GCP"),
             "k8s_persistent_volume": ("disk", "Kubernetes"),
             "k8s_pvc": ("disk", "Kubernetes"),
+            "dynamodb_table": ("database", "AWS"),
+            "ecr_repository": ("container_registry", "AWS"),
+            "cloudwatch_log_group": ("logs", "AWS"),
+            "efs_filesystem": ("filesystem", "AWS"),
+            "elasticache_cluster": ("cache", "AWS"),
         }
 
         if resource_type not in type_map:
@@ -692,11 +738,11 @@ class DiscoveryService:
             now = datetime.now(timezone.utc)
             ds_id = self.db.data_stores.insert(
                 name=name,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 storage_type=storage_type,
                 storage_provider=storage_provider,
                 location_region=resource.get("region"),
-                tags=[provider, storage_type, "discovered"],
                 metadata=metadata,
                 created_at=now,
                 updated_at=now,
@@ -764,7 +810,7 @@ class DiscoveryService:
 
             now = datetime.now(timezone.utc)
             identity_id = self.db.identities.insert(
-                tenant_id=1,
+                tenant_id=self._tenant_for_org(organization_id),
                 identity_type="serviceAccount",
                 username=username,
                 full_name=f"{namespace}/{name}",
@@ -774,6 +820,7 @@ class DiscoveryService:
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                must_change_password=False,
                 created_at=now,
                 updated_at=now,
             )
@@ -816,8 +863,10 @@ class DiscoveryService:
             sw_id = self.db.software.insert(
                 name=image_name,
                 version=version,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 software_type="container",
+                is_active=True,
                 vendor=vendor,
                 tags=["kubernetes", "container-image", "discovered"],
                 created_at=now,
@@ -1004,6 +1053,7 @@ class DiscoveryService:
                 name=full_name,
                 organization_id=organization_id,
                 secret_type="other",
+                is_active=True,
                 secret_value=None,
                 secret_json={
                     "namespace": namespace,
@@ -1032,12 +1082,25 @@ class DiscoveryService:
         dns_names = metadata.get("dns_names", [])
         issuer_ref = metadata.get("issuer_ref", {})
         not_after = metadata.get("not_after")
+        not_before = metadata.get("not_before")
 
         # Parse expiration date
         expiration = None
         if not_after:
             try:
                 expiration = datetime.fromisoformat(not_after.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+
+        # issue_date is NOT NULL. Prefer the certificate's own notBefore; fall
+        # back to the discovery date, which is the earliest point we can attest
+        # the certificate existed.
+        issue_date = datetime.now(timezone.utc).date()
+        if not_before:
+            try:
+                issue_date = datetime.fromisoformat(
+                    not_before.replace("Z", "+00:00")
+                ).date()
             except (ValueError, AttributeError):
                 pass
 
@@ -1063,8 +1126,13 @@ class DiscoveryService:
 
             now = datetime.now(timezone.utc)
             cert_id = self.db.certificates.insert(
-                tenant_id=1,
+                tenant_id=self._tenant_for_org(organization_id),
                 name=name,
+                issue_date=issue_date,
+                status=calculate_certificate_status(
+                    expiration.date() if expiration else None, 30, False
+                ),
+                is_active=True,
                 organization_id=organization_id,
                 creator="cert_manager",
                 cert_type="server_cert",
@@ -1133,10 +1201,36 @@ class DiscoveryService:
             "iam_role": "identity",
             "gce_instance": "entity",
             "gcs_bucket": "data_store",
+            "dynamodb_table": "data_store",
+            "sqs_queue": "service",
+            "sns_topic": "service",
+            "ecr_repository": "data_store",
+            "cloudwatch_log_group": "data_store",
+            "step_function": "service",
+            "eventbridge_rule": "service",
+            "api_gateway_rest_api": "service",
+            "efs_filesystem": "data_store",
+            "elasticache_cluster": "data_store",
+            "cloudfront_distribution": "networking",
+            "route53_hosted_zone": "networking",
         }
         return domain_map.get(resource_type, "entity")
 
     # Main storage orchestrator
+
+    def _tenant_for_org(self, organization_id: int) -> int:
+        """Resolve the tenant owning an organization.
+
+        Domain tables carry a NOT NULL tenant_id, and discovery runs without a
+        request token, so the tenant is derived from the organization rather
+        than assumed to be the default one.
+        """
+        org = self.db.organizations[organization_id]
+        if org is None or getattr(org, "tenant_id", None) is None:
+            raise ValueError(
+                f"Cannot resolve tenant for organization {organization_id}"
+            )
+        return org.tenant_id
 
     def _store_discovered_resources(
         self, organization_id: int, discovery_results: Dict[str, Any]
@@ -1381,7 +1475,7 @@ class DiscoveryService:
             # Create new identity
             now = datetime.now(timezone.utc)
             self.db.identities.insert(
-                tenant_id=1,  # Default tenant
+                tenant_id=self._tenant_for_org(organization_id),
                 identity_type=identity_type,
                 username=aws_username,
                 full_name=name,
@@ -1392,6 +1486,7 @@ class DiscoveryService:
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                must_change_password=False,
                 created_at=now,
                 updated_at=now,
             )
@@ -1457,10 +1552,10 @@ class DiscoveryService:
             now = datetime.now(timezone.utc)
             insert_data = {
                 "name": name,
-                "entity_type": entity_type,
+                "type": entity_type,
                 "sub_type": resource_type,
                 "organization_id": organization_id,
-                "attributes": resource_attrs,
+                "metadata": resource_attrs,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1565,8 +1660,6 @@ class DiscoveryService:
             entities_discovered=0,
             entities_updated=0,
             entities_created=0,
-            created_at=now,
-            updated_at=now,
         )
 
         self.db.commit()

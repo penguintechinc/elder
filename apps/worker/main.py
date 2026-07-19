@@ -28,6 +28,7 @@ from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
 from shared.jobbus import JobBus
+from shared.redaction import redact_url
 
 # Configure logging
 configure_logging()
@@ -355,7 +356,7 @@ class WorkerService:
         try:
             # Connect to Redis
             self.redis = redis.asyncio.from_url(settings.redis_url)
-            logger.info("redis_connected", url=settings.redis_url)
+            logger.info("redis_connected", url=redact_url(settings.redis_url))
 
             # Create JobBus instance
             self.jobbus = JobBus(self.redis, max_deliveries=5, group="workers")
@@ -695,8 +696,14 @@ class WorkerService:
 
                         try:
                             # Fetch all distinct tenants with helpdesk module enabled
-                            # For now, just query all tenants (will be filtered by tenant_modules in prod)
-                            rows = db_manager.write.tenants.select()
+                            # For now, just query all active tenants (will be
+                            # filtered by tenant_modules in prod).
+                            # penguin-dal selects go through the DAL callable —
+                            # `db.<table>.select()` resolves `select` as a column
+                            # name and raises AttributeError.
+                            rows = db_manager.write(
+                                db_manager.write.tenants.is_active == True  # noqa: E712
+                            ).select()
 
                             jobs_to_enqueue = []
                             for tenant in rows:
