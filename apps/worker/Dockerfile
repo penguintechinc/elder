@@ -40,6 +40,10 @@ COPY --from=builder /root/.local /app/.local
 # Copy application code
 COPY apps/worker /app/apps/worker
 COPY shared /app/shared
+# The worker resolves its job-bus consumer groups from the module registry
+# (apps.api.modules.registry). Without this the JobBus fails to initialise with
+# ModuleNotFoundError: No module named 'apps.api'.
+COPY apps/api /app/apps/api
 
 # Fix permissions for non-root user
 RUN chown -R worker:worker /app
