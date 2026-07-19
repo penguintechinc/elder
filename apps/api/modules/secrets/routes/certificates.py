@@ -24,6 +24,7 @@ from apps.api.utils.validation_helpers import (
     validate_required_fields,
     validate_resource_exists,
 )
+from shared.certificates import calculate_certificate_status
 
 bp = Blueprint("certificates", __name__)
 
@@ -82,35 +83,6 @@ VALID_ACME_CHALLENGES = ["http-01", "dns-01", "tls-alpn-01"]
 
 # Valid CT log statuses
 VALID_CT_LOG_STATUSES = ["logged", "pending", "not_required"]
-
-
-def calculate_certificate_status(expiration_date, renewal_days_before, is_revoked):
-    """
-    Calculate certificate status based on expiration date and revocation status.
-
-    Args:
-        expiration_date: Certificate expiration date
-        renewal_days_before: Days before expiration to mark as "expiring_soon"
-        is_revoked: Whether the certificate is revoked
-
-    Returns:
-        Status string: "expired", "expiring_soon", "active", or "revoked"
-    """
-    if is_revoked:
-        return "revoked"
-
-    today = date.today()
-
-    if expiration_date < today:
-        return "expired"
-
-    # Calculate days until expiration
-    days_until_expiration = (expiration_date - today).days
-
-    if days_until_expiration <= renewal_days_before:
-        return "expiring_soon"
-
-    return "active"
 
 
 @bp.route("", methods=["GET"])
