@@ -29,6 +29,7 @@ class NetworkingResource(Base, IDMixin, TimestampMixin):
     __tablename__ = "networking_resources"
 
     name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=True)
     network_type = Column(String(50), nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
@@ -78,6 +79,7 @@ class DataStore(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin
 
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
     name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=True)
     storage_type = Column(String(50), nullable=True)
     storage_provider = Column(String(100), nullable=True)

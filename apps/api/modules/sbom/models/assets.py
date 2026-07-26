@@ -27,6 +27,7 @@ class Service(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     __tablename__ = "services"
 
     name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     domains = Column(JSON, nullable=True)
@@ -53,6 +54,7 @@ class Software(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin)
     __tablename__ = "software"
 
     name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     purchasing_poc_id = Column(Integer, ForeignKey("identities.id"), nullable=True)
