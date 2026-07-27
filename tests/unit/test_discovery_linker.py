@@ -284,3 +284,260 @@ def test_linker_counts_unresolved(seeded):
     counts = service._store_discovered_resources(org_id, results)
     assert counts["unresolved_edges"] == 1
     assert counts["edges_created"] == 0
+
+
+# --- Fix #1: k8s_pod software registration must not clobber the pod's own
+# scan_index entry (regression coverage for code review findings). ---------
+
+
+def test_pod_relationship_source_survives_single_image_software_registration(seeded):
+    # regression: _register(scan_index, provider, resource=<pod>, "software",
+    # sw_id) used to key on the POD's own resource_id, overwriting the pod's
+    # ("entity", entity_id) scan_index entry with ("software", sw_id). Any
+    # relationship declared on the pod itself would then resolve to the
+    # wrong source. Even a single image triggered the overwrite.
+    service, db, org_id = seeded
+    results = {
+        "compute": [
+            {
+                "name": "pod-a",
+                "resource_type": "k8s_pod",
+                "resource_id": "pod-a",
+                "provider": "kubernetes",
+                "metadata": {
+                    "namespace": "default",
+                    "containers": [{"image": "nginx:1.25"}],
+                },
+                "relationships": [
+                    {
+                        "target_external_id": "default",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts == {"edges_created": 1, "unresolved_edges": 0}
+
+    pod = (
+        db(
+            (db.entities.external_id == "pod-a")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    assert pod is not None
+
+    dep = (
+        db(
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.source_id == pod.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
+    assert dep is not None
+    # Prove the edge did NOT come from the clobbered ("software", sw_id) entry.
+    assert dep.source_type == "entity"
+
+
+def test_pod_relationship_source_survives_multi_image_software_registration(seeded):
+    # Same regression as above, but with 2 images: pre-fix, the LAST image
+    # processed would be the one left clobbering the pod's scan_index entry.
+    service, db, org_id = seeded
+    results = {
+        "compute": [
+            {
+                "name": "pod-b",
+                "resource_type": "k8s_pod",
+                "resource_id": "pod-b",
+                "provider": "kubernetes",
+                "metadata": {
+                    "namespace": "default",
+                    "containers": [
+                        {"image": "nginx:1.25"},
+                        {"image": "busybox:1.36"},
+                    ],
+                },
+                "relationships": [
+                    {
+                        "target_external_id": "default",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts == {"edges_created": 1, "unresolved_edges": 0}
+
+    pod = (
+        db(
+            (db.entities.external_id == "pod-b")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    assert pod is not None
+
+    dep = (
+        db(
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.source_id == pod.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
+    assert dep is not None
+    assert dep.source_type == "entity"
+
+    # Both images still get their own resolvable scan_index entry.
+    nginx_sw = (
+        db(
+            (db.software.external_id == "nginx:1.25")
+            & (db.software.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    busybox_sw = (
+        db(
+            (db.software.external_id == "busybox:1.36")
+            & (db.software.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    assert nginx_sw is not None
+    assert busybox_sw is not None
+
+
+# --- Fix #2: an unresolved edge SOURCE (the resource's own id was never
+# registered) must be counted/logged, not silently dropped. ----------------
+
+
+def test_linker_counts_unresolved_when_source_not_registered(seeded, caplog):
+    # k8s_secret resources are stored via the "builtin_secret" domain branch,
+    # which never calls _register(...) — so a relationship declared on a
+    # secret has no scan_index entry to originate from.
+    service, db, org_id = seeded
+    results = {
+        "compute": [
+            {
+                "name": "my-secret",
+                "resource_type": "k8s_secret",
+                "resource_id": "secret-1",
+                "provider": "kubernetes",
+                "metadata": {
+                    "namespace": "default",
+                    "type": "Opaque",
+                    "keys": ["password"],
+                },
+                "relationships": [
+                    {
+                        "target_external_id": "default",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    with caplog.at_level("WARNING"):
+        counts = service._store_discovered_resources(org_id, results)
+
+    assert counts["unresolved_edges"] == 1
+    assert counts["edges_created"] == 0
+    assert any(
+        "secret-1" in record.message
+        and "Unresolved discovery edge source" in record.message
+        for record in caplog.records
+    )
+
+
+# --- Fix #3: edges_created must reflect actual writes, not attempts that
+# hit the swallowed-exception path in _create_dependency_link. -------------
+
+
+def test_create_dependency_link_returns_false_on_write_exception():
+    db = MagicMock()
+    db.return_value.select.return_value.first.return_value = None
+    db.dependencies.insert.side_effect = RuntimeError("db exploded")
+    service = DiscoveryService(db)
+    assert (
+        service._create_dependency_link(
+            "entity", 1, "networking_resource", 2, "in_network"
+        )
+        is False
+    )
+
+
+def test_create_dependency_link_returns_true_on_success():
+    db = MagicMock()
+    db.return_value.select.return_value.first.return_value = None
+    service = DiscoveryService(db)
+    assert (
+        service._create_dependency_link(
+            "entity", 1, "networking_resource", 2, "in_network"
+        )
+        is True
+    )
+
+
+def test_edges_created_excludes_failed_dependency_writes(seeded, monkeypatch):
+    # Force the dependencies write to fail even though the target resolves
+    # cleanly, and confirm the pass-2 counter does not count it.
+    service, db, org_id = seeded
+    monkeypatch.setattr(service, "_create_dependency_link", lambda *a, **kw: False)
+
+    results = {
+        "network": [
+            {
+                "name": "vpc-1",
+                "resource_type": "vpc",
+                "resource_id": "vpc-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-1"},
+            },
+        ],
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-fail",
+                "provider": "aws",
+                "metadata": {},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-1",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            },
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts == {"edges_created": 0, "unresolved_edges": 0}
+
+    inst = (
+        db(
+            (db.entities.external_id == "i-fail")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    assert inst is not None
+    rows = db(
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id == inst.id)
+    ).select()
+    assert len(rows) == 0

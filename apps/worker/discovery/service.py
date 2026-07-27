@@ -900,8 +900,15 @@ class DiscoveryService:
         target_id: int,
         dep_type: str = "discovered_from",
         meta: Optional[Dict] = None,
-    ) -> None:
-        """Create a dependencies record linking domain table entries."""
+    ) -> bool:
+        """Create a dependencies record linking domain table entries.
+
+        Returns:
+            True if the row now exists (inserted or already present), False
+            if the write failed. Callers that need to count actual edges
+            (e.g. the pass-2 linker) rely on this to avoid counting a
+            swallowed write exception as a success.
+        """
         try:
             existing = (
                 self.db(
@@ -925,8 +932,10 @@ class DiscoveryService:
                     created_at=now,
                     updated_at=now,
                 )
+            return True
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
+            return False
 
     # Native-id -> domain table for DB-fallback resolution.
     _RESOLVE_TABLES = {
@@ -984,11 +993,17 @@ class DiscoveryService:
 
     def _link_resources(
         self, source: Tuple[str, int], target: Tuple[str, int], edge_type: Optional[str]
-    ) -> None:
-        """Write a dependencies edge; dual-write network membership."""
+    ) -> bool:
+        """Write a dependencies edge; dual-write network membership.
+
+        Returns the dependencies-edge write result (True/False from
+        `_create_dependency_link`). The network_entity_mappings dual-write is
+        a projection of that edge, so its own success/failure doesn't change
+        the return value here.
+        """
         src_type, src_id = source
         tgt_type, tgt_id = target
-        self._create_dependency_link(
+        linked = self._create_dependency_link(
             src_type, src_id, tgt_type, tgt_id, edge_type, {"linked_by": "discovery"}
         )
         if (
@@ -997,6 +1012,7 @@ class DiscoveryService:
             and tgt_type == "networking_resource"
         ):
             self._upsert_network_entity_mapping(tgt_id, src_id, edge_type)
+        return linked
 
     def _register(
         self,
@@ -1528,9 +1544,16 @@ class DiscoveryService:
                             sw_id = self._store_container_image_as_software(
                                 organization_id, image
                             )
-                            self._register(
-                                scan_index, provider, resource, "software", sw_id
-                            )
+                            # Register the image under its OWN native id (the
+                            # image string, which is also its external_id),
+                            # never via _register(resource=<pod>, ...) — the
+                            # pod dict's resource_id/external_id belongs to
+                            # the pod's own ("entity", entity_id) scan_index
+                            # entry (set above), and keying software off the
+                            # pod's id would clobber it, silently corrupting
+                            # resolution for any relationship naming the pod.
+                            if sw_id:
+                                scan_index[(provider, image)] = ("software", sw_id)
                             if sw_id and root_entity_id:
                                 self._create_dependency_link(
                                     "software",
@@ -1552,6 +1575,18 @@ class DiscoveryService:
                 ext = resource.get("external_id") or resource.get("resource_id")
                 source = scan_index.get((provider, ext))
                 if not source:
+                    # The resource's own id was never registered (its branch
+                    # returned no row id, or the row id came back None) — its
+                    # declared relationships have nowhere to originate from.
+                    # Count and log each one rather than dropping silently.
+                    unresolved_edges += len(rels)
+                    logger.warning(
+                        "Unresolved discovery edge source: %s has no registered "
+                        "scan_index entry (provider=%s); dropping %d relationship(s)",
+                        ext,
+                        provider,
+                        len(rels),
+                    )
                     continue
                 for rel in rels:
                     target = self._resolve_target(
@@ -1571,8 +1606,8 @@ class DiscoveryService:
                             provider,
                         )
                         continue
-                    self._link_resources(source, target, rel.get("edge_type"))
-                    edges_created += 1
+                    if self._link_resources(source, target, rel.get("edge_type")):
+                        edges_created += 1
 
         self.db.commit()
         return {"edges_created": edges_created, "unresolved_edges": unresolved_edges}
