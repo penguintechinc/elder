@@ -1556,7 +1556,7 @@ class DiscoveryService:
             # Update existing entity
             update_data = {
                 "name": name,
-                "attributes": resource_attrs,
+                "metadata": resource_attrs,
                 "external_id": native_id,
                 "updated_at": datetime.now(timezone.utc),
             }
