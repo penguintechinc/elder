@@ -665,3 +665,169 @@ def test_run_discovery_without_organization_id_still_persists_zero_counts(
     assert history is not None
     assert history.results_json["edges_created"] == 0
     assert history.results_json["unresolved_edges"] == 0
+
+
+# --- Task 7: backfill regression coverage for previously-untested edge
+# helpers — _create_dependency_link idempotency (explicit dedup assertion,
+# distinct from the true/false-return tests above) and the K8s SEMANTIC edge
+# helpers _store_k8s_ingress ("routes_to") and _store_k8s_pvc_as_data_store
+# ("bound_to"). These are characterization tests of existing behavior. ------
+
+
+def test_create_dependency_link_is_idempotent(seeded):
+    # Distinct from test_create_dependency_link_returns_{true,false}_on_*
+    # above (which only assert the bool return against a MagicMock db):
+    # this asserts the actual dedup behavior against a real DB — two
+    # identical calls must not create a second row. Sentinel ids
+    # (9_000_001/9_000_002) are chosen far outside any autoincrement range
+    # used elsewhere in this session-persistent-SQLite test module, so the
+    # source_id/target_id filter can't accidentally match a row written by
+    # another test.
+    service, db, org_id = seeded
+    service._create_dependency_link(
+        "entity", 9_000_001, "entity", 9_000_002, "routes_to"
+    )
+    service._create_dependency_link(
+        "entity", 9_000_001, "entity", 9_000_002, "routes_to"
+    )
+    db.commit()
+    rows = db(
+        (db.dependencies.source_id == 9_000_001)
+        & (db.dependencies.target_id == 9_000_002)
+    ).select()
+    assert len(rows) == 1
+    assert rows.first().dependency_type == "routes_to"
+
+
+def test_store_k8s_ingress_creates_routes_to_edge_to_service(seeded):
+    service, db, org_id = seeded
+
+    svc_id = service._store_as_service(
+        org_id,
+        {
+            "name": "web-svc",
+            "resource_type": "k8s_service",
+            "resource_id": "svc-1",
+            "metadata": {"ports": [{"port": 80}]},
+        },
+        "kubernetes",
+    )
+    db.commit()
+    assert svc_id is not None
+
+    ingress_resource = {
+        "name": "web-ingress",
+        "resource_type": "k8s_ingress",
+        "resource_id": "ingress-1",
+        "metadata": {
+            "namespace": "default",
+            "ingress_class": "nginx",
+            "paths": [{"service": "web-svc", "host": "example.com", "path": "/"}],
+            "backend_services": ["web-svc"],
+        },
+    }
+    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {})
+    db.commit()
+    assert ingress_id is not None
+
+    dep = (
+        db(
+            (db.dependencies.source_type == "networking_resource")
+            & (db.dependencies.source_id == ingress_id)
+            & (db.dependencies.target_type == "service")
+            & (db.dependencies.target_id == svc_id)
+        )
+        .select()
+        .first()
+    )
+    assert dep is not None
+    assert dep.dependency_type == "routes_to"
+
+
+def test_store_k8s_ingress_skips_edge_when_service_absent(seeded):
+    # No "backend-svc-missing" row exists in `services` for this org — the
+    # `if svc:` guard in _store_k8s_ingress must skip edge creation without
+    # raising, while the ingress itself is still persisted.
+    service, db, org_id = seeded
+
+    ingress_resource = {
+        "name": "orphan-ingress",
+        "resource_type": "k8s_ingress",
+        "resource_id": "ingress-orphan",
+        "metadata": {
+            "namespace": "default",
+            "backend_services": ["backend-svc-missing"],
+        },
+    }
+    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {})
+    db.commit()
+    assert ingress_id is not None
+
+    rows = db(
+        (db.dependencies.source_type == "networking_resource")
+        & (db.dependencies.source_id == ingress_id)
+    ).select()
+    assert len(rows) == 0
+
+
+def test_store_k8s_pvc_creates_bound_to_edge_to_pv(seeded):
+    service, db, org_id = seeded
+
+    pv_id = service._store_as_data_store(
+        org_id,
+        {
+            "name": "pv-vol-1",
+            "resource_type": "k8s_persistent_volume",
+            "resource_id": "pv-vol-1",
+            "metadata": {},
+        },
+        "kubernetes",
+    )
+    db.commit()
+    assert pv_id is not None
+
+    pvc_resource = {
+        "name": "pvc-1",
+        "resource_type": "k8s_pvc",
+        "resource_id": "pvc-1",
+        "metadata": {"volume_name": "pv-vol-1"},
+    }
+    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes")
+    db.commit()
+    assert pvc_id is not None
+
+    dep = (
+        db(
+            (db.dependencies.source_type == "data_store")
+            & (db.dependencies.source_id == pvc_id)
+            & (db.dependencies.target_type == "data_store")
+            & (db.dependencies.target_id == pv_id)
+        )
+        .select()
+        .first()
+    )
+    assert dep is not None
+    assert dep.dependency_type == "bound_to"
+
+
+def test_store_k8s_pvc_skips_edge_when_pv_absent(seeded):
+    # No data_store row named "pv-does-not-exist" exists for this org — the
+    # `if pv:` guard in _store_k8s_pvc_as_data_store must skip edge creation
+    # without raising, while the PVC itself is still persisted.
+    service, db, org_id = seeded
+
+    pvc_resource = {
+        "name": "pvc-orphan",
+        "resource_type": "k8s_pvc",
+        "resource_id": "pvc-orphan",
+        "metadata": {"volume_name": "pv-does-not-exist"},
+    }
+    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes")
+    db.commit()
+    assert pvc_id is not None
+
+    rows = db(
+        (db.dependencies.source_type == "data_store")
+        & (db.dependencies.source_id == pvc_id)
+    ).select()
+    assert len(rows) == 0
