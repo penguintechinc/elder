@@ -602,3 +602,66 @@ def test_run_discovery_surfaces_edge_counts_in_job_result(seeded, monkeypatch):
     assert history is not None
     assert history.results_json["edges_created"] == 3
     assert history.results_json["unresolved_edges"] == 1
+
+
+def test_run_discovery_without_organization_id_still_persists_zero_counts(
+    seeded, monkeypatch
+):
+    # regression: results_for_storage.update(edge_counts) lived inside the
+    # `if organization_id:` branch, so a job with no organization_id (a real,
+    # reachable path per create_job's optional organization_id) never wrote
+    # edges_created/unresolved_edges into discovery_history.results_json at
+    # all, even though the return dict always defaulted them to 0/0.
+    service, db, org_id = seeded
+
+    # No "_organization_id" in config_json — this is the no-org path.
+    job_id = db.discovery_jobs.insert(
+        name="No Org Job",
+        provider="aws",
+        config_json={},
+        schedule_interval=3600,
+        enabled=True,
+    )
+    db.commit()
+
+    discovery_results = {
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-no-org",
+                "provider": "aws",
+                "metadata": {},
+            }
+        ],
+        "resources_count": 1,
+        "discovery_time": datetime.now(timezone.utc),
+    }
+    mock_client = MagicMock()
+    mock_client.discover_all.return_value = discovery_results
+    monkeypatch.setattr(service, "_get_discovery_client", lambda job_id: mock_client)
+
+    # _store_discovered_resources must not be called on the no-org path;
+    # fail loudly if it is.
+    monkeypatch.setattr(
+        service,
+        "_store_discovered_resources",
+        lambda *a, **kw: (_ for _ in ()).throw(
+            AssertionError("_store_discovered_resources should not run without org_id")
+        ),
+    )
+
+    result = service.run_discovery(job_id)
+
+    assert result["success"] is True
+    assert result["edges_created"] == 0
+    assert result["unresolved_edges"] == 0
+
+    history = (
+        db(db.discovery_history.job_id == job_id)
+        .select(orderby=~db.discovery_history.id)
+        .first()
+    )
+    assert history is not None
+    assert history.results_json["edges_created"] == 0
+    assert history.results_json["unresolved_edges"] == 0

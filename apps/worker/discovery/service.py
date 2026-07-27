@@ -264,7 +264,7 @@ class DiscoveryService:
             edge_counts = {"edges_created": 0, "unresolved_edges": 0}
             if organization_id:
                 edge_counts = self._store_discovered_resources(organization_id, results)
-                results_for_storage.update(edge_counts)
+            results_for_storage.update(edge_counts)
 
             # Record discovery history
             now = datetime.now(timezone.utc)
