@@ -4,7 +4,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -928,6 +928,91 @@ class DiscoveryService:
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
 
+    # Native-id -> domain table for DB-fallback resolution.
+    _RESOLVE_TABLES = {
+        "entity": "entities",
+        "networking_resource": "networking_resources",
+        "data_store": "data_stores",
+        "service": "services",
+        "software": "software",
+    }
+
+    def _resolve_target(
+        self,
+        scan_index: Dict[Any, Any],
+        provider: str,
+        target_external_id: Optional[str],
+        target_kind: Optional[str],
+        organization_id: int,
+    ) -> Optional[Tuple[str, int]]:
+        """Resolve a native cloud id to (type_string, row_id).
+
+        Scan-local index first (same job), then a DB lookup on external_id so
+        targets discovered by an earlier scan still resolve.
+        """
+        hit = scan_index.get((provider, target_external_id))
+        if hit:
+            return hit
+        return self._resolve_target_in_db(
+            target_external_id, target_kind, organization_id
+        )
+
+    def _resolve_target_in_db(
+        self,
+        external_id: Optional[str],
+        target_kind: Optional[str],
+        organization_id: int,
+    ) -> Optional[Tuple[str, int]]:
+        """Look up a persisted row by external_id, hinted table first."""
+        order = []
+        if target_kind in self._RESOLVE_TABLES:
+            order.append(target_kind)
+        order += [k for k in self._RESOLVE_TABLES if k not in order]
+        for type_string in order:
+            table = getattr(self.db, self._RESOLVE_TABLES[type_string])
+            row = (
+                self.db(
+                    (table.external_id == external_id)
+                    & (table.organization_id == organization_id)
+                )
+                .select()
+                .first()
+            )
+            if row:
+                return (type_string, row.id)
+        return None
+
+    def _link_resources(
+        self, source: Tuple[str, int], target: Tuple[str, int], edge_type: Optional[str]
+    ) -> None:
+        """Write a dependencies edge; dual-write network membership."""
+        src_type, src_id = source
+        tgt_type, tgt_id = target
+        self._create_dependency_link(
+            src_type, src_id, tgt_type, tgt_id, edge_type, {"linked_by": "discovery"}
+        )
+        if (
+            edge_type in ("in_network", "in_subnet")
+            and src_type == "entity"
+            and tgt_type == "networking_resource"
+        ):
+            self._upsert_network_entity_mapping(tgt_id, src_id, edge_type)
+
+    def _register(
+        self,
+        scan_index: Dict[Any, Any],
+        provider: str,
+        resource: Dict[str, Any],
+        type_string: str,
+        row_id: Optional[int],
+    ) -> None:
+        """Index a just-persisted resource by its native id for edge resolution."""
+        if not row_id:
+            return
+        ext = resource.get("external_id") or resource.get("resource_id")
+        if ext:
+            scan_index[(provider, ext)] = (type_string, row_id)
+
     def _store_k8s_ingress(
         self,
         organization_id: int,
@@ -1249,13 +1334,18 @@ class DiscoveryService:
 
     def _store_discovered_resources(
         self, organization_id: int, discovery_results: Dict[str, Any]
-    ) -> None:
+    ) -> Dict[str, int]:
         """
         Store discovered resources with hierarchy and domain table mapping.
 
         Creates provider root entities, intermediate networking, and routes
         resources to their proper domain tables (services, data_stores,
-        networking_resources, identities, software, entities).
+        networking_resources, identities, software, entities). A second pass
+        then resolves each resource's declared `relationships` into
+        dependencies edges (native-id resolution, scan-local then DB).
+
+        Returns:
+            Dict with `edges_created` and `unresolved_edges` counts.
         """
         provider = self._detect_provider_type(discovery_results)
 
@@ -1269,6 +1359,17 @@ class DiscoveryService:
         networking_lookup = self._ensure_intermediate_networking(
             organization_id, provider, root_entity_id, discovery_results
         )
+
+        # (provider, external_id) -> (type_string, row_id); seeded from the
+        # networking resources so pass 2 can resolve edges into VPCs/subnets/
+        # namespaces without a DB round-trip.
+        scan_index: Dict[Any, Any] = {}
+        for key, net_id in networking_lookup.items():
+            _, _, ext = key.partition(":")
+            if ext and net_id:
+                scan_index[(provider, ext)] = ("networking_resource", net_id)
+        edges_created = 0
+        unresolved_edges = 0
 
         # Track container images for software extraction
         seen_images = set()
@@ -1300,6 +1401,9 @@ class DiscoveryService:
                         sa_id = self._store_k8s_service_account_as_identity(
                             organization_id, resource, cluster_name
                         )
+                        self._register(
+                            scan_index, provider, resource, "identity", sa_id
+                        )
                         if sa_id and root_entity_id:
                             self._create_dependency_link(
                                 "identity",
@@ -1312,6 +1416,7 @@ class DiscoveryService:
 
                 elif domain == "service":
                     svc_id = self._store_as_service(organization_id, resource, provider)
+                    self._register(scan_index, provider, resource, "service", svc_id)
                     if svc_id and root_entity_id:
                         self._create_dependency_link(
                             "service",
@@ -1331,6 +1436,7 @@ class DiscoveryService:
                         ds_id = self._store_as_data_store(
                             organization_id, resource, provider
                         )
+                    self._register(scan_index, provider, resource, "data_store", ds_id)
                     if ds_id and root_entity_id:
                         self._create_dependency_link(
                             "data_store",
@@ -1392,6 +1498,7 @@ class DiscoveryService:
                         parent_id=root_entity_id,
                         networking_lookup=networking_lookup,
                     )
+                    self._register(scan_index, provider, resource, "entity", entity_id)
 
                     # Link entity to networking resource if applicable
                     metadata = resource.get("metadata", {})
@@ -1421,6 +1528,9 @@ class DiscoveryService:
                             sw_id = self._store_container_image_as_software(
                                 organization_id, image
                             )
+                            self._register(
+                                scan_index, provider, resource, "software", sw_id
+                            )
                             if sw_id and root_entity_id:
                                 self._create_dependency_link(
                                     "software",
@@ -1431,7 +1541,41 @@ class DiscoveryService:
                                     {"provider": provider},
                                 )
 
+        # Pass 2: resolve declared relationships into edges.
+        for category, resources in discovery_results.items():
+            if category in ["resources_count", "discovery_time", "duration_seconds"]:
+                continue
+            for resource in resources or []:
+                rels = resource.get("relationships") or []
+                if not rels:
+                    continue
+                ext = resource.get("external_id") or resource.get("resource_id")
+                source = scan_index.get((provider, ext))
+                if not source:
+                    continue
+                for rel in rels:
+                    target = self._resolve_target(
+                        scan_index,
+                        provider,
+                        rel.get("target_external_id"),
+                        rel.get("target_kind"),
+                        organization_id,
+                    )
+                    if not target:
+                        unresolved_edges += 1
+                        logger.warning(
+                            "Unresolved discovery edge: %s -[%s]-> %s (provider=%s)",
+                            ext,
+                            rel.get("edge_type"),
+                            rel.get("target_external_id"),
+                            provider,
+                        )
+                        continue
+                    self._link_resources(source, target, rel.get("edge_type"))
+                    edges_created += 1
+
         self.db.commit()
+        return {"edges_created": edges_created, "unresolved_edges": unresolved_edges}
 
     def _store_iam_as_identity(
         self, organization_id: int, resource: Dict[str, Any]

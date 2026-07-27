@@ -1,6 +1,7 @@
 """Tests for the cloud-discovery relationship linker (PR1 core engine)."""
 
 import uuid
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -117,3 +118,169 @@ def test_upsert_network_entity_mapping_creates_row(seeded):
     )
     assert row is not None
     assert row.relationship_type == "in_network"
+
+
+def test_resolve_target_prefers_scan_index():
+    service = DiscoveryService(MagicMock())
+    scan_index = {("aws", "vpc-1"): ("networking_resource", 42)}
+    assert service._resolve_target(
+        scan_index, "aws", "vpc-1", "networking_resource", 1
+    ) == (
+        "networking_resource",
+        42,
+    )
+
+
+def test_resolve_target_unknown_returns_none_without_db_hit():
+    db = MagicMock()
+    db.return_value.select.return_value.first.return_value = None
+    service = DiscoveryService(db)
+    assert (
+        service._resolve_target({}, "aws", "vpc-nope", "networking_resource", 1) is None
+    )
+
+
+def test_two_pass_linker_creates_edges(seeded):
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-1",
+                "resource_type": "vpc",
+                "resource_id": "vpc-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-1"},
+            },
+        ],
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-1",
+                "provider": "aws",
+                "metadata": {},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-1",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            },
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts == {"edges_created": 1, "unresolved_edges": 0}
+
+    # Scope by organization_id: external_id/resource_id values like "i-1" and
+    # "vpc-1" are reused by other tests in this module against their own
+    # (uniquely-slugged) organizations in the same session-persistent DB.
+    inst = (
+        db((db.entities.external_id == "i-1") & (db.entities.organization_id == org_id))
+        .select()
+        .first()
+    )
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-1")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.source_id == inst.id)
+            & (db.dependencies.target_type == "networking_resource")
+            & (db.dependencies.target_id == vpc.id)
+        )
+        .select()
+        .first()
+    )
+    assert dep is not None and dep.dependency_type == "in_network"
+    # dual-write to the topology-tab projection
+    nem = (
+        db(
+            (db.network_entity_mappings.network_id == vpc.id)
+            & (db.network_entity_mappings.entity_id == inst.id)
+        )
+        .select()
+        .first()
+    )
+    assert nem is not None
+
+
+def test_linker_is_idempotent(seeded):
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-1",
+                "resource_type": "vpc",
+                "resource_id": "vpc-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-1"},
+            }
+        ],
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-1",
+                "provider": "aws",
+                "metadata": {},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-1",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    service._store_discovered_resources(org_id, results)
+    service._store_discovered_resources(org_id, results)
+
+    # Scope to this test's own org/entity: the dependencies table is shared
+    # across the whole (session-persistent) test DB, so an unscoped lookup
+    # by external_id alone, or a count of dependency_type == "in_network",
+    # would also pick up rows from other tests in this module that reuse
+    # the same resource_id ("i-1") or edge_type.
+    inst = (
+        db((db.entities.external_id == "i-1") & (db.entities.organization_id == org_id))
+        .select()
+        .first()
+    )
+    rows = db(
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id == inst.id)
+        & (db.dependencies.dependency_type == "in_network")
+    ).select()
+    assert len(rows) == 1
+
+
+def test_linker_counts_unresolved(seeded):
+    service, db, org_id = seeded
+    results = {
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-9",
+                "provider": "aws",
+                "metadata": {},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-missing",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["unresolved_edges"] == 1
+    assert counts["edges_created"] == 0
