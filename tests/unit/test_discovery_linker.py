@@ -1,6 +1,7 @@
 """Tests for the cloud-discovery relationship linker (PR1 core engine)."""
 
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -541,3 +542,63 @@ def test_edges_created_excludes_failed_dependency_writes(seeded, monkeypatch):
         & (db.dependencies.source_id == inst.id)
     ).select()
     assert len(rows) == 0
+
+
+# --- Task 5: edges_created/unresolved_edges must reach the discovery job
+# result, not just _store_discovered_resources's own return value. ----------
+
+
+def test_run_discovery_surfaces_edge_counts_in_job_result(seeded, monkeypatch):
+    # regression: _store_discovered_resources's counts were computed but
+    # never merged into run_discovery's return dict or the persisted
+    # discovery_history.results_json, so operators/E2E had no visibility
+    # into linkage health from the job result.
+    service, db, org_id = seeded
+
+    job_id = db.discovery_jobs.insert(
+        name="Edge Count Job",
+        provider="aws",
+        config_json={"_organization_id": org_id},
+        schedule_interval=3600,
+        enabled=True,
+    )
+    db.commit()
+
+    discovery_results = {
+        "compute": [
+            {
+                "name": "web",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-edge-counts",
+                "provider": "aws",
+                "metadata": {},
+            }
+        ],
+        "resources_count": 1,
+        "discovery_time": datetime.now(timezone.utc),
+    }
+    mock_client = MagicMock()
+    mock_client.discover_all.return_value = discovery_results
+    monkeypatch.setattr(service, "_get_discovery_client", lambda job_id: mock_client)
+
+    known_counts = {"edges_created": 3, "unresolved_edges": 1}
+    monkeypatch.setattr(
+        service,
+        "_store_discovered_resources",
+        lambda organization_id, results: dict(known_counts),
+    )
+
+    result = service.run_discovery(job_id)
+
+    assert result["success"] is True
+    assert result["edges_created"] == 3
+    assert result["unresolved_edges"] == 1
+
+    history = (
+        db(db.discovery_history.job_id == job_id)
+        .select(orderby=~db.discovery_history.id)
+        .first()
+    )
+    assert history is not None
+    assert history.results_json["edges_created"] == 3
+    assert history.results_json["unresolved_edges"] == 1

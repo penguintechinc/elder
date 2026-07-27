@@ -253,6 +253,19 @@ class DiscoveryService:
                     "discovery_time"
                 ].isoformat()
 
+            # Get organization_id from config if available
+            organization_id = None
+            if job.config_json:
+                organization_id = job.config_json.get("_organization_id")
+
+            # Store discovered resources as entities (if organization_id
+            # available) and capture edge-linkage counts so they're visible
+            # in both the persisted history row and the job result below.
+            edge_counts = {"edges_created": 0, "unresolved_edges": 0}
+            if organization_id:
+                edge_counts = self._store_discovered_resources(organization_id, results)
+                results_for_storage.update(edge_counts)
+
             # Record discovery history
             now = datetime.now(timezone.utc)
             history_id = self.db.discovery_history.insert(
@@ -273,21 +286,13 @@ class DiscoveryService:
 
             self.db.commit()
 
-            # Get organization_id from config if available
-            organization_id = None
-            if job.config_json:
-                organization_id = job.config_json.get("_organization_id")
-
-            # Store discovered resources as entities (if organization_id available)
-            if organization_id:
-                self._store_discovered_resources(organization_id, results)
-
             return {
                 "job_id": job_id,
                 "history_id": history_id,
                 "resources_discovered": results["resources_count"],
                 "success": True,
                 "discovery_time": results["discovery_time"].isoformat(),
+                **edge_counts,
             }
 
         except Exception as e:
