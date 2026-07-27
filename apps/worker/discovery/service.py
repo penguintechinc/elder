@@ -486,6 +486,7 @@ class DiscoveryService:
                             "is_default": meta.get("is_default"),
                         },
                         tags=["aws", "vpc", "discovered"],
+                        external_id=vpc_id_str,
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -500,6 +501,9 @@ class DiscoveryService:
                     meta = resource.get("metadata", {})
                     parent_vpc = meta.get("vpc_id")
                     parent_id = vpc_lookup.get(parent_vpc) if parent_vpc else None
+                    subnet_id_str = meta.get(
+                        "subnet_id", resource.get("resource_id", "")
+                    )
                     net_id = self._upsert_networking_resource(
                         organization_id=organization_id,
                         name=resource.get("name", ""),
@@ -512,9 +516,7 @@ class DiscoveryService:
                             "available_ips": meta.get("available_ips"),
                         },
                         tags=["aws", "subnet", "discovered"],
-                    )
-                    subnet_id_str = meta.get(
-                        "subnet_id", resource.get("resource_id", "")
+                        external_id=subnet_id_str,
                     )
                     networking_lookup[f"subnet:{subnet_id_str}"] = net_id
 
@@ -533,6 +535,7 @@ class DiscoveryService:
                             )
                         },
                         tags=["gcp", "vpc", "discovered"],
+                        external_id=resource.get("resource_id"),
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -551,6 +554,7 @@ class DiscoveryService:
         parent_id: Optional[int] = None,
         attributes: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
+        external_id: Optional[str] = None,
     ) -> Optional[int]:
         """Create or update a networking_resources record."""
         try:
@@ -567,6 +571,7 @@ class DiscoveryService:
             if existing:
                 self.db(self.db.networking_resources.id == existing.id).update(
                     attributes=attributes or {},
+                    external_id=external_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -580,6 +585,7 @@ class DiscoveryService:
                 parent_id=parent_id,
                 attributes=attributes or {},
                 tags=tags or [],
+                external_id=external_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -666,8 +672,11 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.services.id == existing.id).update(
+                    external_id=native_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -683,6 +692,7 @@ class DiscoveryService:
                 is_public=False,
                 tags=[provider, "discovered"],
                 notes=f"Discovered from {provider} discovery",
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -729,8 +739,11 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.data_stores.id == existing.id).update(
+                    external_id=native_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -744,6 +757,7 @@ class DiscoveryService:
                 storage_provider=storage_provider,
                 location_region=resource.get("region"),
                 metadata=metadata,
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -869,6 +883,7 @@ class DiscoveryService:
                 is_active=True,
                 vendor=vendor,
                 tags=["kubernetes", "container-image", "discovered"],
+                external_id=image,
                 created_at=now,
                 updated_at=now,
             )
@@ -1514,6 +1529,7 @@ class DiscoveryService:
         """
         name = resource.get("name", "Unnamed")
         resource_type = resource.get("resource_type", "")
+        native_id = resource.get("external_id") or resource.get("resource_id")
 
         # Check if entity already exists
         existing = (
@@ -1541,6 +1557,7 @@ class DiscoveryService:
             update_data = {
                 "name": name,
                 "attributes": resource_attrs,
+                "external_id": native_id,
                 "updated_at": datetime.now(timezone.utc),
             }
             if parent_id is not None:
@@ -1556,6 +1573,7 @@ class DiscoveryService:
                 "sub_type": resource_type,
                 "organization_id": organization_id,
                 "metadata": resource_attrs,
+                "external_id": native_id,
                 "created_at": now,
                 "updated_at": now,
             }
