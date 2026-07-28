@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0] - Unreleased
+
+**Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture.
+
+### ✨ Merged Product Lines
+
+#### IceCharts Merge — Diagramming & Automation (#167, #168)
+- **`diagrams`**: React-Flow diagram editor with real-time collaboration, merged in from IceCharts
+- **`streams`**: Workflow automation module, merged in from IceStreams
+- **`flows`**: CI/CD pipeline module, merged in from IceFlows
+
+#### Ruffled Merge — Helpdesk & Knowledge Base (#166, #173)
+- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled
+- **`documents`**: Knowledge base module, merged in from Ruffled
+- **`pages`**: Documentation pages module, merged in from Ruffled
+- Rookery was intentionally excluded from this merge
+
+### 🏗️ Architecture — Modular Monolith Restructure (#164)
+- Feature-domain code moved from the flat `apps/api/models/*.py` + `apps/api/api/v1/*` layout into per-module packages `apps/api/modules/<name>/{models,routes}/` — 15 modules total: `infrastructure`, `ipam`, `sbom`, `services_oncall`, `issues`, `discovery`, `secrets`, `webhooks_alerting`, `access_reviews`, `documents`, `pages`, `diagrams`, `streams`, `flows`, `helpdesk`
+- Always-on **core** models (base, identity, rbac, tenant, audit, security, etc.) remain in `apps/api/models/`
+- Split the `apps/api/models/infrastructure.py` "god-file": `NetworkingResource`/`DataStore` moved to `apps/api/modules/infrastructure/models/infrastructure.py`; `Service`/`Software` moved to `apps/api/modules/sbom/models/assets.py`; cost models moved to `webhooks_alerting`
+- **Breaking for consumers**: import paths for these models changed — `apps.api.models.infrastructure` no longer exists
+
+---
+
 ## [3.2.3] - 2026-04-29
 
 ### 🐛 Bug Fixes
