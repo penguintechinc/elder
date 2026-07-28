@@ -21,6 +21,10 @@ VALID_RESOURCE_TYPES = [
     "project",
     "milestone",
     "issue",
+    "networking_resource",
+    "data_store",
+    "service",
+    "software",
 ]
 
 
@@ -384,7 +388,8 @@ async def get_map():
     Query Parameters:
         - tenant_id: Filter by tenant
         - organization_id: Filter by organization (includes children)
-        - resource_types: Comma-separated list (organization,entity,identity,project,milestone,issue)
+        - resource_types: Comma-separated list (organization,entity,identity,project,milestone,issue,
+          networking_resource,data_store,service,software)
         - entity_types: Comma-separated entity subtypes (network,compute,storage,etc.)
         - include_hierarchical: Include parent-child relationships (default: true)
         - include_dependencies: Include polymorphic dependencies (default: true)
@@ -497,10 +502,10 @@ async def get_map():
                     "organization",
                     org.id,
                     org.name,
-                    org.organization_type,
+                    org.type,
                     {
                         "parent_id": org.parent_id,
-                        "organization_type": org.organization_type,
+                        "organization_type": org.type,
                     },
                 )
                 org_ids_to_include.add(org.id)
@@ -540,7 +545,7 @@ async def get_map():
 
             identities = db(identity_query).select(limitby=(0, limit))
             for identity in identities:
-                label = identity.display_name or identity.username
+                label = identity.full_name or identity.username
                 add_node(
                     "identity",
                     identity.id,
@@ -619,6 +624,94 @@ async def get_map():
                         "status": issue.status,
                         "priority": issue.priority,
                     },
+                )
+
+        # Get networking resources (subnets, VPCs, firewalls, etc.)
+        # Note: networking_resources has no tenant_id column — organization
+        # scoping is the only available filter (unlike the domain tables below).
+        if "networking_resource" in resource_types:
+            nr_query = db.networking_resources.id > 0
+            if org_ids_to_include:
+                nr_query &= db.networking_resources.organization_id.belongs(
+                    list(org_ids_to_include)
+                )
+            elif org_id:
+                nr_query &= db.networking_resources.organization_id == org_id
+
+            networking_resources = db(nr_query).select(limitby=(0, limit))
+            for nr in networking_resources:
+                add_node(
+                    "networking_resource",
+                    nr.id,
+                    nr.name,
+                    nr.network_type,
+                    {"organization_id": nr.organization_id},
+                )
+
+        # Get data stores
+        if "data_store" in resource_types:
+            ds_query = db.data_stores.id > 0
+            if tenant_id:
+                ds_query &= db.data_stores.tenant_id == tenant_id
+            if org_ids_to_include:
+                ds_query &= db.data_stores.organization_id.belongs(
+                    list(org_ids_to_include)
+                )
+            elif org_id:
+                ds_query &= db.data_stores.organization_id == org_id
+
+            data_stores = db(ds_query).select(limitby=(0, limit))
+            for ds in data_stores:
+                add_node(
+                    "data_store",
+                    ds.id,
+                    ds.name,
+                    ds.storage_type,
+                    {"organization_id": ds.organization_id},
+                )
+
+        # Get services
+        if "service" in resource_types:
+            svc_query = db.services.id > 0
+            if tenant_id:
+                svc_query &= db.services.tenant_id == tenant_id
+            if org_ids_to_include:
+                svc_query &= db.services.organization_id.belongs(
+                    list(org_ids_to_include)
+                )
+            elif org_id:
+                svc_query &= db.services.organization_id == org_id
+
+            services = db(svc_query).select(limitby=(0, limit))
+            for svc in services:
+                add_node(
+                    "service",
+                    svc.id,
+                    svc.name,
+                    svc.deployment_method,
+                    {"organization_id": svc.organization_id},
+                )
+
+        # Get software
+        if "software" in resource_types:
+            sw_query = db.software.id > 0
+            if tenant_id:
+                sw_query &= db.software.tenant_id == tenant_id
+            if org_ids_to_include:
+                sw_query &= db.software.organization_id.belongs(
+                    list(org_ids_to_include)
+                )
+            elif org_id:
+                sw_query &= db.software.organization_id == org_id
+
+            software_rows = db(sw_query).select(limitby=(0, limit))
+            for sw in software_rows:
+                add_node(
+                    "software",
+                    sw.id,
+                    sw.name,
+                    sw.software_type,
+                    {"organization_id": sw.organization_id},
                 )
 
         # Add hierarchical edges
@@ -703,6 +796,52 @@ async def get_map():
                         True,
                     )
 
+                # Networking resource to organization
+                if resource_type == "networking_resource" and node.get(
+                    "organization_id"
+                ):
+                    add_edge(
+                        "organization",
+                        node.get("organization_id"),
+                        "networking_resource",
+                        node["resource_id"],
+                        "contains",
+                        True,
+                    )
+
+                # Data store to organization
+                if resource_type == "data_store" and node.get("organization_id"):
+                    add_edge(
+                        "organization",
+                        node.get("organization_id"),
+                        "data_store",
+                        node["resource_id"],
+                        "contains",
+                        True,
+                    )
+
+                # Service to organization
+                if resource_type == "service" and node.get("organization_id"):
+                    add_edge(
+                        "organization",
+                        node.get("organization_id"),
+                        "service",
+                        node["resource_id"],
+                        "contains",
+                        True,
+                    )
+
+                # Software to organization
+                if resource_type == "software" and node.get("organization_id"):
+                    add_edge(
+                        "organization",
+                        node.get("organization_id"),
+                        "software",
+                        node["resource_id"],
+                        "contains",
+                        True,
+                    )
+
         # Add polymorphic dependency edges
         if include_dependencies:
             dep_query = db.dependencies.id > 0
@@ -754,6 +893,10 @@ def _get_node_style_by_resource(resource_type: str, subtype: str = None) -> tupl
         "project": ("square", "#27ae60"),
         "milestone": ("star", "#f39c12"),
         "issue": ("diamond", "#e67e22"),
+        "networking_resource": ("diamond", "#1abc9c"),
+        "data_store": ("database", "#8e44ad"),
+        "service": ("hexagon", "#16a085"),
+        "software": ("square", "#7f8c8d"),
     }
 
     # Entity subtype overrides

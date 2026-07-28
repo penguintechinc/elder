@@ -137,6 +137,7 @@ class Certificate(Base, IDMixin, TimestampMixin):
 
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
     name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
     description = Column(Text, nullable=True)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     creator = Column(String(100), nullable=False)

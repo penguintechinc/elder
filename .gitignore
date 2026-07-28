@@ -1,3 +1,7 @@
+# Superpowers / SDD scratch and git worktrees (local-only)
+.superpowers/
+.worktrees/
+
 # Operating System
 .DS_Store
 .DS_Store?

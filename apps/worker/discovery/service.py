@@ -4,7 +4,7 @@
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +253,19 @@ class DiscoveryService:
                     "discovery_time"
                 ].isoformat()
 
+            # Get organization_id from config if available
+            organization_id = None
+            if job.config_json:
+                organization_id = job.config_json.get("_organization_id")
+
+            # Store discovered resources as entities (if organization_id
+            # available) and capture edge-linkage counts so they're visible
+            # in both the persisted history row and the job result below.
+            edge_counts = {"edges_created": 0, "unresolved_edges": 0}
+            if organization_id:
+                edge_counts = self._store_discovered_resources(organization_id, results)
+            results_for_storage.update(edge_counts)
+
             # Record discovery history
             now = datetime.now(timezone.utc)
             history_id = self.db.discovery_history.insert(
@@ -273,21 +286,13 @@ class DiscoveryService:
 
             self.db.commit()
 
-            # Get organization_id from config if available
-            organization_id = None
-            if job.config_json:
-                organization_id = job.config_json.get("_organization_id")
-
-            # Store discovered resources as entities (if organization_id available)
-            if organization_id:
-                self._store_discovered_resources(organization_id, results)
-
             return {
                 "job_id": job_id,
                 "history_id": history_id,
                 "resources_discovered": results["resources_count"],
                 "success": True,
                 "discovery_time": results["discovery_time"].isoformat(),
+                **edge_counts,
             }
 
         except Exception as e:
@@ -486,6 +491,7 @@ class DiscoveryService:
                             "is_default": meta.get("is_default"),
                         },
                         tags=["aws", "vpc", "discovered"],
+                        external_id=vpc_id_str,
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -500,6 +506,9 @@ class DiscoveryService:
                     meta = resource.get("metadata", {})
                     parent_vpc = meta.get("vpc_id")
                     parent_id = vpc_lookup.get(parent_vpc) if parent_vpc else None
+                    subnet_id_str = meta.get(
+                        "subnet_id", resource.get("resource_id", "")
+                    )
                     net_id = self._upsert_networking_resource(
                         organization_id=organization_id,
                         name=resource.get("name", ""),
@@ -512,9 +521,7 @@ class DiscoveryService:
                             "available_ips": meta.get("available_ips"),
                         },
                         tags=["aws", "subnet", "discovered"],
-                    )
-                    subnet_id_str = meta.get(
-                        "subnet_id", resource.get("resource_id", "")
+                        external_id=subnet_id_str,
                     )
                     networking_lookup[f"subnet:{subnet_id_str}"] = net_id
 
@@ -533,6 +540,7 @@ class DiscoveryService:
                             )
                         },
                         tags=["gcp", "vpc", "discovered"],
+                        external_id=resource.get("resource_id"),
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -551,6 +559,7 @@ class DiscoveryService:
         parent_id: Optional[int] = None,
         attributes: Optional[Dict] = None,
         tags: Optional[List[str]] = None,
+        external_id: Optional[str] = None,
     ) -> Optional[int]:
         """Create or update a networking_resources record."""
         try:
@@ -567,6 +576,7 @@ class DiscoveryService:
             if existing:
                 self.db(self.db.networking_resources.id == existing.id).update(
                     attributes=attributes or {},
+                    external_id=external_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -580,6 +590,7 @@ class DiscoveryService:
                 parent_id=parent_id,
                 attributes=attributes or {},
                 tags=tags or [],
+                external_id=external_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -666,8 +677,11 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.services.id == existing.id).update(
+                    external_id=native_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -683,6 +697,7 @@ class DiscoveryService:
                 is_public=False,
                 tags=[provider, "discovered"],
                 notes=f"Discovered from {provider} discovery",
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -729,8 +744,11 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.data_stores.id == existing.id).update(
+                    external_id=native_id,
                     updated_at=datetime.now(timezone.utc),
                 )
                 return existing.id
@@ -744,6 +762,7 @@ class DiscoveryService:
                 storage_provider=storage_provider,
                 location_region=resource.get("region"),
                 metadata=metadata,
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -869,6 +888,7 @@ class DiscoveryService:
                 is_active=True,
                 vendor=vendor,
                 tags=["kubernetes", "container-image", "discovered"],
+                external_id=image,
                 created_at=now,
                 updated_at=now,
             )
@@ -885,8 +905,15 @@ class DiscoveryService:
         target_id: int,
         dep_type: str = "discovered_from",
         meta: Optional[Dict] = None,
-    ) -> None:
-        """Create a dependencies record linking domain table entries."""
+    ) -> bool:
+        """Create a dependencies record linking domain table entries.
+
+        Returns:
+            True if the row now exists (inserted or already present), False
+            if the write failed. Callers that need to count actual edges
+            (e.g. the pass-2 linker) rely on this to avoid counting a
+            swallowed write exception as a success.
+        """
         try:
             existing = (
                 self.db(
@@ -910,8 +937,102 @@ class DiscoveryService:
                     created_at=now,
                     updated_at=now,
                 )
+            return True
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
+            return False
+
+    # Native-id -> domain table for DB-fallback resolution.
+    _RESOLVE_TABLES = {
+        "entity": "entities",
+        "networking_resource": "networking_resources",
+        "data_store": "data_stores",
+        "service": "services",
+        "software": "software",
+    }
+
+    def _resolve_target(
+        self,
+        scan_index: Dict[Any, Any],
+        provider: str,
+        target_external_id: Optional[str],
+        target_kind: Optional[str],
+        organization_id: int,
+    ) -> Optional[Tuple[str, int]]:
+        """Resolve a native cloud id to (type_string, row_id).
+
+        Scan-local index first (same job), then a DB lookup on external_id so
+        targets discovered by an earlier scan still resolve.
+        """
+        hit = scan_index.get((provider, target_external_id))
+        if hit:
+            return hit
+        return self._resolve_target_in_db(
+            target_external_id, target_kind, organization_id
+        )
+
+    def _resolve_target_in_db(
+        self,
+        external_id: Optional[str],
+        target_kind: Optional[str],
+        organization_id: int,
+    ) -> Optional[Tuple[str, int]]:
+        """Look up a persisted row by external_id, hinted table first."""
+        order = []
+        if target_kind in self._RESOLVE_TABLES:
+            order.append(target_kind)
+        order += [k for k in self._RESOLVE_TABLES if k not in order]
+        for type_string in order:
+            table = getattr(self.db, self._RESOLVE_TABLES[type_string])
+            row = (
+                self.db(
+                    (table.external_id == external_id)
+                    & (table.organization_id == organization_id)
+                )
+                .select()
+                .first()
+            )
+            if row:
+                return (type_string, row.id)
+        return None
+
+    def _link_resources(
+        self, source: Tuple[str, int], target: Tuple[str, int], edge_type: Optional[str]
+    ) -> bool:
+        """Write a dependencies edge; dual-write network membership.
+
+        Returns the dependencies-edge write result (True/False from
+        `_create_dependency_link`). The network_entity_mappings dual-write is
+        a projection of that edge, so its own success/failure doesn't change
+        the return value here.
+        """
+        src_type, src_id = source
+        tgt_type, tgt_id = target
+        linked = self._create_dependency_link(
+            src_type, src_id, tgt_type, tgt_id, edge_type, {"linked_by": "discovery"}
+        )
+        if (
+            edge_type in ("in_network", "in_subnet")
+            and src_type == "entity"
+            and tgt_type == "networking_resource"
+        ):
+            self._upsert_network_entity_mapping(tgt_id, src_id, edge_type)
+        return linked
+
+    def _register(
+        self,
+        scan_index: Dict[Any, Any],
+        provider: str,
+        resource: Dict[str, Any],
+        type_string: str,
+        row_id: Optional[int],
+    ) -> None:
+        """Index a just-persisted resource by its native id for edge resolution."""
+        if not row_id:
+            return
+        ext = resource.get("external_id") or resource.get("resource_id")
+        if ext:
+            scan_index[(provider, ext)] = (type_string, row_id)
 
     def _store_k8s_ingress(
         self,
@@ -1234,13 +1355,18 @@ class DiscoveryService:
 
     def _store_discovered_resources(
         self, organization_id: int, discovery_results: Dict[str, Any]
-    ) -> None:
+    ) -> Dict[str, int]:
         """
         Store discovered resources with hierarchy and domain table mapping.
 
         Creates provider root entities, intermediate networking, and routes
         resources to their proper domain tables (services, data_stores,
-        networking_resources, identities, software, entities).
+        networking_resources, identities, software, entities). A second pass
+        then resolves each resource's declared `relationships` into
+        dependencies edges (native-id resolution, scan-local then DB).
+
+        Returns:
+            Dict with `edges_created` and `unresolved_edges` counts.
         """
         provider = self._detect_provider_type(discovery_results)
 
@@ -1254,6 +1380,17 @@ class DiscoveryService:
         networking_lookup = self._ensure_intermediate_networking(
             organization_id, provider, root_entity_id, discovery_results
         )
+
+        # (provider, external_id) -> (type_string, row_id); seeded from the
+        # networking resources so pass 2 can resolve edges into VPCs/subnets/
+        # namespaces without a DB round-trip.
+        scan_index: Dict[Any, Any] = {}
+        for key, net_id in networking_lookup.items():
+            _, _, ext = key.partition(":")
+            if ext and net_id:
+                scan_index[(provider, ext)] = ("networking_resource", net_id)
+        edges_created = 0
+        unresolved_edges = 0
 
         # Track container images for software extraction
         seen_images = set()
@@ -1285,6 +1422,9 @@ class DiscoveryService:
                         sa_id = self._store_k8s_service_account_as_identity(
                             organization_id, resource, cluster_name
                         )
+                        self._register(
+                            scan_index, provider, resource, "identity", sa_id
+                        )
                         if sa_id and root_entity_id:
                             self._create_dependency_link(
                                 "identity",
@@ -1297,6 +1437,7 @@ class DiscoveryService:
 
                 elif domain == "service":
                     svc_id = self._store_as_service(organization_id, resource, provider)
+                    self._register(scan_index, provider, resource, "service", svc_id)
                     if svc_id and root_entity_id:
                         self._create_dependency_link(
                             "service",
@@ -1316,6 +1457,7 @@ class DiscoveryService:
                         ds_id = self._store_as_data_store(
                             organization_id, resource, provider
                         )
+                    self._register(scan_index, provider, resource, "data_store", ds_id)
                     if ds_id and root_entity_id:
                         self._create_dependency_link(
                             "data_store",
@@ -1377,6 +1519,7 @@ class DiscoveryService:
                         parent_id=root_entity_id,
                         networking_lookup=networking_lookup,
                     )
+                    self._register(scan_index, provider, resource, "entity", entity_id)
 
                     # Link entity to networking resource if applicable
                     metadata = resource.get("metadata", {})
@@ -1406,6 +1549,16 @@ class DiscoveryService:
                             sw_id = self._store_container_image_as_software(
                                 organization_id, image
                             )
+                            # Register the image under its OWN native id (the
+                            # image string, which is also its external_id),
+                            # never via _register(resource=<pod>, ...) — the
+                            # pod dict's resource_id/external_id belongs to
+                            # the pod's own ("entity", entity_id) scan_index
+                            # entry (set above), and keying software off the
+                            # pod's id would clobber it, silently corrupting
+                            # resolution for any relationship naming the pod.
+                            if sw_id:
+                                scan_index[(provider, image)] = ("software", sw_id)
                             if sw_id and root_entity_id:
                                 self._create_dependency_link(
                                     "software",
@@ -1416,7 +1569,53 @@ class DiscoveryService:
                                     {"provider": provider},
                                 )
 
+        # Pass 2: resolve declared relationships into edges.
+        for category, resources in discovery_results.items():
+            if category in ["resources_count", "discovery_time", "duration_seconds"]:
+                continue
+            for resource in resources or []:
+                rels = resource.get("relationships") or []
+                if not rels:
+                    continue
+                ext = resource.get("external_id") or resource.get("resource_id")
+                source = scan_index.get((provider, ext))
+                if not source:
+                    # The resource's own id was never registered (its branch
+                    # returned no row id, or the row id came back None) — its
+                    # declared relationships have nowhere to originate from.
+                    # Count and log each one rather than dropping silently.
+                    unresolved_edges += len(rels)
+                    logger.warning(
+                        "Unresolved discovery edge source: %s has no registered "
+                        "scan_index entry (provider=%s); dropping %d relationship(s)",
+                        ext,
+                        provider,
+                        len(rels),
+                    )
+                    continue
+                for rel in rels:
+                    target = self._resolve_target(
+                        scan_index,
+                        provider,
+                        rel.get("target_external_id"),
+                        rel.get("target_kind"),
+                        organization_id,
+                    )
+                    if not target:
+                        unresolved_edges += 1
+                        logger.warning(
+                            "Unresolved discovery edge: %s -[%s]-> %s (provider=%s)",
+                            ext,
+                            rel.get("edge_type"),
+                            rel.get("target_external_id"),
+                            provider,
+                        )
+                        continue
+                    if self._link_resources(source, target, rel.get("edge_type")):
+                        edges_created += 1
+
         self.db.commit()
+        return {"edges_created": edges_created, "unresolved_edges": unresolved_edges}
 
     def _store_iam_as_identity(
         self, organization_id: int, resource: Dict[str, Any]
@@ -1514,6 +1713,7 @@ class DiscoveryService:
         """
         name = resource.get("name", "Unnamed")
         resource_type = resource.get("resource_type", "")
+        native_id = resource.get("external_id") or resource.get("resource_id")
 
         # Check if entity already exists
         existing = (
@@ -1540,7 +1740,8 @@ class DiscoveryService:
             # Update existing entity
             update_data = {
                 "name": name,
-                "attributes": resource_attrs,
+                "metadata": resource_attrs,
+                "external_id": native_id,
                 "updated_at": datetime.now(timezone.utc),
             }
             if parent_id is not None:
@@ -1556,6 +1757,7 @@ class DiscoveryService:
                 "sub_type": resource_type,
                 "organization_id": organization_id,
                 "metadata": resource_attrs,
+                "external_id": native_id,
                 "created_at": now,
                 "updated_at": now,
             }
