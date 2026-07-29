@@ -41,7 +41,7 @@ Authlib==1.7.1
 # Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
 
 # Security & Cryptography
-PyJWT==2.12.0
+PyJWT==2.13.0
 bcrypt==4.2.1
 cryptography==46.0.7
 # python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
