@@ -89,7 +89,7 @@ six==1.17.0
     # via ecdsa
 sse-starlette==3.4.2
     # via mcp
-starlette==1.0.0
+starlette==1.0.1
     # via
     #   mcp
     #   sse-starlette
