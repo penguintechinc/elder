@@ -65,7 +65,7 @@ pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.1
     # via mcp
-pyjwt[crypto]==2.12.1
+pyjwt[crypto]==2.13.0
     # via mcp
 python-decouple==3.8
     # via -r requirements.in
