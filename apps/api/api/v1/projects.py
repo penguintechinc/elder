@@ -124,7 +124,7 @@ async def create_project():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -221,7 +221,7 @@ async def update_project(id: int):
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 

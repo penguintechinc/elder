@@ -179,7 +179,6 @@ def get_tenant(tenant_id):
 
 
 @bp.route("", methods=["POST"])
-@login_required
 @portal_token_required
 @global_admin_required
 async def create_tenant():
@@ -202,7 +201,7 @@ async def create_tenant():
         Created tenant
     """
     try:
-        body = CreateTenantRequest.model_validate(request.get_json())
+        body = CreateTenantRequest.model_validate(await request.get_json())
     except ValidationError as e:
         errors = [
             {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
@@ -244,7 +243,7 @@ async def create_tenant():
 
 @bp.route("/<int:tenant_id>", methods=["PUT"])
 @portal_token_required
-def update_tenant(tenant_id):
+async def update_tenant(tenant_id):
     """Update a tenant.
 
     Args:
@@ -269,7 +268,7 @@ def update_tenant(tenant_id):
         return jsonify({"error": "Tenant not found"}), 404
 
     try:
-        body = UpdateTenantRequest.model_validate(request.get_json())
+        body = UpdateTenantRequest.model_validate(await request.get_json())
     except ValidationError as e:
         errors = [
             {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
@@ -383,7 +382,7 @@ def list_tenant_users(tenant_id):
 
 @bp.route("/<int:tenant_id>/users/<int:user_id>", methods=["PUT"])
 @portal_token_required
-def update_tenant_user(tenant_id, user_id):
+async def update_tenant_user(tenant_id, user_id):
     """Update a portal user in a tenant.
 
     Args:
@@ -413,7 +412,7 @@ def update_tenant_user(tenant_id, user_id):
     if not user:
         return jsonify({"error": "User not found"}), 404
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 

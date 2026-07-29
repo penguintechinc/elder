@@ -94,7 +94,7 @@ def get_group(group_id):
 @bp.route("/groups/<int:group_id>", methods=["PATCH"])
 @login_required
 @license_required("enterprise")
-def update_group(group_id):
+async def update_group(group_id):
     """
     Update group ownership and settings.
 
@@ -124,7 +124,7 @@ def update_group(group_id):
             if not getattr(g.current_user, "is_admin", False):
                 return jsonify({"error": "Not authorized to update this group"}), 403
 
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         group = service.update_group(
             group_id=group_id,
@@ -155,7 +155,7 @@ def update_group(group_id):
 @bp.route("/groups/<int:group_id>/requests", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def create_access_request(group_id):
+async def create_access_request(group_id):
     """
     Create an access request for a group.
 
@@ -178,7 +178,7 @@ def create_access_request(group_id):
         if not current_user_id:
             return jsonify({"error": "Identity not found for current user"}), 400
 
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         # Parse expires_at if provided
         expires_at = None
@@ -285,7 +285,7 @@ def list_pending_requests():
 @bp.route("/requests/<int:request_id>/approve", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def approve_request(request_id):
+async def approve_request(request_id):
     """
     Approve an access request.
 
@@ -307,7 +307,7 @@ def approve_request(request_id):
         if not current_user_id:
             return jsonify({"error": "Identity not found for current user"}), 400
 
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         result = service.approve_request(
             request_id=request_id,
@@ -331,7 +331,7 @@ def approve_request(request_id):
 @bp.route("/requests/<int:request_id>/deny", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def deny_request(request_id):
+async def deny_request(request_id):
     """
     Deny an access request.
 
@@ -353,7 +353,7 @@ def deny_request(request_id):
         if not current_user_id:
             return jsonify({"error": "Identity not found for current user"}), 400
 
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         result = service.deny_request(
             request_id=request_id,
@@ -412,7 +412,7 @@ def cancel_request(request_id):
 @bp.route("/requests/bulk-approve", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def bulk_approve_requests():
+async def bulk_approve_requests():
     """
     Bulk approve multiple requests.
 
@@ -432,7 +432,7 @@ def bulk_approve_requests():
         if not current_user_id:
             return jsonify({"error": "Identity not found for current user"}), 400
 
-        data = request.get_json()
+        data = await request.get_json()
         if not data or "request_ids" not in data:
             return jsonify({"error": "request_ids is required"}), 400
 
@@ -489,7 +489,7 @@ def list_group_members(group_id):
 @bp.route("/groups/<int:group_id>/members", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def add_group_member(group_id):
+async def add_group_member(group_id):
     """
     Directly add a member to a group (admin/owner only).
 
@@ -513,7 +513,7 @@ def add_group_member(group_id):
             if not getattr(g.current_user, "is_admin", False):
                 return jsonify({"error": "Not authorized to add members"}), 403
 
-        data = request.get_json()
+        data = await request.get_json()
         if not data or "identity_id" not in data:
             return jsonify({"error": "identity_id is required"}), 400
 

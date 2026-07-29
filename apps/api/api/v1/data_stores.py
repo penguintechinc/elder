@@ -119,7 +119,7 @@ async def create_data_store():
     """Create a new data store entry."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -210,7 +210,7 @@ async def update_data_store(id: int):
     """Update a data store entry."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -350,7 +350,7 @@ async def add_data_store_label(id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

@@ -141,7 +141,7 @@ async def add_participant(rotation_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -257,7 +257,7 @@ async def update_participant(rotation_id: int, participant_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -471,7 +471,7 @@ async def create_override(rotation_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -611,7 +611,7 @@ async def update_override(override_id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

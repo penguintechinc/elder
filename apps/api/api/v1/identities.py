@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required

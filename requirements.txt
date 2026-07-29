@@ -130,6 +130,10 @@ aiohttp==3.13.4 \
     --hash=sha256:f989ac8bc5595ff761a5ccd32bdb0768a117f36dd1504b1c2c074ed5d3f4df9c \
     --hash=sha256:fc432f6a2c4f720180959bc19aa37259651c1a4ed8af8afc84dd41c60f15f791
     # via -r requirements.in
+aiofiles==25.1.0 \
+    --hash=sha256:abe311e527c862958650f9438e859c1fa7568a141b22abcd015e120e86a85695 \
+    --hash=sha256:a8d728f0a29de45dc521f18f07297428d56992a742f0cd2701ba86e44d23d5b2
+    # via quart
 aiosignal==1.4.0 \
     --hash=sha256:053243f8b92b990551949e63930a839ff0cf0b0ebbe0597b0f3fb19e1a0fe82e \
     --hash=sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7
@@ -1113,8 +1117,25 @@ h11==0.16.0 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
     #   httpcore
+    #   hypercorn
     #   uvicorn
     #   wsproto
+h2==4.3.0 \
+    --hash=sha256:6c59efe4323fa18b47a632221a1888bd7fde6249819beda254aeca909f221bf1 \
+    --hash=sha256:c438f029a25f7945c69e0ccf0fb951dc3f73a5f6412981daee861431b70e2bdd
+    # via hypercorn
+hpack==4.1.0 \
+    --hash=sha256:157ac792668d995c657d93111f46b4535ed114f0c9c8d672271bbec7eae1b496 \
+    --hash=sha256:ec5eca154f7056aa06f196a557655c5b009b382873ac8d1e66e79e87535f1dca
+    # via h2
+hyperframe==6.1.0 \
+    --hash=sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5 \
+    --hash=sha256:f630908a00854a7adeabd6382b43923a4c4cd4b821fcb527e6ab9e15382a3b08
+    # via h2
+hypercorn==0.18.0 \
+    --hash=sha256:225e268f2c1c2f28f6d8f6db8f40cb8c992963610c5725e13ccfcddccb24b1cd \
+    --hash=sha256:d63267548939c46b0247dc8e5b45a9947590e35e64ee73a23c074aa3cf88e9da
+    # via quart
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
@@ -1806,6 +1827,10 @@ pathspec==1.0.4 \
     --hash=sha256:0210e2ae8a21a9137c0d470578cb0e595af87edaa6ebf12ff176f14a02e0e645 \
     --hash=sha256:fb6ae2fd4e7c921a165808a552060e722767cfa526f99ca5156ed2ce45a5c723
     # via black
+penguin-aaa==0.1.0 \
+    --hash=sha256:4d894db11879f8adab6cb30229e5525c7eaa2fca1efd665da337eb07fff74caf \
+    --hash=sha256:d410eb578cf206cf13cbaa20deeda29d1a6cd0412c8406bb65ad473adb46cce4
+    # via -r requirements.in
 penguin-dal==0.3.0 \
     --hash=sha256:6f598d3131fcdffe1f1ab003f83d63952a1d5447bf8a2140e5a33d38a19085ca \
     --hash=sha256:16b679b5a9fadb825b48c9dd58c779c1418757b9353c9085957d7340489d950d
@@ -1990,6 +2015,10 @@ proto-plus==1.27.1 \
     #   google-cloud-kms
     #   google-cloud-resource-manager
     #   google-cloud-secret-manager
+priority==2.0.0 \
+    --hash=sha256:6f8eefce5f3ad59baf2c080a664037bb4725cd0a790d53d59ab4059288faf6aa \
+    --hash=sha256:c965d54f1b8d0d0b19479db3924c7c36cf672dbf2aec92d43fbdaf4492ba18c0
+    # via hypercorn
 protobuf==5.29.6 \
     --hash=sha256:36ade6ff88212e91aef4e687a971a11d7d24d6948a66751abc1b3238648f5d05 \
     --hash=sha256:62e8a3114992c7c647bce37dcc93647575fc52d50e48de30c6fcb28a6a291eb1 \
@@ -2453,6 +2482,14 @@ pyyaml==6.0.2 \
     #   flasgger
     #   kubernetes
     #   uvicorn
+quart==0.20.0 \
+    --hash=sha256:003c08f551746710acb757de49d9b768986fd431517d0eb127380b656b98b8f1 \
+    --hash=sha256:08793c206ff832483586f5ae47018c7e40bdd75d886fee3fabbdaa70c2cf505d
+    # via -r requirements.in
+quart-cors==0.8.0 \
+    --hash=sha256:62dc811768e2e1704d2b99d5880e3eb26fc776832305a19ea53db66f63837767 \
+    --hash=sha256:ac32c4931da6fba944e9e2d3f856f2db4fd82e3fb905a09646086780c221a118
+    # via -r requirements.in
 redis==5.2.1 \
     --hash=sha256:16f2e22dff21d5125e8481515e386711a34cbec50f0e44413dd7d9c060a54e0f \
     --hash=sha256:ee7e1056b9aea0f04c6c2ed59452947f34c4940ee025f5dd83e6a6418b6989e4

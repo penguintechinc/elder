@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import (
@@ -57,21 +57,24 @@ async def list_services():
     # Get pagination params using helper
     pagination = PaginationParams.from_request()
 
+    # Capture request args before threadpool
+    filter_org_id = request.args.get("organization_id", type=int)
+    filter_status = request.args.get("status")
+    filter_search = request.args.get("search")
+
     # Build query
     def get_services():
         query = db.services.id > 0
 
         # Apply filters
-        if request.args.get("organization_id"):
-            org_id = request.args.get("organization_id", type=int)
-            query &= db.services.organization_id == org_id
+        if filter_org_id:
+            query &= db.services.organization_id == filter_org_id
 
-        if request.args.get("status"):
-            query &= db.services.status == request.args.get("status")
+        if filter_status:
+            query &= db.services.status == filter_status
 
-        if request.args.get("search"):
-            search = request.args.get("search")
-            search_pattern = f"%{search}%"
+        if filter_search:
+            search_pattern = f"%{filter_search}%"
             query &= db.services.name.ilike(search_pattern)
 
         # Get count and rows
@@ -151,7 +154,7 @@ async def create_service(body: CreateServiceRequest):
             tenant_id=tenant_id,
             port=body.port,
             status=body.status,
-            type=getattr(body, "type", None) or "unknown",
+            is_public=body.is_public if body.is_public is not None else False,
             tags=body.tags or [],
             created_at=now,
             updated_at=now,
@@ -395,7 +398,7 @@ async def trigger_service_sbom_scan(id: int):
     # Services table does not have repository_url column
 
     # Get request data if provided
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     scan_type = data.get("scan_type", "git_clone")
     repository_branch = data.get("repository_branch")
 

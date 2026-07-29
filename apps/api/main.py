@@ -7,8 +7,12 @@ import logging
 import os
 
 import structlog
+from penguin_aaa.audit.emitter import Emitter
+from penguin_aaa.audit.sinks import StdoutSink
+from penguin_aaa.middleware.asgi import AuditMiddleware
+from penguin_aaa.middleware.tenant import TenantMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
-from quart import Quart, jsonify, make_response
+from quart import Quart, g, jsonify, make_response
 from quart_cors import cors
 
 from apps.api.config import get_config
@@ -130,7 +134,51 @@ def create_app(config_name: str = None) -> Quart:
         version=app.config["APP_VERSION"],
     )
 
+    _register_before_request(app)
+
     return app
+
+
+def create_asgi_app(config_name: str = None):
+    """Return a production-ready ASGI callable wrapped with penguin-aaa middleware.
+
+    Layer order (outermost first):
+      AuditMiddleware → TenantMiddleware → Quart app
+
+    Use this as the uvicorn entry point. Tests can use ``create_app()`` directly
+    to get the bare Quart app and call ``app.test_client()``.
+    """
+    quart_app = create_app(config_name)
+    emitter = Emitter(StdoutSink())
+    asgi = TenantMiddleware(quart_app, required=False)
+    asgi = AuditMiddleware(asgi, emitter)
+    return asgi
+
+
+def _register_before_request(app: Quart) -> None:
+    """Populate g.claims from the JWT payload on every authenticated request.
+
+    This bridges Elder's Bearer-token auth into the penguin-aaa claims format
+    so that @require_scope / @require_role decorators work without an extra DB
+    round-trip — the scopes and roles are embedded in the token itself.
+    """
+
+    @app.before_request
+    async def populate_claims():
+        from apps.api.auth.jwt_handler import get_token_from_header, verify_token
+
+        token = get_token_from_header()
+        if not token:
+            return
+        payload = verify_token(token)
+        if not payload:
+            return
+        g.claims = {
+            "sub": payload.get("sub", ""),
+            "tenant": payload.get("tenant", ""),
+            "roles": payload.get("roles", []),
+            "scope": payload.get("scope", []),
+        }
 
 
 _metrics_registry = CollectorRegistry(auto_describe=True)
@@ -454,7 +502,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        create_app(),
+        create_asgi_app(),
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 5000)),
     )

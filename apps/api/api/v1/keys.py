@@ -78,7 +78,7 @@ def get_key(key_id):
 
 @bp.route("", methods=["POST"])
 @login_required
-def create_key():
+async def create_key():
     """
     Create a new encryption key.
 
@@ -98,7 +98,7 @@ def create_key():
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -224,7 +224,7 @@ def delete_key(key_id):
 
 @bp.route("/<int:key_id>/encrypt", methods=["POST"])
 @login_required
-def encrypt_data(key_id):
+async def encrypt_data(key_id):
     """
     Encrypt data using this key.
 
@@ -239,7 +239,7 @@ def encrypt_data(key_id):
         404: Key not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data or "plaintext" not in data:
             return jsonify({"error": "plaintext field required"}), 400
@@ -259,7 +259,7 @@ def encrypt_data(key_id):
 
 @bp.route("/<int:key_id>/decrypt", methods=["POST"])
 @login_required
-def decrypt_data(key_id):
+async def decrypt_data(key_id):
     """
     Decrypt data using this key.
 
@@ -274,7 +274,7 @@ def decrypt_data(key_id):
         404: Key not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data or "ciphertext" not in data:
             return jsonify({"error": "ciphertext field required"}), 400
@@ -294,7 +294,7 @@ def decrypt_data(key_id):
 
 @bp.route("/<int:key_id>/generate-data-key", methods=["POST"])
 @login_required
-def generate_data_key(key_id):
+async def generate_data_key(key_id):
     """
     Generate a data encryption key.
 
@@ -309,7 +309,7 @@ def generate_data_key(key_id):
         404: Key not found
     """
     try:
-        data = request.get_json() or {}
+        data = await request.get_json() or {}
 
         service = get_keys_service()
         result = service.generate_data_key(
@@ -328,7 +328,7 @@ def generate_data_key(key_id):
 
 @bp.route("/<int:key_id>/sign", methods=["POST"])
 @login_required
-def sign_data(key_id):
+async def sign_data(key_id):
     """
     Sign data using this key (asymmetric keys only).
 
@@ -344,7 +344,7 @@ def sign_data(key_id):
         400: Key not asymmetric
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data or "message" not in data:
             return jsonify({"error": "message field required"}), 400
@@ -368,7 +368,7 @@ def sign_data(key_id):
 
 @bp.route("/<int:key_id>/verify", methods=["POST"])
 @login_required
-def verify_signature(key_id):
+async def verify_signature(key_id):
     """
     Verify a message signature (asymmetric keys only).
 
@@ -385,7 +385,7 @@ def verify_signature(key_id):
         400: Invalid request or key not asymmetric
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -485,7 +485,7 @@ def list_key_providers():
 
 @bp.route("/providers", methods=["POST"])
 @login_required
-def create_key_provider():
+async def create_key_provider():
     """
     Register a new key provider.
 
@@ -506,7 +506,7 @@ def create_key_provider():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -557,7 +557,7 @@ def get_key_provider(provider_id):
 
 @bp.route("/providers/<int:provider_id>", methods=["PUT"])
 @login_required
-def update_key_provider(provider_id):
+async def update_key_provider(provider_id):
     """
     Update key provider configuration.
 
@@ -574,7 +574,7 @@ def update_key_provider(provider_id):
         404: Provider not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

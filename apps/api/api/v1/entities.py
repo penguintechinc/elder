@@ -8,7 +8,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
-from penguin_libs.pydantic.flask_integration import validated_request
+from apps.api.utils.quart_validation import validated_request
 
 from apps.api.auth.decorators import login_required
 from apps.api.models.dataclasses import (
@@ -394,7 +394,7 @@ async def update_entity_attributes(id: int):
     if error:
         return error
 
-    data = request.get_json()
+    data = await request.get_json()
     if not isinstance(data, dict):
         return ApiResponse.bad_request("Attributes must be a JSON object")
 

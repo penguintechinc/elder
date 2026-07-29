@@ -186,7 +186,7 @@ async def create_certificate():
     """Create a new certificate entry."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
@@ -358,7 +358,7 @@ async def update_certificate(id: int):
     """Update a certificate entry."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if error := validate_json_body(data):
         return error
 

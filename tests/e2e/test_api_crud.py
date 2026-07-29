@@ -97,11 +97,20 @@ class TestEntityCRUD:
 
     def test_create_entity(self, api_url, auth_headers, check_services):
         """Test creating a new entity."""
+        # Get an existing org to attach entity to
+        orgs_response = requests.get(
+            f"{api_url}/api/v1/organizations",
+            headers=auth_headers,
+        )
+        org_id = orgs_response.json()["items"][0]["id"] if orgs_response.status_code == 200 and orgs_response.json().get("items") else None
+
         entity_data = {
             "name": "E2E Test Entity",
             "entity_type": "server",
             "description": "Created by E2E tests",
         }
+        if org_id:
+            entity_data["organization_id"] = org_id
 
         response = requests.post(
             f"{api_url}/api/v1/entities",
@@ -170,11 +179,20 @@ class TestServiceCRUD:
 
     def test_create_service(self, api_url, auth_headers, check_services):
         """Test creating a new service."""
+        # Get an existing org to attach service to
+        orgs_response = requests.get(
+            f"{api_url}/api/v1/organizations",
+            headers=auth_headers,
+        )
+        org_id = orgs_response.json()["items"][0]["id"] if orgs_response.status_code == 200 and orgs_response.json().get("items") else None
+
         service_data = {
             "name": "E2E Test Service",
             "description": "Created by E2E tests",
             "is_public": False,
         }
+        if org_id:
+            service_data["organization_id"] = org_id
 
         response = requests.post(
             f"{api_url}/api/v1/services",
@@ -223,8 +241,7 @@ class TestLabelCRUD:
 
         suffix = "".join(random.choices(string.ascii_lowercase, k=6))
         label_data = {
-            "key": f"e2e-test-{suffix}",
-            "value": "test-value",
+            "name": f"e2e-test-{suffix}",
             "color": "#ff0000",
         }
 
@@ -236,7 +253,7 @@ class TestLabelCRUD:
 
         assert response.status_code in [200, 201]
         data = response.json()
-        assert data.get("key") == label_data["key"]
+        assert data.get("name") == label_data["name"]
 
     def test_list_labels(self, api_url, auth_headers, check_services):
         """Test listing labels."""

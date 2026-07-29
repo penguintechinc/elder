@@ -422,18 +422,23 @@ class WorkerService:
         logger.info("Elder Worker Service stopped")
 
     def run_health_server(self):
-        """Run Quart health check server in a separate thread."""
+        """Run health check server in a separate thread using hypercorn."""
+        import asyncio
         import threading
 
-        def run_quart():
-            self.health_app.run(
-                host="0.0.0.0",
-                port=settings.health_check_port,
-                debug=False,
-                use_reloader=False,
-            )
+        from hypercorn.asyncio import serve
+        from hypercorn.config import Config
 
-        health_thread = threading.Thread(target=run_quart, daemon=True)
+        def run_hypercorn():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            config = Config()
+            config.bind = [f"0.0.0.0:{settings.health_check_port}"]
+            config.loglevel = "WARNING"
+            # Disable signal handlers — running in non-main thread
+            loop.run_until_complete(serve(self.health_app, config, shutdown_trigger=asyncio.Event().wait))
+
+        health_thread = threading.Thread(target=run_hypercorn, daemon=True)
         health_thread.start()
         logger.info(
             "Health check server started",

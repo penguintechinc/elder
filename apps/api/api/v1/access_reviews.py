@@ -120,7 +120,7 @@ def get_review_items(review_id):
 @bp.route("/access-reviews/<int:review_id>/decisions", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def submit_decisions(review_id):
+async def submit_decisions(review_id):
     """
     Submit review decision for member(s).
 
@@ -139,7 +139,7 @@ def submit_decisions(review_id):
     """
     try:
         service = get_service()
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -239,7 +239,7 @@ def get_my_reviews():
 @bp.route("/access-reviews", methods=["POST"])
 @login_required
 @license_required("enterprise")
-def create_review():
+async def create_review():
     """
     Create an ad-hoc access review (admin only).
 
@@ -258,7 +258,7 @@ def create_review():
     """
     try:
         service = get_service()
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400

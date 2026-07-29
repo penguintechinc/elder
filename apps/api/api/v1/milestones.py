@@ -129,7 +129,7 @@ async def create_milestone():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -157,7 +157,6 @@ async def create_milestone():
             description=data.get("description"),
             status=data.get("status", "open"),
             organization_id=data["organization_id"],
-            tenant_id=org.tenant_id,
             project_id=data.get("project_id"),
             due_date=data.get("due_date"),
             created_at=now,
@@ -229,7 +228,7 @@ async def update_milestone(id: int):
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -271,7 +270,6 @@ async def update_milestone(id: int):
             update_dict["closed_at"] = data["closed_at"]
         if "organization_id" in data:
             update_dict["organization_id"] = data["organization_id"]
-            update_dict["tenant_id"] = org_tenant_id
 
         if update_dict:
             db(db.milestones.id == id).update(**update_dict)

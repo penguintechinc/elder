@@ -7,10 +7,11 @@ import inspect
 from functools import wraps
 from typing import Callable, List
 
-from quart import current_app, g, jsonify, request
 from penguin_dal import Row
+from quart import current_app, g, jsonify, request
 
 from apps.api.auth.jwt_handler import get_current_user
+from apps.api.auth.rbac import check_org_permission, check_permission, enforcer
 
 
 def login_required(f: Callable) -> Callable:
@@ -233,41 +234,75 @@ def org_permission_required(permission_name: str, org_id_param: str = "id") -> C
 
 
 def _check_user_permission(user: Row, permission_name: str) -> bool:
-    """
-    Check if user has a specific permission (global or org-scoped).
-
-    Args:
-        user: PyDAL Row representing identity
-        permission_name: Permission name to check
-
-    Returns:
-        True if user has permission (currently simplified - returns True for all authenticated users)
-
-    TODO: Implement full RBAC permission checking with PyDAL
-    """
-    # Simplified permission check - superusers have all permissions
-    # For non-superusers, we'll need to implement RBAC tables and logic
-    # For now, allow authenticated users to proceed
-    return True
+    """Check if user has a specific permission using RBACEnforcer."""
+    return check_permission(user, permission_name)
 
 
 def _check_org_permission(user: Row, permission_name: str, org_id: int) -> bool:
+    """Check if user has permission in an organization context."""
+    return check_org_permission(user, permission_name, org_id)
+
+
+def require_scope(scope: str) -> Callable:
+    """Require a specific scope claim on the current request.
+
+    Reads ``g.claims["scope"]`` populated by the before_request bridge in main.py.
+    Returns 403 if the scope is absent. Must be placed after ``@login_required``.
+
+    Usage::
+
+        @bp.route("/secrets")
+        @login_required
+        @require_scope("secrets:read")
+        async def list_secrets():
+            ...
     """
-    Check if user has permission for a specific organization.
 
-    Args:
-        user: PyDAL Row representing identity
-        permission_name: Permission name to check
-        org_id: Organization ID
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        async def wrapper(*args, **kwargs):
+            claims = getattr(g, "claims", {}) or {}
+            granted = set(claims.get("scope", []))
+            if getattr(g, "current_user", None) and getattr(
+                g.current_user, "is_superuser", False
+            ):
+                pass  # superusers bypass scope checks
+            elif scope not in granted:
+                return jsonify({"error": f"Missing required scope: '{scope}'"}), 403
+            if inspect.iscoroutinefunction(f):
+                return await f(*args, **kwargs)
+            return f(*args, **kwargs)
 
-    Returns:
-        True if user has permission for this organization (currently simplified)
+        return wrapper
 
-    TODO: Implement full organization-scoped RBAC with PyDAL
+    return decorator
+
+
+def require_role(role: str) -> Callable:
+    """Require a specific role on the current request.
+
+    Reads ``g.claims["roles"]`` populated by the before_request bridge in main.py.
+    Returns 403 if the role is absent. Must be placed after ``@login_required``.
     """
-    # Simplified org permission check
-    # For now, allow authenticated users to proceed
-    return True
+
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        async def wrapper(*args, **kwargs):
+            claims = getattr(g, "claims", {}) or {}
+            granted = set(claims.get("roles", []))
+            if getattr(g, "current_user", None) and getattr(
+                g.current_user, "is_superuser", False
+            ):
+                pass
+            elif role not in granted:
+                return jsonify({"error": f"Missing required role: '{role}'"}), 403
+            if inspect.iscoroutinefunction(f):
+                return await f(*args, **kwargs)
+            return f(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 
 def resource_role_required(required_role: str, resource_param: str = "id") -> Callable:
@@ -291,7 +326,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
         @login_required
         @license_required('enterprise')
         @resource_role_required('maintainer', resource_param='id')
-        def create_entity_metadata(id):
+        async def create_entity_metadata(id):
             # Only maintainers can create metadata
             pass
 
@@ -299,7 +334,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
         @login_required
         @license_required('enterprise')
         @resource_role_required('viewer')
-        def create_issue():
+        async def create_issue():
             # Viewers can create issues
             # Must provide entity_id or organization_id in request body
             pass
@@ -333,7 +368,7 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
 
             # If not in route params, check request body (for POST/PATCH)
             if not resource_id and request.is_json:
-                data = request.get_json()
+                data = await request.get_json()
                 if "entity_id" in data:
                     resource_id = data["entity_id"]
                     resource_type = "entity"

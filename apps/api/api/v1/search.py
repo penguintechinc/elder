@@ -251,7 +251,7 @@ def search_issues():
 
 @bp.route("/graph", methods=["POST"])
 @login_required
-def search_graph():
+async def search_graph():
     """
     Graph-based search for entities and dependencies.
 
@@ -268,7 +268,7 @@ def search_graph():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data or "start_entity_id" not in data:
             return jsonify({"error": "start_entity_id is required"}), 400
@@ -322,7 +322,7 @@ def list_saved_searches():
 
 @bp.route("/saved", methods=["POST"])
 @login_required
-def create_saved_search():
+async def create_saved_search():
     """
     Save a search query.
 
@@ -340,7 +340,7 @@ def create_saved_search():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -429,7 +429,7 @@ def execute_saved_search(search_id):
 
 @bp.route("/saved/<int:search_id>", methods=["PUT"])
 @login_required
-def update_saved_search(search_id):
+async def update_saved_search(search_id):
     """
     Update saved search.
 
@@ -446,7 +446,7 @@ def update_saved_search(search_id):
         404: Search not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
