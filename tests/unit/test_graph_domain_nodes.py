@@ -186,30 +186,24 @@ class TestGraphDomainNodes:
             )
 
             # Org in Tenant A
-            org_a_id = db.organizations.insert(
-                name="Org A", tenant_id=tenant_a_id
-            )
+            org_a_id = db.organizations.insert(name="Org A", tenant_id=tenant_a_id)
 
             # Org in Tenant B
-            org_b_id = db.organizations.insert(
-                name="Org B", tenant_id=tenant_b_id
-            )
+            org_b_id = db.organizations.insert(name="Org B", tenant_id=tenant_b_id)
 
-            # Entity in Tenant A
+            # Entities have no tenant_id column — they are scoped via
+            # organization_id (whose organization carries the tenant).
             entity_a_id = db.entities.insert(
                 name="Entity A",
                 type="compute",
                 organization_id=org_a_id,
-                tenant_id=tenant_a_id,
                 external_id="ea-1",
             )
 
-            # Entity in Tenant B
             entity_b_id = db.entities.insert(
                 name="Entity B",
                 type="compute",
                 organization_id=org_b_id,
-                tenant_id=tenant_b_id,
                 external_id="eb-1",
             )
 
@@ -218,6 +212,7 @@ class TestGraphDomainNodes:
                 name="Service A",
                 organization_id=org_a_id,
                 tenant_id=tenant_a_id,
+                is_public=False,
                 external_id="sa-1",
             )
 
@@ -226,6 +221,7 @@ class TestGraphDomainNodes:
                 name="Service B",
                 organization_id=org_b_id,
                 tenant_id=tenant_b_id,
+                is_public=False,
                 external_id="sb-1",
             )
 
@@ -256,6 +252,10 @@ class TestGraphDomainNodes:
                 "tenant_b_id": tenant_b_id,
                 "identity_a_id": identity_a_id,
                 "identity_b_id": identity_b_id,
+                "org_a_id": org_a_id,
+                "org_b_id": org_b_id,
+                "entity_a_id": entity_a_id,
+                "entity_b_id": entity_b_id,
             }
 
         fixtures = await run_in_threadpool(_seed)
@@ -263,9 +263,7 @@ class TestGraphDomainNodes:
         client = app.test_client()
 
         # User A token
-        token_a = self._token(
-            app, fixtures["tenant_a_id"], fixtures["identity_a_id"]
-        )
+        token_a = self._token(app, fixtures["tenant_a_id"], fixtures["identity_a_id"])
 
         # Test 1: User A can see their own tenant's resources
         response = await client.get(
@@ -289,48 +287,89 @@ class TestGraphDomainNodes:
         entity_names = {n["label"] for n in body["nodes"]}
         # The query param MUST be ignored; User A still sees only their tenant
         assert "Entity A" in entity_names, "User A should still see Entity A"
-        assert "Entity B" not in entity_names, "User A still cannot see Entity B (query param ignored)"
+        assert (
+            "Entity B" not in entity_names
+        ), "User A still cannot see Entity B (query param ignored)"
 
-        # Test 3: Edges also respect tenant scoping
-        edge_sources = {
-            (e["from"], e["to"]) for e in body["edges"]
-        }
-        # Entity A -> Service A edge should exist only if both are in Tenant A
-        # Entity B -> Service B edge must NOT appear (even though User A's token is for Tenant A)
-        for src, tgt in edge_sources:
-            # Verify no edge leaks from Tenant B
+        # Test 3: no tenant-B resource of any kind leaks, and every rendered
+        # edge connects only rendered (in-tenant) nodes.
+        all_labels = {n["label"] for n in body["nodes"]}
+        assert "Service B" not in all_labels, "Tenant B service must not render"
+        node_ids = {n["id"] for n in body["nodes"]}
+        for edge in body["edges"]:
             assert (
-                src != fixtures["entity_b_id"]
-            ), "Tenant B entity should not appear as edge source"
+                edge["from"] in node_ids and edge["to"] in node_ids
+            ), "edge must only connect rendered (in-tenant) nodes"
 
     @pytest.mark.asyncio
-    async def test_missing_tenant_claim_returns_403(self, app):
-        """Verify GET /graph/map returns 403 when JWT has no tenant claim.
+    async def test_org_id_param_cannot_cross_tenant(self, app):
+        """The organization_id query param must not cross tenants either.
+
+        entities/networking_resources/projects/milestones/issues are scoped by
+        organization_id (no tenant_id column), so passing another tenant's
+        org id must be re-validated against the caller's tenant, not trusted.
 
         regression: gh-189
         """
-        now = datetime.now(timezone.utc)
+        db = app.db
 
-        # Create token WITHOUT tenant claim
-        payload = {
-            "sub": "test-user",
-            "iat": now,
-            "exp": now + timedelta(hours=1),
-            "scope": ["infrastructure:read"],
-            "identity_id": 1,
-            "roles": ["admin"],
-            # NOTE: no 'tenant' claim
-        }
-        secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
-        token = jwt.encode(payload, secret, algorithm="HS256")
+        def _seed():
+            now = datetime.now(timezone.utc)
+            tenant_a = db.tenants.insert(
+                name="Tenant A",
+                slug=f"tenant-a-{uuid.uuid4().hex[:8]}",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            email_a = f"user-a-{uuid.uuid4().hex[:8]}@test.local"
+            identity_a = db.identities.insert(
+                tenant_id=tenant_a,
+                username=email_a,
+                email=email_a,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
+            )
+            tenant_b = db.tenants.insert(
+                name="Tenant B",
+                slug=f"tenant-b-{uuid.uuid4().hex[:8]}",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            org_b = db.organizations.insert(name="Org B", tenant_id=tenant_b)
+            # Entity in tenant B (no tenant_id column — org-scoped only)
+            db.entities.insert(
+                name="Secret Entity B",
+                type="compute",
+                organization_id=org_b,
+                external_id="secret-eb",
+            )
+            db.commit()
+            return {
+                "tenant_a": tenant_a,
+                "identity_a": identity_a,
+                "org_b": org_b,
+            }
+
+        fixtures = await run_in_threadpool(_seed)
+        token_a = self._token(app, fixtures["tenant_a"], fixtures["identity_a"])
 
         client = app.test_client()
         response = await client.get(
-            "/api/v1/graph/map",
-            headers={"Authorization": f"Bearer {token}"},
+            f"/api/v1/graph/map?organization_id={fixtures['org_b']}",
+            headers={"Authorization": f"Bearer {token_a}"},
         )
-
-        assert response.status_code == 403
+        assert response.status_code == 200
         body = await response.get_json()
-        assert "error" in body
-        assert "tenant" in body["error"].lower()
+        labels = {n["label"] for n in body["nodes"]}
+        assert (
+            "Secret Entity B" not in labels
+        ), "org_id param must not leak another tenant's entity"

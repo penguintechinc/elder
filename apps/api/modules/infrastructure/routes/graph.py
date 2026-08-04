@@ -497,8 +497,18 @@ async def get_map():
             org_query = db.organizations.id > 0
             org_query &= db.organizations.tenant_id == caller_tenant_id
             if org_id:
-                # Get this org and all children recursively
-                org_ids_to_include = _get_org_tree(db, org_id)
+                # Get this org and all children recursively, then constrain to
+                # organizations the caller's tenant actually owns. Without this,
+                # a caller could pass ?organization_id=<another tenant's org> and
+                # scope the org-only tables (entities, networking_resources,
+                # projects, milestones, issues) to that tenant's data (gh-189).
+                requested_tree = _get_org_tree(db, org_id)
+                if requested_tree:
+                    owned = db(
+                        db.organizations.id.belongs(list(requested_tree))
+                        & (db.organizations.tenant_id == caller_tenant_id)
+                    ).select(db.organizations.id)
+                    org_ids_to_include = {o.id for o in owned}
                 if org_ids_to_include:
                     org_query &= db.organizations.id.belongs(list(org_ids_to_include))
 
@@ -883,9 +893,12 @@ async def get_map():
         # Add polymorphic dependency edges
         if include_dependencies:
             dep_query = db.dependencies.id > 0
-            if tenant_id:
-                dep_query &= db.dependencies.tenant_id == tenant_id
-
+            # Edges are transitively tenant-scoped: add_edge only renders an
+            # edge when both endpoint nodes exist, and every node block above is
+            # filtered to caller_tenant_id. Filtering on dependencies.tenant_id
+            # here would additionally drop legacy edges with a NULL tenant_id
+            # whose endpoints are legitimately in-tenant, so isolation is
+            # enforced via node membership instead (gh-189).
             dependencies = db(dep_query).select()
             for dep in dependencies:
                 add_edge(
