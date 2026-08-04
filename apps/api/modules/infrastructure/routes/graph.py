@@ -591,6 +591,9 @@ async def get_map():
                 tenant_org_ids = [org.id for org in tenant_orgs]
                 if tenant_org_ids:
                     project_query &= db.projects.organization_id.belongs(tenant_org_ids)
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    project_query = db.projects.id < 0
 
             projects = db(project_query).select(limitby=(0, limit))
             for project in projects:
@@ -622,6 +625,9 @@ async def get_map():
                     milestone_query &= db.milestones.organization_id.belongs(
                         tenant_org_ids
                     )
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    milestone_query = db.milestones.id < 0
 
             milestones = db(milestone_query).select(limitby=(0, limit))
             for milestone in milestones:
@@ -651,6 +657,9 @@ async def get_map():
                 tenant_org_ids = [org.id for org in tenant_orgs]
                 if tenant_org_ids:
                     issue_query &= db.issues.organization_id.belongs(tenant_org_ids)
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    issue_query = db.issues.id < 0
 
             issues = db(issue_query).select(limitby=(0, limit))
             for issue in issues:
