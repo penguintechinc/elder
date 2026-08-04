@@ -125,3 +125,212 @@ class TestGraphDomainNodes:
 
         edge_types = {e["type"] for e in body["edges"]}
         assert "in_network" in edge_types
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_isolation_no_query_param_bypass(self, app):
+        """Verify cross-tenant inventory leak is fixed: query param cannot bypass isolation.
+
+        regression: gh-189
+        """
+        db = app.db
+
+        def _seed():
+            now = datetime.now(timezone.utc)
+
+            # Tenant A
+            tenant_a_id = db.tenants.insert(
+                name="Tenant A",
+                slug=f"tenant-a-{uuid.uuid4().hex[:8]}",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            email_a = f"user-a-{uuid.uuid4().hex[:8]}@test.local"
+            identity_a_id = db.identities.insert(
+                tenant_id=tenant_a_id,
+                username=email_a,
+                email=email_a,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
+            )
+
+            # Tenant B
+            tenant_b_id = db.tenants.insert(
+                name="Tenant B",
+                slug=f"tenant-b-{uuid.uuid4().hex[:8]}",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            email_b = f"user-b-{uuid.uuid4().hex[:8]}@test.local"
+            identity_b_id = db.identities.insert(
+                tenant_id=tenant_b_id,
+                username=email_b,
+                email=email_b,
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
+            )
+
+            # Org in Tenant A
+            org_a_id = db.organizations.insert(
+                name="Org A", tenant_id=tenant_a_id
+            )
+
+            # Org in Tenant B
+            org_b_id = db.organizations.insert(
+                name="Org B", tenant_id=tenant_b_id
+            )
+
+            # Entity in Tenant A
+            entity_a_id = db.entities.insert(
+                name="Entity A",
+                type="compute",
+                organization_id=org_a_id,
+                tenant_id=tenant_a_id,
+                external_id="ea-1",
+            )
+
+            # Entity in Tenant B
+            entity_b_id = db.entities.insert(
+                name="Entity B",
+                type="compute",
+                organization_id=org_b_id,
+                tenant_id=tenant_b_id,
+                external_id="eb-1",
+            )
+
+            # Service in Tenant A
+            svc_a_id = db.services.insert(
+                name="Service A",
+                organization_id=org_a_id,
+                tenant_id=tenant_a_id,
+                external_id="sa-1",
+            )
+
+            # Service in Tenant B
+            svc_b_id = db.services.insert(
+                name="Service B",
+                organization_id=org_b_id,
+                tenant_id=tenant_b_id,
+                external_id="sb-1",
+            )
+
+            # Dependency in Tenant A
+            db.dependencies.insert(
+                source_type="entity",
+                source_id=entity_a_id,
+                target_type="service",
+                target_id=svc_a_id,
+                tenant_id=tenant_a_id,
+                dependency_type="uses",
+            )
+
+            # Dependency in Tenant B
+            db.dependencies.insert(
+                source_type="entity",
+                source_id=entity_b_id,
+                target_type="service",
+                target_id=svc_b_id,
+                tenant_id=tenant_b_id,
+                dependency_type="uses",
+            )
+
+            db.commit()
+
+            return {
+                "tenant_a_id": tenant_a_id,
+                "tenant_b_id": tenant_b_id,
+                "identity_a_id": identity_a_id,
+                "identity_b_id": identity_b_id,
+            }
+
+        fixtures = await run_in_threadpool(_seed)
+
+        client = app.test_client()
+
+        # User A token
+        token_a = self._token(
+            app, fixtures["tenant_a_id"], fixtures["identity_a_id"]
+        )
+
+        # Test 1: User A can see their own tenant's resources
+        response = await client.get(
+            "/api/v1/graph/map",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert response.status_code == 200
+        body = await response.get_json()
+        entity_names = {n["label"] for n in body["nodes"]}
+        assert "Entity A" in entity_names, "User A should see Entity A"
+        assert "Entity B" not in entity_names, "User A should NOT see Entity B"
+
+        # Test 2: User A cannot bypass isolation with ?tenant_id=<B> query param
+        tenant_b_id = fixtures["tenant_b_id"]
+        response = await client.get(
+            f"/api/v1/graph/map?tenant_id={tenant_b_id}",
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+        assert response.status_code == 200
+        body = await response.get_json()
+        entity_names = {n["label"] for n in body["nodes"]}
+        # The query param MUST be ignored; User A still sees only their tenant
+        assert "Entity A" in entity_names, "User A should still see Entity A"
+        assert "Entity B" not in entity_names, "User A still cannot see Entity B (query param ignored)"
+
+        # Test 3: Edges also respect tenant scoping
+        edge_sources = {
+            (e["from"], e["to"]) for e in body["edges"]
+        }
+        # Entity A -> Service A edge should exist only if both are in Tenant A
+        # Entity B -> Service B edge must NOT appear (even though User A's token is for Tenant A)
+        for src, tgt in edge_sources:
+            # Verify no edge leaks from Tenant B
+            assert (
+                src != fixtures["entity_b_id"]
+            ), "Tenant B entity should not appear as edge source"
+
+    @pytest.mark.asyncio
+    async def test_missing_tenant_claim_returns_403(self, app):
+        """Verify GET /graph/map returns 403 when JWT has no tenant claim.
+
+        regression: gh-189
+        """
+        now = datetime.now(timezone.utc)
+
+        # Create token WITHOUT tenant claim
+        payload = {
+            "sub": "test-user",
+            "iat": now,
+            "exp": now + timedelta(hours=1),
+            "scope": ["infrastructure:read"],
+            "identity_id": 1,
+            "roles": ["admin"],
+            # NOTE: no 'tenant' claim
+        }
+        secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
+        token = jwt.encode(payload, secret, algorithm="HS256")
+
+        client = app.test_client()
+        response = await client.get(
+            "/api/v1/graph/map",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 403
+        body = await response.get_json()
+        assert "error" in body
+        assert "tenant" in body["error"].lower()

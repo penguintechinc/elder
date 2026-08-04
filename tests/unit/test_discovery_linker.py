@@ -684,11 +684,16 @@ def test_create_dependency_link_is_idempotent(seeded):
     # source_id/target_id filter can't accidentally match a row written by
     # another test.
     service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
     service._create_dependency_link(
-        "entity", 9_000_001, "entity", 9_000_002, "routes_to"
+        "entity", 9_000_001, "entity", 9_000_002, tenant_id, "routes_to"
     )
     service._create_dependency_link(
-        "entity", 9_000_001, "entity", 9_000_002, "routes_to"
+        "entity", 9_000_001, "entity", 9_000_002, tenant_id, "routes_to"
     )
     db.commit()
     rows = db(
@@ -701,6 +706,10 @@ def test_create_dependency_link_is_idempotent(seeded):
 
 def test_store_k8s_ingress_creates_routes_to_edge_to_service(seeded):
     service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
 
     svc_id = service._store_as_service(
         org_id,
@@ -726,7 +735,7 @@ def test_store_k8s_ingress_creates_routes_to_edge_to_service(seeded):
             "backend_services": ["web-svc"],
         },
     }
-    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {})
+    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {}, tenant_id)
     db.commit()
     assert ingress_id is not None
 
@@ -750,6 +759,10 @@ def test_store_k8s_ingress_skips_edge_when_service_absent(seeded):
     # raising, while the ingress itself is still persisted.
     service, db, org_id = seeded
 
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
     ingress_resource = {
         "name": "orphan-ingress",
         "resource_type": "k8s_ingress",
@@ -759,7 +772,7 @@ def test_store_k8s_ingress_skips_edge_when_service_absent(seeded):
             "backend_services": ["backend-svc-missing"],
         },
     }
-    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {})
+    ingress_id = service._store_k8s_ingress(org_id, ingress_resource, {}, tenant_id)
     db.commit()
     assert ingress_id is not None
 
@@ -772,6 +785,10 @@ def test_store_k8s_ingress_skips_edge_when_service_absent(seeded):
 
 def test_store_k8s_pvc_creates_bound_to_edge_to_pv(seeded):
     service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
 
     pv_id = service._store_as_data_store(
         org_id,
@@ -792,7 +809,7 @@ def test_store_k8s_pvc_creates_bound_to_edge_to_pv(seeded):
         "resource_id": "pvc-1",
         "metadata": {"volume_name": "pv-vol-1"},
     }
-    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes")
+    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes", tenant_id)
     db.commit()
     assert pvc_id is not None
 
@@ -816,13 +833,17 @@ def test_store_k8s_pvc_skips_edge_when_pv_absent(seeded):
     # without raising, while the PVC itself is still persisted.
     service, db, org_id = seeded
 
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
     pvc_resource = {
         "name": "pvc-orphan",
         "resource_type": "k8s_pvc",
         "resource_id": "pvc-orphan",
         "metadata": {"volume_name": "pv-does-not-exist"},
     }
-    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes")
+    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes", tenant_id)
     db.commit()
     assert pvc_id is not None
 
@@ -831,3 +852,53 @@ def test_store_k8s_pvc_skips_edge_when_pv_absent(seeded):
         & (db.dependencies.source_id == pvc_id)
     ).select()
     assert len(rows) == 0
+
+
+def test_dependencies_have_tenant_id_set(seeded):
+    """Verify that discovery-created dependencies have tenant_id populated.
+
+    regression: gh-189
+    """
+    service, db, org_id = seeded
+
+    # Get the tenant_id from the organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
+    # Create a simple dependency link
+    src_id = service._store_as_entity(
+        org_id,
+        {"name": "source", "resource_type": "pod", "resource_id": "pod-1"},
+        "kubernetes",
+    )
+    tgt_id = service._store_as_entity(
+        org_id,
+        {"name": "target", "resource_type": "pod", "resource_id": "pod-2"},
+        "kubernetes",
+    )
+
+    # Use _create_dependency_link to create a dependency (as discovery does)
+    result = service._create_dependency_link(
+        "entity",
+        src_id,
+        "entity",
+        tgt_id,
+        tenant_id,
+        "discovered_from",
+        {"test": "data"},
+    )
+    assert result is True
+
+    db.commit()
+
+    # Verify the dependency row has tenant_id set
+    dep_rows = db(
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id == src_id)
+        & (db.dependencies.target_type == "entity")
+        & (db.dependencies.target_id == tgt_id)
+    ).select()
+
+    assert len(dep_rows) == 1, "Dependency should exist"
+    dep = dep_rows[0]
+    assert dep.tenant_id == tenant_id, f"Dependency must have tenant_id={tenant_id}, got {dep.tenant_id}"
