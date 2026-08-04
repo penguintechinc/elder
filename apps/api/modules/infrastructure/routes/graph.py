@@ -386,7 +386,6 @@ async def get_map():
     Get global map of all resources and relationships for visualization.
 
     Query Parameters:
-        - tenant_id: Filter by tenant
         - organization_id: Filter by organization (includes children)
         - resource_types: Comma-separated list (organization,entity,identity,project,milestone,issue,
           networking_resource,data_store,service,software)
@@ -400,8 +399,16 @@ async def get_map():
     """
     db = current_app.db_read
 
+    # Get caller's tenant from JWT, NOT from query parameter
+    from quart import g as flask_g
+
+    caller_tenant_id = getattr(
+        getattr(flask_g, "current_user", None), "tenant_id", None
+    )
+    if caller_tenant_id is None:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
     # Get filter parameters
-    tenant_id = request.args.get("tenant_id", type=int)
     org_id = request.args.get("organization_id", type=int)
     resource_types_param = request.args.get("resource_types", "")
     entity_types_param = request.args.get("entity_types", "")
@@ -488,11 +495,20 @@ async def get_map():
         org_ids_to_include = set()
         if "organization" in resource_types:
             org_query = db.organizations.id > 0
-            if tenant_id:
-                org_query &= db.organizations.tenant_id == tenant_id
+            org_query &= db.organizations.tenant_id == caller_tenant_id
             if org_id:
-                # Get this org and all children recursively
-                org_ids_to_include = _get_org_tree(db, org_id)
+                # Get this org and all children recursively, then constrain to
+                # organizations the caller's tenant actually owns. Without this,
+                # a caller could pass ?organization_id=<another tenant's org> and
+                # scope the org-only tables (entities, networking_resources,
+                # projects, milestones, issues) to that tenant's data (gh-189).
+                requested_tree = _get_org_tree(db, org_id)
+                if requested_tree:
+                    owned = db(
+                        db.organizations.id.belongs(list(requested_tree))
+                        & (db.organizations.tenant_id == caller_tenant_id)
+                    ).select(db.organizations.id)
+                    org_ids_to_include = {o.id for o in owned}
                 if org_ids_to_include:
                     org_query &= db.organizations.id.belongs(list(org_ids_to_include))
 
@@ -513,14 +529,21 @@ async def get_map():
         # Get entities
         if "entity" in resource_types:
             entity_query = db.entities.id > 0
-            if tenant_id:
-                entity_query &= db.entities.tenant_id == tenant_id
             if org_ids_to_include:
                 entity_query &= db.entities.organization_id.belongs(
                     list(org_ids_to_include)
                 )
-            elif org_id:
-                entity_query &= db.entities.organization_id == org_id
+            else:
+                # No orgs to include yet; populate from caller's tenant
+                tenant_orgs = db(db.organizations.tenant_id == caller_tenant_id).select(
+                    db.organizations.id
+                )
+                tenant_org_ids = [org.id for org in tenant_orgs]
+                if tenant_org_ids:
+                    entity_query &= db.entities.organization_id.belongs(tenant_org_ids)
+                else:
+                    # No tenant orgs; return no entities
+                    entity_query = db.entities.id < 0
             if entity_types:
                 entity_query &= db.entities.type.belongs(entity_types)
 
@@ -540,8 +563,7 @@ async def get_map():
         # Get identities
         if "identity" in resource_types:
             identity_query = db.identities.id > 0
-            if tenant_id:
-                identity_query &= db.identities.tenant_id == tenant_id
+            identity_query &= db.identities.tenant_id == caller_tenant_id
 
             identities = db(identity_query).select(limitby=(0, limit))
             for identity in identities:
@@ -557,14 +579,21 @@ async def get_map():
         # Get projects
         if "project" in resource_types:
             project_query = db.projects.id > 0
-            if tenant_id:
-                project_query &= (
-                    db.projects.organization_id > 0
-                )  # tenant_id not in projects
             if org_ids_to_include:
                 project_query &= db.projects.organization_id.belongs(
                     list(org_ids_to_include)
                 )
+            else:
+                # No orgs to include yet; populate from caller's tenant
+                tenant_orgs = db(db.organizations.tenant_id == caller_tenant_id).select(
+                    db.organizations.id
+                )
+                tenant_org_ids = [org.id for org in tenant_orgs]
+                if tenant_org_ids:
+                    project_query &= db.projects.organization_id.belongs(tenant_org_ids)
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    project_query = db.projects.id < 0
 
             projects = db(project_query).select(limitby=(0, limit))
             for project in projects:
@@ -582,12 +611,23 @@ async def get_map():
         # Get milestones
         if "milestone" in resource_types:
             milestone_query = db.milestones.id > 0
-            if tenant_id:
-                milestone_query &= db.milestones.tenant_id == tenant_id
             if org_ids_to_include:
                 milestone_query &= db.milestones.organization_id.belongs(
                     list(org_ids_to_include)
                 )
+            else:
+                # No orgs to include yet; populate from caller's tenant
+                tenant_orgs = db(db.organizations.tenant_id == caller_tenant_id).select(
+                    db.organizations.id
+                )
+                tenant_org_ids = [org.id for org in tenant_orgs]
+                if tenant_org_ids:
+                    milestone_query &= db.milestones.organization_id.belongs(
+                        tenant_org_ids
+                    )
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    milestone_query = db.milestones.id < 0
 
             milestones = db(milestone_query).select(limitby=(0, limit))
             for milestone in milestones:
@@ -605,12 +645,21 @@ async def get_map():
         # Get issues
         if "issue" in resource_types:
             issue_query = db.issues.id > 0
-            if tenant_id:
-                issue_query &= db.issues.tenant_id == tenant_id
             if org_ids_to_include:
                 issue_query &= db.issues.organization_id.belongs(
                     list(org_ids_to_include)
                 )
+            else:
+                # No orgs to include yet; populate from caller's tenant
+                tenant_orgs = db(db.organizations.tenant_id == caller_tenant_id).select(
+                    db.organizations.id
+                )
+                tenant_org_ids = [org.id for org in tenant_orgs]
+                if tenant_org_ids:
+                    issue_query &= db.issues.organization_id.belongs(tenant_org_ids)
+                else:
+                    # Caller's tenant owns no orgs — fail closed, return nothing
+                    issue_query = db.issues.id < 0
 
             issues = db(issue_query).select(limitby=(0, limit))
             for issue in issues:
@@ -627,16 +676,27 @@ async def get_map():
                 )
 
         # Get networking resources (subnets, VPCs, firewalls, etc.)
-        # Note: networking_resources has no tenant_id column — organization
-        # scoping is the only available filter (unlike the domain tables below).
+        # Note: networking_resources has no tenant_id column — must scope by
+        # organizations that belong to the caller's tenant.
         if "networking_resource" in resource_types:
             nr_query = db.networking_resources.id > 0
             if org_ids_to_include:
                 nr_query &= db.networking_resources.organization_id.belongs(
                     list(org_ids_to_include)
                 )
-            elif org_id:
-                nr_query &= db.networking_resources.organization_id == org_id
+            else:
+                # No orgs to include yet; populate from caller's tenant
+                tenant_orgs = db(db.organizations.tenant_id == caller_tenant_id).select(
+                    db.organizations.id
+                )
+                tenant_org_ids = [org.id for org in tenant_orgs]
+                if tenant_org_ids:
+                    nr_query &= db.networking_resources.organization_id.belongs(
+                        tenant_org_ids
+                    )
+                else:
+                    # No tenant orgs; return no networking resources
+                    nr_query = db.networking_resources.id < 0
 
             networking_resources = db(nr_query).select(limitby=(0, limit))
             for nr in networking_resources:
@@ -651,8 +711,7 @@ async def get_map():
         # Get data stores
         if "data_store" in resource_types:
             ds_query = db.data_stores.id > 0
-            if tenant_id:
-                ds_query &= db.data_stores.tenant_id == tenant_id
+            ds_query &= db.data_stores.tenant_id == caller_tenant_id
             if org_ids_to_include:
                 ds_query &= db.data_stores.organization_id.belongs(
                     list(org_ids_to_include)
@@ -673,8 +732,7 @@ async def get_map():
         # Get services
         if "service" in resource_types:
             svc_query = db.services.id > 0
-            if tenant_id:
-                svc_query &= db.services.tenant_id == tenant_id
+            svc_query &= db.services.tenant_id == caller_tenant_id
             if org_ids_to_include:
                 svc_query &= db.services.organization_id.belongs(
                     list(org_ids_to_include)
@@ -695,8 +753,7 @@ async def get_map():
         # Get software
         if "software" in resource_types:
             sw_query = db.software.id > 0
-            if tenant_id:
-                sw_query &= db.software.tenant_id == tenant_id
+            sw_query &= db.software.tenant_id == caller_tenant_id
             if org_ids_to_include:
                 sw_query &= db.software.organization_id.belongs(
                     list(org_ids_to_include)
@@ -845,9 +902,12 @@ async def get_map():
         # Add polymorphic dependency edges
         if include_dependencies:
             dep_query = db.dependencies.id > 0
-            if tenant_id:
-                dep_query &= db.dependencies.tenant_id == tenant_id
-
+            # Edges are transitively tenant-scoped: add_edge only renders an
+            # edge when both endpoint nodes exist, and every node block above is
+            # filtered to caller_tenant_id. Filtering on dependencies.tenant_id
+            # here would additionally drop legacy edges with a NULL tenant_id
+            # whose endpoints are legitimately in-tenant, so isolation is
+            # enforced via node membership instead (gh-189).
             dependencies = db(dep_query).select()
             for dep in dependencies:
                 add_edge(

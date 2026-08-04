@@ -903,10 +903,20 @@ class DiscoveryService:
         source_id: int,
         target_type: str,
         target_id: int,
+        tenant_id: int,
         dep_type: str = "discovered_from",
         meta: Optional[Dict] = None,
     ) -> bool:
         """Create a dependencies record linking domain table entries.
+
+        Args:
+            source_type: Type of source resource
+            source_id: ID of source resource
+            target_type: Type of target resource
+            target_id: ID of target resource
+            tenant_id: Tenant ID (scopes the dependency)
+            dep_type: Dependency type (default: discovered_from)
+            meta: Optional metadata dictionary
 
         Returns:
             True if the row now exists (inserted or already present), False
@@ -932,6 +942,7 @@ class DiscoveryService:
                     source_id=source_id,
                     target_type=target_type,
                     target_id=target_id,
+                    tenant_id=tenant_id,
                     dependency_type=dep_type,
                     metadata=meta or {},
                     created_at=now,
@@ -997,19 +1008,35 @@ class DiscoveryService:
         return None
 
     def _link_resources(
-        self, source: Tuple[str, int], target: Tuple[str, int], edge_type: Optional[str]
+        self,
+        source: Tuple[str, int],
+        target: Tuple[str, int],
+        edge_type: Optional[str],
+        tenant_id: int,
     ) -> bool:
         """Write a dependencies edge; dual-write network membership.
 
-        Returns the dependencies-edge write result (True/False from
-        `_create_dependency_link`). The network_entity_mappings dual-write is
-        a projection of that edge, so its own success/failure doesn't change
-        the return value here.
+        Args:
+            source: Tuple of (source_type, source_id)
+            target: Tuple of (target_type, target_id)
+            edge_type: Type of dependency edge
+            tenant_id: Tenant ID (scopes the dependency)
+
+        Returns:
+            True/False from `_create_dependency_link`. The network_entity_mappings
+            dual-write is a projection of that edge, so its own success/failure
+            doesn't change the return value here.
         """
         src_type, src_id = source
         tgt_type, tgt_id = target
         linked = self._create_dependency_link(
-            src_type, src_id, tgt_type, tgt_id, edge_type, {"linked_by": "discovery"}
+            src_type,
+            src_id,
+            tgt_type,
+            tgt_id,
+            tenant_id,
+            edge_type,
+            {"linked_by": "discovery"},
         )
         if (
             edge_type in ("in_network", "in_subnet")
@@ -1039,8 +1066,16 @@ class DiscoveryService:
         organization_id: int,
         resource: Dict[str, Any],
         networking_lookup: Dict[str, int],
+        tenant_id: int,
     ) -> Optional[int]:
-        """Store a K8s Ingress in the networking_resources table."""
+        """Store a K8s Ingress in the networking_resources table.
+
+        Args:
+            organization_id: Organization ID
+            resource: K8s Ingress resource data
+            networking_lookup: Mapping of network names to IDs
+            tenant_id: Tenant ID (scopes dependencies)
+        """
         metadata = resource.get("metadata", {})
         namespace = metadata.get("namespace", "default")
         parent_id = networking_lookup.get(f"namespace:{namespace}")
@@ -1079,6 +1114,7 @@ class DiscoveryService:
                             ingress_id,
                             "service",
                             svc.id,
+                            tenant_id,
                             "routes_to",
                             {"ingress": resource.get("name", "")},
                         )
@@ -1101,9 +1137,20 @@ class DiscoveryService:
         return ingress_id
 
     def _store_k8s_pvc_as_data_store(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
+        self,
+        organization_id: int,
+        resource: Dict[str, Any],
+        provider: str,
+        tenant_id: int,
     ) -> Optional[int]:
-        """Store a K8s PVC in data_stores and link to PV via dependencies."""
+        """Store a K8s PVC in data_stores and link to PV via dependencies.
+
+        Args:
+            organization_id: Organization ID
+            resource: K8s PVC resource data
+            provider: Provider type (e.g., 'kubernetes')
+            tenant_id: Tenant ID (scopes dependencies)
+        """
         pvc_id = self._store_as_data_store(organization_id, resource, provider)
 
         if pvc_id:
@@ -1128,6 +1175,7 @@ class DiscoveryService:
                             pvc_id,
                             "data_store",
                             pv.id,
+                            tenant_id,
                             "bound_to",
                             {"pvc": resource.get("name", ""), "pv": volume_name},
                         )
@@ -1370,6 +1418,9 @@ class DiscoveryService:
         """
         provider = self._detect_provider_type(discovery_results)
 
+        # Resolve tenant_id from organization
+        tenant_id = self._tenant_for_org(organization_id)
+
         # Get config for root entity naming
         root_config = {"name": f"{provider} discovery"}
         root_entity_id = self._ensure_provider_root_entity(
@@ -1431,6 +1482,7 @@ class DiscoveryService:
                                 sa_id,
                                 "entity",
                                 root_entity_id,
+                                tenant_id,
                                 "discovered_from",
                                 {"provider": provider},
                             )
@@ -1444,6 +1496,7 @@ class DiscoveryService:
                             svc_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1451,7 +1504,7 @@ class DiscoveryService:
                 elif domain == "data_store":
                     if resource_type == "k8s_pvc":
                         ds_id = self._store_k8s_pvc_as_data_store(
-                            organization_id, resource, provider
+                            organization_id, resource, provider, tenant_id
                         )
                     else:
                         ds_id = self._store_as_data_store(
@@ -1464,6 +1517,7 @@ class DiscoveryService:
                             ds_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1476,6 +1530,7 @@ class DiscoveryService:
                             secret_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1490,6 +1545,7 @@ class DiscoveryService:
                             cert_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1501,7 +1557,7 @@ class DiscoveryService:
                         )
                     elif resource_type == "k8s_ingress":
                         self._store_k8s_ingress(
-                            organization_id, resource, networking_lookup
+                            organization_id, resource, networking_lookup, tenant_id
                         )
                     elif resource_type == "k8s_cni":
                         self._store_cni_as_networking(
@@ -1565,6 +1621,7 @@ class DiscoveryService:
                                     sw_id,
                                     "entity",
                                     root_entity_id,
+                                    tenant_id,
                                     "discovered_from",
                                     {"provider": provider},
                                 )
@@ -1611,7 +1668,9 @@ class DiscoveryService:
                             provider,
                         )
                         continue
-                    if self._link_resources(source, target, rel.get("edge_type")):
+                    if self._link_resources(
+                        source, target, rel.get("edge_type"), tenant_id
+                    ):
                         edges_created += 1
 
         self.db.commit()
