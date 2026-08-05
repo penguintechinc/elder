@@ -18,17 +18,29 @@ export function useModules() {
     throwOnError: false, // Don't throw; degrade gracefully
   })
 
-  // Build set of enabled module IDs (effective=true)
-  const enabledModuleIds: Set<string> = new Set(
-    data?.modules
-      ?.filter((m: ModuleInfo) => m.effective)
-      .map((m: ModuleInfo) => m.nav_id) ?? []
-  )
+  // Build set of enabled module IDs (effective=true).
+  //
+  // Match on BOTH the backend `name` (bare, e.g. "infrastructure") and `nav_id`
+  // (prefixed, e.g. "nav_infrastructure"). The frontend module manifests are
+  // inconsistent: older modules use a bare `id` ("infrastructure", "issues",
+  // "secrets", ...) while newer ones use the nav_-prefixed form
+  // ("nav_diagrams", ...). Keying only on `nav_id` (as before) silently dropped
+  // every bare-id module — its routes and sidebar nav never registered — so
+  // e.g. /organizations, /entities, /iam, /issues fell through to RouteNotFound.
+  // Including both keys makes `enabled.has(module.id)` correct for either form.
+  const enabledModuleIds = new Set<string>()
+  data?.modules
+    ?.filter((m: ModuleInfo) => m.effective)
+    .forEach((m: ModuleInfo) => {
+      if (m.nav_id) enabledModuleIds.add(m.nav_id)
+      if (m.name) enabledModuleIds.add(m.name)
+    })
 
-  // Build capabilities map: module nav_id -> capabilities
+  // Build capabilities map keyed on both name and nav_id, for the same reason.
   const capabilitiesMap = new Map<string, ModuleCapabilities>()
   data?.modules?.forEach((m: ModuleInfo) => {
-    capabilitiesMap.set(m.nav_id, m.capabilities)
+    if (m.nav_id) capabilitiesMap.set(m.nav_id, m.capabilities)
+    if (m.name) capabilitiesMap.set(m.name, m.capabilities)
   })
 
   return {
