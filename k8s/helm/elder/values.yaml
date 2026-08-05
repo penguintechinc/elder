@@ -89,6 +89,9 @@ postgres:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 # Redis Cache
 redis:
@@ -124,6 +127,9 @@ redis:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 # Elder Web UI
 web:

@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Elder Alpha Deployment Script
-# Local MicroK8s Deployment via Kustomize
+# Local MicroK8s Deployment via Helm v4
 #
 # Usage:
 #   ./scripts/deploy-alpha.sh [OPTIONS]
 #
 # Options:
-#   --build               Build Docker images and import into MicroK8s (default)
+#   --build               Build Docker images and push to local registry (default)
 #   --skip-build          Skip Docker build, use existing images
-#   --tag TAG             Image tag to use (default: alpha)
+#   --tag TAG             Image tag to use (default: alpha-latest)
 #   --service SERVICE     Build/deploy specific service only
 #   --dry-run             Show what would be deployed without applying
-#   --rollback            Rollback deployments to previous revision
+#   --rollback            Rollback the Helm release to the previous revision
 #   --help                Show this help message
 #
 # Environment:
 #   KUBE_CONTEXT          Kubernetes context (default: local-alpha)
 #   NAMESPACE             Target namespace (default: elder)
-#   APP_HOST              Application hostname (default: elder.localhost.local)
+#   APP_HOST              Web NodePort access host:port (default: localhost:30080)
 #
 # =============================================================================
 
@@ -34,22 +34,32 @@ readonly PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 readonly APP_NAME="${APP_NAME:-elder}"
 readonly KUBE_CONTEXT="${KUBE_CONTEXT:-local-alpha}"
 readonly NAMESPACE="${NAMESPACE:-elder}"
-readonly APP_HOST="${APP_HOST:-elder.localhost.local}"
-readonly OVERLAY_PATH="${OVERLAY_PATH:-k8s/kustomize/overlays/alpha}"
+readonly APP_HOST="${APP_HOST:-localhost:30080}"
+readonly HELM_DIR="${HELM_DIR:-k8s/helm/elder}"
+readonly VALUES_FILE="${VALUES_FILE:-k8s/helm/elder/alpha.yml}"
+readonly REGISTRY="${REGISTRY:-localhost:32000}"
 
-# Services with their build context paths (relative to PROJECT_ROOT)
-declare -A SERVICE_PATHS=(
-    ["api"]="apps/api"
-    ["worker"]="apps/worker"
+# Services with their build contexts and Dockerfile paths (relative to
+# PROJECT_ROOT). Matches `make docker-build-alpha` exactly — api/worker/web
+# need the repo root as build context (their Dockerfiles COPY from apps/,
+# shared/, etc.); scanner is self-contained under apps/scanner.
+declare -A SERVICE_DOCKERFILE=(
+    ["api"]="apps/api/Dockerfile"
+    ["worker"]="apps/worker/Dockerfile"
+    ["scanner"]="apps/scanner/Dockerfile"
+    ["web"]="web/Dockerfile"
+)
+declare -A SERVICE_CONTEXT=(
+    ["api"]="."
+    ["worker"]="."
     ["scanner"]="apps/scanner"
-    ["web"]="web"
+    ["web"]="."
 )
 
-# Image name prefix (used for docker build tags)
-readonly IMAGE_PREFIX="${APP_NAME}"
+readonly APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
 
 # Defaults
-declare TAG="alpha"
+declare TAG="alpha-latest"
 declare SERVICE_FILTER=""
 declare SKIP_BUILD=false
 declare DRY_RUN=false
@@ -82,11 +92,15 @@ print_error() {
 }
 
 # =============================================================================
-# kubectl wrapper (always uses --context)
+# kubectl / helm wrappers (always pass context explicitly)
 # =============================================================================
 
 kctl() {
     kubectl --context "${KUBE_CONTEXT}" "$@"
+}
+
+helm_cmd() {
+    helm --kube-context "${KUBE_CONTEXT}" "$@"
 }
 
 # =============================================================================
@@ -97,7 +111,7 @@ check_prerequisites() {
     print_info "Checking prerequisites..."
     local missing=()
 
-    for cmd in kubectl docker microk8s; do
+    for cmd in kubectl docker microk8s helm; do
         if ! command -v "${cmd}" &>/dev/null; then
             missing+=("${cmd}")
         fi
@@ -123,9 +137,9 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Verify overlay exists
-    if [[ ! -d "${PROJECT_ROOT}/${OVERLAY_PATH}" ]]; then
-        print_error "Kustomize overlay not found: ${OVERLAY_PATH}"
+    # Verify Helm chart exists
+    if [[ ! -f "${PROJECT_ROOT}/${HELM_DIR}/Chart.yaml" ]]; then
+        print_error "Helm chart not found: ${HELM_DIR}"
         exit 1
     fi
 
@@ -133,83 +147,91 @@ check_prerequisites() {
 }
 
 # =============================================================================
-# Docker build and MicroK8s import
+# Docker build and push to the local MicroK8s registry (localhost:32000)
 # =============================================================================
 
-build_and_import() {
+build_and_push() {
     local service="$1"
     local tag="$2"
-    local service_path="${PROJECT_ROOT}/${SERVICE_PATHS[${service}]}"
-
-    if [[ ! -d "${service_path}" ]]; then
-        print_warning "Service directory not found: ${SERVICE_PATHS[${service}]} — skipping"
-        return 0
-    fi
-
-    # Find Dockerfile (prefer Dockerfile.notests for faster alpha builds)
-    local dockerfile="${service_path}/Dockerfile"
-    if [[ -f "${service_path}/Dockerfile.notests" ]]; then
-        dockerfile="${service_path}/Dockerfile.notests"
-        print_info "Using Dockerfile.notests for ${service} (faster alpha build)"
-    fi
+    local dockerfile="${PROJECT_ROOT}/${SERVICE_DOCKERFILE[${service}]}"
+    local context="${PROJECT_ROOT}/${SERVICE_CONTEXT[${service}]}"
 
     if [[ ! -f "${dockerfile}" ]]; then
-        print_warning "No Dockerfile found for ${service} — skipping"
+        print_warning "No Dockerfile found for ${service} (${dockerfile}) — skipping"
         return 0
     fi
 
-    local image_name="${IMAGE_PREFIX}/${service}:${tag}"
+    local image_name="${REGISTRY}/${APP_NAME}-${service}:${tag}"
 
     print_info "Building image: ${image_name}"
+    local build_args=(--build-arg "APP_VERSION=${APP_VERSION}")
+    if [[ "${service}" == "web" ]]; then
+        build_args=(
+            --build-arg "VITE_VERSION=${APP_VERSION}"
+            --build-arg "VITE_BUILD_TIME=$(date +%s)"
+            # Absolute URL required: web (NodePort 30080) and api (NodePort
+            # 30081) are two different origins on localhost, not one
+            # same-origin ingress host — see k8s/helm/elder/alpha.yml
+            # web.buildArgs.VITE_API_URL for the source of truth this must
+            # match, and apps/api/config.py _build_cors_origins for the
+            # matching CORS allow.
+            --build-arg "VITE_API_URL=http://localhost:30081"
+        )
+    fi
+
     if ! docker build \
         --file "${dockerfile}" \
         --tag "${image_name}" \
         --label "environment=alpha" \
         --label "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        "${service_path}"; then
+        "${build_args[@]}" \
+        "${context}"; then
         print_error "Failed to build ${service}"
         return 1
     fi
 
-    print_info "Importing ${image_name} into MicroK8s..."
-    if ! docker save "${image_name}" | microk8s ctr image import -; then
-        print_error "Failed to import ${image_name} into MicroK8s"
+    print_info "Pushing ${image_name} to local registry..."
+    if ! docker push "${image_name}"; then
+        print_error "Failed to push ${image_name} — is the local registry running? " \
+            "(microk8s enable registry, or: docker run -d -p 32000:5000 registry:2)"
         return 1
     fi
 
-    print_success "Built and imported: ${image_name}"
+    print_success "Built and pushed: ${image_name}"
 }
 
 # =============================================================================
-# Kustomize deployment
+# Helm deployment
 # =============================================================================
 
 do_deploy() {
-    print_info "Deploying to local MicroK8s cluster..."
+    print_info "Deploying to local MicroK8s cluster via Helm..."
     print_info "  Context:   ${KUBE_CONTEXT}"
     print_info "  Namespace: ${NAMESPACE}"
-    print_info "  Overlay:   ${OVERLAY_PATH}"
+    print_info "  Chart:     ${HELM_DIR}"
+    print_info "  Values:    ${VALUES_FILE}"
     print_info "  Host:      ${APP_HOST}"
 
-    # Create namespace if missing
-    if ! kctl get namespace "${NAMESPACE}" &>/dev/null; then
-        print_info "Creating namespace: ${NAMESPACE}"
-        kctl create namespace "${NAMESPACE}"
-    fi
-
-    # Apply kustomize overlay
     if [[ "${DRY_RUN}" == "true" ]]; then
-        print_info "DRY-RUN: Rendering kustomize output..."
-        kctl apply -k "${PROJECT_ROOT}/${OVERLAY_PATH}" --dry-run=client -o yaml
+        print_info "DRY-RUN: Rendering Helm output..."
+        helm_cmd upgrade --install "${APP_NAME}" "${PROJECT_ROOT}/${HELM_DIR}" \
+            --namespace "${NAMESPACE}" \
+            --create-namespace \
+            --values "${PROJECT_ROOT}/${VALUES_FILE}" \
+            --dry-run --debug
         return 0
     fi
 
-    if ! kctl apply -k "${PROJECT_ROOT}/${OVERLAY_PATH}"; then
-        print_error "Failed to apply kustomize overlay"
+    if ! helm_cmd upgrade --install "${APP_NAME}" "${PROJECT_ROOT}/${HELM_DIR}" \
+        --namespace "${NAMESPACE}" \
+        --create-namespace \
+        --values "${PROJECT_ROOT}/${VALUES_FILE}" \
+        --wait --timeout 300s; then
+        print_error "Failed to apply Helm release"
         return 1
     fi
 
-    print_success "Kustomize manifests applied"
+    print_success "Helm release applied"
 }
 
 # =============================================================================
@@ -237,18 +259,6 @@ wait_for_rollout() {
         fi
     done
 
-    # Also check statefulsets
-    local statefulsets
-    statefulsets=$(kctl get statefulsets -n "${NAMESPACE}" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-
-    for sts in ${statefulsets}; do
-        print_info "Waiting for statefulset/${sts}..."
-        if ! kctl rollout status "statefulset/${sts}" -n "${NAMESPACE}" --timeout=300s; then
-            print_error "StatefulSet ${sts} failed to roll out"
-            failed=true
-        fi
-    done
-
     if [[ "${failed}" == "true" ]]; then
         return 1
     fi
@@ -268,12 +278,13 @@ show_status() {
     print_info "Services:"
     kctl get svc -n "${NAMESPACE}"
     echo ""
-    print_info "Access URL: https://${APP_HOST}"
+    print_info "Access URL: http://${APP_HOST}"
     echo ""
     print_info "Quick commands:"
     echo "  View pods:   kubectl --context ${KUBE_CONTEXT} get pods -n ${NAMESPACE}"
-    echo "  View logs:   kubectl --context ${KUBE_CONTEXT} logs -n ${NAMESPACE} -l environment=alpha -f"
+    echo "  View logs:   kubectl --context ${KUBE_CONTEXT} logs -n ${NAMESPACE} -l app.kubernetes.io/instance=${APP_NAME} -f"
     echo "  Describe:    kubectl --context ${KUBE_CONTEXT} describe pods -n ${NAMESPACE}"
+    echo "  Helm status: helm --kube-context ${KUBE_CONTEXT} status ${APP_NAME} -n ${NAMESPACE}"
 }
 
 # =============================================================================
@@ -281,22 +292,16 @@ show_status() {
 # =============================================================================
 
 do_rollback() {
-    print_warning "Rolling back deployments in ${NAMESPACE}..."
+    print_warning "Rolling back Helm release '${APP_NAME}' in ${NAMESPACE}..."
 
-    local deployments
-    deployments=$(kctl get deployments -n "${NAMESPACE}" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
-
-    if [[ -z "${deployments}" ]]; then
-        print_error "No deployments found in namespace ${NAMESPACE}"
+    if ! helm_cmd history "${APP_NAME}" -n "${NAMESPACE}" &>/dev/null; then
+        print_error "No Helm release '${APP_NAME}' found in namespace ${NAMESPACE}"
         return 1
     fi
 
-    for deploy in ${deployments}; do
-        print_info "Rolling back deployment/${deploy}..."
-        kctl rollout undo "deployment/${deploy}" -n "${NAMESPACE}"
-    done
+    helm_cmd rollback "${APP_NAME}" -n "${NAMESPACE}" --wait --timeout 300s
 
-    print_success "Rollback initiated"
+    print_success "Rollback complete"
     wait_for_rollout
 }
 
@@ -308,28 +313,30 @@ show_help() {
     cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Deploy ${APP_NAME} to local MicroK8s alpha environment using Kustomize.
+Deploy ${APP_NAME} to local MicroK8s alpha environment using Helm v4.
 
 OPTIONS:
-    --build               Build images and import into MicroK8s (default)
+    --build               Build and push images to the local registry (default)
     --skip-build          Skip Docker build, use existing images
-    --tag TAG             Image tag (default: alpha)
+    --tag TAG             Image tag (default: alpha-latest)
     --service SERVICE     Build specific service only
-    --dry-run             Render manifests without applying
-    --rollback            Rollback deployments to previous revision
+    --dry-run             Render manifests without applying (helm --dry-run --debug)
+    --rollback            Roll back the Helm release to the previous revision
     --help                Show this help message
 
 ENVIRONMENT:
     KUBE_CONTEXT:   ${KUBE_CONTEXT}
     NAMESPACE:      ${NAMESPACE}
     APP_HOST:       ${APP_HOST}
-    OVERLAY_PATH:   ${OVERLAY_PATH}
+    HELM_DIR:       ${HELM_DIR}
+    VALUES_FILE:    ${VALUES_FILE}
+    REGISTRY:       ${REGISTRY}
 
 SERVICES:
-    api        (apps/api)
-    worker     (apps/worker)
-    scanner    (apps/scanner)
-    web        (web)
+    api        (apps/api, build context: repo root)
+    worker     (apps/worker, build context: repo root)
+    scanner    (apps/scanner, build context: apps/scanner)
+    web        (web, build context: repo root)
 
 EXAMPLES:
     # Full build and deploy
@@ -344,7 +351,7 @@ EXAMPLES:
     # Preview what would be applied
     $(basename "$0") --skip-build --dry-run
 
-    # Rollback to previous deployment
+    # Roll back to the previous Helm revision
     $(basename "$0") --rollback
 EOF
 }
@@ -395,7 +402,7 @@ main() {
 
     echo ""
     print_info "=========================================="
-    print_info "  ${APP_NAME} — Alpha Deployment"
+    print_info "  ${APP_NAME} — Alpha Deployment (Helm)"
     print_info "=========================================="
     echo ""
 
@@ -410,10 +417,10 @@ main() {
 
     # Build images
     if [[ "${SKIP_BUILD}" != "true" ]]; then
-        print_info "Building and importing Docker images..."
-        for service in "${!SERVICE_PATHS[@]}"; do
+        print_info "Building and pushing Docker images to ${REGISTRY}..."
+        for service in "${!SERVICE_DOCKERFILE[@]}"; do
             if [[ -z "${SERVICE_FILTER}" ]] || [[ "${SERVICE_FILTER}" == "${service}" ]]; then
-                build_and_import "${service}" "${TAG}" || {
+                build_and_push "${service}" "${TAG}" || {
                     print_error "Failed to build ${service}"
                     exit 1
                 }

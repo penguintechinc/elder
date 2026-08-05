@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: elder-otel
-  labels:
-    app.kubernetes.io/part-of: elder
-data:
-  OTEL_EXPORTER_OTLP_ENDPOINT: "http://signoz-otel-collector:4318"
-  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"

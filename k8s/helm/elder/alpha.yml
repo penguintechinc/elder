@@ -1,11 +1,16 @@
 # Alpha environment overrides
-# Local development / testing environment
+# Local development / testing environment (MicroK8s, context: local-alpha)
+#
+# Renamed from values-alpha.yaml -> alpha.yml per house Helm naming convention
+# (bare `{env}.yml`, loaded explicitly via --values; only the chart's own
+# defaults keep the `values.yaml` name/extension).
 
 namespace: elder
 
-# Global settings for alpha
+# Global settings for alpha — images are built+pushed to the local MicroK8s
+# registry by `make docker-build-alpha` / `scripts/deploy-alpha.sh`.
 global:
-  imageRegistry: ""
+  imageRegistry: "localhost:32000"
   imagePullSecrets: []
 
 # OpenTelemetry - enabled, in-cluster SigNoz collector on local-alpha (MicroK8s)
@@ -15,11 +20,14 @@ otel:
   protocol: "http/protobuf"
 
 # PostgreSQL - Single replica for alpha
+# pullPolicy: IfNotPresent (not Never) — this is an external image pulled from
+# Docker Hub, not one of the locally-built app images; Never would fail on a
+# clean node with no cached layer.
 postgres:
   enabled: true
   replicaCount: 1
   image:
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "128Mi"
@@ -32,11 +40,15 @@ postgres:
     size: 5Gi
 
 # Redis - Single replica for alpha
+# NOTE: kept as redis:7-bookworm (not valkey/valkey:8) for this migration —
+# house standard prefers Valkey, but this image is already digest-pinned and
+# proven working in this chart's beta path; swapping the engine is deferred
+# to a fast-follow so the 2-day demo isn't riding on an unvalidated change.
 redis:
   enabled: true
   replicaCount: 1
   image:
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   resources:
     requests:
       memory: "64Mi"
@@ -48,16 +60,30 @@ redis:
     enabled: true
     size: 2Gi
 
-# Elder Web UI - Single replica for alpha
+# Elder Web UI - Single replica for alpha, exposed via fixed NodePort so the
+# demo is reachable at http://localhost:30080 with no port-forward.
 web:
   enabled: true
   replicaCount: 1
   image:
     repository: elder-web
     tag: alpha-latest
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 3000
+    targetPort: 3000
+    nodePort: 30080
   buildArgs:
-    VITE_API_URL: "http://localhost:4000"
+    # Absolute URL (not relative) — required because web and api are on two
+    # different NodePorts on the host, not one same-origin ingress host like
+    # the old kustomize alpha overlay. See apps/api CORS SITE_URL below and
+    # web/src/lib/api.ts (VITE_API_URL only used for "local dev outside
+    # Docker" — this is exactly that case). Must be passed as
+    # --build-arg VITE_API_URL=http://localhost:30081 at image build time;
+    # this value is not auto-consumed by the build scripts, it is documented
+    # here as the source of truth they must match.
+    VITE_API_URL: "http://localhost:30081"
   resources:
     requests:
       memory: "64Mi"
@@ -68,18 +94,27 @@ web:
   autoscaling:
     enabled: false
 
-# Elder Flask API - Single replica for alpha
+# Elder Flask API - Single replica for alpha, exposed via fixed NodePort so
+# the browser (loaded from the web NodePort) can reach the API directly.
 api:
   enabled: true
   replicaCount: 1
   image:
     repository: elder-api
     tag: alpha-latest
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 5000
+    targetPort: 5000
+    grpcPort: 50051
+    nodePort: 30081
   env:
     FLASK_ENV: development
     SECRET_KEY: "alpha-dev-secret-key"
-    SITE_URL: "http://localhost:3005"
+    # Must match web's NodePort (30080) — this becomes the primary allowed
+    # CORS origin (see apps/api/config.py _build_cors_origins).
+    SITE_URL: "http://localhost:30080"
     LOG_LEVEL: DEBUG
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "false"
@@ -104,7 +139,7 @@ scanner:
   image:
     repository: elder-scanner
     tag: alpha-latest
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   env:
     SCANNER_POLL_INTERVAL: "600"
     LOG_LEVEL: DEBUG
@@ -126,7 +161,7 @@ worker:
   image:
     repository: elder-worker
     tag: alpha-latest
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   env:
     LOG_LEVEL: DEBUG
     LOG_FORMAT: json
@@ -152,7 +187,7 @@ flows-invoker:
   image:
     repository: elder-flows-invoker
     tag: alpha-latest
-    pullPolicy: Never
+    pullPolicy: IfNotPresent
   env:
     LOG_LEVEL: DEBUG
     DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
@@ -168,8 +203,12 @@ flows-invoker:
       memory: "256Mi"
       cpu: "250m"
 
-# Ingress - Disabled in alpha
+# Ingress - Disabled in alpha; web/api reachable via NodePort instead
 ingress:
+  enabled: false
+
+# Cilium Gateway API - Disabled in alpha (beta/prod only)
+gateway:
   enabled: false
 
 # Service Account

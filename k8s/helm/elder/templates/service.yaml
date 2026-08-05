@@ -28,11 +28,17 @@ spec:
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
     name: http
+    {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
+    nodePort: {{ $componentConfig.service.nodePort }}
+    {{- end }}
   {{- else if eq $component "api" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
     name: http
+    {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
+    nodePort: {{ $componentConfig.service.nodePort }}
+    {{- end }}
   - port: {{ $componentConfig.service.grpcPort }}
     targetPort: {{ $componentConfig.service.grpcPort }}
     protocol: TCP
