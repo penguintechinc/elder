@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -10,6 +10,7 @@ import {
   applyEdgeChanges,
   type Node,
   type Edge,
+  type NodeProps,
   type OnNodesChange,
   type OnEdgesChange,
   type OnConnect,
@@ -55,7 +56,7 @@ const NODE_TYPES = {
   ],
 }
 
-function StreamNodeComponent({ data, selected }: { data: StreamNode['data']; selected: boolean }) {
+function StreamNodeComponent({ data, selected }: NodeProps<StreamNode>) {
   const bgColor = selected ? 'bg-amber-600' : 'bg-slate-700'
   return (
     <div className={`${bgColor} px-4 py-3 rounded-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}>
@@ -78,15 +79,16 @@ export default function PlaybookEditor() {
   const [selectedNode, setSelectedNode] = useState<StreamNode | null>(null)
   const [nodeConfig, setNodeConfig] = useState<Record<string, unknown>>({})
 
-  const { isLoading, error } = useQuery({
+  const { data: streamData, isLoading, error } = useQuery({
     queryKey: ['stream', id],
     queryFn: () => id ? api.getStream(Number(id)) : null,
     enabled: !!id,
-    onSuccess: (data) => {
-      if (data?.nodes) setNodes(data.nodes)
-      if (data?.edges) setEdges(data.edges)
-    },
   })
+
+  useEffect(() => {
+    if (streamData?.nodes) setNodes(streamData.nodes)
+    if (streamData?.edges) setEdges(streamData.edges)
+  }, [streamData])
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -106,7 +108,7 @@ export default function PlaybookEditor() {
     },
   })
 
-  const onNodesChange: OnNodesChange = useCallback(
+  const onNodesChange: OnNodesChange<StreamNode> = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
     []
   )
