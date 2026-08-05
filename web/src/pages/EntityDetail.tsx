@@ -16,13 +16,24 @@ interface MetadataField {
 }
 
 // Detail routes that actually exist for each dependency resource type — see
-// web/src/modules/*/index.tsx. identity/milestone have no detail page, so
-// those render as plain (non-clickable) text.
+// web/src/modules/*/index.tsx. These append `/${resourceId}` to link
+// directly to the specific resource.
 const DEPENDENCY_DETAIL_ROUTES: Record<string, string> = {
   entity: '/entities',
   organization: '/organizations',
   issue: '/issues',
   project: '/projects',
+}
+
+// Resource types with no detail page — clicking navigates to the list page
+// instead (no id appended).
+const DEPENDENCY_LIST_ROUTES: Record<string, string> = {
+  identity: '/iam',
+  service: '/services',
+  data_store: '/data-stores',
+  software: '/software',
+  networking: '/networking',
+  milestone: '/milestones',
 }
 
 function formatResourceType(type: string): string {
@@ -131,8 +142,11 @@ export default function EntityDetail() {
   }
 
   const getDependencyPath = (type: string, resourceId: number): string | null => {
-    const base = DEPENDENCY_DETAIL_ROUTES[type]
-    return base ? `${base}/${resourceId}` : null
+    const detailBase = DEPENDENCY_DETAIL_ROUTES[type]
+    if (detailBase) return `${detailBase}/${resourceId}`
+    const listPath = DEPENDENCY_LIST_ROUTES[type]
+    if (listPath) return listPath
+    return null
   }
 
   if (entityLoading) {

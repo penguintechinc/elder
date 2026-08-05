@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Server,
@@ -137,6 +137,17 @@ function LoadingSpinner() {
   )
 }
 
+// Fires the given callback on Enter/Space — for making non-button elements
+// (Card tiles) keyboard-activatable like a real button.
+function onActivateKey(callback: () => void) {
+  return (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      callback()
+    }
+  }
+}
+
 type LucideIcon = typeof Server
 
 function SubTabNav<T extends string>({ tabs, icons, active, onChange }: {
@@ -230,6 +241,7 @@ function VMsTab() {
 
 // ── Kubernetes Tab ────────────────────────────────────────────
 function KubernetesTab() {
+  const navigate = useNavigate()
   const [subTab, setSubTab] = useState<K8sTab>('Clusters')
 
   const { data: clustersData, isLoading: loadingClusters, refetch: refetchClusters } = useQuery({
@@ -326,7 +338,14 @@ function KubernetesTab() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {clusters.map((cluster) => (
-              <Card key={cluster.id}>
+              <Card
+                key={cluster.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate(`/entities/${cluster.id}`)}
+                onKeyDown={onActivateKey(() => navigate(`/entities/${cluster.id}`))}
+                className="cursor-pointer hover:border-primary-500 transition-colors"
+              >
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <Ship className="h-5 w-5 text-amber-400" />
@@ -371,7 +390,11 @@ function KubernetesTab() {
                 {nodes.map((node) => {
                   const meta: EntityMetadata = node.attributes?.metadata || {}
                   return (
-                    <tr key={node.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                    <tr
+                      key={node.id}
+                      className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                      onClick={() => navigate(`/entities/${node.id}`)}
+                    >
                       <td className="py-3 px-4 text-white font-medium">{node.name}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.capacity_cpu || '\u2014'}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.capacity_memory || '\u2014'}</td>
@@ -419,7 +442,11 @@ function KubernetesTab() {
                     ? 'bg-yellow-900/50 text-yellow-400'
                     : 'bg-red-900/50 text-red-400'
                   return (
-                    <tr key={pod.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                    <tr
+                      key={pod.id}
+                      className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                      onClick={() => navigate(`/entities/${pod.id}`)}
+                    >
                       <td className="py-3 px-4 text-white font-medium">{pod.name}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.namespace || '\u2014'}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.node_name || '\u2014'}</td>
@@ -453,7 +480,11 @@ function KubernetesTab() {
               </thead>
               <tbody>
                 {services.map((svc) => (
-                  <tr key={svc.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                  <tr
+                    key={svc.id}
+                    className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                    onClick={() => navigate('/services')}
+                  >
                     <td className="py-3 px-4 text-white font-medium">{svc.name}</td>
                     <td className="py-3 px-4 text-slate-300">{svc.port || '\u2014'}</td>
                     <td className="py-3 px-4">
@@ -476,7 +507,14 @@ function KubernetesTab() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {namespaces.map((ns) => (
-              <Card key={ns.id}>
+              <Card
+                key={ns.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => navigate('/networking')}
+                onKeyDown={onActivateKey(() => navigate('/networking'))}
+                className="cursor-pointer hover:border-primary-500 transition-colors"
+              >
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <Layers className="h-5 w-5 text-blue-400" />
@@ -520,7 +558,11 @@ function KubernetesTab() {
               </thead>
               <tbody>
                 {storage.map((ds) => (
-                  <tr key={ds.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                  <tr
+                    key={ds.id}
+                    className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                    onClick={() => navigate('/data-stores')}
+                  >
                     <td className="py-3 px-4 text-white font-medium">{ds.name}</td>
                     <td className="py-3 px-4 text-slate-300">{ds.storage_type || '\u2014'}</td>
                     <td className="py-3 px-4 text-slate-300">{ds.storage_provider || '\u2014'}</td>
@@ -550,7 +592,11 @@ function KubernetesTab() {
               </thead>
               <tbody>
                 {serviceAccounts.map((sa) => (
-                  <tr key={sa.id} className="border-b border-slate-800 hover:bg-slate-800/50">
+                  <tr
+                    key={sa.id}
+                    className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer"
+                    onClick={() => navigate('/iam')}
+                  >
                     <td className="py-3 px-4 text-white font-mono text-xs">{sa.username}</td>
                     <td className="py-3 px-4 text-slate-300">{sa.full_name || sa.username}</td>
                     <td className="py-3 px-4 text-slate-300">{sa.auth_provider || '\u2014'}</td>
