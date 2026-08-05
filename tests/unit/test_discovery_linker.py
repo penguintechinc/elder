@@ -809,7 +809,9 @@ def test_store_k8s_pvc_creates_bound_to_edge_to_pv(seeded):
         "resource_id": "pvc-1",
         "metadata": {"volume_name": "pv-vol-1"},
     }
-    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes", tenant_id)
+    pvc_id = service._store_k8s_pvc_as_data_store(
+        org_id, pvc_resource, "kubernetes", tenant_id
+    )
     db.commit()
     assert pvc_id is not None
 
@@ -843,7 +845,9 @@ def test_store_k8s_pvc_skips_edge_when_pv_absent(seeded):
         "resource_id": "pvc-orphan",
         "metadata": {"volume_name": "pv-does-not-exist"},
     }
-    pvc_id = service._store_k8s_pvc_as_data_store(org_id, pvc_resource, "kubernetes", tenant_id)
+    pvc_id = service._store_k8s_pvc_as_data_store(
+        org_id, pvc_resource, "kubernetes", tenant_id
+    )
     db.commit()
     assert pvc_id is not None
 
@@ -901,4 +905,261 @@ def test_dependencies_have_tenant_id_set(seeded):
 
     assert len(dep_rows) == 1, "Dependency should exist"
     dep = dep_rows[0]
-    assert dep.tenant_id == tenant_id, f"Dependency must have tenant_id={tenant_id}, got {dep.tenant_id}"
+    assert (
+        dep.tenant_id == tenant_id
+    ), f"Dependency must have tenant_id={tenant_id}, got {dep.tenant_id}"
+
+
+# PR2a tests: provider-agnostic discovery-engine prerequisites for cloud edge capture
+
+
+def test_format_resource_includes_external_id_and_relationships(app):
+    """Test that format_resource returns external_id and relationships keys."""
+    from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
+
+    # Create a minimal config to instantiate the discovery client
+    config = {
+        "provider_type": "aws",
+        "aws_access_key_id": "test",
+        "aws_secret_access_key": "test",
+    }
+    client = AWSDiscoveryClient(config)
+
+    # Test with both external_id and relationships provided
+    result = client.format_resource(
+        resource_id="i-123",
+        resource_type="ec2_instance",
+        name="test-instance",
+        metadata={"key": "value"},
+        region="us-east-1",
+        tags={"env": "test"},
+        external_id="arn:aws:ec2:us-east-1:123456789012:instance/i-123",
+        relationships=[{"type": "assumes_role", "target_id": "role-1"}],
+    )
+
+    assert result["external_id"] == "arn:aws:ec2:us-east-1:123456789012:instance/i-123"
+    assert result["relationships"] == [{"type": "assumes_role", "target_id": "role-1"}]
+    assert result["resource_id"] == "i-123"
+    assert result["name"] == "test-instance"
+
+
+def test_format_resource_defaults_external_id_and_relationships(app):
+    """Test that format_resource uses sensible defaults when external_id/relationships omitted."""
+    from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
+
+    config = {
+        "provider_type": "aws",
+        "aws_access_key_id": "test",
+        "aws_secret_access_key": "test",
+    }
+    client = AWSDiscoveryClient(config)
+
+    result = client.format_resource(
+        resource_id="i-456",
+        resource_type="ec2_instance",
+        name="test-instance-2",
+        metadata={},
+    )
+
+    # external_id should be None when not provided
+    assert result["external_id"] is None
+    # relationships should default to empty list
+    assert result["relationships"] == []
+
+
+def test_upsert_networking_resource_preserves_external_id_on_update(seeded):
+    """Test that _upsert_networking_resource preserves external_id on update when omitted."""
+    service, db, org_id = seeded
+
+    # Insert with external_id
+    net_id = service._upsert_networking_resource(
+        organization_id=org_id,
+        name="vpc-preserve-test",
+        network_type="vpc",
+        external_id="arn:aws:ec2:us-east-1:123456789012:vpc/vpc-abc",
+    )
+    db.commit()
+
+    row = db(db.networking_resources.id == net_id).select().first()
+    assert row.external_id == "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-abc"
+
+    # Update without providing external_id — should preserve the existing value
+    service._upsert_networking_resource(
+        organization_id=org_id,
+        name="vpc-preserve-test",
+        network_type="vpc",
+        attributes={"new_attr": "value"},
+        # external_id deliberately omitted
+    )
+    db.commit()
+
+    row = db(db.networking_resources.id == net_id).select().first()
+    # The external_id should still be the original value, not nulled
+    assert row.external_id == "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-abc"
+    assert row.attributes.get("new_attr") == "value"
+
+
+def test_store_iam_as_identity_returns_id_on_insert(seeded):
+    """Test that _store_iam_as_identity returns identity_id and sets external_id on insert."""
+    service, db, org_id = seeded
+
+    resource = {
+        "name": "test-user",
+        "resource_type": "iam_user",
+        "resource_id": "arn:aws:iam::123456789012:user/test-user",
+        "metadata": {
+            "arn": "arn:aws:iam::123456789012:user/test-user",
+        },
+    }
+
+    identity_id = service._store_iam_as_identity(org_id, resource)
+    db.commit()
+
+    assert identity_id is not None
+    row = db(db.identities.id == identity_id).select().first()
+    assert row is not None
+    assert row.external_id == "arn:aws:iam::123456789012:user/test-user"
+    assert row.auth_provider == "aws"
+    assert row.identity_type == "integration"
+
+
+def test_store_iam_as_identity_returns_id_on_update(seeded):
+    """Test that _store_iam_as_identity returns identity_id and updates external_id on update."""
+    service, db, org_id = seeded
+
+    resource = {
+        "name": "test-role",
+        "resource_type": "iam_role",
+        "resource_id": "arn:aws:iam::123456789012:role/test-role",
+        "metadata": {
+            "arn": "arn:aws:iam::123456789012:role/test-role",
+        },
+    }
+
+    # First insert
+    identity_id_1 = service._store_iam_as_identity(org_id, resource)
+    db.commit()
+
+    # Second call should hit update path
+    identity_id_2 = service._store_iam_as_identity(org_id, resource)
+    db.commit()
+
+    assert identity_id_1 == identity_id_2
+    row = db(db.identities.id == identity_id_2).select().first()
+    assert row.external_id == "arn:aws:iam::123456789012:role/test-role"
+    assert row.identity_type == "serviceAccount"  # IAM roles are service accounts
+
+
+def test_identity_registration_in_scan_index(seeded):
+    """Test that registered IAM identities resolve via scan_index in same-scan."""
+    service, db, org_id = seeded
+
+    iam_resource = {
+        "name": "lambda-exec-role",
+        "resource_type": "iam_role",
+        "resource_id": "arn:aws:iam::123456789012:role/lambda-exec",
+        "metadata": {
+            "arn": "arn:aws:iam::123456789012:role/lambda-exec",
+        },
+    }
+
+    # Store and register
+    identity_id = service._store_iam_as_identity(org_id, iam_resource)
+    scan_index = {}
+    service._register(scan_index, "aws", iam_resource, "identity", identity_id)
+    db.commit()
+
+    # Verify scan_index entry
+    ext_id = "arn:aws:iam::123456789012:role/lambda-exec"
+    assert ("aws", ext_id) in scan_index
+    assert scan_index[("aws", ext_id)] == ("identity", identity_id)
+
+    # Verify _resolve_target finds it via scan_index
+    result = service._resolve_target(scan_index, "aws", ext_id, "identity", org_id)
+    assert result == ("identity", identity_id)
+
+
+def test_resolve_target_in_db_finds_identity_by_external_id(seeded):
+    """Test that _resolve_target_in_db resolves identity by external_id (DB fallback)."""
+    service, db, org_id = seeded
+
+    # Insert an identity with external_id
+    identity_resource = {
+        "name": "gcp-service-account",
+        "resource_type": "service_account",
+        "resource_id": "sa-123@project.iam.gserviceaccount.com",
+        "metadata": {
+            "arn": "sa-123@project.iam.gserviceaccount.com",
+        },
+    }
+
+    identity_id = service._store_iam_as_identity(org_id, identity_resource)
+    db.commit()
+
+    # Now resolve it via DB lookup (simulating a different scan)
+    external_id = "sa-123@project.iam.gserviceaccount.com"
+    result = service._resolve_target_in_db(external_id, "identity", org_id)
+
+    assert result is not None
+    assert result == ("identity", identity_id)
+
+
+def test_iam_identity_creates_discovered_from_edge(seeded):
+    """Test that storing iam_user/iam_role and registering it creates discovered_from edge."""
+    service, db, org_id = seeded
+
+    # Create root entity (e.g., AWS account)
+    root_entity_id = service._store_as_entity(
+        org_id,
+        {
+            "name": "aws-account",
+            "resource_type": "aws_account",
+            "resource_id": "123456789012",
+        },
+        "provider",
+    )
+    db.commit()
+
+    # Get tenant for dependency creation
+    org = db(db.organizations.id == org_id).select().first()
+    tenant_id = org.tenant_id
+
+    # Create IAM role
+    iam_resource = {
+        "name": "cross-account-role",
+        "resource_type": "iam_role",
+        "resource_id": "arn:aws:iam::123456789012:role/cross-account",
+        "metadata": {
+            "arn": "arn:aws:iam::123456789012:role/cross-account",
+        },
+    }
+
+    identity_id = service._store_iam_as_identity(org_id, iam_resource)
+    db.commit()
+
+    # Create the dependency edge (as the code path does)
+    result = service._create_dependency_link(
+        "identity",
+        identity_id,
+        "entity",
+        root_entity_id,
+        tenant_id,
+        "discovered_from",
+        {"provider": "aws"},
+    )
+
+    assert result is True
+    db.commit()
+
+    # Verify the dependency exists
+    dep_rows = db(
+        (db.dependencies.source_type == "identity")
+        & (db.dependencies.source_id == identity_id)
+        & (db.dependencies.target_type == "entity")
+        & (db.dependencies.target_id == root_entity_id)
+    ).select()
+
+    assert len(dep_rows) == 1
+    dep = dep_rows[0]
+    assert dep.dependency_type == "discovered_from"
+    assert dep.tenant_id == tenant_id
