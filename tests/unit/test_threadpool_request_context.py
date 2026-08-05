@@ -22,9 +22,7 @@ async def test_run_in_threadpool_propagates_request_args(app):
     ``contextvars.Context`` into the executor thread instead.
     """
 
-    async with app.test_request_context(
-        "/api/v1/issues?status=open", method="GET"
-    ):
+    async with app.test_request_context("/api/v1/issues?status=open", method="GET"):
 
         def read_status():
             from quart import request
