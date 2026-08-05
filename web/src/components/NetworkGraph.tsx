@@ -40,6 +40,13 @@ const entityTypeColors: Record<string, string> = {
   user: '#f59e0b', // amber-500
   security_issue: '#ef4444', // red-500
 
+  // Cloud discovery resource types (fallback when the discovered resource
+  // has no more specific subtype — see graph.py add_node: type = subtype or
+  // resource_type). Keep in sync with Map.tsx RESOURCE_TYPES colors.
+  networking_resource: '#1abc9c', // turquoise
+  data_store: '#06b6d4', // cyan-500
+  software: '#eab308', // yellow-500
+
   // Default fallback
   default: '#64748b', // slate-500
 };

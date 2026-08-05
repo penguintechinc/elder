@@ -25,6 +25,9 @@ interface MapEdge {
 }
 
 // Resource type options
+// Cloud discovery types (networking_resource/data_store/service/software) must
+// match apps/api/modules/infrastructure/routes/graph.py VALID_RESOURCE_TYPES
+// exactly — they're sent verbatim in the resource_types query param.
 const RESOURCE_TYPES = [
   { value: 'organization', label: 'Organizations', color: '#3498db' },
   { value: 'entity', label: 'Entities', color: '#e74c3c' },
@@ -32,6 +35,10 @@ const RESOURCE_TYPES = [
   { value: 'project', label: 'Projects', color: '#27ae60' },
   { value: 'milestone', label: 'Milestones', color: '#f39c12' },
   { value: 'issue', label: 'Issues', color: '#e67e22' },
+  { value: 'networking_resource', label: 'Networking Resources', color: '#1abc9c' },
+  { value: 'data_store', label: 'Data Stores', color: '#06b6d4' },
+  { value: 'service', label: 'Services', color: '#a855f7' },
+  { value: 'software', label: 'Software', color: '#eab308' },
 ]
 
 // Entity subtype options

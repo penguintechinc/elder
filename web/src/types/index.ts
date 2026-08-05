@@ -39,20 +39,21 @@ export type EntityType =
   | 'user'
   | 'security_issue'
 
+// Matches apps/api/models/dataclasses.py DependencyDTO exactly — the API
+// returns polymorphic source/target refs only, it never joins/enriches the
+// referenced resource (no source_entity/target_entity name fields).
 export interface Dependency {
   id: number
+  tenant_id: number
   source_type: string
   source_id: number
   target_type: string
   target_id: number
-  // Enriched fields returned by the dependencies API (joined entity refs).
-  source_entity_id?: number
-  target_entity_id?: number
-  source_entity?: { id: number; name: string }
-  target_entity?: { id: number; name: string }
   dependency_type: DependencyType
   metadata?: Record<string, unknown>
   created_at: string
+  updated_at: string
+  village_id?: string
 }
 
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'

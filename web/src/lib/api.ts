@@ -347,25 +347,27 @@ class ApiClient {
   }
 
   // Dependencies
+  // NOTE: backend only recognizes source_type/source_id/target_type/target_id
+  // (see apps/api/modules/infrastructure/routes/dependencies.py) — do not add
+  // *_entity_id aliases back, the backend silently ignores unknown params.
   async getDependencies(params?: {
     page?: number
     per_page?: number
-    source_entity_id?: number
-    target_entity_id?: number
     source_type?: string
+    source_id?: number
     target_type?: string
+    target_id?: number
+    dependency_type?: string
   }) {
     const response = await this.client.get('/dependencies', { params })
     return response.data
   }
 
   async createDependency(data: {
-    source_entity_id?: number
-    target_entity_id?: number
-    source_type?: string
-    source_id?: number
-    target_type?: string
-    target_id?: number
+    source_type: string
+    source_id: number
+    target_type: string
+    target_id: number
     dependency_type: string
     metadata?: Record<string, unknown>
   }) {
