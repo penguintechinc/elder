@@ -1810,10 +1810,22 @@ class DiscoveryService:
         )
 
         if existing:
-            # Update existing identity
+            # Update existing identity. Unlike every other _store_as_*/
+            # _upsert_* helper in this file, the "existing" lookup above is
+            # NOT organization_id-scoped — identities.username carries a
+            # DB-level UNIQUE constraint, so a re-discovered principal can't
+            # get its own per-org row the way networking/data_store/service/
+            # entity resources do. Without reassigning organization_id (and
+            # tenant_id, which /graph/map filters identities on directly)
+            # here, an identity first discovered by one org would stay
+            # permanently invisible to any other org's org/tenant-scoped
+            # queries even after that org's own scan re-observes the same
+            # external principal.
             self.db(self.db.identities.id == existing.id).update(
                 full_name=name,
                 external_id=arn,
+                organization_id=organization_id,
+                tenant_id=self._tenant_for_org(organization_id),
                 updated_at=datetime.now(timezone.utc),
             )
             return existing.id
