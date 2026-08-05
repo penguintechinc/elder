@@ -574,10 +574,14 @@ class DiscoveryService:
             )
 
             if existing:
+                update_dict = {
+                    "attributes": attributes or {},
+                    "updated_at": datetime.now(timezone.utc),
+                }
+                if external_id is not None:
+                    update_dict["external_id"] = external_id
                 self.db(self.db.networking_resources.id == existing.id).update(
-                    attributes=attributes or {},
-                    external_id=external_id,
-                    updated_at=datetime.now(timezone.utc),
+                    **update_dict
                 )
                 return existing.id
 
@@ -960,6 +964,7 @@ class DiscoveryService:
         "data_store": "data_stores",
         "service": "services",
         "software": "software",
+        "identity": "identities",
     }
 
     def _resolve_target(
@@ -1467,7 +1472,22 @@ class DiscoveryService:
 
                 if domain == "identity":
                     if resource_type in ("iam_user", "iam_role"):
-                        self._store_iam_as_identity(organization_id, resource)
+                        identity_id = self._store_iam_as_identity(
+                            organization_id, resource
+                        )
+                        self._register(
+                            scan_index, provider, resource, "identity", identity_id
+                        )
+                        if identity_id and root_entity_id:
+                            self._create_dependency_link(
+                                "identity",
+                                identity_id,
+                                "entity",
+                                root_entity_id,
+                                tenant_id,
+                                "discovered_from",
+                                {"provider": provider},
+                            )
                     elif resource_type == "k8s_service_account":
                         cluster_name = root_config.get("name", "unknown")
                         sa_id = self._store_k8s_service_account_as_identity(
@@ -1678,13 +1698,16 @@ class DiscoveryService:
 
     def _store_iam_as_identity(
         self, organization_id: int, resource: Dict[str, Any]
-    ) -> None:
+    ) -> Optional[int]:
         """
         Store IAM user or role as an Identity resource.
 
         Args:
             organization_id: Organization ID
             resource: Discovered IAM resource data
+
+        Returns:
+            Identity row ID or None
         """
         resource_type = resource.get("resource_type", "")
         name = resource.get("name", "Unnamed")
@@ -1727,12 +1750,14 @@ class DiscoveryService:
             # Update existing identity
             self.db(self.db.identities.id == existing.id).update(
                 full_name=name,
+                external_id=arn,
                 updated_at=datetime.now(timezone.utc),
             )
+            return existing.id
         else:
             # Create new identity
             now = datetime.now(timezone.utc)
-            self.db.identities.insert(
+            identity_id = self.db.identities.insert(
                 tenant_id=self._tenant_for_org(organization_id),
                 identity_type=identity_type,
                 username=aws_username,
@@ -1740,6 +1765,7 @@ class DiscoveryService:
                 organization_id=organization_id,
                 auth_provider="aws",
                 auth_provider_id=arn,
+                external_id=arn,
                 portal_role="observer",  # AWS identities get observer role by default
                 is_active=True,
                 is_superuser=False,
@@ -1748,6 +1774,7 @@ class DiscoveryService:
                 created_at=now,
                 updated_at=now,
             )
+            return identity_id
 
     def _store_as_entity(
         self,
