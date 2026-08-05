@@ -18,7 +18,7 @@
 # Environment:
 #   KUBE_CONTEXT          Kubernetes context (default: local-alpha)
 #   NAMESPACE             Target namespace (default: elder)
-#   APP_HOST              Web NodePort access host:port (default: localhost:30080)
+#   APP_HOST              Web NodePort access host:port (default: localhost:30090)
 #
 # =============================================================================
 
@@ -34,15 +34,14 @@ readonly PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
 readonly APP_NAME="${APP_NAME:-elder}"
 readonly KUBE_CONTEXT="${KUBE_CONTEXT:-local-alpha}"
 readonly NAMESPACE="${NAMESPACE:-elder}"
-readonly APP_HOST="${APP_HOST:-localhost:30080}"
+readonly APP_HOST="${APP_HOST:-localhost:30090}"
 readonly HELM_DIR="${HELM_DIR:-k8s/helm/elder}"
 readonly VALUES_FILE="${VALUES_FILE:-k8s/helm/elder/alpha.yml}"
 readonly REGISTRY="${REGISTRY:-localhost:32000}"
 
 # Services with their build contexts and Dockerfile paths (relative to
-# PROJECT_ROOT). Matches `make docker-build-alpha` exactly — api/worker/web
-# need the repo root as build context (their Dockerfiles COPY from apps/,
-# shared/, etc.); scanner is self-contained under apps/scanner.
+# PROJECT_ROOT). All four Dockerfiles COPY paths relative to the repo root
+# (e.g. `COPY apps/scanner/ .`), so all four need repo root as build context.
 declare -A SERVICE_DOCKERFILE=(
     ["api"]="apps/api/Dockerfile"
     ["worker"]="apps/worker/Dockerfile"
@@ -52,7 +51,7 @@ declare -A SERVICE_DOCKERFILE=(
 declare -A SERVICE_CONTEXT=(
     ["api"]="."
     ["worker"]="."
-    ["scanner"]="apps/scanner"
+    ["scanner"]="."
     ["web"]="."
 )
 
@@ -169,13 +168,13 @@ build_and_push() {
         build_args=(
             --build-arg "VITE_VERSION=${APP_VERSION}"
             --build-arg "VITE_BUILD_TIME=$(date +%s)"
-            # Absolute URL required: web (NodePort 30080) and api (NodePort
-            # 30081) are two different origins on localhost, not one
+            # Absolute URL required: web (NodePort 30090) and api (NodePort
+            # 30091) are two different origins on localhost, not one
             # same-origin ingress host — see k8s/helm/elder/alpha.yml
             # web.buildArgs.VITE_API_URL for the source of truth this must
             # match, and apps/api/config.py _build_cors_origins for the
             # matching CORS allow.
-            --build-arg "VITE_API_URL=http://localhost:30081"
+            --build-arg "VITE_API_URL=http://localhost:30091"
         )
     fi
 
@@ -335,7 +334,7 @@ ENVIRONMENT:
 SERVICES:
     api        (apps/api, build context: repo root)
     worker     (apps/worker, build context: repo root)
-    scanner    (apps/scanner, build context: apps/scanner)
+    scanner    (apps/scanner, build context: repo root)
     web        (web, build context: repo root)
 
 EXAMPLES:

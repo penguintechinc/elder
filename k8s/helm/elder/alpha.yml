@@ -13,9 +13,21 @@ global:
   imageRegistry: "localhost:32000"
   imagePullSecrets: []
 
-# OpenTelemetry - enabled, in-cluster SigNoz collector on local-alpha (MicroK8s)
+# OpenTelemetry - DISABLED on this local-alpha cluster: no signoz-otel-collector
+# Service exists in any namespace here (checked `kubectl get svc -A`). With it
+# enabled, apps/api hung on every request: shared/observability.py wires up a
+# SimpleSpanProcessor (synchronous, exports inline on the request path, not
+# batched/async), so each request blocked through the OTLP exporter's DNS-fail
+# retry/backoff cycle (~10s+) — well past the 5s liveness/readiness probe
+# timeout, so api never went Ready. Confirmed by curling the pod IP directly:
+# /healthz timed out at 15s with 0 bytes received. Flagging the
+# SimpleSpanProcessor choice separately — it's a blocking-design bug in
+# shared/observability.py (should be BatchSpanProcessor) independent of
+# whether a collector is present, but that's a code fix requiring a rebuild,
+# out of scope here. Re-enable once a real collector is deployed on
+# local-alpha and the processor is fixed.
 otel:
-  enabled: true
+  enabled: false
   endpoint: "http://signoz-otel-collector:4318"
   protocol: "http/protobuf"
 
@@ -61,7 +73,10 @@ redis:
     size: 2Gi
 
 # Elder Web UI - Single replica for alpha, exposed via fixed NodePort so the
-# demo is reachable at http://localhost:30080 with no port-forward.
+# demo is reachable at http://localhost:30090 with no port-forward.
+# NOTE: 30080/30081 are already claimed on this shared local-alpha cluster by
+# the squawk product (dns-server/dhcp-server NodePorts) — shifted to
+# 30090/30091 to avoid "provided port is already allocated" on install.
 web:
   enabled: true
   replicaCount: 1
@@ -73,17 +88,17 @@ web:
     type: NodePort
     port: 3000
     targetPort: 3000
-    nodePort: 30080
+    nodePort: 30090
   buildArgs:
     # Absolute URL (not relative) — required because web and api are on two
     # different NodePorts on the host, not one same-origin ingress host like
     # the old kustomize alpha overlay. See apps/api CORS SITE_URL below and
     # web/src/lib/api.ts (VITE_API_URL only used for "local dev outside
     # Docker" — this is exactly that case). Must be passed as
-    # --build-arg VITE_API_URL=http://localhost:30081 at image build time;
+    # --build-arg VITE_API_URL=http://localhost:30091 at image build time;
     # this value is not auto-consumed by the build scripts, it is documented
     # here as the source of truth they must match.
-    VITE_API_URL: "http://localhost:30081"
+    VITE_API_URL: "http://localhost:30091"
   resources:
     requests:
       memory: "64Mi"
@@ -108,17 +123,24 @@ api:
     port: 5000
     targetPort: 5000
     grpcPort: 50051
-    nodePort: 30081
+    nodePort: 30091
   env:
     FLASK_ENV: development
     SECRET_KEY: "alpha-dev-secret-key"
-    # Must match web's NodePort (30080) — this becomes the primary allowed
+    # Must match web's NodePort (30090) — this becomes the primary allowed
     # CORS origin (see apps/api/config.py _build_cors_origins).
-    SITE_URL: "http://localhost:30080"
+    SITE_URL: "http://localhost:30090"
     LOG_LEVEL: DEBUG
     RELEASE_MODE: "false"
     GRPC_REQUIRE_LICENSE: "false"
     # Database (must match Service names from helm template)
+    # shared/database/__init__.py::get_database_url() requires the literal
+    # DATABASE_URL env var — it does NOT build one from DB_HOST/DB_USER/
+    # DB_PASSWORD despite apps/api/config.py's comment claiming it does
+    # (pre-existing doc/code mismatch, flagged not fixed here). DB_HOST/
+    # DB_PASSWORD below are kept for other consumers but are not sufficient
+    # on their own for api's startup DB check.
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DB_HOST: elder-postgres
     DB_PASSWORD: elder_dev_password
     REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
@@ -139,7 +161,15 @@ scanner:
   image:
     repository: elder-scanner
     tag: alpha-latest
-    pullPolicy: IfNotPresent
+    # Always (not IfNotPresent): tag is mutable (`alpha-latest`) and the node
+    # already had a pre-fix image cached under this exact tag (missing the
+    # `COPY shared /app/shared` layer -> ModuleNotFoundError: shared). With
+    # IfNotPresent, kubelet only checks whether the tag exists locally, never
+    # re-checks the registry digest, so a `docker push` alone never reaches
+    # the node. Confirmed stale via pod imageID vs `docker push` digest
+    # mismatch. Scoped to scanner only since it's the one whose Dockerfile
+    # changed this session.
+    pullPolicy: Always
   env:
     SCANNER_POLL_INTERVAL: "600"
     LOG_LEVEL: DEBUG

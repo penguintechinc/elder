@@ -37,6 +37,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 RUN playwright install chromium && playwright install-deps chromium
 
 COPY apps/scanner/ .
+COPY shared /app/shared
 
 RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
     mkdir -p /app/screenshots && \

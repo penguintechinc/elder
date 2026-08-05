@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import atexit
 import os
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import structlog
 from opentelemetry import metrics, trace
@@ -20,8 +20,23 @@ from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExp
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
-from opentelemetry.instrumentation.redis import RedisInstrumentor
+
+# Optional: psycopg2/redis instrumentation wrappers are listed in every
+# service's requirements, but the underlying drivers (`psycopg2`, `redis`)
+# are only installed where a service has direct DB/Redis access (api,
+# worker). Scanner has neither — it talks to the API over HTTP — so these
+# imports fail at module load, before auto_instrument_app()'s per-
+# instrumentor try/except ever runs. Guarding here extends this module's
+# existing "fail gracefully" contract (see module docstring) to a missing
+# optional dependency, not just an unreachable OTLP endpoint.
+try:
+    from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+except ImportError:
+    Psycopg2Instrumentor = None  # type: ignore[assignment,misc]
+try:
+    from opentelemetry.instrumentation.redis import RedisInstrumentor
+except ImportError:
+    RedisInstrumentor = None  # type: ignore[assignment,misc]
 from opentelemetry.sdk._logs import LoggerProvider
 from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
@@ -29,7 +44,15 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from quart import Quart
+
+if TYPE_CHECKING:
+    # Quart is only ever used as a type annotation below (auto_instrument_app),
+    # never at runtime — with `from __future__ import annotations` active,
+    # annotations are lazily-evaluated strings, so this doesn't need to be a
+    # real import. Non-web services (e.g. scanner: a poller with no ASGI app)
+    # don't ship quart at all; a real top-level import broke them at module
+    # load, same class of bug as the psycopg2/redis guards above.
+    from quart import Quart
 
 
 def init_telemetry(service_name: str) -> dict[str, Any]:
@@ -175,19 +198,27 @@ def auto_instrument_app(app: Quart) -> None:
     except Exception as e:
         logger.warning("Failed to install OTel ASGI middleware", error=str(e))
 
-    # Redis instrumentation
-    try:
-        RedisInstrumentor().instrument()
-        logger.info("OTel Redis instrumentation installed")
-    except Exception as e:
-        logger.warning("Failed to instrument Redis", error=str(e))
+    # Redis instrumentation (optional — driver not installed in every
+    # service, see import guard above)
+    if RedisInstrumentor is None:
+        logger.info("OTel Redis instrumentation skipped (driver not installed)")
+    else:
+        try:
+            RedisInstrumentor().instrument()
+            logger.info("OTel Redis instrumentation installed")
+        except Exception as e:
+            logger.warning("Failed to instrument Redis", error=str(e))
 
-    # psycopg2/psycopg3 instrumentation
-    try:
-        Psycopg2Instrumentor().instrument()
-        logger.info("OTel psycopg2 instrumentation installed")
-    except Exception as e:
-        logger.warning("Failed to instrument psycopg2", error=str(e))
+    # psycopg2/psycopg3 instrumentation (optional — driver not installed in
+    # every service, see import guard above)
+    if Psycopg2Instrumentor is None:
+        logger.info("OTel psycopg2 instrumentation skipped (driver not installed)")
+    else:
+        try:
+            Psycopg2Instrumentor().instrument()
+            logger.info("OTel psycopg2 instrumentation installed")
+        except Exception as e:
+            logger.warning("Failed to instrument psycopg2", error=str(e))
 
     # httpx instrumentation (async HTTP client)
     try:
