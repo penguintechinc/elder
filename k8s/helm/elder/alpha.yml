@@ -180,9 +180,11 @@ worker:
   credentialsSecret:
     name: ""
 
-# Flows Invoker Service - Single replica for alpha
+# Flows Invoker Service - DISABLED for alpha: apps/flows-invoker has no
+# buildable image yet, so enabling it guarantees an ImagePullBackOff pod.
+# Re-enable once the service exists and deploy-alpha.sh builds it.
 flows-invoker:
-  enabled: true
+  enabled: false
   replicaCount: 1
   image:
     repository: elder-flows-invoker
