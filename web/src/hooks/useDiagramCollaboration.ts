@@ -13,19 +13,45 @@ export interface UseDiagramCollaborationOptions {
   onRemoteChange: (nodes: Node[], edges: Edge[]) => void
 }
 
-interface WebSocketMessage {
-  type:
-    | 'cursor'
-    | 'drawing_change'
-    | 'presence'
-    | 'ping'
-    | 'cursor_moved'
-    | 'drawing_changed'
-    | 'user_joined'
-    | 'user_left'
-    | 'collaborators'
-  [key: string]: unknown
+interface CursorMovedMessage {
+  type: 'cursor_moved'
+  identity_id: string
+  x: number
+  y: number
 }
+
+interface DrawingChangedMessage {
+  type: 'drawing_changed'
+  nodes: Node[]
+  edges: Edge[]
+}
+
+interface UserJoinedMessage {
+  type: 'user_joined'
+  identity_id: string
+}
+
+interface UserLeftMessage {
+  type: 'user_left'
+  identity_id: string
+}
+
+interface CollaboratorsMessage {
+  type: 'collaborators'
+  collaborators: RemoteCollaborator[]
+}
+
+interface UnhandledMessage {
+  type: 'cursor' | 'drawing_change' | 'presence' | 'ping'
+}
+
+type WebSocketMessage =
+  | CursorMovedMessage
+  | DrawingChangedMessage
+  | UserJoinedMessage
+  | UserLeftMessage
+  | CollaboratorsMessage
+  | UnhandledMessage
 
 export function useDiagramCollaboration(
   diagramId: number,
@@ -111,7 +137,7 @@ export function useDiagramCollaboration(
   const handleMessageReceived = (message: WebSocketMessage) => {
     switch (message.type) {
       case 'cursor_moved': {
-        const { identity_id, x, y } = message as RemoteCollaborator
+        const { identity_id, x, y } = message
         setCollaborators((prev) => {
           const updated = new Map(prev)
           updated.set(identity_id, { identity_id, x, y })
@@ -122,7 +148,7 @@ export function useDiagramCollaboration(
 
       case 'drawing_changed': {
         if (applyingRemoteChange.current) return
-        const { nodes, edges } = message as { nodes: Node[]; edges: Edge[] }
+        const { nodes, edges } = message
         applyingRemoteChange.current = true
         onRemoteChange(nodes, edges)
         setTimeout(() => {
@@ -132,13 +158,13 @@ export function useDiagramCollaboration(
       }
 
       case 'user_joined': {
-        const { identity_id } = message as { identity_id: string }
+        const { identity_id } = message
         console.log('[useDiagramCollaboration] User joined:', identity_id)
         break
       }
 
       case 'user_left': {
-        const { identity_id } = message as { identity_id: string }
+        const { identity_id } = message
         setCollaborators((prev) => {
           const updated = new Map(prev)
           updated.delete(identity_id)
@@ -149,7 +175,7 @@ export function useDiagramCollaboration(
       }
 
       case 'collaborators': {
-        const { collaborators: collab } = message as { collaborators: RemoteCollaborator[] }
+        const { collaborators: collab } = message
         const map = new Map(collab.map((c) => [c.identity_id, c]))
         setCollaborators(map)
         console.log('[useDiagramCollaboration] Initial collaborators:', collab.length)

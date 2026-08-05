@@ -11,6 +11,7 @@ import {
   applyEdgeChanges,
   type Node,
   type Edge,
+  type NodeProps,
   type OnNodesChange,
   type OnEdgesChange,
   type OnConnect,
@@ -28,7 +29,13 @@ import { useDiagramCollaboration } from '@/hooks/useDiagramCollaboration'
 
 const handleStyle = '!w-3 !h-3 !bg-amber-500 !border-2 !border-amber-600'
 
-function CloudProviderNode({ data, selected }: { data: { label: string; provider: string; color: string }; selected: boolean }) {
+interface CloudProviderNodeData extends Record<string, unknown> {
+  label: string
+  provider: string
+  color: string
+}
+
+function CloudProviderNode({ data, selected }: NodeProps<Node<CloudProviderNodeData>>) {
   return (
     <div
       className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}
@@ -47,7 +54,13 @@ function CloudProviderNode({ data, selected }: { data: { label: string; provider
   )
 }
 
-function InfrastructureNode({ data, selected }: { data: { label: string; type: string; color: string }; selected: boolean }) {
+interface InfrastructureNodeData extends Record<string, unknown> {
+  label: string
+  type: string
+  color: string
+}
+
+function InfrastructureNode({ data, selected }: NodeProps<Node<InfrastructureNodeData>>) {
   return (
     <div
       className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}
@@ -66,7 +79,13 @@ function InfrastructureNode({ data, selected }: { data: { label: string; type: s
   )
 }
 
-function ShapeNode({ data, selected }: { data: { label: string; color: string; shape: string }; selected: boolean }) {
+interface ShapeNodeData extends Record<string, unknown> {
+  label: string
+  color: string
+  shape: string
+}
+
+function ShapeNode({ data, selected }: NodeProps<Node<ShapeNodeData>>) {
   const shapeStyles: Record<string, string> = {
     rectangle: 'rounded-md',
     rounded: 'rounded-xl',
@@ -96,7 +115,12 @@ function ShapeNode({ data, selected }: { data: { label: string; color: string; s
   )
 }
 
-function TextNode({ data, selected }: { data: { label: string; fontSize: string }; selected: boolean }) {
+interface TextNodeData extends Record<string, unknown> {
+  label: string
+  fontSize: string
+}
+
+function TextNode({ data, selected }: NodeProps<Node<TextNodeData>>) {
   return (
     <div className={`px-2 py-1 ${selected ? 'ring-2 ring-amber-400' : ''}`}>
       <span className={`text-white font-medium ${data.fontSize || 'text-sm'}`}>{data.label}</span>
