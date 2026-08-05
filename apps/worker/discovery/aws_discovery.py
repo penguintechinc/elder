@@ -341,27 +341,33 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                         # EC2 -> VPC (in_network)
                         if instance.get("VpcId"):
-                            relationships.append({
-                                "target_external_id": instance["VpcId"],
-                                "target_kind": "networking_resource",
-                                "edge_type": "in_network",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": instance["VpcId"],
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "in_network",
+                                }
+                            )
 
                         # EC2 -> Subnet (in_subnet)
                         if instance.get("SubnetId"):
-                            relationships.append({
-                                "target_external_id": instance["SubnetId"],
-                                "target_kind": "networking_resource",
-                                "edge_type": "in_subnet",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": instance["SubnetId"],
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "in_subnet",
+                                }
+                            )
 
                         # EC2 -> Security Groups (uses_security_group)
                         for sg in instance.get("SecurityGroups", []):
-                            relationships.append({
-                                "target_external_id": sg["GroupId"],
-                                "target_kind": "networking_resource",
-                                "edge_type": "uses_security_group",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": sg["GroupId"],
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "uses_security_group",
+                                }
+                            )
 
                         # EC2 -> IAM Role (assumes_role)
                         if instance.get("IamInstanceProfile"):
@@ -380,11 +386,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                                     if roles:
                                         role_arn = roles[0].get("Arn")
                                         if role_arn:
-                                            relationships.append({
-                                                "target_external_id": role_arn,
-                                                "target_kind": "identity",
-                                                "edge_type": "assumes_role",
-                                            })
+                                            relationships.append(
+                                                {
+                                                    "target_external_id": role_arn,
+                                                    "target_kind": "identity",
+                                                    "edge_type": "assumes_role",
+                                                }
+                                            )
                                 except Exception as e:
                                     logger.warning(
                                         f"Failed to resolve instance profile {profile_arn}: {e}"
@@ -483,11 +491,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         # EBS Volume -> EC2 instance (attached_to)
                         for attachment in volume.get("Attachments", []):
                             if attachment.get("InstanceId"):
-                                relationships.append({
-                                    "target_external_id": attachment["InstanceId"],
-                                    "target_kind": "entity",
-                                    "edge_type": "attached_to",
-                                })
+                                relationships.append(
+                                    {
+                                        "target_external_id": attachment["InstanceId"],
+                                        "target_kind": "entity",
+                                        "edge_type": "attached_to",
+                                    }
+                                )
 
                         resource = self.format_resource(
                             resource_id=volume_id,
@@ -551,9 +561,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         resource = self.format_resource(
                             resource_id=vpc_id,
                             resource_type="vpc",
-                            name=self._get_name_from_tags(
-                                vpc.get("Tags", []), vpc_id
-                            ),
+                            name=self._get_name_from_tags(vpc.get("Tags", []), vpc_id),
                             metadata={
                                 "cidr_block": vpc.get("CidrBlock"),
                                 "state": vpc.get("State"),
@@ -580,11 +588,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                         # Subnet -> VPC (in_network)
                         if subnet.get("VpcId"):
-                            relationships.append({
-                                "target_external_id": subnet["VpcId"],
-                                "target_kind": "networking_resource",
-                                "edge_type": "in_network",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": subnet["VpcId"],
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "in_network",
+                                }
+                            )
 
                         resource = self.format_resource(
                             resource_id=subnet_id,
@@ -626,9 +636,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                         # Get tags for load balancer
                         try:
-                            tags_response = elbv2.describe_tags(
-                                ResourceArns=[lb_arn]
-                            )
+                            tags_response = elbv2.describe_tags(ResourceArns=[lb_arn])
                             tags_list = tags_response.get("TagDescriptions", [{}])[
                                 0
                             ].get("Tags", [])
@@ -639,11 +647,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         # ELB -> VPC (in_network)
                         vpc_id = lb.get("VpcId")
                         if vpc_id:
-                            relationships.append({
-                                "target_external_id": vpc_id,
-                                "target_kind": "networking_resource",
-                                "edge_type": "in_network",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": vpc_id,
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "in_network",
+                                }
+                            )
 
                         # ELB -> Target Instances (routes_to)
                         try:
@@ -655,23 +665,21 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                                 tg_arn = tg.get("TargetGroupArn")
                                 if tg_arn:
                                     # Get target health for this TG
-                                    health_response = (
-                                        elbv2.describe_target_health(
-                                            TargetGroupArn=tg_arn
-                                        )
+                                    health_response = elbv2.describe_target_health(
+                                        TargetGroupArn=tg_arn
                                     )
                                     for target in health_response.get(
                                         "TargetHealthDescriptions", []
                                     ):
-                                        target_id = target.get("Target", {}).get(
-                                            "Id"
-                                        )
+                                        target_id = target.get("Target", {}).get("Id")
                                         if target_id:
-                                            relationships.append({
-                                                "target_external_id": target_id,
-                                                "target_kind": "entity",
-                                                "edge_type": "routes_to",
-                                            })
+                                            relationships.append(
+                                                {
+                                                    "target_external_id": target_id,
+                                                    "target_kind": "entity",
+                                                    "edge_type": "routes_to",
+                                                }
+                                            )
                         except Exception as e:
                             logger.warning(
                                 f"Failed to enumerate target groups for LB {lb_arn}: {e}"
@@ -727,11 +735,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                     # Security Group -> VPC (in_network)
                     if sg.get("VpcId"):
-                        relationships.append({
-                            "target_external_id": sg["VpcId"],
-                            "target_kind": "networking_resource",
-                            "edge_type": "in_network",
-                        })
+                        relationships.append(
+                            {
+                                "target_external_id": sg["VpcId"],
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            }
+                        )
 
                     resource = self.format_resource(
                         resource_id=sg_id,
@@ -783,21 +793,25 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                     db_subnet_group = db_instance.get("DBSubnetGroup", {})
                     vpc_id = db_subnet_group.get("VpcId")
                     if vpc_id:
-                        relationships.append({
-                            "target_external_id": vpc_id,
-                            "target_kind": "networking_resource",
-                            "edge_type": "in_network",
-                        })
+                        relationships.append(
+                            {
+                                "target_external_id": vpc_id,
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            }
+                        )
 
                     # RDS -> Security Groups (uses_security_group)
                     for vpc_sg in db_instance.get("VpcSecurityGroups", []):
                         sg_id = vpc_sg.get("VpcSecurityGroupId")
                         if sg_id:
-                            relationships.append({
-                                "target_external_id": sg_id,
-                                "target_kind": "networking_resource",
-                                "edge_type": "uses_security_group",
-                            })
+                            relationships.append(
+                                {
+                                    "target_external_id": sg_id,
+                                    "target_kind": "networking_resource",
+                                    "edge_type": "uses_security_group",
+                                }
+                            )
 
                     resource = self.format_resource(
                         resource_id=db_instance["DBInstanceIdentifier"],
@@ -852,28 +866,34 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                     vpc_config = function.get("VpcConfig", {})
                     vpc_id = vpc_config.get("VpcId")
                     if vpc_id:
-                        relationships.append({
-                            "target_external_id": vpc_id,
-                            "target_kind": "networking_resource",
-                            "edge_type": "in_network",
-                        })
+                        relationships.append(
+                            {
+                                "target_external_id": vpc_id,
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            }
+                        )
 
                     # Lambda -> Security Groups (uses_security_group)
                     for sg_id in vpc_config.get("SecurityGroupIds", []):
-                        relationships.append({
-                            "target_external_id": sg_id,
-                            "target_kind": "networking_resource",
-                            "edge_type": "uses_security_group",
-                        })
+                        relationships.append(
+                            {
+                                "target_external_id": sg_id,
+                                "target_kind": "networking_resource",
+                                "edge_type": "uses_security_group",
+                            }
+                        )
 
                     # Lambda -> IAM Role (assumes_role)
                     role_arn = function.get("Role")
                     if role_arn:
-                        relationships.append({
-                            "target_external_id": role_arn,
-                            "target_kind": "identity",
-                            "edge_type": "assumes_role",
-                        })
+                        relationships.append(
+                            {
+                                "target_external_id": role_arn,
+                                "target_kind": "identity",
+                                "edge_type": "assumes_role",
+                            }
+                        )
 
                     resource = self.format_resource(
                         resource_id=function_arn,

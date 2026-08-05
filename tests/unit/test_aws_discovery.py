@@ -217,8 +217,12 @@ class TestEC2Relationships:
 
         assert len(resources) == 1
         assert resources[0]["external_id"] == "i-123"
-        assert any(r["edge_type"] == "in_network" for r in resources[0]["relationships"])
-        vpc_rel = [r for r in resources[0]["relationships"] if r["edge_type"] == "in_network"][0]
+        assert any(
+            r["edge_type"] == "in_network" for r in resources[0]["relationships"]
+        )
+        vpc_rel = [
+            r for r in resources[0]["relationships"] if r["edge_type"] == "in_network"
+        ][0]
         assert vpc_rel["target_external_id"] == "vpc-abc"
         assert vpc_rel["target_kind"] == "networking_resource"
 
@@ -249,7 +253,9 @@ class TestEC2Relationships:
         resources = client.discover_compute()
 
         assert len(resources) == 1
-        subnet_rels = [r for r in resources[0]["relationships"] if r["edge_type"] == "in_subnet"]
+        subnet_rels = [
+            r for r in resources[0]["relationships"] if r["edge_type"] == "in_subnet"
+        ]
         assert len(subnet_rels) == 1
         assert subnet_rels[0]["target_external_id"] == "subnet-def"
 
@@ -282,7 +288,11 @@ class TestEC2Relationships:
 
         resources = client.discover_compute()
 
-        sg_rels = [r for r in resources[0]["relationships"] if r["edge_type"] == "uses_security_group"]
+        sg_rels = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "uses_security_group"
+        ]
         assert len(sg_rels) == 2
         assert set(r["target_external_id"] for r in sg_rels) == {"sg-1", "sg-2"}
 
@@ -330,19 +340,23 @@ class TestNetworkingRelationships:
         client = make_client()
         ec2 = MagicMock()
         vpc_paginator = MagicMock()
-        vpc_paginator.paginate.return_value = iter([
-            {
-                "Vpcs": [
-                    {
-                        "VpcId": "vpc-123",
-                        "CidrBlock": "10.0.0.0/16",
-                        "State": "available",
-                        "Tags": [],
-                    }
-                ]
-            }
-        ])
-        ec2.get_paginator.side_effect = lambda op: vpc_paginator if op == "describe_vpcs" else MagicMock()
+        vpc_paginator.paginate.return_value = iter(
+            [
+                {
+                    "Vpcs": [
+                        {
+                            "VpcId": "vpc-123",
+                            "CidrBlock": "10.0.0.0/16",
+                            "State": "available",
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ]
+        )
+        ec2.get_paginator.side_effect = lambda op: (
+            vpc_paginator if op == "describe_vpcs" else MagicMock()
+        )
         client.session.client.return_value = ec2
 
         resources = client.discover_network()
@@ -357,18 +371,20 @@ class TestNetworkingRelationships:
 
         def subnet_paginator():
             p = MagicMock()
-            p.paginate.return_value = iter([
-                {
-                    "Subnets": [
-                        {
-                            "SubnetId": "subnet-123",
-                            "VpcId": "vpc-abc",
-                            "CidrBlock": "10.0.1.0/24",
-                            "Tags": [],
-                        }
-                    ]
-                }
-            ])
+            p.paginate.return_value = iter(
+                [
+                    {
+                        "Subnets": [
+                            {
+                                "SubnetId": "subnet-123",
+                                "VpcId": "vpc-abc",
+                                "CidrBlock": "10.0.1.0/24",
+                                "Tags": [],
+                            }
+                        ]
+                    }
+                ]
+            )
             return p
 
         def sg_paginator():
@@ -563,9 +579,7 @@ class TestPhaseB2RDS:
 
         assert len(resources[0]["relationships"]) >= 1
         vpc_rel = [
-            r
-            for r in resources[0]["relationships"]
-            if r["edge_type"] == "in_network"
+            r for r in resources[0]["relationships"] if r["edge_type"] == "in_network"
         ]
         assert len(vpc_rel) == 1
         assert vpc_rel[0]["target_external_id"] == "vpc-abc"
@@ -675,9 +689,7 @@ class TestPhaseB2Lambda:
         resources = client.discover_serverless()
 
         vpc_rel = [
-            r
-            for r in resources[0]["relationships"]
-            if r["edge_type"] == "in_network"
+            r for r in resources[0]["relationships"] if r["edge_type"] == "in_network"
         ]
         assert len(vpc_rel) == 1
         assert vpc_rel[0]["target_external_id"] == "vpc-abc"
@@ -748,9 +760,7 @@ class TestPhaseB2Lambda:
         resources = client.discover_serverless()
 
         role_rel = [
-            r
-            for r in resources[0]["relationships"]
-            if r["edge_type"] == "assumes_role"
+            r for r in resources[0]["relationships"] if r["edge_type"] == "assumes_role"
         ]
         assert len(role_rel) == 1
         assert (
@@ -771,7 +781,9 @@ class TestPhaseB2ELB:
 
         # Mock EC2 for VPCs (returns empty to simplify)
         ec2_paginator = MagicMock()
-        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2_paginator.paginate.return_value = iter(
+            [{"Vpcs": [], "Subnets": [], "SecurityGroups": []}]
+        )
         ec2.get_paginator.return_value = ec2_paginator
 
         # Mock ELBv2
@@ -807,7 +819,9 @@ class TestPhaseB2ELB:
         resources = client.discover_network()
 
         lb_resources = [r for r in resources if r["resource_type"] == "load_balancer"]
-        assert len(lb_resources) > 0, f"No load balancers found. Found: {[r['resource_type'] for r in resources]}"
+        assert (
+            len(lb_resources) > 0
+        ), f"No load balancers found. Found: {[r['resource_type'] for r in resources]}"
         lb_resource = lb_resources[0]
         assert (
             lb_resource["external_id"]
@@ -822,7 +836,9 @@ class TestPhaseB2ELB:
 
         # Mock EC2 for VPCs (returns empty to simplify)
         ec2_paginator = MagicMock()
-        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2_paginator.paginate.return_value = iter(
+            [{"Vpcs": [], "Subnets": [], "SecurityGroups": []}]
+        )
         ec2.get_paginator.return_value = ec2_paginator
 
         # Mock ELBv2
@@ -860,9 +876,7 @@ class TestPhaseB2ELB:
         assert len(lb_resources) > 0
         lb_resource = lb_resources[0]
         vpc_rel = [
-            r
-            for r in lb_resource["relationships"]
-            if r["edge_type"] == "in_network"
+            r for r in lb_resource["relationships"] if r["edge_type"] == "in_network"
         ]
         assert len(vpc_rel) == 1
         assert vpc_rel[0]["target_external_id"] == "vpc-abc"
@@ -875,7 +889,9 @@ class TestPhaseB2ELB:
 
         # Mock EC2 for VPCs (returns empty to simplify)
         ec2_paginator = MagicMock()
-        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2_paginator.paginate.return_value = iter(
+            [{"Vpcs": [], "Subnets": [], "SecurityGroups": []}]
+        )
         ec2.get_paginator.return_value = ec2_paginator
 
         # Mock ELBv2
@@ -925,9 +941,7 @@ class TestPhaseB2ELB:
         assert len(lb_resources) > 0
         lb_resource = lb_resources[0]
         routes_to_rels = [
-            r
-            for r in lb_resource["relationships"]
-            if r["edge_type"] == "routes_to"
+            r for r in lb_resource["relationships"] if r["edge_type"] == "routes_to"
         ]
         assert len(routes_to_rels) == 2
         assert set(r["target_external_id"] for r in routes_to_rels) == {"i-1", "i-2"}
@@ -967,9 +981,7 @@ class TestPhaseB2EC2Role:
         )
         iam.get_instance_profile.return_value = {
             "InstanceProfile": {
-                "Roles": [
-                    {"Arn": "arn:aws:iam::123456789012:role/ec2-role"}
-                ]
+                "Roles": [{"Arn": "arn:aws:iam::123456789012:role/ec2-role"}]
             }
         }
 
@@ -985,9 +997,7 @@ class TestPhaseB2EC2Role:
         resources = client.discover_compute()
 
         role_rels = [
-            r
-            for r in resources[0]["relationships"]
-            if r["edge_type"] == "assumes_role"
+            r for r in resources[0]["relationships"] if r["edge_type"] == "assumes_role"
         ]
         assert len(role_rels) == 1
         assert (

@@ -1204,9 +1204,31 @@ def test_aws_ec2_vpc_relationship_created(seeded):
     assert counts["edges_created"] == 1
     assert counts["unresolved_edges"] == 0
 
-    inst = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
-    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
-    dep = db((db.dependencies.source_id == inst.id) & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    inst = (
+        db(
+            (db.entities.external_id == "i-web-1")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-prod")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_id == inst.id)
+            & (db.dependencies.target_id == vpc.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
     assert dep is not None
 
 
@@ -1246,9 +1268,31 @@ def test_aws_ec2_subnet_relationship_created(seeded):
     assert counts["edges_created"] == 1
     assert counts["unresolved_edges"] == 0
 
-    inst = db((db.entities.external_id == "i-subnet-test") & (db.entities.organization_id == org_id)).select().first()
-    subnet = db((db.networking_resources.external_id == "subnet-az1") & (db.networking_resources.organization_id == org_id)).select().first()
-    dep = db((db.dependencies.source_id == inst.id) & (db.dependencies.target_id == subnet.id) & (db.dependencies.dependency_type == "in_subnet")).select().first()
+    inst = (
+        db(
+            (db.entities.external_id == "i-subnet-test")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    subnet = (
+        db(
+            (db.networking_resources.external_id == "subnet-az1")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_id == inst.id)
+            & (db.dependencies.target_id == subnet.id)
+            & (db.dependencies.dependency_type == "in_subnet")
+        )
+        .select()
+        .first()
+    )
     assert dep is not None
 
 
@@ -1283,8 +1327,16 @@ def test_aws_ec2_security_group_relationships(seeded):
                 "provider": "aws",
                 "metadata": {},
                 "relationships": [
-                    {"target_external_id": "sg-web", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
-                    {"target_external_id": "sg-app", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                    {
+                        "target_external_id": "sg-web",
+                        "edge_type": "uses_security_group",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "sg-app",
+                        "edge_type": "uses_security_group",
+                        "target_kind": "networking_resource",
+                    },
                 ],
             }
         ],
@@ -1293,9 +1345,22 @@ def test_aws_ec2_security_group_relationships(seeded):
     assert counts["edges_created"] == 2
     assert counts["unresolved_edges"] == 0
 
-    inst = db((db.entities.external_id == "i-sg-test") & (db.entities.organization_id == org_id)).select().first()
-    sgs = db((db.networking_resources.network_type == "security_group") & (db.networking_resources.organization_id == org_id)).select()
-    deps = db((db.dependencies.source_id == inst.id) & (db.dependencies.dependency_type == "uses_security_group")).select()
+    inst = (
+        db(
+            (db.entities.external_id == "i-sg-test")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    sgs = db(
+        (db.networking_resources.network_type == "security_group")
+        & (db.networking_resources.organization_id == org_id)
+    ).select()
+    deps = db(
+        (db.dependencies.source_id == inst.id)
+        & (db.dependencies.dependency_type == "uses_security_group")
+    ).select()
     assert len(deps) == 2
     assert set(d.target_id for d in deps) == {sg.id for sg in sgs}
 
@@ -1336,9 +1401,33 @@ def test_aws_ebs_attached_to_ec2(seeded):
     assert counts["edges_created"] == 1
     assert counts["unresolved_edges"] == 0
 
-    inst = db((db.entities.external_id == "i-ebs-test") & (db.entities.organization_id == org_id)).select().first()
-    vol = db((db.data_stores.external_id == "vol-123") & (db.data_stores.organization_id == org_id)).select().first()
-    dep = db((db.dependencies.source_type == "data_store") & (db.dependencies.source_id == vol.id) & (db.dependencies.target_type == "entity") & (db.dependencies.target_id == inst.id) & (db.dependencies.dependency_type == "attached_to")).select().first()
+    inst = (
+        db(
+            (db.entities.external_id == "i-ebs-test")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    vol = (
+        db(
+            (db.data_stores.external_id == "vol-123")
+            & (db.data_stores.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_type == "data_store")
+            & (db.dependencies.source_id == vol.id)
+            & (db.dependencies.target_type == "entity")
+            & (db.dependencies.target_id == inst.id)
+            & (db.dependencies.dependency_type == "attached_to")
+        )
+        .select()
+        .first()
+    )
     assert dep is not None
 
 
@@ -1376,9 +1465,33 @@ def test_aws_subnet_in_vpc_relationship(seeded):
     assert counts["edges_created"] == 1
     assert counts["unresolved_edges"] == 0
 
-    subnet = db((db.networking_resources.external_id == "subnet-az1") & (db.networking_resources.organization_id == org_id)).select().first()
-    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
-    dep = db((db.dependencies.source_type == "networking_resource") & (db.dependencies.source_id == subnet.id) & (db.dependencies.target_type == "networking_resource") & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    subnet = (
+        db(
+            (db.networking_resources.external_id == "subnet-az1")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-prod")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_type == "networking_resource")
+            & (db.dependencies.source_id == subnet.id)
+            & (db.dependencies.target_type == "networking_resource")
+            & (db.dependencies.target_id == vpc.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
     assert dep is not None
 
 
@@ -1416,9 +1529,33 @@ def test_aws_security_group_in_vpc(seeded):
     assert counts["edges_created"] == 1
     assert counts["unresolved_edges"] == 0
 
-    sg = db((db.networking_resources.external_id == "sg-web") & (db.networking_resources.organization_id == org_id)).select().first()
-    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
-    dep = db((db.dependencies.source_type == "networking_resource") & (db.dependencies.source_id == sg.id) & (db.dependencies.target_type == "networking_resource") & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    sg = (
+        db(
+            (db.networking_resources.external_id == "sg-web")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-prod")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    dep = (
+        db(
+            (db.dependencies.source_type == "networking_resource")
+            & (db.dependencies.source_id == sg.id)
+            & (db.dependencies.target_type == "networking_resource")
+            & (db.dependencies.target_id == vpc.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
     assert dep is not None
 
 
@@ -1443,7 +1580,11 @@ def test_aws_complex_topology_all_edges_resolve(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
             {
@@ -1454,7 +1595,11 @@ def test_aws_complex_topology_all_edges_resolve(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
         ],
@@ -1467,9 +1612,21 @@ def test_aws_complex_topology_all_edges_resolve(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
-                    {"target_external_id": "subnet-1a", "edge_type": "in_subnet", "target_kind": "networking_resource"},
-                    {"target_external_id": "sg-web", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "subnet-1a",
+                        "edge_type": "in_subnet",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "sg-web",
+                        "edge_type": "uses_security_group",
+                        "target_kind": "networking_resource",
+                    },
                 ],
             }
         ],
@@ -1482,7 +1639,11 @@ def test_aws_complex_topology_all_edges_resolve(seeded):
                 "provider": "aws",
                 "metadata": {"size_gb": 100},
                 "relationships": [
-                    {"target_external_id": "i-web-1", "edge_type": "attached_to", "target_kind": "entity"}
+                    {
+                        "target_external_id": "i-web-1",
+                        "edge_type": "attached_to",
+                        "target_kind": "entity",
+                    }
                 ],
             }
         ],
@@ -1514,7 +1675,11 @@ def test_phase_b2_rds_relationships(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
         ],
@@ -1527,8 +1692,16 @@ def test_phase_b2_rds_relationships(seeded):
                 "provider": "aws",
                 "metadata": {"engine": "postgres", "vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
-                    {"target_external_id": "sg-rds", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "sg-rds",
+                        "edge_type": "uses_security_group",
+                        "target_kind": "networking_resource",
+                    },
                 ],
             }
         ],
@@ -1538,29 +1711,61 @@ def test_phase_b2_rds_relationships(seeded):
     assert counts["unresolved_edges"] == 0
 
     # Verify RDS data_store was created
-    rds = db((db.data_stores.external_id == "arn:aws:rds:us-east-2:123456789012:db:prod-db") & (db.data_stores.organization_id == org_id)).select().first()
+    rds = (
+        db(
+            (
+                db.data_stores.external_id
+                == "arn:aws:rds:us-east-2:123456789012:db:prod-db"
+            )
+            & (db.data_stores.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
     assert rds is not None
 
     # Verify edges were created
-    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
-    sg = db((db.networking_resources.external_id == "sg-rds") & (db.networking_resources.organization_id == org_id)).select().first()
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-prod")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    sg = (
+        db(
+            (db.networking_resources.external_id == "sg-rds")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
 
-    rds_to_vpc_dep = db(
-        (db.dependencies.source_type == "data_store")
-        & (db.dependencies.source_id == rds.id)
-        & (db.dependencies.target_type == "networking_resource")
-        & (db.dependencies.target_id == vpc.id)
-        & (db.dependencies.dependency_type == "in_network")
-    ).select().first()
+    rds_to_vpc_dep = (
+        db(
+            (db.dependencies.source_type == "data_store")
+            & (db.dependencies.source_id == rds.id)
+            & (db.dependencies.target_type == "networking_resource")
+            & (db.dependencies.target_id == vpc.id)
+            & (db.dependencies.dependency_type == "in_network")
+        )
+        .select()
+        .first()
+    )
     assert rds_to_vpc_dep is not None
 
-    rds_to_sg_dep = db(
-        (db.dependencies.source_type == "data_store")
-        & (db.dependencies.source_id == rds.id)
-        & (db.dependencies.target_type == "networking_resource")
-        & (db.dependencies.target_id == sg.id)
-        & (db.dependencies.dependency_type == "uses_security_group")
-    ).select().first()
+    rds_to_sg_dep = (
+        db(
+            (db.dependencies.source_type == "data_store")
+            & (db.dependencies.source_id == rds.id)
+            & (db.dependencies.target_type == "networking_resource")
+            & (db.dependencies.target_id == sg.id)
+            & (db.dependencies.dependency_type == "uses_security_group")
+        )
+        .select()
+        .first()
+    )
     assert rds_to_sg_dep is not None
 
 
@@ -1572,11 +1777,16 @@ def test_phase_b2_lambda_relationships(seeded):
     tenant_id = 1
     now = datetime.now(timezone.utc)
     role_arn = "arn:aws:iam::123456789012:role/lambda-role"
-    username = f"aws:123456789012:lambda-role:org{org_id}"  # Make username unique per org
+    username = (
+        f"aws:123456789012:lambda-role:org{org_id}"  # Make username unique per org
+    )
 
     # Check if identity already exists for this org
     existing = (
-        db((db.identities.username == username) & (db.identities.organization_id == org_id))
+        db(
+            (db.identities.username == username)
+            & (db.identities.organization_id == org_id)
+        )
         .select()
         .first()
     )
@@ -1619,7 +1829,11 @@ def test_phase_b2_lambda_relationships(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
         ],
@@ -1632,29 +1846,57 @@ def test_phase_b2_lambda_relationships(seeded):
                 "provider": "aws",
                 "metadata": {"runtime": "python3.11"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
-                    {"target_external_id": "sg-lambda", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
-                    {"target_external_id": role_arn, "edge_type": "assumes_role", "target_kind": "identity"},
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "sg-lambda",
+                        "edge_type": "uses_security_group",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": role_arn,
+                        "edge_type": "assumes_role",
+                        "target_kind": "identity",
+                    },
                 ],
             }
         ],
     }
     counts = service._store_discovered_resources(org_id, results)
-    assert counts["edges_created"] == 4  # sg->vpc, lambda->vpc, lambda->sg, lambda->role
+    assert (
+        counts["edges_created"] == 4
+    )  # sg->vpc, lambda->vpc, lambda->sg, lambda->role
     assert counts["unresolved_edges"] == 0
 
     # Verify service was created
-    func = db((db.services.external_id == "arn:aws:lambda:us-east-2:123456789012:function:my-func") & (db.services.organization_id == org_id)).select().first()
+    func = (
+        db(
+            (
+                db.services.external_id
+                == "arn:aws:lambda:us-east-2:123456789012:function:my-func"
+            )
+            & (db.services.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
     assert func is not None
 
     # Verify assumes_role edge was created
-    assumes_role_dep = db(
-        (db.dependencies.source_type == "service")
-        & (db.dependencies.source_id == func.id)
-        & (db.dependencies.target_type == "identity")
-        & (db.dependencies.target_id == identity_id)
-        & (db.dependencies.dependency_type == "assumes_role")
-    ).select().first()
+    assumes_role_dep = (
+        db(
+            (db.dependencies.source_type == "service")
+            & (db.dependencies.source_id == func.id)
+            & (db.dependencies.target_type == "identity")
+            & (db.dependencies.target_id == identity_id)
+            & (db.dependencies.dependency_type == "assumes_role")
+        )
+        .select()
+        .first()
+    )
     assert assumes_role_dep is not None
 
 
@@ -1679,9 +1921,21 @@ def test_phase_b2_elb_routes_to_targets(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
-                    {"target_external_id": "i-web-1", "edge_type": "routes_to", "target_kind": "entity"},
-                    {"target_external_id": "i-web-2", "edge_type": "routes_to", "target_kind": "entity"},
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": "i-web-1",
+                        "edge_type": "routes_to",
+                        "target_kind": "entity",
+                    },
+                    {
+                        "target_external_id": "i-web-2",
+                        "edge_type": "routes_to",
+                        "target_kind": "entity",
+                    },
                 ],
             },
         ],
@@ -1694,7 +1948,11 @@ def test_phase_b2_elb_routes_to_targets(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
             {
@@ -1705,34 +1963,65 @@ def test_phase_b2_elb_routes_to_targets(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             },
         ],
     }
     counts = service._store_discovered_resources(org_id, results)
-    assert counts["edges_created"] == 5  # vpc->vpc (dummy), lb->vpc, lb->i1, lb->i2, i1->vpc, i2->vpc
+    assert (
+        counts["edges_created"] == 5
+    )  # vpc->vpc (dummy), lb->vpc, lb->i1, lb->i2, i1->vpc, i2->vpc
     assert counts["unresolved_edges"] == 0
 
     # Verify LB was created and registered
-    lb = db(
-        (db.networking_resources.external_id == "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188")
-        & (db.networking_resources.organization_id == org_id)
-    ).select().first()
+    lb = (
+        db(
+            (
+                db.networking_resources.external_id
+                == "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188"
+            )
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
     assert lb is not None
 
     # Verify routes_to edges were created
-    web1 = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
-    web2 = db((db.entities.external_id == "i-web-2") & (db.entities.organization_id == org_id)).select().first()
+    web1 = (
+        db(
+            (db.entities.external_id == "i-web-1")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    web2 = (
+        db(
+            (db.entities.external_id == "i-web-2")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
 
     for web in [web1, web2]:
-        routes_to_dep = db(
-            (db.dependencies.source_type == "networking_resource")
-            & (db.dependencies.source_id == lb.id)
-            & (db.dependencies.target_type == "entity")
-            & (db.dependencies.target_id == web.id)
-            & (db.dependencies.dependency_type == "routes_to")
-        ).select().first()
+        routes_to_dep = (
+            db(
+                (db.dependencies.source_type == "networking_resource")
+                & (db.dependencies.source_id == lb.id)
+                & (db.dependencies.target_type == "entity")
+                & (db.dependencies.target_id == web.id)
+                & (db.dependencies.dependency_type == "routes_to")
+            )
+            .select()
+            .first()
+        )
         assert routes_to_dep is not None
 
 
@@ -1748,7 +2037,10 @@ def test_phase_b2_ec2_assumes_role(seeded):
 
     # Check if identity already exists for this org
     existing = (
-        db((db.identities.username == username) & (db.identities.organization_id == org_id))
+        db(
+            (db.identities.username == username)
+            & (db.identities.organization_id == org_id)
+        )
         .select()
         .first()
     )
@@ -1793,8 +2085,16 @@ def test_phase_b2_ec2_assumes_role(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
-                    {"target_external_id": role_arn, "edge_type": "assumes_role", "target_kind": "identity"},
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    },
+                    {
+                        "target_external_id": role_arn,
+                        "edge_type": "assumes_role",
+                        "target_kind": "identity",
+                    },
                 ],
             }
         ],
@@ -1804,16 +2104,27 @@ def test_phase_b2_ec2_assumes_role(seeded):
     assert counts["unresolved_edges"] == 0
 
     # Verify EC2 assumes_role edge was created
-    ec2 = db((db.entities.external_id == "i-web") & (db.entities.organization_id == org_id)).select().first()
+    ec2 = (
+        db(
+            (db.entities.external_id == "i-web")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
     assert ec2 is not None
 
-    assumes_role_dep = db(
-        (db.dependencies.source_type == "entity")
-        & (db.dependencies.source_id == ec2.id)
-        & (db.dependencies.target_type == "identity")
-        & (db.dependencies.target_id == identity_id)
-        & (db.dependencies.dependency_type == "assumes_role")
-    ).select().first()
+    assumes_role_dep = (
+        db(
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.source_id == ec2.id)
+            & (db.dependencies.target_type == "identity")
+            & (db.dependencies.target_id == identity_id)
+            & (db.dependencies.dependency_type == "assumes_role")
+        )
+        .select()
+        .first()
+    )
     assert assumes_role_dep is not None
 
 
@@ -1840,7 +2151,11 @@ def test_aws_no_connected_to_for_ec2_in_network(seeded):
                 "provider": "aws",
                 "metadata": {"vpc_id": "vpc-prod"},
                 "relationships": [
-                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
                 ],
             }
         ],
@@ -1850,12 +2165,30 @@ def test_aws_no_connected_to_for_ec2_in_network(seeded):
     assert counts["unresolved_edges"] == 0
 
     # Verify NO network_entity_mappings row exists for EC2->VPC
-    ec2 = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
-    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+    ec2 = (
+        db(
+            (db.entities.external_id == "i-web-1")
+            & (db.entities.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
+    vpc = (
+        db(
+            (db.networking_resources.external_id == "vpc-prod")
+            & (db.networking_resources.organization_id == org_id)
+        )
+        .select()
+        .first()
+    )
 
-    legacy_mapping = db(
-        (db.network_entity_mappings.network_id == vpc.id)
-        & (db.network_entity_mappings.entity_id == ec2.id)
-        & (db.network_entity_mappings.relationship_type == "connected_to")
-    ).select().first()
+    legacy_mapping = (
+        db(
+            (db.network_entity_mappings.network_id == vpc.id)
+            & (db.network_entity_mappings.entity_id == ec2.id)
+            & (db.network_entity_mappings.relationship_type == "connected_to")
+        )
+        .select()
+        .first()
+    )
     assert legacy_mapping is None, "AWS should emit in_network, not legacy connected_to"
