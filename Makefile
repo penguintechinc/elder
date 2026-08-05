@@ -327,6 +327,7 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 	@docker build -t localhost:32000/elder-web:alpha-latest \
 		--build-arg VITE_VERSION=$(VERSION) \
 		--build-arg VITE_BUILD_TIME=$(shell date +%s) \
+		--build-arg VITE_API_URL=http://localhost:30081 \
 		-f web/Dockerfile .
 	@docker push localhost:32000/elder-web:alpha-latest
 	@echo "$(BLUE)Building elder-scanner → localhost:32000...$(RESET)"
@@ -386,9 +387,14 @@ db-backup: ## Backup local postgres to backups/
 	@echo "$(GREEN)Backup saved to backups/$(RESET)"
 
 # ── Kubernetes Deployment ──────────────────────────────────────────────────
-deploy-alpha: ## Deploy to local alpha cluster via Kustomize (context: local-alpha)
-	@echo "$(BLUE)Deploying to alpha (kustomize)...$(RESET)"
-	@kubectl apply --context local-alpha -k k8s/kustomize/overlays/alpha
+deploy-alpha: ## Deploy to local alpha cluster via Helm (context: local-alpha) — assumes images already built/pushed (make docker-build-alpha)
+	@echo "$(BLUE)Deploying to alpha (helm)...$(RESET)"
+	@helm upgrade --install $(PROJECT_NAME) $(HELM_DIR) \
+		--kube-context local-alpha \
+		--namespace $(K8S_NAMESPACE) \
+		--create-namespace \
+		--values $(HELM_DIR)/alpha.yml \
+		--wait --timeout 300s
 	@kubectl --context local-alpha rollout status deployment -n $(K8S_NAMESPACE) --timeout=120s
 	@echo "$(GREEN)Alpha deployment complete$(RESET)"
 
@@ -403,7 +409,7 @@ deploy-prod: ## Deploy to production cluster via Helm (context: $(PROJECT_NAME)-
 	@echo "$(BLUE)Deploying to production...$(RESET)"
 	@echo "$(YELLOW)Ensure you have pushed a git tag before deploying to prod$(RESET)"
 	@helm upgrade --install $(PROJECT_NAME) $(HELM_DIR) \
-		--context $(PROJECT_NAME)-prod \
+		--kube-context $(PROJECT_NAME)-prod \
 		--namespace $(K8S_NAMESPACE) \
 		--create-namespace \
 		--values $(HELM_DIR)/values-prod.yaml \
@@ -415,7 +421,7 @@ helm-lint: ## Lint the Helm chart
 	@helm lint $(HELM_DIR)
 
 helm-template: ## Render Helm templates with alpha values (dry-run review)
-	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/values-alpha.yaml
+	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/alpha.yml
 
 # ── License ────────────────────────────────────────────────────────────────
 license-validate: ## Validate license configuration

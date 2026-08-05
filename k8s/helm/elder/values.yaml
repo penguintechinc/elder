@@ -68,6 +68,13 @@ postgres:
     POSTGRES_USER: elder
     POSTGRES_PASSWORD: elder_dev_password
     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    # Required when /var/lib/postgresql/data is a PVC mount: initdb chmods
+    # PGDATA to 0700, which fails with "Operation not permitted" if the mount
+    # root is owned by a different UID (e.g. root:root from local-path or
+    # most CSI provisioners) and the container runs non-root with
+    # capabilities dropped. Pointing PGDATA at a subdirectory lets postgres
+    # create + own that subdir itself instead of chmod'ing the mount root.
+    PGDATA: /var/lib/postgresql/data/pgdata
   resources:
     requests:
       memory: "256Mi"
@@ -89,6 +96,9 @@ postgres:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 # Redis Cache
 redis:
@@ -124,6 +134,9 @@ redis:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
 
 # Elder Web UI
 web:

@@ -66,6 +66,7 @@ spec:
               fieldPath: metadata.name
         {{- end }}
         {{- end }}
+        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "web") (eq $component "api") (eq $component "worker") }}
         ports:
         {{- if eq $component "postgres" }}
         - name: postgres
@@ -90,6 +91,7 @@ spec:
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
+        {{- end }}
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}

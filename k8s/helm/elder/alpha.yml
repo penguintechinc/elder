@@ -1,0 +1,267 @@
+# Alpha environment overrides
+# Local development / testing environment (MicroK8s, context: local-alpha)
+#
+# Renamed from values-alpha.yaml -> alpha.yml per house Helm naming convention
+# (bare `{env}.yml`, loaded explicitly via --values; only the chart's own
+# defaults keep the `values.yaml` name/extension).
+
+namespace: elder
+
+# Global settings for alpha — images are built+pushed to the local MicroK8s
+# registry by `make docker-build-alpha` / `scripts/deploy-alpha.sh`.
+global:
+  imageRegistry: "localhost:32000"
+  imagePullSecrets: []
+
+# OpenTelemetry - DISABLED on this local-alpha cluster: no signoz-otel-collector
+# Service exists in any namespace here (checked `kubectl get svc -A`). With it
+# enabled, apps/api hung on every request: shared/observability.py wires up a
+# SimpleSpanProcessor (synchronous, exports inline on the request path, not
+# batched/async), so each request blocked through the OTLP exporter's DNS-fail
+# retry/backoff cycle (~10s+) — well past the 5s liveness/readiness probe
+# timeout, so api never went Ready. Confirmed by curling the pod IP directly:
+# /healthz timed out at 15s with 0 bytes received. Flagging the
+# SimpleSpanProcessor choice separately — it's a blocking-design bug in
+# shared/observability.py (should be BatchSpanProcessor) independent of
+# whether a collector is present, but that's a code fix requiring a rebuild,
+# out of scope here. Re-enable once a real collector is deployed on
+# local-alpha and the processor is fixed.
+otel:
+  enabled: false
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
+# PostgreSQL - Single replica for alpha
+# pullPolicy: IfNotPresent (not Never) — this is an external image pulled from
+# Docker Hub, not one of the locally-built app images; Never would fail on a
+# clean node with no cached layer.
+postgres:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+
+# Redis - Single replica for alpha
+# NOTE: kept as redis:7-bookworm (not valkey/valkey:8) for this migration —
+# house standard prefers Valkey, but this image is already digest-pinned and
+# proven working in this chart's beta path; swapping the engine is deferred
+# to a fast-follow so the 2-day demo isn't riding on an unvalidated change.
+redis:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  persistence:
+    enabled: true
+    size: 2Gi
+
+# Elder Web UI - Single replica for alpha, exposed via fixed NodePort so the
+# demo is reachable at http://localhost:30090 with no port-forward.
+# NOTE: 30080/30081 are already claimed on this shared local-alpha cluster by
+# the squawk product (dns-server/dhcp-server NodePorts) — shifted to
+# 30090/30091 to avoid "provided port is already allocated" on install.
+web:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-web
+    tag: alpha-latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 3000
+    targetPort: 3000
+    nodePort: 30090
+  buildArgs:
+    # Absolute URL (not relative) — required because web and api are on two
+    # different NodePorts on the host, not one same-origin ingress host like
+    # the old kustomize alpha overlay. See apps/api CORS SITE_URL below and
+    # web/src/lib/api.ts (VITE_API_URL only used for "local dev outside
+    # Docker" — this is exactly that case). Must be passed as
+    # --build-arg VITE_API_URL=http://localhost:30091 at image build time;
+    # this value is not auto-consumed by the build scripts, it is documented
+    # here as the source of truth they must match.
+    VITE_API_URL: "http://localhost:30091"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+  autoscaling:
+    enabled: false
+
+# Elder Flask API - Single replica for alpha, exposed via fixed NodePort so
+# the browser (loaded from the web NodePort) can reach the API directly.
+api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-api
+    tag: alpha-latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 5000
+    targetPort: 5000
+    grpcPort: 50051
+    nodePort: 30091
+  env:
+    FLASK_ENV: development
+    SECRET_KEY: "alpha-dev-secret-key"
+    # Must match web's NodePort (30090) — this becomes the primary allowed
+    # CORS origin (see apps/api/config.py _build_cors_origins).
+    SITE_URL: "http://localhost:30090"
+    LOG_LEVEL: DEBUG
+    RELEASE_MODE: "false"
+    GRPC_REQUIRE_LICENSE: "false"
+    # Database (must match Service names from helm template)
+    # shared/database/__init__.py::get_database_url() requires the literal
+    # DATABASE_URL env var — it does NOT build one from DB_HOST/DB_USER/
+    # DB_PASSWORD despite apps/api/config.py's comment claiming it does
+    # (pre-existing doc/code mismatch, flagged not fixed here). DB_HOST/
+    # DB_PASSWORD below are kept for other consumers but are not sufficient
+    # on their own for api's startup DB check.
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DB_HOST: elder-postgres
+    DB_PASSWORD: elder_dev_password
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  autoscaling:
+    enabled: false
+
+# Scanner Service - Single replica for alpha
+scanner:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-scanner
+    tag: alpha-latest
+    # Always (not IfNotPresent): tag is mutable (`alpha-latest`) and the node
+    # already had a pre-fix image cached under this exact tag (missing the
+    # `COPY shared /app/shared` layer -> ModuleNotFoundError: shared). With
+    # IfNotPresent, kubelet only checks whether the tag exists locally, never
+    # re-checks the registry digest, so a `docker push` alone never reaches
+    # the node. Confirmed stale via pod imageID vs `docker push` digest
+    # mismatch. Scoped to scanner only since it's the one whose Dockerfile
+    # changed this session.
+    pullPolicy: Always
+  env:
+    SCANNER_POLL_INTERVAL: "600"
+    LOG_LEVEL: DEBUG
+    ELDER_API_URL: "http://elder-api:5000"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  screenshotStorage:
+    sizeLimit: "500Mi"
+
+# Worker Service - Single replica for alpha
+worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder-worker
+    tag: alpha-latest
+    pullPolicy: IfNotPresent
+  env:
+    LOG_LEVEL: DEBUG
+    LOG_FORMAT: json
+    SYNC_ON_STARTUP: "false"
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  credentialsSecret:
+    name: ""
+
+# Flows Invoker Service - DISABLED for alpha: apps/flows-invoker has no
+# buildable image yet, so enabling it guarantees an ImagePullBackOff pod.
+# Re-enable once the service exists and deploy-alpha.sh builds it.
+flows-invoker:
+  enabled: false
+  replicaCount: 1
+  image:
+    repository: elder-flows-invoker
+    tag: alpha-latest
+    pullPolicy: IfNotPresent
+  env:
+    LOG_LEVEL: DEBUG
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "2"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+# Ingress - Disabled in alpha; web/api reachable via NodePort instead
+ingress:
+  enabled: false
+
+# Cilium Gateway API - Disabled in alpha (beta/prod only)
+gateway:
+  enabled: false
+
+# Service Account
+serviceAccount:
+  create: true
+  name: "elder"
+
+# Pod Security Context - More relaxed for development
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Security Context - fully hardened; web/api/worker/scanner now ship explicit writable
+# emptyDir volumes (tmp, instance-dir, screenshots) so readOnlyRootFilesystem no longer
+# needs to be relaxed for alpha ergonomics (see #164).
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL

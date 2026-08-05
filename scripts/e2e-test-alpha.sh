@@ -78,8 +78,12 @@ echo ""
 ###############################################################################
 if [ "$DEPLOY" = true ]; then
     log_section "Phase 1: Deploy"
-    log_info "Deploying via Kustomize..."
-    kubectl apply --context "$CONTEXT" -k "$PROJECT_ROOT/k8s/kustomize/overlays/alpha"
+    log_info "Deploying via Helm..."
+    helm --kube-context "$CONTEXT" upgrade --install elder "$PROJECT_ROOT/k8s/helm/elder" \
+        --namespace "$NAMESPACE" \
+        --create-namespace \
+        --values "$PROJECT_ROOT/k8s/helm/elder/alpha.yml" \
+        --wait --timeout 300s
     log_info "Waiting 60s for pods to settle..."
     sleep 60
     log_success "Deployed"
@@ -120,7 +124,7 @@ log_info "  Running per-service healthchecks..."
 HEALTH_FAILURES=0
 
 # Scanner — exec python healthcheck.py inside the container
-SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$SCANNER_POD" ]]; then
     if kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$SCANNER_POD" -- python healthcheck.py >/dev/null 2>&1; then
         log_success "  Scanner healthcheck: OK"
@@ -133,7 +137,7 @@ else
 fi
 
 # Worker — hit its HTTP health endpoint (port matches HEALTH_CHECK_PORT in deployment, default 28000)
-WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$WORKER_POD" ]]; then
     WORKER_HEALTH=$(kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$WORKER_POD" -- \
         python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:28000/healthz',timeout=5); print(r.status)" 2>/dev/null || echo "ERR")
