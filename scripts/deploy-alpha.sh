@@ -168,13 +168,14 @@ build_and_push() {
         build_args=(
             --build-arg "VITE_VERSION=${APP_VERSION}"
             --build-arg "VITE_BUILD_TIME=$(date +%s)"
-            # Absolute URL required: web (NodePort 30090) and api (NodePort
-            # 30091) are two different origins on localhost, not one
-            # same-origin ingress host — see k8s/helm/elder/alpha.yml
-            # web.buildArgs.VITE_API_URL for the source of truth this must
-            # match, and apps/api/config.py _build_cors_origins for the
-            # matching CORS allow.
-            --build-arg "VITE_API_URL=http://localhost:30091"
+            # Empty (relative) on purpose — nginx (web/nginx.conf) proxies
+            # /api/* same-origin to the elder-api Service inside the
+            # container, so the SPA never calls the API's NodePort (30091)
+            # directly. See k8s/helm/elder/alpha.yml web.buildArgs.VITE_API_URL
+            # for the source of truth this must match. Setting this to an
+            # absolute http://localhost:30091 URL again reintroduces the bug
+            # where login only worked from a browser on the cluster host.
+            --build-arg "VITE_API_URL="
         )
     fi
 
