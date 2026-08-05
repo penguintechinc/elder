@@ -1,5 +1,6 @@
 """Tests for the cloud-discovery relationship linker (PR1 core engine)."""
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
@@ -702,6 +703,93 @@ def test_create_dependency_link_is_idempotent(seeded):
     ).select()
     assert len(rows) == 1
     assert rows.first().dependency_type == "routes_to"
+
+
+def test_create_dependency_link_allows_different_types_same_pair(seeded):
+    """Different dependency_type values between same (source, target) pair create separate rows."""
+    service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
+    # Create two edges with different dep_types between the same pair
+    service._create_dependency_link(
+        "entity", 9_010_001, "entity", 9_010_002, tenant_id, "routes_to"
+    )
+    service._create_dependency_link(
+        "entity", 9_010_001, "entity", 9_010_002, tenant_id, "manages"
+    )
+    db.commit()
+
+    # Both rows should exist
+    rows = db(
+        (db.dependencies.source_id == 9_010_001)
+        & (db.dependencies.target_id == 9_010_002)
+    ).select()
+    assert len(rows) == 2
+
+    types = {row.dependency_type for row in rows}
+    assert types == {"routes_to", "manages"}
+
+
+def test_create_dependency_link_non_canonical_type_warns_but_persists(seeded, caplog):
+    """Non-canonical dependency types log a warning but edge is still created."""
+    service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
+    # Create edge with unknown dep_type
+    with caplog.at_level(logging.WARNING):
+        result = service._create_dependency_link(
+            "entity", 9_020_001, "entity", 9_020_002, tenant_id, "frobnicate"
+        )
+    db.commit()
+
+    assert result is True
+
+    # Verify the edge was created
+    rows = db(
+        (db.dependencies.source_id == 9_020_001)
+        & (db.dependencies.target_id == 9_020_002)
+        & (db.dependencies.dependency_type == "frobnicate")
+    ).select()
+    assert len(rows) == 1
+
+    # Verify the warning was logged
+    assert any(
+        "Non-canonical dependency_type" in record.message
+        and "frobnicate" in record.message
+        for record in caplog.records
+    )
+
+
+def test_create_dependency_link_canonical_type_no_warning(seeded, caplog):
+    """Canonical dependency types do not produce warnings."""
+    service, db, org_id = seeded
+
+    # Get tenant_id from organization
+    org = db.organizations[org_id]
+    tenant_id = org.tenant_id
+
+    # Create edge with canonical dep_type
+    with caplog.at_level(logging.WARNING):
+        result = service._create_dependency_link(
+            "entity", 9_030_001, "entity", 9_030_002, tenant_id, "bound_to"
+        )
+    db.commit()
+
+    assert result is True
+
+    # Verify no non-canonical warnings were logged
+    non_canonical_warnings = [
+        record
+        for record in caplog.records
+        if "Non-canonical dependency_type" in record.message
+    ]
+    assert len(non_canonical_warnings) == 0
 
 
 def test_store_k8s_ingress_creates_routes_to_edge_to_service(seeded):
