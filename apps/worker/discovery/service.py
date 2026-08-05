@@ -1593,9 +1593,16 @@ class DiscoveryService:
                             region=resource.get("region"),
                             attributes=resource.get("metadata", {}),
                             tags=["aws", "security_group", "discovered"],
-                            external_id=resource.get("external_id") or resource.get("resource_id"),
+                            external_id=resource.get("external_id")
+                            or resource.get("resource_id"),
                         )
-                        self._register(scan_index, provider, resource, "networking_resource", net_id)
+                        self._register(
+                            scan_index,
+                            provider,
+                            resource,
+                            "networking_resource",
+                            net_id,
+                        )
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
                 else:
@@ -1614,7 +1621,15 @@ class DiscoveryService:
                     metadata = resource.get("metadata", {})
                     if entity_id:
                         vpc_id = metadata.get("vpc_id")
-                        if vpc_id and f"vpc:{vpc_id}" in networking_lookup:
+                        # AWS now emits explicit in_network relationships in pass 2,
+                        # so skip the legacy connected_to mapping for it (it would
+                        # otherwise duplicate the edge on the Topology tab). Providers
+                        # not yet migrated (gcp/azure) keep the legacy fallback.
+                        if (
+                            vpc_id
+                            and provider != "aws"
+                            and f"vpc:{vpc_id}" in networking_lookup
+                        ):
                             self._upsert_network_entity_mapping(
                                 networking_lookup[f"vpc:{vpc_id}"],
                                 entity_id,
