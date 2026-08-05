@@ -119,6 +119,8 @@ class BaseDiscoveryProvider(ABC):
         metadata: Dict[str, Any],
         region: Optional[str] = None,
         tags: Optional[Dict[str, str]] = None,
+        external_id: Optional[str] = None,
+        relationships: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         Format discovered resource into standard Elder format.
@@ -130,6 +132,8 @@ class BaseDiscoveryProvider(ABC):
             metadata: Additional resource metadata
             region: Cloud region/zone
             tags: Resource tags/labels
+            external_id: External identifier from cloud provider
+            relationships: List of resource relationships/dependencies
 
         Returns:
             Standardized resource dictionary
@@ -142,6 +146,8 @@ class BaseDiscoveryProvider(ABC):
             "region": region,
             "tags": tags or {},
             "metadata": metadata,
+            "external_id": external_id,
+            "relationships": relationships or [],
             "discovered_at": datetime.now(timezone.utc).isoformat(),
         }
 

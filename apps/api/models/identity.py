@@ -112,6 +112,14 @@ class Identity(Base, IDMixin, TimestampMixin):
         comment="Associated organization (integer, no FK to avoid circular ref)",
     )
 
+    # External ID for cloud provider integration (e.g., AWS ARN, GCP email)
+    external_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="External identifier from cloud provider (AWS ARN, GCP email, etc.)",
+    )
+
     # Portal access level
     portal_role = Column(
         String(20),
