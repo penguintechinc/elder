@@ -323,14 +323,24 @@ async def get_organization_graph(id: int):
 
     Returns:
         200: Graph data with nodes and edges
-        404: Organization not found
+        403: Missing tenant claim in token
+        404: Organization not found, or found but outside caller's tenant
     """
     db = current_app.db
 
-    # Check if organization exists using helper
+    # Resolve caller's tenant from the authenticated JWT — never from the
+    # path/query — and require it. A token with no tenant claim can prove no
+    # tenant, so it gets no data.
+    caller_tenant_id = getattr(getattr(g, "current_user", None), "tenant_id", None)
+    if caller_tenant_id is None:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Check if organization exists AND belongs to the caller's tenant. Same
+    # 404 either way so a caller can't distinguish "doesn't exist" from
+    # "exists in another tenant" (regression: org-graph-auth-scope).
     try:
         org_row = await get_by_id(db.organizations, id)
-        if org_row is None:
+        if org_row is None or org_row.tenant_id != caller_tenant_id:
             return ApiResponse.not_found("Organization Unit")
     except Exception:
         return ApiResponse.not_found("Organization Unit")
@@ -344,12 +354,14 @@ async def get_organization_graph(id: int):
     visited_orgs = set()
     visited_entities = set()
 
-    # Helper to add organization node
+    # Helper to add organization node. Cross-tenant orgs are silently
+    # skipped (not raised) so the response graph never contains another
+    # tenant's data, even if reached transitively via parent/child links.
     def add_org_node(org_id):
         if org_id in visited_orgs:
             return
         org = db.organizations[org_id]
-        if not org:
+        if not org or org.tenant_id != caller_tenant_id:
             return
         visited_orgs.add(org_id)
         nodes.append(
@@ -366,7 +378,9 @@ async def get_organization_graph(id: int):
         )
         return org
 
-    # Helper to add entity node
+    # Helper to add entity node. Safe without its own tenant check: it is
+    # only ever called for entities fetched via the `org_ids` query below,
+    # which is itself built from `visited_orgs` (already tenant-verified).
     def add_entity_node(entity_id):
         if entity_id in visited_entities:
             return
@@ -390,11 +404,16 @@ async def get_organization_graph(id: int):
     # Add current organization
     add_org_node(id)
 
-    # Get all child organizations recursively (limit to depth * 10)
+    # Get all child organizations recursively (limit to depth * 10),
+    # scoped to the caller's tenant so the traversal never crosses into
+    # another tenant's organization tree.
     def get_children_recursive(parent_id, current_depth=0):
         if current_depth >= depth:
             return []
-        children = db(db.organizations.parent_id == parent_id).select()
+        children = db(
+            (db.organizations.parent_id == parent_id)
+            & (db.organizations.tenant_id == caller_tenant_id)
+        ).select()
         all_children = list(children)
         for child in children:
             all_children.extend(get_children_recursive(child.id, current_depth + 1))
@@ -412,12 +431,14 @@ async def get_organization_graph(id: int):
                 }
             )
 
-    # Get parent hierarchy up to depth
+    # Get parent hierarchy up to depth, stopping at the tenant boundary —
+    # a parent_id that resolves outside the caller's tenant halts the climb
+    # rather than being added to the graph.
     current_org = org_row
     for _ in range(depth):
         if current_org and current_org.parent_id:
             parent = db.organizations[current_org.parent_id]
-            if parent:
+            if parent and parent.tenant_id == caller_tenant_id:
                 add_org_node(parent.id)
                 edges.append(
                     {
