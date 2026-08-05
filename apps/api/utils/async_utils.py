@@ -8,16 +8,10 @@ Python 3.12 optimizations with asyncio TaskGroups for structured concurrency.
 
 
 import asyncio
+import contextvars
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
 from typing import Any, Callable, ParamSpec, TypeVar
-
-try:
-    from flask import copy_current_request_context, has_request_context
-
-    FLASK_AVAILABLE = True
-except ImportError:
-    FLASK_AVAILABLE = False
 
 # Thread pool for blocking operations (PyDAL database calls)
 _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="pydal_")
@@ -31,11 +25,12 @@ async def run_in_threadpool(
     func: Callable[P, T], *args: P.args, **kwargs: P.kwargs
 ) -> T:
     """
-    Run a blocking function in the thread pool with Flask context support.
+    Run a blocking function in the thread pool with request context support.
 
     This is essential for PyDAL operations since PyDAL is synchronous but we want
-    to use async Flask endpoints for better concurrency. Automatically copies
-    Flask request context into the thread if available.
+    to use async Quart endpoints for better concurrency. The caller's contextvars
+    (which back Quart's ``request``, ``g`` and ``current_app`` proxies) are copied
+    into the worker thread so the blocking function can safely read them.
 
     Args:
         func: The blocking function to run
@@ -83,7 +78,7 @@ async def run_in_threadpool(
                 if is_connection_error and retry_count < max_retries:
                     # Try to reconnect
                     try:
-                        from flask import current_app
+                        from quart import current_app
 
                         if hasattr(current_app, "db"):
                             # Force PyDAL to create new connection by closing old one
@@ -102,13 +97,19 @@ async def run_in_threadpool(
 
                 raise  # Re-raise the original error
 
-    # If we're in a Flask request context, copy it to the thread
-    if FLASK_AVAILABLE and has_request_context():
-        wrapped_func = copy_current_request_context(safe_wrapper)
-    else:
-        wrapped_func = safe_wrapper
-
-    return await loop.run_in_executor(_executor, wrapped_func)
+    # Propagate the caller's context into the worker thread. Quart keeps the
+    # request/app context in contextvars (``request``, ``g`` and ``current_app``
+    # are all contextvar-backed proxies), and ``loop.run_in_executor`` does NOT
+    # copy the caller's context to the executor thread by default. Copying it
+    # here lets the blocking function read ``request.args``, ``g``, etc.
+    #
+    # The previous implementation copied the *Flask* request context via
+    # ``flask.copy_current_request_context``; under Quart that context is always
+    # empty, so ``has_request_context()`` returned False and the context was
+    # silently never propagated -- every threadpool function that touched
+    # ``request`` raised "Not within a request context".
+    ctx = contextvars.copy_context()
+    return await loop.run_in_executor(_executor, lambda: ctx.run(safe_wrapper))
 
 
 def to_thread(func: Callable[P, T]) -> Callable[P, asyncio.Task[T]]:
