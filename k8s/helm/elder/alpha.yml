@@ -77,6 +77,15 @@ redis:
 # NOTE: 30080/30081 are already claimed on this shared local-alpha cluster by
 # the squawk product (dns-server/dhcp-server NodePorts) — shifted to
 # 30090/30091 to avoid "provided port is already allocated" on install.
+#
+# SAME-ORIGIN: the container is a rootless nginx (web/Dockerfile,
+# web/nginx.conf) that serves the SPA AND reverse-proxies /api/* to the
+# elder-api Service (http://elder-api:5000) server-side. The browser only
+# ever talks to :30090 — this is what makes login work from a REMOTE
+# browser, not just one on the cluster host: the old setup baked an
+# absolute http://localhost:30091 API URL into the SPA, which only
+# resolved for a browser on the cluster host itself. nginx listens on 8080
+# (nginx-unprivileged default, non-root).
 web:
   enabled: true
   replicaCount: 1
@@ -86,19 +95,18 @@ web:
     pullPolicy: IfNotPresent
   service:
     type: NodePort
-    port: 3000
-    targetPort: 3000
+    port: 8080
+    targetPort: 8080
     nodePort: 30090
   buildArgs:
-    # Absolute URL (not relative) — required because web and api are on two
-    # different NodePorts on the host, not one same-origin ingress host like
-    # the old kustomize alpha overlay. See apps/api CORS SITE_URL below and
-    # web/src/lib/api.ts (VITE_API_URL only used for "local dev outside
-    # Docker" — this is exactly that case). Must be passed as
-    # --build-arg VITE_API_URL=http://localhost:30091 at image build time;
-    # this value is not auto-consumed by the build scripts, it is documented
-    # here as the source of truth they must match.
-    VITE_API_URL: "http://localhost:30091"
+    # Empty (relative) on purpose — see web/src/lib/api.ts: an empty
+    # VITE_API_URL makes the SPA call a relative /api/v1 base, which nginx
+    # then proxies same-origin to elder-api. Do NOT set this to an
+    # absolute http://localhost:30091 URL again; that was the bug (worked
+    # only from the cluster host, "Unable to connect" from every remote
+    # browser). 30091 (elder-api's NodePort) still exists for direct
+    # debugging but the SPA must never call it directly.
+    VITE_API_URL: ""
   resources:
     requests:
       memory: "64Mi"
