@@ -4,7 +4,7 @@
         setup setup-env setup-python \
         dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
-        smoke-test smoke-test-beta seed-mock-data screenshots \
+        smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug test-beta \
         build docker-build docker-build-alpha docker-push docker-scan \
@@ -260,6 +260,11 @@ seed-mock-data: ## Seed 3-4 realistic mock items per feature for local testing
 	@echo "$(BLUE)Seeding mock data...$(RESET)"
 	@$(PYTHON) scripts/seed_mock_data.py
 	@echo "$(GREEN)Mock data seeded$(RESET)"
+
+seed-cloud-discovery: ## Seed a demo AWS cloud-discovery topology via the real linker (no live AWS)
+	@echo "$(BLUE)Seeding cloud-discovery demo topology...$(RESET)"
+	@$(PYTHON) scripts/seed_cloud_discovery.py
+	@echo "$(GREEN)Cloud-discovery demo topology seeded$(RESET)"
 
 screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
 	@node scripts/capture-screenshots.cjs
