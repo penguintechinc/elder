@@ -81,17 +81,18 @@ export default function App() {
           <Route path="search" element={<Search />} />
           <Route path="profile" element={<Profile />} />
 
-          {/* Module-gated routes: lazy load with Suspense */}
-          <Suspense fallback={<div />}>
-            {moduleRoutes.map((route, idx) => (
-              <Route
-                key={idx}
-                path={route.path}
-                element={route.element}
-                handle={route.handle}
-              />
-            ))}
-          </Suspense>
+          {/* Module-gated routes: wrap each lazy element in its own Suspense.
+              A <Suspense> may NOT be a direct child of a <Route> in react-router
+              v6 (only <Route>/<Fragment> are allowed) — doing so throws in
+              createRoutesFromChildren and blanks the entire app. */}
+          {moduleRoutes.map((route, idx) => (
+            <Route
+              key={idx}
+              path={route.path}
+              element={<Suspense fallback={<div />}>{route.element}</Suspense>}
+              handle={route.handle}
+            />
+          ))}
 
           {/* Admin pages (always available, filtered by role in Layout) */}
           <Route path="admin/tenants" element={<Tenants />} />
