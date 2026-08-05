@@ -288,14 +288,58 @@ def test_seed_topology_is_idempotent(seeded):
 
 
 def test_resolve_or_create_demo_tenant_is_idempotent(app):
-    """Calling the tenant resolver twice must return the same tenant_id, not duplicate."""
+    """Idempotent, and resolves to the existing system/default tenant that the
+    tenant-less portal-auth login falls back to — NOT a separate demo tenant the
+    UI login could never reach (regression: demo login INVALID_CREDENTIALS)."""
     db = app.db
+    login_tenant = db(db.tenants.slug.belongs(("system", "default"))).select().first()
+
     first_id = seed_cloud_discovery._resolve_or_create_demo_tenant(db)
     second_id = seed_cloud_discovery._resolve_or_create_demo_tenant(db)
     assert first_id == second_id
 
-    rows = db(db.tenants.slug == seed_cloud_discovery.DEMO_TENANT_SLUG).select()
-    assert len(rows) == 1
+    if login_tenant is not None:
+        assert first_id == login_tenant.id
+        assert (
+            len(db(db.tenants.slug == seed_cloud_discovery.DEMO_TENANT_SLUG).select())
+            == 0
+        )
+    else:
+        returned = db(db.tenants.id == first_id).select().first()
+        assert returned.slug == seed_cloud_discovery.DEMO_TENANT_SLUG
+
+
+def test_resolve_or_create_demo_admin_creates_portal_user(app):
+    """Regression (demo login): the seed must create a portal_users row — the UI
+    login (/api/v1/portal-auth/login) authenticates against portal_users, not
+    identities — plus an identities row for API/JWT auth. Idempotent."""
+    db = app.db
+    tenant_id = seed_cloud_discovery._resolve_or_create_demo_tenant(db)
+
+    seed_cloud_discovery._resolve_or_create_demo_admin(db, tenant_id)
+    db.commit()
+
+    portal = db(
+        (db.portal_users.email == seed_cloud_discovery.DEMO_ADMIN_USERNAME)
+        & (db.portal_users.tenant_id == tenant_id)
+    ).select()
+    ident = db(
+        db.identities.username == seed_cloud_discovery.DEMO_ADMIN_USERNAME
+    ).select()
+    assert len(portal) == 1, "portal_user required for UI login"
+    assert len(ident) == 1, "identity required for API/JWT auth"
+
+    # Second call must not duplicate.
+    seed_cloud_discovery._resolve_or_create_demo_admin(db, tenant_id)
+    db.commit()
+    assert (
+        len(
+            db(
+                db.portal_users.email == seed_cloud_discovery.DEMO_ADMIN_USERNAME
+            ).select()
+        )
+        == 1
+    )
 
 
 def test_resolve_or_create_demo_org_is_idempotent(app):

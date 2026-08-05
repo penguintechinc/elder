@@ -452,13 +452,22 @@ def build_discovery_results() -> Dict[str, Any]:
 
 
 def _resolve_or_create_demo_tenant(db: Any) -> int:
-    """Find or create the dedicated "Demo Cloud Discovery" tenant.
+    """Return the tenant the UI login actually resolves to, so the demo is
+    visible AND sign-in-able.
 
-    Deliberately a brand-new, clearly-named tenant rather than whatever
-    "system"/"default" tenant owns the deployment's default admin — so the
-    demo topology never gets mixed into (or hidden behind) a shared
-    deployment's real data, and the login story stays unambiguous.
+    The portal-auth login (`/api/v1/portal-auth/login`) is tenant-scoped and,
+    when the login form supplies no tenant (the normal single-tenant UX), it
+    falls back to the "system" then "default" tenant. `/graph/map` is likewise
+    tenant-scoped (gh-189). A dedicated demo tenant is therefore a dead end: the
+    tenant-less login can't find a user in it, and the graph wouldn't show its
+    data. So seed into that same system/default tenant; only create the demo
+    tenant as a last resort (a fresh DB with neither present).
     """
+    for slug in ("system", "default"):
+        existing = db(db.tenants.slug == slug).select().first()
+        if existing:
+            return int(existing.id)
+
     existing = db(db.tenants.slug == DEMO_TENANT_SLUG).select().first()
     if existing:
         return int(existing.id)
@@ -504,28 +513,44 @@ def _resolve_or_create_demo_org(db: Any, tenant_id: int) -> int:
 
 
 def _resolve_or_create_demo_admin(db: Any, tenant_id: int) -> None:
-    """Find or create the demo admin identity used to log in and view the demo."""
-    existing = db(db.identities.username == DEMO_ADMIN_USERNAME).select().first()
-    if existing:
-        return
-
+    """Find or create the demo admin. Two SEPARATE rows are required and are
+    created independently (idempotently): a ``portal_users`` row — the UI login
+    (`/api/v1/portal-auth/login`) authenticates against this table — and an
+    ``identities`` row for JWT/API auth. Creating only the identity (as an
+    earlier version did) leaves the UI login failing with INVALID_CREDENTIALS.
+    """
     now = datetime.now(timezone.utc)
-    db.identities.insert(
-        tenant_id=tenant_id,
-        username=DEMO_ADMIN_USERNAME,
-        email=DEMO_ADMIN_USERNAME,
-        full_name="Demo Admin",
-        identity_type="human",
-        auth_provider="local",
-        password_hash=generate_password_hash(DEMO_ADMIN_PASSWORD),
-        is_active=True,
-        is_superuser=True,
-        mfa_enabled=False,
-        must_change_password=False,
-        portal_role="admin",
-        created_at=now,
-        updated_at=now,
-    )
+    pwd_hash = generate_password_hash(DEMO_ADMIN_PASSWORD)
+
+    if not db(db.portal_users.email == DEMO_ADMIN_USERNAME).select().first():
+        db.portal_users.insert(
+            tenant_id=tenant_id,
+            email=DEMO_ADMIN_USERNAME,
+            password_hash=pwd_hash,
+            is_active=True,
+            email_verified=True,
+            global_role="admin",
+            created_at=now,
+            updated_at=now,
+        )
+
+    if not db(db.identities.username == DEMO_ADMIN_USERNAME).select().first():
+        db.identities.insert(
+            tenant_id=tenant_id,
+            username=DEMO_ADMIN_USERNAME,
+            email=DEMO_ADMIN_USERNAME,
+            full_name="Demo Admin",
+            identity_type="human",
+            auth_provider="local",
+            password_hash=pwd_hash,
+            is_active=True,
+            is_superuser=True,
+            mfa_enabled=False,
+            must_change_password=False,
+            portal_role="admin",
+            created_at=now,
+            updated_at=now,
+        )
     db.commit()
 
 
