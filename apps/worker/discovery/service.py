@@ -803,6 +803,7 @@ class DiscoveryService:
                 "state": metadata.get("state"),
             },
             tags=["aws", "load-balancer", "discovered"],
+            external_id=resource.get("external_id") or resource.get("resource_id"),
         )
 
     def _store_k8s_service_account_as_identity(
@@ -1365,6 +1366,7 @@ class DiscoveryService:
             "cert_manager_certificate": "certificate",
             "vpc": "networking",
             "subnet": "networking",
+            "security_group": "networking",
             "load_balancer": "networking",
             "ec2_instance": "entity",
             "s3_bucket": "data_store",
@@ -1572,8 +1574,11 @@ class DiscoveryService:
 
                 elif domain == "networking":
                     if resource_type == "load_balancer":
-                        self._store_as_networking_resource(
+                        lb_id = self._store_as_networking_resource(
                             organization_id, resource, networking_lookup
+                        )
+                        self._register(
+                            scan_index, provider, resource, "networking_resource", lb_id
                         )
                     elif resource_type == "k8s_ingress":
                         self._store_k8s_ingress(
@@ -1582,6 +1587,25 @@ class DiscoveryService:
                     elif resource_type == "k8s_cni":
                         self._store_cni_as_networking(
                             organization_id, resource, networking_lookup
+                        )
+                    elif resource_type == "security_group":
+                        # Store security group as networking resource
+                        net_id = self._upsert_networking_resource(
+                            organization_id=organization_id,
+                            name=resource.get("name", ""),
+                            network_type="security_group",
+                            region=resource.get("region"),
+                            attributes=resource.get("metadata", {}),
+                            tags=["aws", "security_group", "discovered"],
+                            external_id=resource.get("external_id")
+                            or resource.get("resource_id"),
+                        )
+                        self._register(
+                            scan_index,
+                            provider,
+                            resource,
+                            "networking_resource",
+                            net_id,
                         )
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
@@ -1601,7 +1625,15 @@ class DiscoveryService:
                     metadata = resource.get("metadata", {})
                     if entity_id:
                         vpc_id = metadata.get("vpc_id")
-                        if vpc_id and f"vpc:{vpc_id}" in networking_lookup:
+                        # AWS now emits explicit in_network relationships in pass 2,
+                        # so skip the legacy connected_to mapping for it (it would
+                        # otherwise duplicate the edge on the Topology tab). Providers
+                        # not yet migrated (gcp/azure) keep the legacy fallback.
+                        if (
+                            vpc_id
+                            and provider != "aws"
+                            and f"vpc:{vpc_id}" in networking_lookup
+                        ):
                             self._upsert_network_entity_mapping(
                                 networking_lookup[f"vpc:{vpc_id}"],
                                 entity_id,
