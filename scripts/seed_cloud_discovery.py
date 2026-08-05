@@ -21,6 +21,7 @@ Usage:
 """
 
 import os
+import secrets
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -37,10 +38,11 @@ DEMO_TENANT_SLUG = "demo-cloud-discovery"
 DEMO_TENANT_NAME = "Demo Cloud Discovery"
 DEMO_ORG_NAME = "Demo Cloud Discovery Org"
 DEMO_ADMIN_USERNAME = "demo-admin@elderrms.app"
-# Local/demo default credential only — never a production secret. Mirrors the
-# established convention already used by scripts/seed_mock_data.py's default
-# admin123 password and shared/database/__init__.py's ADMIN_PASSWORD default.
-DEMO_ADMIN_PASSWORD = "DemoCloud!2026"
+# Demo-only credential — read from the environment so no secret literal is
+# committed (satisfies secret scanning + the no-hardcoded-credentials rule).
+# If DEMO_ADMIN_PASSWORD is unset a random one is generated and printed at the
+# end of the run; set it to pin a stable password across re-runs / redeploys.
+DEMO_ADMIN_PASSWORD = os.environ.get("DEMO_ADMIN_PASSWORD") or secrets.token_urlsafe(12)
 
 AWS_ACCOUNT_ID = "123456789012"
 AWS_REGION = "us-east-2"
