@@ -8,6 +8,24 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Canonical edge types allowed in dependencies table.
+CANONICAL_EDGE_TYPES: frozenset[str] = frozenset(
+    {
+        "in_network",
+        "in_subnet",
+        "uses_security_group",
+        "attached_to",
+        "routes_to",
+        "assumes_role",
+        "in_resource_group",
+        "bound_to",
+        "runs_on",
+        "runs_in",
+        "manages",
+        "discovered_from",
+    }
+)
+
 from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
 from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
 from apps.worker.discovery.base import BaseDiscoveryProvider
@@ -929,6 +947,18 @@ class DiscoveryService:
             (e.g. the pass-2 linker) rely on this to avoid counting a
             swallowed write exception as a success.
         """
+        # Warn on non-canonical dependency types but still persist them
+        if dep_type not in CANONICAL_EDGE_TYPES:
+            logger.warning(
+                "Non-canonical dependency_type %r for edge %s(%s)->"
+                "%s(%s); persisting anyway",
+                dep_type,
+                source_type,
+                source_id,
+                target_type,
+                target_id,
+            )
+
         try:
             existing = (
                 self.db(
@@ -936,6 +966,7 @@ class DiscoveryService:
                     & (self.db.dependencies.source_id == source_id)
                     & (self.db.dependencies.target_type == target_type)
                     & (self.db.dependencies.target_id == target_id)
+                    & (self.db.dependencies.dependency_type == dep_type)
                 )
                 .select()
                 .first()
