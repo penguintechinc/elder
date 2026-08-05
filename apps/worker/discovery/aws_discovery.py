@@ -336,11 +336,38 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
             ):
                 for reservation in page.get("Reservations", []):
                     for instance in reservation.get("Instances", []):
+                        instance_id = instance["InstanceId"]
+                        relationships = []
+
+                        # EC2 -> VPC (in_network)
+                        if instance.get("VpcId"):
+                            relationships.append({
+                                "target_external_id": instance["VpcId"],
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            })
+
+                        # EC2 -> Subnet (in_subnet)
+                        if instance.get("SubnetId"):
+                            relationships.append({
+                                "target_external_id": instance["SubnetId"],
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_subnet",
+                            })
+
+                        # EC2 -> Security Groups (uses_security_group)
+                        for sg in instance.get("SecurityGroups", []):
+                            relationships.append({
+                                "target_external_id": sg["GroupId"],
+                                "target_kind": "networking_resource",
+                                "edge_type": "uses_security_group",
+                            })
+
                         resource = self.format_resource(
-                            resource_id=instance["InstanceId"],
+                            resource_id=instance_id,
                             resource_type="ec2_instance",
                             name=self._get_name_from_tags(
-                                instance.get("Tags", []), instance["InstanceId"]
+                                instance.get("Tags", []), instance_id
                             ),
                             metadata={
                                 "instance_type": instance.get("InstanceType"),
@@ -357,6 +384,8 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                             },
                             region=self.region,
                             tags=self._normalize_tags(instance.get("Tags", [])),
+                            external_id=instance_id,
+                            relationships=relationships,
                         )
                         resources.append(resource)
 
@@ -421,11 +450,23 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                 for page in paginator.paginate():
                     for volume in page.get("Volumes", []):
+                        volume_id = volume["VolumeId"]
+                        relationships = []
+
+                        # EBS Volume -> EC2 instance (attached_to)
+                        for attachment in volume.get("Attachments", []):
+                            if attachment.get("InstanceId"):
+                                relationships.append({
+                                    "target_external_id": attachment["InstanceId"],
+                                    "target_kind": "entity",
+                                    "edge_type": "attached_to",
+                                })
+
                         resource = self.format_resource(
-                            resource_id=volume["VolumeId"],
+                            resource_id=volume_id,
                             resource_type="ebs_volume",
                             name=self._get_name_from_tags(
-                                volume.get("Tags", []), volume["VolumeId"]
+                                volume.get("Tags", []), volume_id
                             ),
                             metadata={
                                 "size_gb": volume.get("Size"),
@@ -437,6 +478,8 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                             },
                             region=self.region,
                             tags=self._normalize_tags(volume.get("Tags", [])),
+                            external_id=volume_id,
+                            relationships=relationships,
                         )
                         resources.append(resource)
 
@@ -477,11 +520,12 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                 for page in paginator.paginate():
                     for vpc in page.get("Vpcs", []):
+                        vpc_id = vpc["VpcId"]
                         resource = self.format_resource(
-                            resource_id=vpc["VpcId"],
+                            resource_id=vpc_id,
                             resource_type="vpc",
                             name=self._get_name_from_tags(
-                                vpc.get("Tags", []), vpc["VpcId"]
+                                vpc.get("Tags", []), vpc_id
                             ),
                             metadata={
                                 "cidr_block": vpc.get("CidrBlock"),
@@ -490,6 +534,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                             },
                             region=self.region,
                             tags=self._normalize_tags(vpc.get("Tags", [])),
+                            external_id=vpc_id,
                         )
                         resources.append(resource)
 
@@ -503,11 +548,22 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                 for page in paginator.paginate():
                     for subnet in page.get("Subnets", []):
+                        subnet_id = subnet["SubnetId"]
+                        relationships = []
+
+                        # Subnet -> VPC (in_network)
+                        if subnet.get("VpcId"):
+                            relationships.append({
+                                "target_external_id": subnet["VpcId"],
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            })
+
                         resource = self.format_resource(
-                            resource_id=subnet["SubnetId"],
+                            resource_id=subnet_id,
                             resource_type="subnet",
                             name=self._get_name_from_tags(
-                                subnet.get("Tags", []), subnet["SubnetId"]
+                                subnet.get("Tags", []), subnet_id
                             ),
                             metadata={
                                 "vpc_id": subnet.get("VpcId"),
@@ -519,11 +575,16 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                             },
                             region=self.region,
                             tags=self._normalize_tags(subnet.get("Tags", [])),
+                            external_id=subnet_id,
+                            relationships=relationships,
                         )
                         resources.append(resource)
 
             except (ClientError, BotoCoreError) as e:
                 logger.warning(f"Failed to discover subnets: {e}")
+
+            # Security Groups
+            resources.extend(self.discover_security_groups())
 
         # Load Balancers (ELBv2)
         if not self.services or "elb" in self.services:
@@ -575,6 +636,50 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         # Route 53 Hosted Zones
         if not self.services or "route53" in self.services:
             resources.extend(self.discover_route53())
+
+        return resources
+
+    def discover_security_groups(self) -> List[Dict[str, Any]]:
+        """Discover security groups and their VPC associations."""
+        resources = []
+
+        try:
+            ec2 = self.session.client("ec2")
+            paginator = ec2.get_paginator("describe_security_groups")
+
+            for page in paginator.paginate():
+                for sg in page.get("SecurityGroups", []):
+                    sg_id = sg["GroupId"]
+                    relationships = []
+
+                    # Security Group -> VPC (in_network)
+                    if sg.get("VpcId"):
+                        relationships.append({
+                            "target_external_id": sg["VpcId"],
+                            "target_kind": "networking_resource",
+                            "edge_type": "in_network",
+                        })
+
+                    resource = self.format_resource(
+                        resource_id=sg_id,
+                        resource_type="security_group",
+                        name=sg.get("GroupName", sg_id),
+                        metadata={
+                            "group_name": sg.get("GroupName"),
+                            "vpc_id": sg.get("VpcId"),
+                            "description": sg.get("GroupDescription"),
+                            "ingress_rules": len(sg.get("IpPermissions", [])),
+                            "egress_rules": len(sg.get("IpPermissionsEgress", [])),
+                        },
+                        region=self.region,
+                        tags=self._normalize_tags(sg.get("Tags", [])),
+                        external_id=sg_id,
+                        relationships=relationships,
+                    )
+                    resources.append(resource)
+
+        except (ClientError, BotoCoreError) as e:
+            logger.warning(f"Failed to discover security groups: {e}")
 
         return resources
 

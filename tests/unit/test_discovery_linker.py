@@ -1163,3 +1163,331 @@ def test_iam_identity_creates_discovered_from_edge(seeded):
     dep = dep_rows[0]
     assert dep.dependency_type == "discovered_from"
     assert dep.tenant_id == tenant_id
+
+
+# --- AWS Network Topology Relationship Tests (Phase B1) -----------------------
+
+
+def test_aws_ec2_vpc_relationship_created(seeded):
+    """EC2 instance -> VPC (in_network) edge is created correctly."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            }
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web-1",
+                "external_id": "i-web-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1
+    assert counts["unresolved_edges"] == 0
+
+    inst = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
+    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+    dep = db((db.dependencies.source_id == inst.id) & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    assert dep is not None
+
+
+def test_aws_ec2_subnet_relationship_created(seeded):
+    """EC2 instance -> subnet (in_subnet) edge is created correctly."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "subnet-az1",
+                "resource_type": "subnet",
+                "resource_id": "subnet-az1",
+                "external_id": "subnet-az1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod", "cidr_block": "10.0.1.0/24"},
+            }
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-subnet-test",
+                "external_id": "i-subnet-test",
+                "provider": "aws",
+                "metadata": {"subnet_id": "subnet-az1"},
+                "relationships": [
+                    {
+                        "target_external_id": "subnet-az1",
+                        "edge_type": "in_subnet",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1
+    assert counts["unresolved_edges"] == 0
+
+    inst = db((db.entities.external_id == "i-subnet-test") & (db.entities.organization_id == org_id)).select().first()
+    subnet = db((db.networking_resources.external_id == "subnet-az1") & (db.networking_resources.organization_id == org_id)).select().first()
+    dep = db((db.dependencies.source_id == inst.id) & (db.dependencies.target_id == subnet.id) & (db.dependencies.dependency_type == "in_subnet")).select().first()
+    assert dep is not None
+
+
+def test_aws_ec2_security_group_relationships(seeded):
+    """EC2 instance -> multiple security groups (uses_security_group) edges."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "sg-web",
+                "resource_type": "security_group",
+                "resource_id": "sg-web",
+                "external_id": "sg-web",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "sg-app",
+                "resource_type": "security_group",
+                "resource_id": "sg-app",
+                "external_id": "sg-app",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-sg-test",
+                "external_id": "i-sg-test",
+                "provider": "aws",
+                "metadata": {},
+                "relationships": [
+                    {"target_external_id": "sg-web", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                    {"target_external_id": "sg-app", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 2
+    assert counts["unresolved_edges"] == 0
+
+    inst = db((db.entities.external_id == "i-sg-test") & (db.entities.organization_id == org_id)).select().first()
+    sgs = db((db.networking_resources.network_type == "security_group") & (db.networking_resources.organization_id == org_id)).select()
+    deps = db((db.dependencies.source_id == inst.id) & (db.dependencies.dependency_type == "uses_security_group")).select()
+    assert len(deps) == 2
+    assert set(d.target_id for d in deps) == {sg.id for sg in sgs}
+
+
+def test_aws_ebs_attached_to_ec2(seeded):
+    """EBS volume -> EC2 instance (attached_to) edge is created correctly."""
+    service, db, org_id = seeded
+    results = {
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-ebs-test",
+                "external_id": "i-ebs-test",
+                "provider": "aws",
+                "metadata": {},
+            }
+        ],
+        "storage": [
+            {
+                "name": "data-vol",
+                "resource_type": "ebs_volume",
+                "resource_id": "vol-123",
+                "external_id": "vol-123",
+                "provider": "aws",
+                "metadata": {"size_gb": 100},
+                "relationships": [
+                    {
+                        "target_external_id": "i-ebs-test",
+                        "edge_type": "attached_to",
+                        "target_kind": "entity",
+                    }
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1
+    assert counts["unresolved_edges"] == 0
+
+    inst = db((db.entities.external_id == "i-ebs-test") & (db.entities.organization_id == org_id)).select().first()
+    vol = db((db.data_stores.external_id == "vol-123") & (db.data_stores.organization_id == org_id)).select().first()
+    dep = db((db.dependencies.source_type == "data_store") & (db.dependencies.source_id == vol.id) & (db.dependencies.target_type == "entity") & (db.dependencies.target_id == inst.id) & (db.dependencies.dependency_type == "attached_to")).select().first()
+    assert dep is not None
+
+
+def test_aws_subnet_in_vpc_relationship(seeded):
+    """Subnet -> VPC (in_network) edge is created correctly."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "subnet-az1",
+                "resource_type": "subnet",
+                "resource_id": "subnet-az1",
+                "external_id": "subnet-az1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            },
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1
+    assert counts["unresolved_edges"] == 0
+
+    subnet = db((db.networking_resources.external_id == "subnet-az1") & (db.networking_resources.organization_id == org_id)).select().first()
+    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+    dep = db((db.dependencies.source_type == "networking_resource") & (db.dependencies.source_id == subnet.id) & (db.dependencies.target_type == "networking_resource") & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    assert dep is not None
+
+
+def test_aws_security_group_in_vpc(seeded):
+    """Security group -> VPC (in_network) edge is created correctly."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "sg-web",
+                "resource_type": "security_group",
+                "resource_id": "sg-web",
+                "external_id": "sg-web",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {
+                        "target_external_id": "vpc-prod",
+                        "edge_type": "in_network",
+                        "target_kind": "networking_resource",
+                    }
+                ],
+            },
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1
+    assert counts["unresolved_edges"] == 0
+
+    sg = db((db.networking_resources.external_id == "sg-web") & (db.networking_resources.organization_id == org_id)).select().first()
+    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+    dep = db((db.dependencies.source_type == "networking_resource") & (db.dependencies.source_id == sg.id) & (db.dependencies.target_type == "networking_resource") & (db.dependencies.target_id == vpc.id) & (db.dependencies.dependency_type == "in_network")).select().first()
+    assert dep is not None
+
+
+def test_aws_complex_topology_all_edges_resolve(seeded):
+    """Full AWS topology: VPC -> subnets -> EC2 -> SGs + EBS."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "subnet-1a",
+                "resource_type": "subnet",
+                "resource_id": "subnet-1a",
+                "external_id": "subnet-1a",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+            {
+                "name": "sg-web",
+                "resource_type": "security_group",
+                "resource_id": "sg-web",
+                "external_id": "sg-web",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web-1",
+                "external_id": "i-web-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
+                    {"target_external_id": "subnet-1a", "edge_type": "in_subnet", "target_kind": "networking_resource"},
+                    {"target_external_id": "sg-web", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                ],
+            }
+        ],
+        "storage": [
+            {
+                "name": "data-vol",
+                "resource_type": "ebs_volume",
+                "resource_id": "vol-data",
+                "external_id": "vol-data",
+                "provider": "aws",
+                "metadata": {"size_gb": 100},
+                "relationships": [
+                    {"target_external_id": "i-web-1", "edge_type": "attached_to", "target_kind": "entity"}
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    # 4 edges: vpc->vpc (subnet->vpc), vpc->vpc (sg->vpc), ec2->subnet, ec2->sg, ec2->vpc, vol->ec2
+    assert counts["edges_created"] == 6
+    assert counts["unresolved_edges"] == 0

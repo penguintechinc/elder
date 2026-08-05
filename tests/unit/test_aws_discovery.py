@@ -186,6 +186,283 @@ class TestServiceFilter:
         assert service in make_client().get_supported_services()
 
 
+class TestEC2Relationships:
+    """EC2 instances emit relationships to VPCs, subnets, and security groups."""
+
+    def test_ec2_emits_vpc_relationship(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "Reservations": [
+                        {
+                            "Instances": [
+                                {
+                                    "InstanceId": "i-123",
+                                    "State": {"Name": "running"},
+                                    "VpcId": "vpc-abc",
+                                    "Tags": [],
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_compute()
+
+        assert len(resources) == 1
+        assert resources[0]["external_id"] == "i-123"
+        assert any(r["edge_type"] == "in_network" for r in resources[0]["relationships"])
+        vpc_rel = [r for r in resources[0]["relationships"] if r["edge_type"] == "in_network"][0]
+        assert vpc_rel["target_external_id"] == "vpc-abc"
+        assert vpc_rel["target_kind"] == "networking_resource"
+
+    def test_ec2_emits_subnet_relationship(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "Reservations": [
+                        {
+                            "Instances": [
+                                {
+                                    "InstanceId": "i-123",
+                                    "State": {"Name": "running"},
+                                    "SubnetId": "subnet-def",
+                                    "Tags": [],
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_compute()
+
+        assert len(resources) == 1
+        subnet_rels = [r for r in resources[0]["relationships"] if r["edge_type"] == "in_subnet"]
+        assert len(subnet_rels) == 1
+        assert subnet_rels[0]["target_external_id"] == "subnet-def"
+
+    def test_ec2_emits_security_group_relationships(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "Reservations": [
+                        {
+                            "Instances": [
+                                {
+                                    "InstanceId": "i-123",
+                                    "State": {"Name": "running"},
+                                    "SecurityGroups": [
+                                        {"GroupId": "sg-1"},
+                                        {"GroupId": "sg-2"},
+                                    ],
+                                    "Tags": [],
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_compute()
+
+        sg_rels = [r for r in resources[0]["relationships"] if r["edge_type"] == "uses_security_group"]
+        assert len(sg_rels) == 2
+        assert set(r["target_external_id"] for r in sg_rels) == {"sg-1", "sg-2"}
+
+
+class TestEBSRelationships:
+    """EBS volumes emit relationships to attached EC2 instances."""
+
+    def test_ebs_emits_attachment_relationship(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "Volumes": [
+                        {
+                            "VolumeId": "vol-123",
+                            "State": "in-use",
+                            "Size": 100,
+                            "Attachments": [
+                                {"InstanceId": "i-abc", "Device": "/dev/sda1"}
+                            ],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_storage()
+
+        vol = [r for r in resources if r["resource_type"] == "ebs_volume"][0]
+        assert vol["external_id"] == "vol-123"
+        assert len(vol["relationships"]) == 1
+        assert vol["relationships"][0]["edge_type"] == "attached_to"
+        assert vol["relationships"][0]["target_external_id"] == "i-abc"
+        assert vol["relationships"][0]["target_kind"] == "entity"
+
+
+class TestNetworkingRelationships:
+    """VPCs, subnets, and security groups emit in_network relationships."""
+
+    def test_vpc_has_external_id(self):
+        client = make_client()
+        ec2 = MagicMock()
+        vpc_paginator = MagicMock()
+        vpc_paginator.paginate.return_value = iter([
+            {
+                "Vpcs": [
+                    {
+                        "VpcId": "vpc-123",
+                        "CidrBlock": "10.0.0.0/16",
+                        "State": "available",
+                        "Tags": [],
+                    }
+                ]
+            }
+        ])
+        ec2.get_paginator.side_effect = lambda op: vpc_paginator if op == "describe_vpcs" else MagicMock()
+        client.session.client.return_value = ec2
+
+        resources = client.discover_network()
+
+        vpcs = [r for r in resources if r["resource_type"] == "vpc"]
+        assert len(vpcs) == 1
+        assert vpcs[0]["external_id"] == "vpc-123"
+
+    def test_subnet_emits_vpc_relationship(self):
+        client = make_client()
+        ec2 = MagicMock()
+
+        def subnet_paginator():
+            p = MagicMock()
+            p.paginate.return_value = iter([
+                {
+                    "Subnets": [
+                        {
+                            "SubnetId": "subnet-123",
+                            "VpcId": "vpc-abc",
+                            "CidrBlock": "10.0.1.0/24",
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ])
+            return p
+
+        def sg_paginator():
+            p = MagicMock()
+            p.paginate.return_value = iter([{"SecurityGroups": []}])
+            return p
+
+        def get_paginator(op):
+            if op == "describe_subnets":
+                return subnet_paginator()
+            elif op == "describe_security_groups":
+                return sg_paginator()
+            else:
+                p = MagicMock()
+                p.paginate.return_value = iter([{"Vpcs": []}, {"LoadBalancers": []}])
+                return p
+
+        ec2.get_paginator.side_effect = get_paginator
+        client.session.client.return_value = ec2
+
+        resources = client.discover_network()
+
+        subnets = [r for r in resources if r["resource_type"] == "subnet"]
+        assert len(subnets) == 1
+        assert subnets[0]["external_id"] == "subnet-123"
+        assert len(subnets[0]["relationships"]) == 1
+        assert subnets[0]["relationships"][0]["edge_type"] == "in_network"
+        assert subnets[0]["relationships"][0]["target_external_id"] == "vpc-abc"
+
+
+class TestSecurityGroupDiscovery:
+    """Security groups are discovered and linked to VPCs."""
+
+    def test_discover_security_groups_returns_sgs(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "SecurityGroups": [
+                        {
+                            "GroupId": "sg-123",
+                            "GroupName": "web-sg",
+                            "VpcId": "vpc-abc",
+                            "Description": "Web traffic",
+                            "IpPermissions": [],
+                            "IpPermissionsEgress": [],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_security_groups()
+
+        assert len(resources) == 1
+        assert resources[0]["resource_type"] == "security_group"
+        assert resources[0]["external_id"] == "sg-123"
+        assert resources[0]["name"] == "web-sg"
+
+    def test_security_group_emits_vpc_relationship(self):
+        client = make_client()
+        ec2 = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "SecurityGroups": [
+                        {
+                            "GroupId": "sg-123",
+                            "GroupName": "web-sg",
+                            "VpcId": "vpc-abc",
+                            "Description": "Web traffic",
+                            "IpPermissions": [],
+                            "IpPermissionsEgress": [],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = ec2
+
+        resources = client.discover_security_groups()
+
+        assert len(resources[0]["relationships"]) == 1
+        assert resources[0]["relationships"][0]["edge_type"] == "in_network"
+        assert resources[0]["relationships"][0]["target_external_id"] == "vpc-abc"
+        assert resources[0]["relationships"][0]["target_kind"] == "networking_resource"
+
+
 class TestErrorHandling:
     def test_aws_error_degrades_to_empty_list(self):
         """A denied permission must not abort the whole scan."""

@@ -1365,6 +1365,7 @@ class DiscoveryService:
             "cert_manager_certificate": "certificate",
             "vpc": "networking",
             "subnet": "networking",
+            "security_group": "networking",
             "load_balancer": "networking",
             "ec2_instance": "entity",
             "s3_bucket": "data_store",
@@ -1583,6 +1584,18 @@ class DiscoveryService:
                         self._store_cni_as_networking(
                             organization_id, resource, networking_lookup
                         )
+                    elif resource_type == "security_group":
+                        # Store security group as networking resource
+                        net_id = self._upsert_networking_resource(
+                            organization_id=organization_id,
+                            name=resource.get("name", ""),
+                            network_type="security_group",
+                            region=resource.get("region"),
+                            attributes=resource.get("metadata", {}),
+                            tags=["aws", "security_group", "discovered"],
+                            external_id=resource.get("external_id") or resource.get("resource_id"),
+                        )
+                        self._register(scan_index, provider, resource, "networking_resource", net_id)
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
                 else:
