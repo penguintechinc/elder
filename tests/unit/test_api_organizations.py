@@ -6,9 +6,10 @@ No external network calls or real database required.
 """
 
 import json
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 from quart import current_app
 
 
@@ -303,3 +304,111 @@ class TestOrganizationAPI:
             data = json.loads(await response.get_data())
             items = data.get("items", data.get("organizations", []))
             assert len(items) <= 10
+
+    @staticmethod
+    def _get_or_create_tenant(db, slug: str, name: str) -> int:
+        """Get or create a tenant row by slug, returning its id."""
+        tenant = db(db.tenants.slug == slug).select().first()
+        if tenant:
+            return tenant.id
+        tenant_id = db.tenants.insert(name=name, slug=slug, is_active=True)
+        db.commit()
+        return tenant_id
+
+    @pytest.mark.asyncio
+    async def test_get_organization_graph_unauthenticated(self, async_client):
+        """GET /organizations/:id/graph with no auth token must 401.
+
+        regression: org-graph-auth-scope
+        """
+        response = await async_client.get("/api/v1/organizations/1/graph")
+        assert response.status_code == 401
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_organization_graph_cross_tenant_forbidden(
+        self, mock_get_user, async_client, app
+    ):
+        """A caller must not read another tenant's organization graph.
+
+        regression: org-graph-auth-scope
+        """
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+
+            tenant_a_id = self._get_or_create_tenant(
+                db, "org-graph-tenant-a", "Org Graph Tenant A"
+            )
+            tenant_b_id = self._get_or_create_tenant(
+                db, "org-graph-tenant-b", "Org Graph Tenant B"
+            )
+
+            other_org_id = db.organizations.insert(
+                name="Other Tenant Org",
+                tenant_id=tenant_b_id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+            # Caller authenticated against tenant A, requesting tenant B's org.
+            mock_user = MagicMock()
+            mock_user.id = 1
+            mock_user.username = "test"
+            mock_user.is_superuser = True
+            mock_user.tenant_id = tenant_a_id
+            mock_get_user.return_value = mock_user
+
+            response = await async_client.get(
+                f"/api/v1/organizations/{other_org_id}/graph",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+            assert response.status_code in (403, 404)
+            data = json.loads(await response.get_data())
+            # Must not leak the other tenant's org data in the response body.
+            assert "Other Tenant Org" not in json.dumps(data)
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_organization_graph_same_tenant_ok(
+        self, mock_get_user, async_client, app
+    ):
+        """A caller can read their own tenant's organization graph.
+
+        regression: org-graph-auth-scope
+        """
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+
+            tenant_id = self._get_or_create_tenant(
+                db, "org-graph-tenant-own", "Org Graph Tenant Own"
+            )
+
+            org_id = db.organizations.insert(
+                name="My Own Org",
+                tenant_id=tenant_id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+            mock_user = MagicMock()
+            mock_user.id = 1
+            mock_user.username = "test"
+            mock_user.is_superuser = True
+            mock_user.tenant_id = tenant_id
+            mock_get_user.return_value = mock_user
+
+            response = await async_client.get(
+                f"/api/v1/organizations/{org_id}/graph",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+            assert response.status_code == 200
+            data = json.loads(await response.get_data())
+            assert data["center_node"] == f"org-{org_id}"
+            node_ids = {node["id"] for node in data["nodes"]}
+            assert f"org-{org_id}" in node_ids
