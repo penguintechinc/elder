@@ -1491,3 +1491,371 @@ def test_aws_complex_topology_all_edges_resolve(seeded):
     # 4 edges: vpc->vpc (subnet->vpc), vpc->vpc (sg->vpc), ec2->subnet, ec2->sg, ec2->vpc, vol->ec2
     assert counts["edges_created"] == 6
     assert counts["unresolved_edges"] == 0
+
+
+def test_phase_b2_rds_relationships(seeded):
+    """Phase B2: RDS emits in_network and uses_security_group relationships."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "sg-rds",
+                "resource_type": "security_group",
+                "resource_id": "sg-rds",
+                "external_id": "sg-rds",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+        ],
+        "data_store": [
+            {
+                "name": "prod-db",
+                "resource_type": "rds_instance",
+                "resource_id": "prod-db",
+                "external_id": "arn:aws:rds:us-east-2:123456789012:db:prod-db",
+                "provider": "aws",
+                "metadata": {"engine": "postgres", "vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
+                    {"target_external_id": "sg-rds", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 3  # sg->vpc, rds->vpc, rds->sg
+    assert counts["unresolved_edges"] == 0
+
+    # Verify RDS data_store was created
+    rds = db((db.data_stores.external_id == "arn:aws:rds:us-east-2:123456789012:db:prod-db") & (db.data_stores.organization_id == org_id)).select().first()
+    assert rds is not None
+
+    # Verify edges were created
+    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+    sg = db((db.networking_resources.external_id == "sg-rds") & (db.networking_resources.organization_id == org_id)).select().first()
+
+    rds_to_vpc_dep = db(
+        (db.dependencies.source_type == "data_store")
+        & (db.dependencies.source_id == rds.id)
+        & (db.dependencies.target_type == "networking_resource")
+        & (db.dependencies.target_id == vpc.id)
+        & (db.dependencies.dependency_type == "in_network")
+    ).select().first()
+    assert rds_to_vpc_dep is not None
+
+    rds_to_sg_dep = db(
+        (db.dependencies.source_type == "data_store")
+        & (db.dependencies.source_id == rds.id)
+        & (db.dependencies.target_type == "networking_resource")
+        & (db.dependencies.target_id == sg.id)
+        & (db.dependencies.dependency_type == "uses_security_group")
+    ).select().first()
+    assert rds_to_sg_dep is not None
+
+
+def test_phase_b2_lambda_relationships(seeded):
+    """Phase B2: Lambda emits in_network, uses_security_group, and assumes_role relationships."""
+    service, db, org_id = seeded
+
+    # Pre-create the IAM role as an identity with a unique username per org
+    tenant_id = 1
+    now = datetime.now(timezone.utc)
+    role_arn = "arn:aws:iam::123456789012:role/lambda-role"
+    username = f"aws:123456789012:lambda-role:org{org_id}"  # Make username unique per org
+
+    # Check if identity already exists for this org
+    existing = (
+        db((db.identities.username == username) & (db.identities.organization_id == org_id))
+        .select()
+        .first()
+    )
+    if existing:
+        identity_id = existing.id
+    else:
+        identity_id = db.identities.insert(
+            tenant_id=tenant_id,
+            identity_type="serviceAccount",
+            username=username,
+            full_name="lambda-role",
+            organization_id=org_id,
+            auth_provider="aws",
+            auth_provider_id=role_arn,
+            external_id=role_arn,
+            portal_role="observer",
+            is_active=True,
+            is_superuser=False,
+            mfa_enabled=False,
+            must_change_password=False,
+            created_at=now,
+            updated_at=now,
+        )
+
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "sg-lambda",
+                "resource_type": "security_group",
+                "resource_id": "sg-lambda",
+                "external_id": "sg-lambda",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+        ],
+        "service": [
+            {
+                "name": "my-func",
+                "resource_type": "lambda_function",
+                "resource_id": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                "external_id": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                "provider": "aws",
+                "metadata": {"runtime": "python3.11"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
+                    {"target_external_id": "sg-lambda", "edge_type": "uses_security_group", "target_kind": "networking_resource"},
+                    {"target_external_id": role_arn, "edge_type": "assumes_role", "target_kind": "identity"},
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 4  # sg->vpc, lambda->vpc, lambda->sg, lambda->role
+    assert counts["unresolved_edges"] == 0
+
+    # Verify service was created
+    func = db((db.services.external_id == "arn:aws:lambda:us-east-2:123456789012:function:my-func") & (db.services.organization_id == org_id)).select().first()
+    assert func is not None
+
+    # Verify assumes_role edge was created
+    assumes_role_dep = db(
+        (db.dependencies.source_type == "service")
+        & (db.dependencies.source_id == func.id)
+        & (db.dependencies.target_type == "identity")
+        & (db.dependencies.target_id == identity_id)
+        & (db.dependencies.dependency_type == "assumes_role")
+    ).select().first()
+    assert assumes_role_dep is not None
+
+
+def test_phase_b2_elb_routes_to_targets(seeded):
+    """Phase B2: ELB emits routes_to relationships to target instances."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+            {
+                "name": "my-lb",
+                "resource_type": "load_balancer",
+                "resource_id": "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188",
+                "external_id": "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
+                    {"target_external_id": "i-web-1", "edge_type": "routes_to", "target_kind": "entity"},
+                    {"target_external_id": "i-web-2", "edge_type": "routes_to", "target_kind": "entity"},
+                ],
+            },
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web-1",
+                "external_id": "i-web-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+            {
+                "name": "web-2",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web-2",
+                "external_id": "i-web-2",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            },
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 5  # vpc->vpc (dummy), lb->vpc, lb->i1, lb->i2, i1->vpc, i2->vpc
+    assert counts["unresolved_edges"] == 0
+
+    # Verify LB was created and registered
+    lb = db(
+        (db.networking_resources.external_id == "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188")
+        & (db.networking_resources.organization_id == org_id)
+    ).select().first()
+    assert lb is not None
+
+    # Verify routes_to edges were created
+    web1 = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
+    web2 = db((db.entities.external_id == "i-web-2") & (db.entities.organization_id == org_id)).select().first()
+
+    for web in [web1, web2]:
+        routes_to_dep = db(
+            (db.dependencies.source_type == "networking_resource")
+            & (db.dependencies.source_id == lb.id)
+            & (db.dependencies.target_type == "entity")
+            & (db.dependencies.target_id == web.id)
+            & (db.dependencies.dependency_type == "routes_to")
+        ).select().first()
+        assert routes_to_dep is not None
+
+
+def test_phase_b2_ec2_assumes_role(seeded):
+    """Phase B2: EC2 emits assumes_role relationship to its IAM role."""
+    service, db, org_id = seeded
+
+    # Pre-create the IAM role as an identity with a unique username per org
+    tenant_id = 1
+    now = datetime.now(timezone.utc)
+    role_arn = "arn:aws:iam::123456789012:role/ec2-role"
+    username = f"aws:123456789012:ec2-role:org{org_id}"  # Make username unique per org
+
+    # Check if identity already exists for this org
+    existing = (
+        db((db.identities.username == username) & (db.identities.organization_id == org_id))
+        .select()
+        .first()
+    )
+    if existing:
+        identity_id = existing.id
+    else:
+        identity_id = db.identities.insert(
+            tenant_id=tenant_id,
+            identity_type="serviceAccount",
+            username=username,
+            full_name="ec2-role",
+            organization_id=org_id,
+            auth_provider="aws",
+            auth_provider_id=role_arn,
+            external_id=role_arn,
+            portal_role="observer",
+            is_active=True,
+            is_superuser=False,
+            mfa_enabled=False,
+            must_change_password=False,
+            created_at=now,
+            updated_at=now,
+        )
+
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+        ],
+        "compute": [
+            {
+                "name": "web-server",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web",
+                "external_id": "i-web",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"},
+                    {"target_external_id": role_arn, "edge_type": "assumes_role", "target_kind": "identity"},
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 2  # ec2->vpc, ec2->role
+    assert counts["unresolved_edges"] == 0
+
+    # Verify EC2 assumes_role edge was created
+    ec2 = db((db.entities.external_id == "i-web") & (db.entities.organization_id == org_id)).select().first()
+    assert ec2 is not None
+
+    assumes_role_dep = db(
+        (db.dependencies.source_type == "entity")
+        & (db.dependencies.source_id == ec2.id)
+        & (db.dependencies.target_type == "identity")
+        & (db.dependencies.target_id == identity_id)
+        & (db.dependencies.dependency_type == "assumes_role")
+    ).select().first()
+    assert assumes_role_dep is not None
+
+
+def test_aws_no_connected_to_for_ec2_in_network(seeded):
+    """Regression: AWS EC2 with in_network now, legacy connected_to never created for AWS."""
+    service, db, org_id = seeded
+    results = {
+        "network": [
+            {
+                "name": "vpc-prod",
+                "resource_type": "vpc",
+                "resource_id": "vpc-prod",
+                "external_id": "vpc-prod",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+            },
+        ],
+        "compute": [
+            {
+                "name": "web-1",
+                "resource_type": "ec2_instance",
+                "resource_id": "i-web-1",
+                "external_id": "i-web-1",
+                "provider": "aws",
+                "metadata": {"vpc_id": "vpc-prod"},
+                "relationships": [
+                    {"target_external_id": "vpc-prod", "edge_type": "in_network", "target_kind": "networking_resource"}
+                ],
+            }
+        ],
+    }
+    counts = service._store_discovered_resources(org_id, results)
+    assert counts["edges_created"] == 1  # ec2->vpc
+    assert counts["unresolved_edges"] == 0
+
+    # Verify NO network_entity_mappings row exists for EC2->VPC
+    ec2 = db((db.entities.external_id == "i-web-1") & (db.entities.organization_id == org_id)).select().first()
+    vpc = db((db.networking_resources.external_id == "vpc-prod") & (db.networking_resources.organization_id == org_id)).select().first()
+
+    legacy_mapping = db(
+        (db.network_entity_mappings.network_id == vpc.id)
+        & (db.network_entity_mappings.entity_id == ec2.id)
+        & (db.network_entity_mappings.relationship_type == "connected_to")
+    ).select().first()
+    assert legacy_mapping is None, "AWS should emit in_network, not legacy connected_to"

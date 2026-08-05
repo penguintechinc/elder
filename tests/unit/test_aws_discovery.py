@@ -495,3 +495,503 @@ class TestErrorHandling:
 
         with pytest.raises(TypeError):
             client.discover_compute()
+
+
+class TestPhaseB2RDS:
+    """Phase B2: RDS relationship capture (in_network, uses_security_group)."""
+
+    def test_rds_instance_has_external_id_set(self):
+        """RDS external_id must be the DBInstanceArn for edge resolution."""
+        client = make_client()
+        rds = MagicMock()
+        paginated(
+            rds,
+            [
+                {
+                    "DBInstances": [
+                        {
+                            "DBInstanceIdentifier": "prod-db",
+                            "DBInstanceArn": "arn:aws:rds:us-east-2:123456789012:db:prod-db",
+                            "Engine": "postgres",
+                            "EngineVersion": "14.7",
+                            "DBInstanceClass": "db.t3.micro",
+                            "StorageType": "gp2",
+                            "AllocatedStorage": 20,
+                            "DBInstanceStatus": "available",
+                            "DBSubnetGroup": {"VpcId": "vpc-subnet-group"},
+                            "VpcSecurityGroups": [],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = rds
+
+        resources = client.discover_databases()
+
+        assert len(resources) == 1
+        assert (
+            resources[0]["external_id"]
+            == "arn:aws:rds:us-east-2:123456789012:db:prod-db"
+        )
+
+    def test_rds_to_vpc_relationship(self):
+        """RDS emits in_network relationship to its VPC."""
+        client = make_client()
+        rds = MagicMock()
+        paginated(
+            rds,
+            [
+                {
+                    "DBInstances": [
+                        {
+                            "DBInstanceIdentifier": "prod-db",
+                            "DBInstanceArn": "arn:aws:rds:us-east-2:123456789012:db:prod-db",
+                            "Engine": "postgres",
+                            "DBSubnetGroup": {"VpcId": "vpc-abc"},
+                            "VpcSecurityGroups": [],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = rds
+
+        resources = client.discover_databases()
+
+        assert len(resources[0]["relationships"]) >= 1
+        vpc_rel = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "in_network"
+        ]
+        assert len(vpc_rel) == 1
+        assert vpc_rel[0]["target_external_id"] == "vpc-abc"
+        assert vpc_rel[0]["target_kind"] == "networking_resource"
+
+    def test_rds_to_security_groups_relationship(self):
+        """RDS emits uses_security_group relationship for each assigned SG."""
+        client = make_client()
+        rds = MagicMock()
+        paginated(
+            rds,
+            [
+                {
+                    "DBInstances": [
+                        {
+                            "DBInstanceIdentifier": "prod-db",
+                            "DBInstanceArn": "arn:aws:rds:us-east-2:123456789012:db:prod-db",
+                            "Engine": "postgres",
+                            "DBSubnetGroup": {"VpcId": "vpc-abc"},
+                            "VpcSecurityGroups": [
+                                {"VpcSecurityGroupId": "sg-1"},
+                                {"VpcSecurityGroupId": "sg-2"},
+                            ],
+                            "Tags": [],
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = rds
+
+        resources = client.discover_databases()
+
+        sg_rels = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "uses_security_group"
+        ]
+        assert len(sg_rels) == 2
+        assert set(r["target_external_id"] for r in sg_rels) == {"sg-1", "sg-2"}
+
+
+class TestPhaseB2Lambda:
+    """Phase B2: Lambda relationship capture (in_network, uses_security_group, assumes_role)."""
+
+    def test_lambda_function_has_external_id_set(self):
+        """Lambda external_id must be the FunctionArn for edge resolution."""
+        client = make_client()
+        lambda_client = MagicMock()
+        paginated(
+            lambda_client,
+            [
+                {
+                    "Functions": [
+                        {
+                            "FunctionName": "my-func",
+                            "FunctionArn": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                            "Runtime": "python3.11",
+                            "Handler": "index.handler",
+                            "MemorySize": 128,
+                            "Timeout": 30,
+                            "VpcConfig": {},
+                            "Role": "arn:aws:iam::123456789012:role/lambda-role",
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = lambda_client
+
+        resources = client.discover_serverless()
+
+        assert len(resources) == 1
+        assert (
+            resources[0]["external_id"]
+            == "arn:aws:lambda:us-east-2:123456789012:function:my-func"
+        )
+
+    def test_lambda_with_vpc_config_emits_in_network(self):
+        """Lambda in VPC emits in_network relationship to VPC."""
+        client = make_client()
+        lambda_client = MagicMock()
+        paginated(
+            lambda_client,
+            [
+                {
+                    "Functions": [
+                        {
+                            "FunctionName": "my-func",
+                            "FunctionArn": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                            "Runtime": "python3.11",
+                            "Handler": "index.handler",
+                            "MemorySize": 128,
+                            "Timeout": 30,
+                            "VpcConfig": {
+                                "VpcId": "vpc-abc",
+                                "SecurityGroupIds": ["sg-1"],
+                            },
+                            "Role": "arn:aws:iam::123456789012:role/lambda-role",
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = lambda_client
+
+        resources = client.discover_serverless()
+
+        vpc_rel = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "in_network"
+        ]
+        assert len(vpc_rel) == 1
+        assert vpc_rel[0]["target_external_id"] == "vpc-abc"
+
+    def test_lambda_emits_uses_security_group(self):
+        """Lambda in VPC emits uses_security_group for each SG."""
+        client = make_client()
+        lambda_client = MagicMock()
+        paginated(
+            lambda_client,
+            [
+                {
+                    "Functions": [
+                        {
+                            "FunctionName": "my-func",
+                            "FunctionArn": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                            "Runtime": "python3.11",
+                            "Handler": "index.handler",
+                            "MemorySize": 128,
+                            "Timeout": 30,
+                            "VpcConfig": {
+                                "VpcId": "vpc-abc",
+                                "SecurityGroupIds": ["sg-1", "sg-2"],
+                            },
+                            "Role": "arn:aws:iam::123456789012:role/lambda-role",
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = lambda_client
+
+        resources = client.discover_serverless()
+
+        sg_rels = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "uses_security_group"
+        ]
+        assert len(sg_rels) == 2
+        assert set(r["target_external_id"] for r in sg_rels) == {"sg-1", "sg-2"}
+
+    def test_lambda_emits_assumes_role(self):
+        """Lambda emits assumes_role relationship to its execution role."""
+        client = make_client()
+        lambda_client = MagicMock()
+        paginated(
+            lambda_client,
+            [
+                {
+                    "Functions": [
+                        {
+                            "FunctionName": "my-func",
+                            "FunctionArn": "arn:aws:lambda:us-east-2:123456789012:function:my-func",
+                            "Runtime": "python3.11",
+                            "Handler": "index.handler",
+                            "MemorySize": 128,
+                            "Timeout": 30,
+                            "VpcConfig": {},
+                            "Role": "arn:aws:iam::123456789012:role/lambda-role",
+                        }
+                    ]
+                }
+            ],
+        )
+        client.session.client.return_value = lambda_client
+
+        resources = client.discover_serverless()
+
+        role_rel = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "assumes_role"
+        ]
+        assert len(role_rel) == 1
+        assert (
+            role_rel[0]["target_external_id"]
+            == "arn:aws:iam::123456789012:role/lambda-role"
+        )
+        assert role_rel[0]["target_kind"] == "identity"
+
+
+class TestPhaseB2ELB:
+    """Phase B2: ELB/ALB relationship capture (in_network, routes_to)."""
+
+    def test_load_balancer_has_external_id_set(self):
+        """LB external_id must be the LoadBalancerArn for edge resolution."""
+        client = make_client()
+        ec2 = MagicMock()
+        elbv2 = MagicMock()
+
+        # Mock EC2 for VPCs (returns empty to simplify)
+        ec2_paginator = MagicMock()
+        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2.get_paginator.return_value = ec2_paginator
+
+        # Mock ELBv2
+        elbv2_paginator = MagicMock()
+        elbv2_paginator.paginate.return_value = iter(
+            [
+                {
+                    "LoadBalancers": [
+                        {
+                            "LoadBalancerName": "my-lb",
+                            "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188",
+                            "Type": "application",
+                            "Scheme": "internet-facing",
+                            "VpcId": "vpc-abc",
+                            "State": {"Code": "active"},
+                            "DNSName": "my-lb-123.us-east-2.elb.amazonaws.com",
+                        }
+                    ]
+                }
+            ]
+        )
+        elbv2.get_paginator.return_value = elbv2_paginator
+        elbv2.describe_tags.return_value = {"TagDescriptions": [{"Tags": []}]}
+        elbv2.describe_target_groups.return_value = {"TargetGroups": []}
+
+        def get_client_side_effect(service):
+            if service == "elbv2":
+                return elbv2
+            return ec2
+
+        client.session.client.side_effect = get_client_side_effect
+
+        resources = client.discover_network()
+
+        lb_resources = [r for r in resources if r["resource_type"] == "load_balancer"]
+        assert len(lb_resources) > 0, f"No load balancers found. Found: {[r['resource_type'] for r in resources]}"
+        lb_resource = lb_resources[0]
+        assert (
+            lb_resource["external_id"]
+            == "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188"
+        )
+
+    def test_load_balancer_to_vpc_relationship(self):
+        """LB emits in_network relationship to its VPC."""
+        client = make_client()
+        ec2 = MagicMock()
+        elbv2 = MagicMock()
+
+        # Mock EC2 for VPCs (returns empty to simplify)
+        ec2_paginator = MagicMock()
+        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2.get_paginator.return_value = ec2_paginator
+
+        # Mock ELBv2
+        elbv2_paginator = MagicMock()
+        elbv2_paginator.paginate.return_value = iter(
+            [
+                {
+                    "LoadBalancers": [
+                        {
+                            "LoadBalancerName": "my-lb",
+                            "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188",
+                            "Type": "application",
+                            "VpcId": "vpc-abc",
+                            "State": {"Code": "active"},
+                            "DNSName": "my-lb.us-east-2.elb.amazonaws.com",
+                        }
+                    ]
+                }
+            ]
+        )
+        elbv2.get_paginator.return_value = elbv2_paginator
+        elbv2.describe_tags.return_value = {"TagDescriptions": [{"Tags": []}]}
+        elbv2.describe_target_groups.return_value = {"TargetGroups": []}
+
+        def get_client_side_effect(service):
+            if service == "elbv2":
+                return elbv2
+            return ec2
+
+        client.session.client.side_effect = get_client_side_effect
+
+        resources = client.discover_network()
+
+        lb_resources = [r for r in resources if r["resource_type"] == "load_balancer"]
+        assert len(lb_resources) > 0
+        lb_resource = lb_resources[0]
+        vpc_rel = [
+            r
+            for r in lb_resource["relationships"]
+            if r["edge_type"] == "in_network"
+        ]
+        assert len(vpc_rel) == 1
+        assert vpc_rel[0]["target_external_id"] == "vpc-abc"
+
+    def test_load_balancer_routes_to_targets(self):
+        """LB emits routes_to relationship for each target instance."""
+        client = make_client()
+        ec2 = MagicMock()
+        elbv2 = MagicMock()
+
+        # Mock EC2 for VPCs (returns empty to simplify)
+        ec2_paginator = MagicMock()
+        ec2_paginator.paginate.return_value = iter([{"Vpcs": [], "Subnets": [], "SecurityGroups": []}])
+        ec2.get_paginator.return_value = ec2_paginator
+
+        # Mock ELBv2
+        elbv2_paginator = MagicMock()
+        elbv2_paginator.paginate.return_value = iter(
+            [
+                {
+                    "LoadBalancers": [
+                        {
+                            "LoadBalancerName": "my-lb",
+                            "LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-2:123456789012:loadbalancer/app/my-lb/50dc6c495c0c9188",
+                            "Type": "application",
+                            "VpcId": "vpc-abc",
+                            "State": {"Code": "active"},
+                            "DNSName": "my-lb.us-east-2.elb.amazonaws.com",
+                        }
+                    ]
+                }
+            ]
+        )
+        elbv2.get_paginator.return_value = elbv2_paginator
+        elbv2.describe_tags.return_value = {"TagDescriptions": [{"Tags": []}]}
+        elbv2.describe_target_groups.return_value = {
+            "TargetGroups": [
+                {
+                    "TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-2:123456789012:targetgroup/my-targets/73e2d6bc24d8a067"
+                }
+            ]
+        }
+        elbv2.describe_target_health.return_value = {
+            "TargetHealthDescriptions": [
+                {"Target": {"Id": "i-1"}},
+                {"Target": {"Id": "i-2"}},
+            ]
+        }
+
+        def get_client_side_effect(service):
+            if service == "elbv2":
+                return elbv2
+            return ec2
+
+        client.session.client.side_effect = get_client_side_effect
+
+        resources = client.discover_network()
+
+        lb_resources = [r for r in resources if r["resource_type"] == "load_balancer"]
+        assert len(lb_resources) > 0
+        lb_resource = lb_resources[0]
+        routes_to_rels = [
+            r
+            for r in lb_resource["relationships"]
+            if r["edge_type"] == "routes_to"
+        ]
+        assert len(routes_to_rels) == 2
+        assert set(r["target_external_id"] for r in routes_to_rels) == {"i-1", "i-2"}
+
+
+class TestPhaseB2EC2Role:
+    """Phase B2: EC2 assumes_role relationship capture."""
+
+    def test_ec2_emits_assumes_role_with_resolved_role_arn(self):
+        """EC2 resolves instance profile to role ARN and emits assumes_role."""
+        client = make_client()
+        ec2 = MagicMock()
+        iam = MagicMock()
+        paginated(
+            ec2,
+            [
+                {
+                    "Reservations": [
+                        {
+                            "Instances": [
+                                {
+                                    "InstanceId": "i-abc",
+                                    "State": {"Name": "running"},
+                                    "VpcId": "vpc-123",
+                                    "SubnetId": "subnet-123",
+                                    "SecurityGroups": [],
+                                    "IamInstanceProfile": {
+                                        "Arn": "arn:aws:iam::123456789012:instance-profile/ec2-role"
+                                    },
+                                    "Tags": [],
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+        )
+        iam.get_instance_profile.return_value = {
+            "InstanceProfile": {
+                "Roles": [
+                    {"Arn": "arn:aws:iam::123456789012:role/ec2-role"}
+                ]
+            }
+        }
+
+        def get_client_side_effect(service):
+            if service == "ec2":
+                return ec2
+            elif service == "iam":
+                return iam
+            return MagicMock()
+
+        client.session.client.side_effect = get_client_side_effect
+
+        resources = client.discover_compute()
+
+        role_rels = [
+            r
+            for r in resources[0]["relationships"]
+            if r["edge_type"] == "assumes_role"
+        ]
+        assert len(role_rels) == 1
+        assert (
+            role_rels[0]["target_external_id"]
+            == "arn:aws:iam::123456789012:role/ec2-role"
+        )
+        assert role_rels[0]["target_kind"] == "identity"

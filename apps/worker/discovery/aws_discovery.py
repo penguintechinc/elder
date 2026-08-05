@@ -363,6 +363,33 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                                 "edge_type": "uses_security_group",
                             })
 
+                        # EC2 -> IAM Role (assumes_role)
+                        if instance.get("IamInstanceProfile"):
+                            profile_arn = instance["IamInstanceProfile"].get("Arn")
+                            if profile_arn:
+                                try:
+                                    # Resolve instance profile ARN to role ARN
+                                    iam = self.session.client("iam")
+                                    profile_name = profile_arn.split("/")[-1]
+                                    profile_info = iam.get_instance_profile(
+                                        InstanceProfileName=profile_name
+                                    )
+                                    roles = profile_info.get("InstanceProfile", {}).get(
+                                        "Roles", []
+                                    )
+                                    if roles:
+                                        role_arn = roles[0].get("Arn")
+                                        if role_arn:
+                                            relationships.append({
+                                                "target_external_id": role_arn,
+                                                "target_kind": "identity",
+                                                "edge_type": "assumes_role",
+                                            })
+                                except Exception as e:
+                                    logger.warning(
+                                        f"Failed to resolve instance profile {profile_arn}: {e}"
+                                    )
+
                         resource = self.format_resource(
                             resource_id=instance_id,
                             resource_type="ec2_instance",
@@ -594,10 +621,13 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
                 for page in paginator.paginate():
                     for lb in page.get("LoadBalancers", []):
+                        lb_arn = lb["LoadBalancerArn"]
+                        relationships = []
+
                         # Get tags for load balancer
                         try:
                             tags_response = elbv2.describe_tags(
-                                ResourceArns=[lb["LoadBalancerArn"]]
+                                ResourceArns=[lb_arn]
                             )
                             tags_list = tags_response.get("TagDescriptions", [{}])[
                                 0
@@ -606,19 +636,62 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         except:
                             tags = {}
 
+                        # ELB -> VPC (in_network)
+                        vpc_id = lb.get("VpcId")
+                        if vpc_id:
+                            relationships.append({
+                                "target_external_id": vpc_id,
+                                "target_kind": "networking_resource",
+                                "edge_type": "in_network",
+                            })
+
+                        # ELB -> Target Instances (routes_to)
+                        try:
+                            # Get target groups for this LB
+                            tg_response = elbv2.describe_target_groups(
+                                LoadBalancerArn=lb_arn
+                            )
+                            for tg in tg_response.get("TargetGroups", []):
+                                tg_arn = tg.get("TargetGroupArn")
+                                if tg_arn:
+                                    # Get target health for this TG
+                                    health_response = (
+                                        elbv2.describe_target_health(
+                                            TargetGroupArn=tg_arn
+                                        )
+                                    )
+                                    for target in health_response.get(
+                                        "TargetHealthDescriptions", []
+                                    ):
+                                        target_id = target.get("Target", {}).get(
+                                            "Id"
+                                        )
+                                        if target_id:
+                                            relationships.append({
+                                                "target_external_id": target_id,
+                                                "target_kind": "entity",
+                                                "edge_type": "routes_to",
+                                            })
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to enumerate target groups for LB {lb_arn}: {e}"
+                            )
+
                         resource = self.format_resource(
-                            resource_id=lb["LoadBalancerArn"],
+                            resource_id=lb_arn,
                             resource_type="load_balancer",
                             name=lb.get("LoadBalancerName"),
                             metadata={
                                 "type": lb.get("Type"),
                                 "scheme": lb.get("Scheme"),
-                                "vpc_id": lb.get("VpcId"),
+                                "vpc_id": vpc_id,
                                 "state": lb.get("State", {}).get("Code"),
                                 "dns_name": lb.get("DNSName"),
                             },
                             region=self.region,
                             tags=tags,
+                            external_id=lb_arn,
+                            relationships=relationships,
                         )
                         resources.append(resource)
 
@@ -694,14 +767,37 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
             for page in paginator.paginate():
                 for db_instance in page.get("DBInstances", []):
+                    db_instance_arn = db_instance["DBInstanceArn"]
+                    relationships = []
+
                     # Get tags for DB instance
                     try:
                         tags_response = rds.list_tags_for_resource(
-                            ResourceName=db_instance["DBInstanceArn"]
+                            ResourceName=db_instance_arn
                         )
                         tags = self._normalize_tags(tags_response.get("TagList", []))
                     except:
                         tags = {}
+
+                    # RDS -> VPC (in_network)
+                    db_subnet_group = db_instance.get("DBSubnetGroup", {})
+                    vpc_id = db_subnet_group.get("VpcId")
+                    if vpc_id:
+                        relationships.append({
+                            "target_external_id": vpc_id,
+                            "target_kind": "networking_resource",
+                            "edge_type": "in_network",
+                        })
+
+                    # RDS -> Security Groups (uses_security_group)
+                    for vpc_sg in db_instance.get("VpcSecurityGroups", []):
+                        sg_id = vpc_sg.get("VpcSecurityGroupId")
+                        if sg_id:
+                            relationships.append({
+                                "target_external_id": sg_id,
+                                "target_kind": "networking_resource",
+                                "edge_type": "uses_security_group",
+                            })
 
                     resource = self.format_resource(
                         resource_id=db_instance["DBInstanceIdentifier"],
@@ -721,6 +817,8 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         },
                         region=self.region,
                         tags=tags,
+                        external_id=db_instance_arn,
+                        relationships=relationships,
                     )
                     resources.append(resource)
 
@@ -741,6 +839,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
             for page in paginator.paginate():
                 for function in page.get("Functions", []):
                     function_arn = function["FunctionArn"]
+                    relationships = []
 
                     # Get tags
                     try:
@@ -748,6 +847,33 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                         tags = tags_response.get("Tags", {})
                     except:
                         tags = {}
+
+                    # Lambda -> VPC (in_network)
+                    vpc_config = function.get("VpcConfig", {})
+                    vpc_id = vpc_config.get("VpcId")
+                    if vpc_id:
+                        relationships.append({
+                            "target_external_id": vpc_id,
+                            "target_kind": "networking_resource",
+                            "edge_type": "in_network",
+                        })
+
+                    # Lambda -> Security Groups (uses_security_group)
+                    for sg_id in vpc_config.get("SecurityGroupIds", []):
+                        relationships.append({
+                            "target_external_id": sg_id,
+                            "target_kind": "networking_resource",
+                            "edge_type": "uses_security_group",
+                        })
+
+                    # Lambda -> IAM Role (assumes_role)
+                    role_arn = function.get("Role")
+                    if role_arn:
+                        relationships.append({
+                            "target_external_id": role_arn,
+                            "target_kind": "identity",
+                            "edge_type": "assumes_role",
+                        })
 
                     resource = self.format_resource(
                         resource_id=function_arn,
@@ -760,10 +886,12 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
                             "timeout_seconds": function.get("Timeout"),
                             "last_modified": function.get("LastModified"),
                             "code_size_bytes": function.get("CodeSize"),
-                            "vpc_id": function.get("VpcConfig", {}).get("VpcId"),
+                            "vpc_id": vpc_id,
                         },
                         region=self.region,
                         tags=tags,
+                        external_id=function_arn,
+                        relationships=relationships,
                     )
                     resources.append(resource)
 

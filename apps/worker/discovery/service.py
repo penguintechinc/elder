@@ -803,6 +803,7 @@ class DiscoveryService:
                 "state": metadata.get("state"),
             },
             tags=["aws", "load-balancer", "discovered"],
+            external_id=resource.get("external_id") or resource.get("resource_id"),
         )
 
     def _store_k8s_service_account_as_identity(
@@ -1573,8 +1574,11 @@ class DiscoveryService:
 
                 elif domain == "networking":
                     if resource_type == "load_balancer":
-                        self._store_as_networking_resource(
+                        lb_id = self._store_as_networking_resource(
                             organization_id, resource, networking_lookup
+                        )
+                        self._register(
+                            scan_index, provider, resource, "networking_resource", lb_id
                         )
                     elif resource_type == "k8s_ingress":
                         self._store_k8s_ingress(
