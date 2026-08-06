@@ -63,6 +63,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Intake forms | Generalize `hd_ticket_forms` → **issue intake forms**; default **private**, optional public; public requires **Altcha** captcha (§6) |
 | Assignment webhooks | Extend native **`webhooks`** module: fire on `issue.assigned`, multiple configs filtered by `issue_type` + assignee (§7) |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §8. Issues Enterprise gates removed (#232) |
+| **Village IDs** | **Every object gets a unique `village_id`** (`VillageIDMixin`, `generate_village_id(tenant_id, redis)`) — issues, comments, attachments, intake forms, webhook configs, and any workflow/workflow-item. Tables lacking it today (`issue_comments`, `hd_ticket_messages`, `hd_ticket_attachments`, `hd_ticket_forms`, native `webhooks`) **get it added**; migration backfills existing rows |
 
 ## 4. Target model — the extended Issue
 
@@ -128,7 +129,7 @@ Writes map to each backend's native value **and case** (case bug fixed #232). **
 
 Configurable intake screens that create Issues on submit.
 
-- **Form config:** name, `slug`, ordered field definitions (JSON), the `issue_type` it files as (default `support`), default assignee (identity/OU), `is_active`.
+- **Form config:** `village_id` (unique), name, `slug`, ordered field definitions (JSON), the `issue_type` it files as (default `support`), default assignee (identity/OU), `is_active`.
 - **Visibility:** **default private** (auth required); optionally **public** (unauthenticated endpoint at `/api/v1/intake/{slug}`).
 - **Captcha:** public forms **require Altcha** (altcha.org — open-source, self-hostable, privacy-friendly proof-of-work; replaces the old forms' Turnstile/reCAPTCHA which don't fit the open-source posture). Config: `captcha_provider='altcha'`, server verifies the Altcha solution before creating the issue. Private forms: no captcha.
 - **Submit flow:** validate fields → (if public) verify Altcha → upsert requester contact (external) → create Issue (`issue_type` per form, support fields populated) → apply default assignee → fire `issue.assigned` webhook if assigned (§7).
@@ -139,7 +140,7 @@ Configurable intake screens that create Issues on submit.
 Native `webhooks` table already stores `{events: JSON, organization_id, event_type, url, …}`. Extend it:
 
 - **New event:** `issue.assigned` — emitted whenever an issue's assignee changes (create-with-assignee, PATCH assignee, form default-assign, reassignment).
-- **Filters (per webhook, additive):** `issue_type` (e.g. `support`) **and/or** assignee (identity id or org-unit id). Stored on the webhook config (extend the row or its filter JSON).
+- **Filters (per webhook, additive):** `issue_type` (e.g. `support`) **and/or** assignee (identity id or org-unit id). Stored on the webhook config (extend the row or its filter JSON). The `webhooks` table also **gains a `village_id`** (it lacks one today).
 - **Multiple configs:** each webhook independently filtered — e.g. *(a)* any issue assigned to **OU-X** → OU-X's webhook; *(b)* `issue_type=support` assigned to the **support-bot identity** → the support-bot webhook.
 - **Dispatch:** on assignment, evaluate all tenant webhooks whose filters match → POST a signed payload (issue id, type, status, assignee {type,id}, actor, timestamp). Reuse existing delivery/retry/signing.
 - **Matching semantics:** a webhook with only an OU filter matches any issue assigned to that OU regardless of type; one with `issue_type=support` + support-bot matches only those. Empty filter = all assignments in the tenant.
@@ -165,7 +166,8 @@ No schema change, no data migration, no `hd_*` retirement. **Org-unit assignment
 
 ## 9. Phase B — post-demo (migrate into `issues`)
 
-1. **Add columns** to `issues`: `tenant_id`, polymorphic assignee (`assignee_type`/`assignee_id`), `channel`, `category`, `requester_contact_id`, SLA fields, `parent_issue_id` (self-FK); add `support` to `issue_type` and `urgent` to priority. Add `issue_attachments`; extend `issue_comments` (`is_internal`, email cols).
+1. **Add columns** to `issues`: `tenant_id`, polymorphic assignee (`assignee_type`/`assignee_id`), `channel`, `category`, `requester_contact_id`, SLA fields, `parent_issue_id` (self-FK); add `support` to `issue_type` and `urgent` to priority. Add `issue_attachments` (**with `village_id`**); extend `issue_comments` (`is_internal`, email cols, **add `village_id`**). Add `village_id` (VillageIDMixin) to every object lacking it — intake forms, webhook configs, comments, attachments.
+   - **Backfill `village_id`** for all pre-existing rows that lack one (`issue_comments`, migrated messages, attachments, forms, webhooks) via `generate_village_id(tenant_id, redis)` — every object ends up uniquely addressable.
 2. **Migrate `hd_teams` → `organizations`** (`type=team`) + membership; resolve `hd_companies`/`hd_contacts` convergence (§5).
 3. **Backfill `hd_tickets` → `issues`** (`issue_type=support`; `tenant_id` direct; map status/priority/case; `subject`→`title`; `hd_team_id`→OU assignee; tags→labels; messages→`issue_comments`; attachments→`issue_attachments`). Keep `legacy_id` for FK remap. **Also backfill `tenant_id` for existing issues** via org→tenant (fixes the leak).
 4. Repoint `hd_sla_policies`/`hd_canned_responses`/`hd_email_accounts`/forms FKs to `issues`.
