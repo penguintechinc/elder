@@ -38,6 +38,10 @@ const pages = [
   { name: 'webhooks', path: '/webhooks' },
   { name: 'backups', path: '/backups' },
   { name: 'map', path: '/map' },
+  { name: 'diagram', path: '/diagram' },
+  { name: 'compute', path: '/compute' },
+  { name: 'compute-kubernetes', path: '/compute?tab=Kubernetes' },
+  { name: 'entity-detail', path: '/entities/1' },
   { name: 'search', path: '/search' },
   // Admin pages
   { name: 'admin-tenants', path: '/admin/tenants' },
