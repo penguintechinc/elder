@@ -7,9 +7,9 @@ import {
   Box,
   Building2,
   GitBranch,
-  MapIcon,
   Server,
   Network,
+  Share2,
 } from 'lucide-react'
 
 // Lazy-load page components
@@ -25,7 +25,7 @@ const OrganizationDetail = lazy(() => import('@/pages/OrganizationDetail'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Dependencies = lazy(() => import('@/pages/Dependencies'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
-const Map = lazy(() => import('@/pages/Map'))
+const Diagram = lazy(() => import('@/pages/Diagram'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const Compute = lazy(() => import('@/pages/Compute'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
@@ -50,7 +50,7 @@ const navigation: MenuCategory[] = [
     items: [
       { name: 'Networking', href: '/networking', icon: Network },
       { name: 'Dependencies', href: '/dependencies', icon: GitBranch },
-      { name: 'Map', href: '/map', icon: MapIcon },
+      { name: 'Diagram', href: '/diagram', icon: Share2 },
     ],
   },
 ]
@@ -61,7 +61,7 @@ const routes: RouteObject[] = [
   { path: 'organizations', element: <Organizations /> },
   { path: 'organizations/:id', element: <OrganizationDetail /> },
   { path: 'dependencies', element: <Dependencies /> },
-  { path: 'map', element: <Map /> },
+  { path: 'diagram', element: <Diagram /> },
   { path: 'compute', element: <Compute /> },
   { path: 'kubernetes', element: <Navigate to="/compute?tab=Kubernetes" replace /> },
   { path: 'lxd', element: <Navigate to="/compute?tab=LXD%2FLXC" replace /> },

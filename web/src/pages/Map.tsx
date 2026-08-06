@@ -1,414 +1,357 @@
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Map as MapIcon, Filter, RefreshCw } from 'lucide-react'
-import type { Organization } from '@/types'
+import {
+  Map as MapLibreMap,
+  Marker as MapLibreMarker,
+  NavigationControl,
+  Popup as MapLibrePopup,
+} from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import { Map as MapIcon } from 'lucide-react'
 import api from '@/lib/api'
-import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-// Input component not currently used
-import { NetworkGraph } from '@/components/NetworkGraph'
 
-interface MapNode {
-  id: string
+// EOX Sentinel-2 cloudless satellite basemap — no API key required.
+const SATELLITE_TILE_URL =
+  'https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg'
+const SATELLITE_ATTRIBUTION = '&copy; EOX IT Services GmbH — Sentinel-2 cloudless'
+
+// World view — not scoped to any single region/customer.
+const DEFAULT_CENTER: [number, number] = [0, 20]
+const DEFAULT_ZOOM = 1.4
+
+interface RegionInfo {
+  lng: number
+  lat: number
   label: string
-  type: string
-  resource_id: number
-  resource_type: string
-  organization_id?: number
-  parent_id?: number
 }
 
-interface MapEdge {
-  from: string
-  to: string
-  type: string
+// Fallback coordinates for cloud entities that only carry a region code
+// (entity.region) with no precise metadata.location. Intentionally small —
+// the primary path is exact entity.metadata.location coordinates.
+const REGION_COORDS: Record<string, RegionInfo> = {
+  // AWS
+  'us-east-1': { lng: -77.4874, lat: 39.0438, label: 'AWS US East (N. Virginia)' },
+  'us-east-2': { lng: -82.9988, lat: 40.4173, label: 'AWS US East (Ohio)' },
+  'us-west-1': { lng: -121.8863, lat: 37.3382, label: 'AWS US West (N. California)' },
+  'us-west-2': { lng: -120.5542, lat: 43.8041, label: 'AWS US West (Oregon)' },
+  'eu-west-1': { lng: -8.2439, lat: 53.4129, label: 'AWS EU (Ireland)' },
+  'eu-central-1': { lng: 8.6821, lat: 50.1109, label: 'AWS EU (Frankfurt)' },
+  'ap-southeast-1': { lng: 103.8198, lat: 1.3521, label: 'AWS Asia Pacific (Singapore)' },
+  'ap-northeast-1': { lng: 139.6917, lat: 35.6895, label: 'AWS Asia Pacific (Tokyo)' },
+  // GCP
+  'us-central1': { lng: -93.6091, lat: 41.5868, label: 'GCP US Central (Iowa)' },
+  'us-east1': { lng: -81.1637, lat: 33.8361, label: 'GCP US East (S. Carolina)' },
+  'europe-west1': { lng: 4.3517, lat: 50.8503, label: 'GCP Europe West (Belgium)' },
+  'europe-west3': { lng: 8.6821, lat: 50.1109, label: 'GCP Europe West (Frankfurt)' },
+  'asia-east1': { lng: 121.5654, lat: 25.033, label: 'GCP Asia East (Taiwan)' },
+  'asia-southeast1': { lng: 103.8198, lat: 1.3521, label: 'GCP Asia Southeast (Singapore)' },
+  // Azure
+  eastus: { lng: -78.4767, lat: 37.4316, label: 'Azure East US (Virginia)' },
+  eastus2: { lng: -78.6569, lat: 37.5407, label: 'Azure East US 2 (Virginia)' },
+  westus2: { lng: -120.7401, lat: 47.7511, label: 'Azure West US 2 (Washington)' },
+  westeurope: { lng: 4.9041, lat: 52.3676, label: 'Azure West Europe (Netherlands)' },
+  uksouth: { lng: -0.1278, lat: 51.5074, label: 'Azure UK South (London)' },
+  southeastasia: { lng: 103.8198, lat: 1.3521, label: 'Azure Southeast Asia (Singapore)' },
 }
 
-// Resource type options
-// Cloud discovery types (networking_resource/data_store/service/software) must
-// match apps/api/modules/infrastructure/routes/graph.py VALID_RESOURCE_TYPES
-// exactly — they're sent verbatim in the resource_types query param.
-const RESOURCE_TYPES = [
-  { value: 'organization', label: 'Organizations', color: '#3498db' },
-  { value: 'entity', label: 'Entities', color: '#e74c3c' },
-  { value: 'identity', label: 'Identities', color: '#9b59b6' },
-  { value: 'project', label: 'Projects', color: '#27ae60' },
-  { value: 'milestone', label: 'Milestones', color: '#f39c12' },
-  { value: 'issue', label: 'Issues', color: '#e67e22' },
-  { value: 'networking_resource', label: 'Networking Resources', color: '#1abc9c' },
-  { value: 'data_store', label: 'Data Stores', color: '#06b6d4' },
-  { value: 'service', label: 'Services', color: '#a855f7' },
-  { value: 'software', label: 'Software', color: '#eab308' },
-]
+interface EntityLocation {
+  city?: string | null
+  state?: string | null
+  country?: string | null
+  latitude?: number | null
+  longitude?: number | null
+}
 
-// Entity subtype options
-const ENTITY_TYPES = [
-  { value: 'network', label: 'Network', color: '#f39c12' },
-  { value: 'compute', label: 'Compute', color: '#e74c3c' },
-  { value: 'storage', label: 'Storage', color: '#8e44ad' },
-  { value: 'datacenter', label: 'Datacenter', color: '#2c3e50' },
-  { value: 'vpc', label: 'VPC', color: '#2980b9' },
-  { value: 'subnet', label: 'Subnet', color: '#1abc9c' },
-  { value: 'security', label: 'Security', color: '#c0392b' },
-  { value: 'user', label: 'User', color: '#9b59b6' },
-  { value: 'application', label: 'Application', color: '#8b5cf6' },
-  { value: 'service', label: 'Service', color: '#a855f7' },
-  { value: 'database', label: 'Database', color: '#06b6d4' },
-]
+interface EntityMetadata {
+  location?: EntityLocation | null
+}
 
-export default function Map() {
-  // Filter state
-  const [selectedResourceTypes, setSelectedResourceTypes] = useState<string[]>(RESOURCE_TYPES.map(t => t.value))
-  const [selectedEntityTypes, setSelectedEntityTypes] = useState<string[]>([])
-  const [organizationId, setOrganizationId] = useState<string>('')
-  const [includeHierarchical, setIncludeHierarchical] = useState(true)
-  const [includeDependencies, setIncludeDependencies] = useState(true)
-  const [limit, setLimit] = useState(500)
-  const [showFilters, setShowFilters] = useState(true)
+// Local, narrowed shape of what this page reads from GET /entities — the
+// full Entity type lives in @/types but doesn't carry `region`/`metadata`.
+interface GeoEntity {
+  id: number
+  name: string
+  type: string
+  sub_type?: string | null
+  region?: string | null
+  metadata?: EntityMetadata | null
+}
 
-  // Build query params
-  const queryParams = useMemo(() => ({
-    resource_types: selectedResourceTypes.join(','),
-    entity_types: selectedEntityTypes.join(','),
-    organization_id: organizationId ? parseInt(organizationId) : undefined,
-    include_hierarchical: includeHierarchical,
-    include_dependencies: includeDependencies,
-    limit,
-  }), [selectedResourceTypes, selectedEntityTypes, organizationId, includeHierarchical, includeDependencies, limit])
+interface EntitiesResponse {
+  items: GeoEntity[]
+  total: number
+}
 
-  // Fetch map data
-  const { data: mapData, isLoading, refetch } = useQuery({
-    queryKey: ['map', queryParams],
-    queryFn: () => api.getMap(queryParams),
+interface ExactMarker {
+  entity: GeoEntity
+  lng: number
+  lat: number
+  location: EntityLocation
+}
+
+interface RegionApproxGroup {
+  region: string
+  info: RegionInfo
+  entities: GeoEntity[]
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function buildExactPopup(item: ExactMarker): HTMLDivElement {
+  const container = document.createElement('div')
+  container.className = 'text-sm min-w-[180px] max-w-[260px]'
+
+  const title = document.createElement('div')
+  title.className = 'font-semibold text-amber-400 mb-1'
+  title.textContent = item.entity.name || 'Unnamed entity'
+  container.appendChild(title)
+
+  const placeParts = [item.location.city, item.location.state, item.location.country].filter(
+    (part): part is string => Boolean(part && part.trim())
+  )
+  if (placeParts.length > 0) {
+    const place = document.createElement('div')
+    place.className = 'text-slate-300'
+    place.textContent = placeParts.join(', ')
+    container.appendChild(place)
+  }
+
+  const typeLine = document.createElement('div')
+  typeLine.className = 'text-slate-400 text-xs mt-1'
+  typeLine.textContent = item.entity.sub_type
+    ? `${item.entity.type} / ${item.entity.sub_type}`
+    : item.entity.type
+  container.appendChild(typeLine)
+
+  return container
+}
+
+const MAX_LISTED_ENTITIES_PER_REGION = 25
+
+function buildRegionPopup(group: RegionApproxGroup): HTMLDivElement {
+  const container = document.createElement('div')
+  container.className = 'text-sm min-w-[180px] max-w-[260px]'
+
+  const title = document.createElement('div')
+  title.className = 'font-semibold text-amber-400 mb-1'
+  title.textContent = group.info.label
+  container.appendChild(title)
+
+  const note = document.createElement('div')
+  note.className = 'text-amber-500/80 text-xs italic mb-1'
+  note.textContent = 'Approximate — region-level location only'
+  container.appendChild(note)
+
+  const summary = document.createElement('div')
+  summary.className = 'text-slate-300 mb-1'
+  summary.textContent = `${group.entities.length} resource${group.entities.length === 1 ? '' : 's'}`
+  container.appendChild(summary)
+
+  const list = document.createElement('ul')
+  list.className = 'space-y-0.5 max-h-40 overflow-y-auto'
+  for (const entity of group.entities.slice(0, MAX_LISTED_ENTITIES_PER_REGION)) {
+    const li = document.createElement('li')
+    li.className = 'text-slate-200 truncate'
+    li.textContent = entity.sub_type ? `${entity.name} (${entity.sub_type})` : entity.name
+    list.appendChild(li)
+  }
+  if (group.entities.length > MAX_LISTED_ENTITIES_PER_REGION) {
+    const more = document.createElement('li')
+    more.className = 'text-slate-500 italic'
+    more.textContent = `+ ${group.entities.length - MAX_LISTED_ENTITIES_PER_REGION} more`
+    list.appendChild(more)
+  }
+  container.appendChild(list)
+
+  return container
+}
+
+// Named MapPage (not Map) — a top-level `function Map()` here would shadow
+// the global ES2015 Map class used below for regionGroupMap.
+export default function MapPage() {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null)
+  const mapInstanceRef = useRef<MapLibreMap | null>(null)
+  const markersRef = useRef<MapLibreMarker[]>([])
+  const [mapLoaded, setMapLoaded] = useState(false)
+
+  // Primary data source: entities carrying an exact metadata.location.
+  // metadata may be absent entirely until the backend metadata-exposure fix
+  // deploys — every access below is optional-chained accordingly.
+  const { data: entitiesData, isLoading } = useQuery<EntitiesResponse>({
+    queryKey: ['map-entities'],
+    queryFn: () => api.getEntities({ per_page: 1000 }),
   })
 
-  // Fetch organizations for filter dropdown
-  const { data: orgsData } = useQuery({
-    queryKey: ['organizations-list'],
-    queryFn: () => api.getOrganizations({ per_page: 1000 }),
-  })
+  const markerData = useMemo(() => {
+    const exact: ExactMarker[] = []
+    const regionGroupMap = new Map<string, RegionApproxGroup>()
+    let skipped = 0
 
-  // Transform API data to NetworkGraph format
-  const graphData = useMemo(() => {
-    if (!mapData) return { nodes: [], edges: [] }
+    for (const entity of entitiesData?.items ?? []) {
+      const location = entity.metadata?.location
+      const lat = location?.latitude
+      const lng = location?.longitude
 
-    // Transform nodes - NetworkGraph expects id, label, type, metadata
-    const nodes = mapData.nodes.map((node: MapNode) => ({
-      id: node.id, // Already in format "type:id"
-      label: node.label,
-      type: node.type,
-      metadata: {
-        id: node.resource_id,
-        resource_type: node.resource_type,
-        organization_id: node.organization_id,
-        parent_id: node.parent_id,
-        ...node,
+      if (isFiniteNumber(lat) && isFiniteNumber(lng)) {
+        exact.push({ entity, lat, lng, location: location ?? {} })
+        continue
+      }
+
+      const regionCode = entity.region?.trim().toLowerCase()
+      const info = regionCode ? REGION_COORDS[regionCode] : undefined
+      if (regionCode && info) {
+        let group = regionGroupMap.get(regionCode)
+        if (!group) {
+          group = { region: regionCode, info, entities: [] }
+          regionGroupMap.set(regionCode, group)
+        }
+        group.entities.push(entity)
+        continue
+      }
+
+      skipped += 1
+    }
+
+    return { exact, regionGroups: Array.from(regionGroupMap.values()), skipped }
+  }, [entitiesData])
+
+  // Create the map instance once. The container div is always rendered
+  // (loading/empty states overlay on top of it) so this ref is available
+  // on first mount.
+  useEffect(() => {
+    if (!mapContainerRef.current || mapInstanceRef.current) return
+
+    const map = new MapLibreMap({
+      container: mapContainerRef.current,
+      style: {
+        version: 8,
+        sources: {
+          satellite: {
+            type: 'raster',
+            tiles: [SATELLITE_TILE_URL],
+            tileSize: 256,
+            attribution: SATELLITE_ATTRIBUTION,
+          },
+        },
+        layers: [{ id: 'satellite', type: 'raster', source: 'satellite' }],
       },
-    }))
+      center: DEFAULT_CENTER,
+      zoom: DEFAULT_ZOOM,
+    })
 
-    // Transform edges - NetworkGraph expects from, to, label
-    const edges = mapData.edges.map((edge: MapEdge) => ({
-      from: edge.from,
-      to: edge.to,
-      label: edge.type,
-    }))
+    map.addControl(new NavigationControl(), 'top-right')
+    map.on('load', () => setMapLoaded(true))
+    mapInstanceRef.current = map
 
-    return { nodes, edges }
-  }, [mapData])
+    return () => {
+      markersRef.current.forEach((marker) => marker.remove())
+      markersRef.current = []
+      map.remove()
+      mapInstanceRef.current = null
+    }
+  }, [])
 
-  // Toggle resource type selection
-  const toggleResourceType = (value: string) => {
-    setSelectedResourceTypes(prev =>
-      prev.includes(value)
-        ? prev.filter(t => t !== value)
-        : [...prev, value]
-    )
-  }
+  // Render markers whenever the resolved entity/region data changes.
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    if (!map || !mapLoaded) return
 
-  // Toggle entity type selection
-  const toggleEntityType = (value: string) => {
-    setSelectedEntityTypes(prev =>
-      prev.includes(value)
-        ? prev.filter(t => t !== value)
-        : [...prev, value]
-    )
-  }
+    markersRef.current.forEach((marker) => marker.remove())
+    markersRef.current = []
 
-  interface GraphNodeWithMetadata {
-    id: string
-    label: string
-    type: string
-    metadata?: Record<string, unknown>
-  }
+    for (const item of markerData.exact) {
+      const popup = new MapLibrePopup({ offset: 16, closeButton: true, maxWidth: '260px' }).setDOMContent(
+        buildExactPopup(item)
+      )
+      const marker = new MapLibreMarker({ color: '#0ea5e9' })
+        .setLngLat([item.lng, item.lat])
+        .setPopup(popup)
+        .addTo(map)
+      markersRef.current.push(marker)
+    }
 
-  // Handle node click - could navigate to details
-  const handleNodeClick = (node: GraphNodeWithMetadata) => {
-    console.log('Node clicked:', node)
-    // Could add navigation or modal here
-  }
+    for (const group of markerData.regionGroups) {
+      const popup = new MapLibrePopup({ offset: 16, closeButton: true, maxWidth: '260px' }).setDOMContent(
+        buildRegionPopup(group)
+      )
+      const marker = new MapLibreMarker({ color: '#f59e0b' })
+        .setLngLat([group.info.lng, group.info.lat])
+        .setPopup(popup)
+        .addTo(map)
+      markersRef.current.push(marker)
+    }
+
+    console.log('[Map] Rendered markers', {
+      located: markerData.exact.length,
+      regionApprox: markerData.regionGroups.reduce((sum, g) => sum + g.entities.length, 0),
+      skipped: markerData.skipped,
+    })
+  }, [markerData, mapLoaded])
+
+  const regionApproxCount = markerData.regionGroups.reduce((sum, g) => sum + g.entities.length, 0)
+  const hasMarkers = markerData.exact.length > 0 || regionApproxCount > 0
 
   return (
     <div className="p-8">
-      {/* Header */}
       <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-              <MapIcon className="w-8 h-8" />
-              Resource Map
-            </h1>
-            <p className="text-slate-400 mt-2">
-              Interactive visualization of all resources and their relationships
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowFilters(!showFilters)}
-            >
-              <Filter className="w-4 h-4 mr-2" />
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => refetch()}
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh
-            </Button>
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <MapIcon className="w-8 h-8" />
+          Resource Map
+        </h1>
+        <p className="text-slate-400 mt-2">
+          Geographic view of resources with a known location
+        </p>
       </div>
 
-      {/* Filters */}
-      {showFilters && (
-        <Card className="mb-6">
-          <CardHeader>
-            <h2 className="text-lg font-semibold text-white">Filters</h2>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {/* Organization Filter */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Organization Scope
-                </label>
-                <select
-                  value={organizationId}
-                  onChange={(e) => setOrganizationId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-800 text-white border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                >
-                  <option value="">All Organizations (Global)</option>
-                  {orgsData?.items?.map((org: Organization) => (
-                    <option key={org.id} value={org.id}>
-                      {org.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Resource Types */}
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Resource Types
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {RESOURCE_TYPES.map((type) => (
-                    <button
-                      key={type.value}
-                      onClick={() => toggleResourceType(type.value)}
-                      className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                        selectedResourceTypes.includes(type.value)
-                          ? 'border-primary-500 bg-primary-500/20 text-primary-300'
-                          : 'border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500'
-                      }`}
-                    >
-                      <span
-                        className="inline-block w-2 h-2 rounded-full mr-2"
-                        style={{ backgroundColor: type.color }}
-                      />
-                      {type.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Entity Types (only show if entities selected) */}
-              {selectedResourceTypes.includes('entity') && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Entity Types (leave empty for all)
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {ENTITY_TYPES.map((type) => (
-                      <button
-                        key={type.value}
-                        onClick={() => toggleEntityType(type.value)}
-                        className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-                          selectedEntityTypes.includes(type.value)
-                            ? 'border-primary-500 bg-primary-500/20 text-primary-300'
-                            : 'border-slate-600 bg-slate-800 text-slate-400 hover:border-slate-500'
-                        }`}
-                      >
-                        <span
-                          className="inline-block w-2 h-2 rounded-full mr-2"
-                          style={{ backgroundColor: type.color }}
-                        />
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Relationship Options */}
-              <div className="flex flex-wrap gap-6">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeHierarchical}
-                    onChange={(e) => setIncludeHierarchical(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-slate-300">Include Hierarchical Links</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeDependencies}
-                    onChange={(e) => setIncludeDependencies(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
-                  />
-                  <span className="text-sm text-slate-300">Include Dependencies</span>
-                </label>
-              </div>
-
-              {/* Limit */}
-              <div className="max-w-xs">
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Max Nodes: {limit}
-                </label>
-                <input
-                  type="range"
-                  min="50"
-                  max="1000"
-                  step="50"
-                  value={limit}
-                  onChange={(e) => setLimit(parseInt(e.target.value))}
-                  className="w-full"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Graph Card */}
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold text-white">Resource Graph</h2>
+              <h2 className="text-xl font-semibold text-white">Resource Locations</h2>
               <p className="text-sm text-slate-400 mt-1">
-                {mapData?.stats?.node_count || 0} nodes, {mapData?.stats?.edge_count || 0} connections
-                {mapData?.stats?.truncated && (
-                  <span className="text-yellow-400 ml-2">(truncated to {limit} nodes)</span>
-                )}
+                {markerData.exact.length} located
+                {regionApproxCount > 0 && <span> · {regionApproxCount} region-approximate</span>}
               </p>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-slate-400">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-primary-500 inline-block" />
+                Exact location
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                Region approximate
+              </span>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center h-[calc(100vh-400px)]">
+        <CardContent className="relative p-0">
+          <div
+            ref={mapContainerRef}
+            className="w-full h-[calc(100vh-320px)] rounded-b-lg overflow-hidden"
+          />
+
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60">
               <div className="w-12 h-12 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : !graphData || graphData.nodes.length === 0 ? (
-            <div className="flex items-center justify-center h-[calc(100vh-400px)] bg-slate-800/50 rounded-lg border-2 border-dashed border-slate-600">
-              <div className="text-center text-slate-400">
-                <MapIcon className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium">No resources to display</p>
-                <p className="text-sm mt-2">
-                  Adjust filters or create resources to visualize relationships
+          )}
+
+          {!isLoading && !hasMarkers && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="bg-slate-900/90 border border-slate-700 rounded-lg px-6 py-4 text-center pointer-events-auto max-w-sm">
+                <MapIcon className="w-10 h-10 mx-auto mb-2 text-slate-500" />
+                <p className="text-slate-300 font-medium">No geolocated entities yet</p>
+                <p className="text-slate-500 text-sm mt-1">
+                  Entities need a metadata.location with latitude/longitude, or a recognized
+                  cloud region, to appear here.
                 </p>
               </div>
             </div>
-          ) : (
-            <NetworkGraph
-              nodes={graphData.nodes}
-              edges={graphData.edges}
-              height="calc(100vh - 400px)"
-              onNodeClick={handleNodeClick}
-            />
           )}
-        </CardContent>
-      </Card>
-
-      {/* Legend */}
-      <Card className="mt-6">
-        <CardHeader>
-          <h3 className="text-lg font-semibold text-white">Legend</h3>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {/* Resource Types */}
-            <div>
-              <h4 className="text-sm font-medium text-slate-400 mb-2">Resource Types</h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                {RESOURCE_TYPES.map((type) => (
-                  <div key={type.value} className="flex items-center gap-2">
-                    <div
-                      className="w-4 h-4 rounded"
-                      style={{ backgroundColor: type.color }}
-                    />
-                    <span className="text-sm text-slate-300">{type.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Entity Subtypes */}
-            <div>
-              <h4 className="text-sm font-medium text-slate-400 mb-2">Entity Subtypes</h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                {ENTITY_TYPES.map((type) => (
-                  <div key={type.value} className="flex items-center gap-2">
-                    <div
-                      className="w-4 h-4 rounded"
-                      style={{ backgroundColor: type.color }}
-                    />
-                    <span className="text-sm text-slate-300">{type.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Edge Types */}
-            <div>
-              <h4 className="text-sm font-medium text-slate-400 mb-2">Relationship Types</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-0.5 bg-green-500" />
-                  <span className="text-sm text-slate-300">Parent/Child</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-0.5 bg-blue-500" />
-                  <span className="text-sm text-slate-300">Contains</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-0.5 bg-yellow-500" />
-                  <span className="text-sm text-slate-300">Dependency</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-0.5 bg-slate-500 border-dashed" style={{ borderTop: '2px dashed' }} />
-                  <span className="text-sm text-slate-300">Related</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

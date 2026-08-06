@@ -1,4 +1,4 @@
-import { useEffect, Suspense, useMemo } from 'react'
+import { lazy, useEffect, Suspense, useMemo } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import Dashboard from './pages/Dashboard'
@@ -22,6 +22,10 @@ import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
 // Module framework
 import { routesFor } from './modules/registry'
 import { useModules } from './hooks/useModules'
+
+// Geographic resource map — lazy-loaded: pulls in maplibre-gl, kept out of
+// the main bundle since it's a large dependency.
+const Map = lazy(() => import('./pages/Map'))
 
 // Protected route wrapper component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -80,6 +84,10 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="search" element={<Search />} />
           <Route path="profile" element={<Profile />} />
+          <Route
+            path="map"
+            element={<Suspense fallback={<div />}><Map /></Suspense>}
+          />
 
           {/* Module-gated routes: wrap each lazy element in its own Suspense.
               A <Suspense> may NOT be a direct child of a <Route> in react-router
