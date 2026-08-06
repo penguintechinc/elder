@@ -171,12 +171,22 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         comment="User who created this issue",
     )
 
+    # No single-table ForeignKey: assignee_id is polymorphic (see
+    # assignee_type) and can reference either identities.id or
+    # organizations.id, so it cannot carry a DB-level FK constraint to a
+    # single table.
     assignee_id = Column(
         Integer,
-        ForeignKey("identities.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="User assigned to this issue",
+        comment="Polymorphic assignee id; see assignee_type for the target table",
+    )
+
+    assignee_type = Column(
+        String(16),
+        nullable=True,
+        index=True,
+        comment="Disambiguates assignee_id: 'identity' (identities.id) or 'org_unit' (organizations.id)",
     )
 
     organization_id = Column(
@@ -214,11 +224,11 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         backref="reported_issues",
     )
 
-    assignee: Mapped[Optional["Identity"]] = relationship(
-        "Identity",
-        foreign_keys=[assignee_id],
-        backref="assigned_issues",
-    )
+    # No ORM `assignee` relationship: assignee_id is polymorphic
+    # (identities.id or organizations.id per assignee_type) and has no
+    # single-table FK for SQLAlchemy to infer a join condition from. Callers
+    # resolve the target row via assignee_type + assignee_id at the query
+    # layer instead (see routes/issues.py).
 
     closed_by: Mapped[Optional["Identity"]] = relationship(
         "Identity",

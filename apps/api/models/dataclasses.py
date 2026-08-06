@@ -324,6 +324,7 @@ class IssueDTO:
     updated_at: datetime
     closed_by_id: Optional[int] = None
     due_date: Optional[datetime] = None
+    assignee_type: Optional[str] = None
 
 
 @dataclass(slots=True)

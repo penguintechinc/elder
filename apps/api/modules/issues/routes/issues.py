@@ -6,7 +6,7 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
@@ -21,6 +21,7 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
@@ -41,6 +42,48 @@ def _tenant_id() -> Optional[int]:
         return None
 
 
+def _org_unit_in_tenant(db, org_unit_id: Optional[int], tenant_id: int) -> bool:
+    """Return True if org_unit_id is unset or belongs to tenant_id.
+
+    Org-unit counterpart to identity_in_tenant: guards against cross-tenant
+    IDOR when an issue's assignee_id targets organizations.id
+    (assignee_type="org_unit"). A None id is treated as valid.
+    """
+    if org_unit_id is None:
+        return True
+    return (
+        db(
+            (db.organizations.id == org_unit_id)
+            & (db.organizations.tenant_id == tenant_id)
+        )
+        .select()
+        .first()
+        is not None
+    )
+
+
+def _resolve_assignee_type(
+    db,
+    tenant_id: int,
+    assignee_id: Optional[int],
+    assignee_type: Optional[str],
+) -> tuple:
+    """Resolve the polymorphic assignee_type and validate assignee_id is in tenant.
+
+    Returns (resolved_type, ok). resolved_type is None when assignee_id is
+    None (no assignee being set/changed) and ok is always True in that case.
+    Defaults resolved_type to "identity" for back-compat when assignee_id is
+    given without an explicit assignee_type. ok=False means the target row
+    doesn't exist in the caller's tenant (cross-tenant IDOR guard).
+    """
+    if assignee_id is None:
+        return None, True
+    resolved = assignee_type or "identity"
+    if resolved == "identity":
+        return resolved, identity_in_tenant(db, assignee_id, tenant_id)
+    return resolved, _org_unit_in_tenant(db, assignee_id, tenant_id)
+
+
 # ============================================================================
 # Request Models
 # ============================================================================
@@ -56,6 +99,10 @@ class CreateIssueRequest(RequestModel):
     priority: str = Field(default="medium", description="Priority level")
     issue_type: str = Field(default="other", description="Issue type")
     assignee_id: Optional[int] = Field(default=None, ge=1, description="Assignee ID")
+    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+        default=None,
+        description="Disambiguates assignee_id: identities.id or organizations.id",
+    )
     is_incident: int = Field(default=0, description="Is incident flag")
 
 
@@ -68,6 +115,10 @@ class UpdateIssueRequest(RequestModel):
     priority: Optional[str] = Field(default=None)
     issue_type: Optional[str] = Field(default=None)
     assignee_id: Optional[int] = Field(default=None, ge=1)
+    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+        default=None,
+        description="Disambiguates assignee_id: identities.id or organizations.id",
+    )
     organization_id: Optional[int] = Field(default=None, ge=1)
     is_incident: Optional[int] = Field(default=None)
 
@@ -239,6 +290,21 @@ async def create_issue(body: CreateIssueRequest):
     if not org.tenant_id:
         return jsonify({"error": "Organization must have a tenant"}), 400
 
+    # Resolve + validate the polymorphic assignee (IDOR guard: target must be
+    # in the caller's tenant) before persisting.
+    if body.assignee_id is not None:
+        assignee_type_resolved, assignee_ok = await run_in_threadpool(
+            lambda: _resolve_assignee_type(
+                db, tenant_id, body.assignee_id, body.assignee_type
+            )
+        )
+        if not assignee_ok:
+            return jsonify({"error": "Assignee not found in tenant"}), 404
+    elif body.assignee_type is not None:
+        return jsonify({"error": "assignee_type requires assignee_id"}), 400
+    else:
+        assignee_type_resolved = None
+
     # Capture current_user before thread pool (Flask g doesn't propagate to threads)
     current_user_id = g.current_user.id
 
@@ -253,6 +319,7 @@ async def create_issue(body: CreateIssueRequest):
             issue_type=(body.issue_type or "other").upper(),
             reporter_id=current_user_id,
             assignee_id=body.assignee_id,
+            assignee_type=assignee_type_resolved,
             resource_type="organization",
             resource_id=body.organization_id,
             is_incident=body.is_incident,
@@ -374,6 +441,21 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             return jsonify({"error": "Organization must have a tenant"}), 400
         org_tenant_id = org.tenant_id
 
+    # Resolve + validate the polymorphic assignee (IDOR guard: target must be
+    # in the caller's tenant) before persisting.
+    if body.assignee_id is not None:
+        assignee_type_resolved, assignee_ok = await run_in_threadpool(
+            lambda: _resolve_assignee_type(
+                db, tenant_id, body.assignee_id, body.assignee_type
+            )
+        )
+        if not assignee_ok:
+            return jsonify({"error": "Assignee not found in tenant"}), 404
+    elif body.assignee_type is not None:
+        return jsonify({"error": "assignee_type requires assignee_id"}), 400
+    else:
+        assignee_type_resolved = None
+
     def update():
         # Check if issue exists and belongs to caller's tenant
         issue = (
@@ -400,6 +482,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             update_fields["priority"] = body.priority.upper()
         if body.assignee_id is not None:
             update_fields["assignee_id"] = body.assignee_id
+            update_fields["assignee_type"] = assignee_type_resolved
         if body.organization_id is not None:
             update_fields["resource_id"] = body.organization_id
             update_fields["resource_type"] = "organization"

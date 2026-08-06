@@ -7,6 +7,7 @@ case handling) — see fix/issues-ungate-and-patch-case.
 import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from quart import current_app
@@ -163,3 +164,108 @@ class TestIssuesAPI:
         data = json.loads(await resp.get_data())
         assert data["issue_type"] == "SUPPORT"
         assert data["priority"] == "URGENT"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_assign_issue_to_org_unit(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/{id} can assign an issue to an org unit (organizations.id).
+
+        Polymorphic assignee (issues foundation task 4): assignee_type
+        disambiguates whether assignee_id points at identities or
+        organizations.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            ou_id = db.organizations.insert(
+                name="Support Team",
+                type="team",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            iid = db.issues.insert(
+                title="Assign me",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="SUPPORT",
+                is_incident=0,
+                resource_type="organization",
+                resource_id=ou_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.patch(
+            f"/api/v1/issues/{iid}",
+            json={"assignee_type": "org_unit", "assignee_id": ou_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["assignee_type"] == "org_unit"
+        assert data["assignee_id"] == ou_id
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_assign_issue_to_identity(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/{id} can assign an issue to an identity (identities.id).
+
+        Explicit assignee_type="identity" is honored, and assignee_type is
+        returned so callers can disambiguate the polymorphic assignee_id.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            unique_suffix = uuid4().hex[:8]
+            identity_id = db.identities.insert(
+                identity_type="human",
+                username=f"assignee_user_{unique_suffix}",
+                email=f"assignee_user_{unique_suffix}@example.com",
+                tenant_id=1,
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                created_at=now,
+                updated_at=now,
+            )
+            org_id = db.organizations.insert(
+                name="Identity Assignee Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            iid = db.issues.insert(
+                title="Assign me too",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="SUPPORT",
+                is_incident=0,
+                resource_type="organization",
+                resource_id=org_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.patch(
+            f"/api/v1/issues/{iid}",
+            json={"assignee_type": "identity", "assignee_id": identity_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["assignee_type"] == "identity"
+        assert data["assignee_id"] == identity_id
