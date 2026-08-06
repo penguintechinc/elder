@@ -89,6 +89,14 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
 
     __tablename__ = "issues"
 
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced NOT NULL in a follow-up once populated
+        index=True,
+        comment="Tenant this issue belongs to (nullable during backfill)",
+    )
+
     # Resource association (entity or organization)
     resource_type = Column(
         String(20),
