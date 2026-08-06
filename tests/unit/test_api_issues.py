@@ -305,3 +305,54 @@ class TestIssuesAPI:
         assert data["channel"] == "email"
         assert data["category"] == "billing"
         assert data["metadata"]["source_email"] == "cust@example.com"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_reporter_id_roundtrips(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues then GET it back: reporter_id must equal the caller.
+
+        Regression for issues foundation task 6: migration 001 created the
+        physical `issues` columns as created_by_id/assigned_to_id, but the
+        model has always used reporter_id/assignee_id. On a real database
+        built by replaying Alembic history, a column-name mismatch would
+        surface here as a 500 or a null reporter_id. The unit test DB is
+        built via Base.metadata.create_all(), which already emits the
+        model's column names, so this test is expected to pass without the
+        migration 030 rename firing — it documents and guards the contract;
+        migration 030's guarded rename is what fixes real (001-replayed) DBs.
+
+        Uses caller id=1 (matching the other POST /issues tests in this
+        file, e.g. test_create_support_issue_urgent): reporter_id carries a
+        real FK to identities.id, and id=1 is the seeded default admin
+        (shared/database/__init__.py) present on every fresh test DB. An
+        arbitrary id with no matching identities row (e.g. 7) trips
+        issues_reporter_id_fkey before the reconciliation this test guards
+        is ever reached.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Org", tenant_id=1, created_at=now, updated_at=now
+            )
+            db.commit()
+        resp = await async_client.post(
+            "/api/v1/issues",
+            json={"title": "R", "priority": "low", "organization_id": org_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["reporter_id"] == 1
+
+        get_resp = await async_client.get(
+            f"/api/v1/issues/{data['id']}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_resp.status_code == 200, (await get_resp.get_data()).decode()[:200]
+        get_data = json.loads(await get_resp.get_data())
+        assert get_data["reporter_id"] == 1
