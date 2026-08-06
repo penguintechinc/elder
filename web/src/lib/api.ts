@@ -293,6 +293,7 @@ class ApiClient {
     organization_id?: number
     entity_type?: string
     sub_type?: string
+    parent_id?: number
     search?: string
   }) {
     const response = await this.client.get('/entities', { params })
