@@ -7,6 +7,17 @@
 
 namespace: elder
 
+# Alpha enables the absorbed IceCharts/Ruffled modules (off by default in
+# values.yaml) so the demo surfaces the full merged product — diagrams &
+# workflow engine (IceCharts) and helpdesk + knowledge base (Ruffled).
+modules:
+  helpdesk: true      # Ruffled — tickets/companies/contacts
+  documents: true     # Ruffled — knowledge base
+  pages: true         # Ruffled — WYSIWYG pages
+  diagrams: true      # IceCharts — create diagrams/charts
+  streams: true       # IceCharts — workflow engine (was: playbooks)
+  flows: true         # IceCharts — CI/CD pipelines (was: cicdFlows)
+
 # Global settings for alpha — images are built+pushed to the local MicroK8s
 # registry by `make docker-build-alpha` / `scripts/deploy-alpha.sh`.
 global:
