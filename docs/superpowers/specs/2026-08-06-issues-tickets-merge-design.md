@@ -64,6 +64,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Intake forms | Generalize `hd_ticket_forms` → **issue intake forms**; default **private**, optional public; public requires **Altcha** captcha (§6). **Phase A** |
 | Assignment webhooks | Extend native **`webhooks`**: fire on `issue.assigned`, multiple configs filtered by `issue_type` + assignee (§7). **Phase A** |
 | Village IDs | **Universal — every Elder object** (identities, entities, resources, issues, comments, attachments, forms, webhooks, …) gets a unique `village_id`. `identities` **already has one** (explicit col). Tables genuinely lacking it — `issue_comments`, `hd_ticket_messages`, `hd_ticket_attachments`, `hd_ticket_forms`, `webhooks` — get it added + backfilled; audit repo-wide for any others |
+| Metadata field | **Universal — every object gets a `metadata` JSON bag** for optional/extensible attributes, so we don't add a primary column for every new attribute. `organizations` already has `org_metadata`; `identities` gains `metadata` (§5); every new/converged object here (issues support-extras, comments, attachments, forms, webhooks) carries one. Audit repo-wide |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §10. Issues Enterprise gates removed (#232) |
 
 ## 4. Target model — the extended Issue
@@ -103,6 +104,11 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 
 - `IdentityType += customer_contact`; `OrganizationType += customer_company`.
 - `village_id` **added** to `issue_comments`, `hd_ticket_messages`, attachments, intake forms, `webhooks` (+ backfill). `identities` **already has `village_id`** (explicit column) — no change. **Universal rule:** *every* Elder object carries a unique `village_id`; audit for and add it to any table still missing one.
+
+### 4.5 Support lifecycle — email-only conversations + per-OU auto-close
+
+- **Email-only flow:** a support-issue can be handled **entirely over email** — the customer (a `customer_contact` identity) never enters the WebUI. Reuse the helpdesk email infrastructure (`hd_email_accounts` IMAP/SMTP, `hd_email_logs`, threading via `email_message_id`/`in_reply_to`): inbound email → new issue or comment; agent reply → outbound email threaded to the customer; customer reply → new comment. All threads live in `issue_comments`; the customer never needs WebUI access.
+- **Auto-close timer (per-OU):** organizations (OUs) — and identities assigned under them — carry an `auto_close_days` setting (on `settings`/`metadata`). An issue auto-closes after that window of inactivity. **Conflict rule:** when the assignee OU and the assigned identity (or multiple applicable OUs) specify different timers, **use the longest**. A worker sweeps overdue issues and closes them (with a system comment).
 
 ## 5. Concept convergence (reuse Elder-native, merge duplicates)
 
