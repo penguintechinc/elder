@@ -1871,6 +1871,17 @@ class DiscoveryService:
 
         Returns:
             Entity ID or None
+
+        Note on `tags` vs `metadata`:
+            K8s labels / cloud provider tags (a flat {key: value} dict) go
+            to the dedicated `entities.tags` column. Structural discovery
+            data (namespace, replicas, images, capacity_cpu, etc.) goes to
+            `entities.metadata`, flattened to the top level alongside
+            discovery provenance fields (resource_id, resource_type,
+            region, discovered_at) -- e.g. `entity.metadata.namespace`, not
+            `entity.metadata.metadata.namespace`. On update, `metadata` is
+            merged (not replaced) so out-of-band keys another writer added
+            (e.g. a geo-enrichment agent's `location`) survive a rescan.
         """
         name = resource.get("name", "Unnamed")
         resource_type = resource.get("resource_type", "")
@@ -1887,21 +1898,27 @@ class DiscoveryService:
             .first()
         )
 
-        # Prepare attributes JSON
-        resource_attrs = {
-            "resource_id": resource.get("resource_id"),
-            "resource_type": resource_type,
-            "region": resource.get("region"),
-            "tags": resource.get("tags", {}),
-            "metadata": resource.get("metadata", {}),
-            "discovered_at": datetime.now(timezone.utc).isoformat(),
-        }
+        # Structural/provenance metadata -- flattened, no nested "metadata" key
+        resource_metadata = dict(resource.get("metadata") or {})
+        resource_metadata["resource_id"] = resource.get("resource_id")
+        resource_metadata["resource_type"] = resource_type
+        resource_metadata["region"] = resource.get("region")
+        resource_metadata["discovered_at"] = datetime.now(timezone.utc).isoformat()
+
+        # K8s labels / cloud provider tags -- dedicated column, never merged
+        # into metadata
+        resource_tags = resource.get("tags") or {}
 
         if existing:
-            # Update existing entity
+            # Merge into existing metadata so unrelated keys written by
+            # other agents (e.g. geo-enrichment) aren't wiped on rescan
+            merged_metadata = dict(existing.metadata or {})
+            merged_metadata.update(resource_metadata)
+
             update_data = {
                 "name": name,
-                "metadata": resource_attrs,
+                "metadata": merged_metadata,
+                "tags": resource_tags,
                 "external_id": native_id,
                 "updated_at": datetime.now(timezone.utc),
             }
@@ -1917,7 +1934,8 @@ class DiscoveryService:
                 "type": entity_type,
                 "sub_type": resource_type,
                 "organization_id": organization_id,
-                "metadata": resource_attrs,
+                "metadata": resource_metadata,
+                "tags": resource_tags,
                 "external_id": native_id,
                 "created_at": now,
                 "updated_at": now,

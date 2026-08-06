@@ -8,7 +8,7 @@ Using @dataclass(slots=True) provides 30-50% memory reduction and faster attribu
 
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Union
 
 # ==================== Organization Units (OUs) ====================
 
@@ -90,7 +90,9 @@ class EntityDTO:
     region: Optional[str] = None
     status: Optional[str] = None
     is_managed: bool = False
-    tags: Optional[list] = None
+    # list[str] for user-applied classification tags (via CreateEntityRequest),
+    # or dict[str, str] for discovered K8s labels / cloud provider tags
+    tags: Optional[Union[list, dict]] = None
     metadata: Optional[dict] = None
     last_seen_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
