@@ -11,10 +11,10 @@ There is **no separate "ticket" concept**. A support ticket is **just an Issue**
 
 **Guiding principle:** *leverage Elder-native objects/resources/tables wherever possible; merge duplicate concepts rather than carrying Ruffled's parallel ones.* **Every object carries a unique `village_id`.**
 
-Delivered in **two phases** (re-scoped per review — the demo now includes intake forms, assignment webhooks, and OU-assignment):
+**The entire design ships in the demo, fully working — not half-baked.** Because the demo runs on **seeded** data, we build the **complete native model** and run the demo **entirely on it** — no facade/read-through seam. The small set of already-seeded `hd_tickets` is migrated to native support-issues (it's demo data), the legacy `/helpdesk` surface is retired, and everything (unified Issues CRUD, intake forms, assignment webhooks, email-only flow, per-OU auto-close, CRM-as-identities/OUs, universal village_id + metadata) is real and tested.
 
-- **Phase A (demo-critical):** **build the real unified model + features.** Extend `issues` (support columns, polymorphic identity/OU assignee, village_ids), add the new identity/org types, build **intake forms** (Altcha) and **assignment webhooks**, and a unified full-CRUD Issues UI. Legacy `hd_tickets` are shown **read-through a facade** (normalized as support-issues) so the demo is one backlog **without** the risky data migration.
-- **Phase B (post-demo):** the **data migration** — `hd_tickets` → `issues`, `hd_contacts` → `identities`, `hd_companies` → `organizations`, `hd_teams` → `organizations` — then retire the `hd_*` tables and collapse the facade to plain `/api/v1/issues`.
+- **Phase A (the demo build):** the complete native unified model + **all** features, fully working, **seeded** on the native model. This is the whole design above.
+- **Phase B (post-demo, production only):** the robust **data-migration path for real deployments** that already hold legacy `hd_tickets`/CRM data (dual-write, bake, retire `hd_*`). Not needed for the demo (seeded native), but needed before shipping to environments with existing helpdesk data.
 
 ## 2. Current state (why this is non-trivial)
 
@@ -65,6 +65,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Assignment webhooks | Extend native **`webhooks`**: fire on `issue.assigned`, multiple configs filtered by `issue_type` + assignee (§7). **Phase A** |
 | Village IDs | **Universal — every Elder object** (identities, entities, resources, issues, comments, attachments, forms, webhooks, …) gets a unique `village_id`. `identities` **already has one** (explicit col). Tables genuinely lacking it — `issue_comments`, `hd_ticket_messages`, `hd_ticket_attachments`, `hd_ticket_forms`, `webhooks` — get it added + backfilled; audit repo-wide for any others |
 | Metadata field | **Universal — every object gets a `metadata` JSON bag** for optional/extensible attributes, so we don't add a primary column for every new attribute. `organizations` already has `org_metadata`; `identities` gains `metadata` (§5); every new/converged object here (issues support-extras, comments, attachments, forms, webhooks) carries one. Audit repo-wide |
+| Tenant scoping | **Universal — every object is tenant-scoped** (`tenant_id` + queries filtered by the token's tenant). **Audit repo-wide** for any identity/object/upload/comment/form/webhook that isn't, and fix it. **Sole exception: global users** (super-admins) which sit **above** tenants. This subsumes the Issues tenant-leak fix (§2) |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §10. Issues Enterprise gates removed (#232) |
 
 ## 4. Target model — the extended Issue
@@ -155,10 +156,12 @@ Schema + features land here. Legacy `hd_tickets` are **not** migrated yet — sh
 ### 8.1 Backend (sequence: village_id + tenant scoping FIRST)
 - **First / promptly — `village_id` everywhere:** add `village_id` to every table missing it (`issue_comments`, `hd_ticket_messages`, attachments, forms, `webhooks`) + backfill via `generate_village_id`. (`identities` already has one.) Land this early in Phase A as its own migration + PR, ahead of the feature work.
 - **`issues` migration:** add §4.2 columns (tenant_id, polymorphic assignee, support fields, parent self-FK); add `support`/`urgent` enum values; reconcile `created_by_id`↔`reporter_id`.
-- **Enforce tenant scoping** on all issue reads/writes (close the leak); backfill `issues.tenant_id`.
+- **Tenant-scoping audit (universal):** enforce tenant scoping on all issue reads/writes (close the leak) + backfill `issues.tenant_id`, **and audit every other table** — identities, uploads, comments, forms, webhooks, etc. — adding `tenant_id` + query filters wherever missing. **Exception: global/super-admin users above tenants.** Land the audit + fixes early alongside village_id/metadata.
 - **New types:** `identity_type=customer_contact`, `organization_type=customer_company`.
 - **Intake forms** (§6) + **assignment webhooks** (§7) + `issue_attachments`; extend `issue_comments`.
-- **Facade `/api/v1/work`** (transitional): merges native `issues` + legacy `hd_tickets` (normalized to `issue_type=support`), tenant-scoped, full CRUD by origin; new items create native issues. Collapses to `/api/v1/issues` in Phase B.
+- **No facade — native only.** The demo serves the extended `/api/v1/issues` directly (all support items are native issues). Migrate the existing seeded `hd_tickets` → native support-issues; **retire the `/helpdesk` surface** for the demo.
+- **Email + auto-close workers:** wire the reused helpdesk email poll/send workers to the native issue thread (§4.5); add the per-OU auto-close sweep worker.
+- **Seed the demo on the native model:** support-issues (incl. one email-conversed), `customer_contact` identities (with `metadata` details), `customer_company` OUs, ≥1 public intake form (Altcha) + 1 private, webhook configs (e.g. `support`→support-bot identity, an OU webhook), per-OU auto-close settings.
 - Fix SLA await bug; FE verb/shape drifts.
 
 ### 8.2 UI — unified Issues surface
