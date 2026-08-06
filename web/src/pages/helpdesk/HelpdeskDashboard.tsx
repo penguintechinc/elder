@@ -34,7 +34,7 @@ export default function HelpdeskDashboard() {
     toast.error('Failed to load dashboard stats')
   }
 
-  const stats = data?.data || {
+  const stats = data || {
     total_tickets: 0,
     open_tickets: 0,
     in_progress_tickets: 0,

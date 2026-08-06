@@ -53,7 +53,7 @@ export default function HelpdeskContacts() {
     onError: () => toast.error('Failed to delete contact'),
   })
 
-  const contacts = (data?.data || []) as Contact[]
+  const contacts = (data?.items || []) as Contact[]
 
   return (
     <div className="p-8">
