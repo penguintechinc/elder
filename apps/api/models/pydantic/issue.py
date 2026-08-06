@@ -14,7 +14,7 @@ Provides validated Pydantic 2 equivalents of Issue dataclasses:
 
 
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
@@ -32,13 +32,14 @@ Valid issue status values.
 """
 
 # Issue priority types
-IssuePriority = Literal["low", "medium", "high", "critical"]
+IssuePriority = Literal["low", "medium", "high", "urgent", "critical"]
 """
 Valid issue priority values.
 
 - low: Minor issues with no urgent timeline
 - medium: Standard priority issues
 - high: Important issues requiring timely attention
+- urgent: Time-sensitive issues requiring prompt attention (e.g. support tickets)
 - critical: Urgent issues blocking operations or causing major impact
 """
 
@@ -87,6 +88,7 @@ class IssueDTO(ImmutableModel):
     issue_type: str
     reporter_id: int
     assignee_id: Optional[int] = None
+    assignee_type: Optional[str] = None
     organization_id: Optional[int] = None
     is_incident: int
     closed_at: Optional[datetime] = None
@@ -95,6 +97,14 @@ class IssueDTO(ImmutableModel):
     tenant_id: Optional[int] = None
     village_id: Optional[str] = None
     parent_issue_id: Optional[int] = None
+    channel: Optional[str] = None
+    category: Optional[str] = None
+    requester_contact_id: Optional[int] = None
+    hd_sla_policy_id: Optional[int] = None
+    sla_breach_at: Optional[datetime] = None
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class CreateIssueRequest(RequestModel):
@@ -162,6 +172,20 @@ class CreateIssueRequest(RequestModel):
         ge=1,
         description="Optional parent issue ID for sub-tasks",
     )
+    channel: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic (e.g. billing, technical)",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Universal free-form JSON metadata bag",
+    )
 
 
 class UpdateIssueRequest(RequestModel):
@@ -216,4 +240,18 @@ class UpdateIssueRequest(RequestModel):
         default=None,
         ge=1,
         description="Optional parent issue ID for sub-tasks",
+    )
+    channel: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Universal free-form JSON metadata bag",
     )

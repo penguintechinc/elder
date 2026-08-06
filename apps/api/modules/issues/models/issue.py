@@ -7,7 +7,17 @@ import enum
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
@@ -28,6 +38,7 @@ class IssuePriority(enum.Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    URGENT = "urgent"
     CRITICAL = "critical"
 
 
@@ -43,6 +54,7 @@ class IssueType(enum.Enum):
     APPROVAL = "approval"
     FEATURE = "feature"
     BUG = "bug"
+    SUPPORT = "support"
     OTHER = "other"
 
 
@@ -88,6 +100,14 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
 
     __tablename__ = "issues"
+
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced NOT NULL in a follow-up once populated
+        index=True,
+        comment="Tenant this issue belongs to (nullable during backfill)",
+    )
 
     # Resource association (entity or organization)
     resource_type = Column(
@@ -161,12 +181,22 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         comment="User who created this issue",
     )
 
+    # No single-table ForeignKey: assignee_id is polymorphic (see
+    # assignee_type) and can reference either identities.id or
+    # organizations.id, so it cannot carry a DB-level FK constraint to a
+    # single table.
     assignee_id = Column(
         Integer,
-        ForeignKey("identities.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
-        comment="User assigned to this issue",
+        comment="Polymorphic assignee id; see assignee_type for the target table",
+    )
+
+    assignee_type = Column(
+        String(16),
+        nullable=True,
+        index=True,
+        comment="Disambiguates assignee_id: 'identity' (identities.id) or 'org_unit' (organizations.id)",
     )
 
     organization_id = Column(
@@ -175,6 +205,69 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         nullable=True,
         index=True,
         comment="Organization this issue belongs to",
+    )
+
+    # Support/helpdesk fields (nullable; only populated for issue_type=support)
+    channel = Column(
+        String(20),
+        nullable=True,
+        comment="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+
+    category = Column(
+        String(100),
+        nullable=True,
+        comment="Support category/topic (e.g. billing, technical)",
+    )
+
+    requester_contact_id = Column(
+        Integer,
+        ForeignKey("identities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="CRM contact who requested support (Plan 03 CRM)",
+    )
+
+    hd_sla_policy_id = Column(
+        Integer,
+        nullable=True,
+        comment="Helpdesk SLA policy applied to this issue",
+    )
+
+    sla_breach_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this issue breaches its SLA if not resolved/responded to",
+    )
+
+    first_response_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the first response was recorded for this issue",
+    )
+
+    resolved_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this issue was resolved",
+    )
+
+    # `metadata` is reserved on SQLAlchemy declarative models, so the Python
+    # attribute is named issue_metadata while the DB column stays `metadata`
+    # (same pattern as Organization.org_metadata / Entity.entity_metadata).
+    issue_metadata = Column(
+        "metadata",
+        JSON,
+        nullable=True,
+        comment="Universal free-form JSON metadata bag",
+    )
+
+    parent_issue_id = Column(
+        Integer,
+        ForeignKey("issues.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Parent issue id for sub-tasks (self-referential)",
     )
 
     # Closure tracking
@@ -204,11 +297,11 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         backref="reported_issues",
     )
 
-    assignee: Mapped[Optional["Identity"]] = relationship(
-        "Identity",
-        foreign_keys=[assignee_id],
-        backref="assigned_issues",
-    )
+    # No ORM `assignee` relationship: assignee_id is polymorphic
+    # (identities.id or organizations.id per assignee_type) and has no
+    # single-table FK for SQLAlchemy to infer a join condition from. Callers
+    # resolve the target row via assignee_type + assignee_id at the query
+    # layer instead (see routes/issues.py).
 
     closed_by: Mapped[Optional["Identity"]] = relationship(
         "Identity",

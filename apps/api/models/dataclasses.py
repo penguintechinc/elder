@@ -324,6 +324,16 @@ class IssueDTO:
     updated_at: datetime
     closed_by_id: Optional[int] = None
     due_date: Optional[datetime] = None
+    assignee_type: Optional[str] = None
+    channel: Optional[str] = None
+    category: Optional[str] = None
+    requester_contact_id: Optional[int] = None
+    hd_sla_policy_id: Optional[int] = None
+    sla_breach_at: Optional[datetime] = None
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
+    metadata: Optional[dict] = None
+    parent_issue_id: Optional[int] = None
 
 
 @dataclass(slots=True)

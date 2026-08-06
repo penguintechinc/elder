@@ -481,13 +481,15 @@ git commit -m "fix(issues): reconcile created_by_id/assigned_to_id -> reporter_i
 
 ---
 
-## Task 7: Tenant-scope comments + labels reads
+## Task 7: Tenant-scope ALL issue sub-resource reads (comments, labels, links, projects, milestones)
 
-`comments.py` and `labels.py` list/read without tenant scoping (via the issue). Scope them through the parent issue's tenant.
+Every remaining single-row issue lookup (`db.issues[<id>]` / unscoped `db.issues.id == id`) in the issues module reads/writes a sub-resource without tenant scoping — any tenant can touch another tenant's issue given its numeric id. Scope **all** of them through the parent issue's tenant. The unscoped lookups are in: `comments.py` (GET/POST/DELETE `/comments`), `labels.py` + `issues.py` labels (`/labels`), `issues.py` entity links (`/links`, `/links/by-entity`), and `issues.py` project/milestone linking (`/projects`, `/milestones`).
 
 **Files:**
-- Modify: `apps/api/modules/issues/routes/comments.py`, `labels.py`
+- Modify: `apps/api/modules/issues/routes/comments.py`, `apps/api/modules/issues/routes/labels.py`, `apps/api/modules/issues/routes/issues.py` (links + projects + milestones handlers)
 - Test: `tests/unit/test_issues_tenant_isolation.py`
+
+**Method for every handler:** before touching the sub-resource, resolve the parent issue with `db((db.issues.id == id) & (db.issues.tenant_id == _tenant_id())).select().first()` and 404 if missing. Reuse the `_tenant_id()` helper from Task 2 (in `issues.py`); for `comments.py`/`labels.py`, import it or move it to the module's shared `common.py` and import from there. Run `grep -n "db.issues\[" apps/api/modules/issues/routes/*.py` at the end — it must return **zero** unscoped lookups.
 
 - [ ] **Step 1: Write the failing test** — a tenant-1 token cannot read comments on a tenant-2 issue (404).
 

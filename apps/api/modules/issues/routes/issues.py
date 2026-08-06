@@ -6,7 +6,7 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
@@ -21,12 +21,56 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.modules.helpdesk.common import identity_in_tenant
+from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
+
+
+def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
+    """Return True if org_unit_id is unset or belongs to tenant_id.
+
+    Org-unit counterpart to identity_in_tenant: guards against cross-tenant
+    IDOR when an issue's assignee_id targets organizations.id
+    (assignee_type="org_unit"). A None id is treated as valid.
+    """
+    if org_unit_id is None:
+        return True
+    return (
+        db(
+            (db.organizations.id == org_unit_id)
+            & (db.organizations.tenant_id == tenant_id)
+        )
+        .select()
+        .first()
+        is not None
+    )
+
+
+def _resolve_assignee_type(
+    db: Any,
+    tenant_id: int,
+    assignee_id: Optional[int],
+    assignee_type: Optional[str],
+) -> Tuple[Optional[str], bool]:
+    """Resolve the polymorphic assignee_type and validate assignee_id is in tenant.
+
+    Returns (resolved_type, ok). resolved_type is None when assignee_id is
+    None (no assignee being set/changed) and ok is always True in that case.
+    Defaults resolved_type to "identity" for back-compat when assignee_id is
+    given without an explicit assignee_type. ok=False means the target row
+    doesn't exist in the caller's tenant (cross-tenant IDOR guard).
+    """
+    if assignee_id is None:
+        return None, True
+    resolved = assignee_type or "identity"
+    if resolved == "identity":
+        return resolved, identity_in_tenant(db, assignee_id, tenant_id)
+    return resolved, _org_unit_in_tenant(db, assignee_id, tenant_id)
 
 
 # ============================================================================
@@ -44,7 +88,27 @@ class CreateIssueRequest(RequestModel):
     priority: str = Field(default="medium", description="Priority level")
     issue_type: str = Field(default="other", description="Issue type")
     assignee_id: Optional[int] = Field(default=None, ge=1, description="Assignee ID")
+    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+        default=None,
+        description="Disambiguates assignee_id: identities.id or organizations.id",
+    )
     is_incident: int = Field(default=0, description="Is incident flag")
+    channel: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic (e.g. billing, technical)",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Universal free-form JSON metadata bag"
+    )
+    parent_issue_id: Optional[int] = Field(
+        default=None, ge=1, description="Parent issue id for sub-tasks"
+    )
 
 
 class UpdateIssueRequest(RequestModel):
@@ -56,8 +120,18 @@ class UpdateIssueRequest(RequestModel):
     priority: Optional[str] = Field(default=None)
     issue_type: Optional[str] = Field(default=None)
     assignee_id: Optional[int] = Field(default=None, ge=1)
+    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+        default=None,
+        description="Disambiguates assignee_id: identities.id or organizations.id",
+    )
     organization_id: Optional[int] = Field(default=None, ge=1)
     is_incident: Optional[int] = Field(default=None)
+    channel: Optional[str] = Field(default=None, max_length=20)
+    category: Optional[str] = Field(default=None, max_length=100)
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Universal free-form JSON metadata bag"
+    )
+    parent_issue_id: Optional[int] = Field(default=None, ge=1)
 
 
 class CreateIssueCommentRequest(RequestModel):
@@ -124,12 +198,16 @@ async def list_issues():
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_issues():
-        query = db.issues.id > 0
+        query = db.issues.tenant_id == tenant_id
 
         # Apply filters
         # Note: organization_id is not a column in issues table (removed)
@@ -209,6 +287,10 @@ async def create_issue(body: CreateIssueRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get organization to derive tenant_id
     def get_org():
         return db.organizations[body.organization_id]
@@ -218,6 +300,27 @@ async def create_issue(body: CreateIssueRequest):
         return jsonify({"error": "Organization not found"}), 404
     if not org.tenant_id:
         return jsonify({"error": "Organization must have a tenant"}), 400
+    # Cross-tenant IDOR guard: the org must belong to the caller's own
+    # tenant, not merely exist. Treat a foreign-tenant org as not-found
+    # (matches documents.py:91, streams.py:62,108) rather than leaking its
+    # existence via a distinct error.
+    if org.tenant_id != tenant_id:
+        return jsonify({"error": "Organization not found"}), 404
+
+    # Resolve + validate the polymorphic assignee (IDOR guard: target must be
+    # in the caller's tenant) before persisting.
+    if body.assignee_id is not None:
+        assignee_type_resolved, assignee_ok = await run_in_threadpool(
+            lambda: _resolve_assignee_type(
+                db, tenant_id, body.assignee_id, body.assignee_type
+            )
+        )
+        if not assignee_ok:
+            return jsonify({"error": "Assignee not found in tenant"}), 404
+    elif body.assignee_type is not None:
+        return jsonify({"error": "assignee_type requires assignee_id"}), 400
+    else:
+        assignee_type_resolved = None
 
     # Capture current_user before thread pool (Flask g doesn't propagate to threads)
     current_user_id = g.current_user.id
@@ -233,9 +336,15 @@ async def create_issue(body: CreateIssueRequest):
             issue_type=(body.issue_type or "other").upper(),
             reporter_id=current_user_id,
             assignee_id=body.assignee_id,
+            assignee_type=assignee_type_resolved,
             resource_type="organization",
             resource_id=body.organization_id,
             is_incident=body.is_incident,
+            channel=body.channel,
+            category=body.category,
+            metadata=body.metadata,
+            parent_issue_id=body.parent_issue_id,
+            tenant_id=tenant_id,
             created_at=now,
             updated_at=now,
         )
@@ -284,7 +393,15 @@ async def get_issue(id: int):
     """
     db = current_app.db
 
-    issue = await run_in_threadpool(lambda: db.issues[id])
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    issue = await run_in_threadpool(
+        lambda: db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+        .select()
+        .first()
+    )
 
     if not issue:
         return jsonify({"error": "Issue not found"}), 404
@@ -327,8 +444,12 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     """
     db = current_app.db
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    # If organization is being changed, validate it exists and belongs to
+    # the caller's own tenant before persisting.
     if body.organization_id:
 
         def get_org():
@@ -339,11 +460,33 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             return jsonify({"error": "Organization not found"}), 404
         if not org.tenant_id:
             return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
+        # Cross-tenant IDOR guard: treat a foreign-tenant org as not-found
+        # (matches documents.py:91, streams.py:62,108).
+        if org.tenant_id != tenant_id:
+            return jsonify({"error": "Organization not found"}), 404
+
+    # Resolve + validate the polymorphic assignee (IDOR guard: target must be
+    # in the caller's tenant) before persisting.
+    if body.assignee_id is not None:
+        assignee_type_resolved, assignee_ok = await run_in_threadpool(
+            lambda: _resolve_assignee_type(
+                db, tenant_id, body.assignee_id, body.assignee_type
+            )
+        )
+        if not assignee_ok:
+            return jsonify({"error": "Assignee not found in tenant"}), 404
+    elif body.assignee_type is not None:
+        return jsonify({"error": "assignee_type requires assignee_id"}), 400
+    else:
+        assignee_type_resolved = None
 
     def update():
-        # Check if issue exists
-        issue = db.issues[id]
+        # Check if issue exists and belongs to caller's tenant
+        issue = (
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not issue:
             return None, "Issue not found", 404
 
@@ -363,17 +506,28 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             update_fields["priority"] = body.priority.upper()
         if body.assignee_id is not None:
             update_fields["assignee_id"] = body.assignee_id
+            update_fields["assignee_type"] = assignee_type_resolved
         if body.organization_id is not None:
             update_fields["resource_id"] = body.organization_id
             update_fields["resource_type"] = "organization"
         if body.is_incident is not None:
             update_fields["is_incident"] = body.is_incident
+        if body.channel is not None:
+            update_fields["channel"] = body.channel
+        if body.category is not None:
+            update_fields["category"] = body.category
+        if body.metadata is not None:
+            update_fields["metadata"] = body.metadata
+        if body.parent_issue_id is not None:
+            update_fields["parent_issue_id"] = body.parent_issue_id
 
-        # Update issue
-        db(db.issues.id == id).update(**update_fields)
+        # Update issue (re-scoped to tenant for defense-in-depth)
+        db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).update(
+            **update_fields
+        )
         db.commit()
 
-        return db.issues[id], None, None
+        return get_tenant_scoped_issue(db, id, tenant_id), None, None
 
     result, error, status = await run_in_threadpool(update)
 
@@ -406,13 +560,22 @@ async def delete_issue(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        issue = db.issues[id]
+        issue = (
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not issue:
             return None, "Issue not found", 404
 
-        # Delete issue (cascade deletes comments, labels, links)
-        db(db.issues.id == id).delete()
+        # Delete issue (cascade deletes comments, labels, links); re-scoped
+        # to tenant for defense-in-depth.
+        db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).delete()
         db.commit()
 
         return True, None, None
@@ -450,9 +613,13 @@ async def list_issue_comments(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_comments():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -504,9 +671,13 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -553,9 +724,13 @@ async def delete_issue_comment(id: int, comment_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -689,8 +864,13 @@ async def list_issue_labels_for_issue(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_labels():
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -743,9 +923,13 @@ async def add_issue_label(id: int, body: AddIssueLabelRequest):
 
     label_id = body.label_id
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def add_label():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -805,9 +989,13 @@ async def remove_issue_label(id: int, label_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def remove_label():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -857,9 +1045,13 @@ async def list_issue_entity_links(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_links():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -919,9 +1111,13 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
 
     entity_id = body.entity_id
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -992,9 +1188,13 @@ async def delete_issue_entity_link(id: int, link_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1038,9 +1238,13 @@ async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1099,9 +1303,13 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1163,9 +1371,13 @@ async def unlink_issue_from_project(id: int, project_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1219,9 +1431,13 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1289,9 +1505,13 @@ async def unlink_issue_from_milestone(id: int, milestone_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
