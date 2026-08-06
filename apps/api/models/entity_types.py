@@ -47,6 +47,7 @@ class ComputeSubType:
     DESKTOP = "desktop"
     KUBERNETES_NODE = "kubernetes_node"
     KUBERNETES_CLUSTER = "kubernetes_cluster"
+    KUBERNETES_DEPLOYMENT = "k8s_deployment"
     VIRTUAL_MACHINE = "virtual_machine"
     LXD_CONTAINER = "lxd_container"
     LXD_VM = "lxd_vm"
@@ -118,6 +119,7 @@ ENTITY_SUBTYPES: Dict[str, List[str]] = {
         ComputeSubType.DESKTOP,
         ComputeSubType.KUBERNETES_NODE,
         ComputeSubType.KUBERNETES_CLUSTER,
+        ComputeSubType.KUBERNETES_DEPLOYMENT,
         ComputeSubType.VIRTUAL_MACHINE,
         ComputeSubType.LXD_CONTAINER,
         ComputeSubType.LXD_VM,

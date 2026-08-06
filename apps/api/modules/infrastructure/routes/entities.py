@@ -40,6 +40,8 @@ async def list_entities():
         - page: Page number (default: 1)
         - per_page: Items per page (default: 50, max: 1000)
         - entity_type: Filter by entity type
+        - sub_type: Filter by entity sub-type (e.g. k8s_node, k8s_deployment)
+        - parent_id: Filter by parent entity ID (e.g. all resources under a cluster)
         - organization_id: Filter by organization ID
         - name: Filter by name (partial match)
         - is_active: Filter by active status
@@ -59,6 +61,14 @@ async def list_entities():
     if request.args.get("entity_type"):
         entity_type = request.args.get("entity_type")
         query &= db.entities.type == entity_type
+
+    if request.args.get("sub_type"):
+        sub_type = request.args.get("sub_type")
+        query &= db.entities.sub_type == sub_type
+
+    if request.args.get("parent_id"):
+        parent_id = request.args.get("parent_id", type=int)
+        query &= db.entities.parent_id == parent_id
 
     if request.args.get("organization_id"):
         organization_id = request.args.get("organization_id", type=int)
@@ -408,12 +418,13 @@ async def update_entity_attributes(id: int):
     if not isinstance(data, dict):
         return ApiResponse.bad_request("Attributes must be a JSON object")
 
-    # Update attributes
+    # Update attributes (stored in the `metadata` column; "attributes" is
+    # the public API name for it, matching CreateEntityRequest/UpdateEntityRequest)
     def update_attributes():
-        current_attrs = existing.attributes or {}
+        current_attrs = existing.metadata or {}
         current_attrs.update(data)
 
-        db(db.entities.id == id).update(attributes=current_attrs)
+        db(db.entities.id == id).update(metadata=current_attrs)
         db.commit()
         return db.entities[id]
 

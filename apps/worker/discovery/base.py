@@ -137,6 +137,13 @@ class BaseDiscoveryProvider(ABC):
 
         Returns:
             Standardized resource dictionary
+
+        Note:
+            `tags` (K8s labels / cloud provider tags, a flat {key: value}
+            dict) is kept separate from `metadata` (structural discovery
+            data). `_store_as_entity` in service.py routes `tags` to the
+            dedicated `entities.tags` column and `metadata` to the
+            `entities.metadata` column — they are never merged.
         """
         return {
             "resource_id": resource_id,

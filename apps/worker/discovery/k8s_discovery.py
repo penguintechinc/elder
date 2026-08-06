@@ -90,6 +90,48 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
             "cni",
         ]
 
+    def discover_deployments(self) -> List[Dict[str, Any]]:
+        """Discover Kubernetes Deployments."""
+        resources = []
+
+        try:
+            deployments = self.apps_v1.list_deployment_for_all_namespaces()
+            for dep in deployments.items:
+                spec = dep.spec
+                status = dep.status
+                selector = (
+                    (spec.selector.match_labels or {}) if spec and spec.selector else {}
+                )
+                images = (
+                    [c.image for c in spec.template.spec.containers]
+                    if spec and spec.template and spec.template.spec
+                    else []
+                )
+                labels = dep.metadata.labels or {}
+
+                resource = self.format_resource(
+                    resource_id=dep.metadata.uid,
+                    resource_type="k8s_deployment",
+                    name=dep.metadata.name,
+                    metadata={
+                        "namespace": dep.metadata.namespace,
+                        "replicas": spec.replicas if spec else None,
+                        "available_replicas": (
+                            status.available_replicas if status else None
+                        ),
+                        "ready_replicas": status.ready_replicas if status else None,
+                        "images": images,
+                        "selector": selector,
+                    },
+                    region="N/A",
+                    tags=labels,
+                )
+                resources.append(resource)
+        except Exception:
+            pass
+
+        return resources
+
     def discover_all(self) -> Dict[str, Any]:
         """Discover all Kubernetes resources."""
         start_time = datetime.now(timezone.utc)
@@ -124,6 +166,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
         try:
             nodes = self.core_v1.list_node()
             for node in nodes.items:
+                node_labels = node.metadata.labels or {}
                 resource = self.format_resource(
                     resource_id=node.metadata.uid,
                     resource_type="k8s_node",
@@ -179,7 +222,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                         ),
                     },
                     region="N/A",
-                    tags=node.metadata.labels or {},
+                    tags=node_labels,
                 )
                 resources.append(resource)
         except:
@@ -189,6 +232,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
         try:
             pods = self.core_v1.list_pod_for_all_namespaces()
             for pod in pods.items:
+                pod_labels = pod.metadata.labels or {}
                 resource = self.format_resource(
                     resource_id=pod.metadata.uid,
                     resource_type="k8s_pod",
@@ -254,11 +298,14 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                         ),
                     },
                     region="N/A",
-                    tags=pod.metadata.labels or {},
+                    tags=pod_labels,
                 )
                 resources.append(resource)
         except:
             pass
+
+        # Discover deployments
+        resources.extend(self.discover_deployments())
 
         return resources
 
