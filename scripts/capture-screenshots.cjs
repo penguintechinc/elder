@@ -42,6 +42,13 @@ const pages = [
   { name: 'compute', path: '/compute' },
   { name: 'compute-kubernetes', path: '/compute?tab=Kubernetes' },
   { name: 'entity-detail', path: '/entities/1' },
+  // Merged IceCharts/Ruffled modules (enabled in the alpha demo).
+  // diagrams/streams omitted — their list pages don't yet surface data (a
+  // porting gap tracked separately); helpdesk points at its tickets list
+  // (the dashboard stats endpoint is a known broken endpoint).
+  { name: 'documents', path: '/documents' },
+  { name: 'pages', path: '/pages' },
+  { name: 'helpdesk', path: '/helpdesk/tickets' },
   { name: 'search', path: '/search' },
   // Admin pages
   { name: 'admin-tenants', path: '/admin/tenants' },
