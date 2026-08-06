@@ -170,13 +170,13 @@ async def create_service(body: CreateServiceRequest):
         # Auto-create SBOM scan if repository_url is provided
         if body.repository_url:
             db.sbom_scans.insert(
+                tenant_id=tenant_id,
                 parent_type="service",
                 parent_id=service_id,
                 scan_type="git_clone",
                 status="pending",
                 repository_url=body.repository_url,
                 created_at=now,
-                updated_at=now,
                 repository_branch="main",
                 components_found=0,
                 components_added=0,

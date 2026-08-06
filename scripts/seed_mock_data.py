@@ -572,6 +572,8 @@ class MockDataSeeder:
                     {
                         "title": name,
                         "description": f"{name} for {project.get('name', 'project')}",
+                        "organization_id": project.get("organization_id")
+                        or self._random_org_id(),
                         "project_id": project.get("id"),
                         "due_date": due_date.isoformat(),
                         "status": random.choice(["open", "closed"]),

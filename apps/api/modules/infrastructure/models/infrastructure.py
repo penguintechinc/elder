@@ -3,6 +3,7 @@
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -98,7 +99,7 @@ class DataStore(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin
     contains_pii = Column(Boolean, nullable=True)
     contains_phi = Column(Boolean, nullable=True)
     contains_pci = Column(Boolean, nullable=True)
-    size_bytes = Column(Integer, nullable=True)
+    size_bytes = Column(BigInteger, nullable=True)
     last_access_audit = Column(DateTime(timezone=True), nullable=True)
     extra_metadata = Column("metadata", JSON, nullable=True)
     created_by = Column(Integer, ForeignKey("portal_users.id"), nullable=True)

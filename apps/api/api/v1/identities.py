@@ -199,7 +199,14 @@ async def create_identity(body: CreateIdentityRequest):
             "full_name": body.full_name,
             "auth_provider_id": body.auth_provider_id,
             "is_active": body.is_active,
+            "is_superuser": body.is_superuser,
+            "mfa_enabled": body.mfa_enabled,
             "tenant_id": tenant_id,
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly.
+            "must_change_password": False,
+            "portal_role": "observer",
         }
 
         # Create identity
