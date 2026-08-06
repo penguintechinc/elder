@@ -63,7 +63,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Missing fields | Any helpdesk field absent from issues is **added to `issues`** (nullable) |
 | Intake forms | Generalize `hd_ticket_forms` → **issue intake forms**; default **private**, optional public; public requires **Altcha** captcha (§6). **Phase A** |
 | Assignment webhooks | Extend native **`webhooks`**: fire on `issue.assigned`, multiple configs filtered by `issue_type` + assignee (§7). **Phase A** |
-| Village IDs | **Universal — every Elder object** (identities, entities, resources, issues, comments, attachments, forms, webhooks, …) gets a unique `village_id`. Tables lacking it — incl. **`identities`** — get it added + backfilled; audit repo-wide for any others |
+| Village IDs | **Universal — every Elder object** (identities, entities, resources, issues, comments, attachments, forms, webhooks, …) gets a unique `village_id`. `identities` **already has one** (explicit col). Tables genuinely lacking it — `issue_comments`, `hd_ticket_messages`, `hd_ticket_attachments`, `hd_ticket_forms`, `webhooks` — get it added + backfilled; audit repo-wide for any others |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §10. Issues Enterprise gates removed (#232) |
 
 ## 4. Target model — the extended Issue
@@ -102,7 +102,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 ### 4.4 New enum values / village_id
 
 - `IdentityType += customer_contact`; `OrganizationType += customer_company`.
-- `village_id` (VillageIDMixin) **added** to `issue_comments`, attachments, intake forms, `webhooks`, **and `identities`** (it lacks one today; add + backfill all identity rows). **Universal rule:** *every* Elder object — identities, entities, resources, issues, and any other — carries a unique `village_id`; audit for and add it to any table still missing one.
+- `village_id` **added** to `issue_comments`, `hd_ticket_messages`, attachments, intake forms, `webhooks` (+ backfill). `identities` **already has `village_id`** (explicit column) — no change. **Universal rule:** *every* Elder object carries a unique `village_id`; audit for and add it to any table still missing one.
 
 ## 5. Concept convergence (reuse Elder-native, merge duplicates)
 
@@ -110,7 +110,8 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 |---|---|---|
 | `hd_teams` (+ `hd_team_members`) | `organizations` (`type=team`) + org membership | **Retire** → organizations |
 | `hd_companies` | `organizations` **`type=customer_company`** (new) | **Merge**, kept distinct from internal orgs |
-| `hd_contacts` | `identities` **`identity_type=customer_contact`** (new) | **Merge** into identities, **keyed on email**: if the email already belongs to a user/identity, **reuse that identity** (don't duplicate); else create `customer_contact` with `username=email` |
+| `hd_contacts` | `identities` **`identity_type=customer_contact`** (new) | **Merge** into identities, **keyed on email**: if the email already belongs to a user/identity, **reuse that identity** (don't duplicate); else create `customer_contact` with `username=email`. Optional contact details (phone, desk/office location, job title, notes) go into an identity **`metadata` JSON** bag — **add a `metadata` column to `identities`** (it has none; model it like `organizations.org_metadata`) as "optional information" |
+| `hd_ticket_attachments` storage | Elder **diagrams storage-provider abstraction** (S3/GCS/MinIO already there) | Attachments stored per §6.1: **PVC** if single-node, else **S3-compatible** (default MinIO; support S3/GCS/Azure Blob), server-side encrypted |
 | `tags` (JSON) | issue **`labels`** (native M2M) | **Converge** → labels |
 | `hd_ticket_messages` | `issue_comments` (+ `is_internal`, email cols, `village_id`) | **Merge** |
 | `hd_ticket_attachments` | new **`issue_attachments`** (with `village_id`) | **Generalize** (no native attachments today) |
@@ -121,9 +122,16 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 ## 6. Intake forms (Phase A; generalizes `hd_ticket_forms`)
 
 - **Config:** `village_id`, name, `slug`, ordered field defs (JSON), the `issue_type` it files as (default `support`), default assignee (identity/OU), `is_active`.
+- **Field types = every Pydantic-supported type** (str, int, float, bool, `EmailStr`, `HttpUrl`, `date`/`datetime`, `Enum`/Literal choices, `list[...]`, nested models, constrained types, file upload, etc.). A form's field defs **compile to a dynamic Pydantic model**; submissions are **validated with Pydantic** server-side (same validation stack as the rest of the API → consistent errors + OpenAPI-able).
 - **Visibility:** **default private** (auth); optionally **public** (unauth endpoint `/api/v1/intake/{slug}`).
 - **Captcha:** public forms **require Altcha** (altcha.org — open-source, self-hostable PoW; replaces old Turnstile/reCAPTCHA). `captcha_provider='altcha'`; server verifies the solution before creating the issue. Private forms: none.
-- **Submit:** validate → (public) verify Altcha → upsert requester **identity** (`customer_contact`) → create Issue (`issue_type` per form; support fields set; `village_id`) → apply default assignee → fire `issue.assigned` webhook if assigned (§7).
+- **Submit:** Pydantic-validate → (public) verify Altcha → upsert requester **identity** (`customer_contact`, keyed on email) → create Issue (`issue_type` per form; support fields set; `village_id`) → store any uploads (§6.1) → apply default assignee → fire `issue.assigned` webhook if assigned (§7).
+
+### 6.1 Uploads / attachment storage
+Configurable backend (reuse the diagrams module's S3/GCS/MinIO storage-provider abstraction):
+- **Single-node:** a **PVC** (local persistent volume) is sufficient.
+- **Multi-node:** drop to an **S3-compatible** object store — **default MinIO**, support **AWS S3 / GCS / Azure Blob**. Server-side encryption on (per `security.md` at-rest).
+- `issue_attachments` rows store `village_id`, the backend + object key/path, filename, content-type, size. Applies to both form uploads and in-issue attachments.
 
 ## 7. Assignment webhooks (Phase A; extend native `webhooks`)
 
@@ -139,7 +147,7 @@ Native `webhooks` stores `{events: JSON, organization_id, event_type, url, …}`
 Schema + features land here. Legacy `hd_tickets` are **not** migrated yet — shown via the facade.
 
 ### 8.1 Backend (sequence: village_id + tenant scoping FIRST)
-- **First / promptly — `village_id` everywhere:** add `village_id` (VillageIDMixin) to every table missing it (**`identities`**, `issue_comments`, attachments, forms, `webhooks`) + backfill all rows via `generate_village_id`. Land this early in Phase A as its own migration + PR, ahead of the feature work.
+- **First / promptly — `village_id` everywhere:** add `village_id` to every table missing it (`issue_comments`, `hd_ticket_messages`, attachments, forms, `webhooks`) + backfill via `generate_village_id`. (`identities` already has one.) Land this early in Phase A as its own migration + PR, ahead of the feature work.
 - **`issues` migration:** add §4.2 columns (tenant_id, polymorphic assignee, support fields, parent self-FK); add `support`/`urgent` enum values; reconcile `created_by_id`↔`reporter_id`.
 - **Enforce tenant scoping** on all issue reads/writes (close the leak); backfill `issues.tenant_id`.
 - **New types:** `identity_type=customer_contact`, `organization_type=customer_company`.
@@ -182,7 +190,7 @@ An issue (incl. support) is a metered **object**. Counting must be accurate/audi
 - **Phase A is now a large build under demo time pressure** (schema migration + forms + webhooks + OU-assignment + facade). Highest risk in the plan — sequence so each piece is independently shippable + tested; the `issues` schema migration lands first.
 - **`identities` `village_id`** — **decided: add it** (+ backfill all identities), per the universal village_id rule. Note the ripple: it's a core-table migration touching every identity row, not just customer contacts.
 **Resolved (2026-08-06):**
-- `identities` village_id → **add it, early in Phase A** (§8.1).
+- `identities` village_id → **already present** (explicit column) — no migration needed. `identities` **gains a `metadata` JSON column** (it has none) to hold optional contact info (phone, desk/office location, job title, notes).
 - Contact↔identity → **key on email; reuse the existing identity if the email already belongs to a user**, else create the `customer_contact` (§5).
 - Ticket team+person → **collapse to the person** (§4.1).
 - Legacy `hd_ticket` assignment via the facade → **fires `issue.assigned`** (facade's ticket-update emits it).
