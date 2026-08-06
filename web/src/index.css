@@ -73,3 +73,40 @@ body {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* MapLibre GL popup — match app dark theme (slate + gold), see pages/Map.tsx */
+.maplibregl-popup-content {
+  background: #1e293b;
+  color: #e2e8f0;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  padding: 0.75rem 1rem;
+}
+
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: #1e293b;
+}
+
+.maplibregl-popup-anchor-top .maplibregl-popup-tip {
+  border-bottom-color: #1e293b;
+}
+
+.maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #1e293b;
+}
+
+.maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #1e293b;
+}
+
+.maplibregl-popup-close-button {
+  color: #94a3b8;
+  font-size: 1rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.maplibregl-popup-close-button:hover {
+  color: #f1f5f9;
+  background: transparent;
+}
