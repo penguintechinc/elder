@@ -143,7 +143,6 @@ export default function Diagram() {
 
   // Handle node click - could navigate to details
   const handleNodeClick = (node: GraphNodeWithMetadata) => {
-    console.log('Node clicked:', node)
     // Could add navigation or modal here
   }
 

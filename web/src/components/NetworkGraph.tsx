@@ -193,9 +193,6 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
   }, [graphNodes]);
 
   const initialEdges: Edge[] = useMemo(() => {
-    console.log('NetworkGraph: Converting edges:', graphEdges);
-    console.log('NetworkGraph: graphEdges type:', typeof graphEdges, 'isArray:', Array.isArray(graphEdges));
-
     if (!graphEdges || !Array.isArray(graphEdges)) {
       console.error('NetworkGraph: graphEdges is not an array!', graphEdges);
       return [];
@@ -208,15 +205,10 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
     const validEdges = graphEdges.filter(edge => {
       const sourceExists = validNodeIds.has(edge.from);
       const targetExists = validNodeIds.has(edge.to);
-      if (!sourceExists || !targetExists) {
-        console.log(`NetworkGraph: Filtering out edge from ${edge.from} to ${edge.to} - source exists: ${sourceExists}, target exists: ${targetExists}`);
-      }
       return sourceExists && targetExists;
     });
 
     const converted = validEdges.map((edge, index) => {
-      console.log(`NetworkGraph: Processing edge ${index}:`, edge);
-
       // Different colors for different edge types
       const edgeColor = edge.label === 'parent' ? '#10b981' :
                        edge.label === 'contains' ? '#3b82f6' :
@@ -243,44 +235,24 @@ export const NetworkGraph: React.FC<NetworkGraphProps> = ({
           color: edgeColor,
         },
       };
-      console.log('NetworkGraph: Created edge:', reactFlowEdge);
       return reactFlowEdge;
     });
-    console.log('NetworkGraph: Total edges converted:', converted.length);
-    console.log('NetworkGraph: Final edges array:', converted);
     return converted;
   }, [graphEdges, graphNodes]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
 
-  console.log('NetworkGraph: Current nodes state:', nodes);
-  console.log('NetworkGraph: Node IDs:', nodes.map(n => n.id));
-  console.log('NetworkGraph: Current edges state:', edges);
-  console.log('NetworkGraph: Edge connections:', edges.map(e => ({ id: e.id, source: e.source, target: e.target })));
-
-  // Check if edges have valid source/target that match node IDs
-  edges.forEach((edge) => {
-    const sourceExists = nodes.find(n => n.id === edge.source);
-    const targetExists = nodes.find(n => n.id === edge.target);
-    console.log(`Edge ${edge.id}: source=${edge.source} (exists: ${!!sourceExists}), target=${edge.target} (exists: ${!!targetExists})`);
-  });
-
   // Update nodes when graph data changes
   useEffect(() => {
-    console.log('NetworkGraph: Setting nodes:', initialNodes);
     setNodes(initialNodes);
   }, [initialNodes, setNodes]);
 
-  // Update edges when graph data changes
+  // Update edges when graph data changes. Clear then re-set on the next tick so
+  // React Flow re-measures edges against the freshly-set nodes.
   useEffect(() => {
-    console.log('NetworkGraph: Setting edges:', initialEdges);
-    // Set edges multiple times to force re-render
     setEdges([]);
-    setTimeout(() => {
-      setEdges(initialEdges);
-      console.log('NetworkGraph: Edges set after timeout');
-    }, 100);
+    setTimeout(() => setEdges(initialEdges), 100);
   }, [initialEdges, setEdges]);
 
   const handleNodeClick = useCallback(
