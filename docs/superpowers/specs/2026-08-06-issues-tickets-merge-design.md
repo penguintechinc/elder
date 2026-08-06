@@ -67,6 +67,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Metadata field | **Universal — every object gets a `metadata` JSON bag** for optional/extensible attributes, so we don't add a primary column for every new attribute. `organizations` already has `org_metadata`; `identities` gains `metadata` (§5); every new/converged object here (issues support-extras, comments, attachments, forms, webhooks) carries one. Audit repo-wide |
 | Tenant scoping | **Universal — every object is tenant-scoped** (`tenant_id` + queries filtered by the token's tenant). **Audit repo-wide** for any identity/object/upload/comment/form/webhook that isn't, and fix it. **Sole exception: global users** (super-admins) which sit **above** tenants. This subsumes the Issues tenant-leak fix (§2) |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §10. Issues Enterprise gates removed (#232) |
+| Docs sync | When the build is done, **update `README.md` and `docs/*.md`** to reflect the unified Issue model, intake forms, webhooks, and the retired helpdesk surface (final plan, §Plan 09) |
 
 ## 4. Target model — the extended Issue
 
