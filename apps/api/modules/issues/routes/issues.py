@@ -22,24 +22,13 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.modules.helpdesk.common import identity_in_tenant
+from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
-
-
-def _tenant_id() -> Optional[int]:
-    """Tenant id from validated JWT claims (populated by before_request)."""
-    claims = getattr(g, "claims", {}) or {}
-    raw = claims.get("tenant", "")
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except (ValueError, TypeError):
-        return None
 
 
 def _org_unit_in_tenant(db, org_unit_id: Optional[int], tenant_id: int) -> bool:
@@ -529,7 +518,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         )
         db.commit()
 
-        return db.issues[id], None, None
+        return get_tenant_scoped_issue(db, id, tenant_id), None, None
 
     result, error, status = await run_in_threadpool(update)
 
@@ -615,9 +604,13 @@ async def list_issue_comments(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_comments():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -669,9 +662,13 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -718,9 +715,13 @@ async def delete_issue_comment(id: int, comment_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -854,8 +855,13 @@ async def list_issue_labels_for_issue(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_labels():
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -908,9 +914,13 @@ async def add_issue_label(id: int, body: AddIssueLabelRequest):
 
     label_id = body.label_id
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def add_label():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -970,9 +980,13 @@ async def remove_issue_label(id: int, label_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def remove_label():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1022,9 +1036,13 @@ async def list_issue_entity_links(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_links():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1084,9 +1102,13 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
 
     entity_id = body.entity_id
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1157,9 +1179,13 @@ async def delete_issue_entity_link(id: int, link_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1203,9 +1229,13 @@ async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1264,9 +1294,13 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1328,9 +1362,13 @@ async def unlink_issue_from_project(id: int, project_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1384,9 +1422,13 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -1454,9 +1496,13 @@ async def unlink_issue_from_milestone(id: int, milestone_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete_link():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 

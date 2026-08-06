@@ -42,6 +42,32 @@ def _foreign_tenant(db) -> int:
     return tid
 
 
+def _other_tenant_issue(db, title: str = "T2") -> int:
+    """Create an issue owned by a freshly created (non-1) tenant.
+
+    Shared fixture for task-7 sub-resource isolation tests: each of them only
+    needs a single issue that belongs to a tenant other than the caller's, to
+    verify the parent-issue tenant gate rejects it before the sub-resource is
+    ever touched.
+    """
+    other_tenant_id = _foreign_tenant(db)
+    now = datetime.now(timezone.utc)
+    issue_id = db.issues.insert(
+        title=title,
+        status="OPEN",
+        priority="LOW",
+        issue_type="OTHER",
+        is_incident=0,
+        resource_type="organization",
+        resource_id=1,
+        tenant_id=other_tenant_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.commit()
+    return issue_id
+
+
 class TestIssuesTenantIsolation:
     """Verify issue reads/writes are scoped to the caller's tenant (task 2)."""
 
@@ -217,3 +243,135 @@ class TestIssuesTenantIsolation:
             db = current_app.db
             row = db.issues[issue_id]
             assert row.tenant_id == 1
+
+
+class TestIssueSubResourceTenantIsolation:
+    """Every issue sub-resource lookup must be gated by the parent issue's
+    tenant (task 7) -- comments, labels, entity links, and project/milestone
+    linking all resolved the issue via a bare `db.issues[id]` bracket lookup
+    with no tenant filter, so a tenant-1 caller could read or mutate a
+    tenant-2 issue's sub-resources given only its numeric id.
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_comments_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """GET /issues/<id>/comments for another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 comments")
+        resp = await async_client.get(
+            f"/api/v1/issues/{iid}/comments",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_labels_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """GET /issues/<id>/labels for another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 labels")
+        resp = await async_client.get(
+            f"/api/v1/issues/{iid}/labels",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_add_label_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues/<id>/labels against another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 add-label")
+        resp = await async_client.post(
+            f"/api/v1/issues/{iid}/labels",
+            json={"label_id": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_entity_links_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """GET /issues/<id>/links for another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 links")
+        resp = await async_client.get(
+            f"/api/v1/issues/{iid}/links",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_entity_link_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues/<id>/links against another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 create-link")
+        resp = await async_client.post(
+            f"/api/v1/issues/{iid}/links",
+            json={"entity_id": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_link_project_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues/<id>/projects against another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 link-project")
+        resp = await async_client.post(
+            f"/api/v1/issues/{iid}/projects",
+            json={"project_id": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_link_milestone_scoped_by_issue_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues/<id>/milestones against another tenant's issue must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            iid = _other_tenant_issue(db, title="T2 link-milestone")
+        resp = await async_client.post(
+            f"/api/v1/issues/{iid}/milestones",
+            json={"milestone_id": 1},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404

@@ -11,6 +11,7 @@ from quart import Blueprint, current_app, g, jsonify
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.models.dataclasses import IssueCommentDTO, from_pydal_row, from_pydal_rows
+from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
 
@@ -54,9 +55,13 @@ async def list_issue_comments(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_comments():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -108,9 +113,13 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def create():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -157,9 +166,13 @@ async def delete_issue_comment(id: int, comment_id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
@@ -214,9 +227,13 @@ async def update_issue_comment(id: int, comment_id: int, body: UpdateCommentRequ
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def update():
-        # Verify issue exists
-        issue = db.issues[id]
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
             return None, "Issue not found", 404
 
