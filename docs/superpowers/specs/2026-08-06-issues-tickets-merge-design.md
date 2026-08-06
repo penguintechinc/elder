@@ -16,6 +16,24 @@ There is **no separate "ticket" concept**. A support ticket is **just an Issue**
 - **Phase A (the demo build):** the complete native unified model + **all** features, fully working, **seeded** on the native model. This is the whole design above.
 - **Phase B (post-demo, production only):** the robust **data-migration path for real deployments** that already hold legacy `hd_tickets`/CRM data (dual-write, bake, retire `hd_*`). Not needed for the demo (seeded native), but needed before shipping to environments with existing helpdesk data.
 
+## 1.5 Module organization & licensing
+
+Elder splits into **core + three separately-licensable product modules**, so it can be licensed with some / all / none of them:
+
+| Group | Contains | Notes |
+|---|---|---|
+| **Core** | Unified **Issues** (incl. `issue_type=support`), **assignment webhooks**, infrastructure/CMDB, IAM/identities, IPAM, SBOM, secrets, discovery, on-call — plus the three universal rules (village_id, metadata, tenant scoping) | Always available |
+| **CRM** | Customer-facing support layer: **intake forms**, customer interaction **portal**, SLA policies, canned responses, email accounts/channel + **email-only flow**, per-OU **auto-close**, CRM entity management (`customer_company` OUs, `customer_contact` identities) | Sits on top of core Issues |
+| **Workflow** | Workflows, **streams**, flows (IceCharts engine) | regroup existing `streams`/`flows` |
+| **KB** | **Diagrams**, **pages**, **documents** (IceCharts diagrams + Ruffled KB) | regroup existing `diagrams`/`documents`/`pages` |
+
+**Dual gate — both must allow; either disables:**
+- **ENV breaker** (Docker ENV, e.g. `ELDER_MODULE_CRM|WORKFLOW|KB`) — operator on/off; **default ON** (community/OSS gets everything).
+- **License check** — for Pro/Enterprise, `license.penguintech.io` entitlement can turn a module **off even if ENV=on** (à-la-carte paid modules). No license = community = all on.
+- Active iff **ENV on AND license allows**; graceful-degrade to last-known on server-unreachable (never crash). Reuses the existing module registry + license middleware (`apps/api/modules/registry.py`, `main.py`).
+
+**Impact on this design:** the unified Issue model + assignment webhooks are **Core**; the support/customer layer (forms, portal, SLA, email, auto-close, CRM entities) is the **CRM** module — support-type issues exist in core, CRM wraps the customer-facing intake/portal/SLA/email around them. Regrouping the existing `helpdesk`/`streams`/`flows`/`diagrams`/`documents`/`pages` sub-modules under CRM/Workflow/KB is its own plan (02a).
+
 ## 2. Current state (why this is non-trivial)
 
 Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy models define the schema.
