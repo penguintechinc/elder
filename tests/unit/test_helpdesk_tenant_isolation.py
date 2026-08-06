@@ -68,7 +68,7 @@ class TestHelpdeskCrossTenantIsolation:
             db.commit()
 
         resp = await async_client.post(
-            f"/api/v1/teams/{team_id}/members",
+            f"/api/v1/helpdesk/teams/{team_id}/members",
             json={"identity_id": foreign_id, "role": "member"},
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -101,7 +101,7 @@ class TestHelpdeskCrossTenantIsolation:
                     mock_app.redis_client = MagicMock()
                     mv.return_value = f"vid-{uuid4().hex[:8]}"
                     resp = await async_client.post(
-                        "/api/v1/tickets",
+                        "/api/v1/helpdesk/tickets",
                         json=payload,
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -132,7 +132,7 @@ class TestHelpdeskCrossTenantIsolation:
                     mock_app.redis_client = MagicMock()
                     mv.return_value = f"vid-{uuid4().hex[:8]}"
                     resp = await async_client.post(
-                        "/api/v1/contacts",
+                        "/api/v1/helpdesk/contacts",
                         json=payload,
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -155,7 +155,7 @@ class TestHelpdeskCrossTenantIsolation:
 
         t1 = generate_token(tenant_id=1, scopes=["helpdesk:write"])
         r1 = await async_client.post(
-            "/api/v1/ticket-forms",
+            "/api/v1/helpdesk/ticket-forms",
             json={"name": "F1", "slug": slug},
             headers={"Authorization": f"Bearer {t1}"},
         )
@@ -163,7 +163,7 @@ class TestHelpdeskCrossTenantIsolation:
 
         t2 = generate_token(tenant_id=2, scopes=["helpdesk:write"])
         r2 = await async_client.post(
-            "/api/v1/ticket-forms",
+            "/api/v1/helpdesk/ticket-forms",
             json={"name": "F2", "slug": slug},
             headers={"Authorization": f"Bearer {t2}"},
         )
