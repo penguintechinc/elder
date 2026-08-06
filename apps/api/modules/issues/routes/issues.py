@@ -6,7 +6,7 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
@@ -104,6 +104,22 @@ class CreateIssueRequest(RequestModel):
         description="Disambiguates assignee_id: identities.id or organizations.id",
     )
     is_incident: int = Field(default=0, description="Is incident flag")
+    channel: Optional[str] = Field(
+        default=None,
+        max_length=20,
+        description="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+    category: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Support category/topic (e.g. billing, technical)",
+    )
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Universal free-form JSON metadata bag"
+    )
+    parent_issue_id: Optional[int] = Field(
+        default=None, ge=1, description="Parent issue id for sub-tasks"
+    )
 
 
 class UpdateIssueRequest(RequestModel):
@@ -121,6 +137,12 @@ class UpdateIssueRequest(RequestModel):
     )
     organization_id: Optional[int] = Field(default=None, ge=1)
     is_incident: Optional[int] = Field(default=None)
+    channel: Optional[str] = Field(default=None, max_length=20)
+    category: Optional[str] = Field(default=None, max_length=100)
+    metadata: Optional[Dict[str, Any]] = Field(
+        default=None, description="Universal free-form JSON metadata bag"
+    )
+    parent_issue_id: Optional[int] = Field(default=None, ge=1)
 
 
 class CreateIssueCommentRequest(RequestModel):
@@ -323,6 +345,10 @@ async def create_issue(body: CreateIssueRequest):
             resource_type="organization",
             resource_id=body.organization_id,
             is_incident=body.is_incident,
+            channel=body.channel,
+            category=body.category,
+            metadata=body.metadata,
+            parent_issue_id=body.parent_issue_id,
             tenant_id=tenant_id,
             created_at=now,
             updated_at=now,
@@ -488,6 +514,14 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             update_fields["resource_type"] = "organization"
         if body.is_incident is not None:
             update_fields["is_incident"] = body.is_incident
+        if body.channel is not None:
+            update_fields["channel"] = body.channel
+        if body.category is not None:
+            update_fields["category"] = body.category
+        if body.metadata is not None:
+            update_fields["metadata"] = body.metadata
+        if body.parent_issue_id is not None:
+            update_fields["parent_issue_id"] = body.parent_issue_id
 
         # Update issue (re-scoped to tenant for defense-in-depth)
         db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).update(

@@ -269,3 +269,39 @@ class TestIssuesAPI:
         data = json.loads(await resp.get_data())
         assert data["assignee_type"] == "identity"
         assert data["assignee_id"] == identity_id
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_support_fields_and_metadata(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues persists+returns support fields (channel/category) and
+        the universal metadata JSON bag (issues foundation task 5).
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Org", tenant_id=1, created_at=now, updated_at=now
+            )
+            db.commit()
+        resp = await async_client.post(
+            "/api/v1/issues",
+            json={
+                "title": "Email in",
+                "issue_type": "support",
+                "priority": "high",
+                "organization_id": org_id,
+                "channel": "email",
+                "category": "billing",
+                "metadata": {"source_email": "cust@example.com"},
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["channel"] == "email"
+        assert data["category"] == "billing"
+        assert data["metadata"]["source_email"] == "cust@example.com"

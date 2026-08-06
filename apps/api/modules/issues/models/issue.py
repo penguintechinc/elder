@@ -7,7 +7,17 @@ import enum
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import (
+    JSON,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
@@ -195,6 +205,69 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         nullable=True,
         index=True,
         comment="Organization this issue belongs to",
+    )
+
+    # Support/helpdesk fields (nullable; only populated for issue_type=support)
+    channel = Column(
+        String(20),
+        nullable=True,
+        comment="Support channel the issue was raised through (e.g. email, chat, phone)",
+    )
+
+    category = Column(
+        String(100),
+        nullable=True,
+        comment="Support category/topic (e.g. billing, technical)",
+    )
+
+    requester_contact_id = Column(
+        Integer,
+        ForeignKey("identities.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="CRM contact who requested support (Plan 03 CRM)",
+    )
+
+    hd_sla_policy_id = Column(
+        Integer,
+        nullable=True,
+        comment="Helpdesk SLA policy applied to this issue",
+    )
+
+    sla_breach_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this issue breaches its SLA if not resolved/responded to",
+    )
+
+    first_response_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When the first response was recorded for this issue",
+    )
+
+    resolved_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When this issue was resolved",
+    )
+
+    # `metadata` is reserved on SQLAlchemy declarative models, so the Python
+    # attribute is named issue_metadata while the DB column stays `metadata`
+    # (same pattern as Organization.org_metadata / Entity.entity_metadata).
+    issue_metadata = Column(
+        "metadata",
+        JSON,
+        nullable=True,
+        comment="Universal free-form JSON metadata bag",
+    )
+
+    parent_issue_id = Column(
+        Integer,
+        ForeignKey("issues.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Parent issue id for sub-tasks (self-referential)",
     )
 
     # Closure tracking
