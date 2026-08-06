@@ -4,7 +4,7 @@
         setup setup-env setup-python \
         dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
-        smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery screenshots \
+        smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-k8s-geo-demo screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug test-beta \
         build docker-build docker-build-alpha docker-push docker-scan \
@@ -265,6 +265,11 @@ seed-cloud-discovery: ## Seed a demo AWS cloud-discovery topology via the real l
 	@echo "$(BLUE)Seeding cloud-discovery demo topology...$(RESET)"
 	@$(PYTHON) scripts/seed_cloud_discovery.py
 	@echo "$(GREEN)Cloud-discovery demo topology seeded$(RESET)"
+
+seed-k8s-geo-demo: ## Seed demo K8s cluster hierarchy (parent_id-linked) + geo-located entities for the Map
+	@echo "$(BLUE)Seeding K8s cluster hierarchy + geo-located entities...$(RESET)"
+	@$(PYTHON) scripts/seed_k8s_geo_demo.py
+	@echo "$(GREEN)K8s/geo demo data seeded$(RESET)"
 
 screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
 	@node scripts/capture-screenshots.cjs
