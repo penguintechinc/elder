@@ -37,11 +37,28 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 // Route catch-all: logs unmatched paths and redirects appropriately
 function RouteNotFound() {
   const location = useLocation()
+  const { isLoading: modulesLoading } = useModules()
   const hasToken = localStorage.getItem('elder_token')
 
   useEffect(() => {
-    console.warn('[Elder] Route not found:', location.pathname)
-  }, [location.pathname])
+    if (!modulesLoading) {
+      console.warn('[Elder] Route not found:', location.pathname)
+    }
+  }, [location.pathname, modulesLoading])
+
+  // Module routes register asynchronously (useModules fetches /api/v1/modules).
+  // Until that resolves, moduleRoutes is empty, so a valid module path (e.g.
+  // /entities) matches nothing and falls through to this catch-all. Don't
+  // redirect while modules are still loading — show a spinner and let the real
+  // route take over once they load. Without this, a hard refresh or deep link on
+  // any module page bounces the user to the dashboard.
+  if (modulesLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-bg-primary">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-primary-500" />
+      </div>
+    )
+  }
 
   if (hasToken) {
     return <Navigate to="/" replace />
