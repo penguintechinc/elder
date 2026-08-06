@@ -14,6 +14,47 @@ export interface Organization {
 
 export type OrganizationType = 'department' | 'organization' | 'team' | 'collection' | 'other'
 
+export interface EntityLocation {
+  city?: string
+  state?: string
+  country?: string
+  latitude?: number
+  longitude?: number
+}
+
+// Flat metadata bag written by discovery providers (K8s, cloud, etc). Known
+// structural fields are typed for convenience; anything else (including
+// out-of-band writes like a geo-enrichment agent's `location`) still flows
+// through the index signature.
+export interface EntityMetadata {
+  location?: EntityLocation
+  resource_id?: string
+  resource_type?: string
+  region?: string
+  discovered_at?: string
+  capacity_cpu?: string
+  capacity_memory?: string
+  kubelet_version?: string
+  os_image?: string
+  conditions?: string[]
+  phase?: string
+  namespace?: string
+  node_name?: string
+  pod_ip?: string
+  containers_count?: number
+  replicas?: number
+  available_replicas?: number
+  ready_replicas?: number
+  images?: string[]
+  selector?: Record<string, string>
+  [key: string]: unknown
+}
+
+// K8s labels / cloud provider tags come back as a {key: value} dict;
+// user-applied classification tags (via CreateEntityRequest) are a legacy
+// list[str]. Callers should normalize via lib/entityTags before rendering.
+export type EntityTags = Record<string, string> | string[]
+
 export interface Entity {
   id: number
   unique_id: string
@@ -22,8 +63,11 @@ export interface Entity {
   type: EntityType
   sub_type?: string
   organization_id: number
+  parent_id?: number
   owner_identity_id?: number
-  metadata?: Record<string, unknown>
+  metadata?: EntityMetadata
+  tags?: EntityTags
+  is_active?: boolean
   village_id?: string
   created_at: string
   updated_at: string

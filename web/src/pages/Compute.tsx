@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Server,
   Box,
+  Boxes,
   Layers,
   Network,
   HardDrive,
@@ -17,32 +18,23 @@ import {
 } from 'lucide-react'
 import api from '@/lib/api'
 import Card, { CardHeader, CardContent } from '@/components/Card'
+import { normalizeTags } from '@/lib/entityTags'
+import type { Dependency, EntityMetadata, EntityTags } from '@/types'
 
 // ── API response record types ─────────────────────────────────
 // Lightweight shapes matching what the API returns for each resource.
-// Using Record<string, unknown> for metadata/attributes avoids `any`.
-interface EntityMetadata {
-  capacity_cpu?: string
-  capacity_memory?: string
-  kubelet_version?: string
-  os_image?: string
-  conditions?: string[]
-  phase?: string
-  namespace?: string
-  node_name?: string
-  pod_ip?: string
-  containers_count?: number
-  [key: string]: unknown
-}
-
+// EntityMetadata/EntityTags are shared with the Entity type in src/types —
+// metadata lives on entity.metadata (not entity.attributes.metadata).
 interface ComputeEntity {
   id: number
   name: string
   sub_type: string
   entity_type: string
   organization_id?: number
+  parent_id?: number
   created_at?: string
-  attributes?: { metadata?: EntityMetadata; [key: string]: unknown }
+  metadata?: EntityMetadata
+  tags?: EntityTags
 }
 
 interface K8sService {
@@ -90,13 +82,14 @@ const PRIMARY_ICONS: Record<PrimaryTab, typeof Server> = {
 }
 
 // ── K8s sub-tabs ──────────────────────────────────────────────
-const K8S_TABS = ['Clusters', 'Nodes', 'Pods', 'Services', 'Namespaces', 'Storage', 'Service Accounts'] as const
+const K8S_TABS = ['Clusters', 'Nodes', 'Pods', 'Deployments', 'Services', 'Namespaces', 'Storage', 'Service Accounts'] as const
 type K8sTab = typeof K8S_TABS[number]
 
 const K8S_ICONS: Record<K8sTab, typeof Ship> = {
   'Clusters': Ship,
   'Nodes': Server,
   'Pods': Box,
+  'Deployments': Boxes,
   'Services': Network,
   'Namespaces': Layers,
   'Storage': HardDrive,
@@ -242,30 +235,97 @@ function VMsTab() {
 // ── Kubernetes Tab ────────────────────────────────────────────
 function KubernetesTab() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [subTab, setSubTab] = useState<K8sTab>('Clusters')
+
+  // Cluster drill-down: ?tab=Kubernetes&cluster=<id> scopes Nodes/Pods/
+  // Deployments/Services to that cluster's children (parent_id / dependency
+  // edges). Namespaces stays global.
+  const clusterIdParam = searchParams.get('cluster')
+  const clusterId = clusterIdParam ? parseInt(clusterIdParam, 10) : undefined
+
+  const selectCluster = (id: number) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.set('cluster', String(id))
+      return next
+    })
+  }
+
+  const clearCluster = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      next.delete('cluster')
+      return next
+    })
+  }
 
   const { data: clustersData, isLoading: loadingClusters, refetch: refetchClusters } = useQuery({
     queryKey: ['k8s-clusters'],
     queryFn: () => api.getEntities({ entity_type: 'compute', sub_type: 'kubernetes_cluster' }),
-    enabled: subTab === 'Clusters',
+    enabled: subTab === 'Clusters' && !clusterId,
+  })
+
+  // Fetched independent of subTab/clustersData so the "Cluster: <name>"
+  // header works from any sub-tab, not just the Clusters grid.
+  const { data: selectedCluster } = useQuery({
+    queryKey: ['k8s-cluster', clusterId],
+    queryFn: () => api.getEntity(clusterId!),
+    enabled: !!clusterId,
   })
 
   const { data: nodesData, isLoading: loadingNodes, refetch: refetchNodes } = useQuery({
-    queryKey: ['k8s-nodes'],
-    queryFn: () => api.getEntities({ entity_type: 'compute', sub_type: 'k8s_node' }),
+    queryKey: ['k8s-nodes', clusterId],
+    queryFn: () => api.getEntities({
+      entity_type: 'compute',
+      sub_type: 'k8s_node',
+      per_page: 500,
+      ...(clusterId ? { parent_id: clusterId } : {}),
+    }),
     enabled: subTab === 'Nodes',
   })
 
   const { data: podsData, isLoading: loadingPods, refetch: refetchPods } = useQuery({
-    queryKey: ['k8s-pods'],
-    queryFn: () => api.getEntities({ entity_type: 'compute', sub_type: 'k8s_pod' }),
+    queryKey: ['k8s-pods', clusterId],
+    queryFn: () => api.getEntities({
+      entity_type: 'compute',
+      sub_type: 'k8s_pod',
+      per_page: 500,
+      ...(clusterId ? { parent_id: clusterId } : {}),
+    }),
     enabled: subTab === 'Pods',
   })
 
+  const { data: deploymentsData, isLoading: loadingDeployments, refetch: refetchDeployments } = useQuery({
+    queryKey: ['k8s-deployments', clusterId],
+    queryFn: () => api.getEntities({
+      entity_type: 'compute',
+      sub_type: 'k8s_deployment',
+      per_page: 500,
+      ...(clusterId ? { parent_id: clusterId } : {}),
+    }),
+    enabled: subTab === 'Deployments',
+  })
+
+  // Global K8s services list — cross-referenced against cluster-scoped
+  // dependency edges below when a cluster is selected.
   const { data: servicesData, isLoading: loadingServices, refetch: refetchServices } = useQuery({
     queryKey: ['k8s-services'],
     queryFn: () => api.getServices({ deployment_method: 'kubernetes' }),
     enabled: subTab === 'Services',
+  })
+
+  // The Dependency DTO never enriches source/target with a name, so we
+  // resolve names by intersecting these edges' source_id against the
+  // already-fetched global services list rather than re-fetching per-id.
+  const {
+    data: clusterServiceDepsData,
+    isLoading: loadingClusterServiceDeps,
+    refetch: refetchClusterServiceDeps,
+  } = useQuery({
+    queryKey: ['k8s-cluster-service-deps', clusterId],
+    queryFn: () => api.getDependencies({ target_type: 'entity', target_id: clusterId!, per_page: 500 }),
+    enabled: subTab === 'Services' && !!clusterId,
   })
 
   const { data: namespacesData, isLoading: loadingNamespaces, refetch: refetchNamespaces } = useQuery({
@@ -291,7 +351,11 @@ function KubernetesTab() {
       'Clusters': () => refetchClusters(),
       'Nodes': () => refetchNodes(),
       'Pods': () => refetchPods(),
-      'Services': () => refetchServices(),
+      'Deployments': () => refetchDeployments(),
+      'Services': () => {
+        refetchServices()
+        if (clusterId) refetchClusterServiceDeps()
+      },
       'Namespaces': () => refetchNamespaces(),
       'Storage': () => refetchStorage(),
       'Service Accounts': () => refetchSA(),
@@ -303,7 +367,8 @@ function KubernetesTab() {
     'Clusters': loadingClusters,
     'Nodes': loadingNodes,
     'Pods': loadingPods,
-    'Services': loadingServices,
+    'Deployments': loadingDeployments,
+    'Services': loadingServices || (!!clusterId && loadingClusterServiceDeps),
     'Namespaces': loadingNamespaces,
     'Storage': loadingStorage,
     'Service Accounts': loadingSA,
@@ -312,7 +377,13 @@ function KubernetesTab() {
   const clusters: ComputeEntity[] = clustersData?.items || clustersData?.data || []
   const nodes: ComputeEntity[] = nodesData?.items || nodesData?.data || []
   const pods: ComputeEntity[] = podsData?.items || podsData?.data || []
-  const services: K8sService[] = servicesData?.items || servicesData?.data || []
+  const deployments: ComputeEntity[] = deploymentsData?.items || deploymentsData?.data || []
+  const allServices: K8sService[] = servicesData?.items || servicesData?.data || []
+  const clusterServiceDeps: Dependency[] = clusterServiceDepsData?.items || clusterServiceDepsData?.data || []
+  const clusterServiceIds = new Set(
+    clusterServiceDeps.filter((dep) => dep.source_type === 'service').map((dep) => dep.source_id)
+  )
+  const services: K8sService[] = clusterId ? allServices.filter((s) => clusterServiceIds.has(s.id)) : allServices
   const namespaces: NetworkResource[] = namespacesData?.items || namespacesData?.data || []
   const storage: DataStoreResource[] = storageData?.items || storageData?.data || []
   const serviceAccounts: IdentityResource[] = saData?.items || saData?.data || []
@@ -330,42 +401,81 @@ function KubernetesTab() {
         </button>
       </div>
 
+      {clusterId && (
+        <div className="flex items-center gap-3 px-1 -mt-2">
+          <Ship className="h-4 w-4 text-amber-400 flex-shrink-0" />
+          <span className="text-sm text-slate-300 truncate">
+            Cluster: <span className="font-semibold text-white">{selectedCluster?.name || `#${clusterId}`}</span>
+          </span>
+          <button
+            onClick={clearCluster}
+            className="ml-auto flex-shrink-0 text-xs text-primary-400 hover:text-primary-300 transition-colors"
+          >
+            ← All clusters
+          </button>
+        </div>
+      )}
+
       {isLoading && <LoadingSpinner />}
 
-      {subTab === 'Clusters' && !loadingClusters && (
+      {subTab === 'Clusters' && !loadingClusters && clusterId && (
+        <Card><CardContent>
+          <div className="flex flex-col items-center justify-center py-10 text-slate-400 gap-2">
+            <Ship className="h-10 w-10 text-amber-400 opacity-70" />
+            <p className="text-lg font-medium text-white">{selectedCluster?.name || `Cluster #${clusterId}`}</p>
+            <p className="text-sm text-center max-w-md">
+              Browse the Nodes, Pods, Deployments, or Services tabs above to see this cluster&apos;s resources.
+            </p>
+          </div>
+        </CardContent></Card>
+      )}
+
+      {subTab === 'Clusters' && !loadingClusters && !clusterId && (
         clusters.length === 0 ? (
           <EmptyState icon={Ship} title="No Kubernetes clusters discovered" description="Run a Kubernetes discovery job to see clusters here" />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {clusters.map((cluster) => (
-              <Card
-                key={cluster.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/entities/${cluster.id}`)}
-                onKeyDown={onActivateKey(() => navigate(`/entities/${cluster.id}`))}
-                className="cursor-pointer hover:border-primary-500 transition-colors"
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    <Ship className="h-5 w-5 text-amber-400" />
-                    <h3 className="font-semibold text-white truncate">{cluster.name}</h3>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Type</span>
-                      <span className="text-slate-200">{cluster.sub_type}</span>
+            {clusters.map((cluster) => {
+              const chips = normalizeTags(cluster.tags).slice(0, 2)
+              return (
+                <Card
+                  key={cluster.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => selectCluster(cluster.id)}
+                  onKeyDown={onActivateKey(() => selectCluster(cluster.id))}
+                  className="cursor-pointer hover:border-primary-500 transition-colors"
+                >
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Ship className="h-5 w-5 text-amber-400" />
+                      <h3 className="font-semibold text-white truncate">{cluster.name}</h3>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Organization</span>
-                      <span className="text-slate-200">{cluster.organization_id || '\u2014'}</span>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Type</span>
+                        <span className="text-slate-200">{cluster.sub_type}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Organization</span>
+                        <span className="text-slate-200">{cluster.organization_id || '\u2014'}</span>
+                      </div>
+                      {chips.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {chips.map((chip) => (
+                            <span key={chip.key} className="px-2 py-0.5 text-xs rounded bg-slate-700 text-slate-300">
+                              {chip.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )
       )}
@@ -383,12 +493,14 @@ function KubernetesTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Memory</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Kubelet</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">OS</th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">Labels</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {nodes.map((node) => {
-                  const meta: EntityMetadata = node.attributes?.metadata || {}
+                  const meta: EntityMetadata = node.metadata || {}
+                  const chips = normalizeTags(node.tags).slice(0, 2)
                   return (
                     <tr
                       key={node.id}
@@ -400,6 +512,15 @@ function KubernetesTab() {
                       <td className="py-3 px-4 text-slate-300">{meta.capacity_memory || '\u2014'}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.kubelet_version || '\u2014'}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.os_image || '\u2014'}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex flex-wrap gap-1">
+                          {chips.length > 0 ? chips.map((chip) => (
+                            <span key={chip.key} className="px-1.5 py-0.5 text-xs rounded bg-slate-700 text-slate-300">
+                              {chip.label}
+                            </span>
+                          )) : <span className="text-slate-500">\u2014</span>}
+                        </div>
+                      </td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-1 text-xs rounded-full bg-green-900/50 text-green-400">
                           {(meta.conditions || []).includes('Ready') ? 'Ready' : 'Unknown'}
@@ -427,12 +548,14 @@ function KubernetesTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Node</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">IP</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Containers</th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">Labels</th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">Phase</th>
                 </tr>
               </thead>
               <tbody>
                 {pods.map((pod) => {
-                  const meta: EntityMetadata = pod.attributes?.metadata || {}
+                  const meta: EntityMetadata = pod.metadata || {}
+                  const chips = normalizeTags(pod.tags).slice(0, 2)
                   const phase = meta.phase || 'Unknown'
                   const phaseColor = phase === 'Running'
                     ? 'bg-green-900/50 text-green-400'
@@ -453,6 +576,15 @@ function KubernetesTab() {
                       <td className="py-3 px-4 text-slate-300 font-mono text-xs">{meta.pod_ip || '\u2014'}</td>
                       <td className="py-3 px-4 text-slate-300">{meta.containers_count || 0}</td>
                       <td className="py-3 px-4">
+                        <div className="flex flex-wrap gap-1">
+                          {chips.length > 0 ? chips.map((chip) => (
+                            <span key={chip.key} className="px-1.5 py-0.5 text-xs rounded bg-slate-700 text-slate-300">
+                              {chip.label}
+                            </span>
+                          )) : <span className="text-slate-500">\u2014</span>}
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
                         <span className={`px-2 py-1 text-xs rounded-full ${phaseColor}`}>{phase}</span>
                       </td>
                     </tr>
@@ -460,6 +592,75 @@ function KubernetesTab() {
                 })}
               </tbody>
             </table>
+          </div>
+        )
+      )}
+
+      {subTab === 'Deployments' && !loadingDeployments && (
+        deployments.length === 0 ? (
+          <EmptyState icon={Boxes} title="No Deployments discovered" description="Deployments appear after running Kubernetes discovery" />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {deployments.map((dep) => {
+              const meta: EntityMetadata = dep.metadata || {}
+              const chips = normalizeTags(dep.tags).slice(0, 2)
+              const images = meta.images || []
+              const ready = meta.available_replicas ?? meta.ready_replicas
+              const desired = meta.replicas
+              return (
+                <Card
+                  key={dep.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/entities/${dep.id}`)}
+                  onKeyDown={onActivateKey(() => navigate(`/entities/${dep.id}`))}
+                  className="cursor-pointer hover:border-primary-500 transition-colors"
+                >
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <Boxes className="h-5 w-5 text-amber-400" />
+                      <h3 className="font-semibold text-white truncate">{dep.name}</h3>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Namespace</span>
+                        <span className="text-slate-200">{meta.namespace || '\u2014'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Replicas</span>
+                        <span className="text-slate-200">
+                          {ready ?? '\u2014'}/{desired ?? '\u2014'}
+                        </span>
+                      </div>
+                      {images.length > 0 && (
+                        <div>
+                          <span className="text-slate-400 block mb-1">Images</span>
+                          <div className="space-y-0.5">
+                            {images.slice(0, 2).map((img, i) => (
+                              <p key={i} className="text-xs text-slate-300 font-mono truncate">{img}</p>
+                            ))}
+                            {images.length > 2 && (
+                              <p className="text-xs text-slate-500">+{images.length - 2} more</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {chips.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {chips.map((chip) => (
+                            <span key={chip.key} className="px-2 py-0.5 text-xs rounded bg-slate-700 text-slate-300">
+                              {chip.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )
       )}

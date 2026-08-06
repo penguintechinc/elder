@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Edit, Trash2, ArrowRight, Plus, X, Copy } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, ArrowRight, Plus, X, Copy, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import type { Entity, Dependency, DependencyType, Issue } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
+import { normalizeTags } from '@/lib/entityTags'
 
 interface MetadataField {
   id: number
@@ -46,7 +47,7 @@ export default function EntityDetail() {
   const queryClient = useQueryClient()
   const [showAddDependency, setShowAddDependency] = useState(false)
 
-  const { data: entity, isLoading: entityLoading } = useQuery({
+  const { data: entity, isLoading: entityLoading } = useQuery<Entity>({
     queryKey: ['entity', id],
     queryFn: () => api.getEntity(parseInt(id!)),
     enabled: !!id,
@@ -172,6 +173,17 @@ export default function EntityDetail() {
     )
   }
 
+  const tagChips = normalizeTags(entity.tags)
+  const location = entity.metadata?.location
+  const locationLabel = location
+    ? [location.city, location.state, location.country].filter(Boolean).join(', ')
+    : undefined
+  // Everything in entity.metadata except `location` (shown separately above)
+  // — structural discovery data (namespace, capacity_cpu, images, etc).
+  const discoveryMetadataEntries = Object.entries(entity.metadata || {}).filter(
+    ([key]) => key !== 'location'
+  )
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -293,6 +305,37 @@ export default function EntityDetail() {
                     </span>
                   </dd>
                 </div>
+                {tagChips.length > 0 && (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-400">Labels</dt>
+                    <dd className="mt-1 flex flex-wrap gap-1.5">
+                      {tagChips.map((chip) => (
+                        <span
+                          key={chip.key}
+                          className="px-2 py-0.5 text-xs font-medium bg-slate-700 text-slate-200 rounded"
+                        >
+                          {chip.label}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+                {location && (
+                  <div>
+                    <dt className="text-sm font-medium text-slate-400">Location</dt>
+                    <dd className="mt-1 flex items-start gap-1.5 text-sm text-white">
+                      <MapPin className="w-3.5 h-3.5 mt-0.5 text-primary-400 flex-shrink-0" />
+                      <span>
+                        {locationLabel || 'Unknown'}
+                        {(location.latitude !== undefined && location.longitude !== undefined) && (
+                          <span className="block text-xs text-slate-400 mt-0.5">
+                            {location.latitude}, {location.longitude}
+                          </span>
+                        )}
+                      </span>
+                    </dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-sm font-medium text-slate-400">Created</dt>
                   <dd className="mt-1 text-sm text-white">
@@ -325,6 +368,23 @@ export default function EntityDetail() {
               </div>
             </CardHeader>
             <CardContent>
+              {discoveryMetadataEntries.length > 0 && (
+                <>
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                    Discovery Data
+                  </h3>
+                  <dl className="grid grid-cols-1 gap-4 mb-6">
+                    {discoveryMetadataEntries.map(([key, value]) => (
+                      <div key={key}>
+                        <dt className="text-sm font-medium text-slate-400">{key}</dt>
+                        <dd className="mt-1 text-sm text-white break-words">
+                          {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              )}
               {metadata?.items && metadata.items.length > 0 ? (
                 <dl className="grid grid-cols-1 gap-4">
                   {metadata.items.map((field: MetadataField) => (
@@ -339,7 +399,9 @@ export default function EntityDetail() {
                   ))}
                 </dl>
               ) : (
-                <p className="text-sm text-slate-400">No metadata defined</p>
+                discoveryMetadataEntries.length === 0 && (
+                  <p className="text-sm text-slate-400">No metadata defined</p>
+                )
               )}
             </CardContent>
           </Card>
