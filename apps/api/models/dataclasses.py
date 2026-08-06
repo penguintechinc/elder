@@ -314,8 +314,8 @@ class IssueDTO:
     status: str
     priority: str
     issue_type: str
-    created_by_id: int
-    assigned_to_id: Optional[int]
+    reporter_id: int
+    assignee_id: Optional[int]
     resource_type: str
     resource_id: int
     is_incident: int

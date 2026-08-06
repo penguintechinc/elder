@@ -146,11 +146,11 @@ async def list_issues():
 
         if request.args.get("assignee_id"):
             assignee_id = request.args.get("assignee_id", type=int)
-            query &= db.issues.assigned_to_id == assignee_id
+            query &= db.issues.assignee_id == assignee_id
 
         if request.args.get("reporter_id"):
             reporter_id = request.args.get("reporter_id", type=int)
-            query &= db.issues.created_by_id == reporter_id
+            query &= db.issues.reporter_id == reporter_id
 
         # Get count and rows
         total = db(query).count()
@@ -231,9 +231,9 @@ async def create_issue(body: CreateIssueRequest):
             description=body.description,
             status=(body.status or "open").upper(),
             priority=(body.priority or "medium").upper(),
-            issue_type=body.issue_type,
-            created_by_id=current_user_id,
-            assigned_to_id=body.assignee_id,
+            issue_type=(body.issue_type or "other").upper(),
+            reporter_id=current_user_id,
+            assignee_id=body.assignee_id,
             resource_type="organization",
             resource_id=body.organization_id,
             is_incident=body.is_incident,
@@ -364,7 +364,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.priority is not None:
             update_fields["priority"] = body.priority
         if body.assignee_id is not None:
-            update_fields["assigned_to_id"] = body.assignee_id
+            update_fields["assignee_id"] = body.assignee_id
         if body.organization_id is not None:
             update_fields["resource_id"] = body.organization_id
             update_fields["resource_type"] = "organization"

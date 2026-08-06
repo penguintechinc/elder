@@ -90,9 +90,9 @@ class TestCreateIdentityRegression:
         )
 
         body = await response.get_data()
-        assert response.status_code == 201, (
-            f"expected 201, got {response.status_code}: {body}"
-        )
+        assert (
+            response.status_code == 201
+        ), f"expected 201, got {response.status_code}: {body}"
         data = json.loads(body)
         assert data["username"] == username
 
@@ -167,9 +167,9 @@ class TestCreateServiceRegression:
         )
 
         body = await response.get_data()
-        assert response.status_code == 201, (
-            f"expected 201, got {response.status_code}: {body}"
-        )
+        assert (
+            response.status_code == 201
+        ), f"expected 201, got {response.status_code}: {body}"
         data = json.loads(body)
         assert data["name"] == "regress-service"
 
@@ -195,7 +195,9 @@ class TestCreateDependencyRegression:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_create_dependency_returns_201(self, mock_get_user, async_client, app):
+    async def test_create_dependency_returns_201(
+        self, mock_get_user, async_client, app
+    ):
         async with app.app_context():
             db = current_app.db
             tenant_id = _get_or_create_tenant(
@@ -221,9 +223,9 @@ class TestCreateDependencyRegression:
         )
 
         body = await response.get_data()
-        assert response.status_code == 201, (
-            f"expected 201, got {response.status_code}: {body}"
-        )
+        assert (
+            response.status_code == 201
+        ), f"expected 201, got {response.status_code}: {body}"
         data = json.loads(body)
         assert data["source_id"] == source_org_id
         assert data["target_id"] == target_org_id
@@ -262,8 +264,52 @@ class TestCreateDataStoreRegression:
         )
 
         body = await response.get_data()
-        assert response.status_code == 201, (
-            f"expected 201, got {response.status_code}: {body}"
-        )
+        assert (
+            response.status_code == 201
+        ), f"expected 201, got {response.status_code}: {body}"
         data = json.loads(body)
         assert data["size_bytes"] == large_size_bytes
+
+
+class TestCreateIssueRegression:
+    """regression: issue create used created_by_id/assigned_to_id (wrong columns —
+    real columns are reporter_id/assignee_id) and didn't upper-case issue_type for
+    the Postgres enum, so every POST /api/v1/issues 500'd."""
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_issue_returns_201(self, mock_get_user, async_client, app):
+        async with app.app_context():
+            db = current_app.db
+            tenant_id = _get_or_create_tenant(
+                db, "create-regress-issues", "Create Regress Issues"
+            )
+            org_id = _create_org(db, tenant_id, "Issues Regress Org")
+
+        mock_get_user.return_value = _superuser_mock(tenant_id)
+
+        title = f"regress-issue-{uuid.uuid4().hex[:8]}"
+        payload = {
+            "title": title,
+            "organization_id": org_id,
+            "description": "regression issue",
+            "priority": "high",
+            # default issue_type "other" must be upper-cased to match the enum
+        }
+
+        response = await async_client.post(
+            "/api/v1/issues",
+            json=payload,
+            headers={"Authorization": "Bearer fake-token"},
+        )
+
+        body = await response.get_data()
+        assert (
+            response.status_code == 201
+        ), f"expected 201, got {response.status_code}: {body}"
+        async with app.app_context():
+            db = current_app.db
+            row = db(db.issues.title == title).select().first()
+            assert row is not None
+            # reporter_id is set from the authenticated user, not the request
+            assert row.reporter_id == 1
