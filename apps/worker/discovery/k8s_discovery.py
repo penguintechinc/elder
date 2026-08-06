@@ -100,9 +100,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
                 spec = dep.spec
                 status = dep.status
                 selector = (
-                    (spec.selector.match_labels or {})
-                    if spec and spec.selector
-                    else {}
+                    (spec.selector.match_labels or {}) if spec and spec.selector else {}
                 )
                 images = (
                     [c.image for c in spec.template.spec.containers]
