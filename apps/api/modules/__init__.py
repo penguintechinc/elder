@@ -279,7 +279,14 @@ def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
         tickets,
     )
 
-    api_prefix = "/api/v1"
+    # Namespace all helpdesk resources under /api/v1/helpdesk. This (a) matches
+    # the frontend api client (web/src/lib/api.ts calls /api/v1/helpdesk/*) and
+    # (b) keeps helpdesk's generic resource names (dashboard, teams, companies,
+    # contacts) from colliding with core routes. The missing /helpdesk segment
+    # 404'd the entire module — ticket list AND the dashboard-stats endpoint.
+    # Module access control keys on blueprint name (main.py), not the URL path,
+    # so re-prefixing is safe.
+    api_prefix = "/api/v1/helpdesk"
     return [
         (tickets.bp, f"{api_prefix}/tickets"),
         (messages.bp, f"{api_prefix}/tickets"),

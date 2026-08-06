@@ -20,7 +20,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_list_email_accounts_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/email-accounts with empty list."""
+        """Test GET /api/v1/helpdesk/email-accounts with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -34,7 +34,7 @@ class TestHelpDeskEmailAccountsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/email-accounts",
+            "/api/v1/helpdesk/email-accounts",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -49,7 +49,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_create_email_account_smtp_imap(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/email-accounts with SMTP/IMAP provider."""
+        """Test POST /api/v1/helpdesk/email-accounts with SMTP/IMAP provider."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -79,7 +79,7 @@ class TestHelpDeskEmailAccountsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/email-accounts",
+            "/api/v1/helpdesk/email-accounts",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -98,7 +98,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_create_email_account_gmail_api(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/email-accounts with Gmail API provider."""
+        """Test POST /api/v1/helpdesk/email-accounts with Gmail API provider."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -116,7 +116,7 @@ class TestHelpDeskEmailAccountsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/email-accounts",
+            "/api/v1/helpdesk/email-accounts",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -131,7 +131,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_create_email_account_missing_email(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test POST /api/v1/email-accounts without email_address."""
+        """Test POST /api/v1/helpdesk/email-accounts without email_address."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -142,7 +142,7 @@ class TestHelpDeskEmailAccountsAPI:
         payload = {"provider": "smtp_imap"}
 
         response = await async_client.post(
-            "/api/v1/email-accounts",
+            "/api/v1/helpdesk/email-accounts",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -154,7 +154,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_get_email_account(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/email-accounts/:id."""
+        """Test GET /api/v1/helpdesk/email-accounts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -190,7 +190,7 @@ class TestHelpDeskEmailAccountsAPI:
             db.commit()
 
         response = await async_client.get(
-            f"/api/v1/email-accounts/{account_id}",
+            f"/api/v1/helpdesk/email-accounts/{account_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -207,7 +207,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_get_email_account_not_found(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test GET /api/v1/email-accounts/:id with non-existent account."""
+        """Test GET /api/v1/helpdesk/email-accounts/:id with non-existent account."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -216,7 +216,7 @@ class TestHelpDeskEmailAccountsAPI:
         token = generate_token(tenant_id=1, scopes=["helpdesk:read"])
 
         response = await async_client.get(
-            "/api/v1/email-accounts/9999",
+            "/api/v1/helpdesk/email-accounts/9999",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -227,7 +227,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_update_email_account(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PATCH /api/v1/email-accounts/:id."""
+        """Test PATCH /api/v1/helpdesk/email-accounts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -260,7 +260,7 @@ class TestHelpDeskEmailAccountsAPI:
         }
 
         response = await async_client.patch(
-            f"/api/v1/email-accounts/{account_id}",
+            f"/api/v1/helpdesk/email-accounts/{account_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -276,7 +276,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_delete_email_account(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/email-accounts/:id."""
+        """Test DELETE /api/v1/helpdesk/email-accounts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -303,7 +303,7 @@ class TestHelpDeskEmailAccountsAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/email-accounts/{account_id}",
+            f"/api/v1/helpdesk/email-accounts/{account_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -314,7 +314,7 @@ class TestHelpDeskEmailAccountsAPI:
     async def test_test_connection(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/email-accounts/:id/test-connection."""
+        """Test POST /api/v1/helpdesk/email-accounts/:id/test-connection."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -345,7 +345,7 @@ class TestHelpDeskEmailAccountsAPI:
             db.commit()
 
         response = await async_client.post(
-            f"/api/v1/email-accounts/{account_id}/test-connection",
+            f"/api/v1/helpdesk/email-accounts/{account_id}/test-connection",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -390,7 +390,7 @@ class TestHelpDeskEmailAccountsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/email-accounts?page=1&per_page=2",
+            "/api/v1/helpdesk/email-accounts?page=1&per_page=2",
             headers={"Authorization": f"Bearer {token_tenant1}"},
         )
 
@@ -408,7 +408,7 @@ class TestHelpDeskTicketFormsAPI:
     async def test_list_forms_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/ticket-forms with empty list."""
+        """Test GET /api/v1/helpdesk/ticket-forms with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -422,7 +422,7 @@ class TestHelpDeskTicketFormsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/ticket-forms",
+            "/api/v1/helpdesk/ticket-forms",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -435,7 +435,7 @@ class TestHelpDeskTicketFormsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_form(self, mock_get_user, async_client, generate_token, app):
-        """Test POST /api/v1/ticket-forms."""
+        """Test POST /api/v1/helpdesk/ticket-forms."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -472,7 +472,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/ticket-forms",
+            "/api/v1/helpdesk/ticket-forms",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -491,7 +491,7 @@ class TestHelpDeskTicketFormsAPI:
     async def test_create_form_duplicate_slug(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/ticket-forms with duplicate slug (409)."""
+        """Test POST /api/v1/helpdesk/ticket-forms with duplicate slug (409)."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -524,7 +524,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/ticket-forms",
+            "/api/v1/helpdesk/ticket-forms",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -534,7 +534,7 @@ class TestHelpDeskTicketFormsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_get_form(self, mock_get_user, async_client, generate_token, app):
-        """Test GET /api/v1/ticket-forms/:id."""
+        """Test GET /api/v1/helpdesk/ticket-forms/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -565,7 +565,7 @@ class TestHelpDeskTicketFormsAPI:
             db.commit()
 
         response = await async_client.get(
-            f"/api/v1/ticket-forms/{form_id}",
+            f"/api/v1/helpdesk/ticket-forms/{form_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -579,7 +579,7 @@ class TestHelpDeskTicketFormsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_update_form(self, mock_get_user, async_client, generate_token, app):
-        """Test PATCH /api/v1/ticket-forms/:id."""
+        """Test PATCH /api/v1/helpdesk/ticket-forms/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -614,7 +614,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.patch(
-            f"/api/v1/ticket-forms/{form_id}",
+            f"/api/v1/helpdesk/ticket-forms/{form_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -628,7 +628,7 @@ class TestHelpDeskTicketFormsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_delete_form(self, mock_get_user, async_client, generate_token, app):
-        """Test DELETE /api/v1/ticket-forms/:id."""
+        """Test DELETE /api/v1/helpdesk/ticket-forms/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -656,7 +656,7 @@ class TestHelpDeskTicketFormsAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/ticket-forms/{form_id}",
+            f"/api/v1/helpdesk/ticket-forms/{form_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -664,7 +664,7 @@ class TestHelpDeskTicketFormsAPI:
 
     @pytest.mark.asyncio
     async def test_get_public_form(self, async_client, app):
-        """Test GET /api/v1/ticket-forms/public/:slug (public, no auth)."""
+        """Test GET /api/v1/helpdesk/ticket-forms/public/:slug (public, no auth)."""
         async with app.app_context():
             db = current_app.db
             db((db.hd_ticket_forms.slug == "public-form")).delete()
@@ -687,7 +687,7 @@ class TestHelpDeskTicketFormsAPI:
             )
             db.commit()
 
-        response = await async_client.get("/api/v1/ticket-forms/public/public-form")
+        response = await async_client.get("/api/v1/helpdesk/ticket-forms/public/public-form")
 
         assert response.status_code == 200
         data = json.loads(await response.get_data())
@@ -699,16 +699,16 @@ class TestHelpDeskTicketFormsAPI:
 
     @pytest.mark.asyncio
     async def test_get_public_form_not_found(self, async_client):
-        """Test GET /api/v1/ticket-forms/public/:slug for non-existent form."""
+        """Test GET /api/v1/helpdesk/ticket-forms/public/:slug for non-existent form."""
         response = await async_client.get(
-            "/api/v1/ticket-forms/public/nonexistent-slug"
+            "/api/v1/helpdesk/ticket-forms/public/nonexistent-slug"
         )
 
         assert response.status_code == 404
 
     @pytest.mark.asyncio
     async def test_submit_public_form_without_captcha(self, async_client, app):
-        """Test POST /api/v1/ticket-forms/public/:slug/submit without CAPTCHA token."""
+        """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit without CAPTCHA token."""
         async with app.app_context():
             db = current_app.db
             db((db.hd_ticket_forms.slug == "form-with-captcha")).delete()
@@ -742,7 +742,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/ticket-forms/public/form-with-captcha/submit",
+            "/api/v1/helpdesk/ticket-forms/public/form-with-captcha/submit",
             json=payload,
         )
 
@@ -753,7 +753,7 @@ class TestHelpDeskTicketFormsAPI:
 
     @pytest.mark.asyncio
     async def test_submit_public_form_missing_required_field(self, async_client, app):
-        """Test POST /api/v1/ticket-forms/public/:slug/submit with missing required field."""
+        """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit with missing required field."""
         async with app.app_context():
             db = current_app.db
             db((db.hd_ticket_forms.slug == "required-field-form")).delete()
@@ -786,7 +786,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/ticket-forms/public/required-field-form/submit",
+            "/api/v1/helpdesk/ticket-forms/public/required-field-form/submit",
             json=payload,
         )
 
@@ -794,7 +794,7 @@ class TestHelpDeskTicketFormsAPI:
 
     @pytest.mark.asyncio
     async def test_submit_public_form_creates_ticket(self, async_client, app):
-        """Test POST /api/v1/ticket-forms/public/:slug/submit creates a ticket."""
+        """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit creates a ticket."""
         async with app.app_context():
             db = current_app.db
             db((db.hd_ticket_forms.slug == "submit-form")).delete()
@@ -833,7 +833,7 @@ class TestHelpDeskTicketFormsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/ticket-forms/public/submit-form/submit",
+            "/api/v1/helpdesk/ticket-forms/public/submit-form/submit",
             json=payload,
         )
 
@@ -905,7 +905,7 @@ class TestHelpDeskTicketFormsAPI:
 
         # Filter by is_active=true
         response = await async_client.get(
-            "/api/v1/ticket-forms?is_active=true",
+            "/api/v1/helpdesk/ticket-forms?is_active=true",
             headers={"Authorization": f"Bearer {token_tenant1}"},
         )
 

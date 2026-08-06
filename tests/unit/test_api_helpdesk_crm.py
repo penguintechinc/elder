@@ -34,7 +34,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_list_companies_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/companies with empty list."""
+        """Test GET /api/v1/helpdesk/companies with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -48,7 +48,7 @@ class TestHelpDeskCompaniesAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/companies",
+            "/api/v1/helpdesk/companies",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -63,7 +63,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_create_company(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/companies."""
+        """Test POST /api/v1/helpdesk/companies."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -94,7 +94,7 @@ class TestHelpDeskCompaniesAPI:
                     mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
 
                     response = await async_client.post(
-                        "/api/v1/companies",
+                        "/api/v1/helpdesk/companies",
                         json=payload,
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -115,7 +115,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_create_company_missing_name(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test POST /api/v1/companies with missing name."""
+        """Test POST /api/v1/helpdesk/companies with missing name."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -126,7 +126,7 @@ class TestHelpDeskCompaniesAPI:
         payload = {"domain": "example.com"}
 
         response = await async_client.post(
-            "/api/v1/companies",
+            "/api/v1/helpdesk/companies",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -136,7 +136,7 @@ class TestHelpDeskCompaniesAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_get_company(self, mock_get_user, async_client, generate_token, app):
-        """Test GET /api/v1/companies/:id."""
+        """Test GET /api/v1/helpdesk/companies/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -164,7 +164,7 @@ class TestHelpDeskCompaniesAPI:
             db.commit()
 
         response = await async_client.get(
-            f"/api/v1/companies/{company_id}",
+            f"/api/v1/helpdesk/companies/{company_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -179,7 +179,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_get_company_not_found(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test GET /api/v1/companies/:id with non-existent ID."""
+        """Test GET /api/v1/helpdesk/companies/:id with non-existent ID."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -188,7 +188,7 @@ class TestHelpDeskCompaniesAPI:
         token = generate_token(tenant_id=1, scopes=["helpdesk:read"])
 
         response = await async_client.get(
-            "/api/v1/companies/99999",
+            "/api/v1/helpdesk/companies/99999",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -199,7 +199,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_update_company(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PATCH /api/v1/companies/:id."""
+        """Test PATCH /api/v1/helpdesk/companies/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -228,7 +228,7 @@ class TestHelpDeskCompaniesAPI:
         }
 
         response = await async_client.patch(
-            f"/api/v1/companies/{company_id}",
+            f"/api/v1/helpdesk/companies/{company_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -244,7 +244,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_delete_company(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/companies/:id."""
+        """Test DELETE /api/v1/helpdesk/companies/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -266,7 +266,7 @@ class TestHelpDeskCompaniesAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/companies/{company_id}",
+            f"/api/v1/helpdesk/companies/{company_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -283,7 +283,7 @@ class TestHelpDeskCompaniesAPI:
     async def test_list_companies_filter_by_name(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/companies with name filter."""
+        """Test GET /api/v1/helpdesk/companies with name filter."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -313,7 +313,7 @@ class TestHelpDeskCompaniesAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/companies?name=Acme",
+            "/api/v1/helpdesk/companies?name=Acme",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -345,7 +345,7 @@ class TestHelpDeskCompaniesAPI:
 
         # Tenant 1 should see empty list
         response = await async_client.get(
-            "/api/v1/companies",
+            "/api/v1/helpdesk/companies",
             headers={"Authorization": f"Bearer {token_tenant1}"},
         )
 
@@ -362,7 +362,7 @@ class TestHelpDeskContactsAPI:
     async def test_list_contacts_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/contacts with empty list."""
+        """Test GET /api/v1/helpdesk/contacts with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -376,7 +376,7 @@ class TestHelpDeskContactsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/contacts",
+            "/api/v1/helpdesk/contacts",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -391,7 +391,7 @@ class TestHelpDeskContactsAPI:
     async def test_create_contact(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/contacts."""
+        """Test POST /api/v1/helpdesk/contacts."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -434,7 +434,7 @@ class TestHelpDeskContactsAPI:
                     mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
 
                     response = await async_client.post(
-                        "/api/v1/contacts",
+                        "/api/v1/helpdesk/contacts",
                         json=payload,
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -453,7 +453,7 @@ class TestHelpDeskContactsAPI:
     async def test_create_contact_missing_email(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test POST /api/v1/contacts with missing email."""
+        """Test POST /api/v1/helpdesk/contacts with missing email."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -464,7 +464,7 @@ class TestHelpDeskContactsAPI:
         payload = {"first_name": "John", "last_name": "Doe"}
 
         response = await async_client.post(
-            "/api/v1/contacts",
+            "/api/v1/helpdesk/contacts",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -474,7 +474,7 @@ class TestHelpDeskContactsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_get_contact(self, mock_get_user, async_client, generate_token, app):
-        """Test GET /api/v1/contacts/:id."""
+        """Test GET /api/v1/helpdesk/contacts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -499,7 +499,7 @@ class TestHelpDeskContactsAPI:
             db.commit()
 
         response = await async_client.get(
-            f"/api/v1/contacts/{contact_id}",
+            f"/api/v1/helpdesk/contacts/{contact_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -514,7 +514,7 @@ class TestHelpDeskContactsAPI:
     async def test_update_contact(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PATCH /api/v1/contacts/:id."""
+        """Test PATCH /api/v1/helpdesk/contacts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -543,7 +543,7 @@ class TestHelpDeskContactsAPI:
         }
 
         response = await async_client.patch(
-            f"/api/v1/contacts/{contact_id}",
+            f"/api/v1/helpdesk/contacts/{contact_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -559,7 +559,7 @@ class TestHelpDeskContactsAPI:
     async def test_delete_contact(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/contacts/:id."""
+        """Test DELETE /api/v1/helpdesk/contacts/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -581,7 +581,7 @@ class TestHelpDeskContactsAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/contacts/{contact_id}",
+            f"/api/v1/helpdesk/contacts/{contact_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -598,7 +598,7 @@ class TestHelpDeskContactsAPI:
     async def test_list_contacts_filter_by_email(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/contacts with email filter."""
+        """Test GET /api/v1/helpdesk/contacts with email filter."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -627,7 +627,7 @@ class TestHelpDeskContactsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/contacts?email=alice",
+            "/api/v1/helpdesk/contacts?email=alice",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -659,7 +659,7 @@ class TestHelpDeskContactsAPI:
 
         # Tenant 1 should see empty list
         response = await async_client.get(
-            "/api/v1/contacts",
+            "/api/v1/helpdesk/contacts",
             headers={"Authorization": f"Bearer {token_tenant1}"},
         )
 
@@ -707,7 +707,7 @@ class TestHelpDeskContactsAPI:
 
         # Fetch contact and verify company linkage
         response = await async_client.get(
-            f"/api/v1/contacts/{contact_id}",
+            f"/api/v1/helpdesk/contacts/{contact_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -717,7 +717,7 @@ class TestHelpDeskContactsAPI:
 
         # List contacts filtered by company
         response = await async_client.get(
-            f"/api/v1/contacts?company_id={company_id}",
+            f"/api/v1/helpdesk/contacts?company_id={company_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 

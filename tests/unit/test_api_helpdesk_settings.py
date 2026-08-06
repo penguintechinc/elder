@@ -21,7 +21,7 @@ class TestHelpDeskSLAPoliciesAPI:
     async def test_list_sla_policies_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/sla-policies with empty list."""
+        """Test GET /api/v1/helpdesk/sla-policies with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -37,7 +37,7 @@ class TestHelpDeskSLAPoliciesAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/sla-policies",
+            "/api/v1/helpdesk/sla-policies",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -52,7 +52,7 @@ class TestHelpDeskSLAPoliciesAPI:
     async def test_create_sla_policy(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/sla-policies."""
+        """Test POST /api/v1/helpdesk/sla-policies."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -70,7 +70,7 @@ class TestHelpDeskSLAPoliciesAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/sla-policies",
+            "/api/v1/helpdesk/sla-policies",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -89,7 +89,7 @@ class TestHelpDeskSLAPoliciesAPI:
     async def test_create_sla_policy_missing_name(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/sla-policies with missing name."""
+        """Test POST /api/v1/helpdesk/sla-policies with missing name."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -104,7 +104,7 @@ class TestHelpDeskSLAPoliciesAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/sla-policies",
+            "/api/v1/helpdesk/sla-policies",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -116,7 +116,7 @@ class TestHelpDeskSLAPoliciesAPI:
     async def test_update_sla_policy(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PUT /api/v1/sla-policies/<id>."""
+        """Test PUT /api/v1/helpdesk/sla-policies/<id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -144,7 +144,7 @@ class TestHelpDeskSLAPoliciesAPI:
         }
 
         response = await async_client.put(
-            f"/api/v1/sla-policies/{policy_id}",
+            f"/api/v1/helpdesk/sla-policies/{policy_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -159,7 +159,7 @@ class TestHelpDeskSLAPoliciesAPI:
     async def test_delete_sla_policy(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/sla-policies/<id>."""
+        """Test DELETE /api/v1/helpdesk/sla-policies/<id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -181,7 +181,7 @@ class TestHelpDeskSLAPoliciesAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/sla-policies/{policy_id}",
+            f"/api/v1/helpdesk/sla-policies/{policy_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -216,14 +216,14 @@ class TestHelpDeskSLAPoliciesAPI:
 
         # Tenant 2 tries to read tenant 1 policy
         response = await async_client.get(
-            f"/api/v1/sla-policies/{policy_id}",
+            f"/api/v1/helpdesk/sla-policies/{policy_id}",
             headers={"Authorization": f"Bearer {token_tenant2}"},
         )
 
         # Should not find it (404) because tenant 2 is querying and tenant 1 policy is out of scope
         # Actually, the list endpoint won't include it, so let's try getting the list
         response = await async_client.get(
-            "/api/v1/sla-policies",
+            "/api/v1/helpdesk/sla-policies",
             headers={"Authorization": f"Bearer {token_tenant2}"},
         )
 
@@ -234,7 +234,7 @@ class TestHelpDeskSLAPoliciesAPI:
     @pytest.mark.asyncio
     async def test_sla_policy_no_auth(self, async_client):
         """Test that unauthenticated requests are rejected."""
-        response = await async_client.get("/api/v1/sla-policies")
+        response = await async_client.get("/api/v1/helpdesk/sla-policies")
         assert response.status_code == 401
 
 
@@ -246,7 +246,7 @@ class TestHelpDeskCannedResponsesAPI:
     async def test_list_canned_responses_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/canned-responses with empty list."""
+        """Test GET /api/v1/helpdesk/canned-responses with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -261,7 +261,7 @@ class TestHelpDeskCannedResponsesAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/canned-responses",
+            "/api/v1/helpdesk/canned-responses",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -276,7 +276,7 @@ class TestHelpDeskCannedResponsesAPI:
     async def test_create_canned_response(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/canned-responses."""
+        """Test POST /api/v1/helpdesk/canned-responses."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -292,7 +292,7 @@ class TestHelpDeskCannedResponsesAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/canned-responses",
+            "/api/v1/helpdesk/canned-responses",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -310,7 +310,7 @@ class TestHelpDeskCannedResponsesAPI:
     async def test_create_canned_response_missing_title(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/canned-responses with missing title."""
+        """Test POST /api/v1/helpdesk/canned-responses with missing title."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -324,7 +324,7 @@ class TestHelpDeskCannedResponsesAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/canned-responses",
+            "/api/v1/helpdesk/canned-responses",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -336,7 +336,7 @@ class TestHelpDeskCannedResponsesAPI:
     async def test_update_canned_response(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PUT /api/v1/canned-responses/<id>."""
+        """Test PUT /api/v1/helpdesk/canned-responses/<id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -364,7 +364,7 @@ class TestHelpDeskCannedResponsesAPI:
         }
 
         response = await async_client.put(
-            f"/api/v1/canned-responses/{response_id}",
+            f"/api/v1/helpdesk/canned-responses/{response_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -379,7 +379,7 @@ class TestHelpDeskCannedResponsesAPI:
     async def test_delete_canned_response(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/canned-responses/<id>."""
+        """Test DELETE /api/v1/helpdesk/canned-responses/<id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -402,7 +402,7 @@ class TestHelpDeskCannedResponsesAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/canned-responses/{response_id}",
+            f"/api/v1/helpdesk/canned-responses/{response_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -436,7 +436,7 @@ class TestHelpDeskCannedResponsesAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/canned-responses",
+            "/api/v1/helpdesk/canned-responses",
             headers={"Authorization": f"Bearer {token_tenant2}"},
         )
 
@@ -447,7 +447,7 @@ class TestHelpDeskCannedResponsesAPI:
     @pytest.mark.asyncio
     async def test_canned_response_no_auth(self, async_client):
         """Test that unauthenticated requests are rejected."""
-        response = await async_client.get("/api/v1/canned-responses")
+        response = await async_client.get("/api/v1/helpdesk/canned-responses")
         assert response.status_code == 401
 
 
@@ -459,7 +459,7 @@ class TestHelpDeskTeamsAPI:
     async def test_list_teams_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/teams with empty list."""
+        """Test GET /api/v1/helpdesk/teams with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -474,7 +474,7 @@ class TestHelpDeskTeamsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/teams",
+            "/api/v1/helpdesk/teams",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -487,7 +487,7 @@ class TestHelpDeskTeamsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_team(self, mock_get_user, async_client, generate_token, app):
-        """Test POST /api/v1/teams."""
+        """Test POST /api/v1/helpdesk/teams."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -501,7 +501,7 @@ class TestHelpDeskTeamsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/teams",
+            "/api/v1/helpdesk/teams",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -518,7 +518,7 @@ class TestHelpDeskTeamsAPI:
     async def test_create_team_missing_name(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/teams with missing name."""
+        """Test POST /api/v1/helpdesk/teams with missing name."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -531,7 +531,7 @@ class TestHelpDeskTeamsAPI:
         }
 
         response = await async_client.post(
-            "/api/v1/teams",
+            "/api/v1/helpdesk/teams",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -543,7 +543,7 @@ class TestHelpDeskTeamsAPI:
     async def test_get_team_with_members(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/teams/<id> with members."""
+        """Test GET /api/v1/helpdesk/teams/<id> with members."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -591,7 +591,7 @@ class TestHelpDeskTeamsAPI:
             db.commit()
 
         response = await async_client.get(
-            f"/api/v1/teams/{team_id}",
+            f"/api/v1/helpdesk/teams/{team_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -606,7 +606,7 @@ class TestHelpDeskTeamsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_update_team(self, mock_get_user, async_client, generate_token, app):
-        """Test PUT /api/v1/teams/<id>."""
+        """Test PUT /api/v1/helpdesk/teams/<id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -632,7 +632,7 @@ class TestHelpDeskTeamsAPI:
         }
 
         response = await async_client.put(
-            f"/api/v1/teams/{team_id}",
+            f"/api/v1/helpdesk/teams/{team_id}",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -646,7 +646,7 @@ class TestHelpDeskTeamsAPI:
     async def test_add_team_member(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/teams/<id>/members."""
+        """Test POST /api/v1/helpdesk/teams/<id>/members."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -692,7 +692,7 @@ class TestHelpDeskTeamsAPI:
         }
 
         response = await async_client.post(
-            f"/api/v1/teams/{team_id}/members",
+            f"/api/v1/helpdesk/teams/{team_id}/members",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -708,7 +708,7 @@ class TestHelpDeskTeamsAPI:
     async def test_remove_team_member(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/teams/<team_id>/members/<identity_id>."""
+        """Test DELETE /api/v1/helpdesk/teams/<team_id>/members/<identity_id>."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -756,7 +756,7 @@ class TestHelpDeskTeamsAPI:
             db.commit()
 
         response = await async_client.delete(
-            f"/api/v1/teams/{team_id}/members/{identity_id}",
+            f"/api/v1/helpdesk/teams/{team_id}/members/{identity_id}",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -789,7 +789,7 @@ class TestHelpDeskTeamsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/teams",
+            "/api/v1/helpdesk/teams",
             headers={"Authorization": f"Bearer {token_tenant2}"},
         )
 
@@ -800,5 +800,5 @@ class TestHelpDeskTeamsAPI:
     @pytest.mark.asyncio
     async def test_teams_no_auth(self, async_client):
         """Test that unauthenticated requests are rejected."""
-        response = await async_client.get("/api/v1/teams")
+        response = await async_client.get("/api/v1/helpdesk/teams")
         assert response.status_code == 401

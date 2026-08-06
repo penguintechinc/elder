@@ -21,7 +21,7 @@ class TestHelpDeskTicketsAPI:
     async def test_list_tickets_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/tickets with empty list."""
+        """Test GET /api/v1/helpdesk/tickets with empty list."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -37,7 +37,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/tickets",
+            "/api/v1/helpdesk/tickets",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -52,7 +52,7 @@ class TestHelpDeskTicketsAPI:
     async def test_create_ticket(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/tickets."""
+        """Test POST /api/v1/helpdesk/tickets."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -98,7 +98,7 @@ class TestHelpDeskTicketsAPI:
                     mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
 
                     response = await async_client.post(
-                        "/api/v1/tickets",
+                        "/api/v1/helpdesk/tickets",
                         json=payload,
                         headers={"Authorization": f"Bearer {token}"},
                     )
@@ -116,7 +116,7 @@ class TestHelpDeskTicketsAPI:
     async def test_create_ticket_missing_subject(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test POST /api/v1/tickets with missing subject."""
+        """Test POST /api/v1/helpdesk/tickets with missing subject."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -127,7 +127,7 @@ class TestHelpDeskTicketsAPI:
         payload = {"priority": "high", "requester_id": 1}
 
         response = await async_client.post(
-            "/api/v1/tickets",
+            "/api/v1/helpdesk/tickets",
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -137,7 +137,7 @@ class TestHelpDeskTicketsAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_get_ticket(self, mock_get_user, async_client, generate_token, app):
-        """Test GET /api/v1/tickets/:id."""
+        """Test GET /api/v1/helpdesk/tickets/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -166,7 +166,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             response = await async_client.get(
-                f"/api/v1/tickets/{ticket_id}",
+                f"/api/v1/helpdesk/tickets/{ticket_id}",
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -180,7 +180,7 @@ class TestHelpDeskTicketsAPI:
     async def test_get_ticket_not_found(
         self, mock_get_user, async_client, generate_token
     ):
-        """Test GET /api/v1/tickets/:id with non-existent ticket."""
+        """Test GET /api/v1/helpdesk/tickets/:id with non-existent ticket."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -189,7 +189,7 @@ class TestHelpDeskTicketsAPI:
         token = generate_token(tenant_id=1, scopes=["helpdesk:read"])
 
         response = await async_client.get(
-            "/api/v1/tickets/99999",
+            "/api/v1/helpdesk/tickets/99999",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -200,7 +200,7 @@ class TestHelpDeskTicketsAPI:
     async def test_update_ticket(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test PATCH /api/v1/tickets/:id."""
+        """Test PATCH /api/v1/helpdesk/tickets/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -226,7 +226,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             response = await async_client.patch(
-                f"/api/v1/tickets/{ticket_id}",
+                f"/api/v1/helpdesk/tickets/{ticket_id}",
                 json={"subject": "Updated", "priority": "critical"},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -241,7 +241,7 @@ class TestHelpDeskTicketsAPI:
     async def test_delete_ticket(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test DELETE /api/v1/tickets/:id."""
+        """Test DELETE /api/v1/helpdesk/tickets/:id."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -267,7 +267,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             response = await async_client.delete(
-                f"/api/v1/tickets/{ticket_id}",
+                f"/api/v1/helpdesk/tickets/{ticket_id}",
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -278,7 +278,7 @@ class TestHelpDeskTicketsAPI:
     async def test_assign_ticket(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/tickets/:id/assign."""
+        """Test POST /api/v1/helpdesk/tickets/:id/assign."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -334,7 +334,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             response = await async_client.post(
-                f"/api/v1/tickets/{ticket_id}/assign",
+                f"/api/v1/helpdesk/tickets/{ticket_id}/assign",
                 json={"assignee_id": identity2_id},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -348,7 +348,7 @@ class TestHelpDeskTicketsAPI:
     async def test_merge_tickets(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test POST /api/v1/tickets/:id/merge."""
+        """Test POST /api/v1/helpdesk/tickets/:id/merge."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -386,7 +386,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             response = await async_client.post(
-                f"/api/v1/tickets/{primary_id}/merge",
+                f"/api/v1/helpdesk/tickets/{primary_id}/merge",
                 json={"merge_from_id": secondary_id},
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -409,7 +409,7 @@ class TestHelpDeskMessagesAPI:
     async def test_list_messages_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/tickets/:id/messages."""
+        """Test GET /api/v1/helpdesk/tickets/:id/messages."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -435,7 +435,7 @@ class TestHelpDeskMessagesAPI:
             db.commit()
 
             response = await async_client.get(
-                f"/api/v1/tickets/{ticket_id}/messages",
+                f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -446,7 +446,7 @@ class TestHelpDeskMessagesAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_add_message(self, mock_get_user, async_client, generate_token, app):
-        """Test POST /api/v1/tickets/:id/messages."""
+        """Test POST /api/v1/helpdesk/tickets/:id/messages."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -472,7 +472,7 @@ class TestHelpDeskMessagesAPI:
             db.commit()
 
             response = await async_client.post(
-                f"/api/v1/tickets/{ticket_id}/messages",
+                f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
                 json={
                     "sender_id": 1,
                     "message_type": "reply",
@@ -495,7 +495,7 @@ class TestHelpDeskDashboardAPI:
     async def test_dashboard_stats_empty(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/dashboard/stats."""
+        """Test GET /api/v1/helpdesk/dashboard/stats."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -510,7 +510,7 @@ class TestHelpDeskDashboardAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/dashboard/stats",
+            "/api/v1/helpdesk/dashboard/stats",
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -525,7 +525,7 @@ class TestHelpDeskDashboardAPI:
     async def test_dashboard_stats_with_tickets(
         self, mock_get_user, async_client, generate_token, app
     ):
-        """Test GET /api/v1/dashboard/stats with tickets."""
+        """Test GET /api/v1/helpdesk/dashboard/stats with tickets."""
         mock_user = MagicMock()
         mock_user.id = 1
         mock_user.is_superuser = True
@@ -578,7 +578,7 @@ class TestHelpDeskDashboardAPI:
             db.commit()
 
         response = await async_client.get(
-            "/api/v1/dashboard/stats",
+            "/api/v1/helpdesk/dashboard/stats",
             headers={"Authorization": f"Bearer {token}"},
         )
 
