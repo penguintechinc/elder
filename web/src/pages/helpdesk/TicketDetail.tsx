@@ -76,8 +76,8 @@ export default function TicketDetail() {
     },
   })
 
-  const ticketData = (ticket?.data || {}) as Ticket
-  const messages = (messagesData?.data || []) as Message[]
+  const ticketData = (ticket || {}) as Ticket
+  const messages = (messagesData?.items || []) as Message[]
 
   if (!id) return <p className="text-slate-400">Invalid ticket ID</p>
 

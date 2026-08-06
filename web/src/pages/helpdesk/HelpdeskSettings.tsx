@@ -136,7 +136,7 @@ export default function HelpdeskSettings() {
         { name: 'response_time_hours', label: 'Response Time (hours)', type: 'number', required: true },
         { name: 'resolution_time_hours', label: 'Resolution Time (hours)', type: 'number', required: true },
       ],
-      items: (slaPolicies?.data || []) as SettingsItem[],
+      items: (slaPolicies?.items || []) as SettingsItem[],
     },
     responses: {
       title: 'Canned Responses',
@@ -144,14 +144,14 @@ export default function HelpdeskSettings() {
         { name: 'title', label: 'Title', type: 'text', required: true },
         { name: 'body', label: 'Body', type: 'textarea', required: true },
       ],
-      items: (responses?.data || []) as SettingsItem[],
+      items: (responses?.items || []) as SettingsItem[],
     },
     teams: {
       title: 'Teams',
       fields: [
         { name: 'name', label: 'Team Name', type: 'text', required: true },
       ],
-      items: (teams?.data || []) as SettingsItem[],
+      items: (teams?.items || []) as SettingsItem[],
     },
     email: {
       title: 'Email Accounts',
@@ -159,14 +159,14 @@ export default function HelpdeskSettings() {
         { name: 'name', label: 'Name', type: 'text', required: true },
         { name: 'email', label: 'Email Address', type: 'email', required: true },
       ],
-      items: (emailAccounts?.data || []) as SettingsItem[],
+      items: (emailAccounts?.items || []) as SettingsItem[],
     },
     forms: {
       title: 'Ticket Forms',
       fields: [
         { name: 'name', label: 'Form Name', type: 'text', required: true },
       ],
-      items: (forms?.data || []) as SettingsItem[],
+      items: (forms?.items || []) as SettingsItem[],
     },
   }
 

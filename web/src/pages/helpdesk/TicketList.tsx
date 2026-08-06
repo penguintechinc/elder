@@ -77,7 +77,7 @@ export default function TicketList() {
     },
   })
 
-  const tickets = (data?.data || []) as Ticket[]
+  const tickets = (data?.items || []) as Ticket[]
 
   return (
     <div className="p-8">

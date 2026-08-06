@@ -54,7 +54,7 @@ export default function HelpdeskCompanies() {
     onError: () => toast.error('Failed to delete company'),
   })
 
-  const companies = (data?.data || []) as Company[]
+  const companies = (data?.items || []) as Company[]
 
   return (
     <div className="p-8">
