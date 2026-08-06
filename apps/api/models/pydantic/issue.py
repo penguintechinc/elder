@@ -32,13 +32,14 @@ Valid issue status values.
 """
 
 # Issue priority types
-IssuePriority = Literal["low", "medium", "high", "critical"]
+IssuePriority = Literal["low", "medium", "high", "urgent", "critical"]
 """
 Valid issue priority values.
 
 - low: Minor issues with no urgent timeline
 - medium: Standard priority issues
 - high: Important issues requiring timely attention
+- urgent: Time-sensitive issues requiring prompt attention (e.g. support tickets)
 - critical: Urgent issues blocking operations or causing major impact
 """
 

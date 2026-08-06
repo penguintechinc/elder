@@ -28,6 +28,7 @@ class IssuePriority(enum.Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+    URGENT = "urgent"
     CRITICAL = "critical"
 
 
@@ -43,6 +44,7 @@ class IssueType(enum.Enum):
     APPROVAL = "approval"
     FEATURE = "feature"
     BUG = "bug"
+    SUPPORT = "support"
     OTHER = "other"
 
 
