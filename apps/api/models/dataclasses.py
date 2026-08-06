@@ -198,7 +198,10 @@ class CreateIdentityRequest:
     password: Optional[str] = None  # Will be hashed
     auth_provider_id: Optional[str] = None
     is_active: bool = True
-    is_superuser: bool = False
+    # NOTE: is_superuser is intentionally NOT accepted here — allowing a client
+    # to set it on create is a privilege-escalation / mass-assignment hole. New
+    # identities are always created non-superuser; elevating requires a separate
+    # admin-controlled path.
     mfa_enabled: bool = False
 
 

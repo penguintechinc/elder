@@ -110,12 +110,16 @@ class TestCreateIdentityRegression:
         mock_get_user.return_value = _superuser_mock(tenant_id)
 
         username = f"regress-user-default-su-{uuid.uuid4().hex[:8]}"
+        # security regression: a malicious client explicitly requests superuser.
+        # It MUST be ignored — is_superuser is not client-settable on create
+        # (privilege escalation / mass assignment).
         payload = {
             "username": username,
             "identity_type": "service_account",
             "auth_provider": "local",
             "password": "SuperSecret123!",
             "tenant_id": tenant_id,
+            "is_superuser": True,
         }
 
         response = await async_client.post(
@@ -129,6 +133,7 @@ class TestCreateIdentityRegression:
             db = current_app.db
             row = db(db.identities.username == username).select().first()
             assert row is not None
+            # attack blocked: created non-superuser despite is_superuser:true
             assert row.is_superuser is False
 
 
