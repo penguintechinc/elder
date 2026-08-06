@@ -63,7 +63,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 | Missing fields | Any helpdesk field absent from issues is **added to `issues`** (nullable) |
 | Intake forms | Generalize `hd_ticket_forms` → **issue intake forms**; default **private**, optional public; public requires **Altcha** captcha (§6). **Phase A** |
 | Assignment webhooks | Extend native **`webhooks`**: fire on `issue.assigned`, multiple configs filtered by `issue_type` + assignee (§7). **Phase A** |
-| Village IDs | **Every object** gets a unique `village_id`. Tables lacking it (`issue_comments`, `hd_ticket_messages`, attachments, forms, `webhooks`) get it added + backfilled |
+| Village IDs | **Universal — every Elder object** (identities, entities, resources, issues, comments, attachments, forms, webhooks, …) gets a unique `village_id`. Tables lacking it — incl. **`identities`** — get it added + backfilled; audit repo-wide for any others |
 | License gating | Scope-only; tier model (quota/seat/SSO/MFA/KMS) — §10. Issues Enterprise gates removed (#232) |
 
 ## 4. Target model — the extended Issue
@@ -102,7 +102,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 ### 4.4 New enum values / village_id
 
 - `IdentityType += customer_contact`; `OrganizationType += customer_company`.
-- `village_id` (VillageIDMixin) **added** to `issue_comments`, attachments, intake forms, `webhooks`. **Note:** `identities` currently lacks `village_id` — adding it (so customer-contact identities comply) is a broader core change; **flagged** (§12).
+- `village_id` (VillageIDMixin) **added** to `issue_comments`, attachments, intake forms, `webhooks`, **and `identities`** (it lacks one today; add + backfill all identity rows). **Universal rule:** *every* Elder object — identities, entities, resources, issues, and any other — carries a unique `village_id`; audit for and add it to any table still missing one.
 
 ## 5. Concept convergence (reuse Elder-native, merge duplicates)
 
@@ -179,7 +179,7 @@ An issue (incl. support) is a metered **object**. Counting must be accurate/audi
 ## 12. Risks / open questions
 
 - **Phase A is now a large build under demo time pressure** (schema migration + forms + webhooks + OU-assignment + facade). Highest risk in the plan — sequence so each piece is independently shippable + tested; the `issues` schema migration lands first.
-- **`identities` lacks `village_id`** — customer-contact identities should have one per the rule, but adding `village_id` to the core `identities` table (+ backfilling all identities) is broader than this feature. **Confirm:** add now, or track separately.
+- **`identities` `village_id`** — **decided: add it** (+ backfill all identities), per the universal village_id rule. Note the ripple: it's a core-table migration touching every identity row, not just customer contacts.
 - **External contact as identity:** `identities.username` is unique+required; customer contacts key on email → username=email. Confirm collision handling (same email as an existing user).
 - **Ticket dual-assignment collapse** (team+individual → single, prefer individual): confirm the rule; team affiliation otherwise dropped.
 - **Legacy ticket assignment webhooks in Phase A:** should assigning a *legacy* `hd_ticket` (via facade) also fire `issue.assigned`? (Recommend yes — wire the facade's ticket-update to emit it.)
