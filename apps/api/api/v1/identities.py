@@ -199,7 +199,18 @@ async def create_identity(body: CreateIdentityRequest):
             "full_name": body.full_name,
             "auth_provider_id": body.auth_provider_id,
             "is_active": body.is_active,
+            "mfa_enabled": body.mfa_enabled,
             "tenant_id": tenant_id,
+            # Security: is_superuser is NEVER taken from the request body —
+            # accepting it would let any identities:write caller mint a
+            # superuser (privilege escalation / mass assignment). Force
+            # non-superuser here; elevation is a separate admin-only path.
+            "is_superuser": False,
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly.
+            "must_change_password": False,
+            "portal_role": "observer",
         }
 
         # Create identity

@@ -8,9 +8,9 @@ import logging
 from dataclasses import asdict
 from typing import Optional
 
-from penguin_libs.pydantic import RequestModel, validated_request
+from penguin_libs.pydantic import RequestModel
 from pydantic import Field
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
@@ -21,6 +21,7 @@ from apps.api.models.dataclasses import (
     from_pydal_rows,
 )
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
 
 logger = logging.getLogger(__name__)
 
@@ -257,10 +258,8 @@ async def create_dependency(body: CreateDependencyRequest):
     target_id = body.target_id
 
     # Capture tenant_id from current user before entering threadpool
-    from flask import g as flask_g
-
     current_user_tenant_id = getattr(
-        getattr(flask_g, "current_user", None), "tenant_id", None
+        getattr(g, "current_user", None), "tenant_id", None
     )
 
     # Validate resource types
