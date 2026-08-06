@@ -137,7 +137,7 @@ Both modules run on **penguin-dal** (PyDAL) over `current_app.db`; SQLAlchemy mo
 Configurable backend (reuse the diagrams module's S3/GCS/MinIO storage-provider abstraction):
 - **Single-node:** a **PVC** (local persistent volume) is sufficient.
 - **Multi-node:** drop to an **S3-compatible** object store — **default MinIO**, support **AWS S3 / GCS / Azure Blob**. Server-side encryption on (per `security.md` at-rest).
-- `issue_attachments` rows store `village_id`, the backend + object key/path, filename, content-type, size. Applies to both form uploads and in-issue attachments.
+- `issue_attachments` rows store `village_id`, `metadata`, the backend + object key/path, filename, content-type, size. **The file's SHA256 hash goes in `metadata`** (computed on upload) — integrity verification + content-addressed dedup. Applies to both form uploads and in-issue attachments.
 
 ## 7. Assignment webhooks (Phase A; extend native `webhooks`)
 
