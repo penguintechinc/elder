@@ -6,7 +6,7 @@
 import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Tuple
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
@@ -31,7 +31,7 @@ from shared.webhooks import send_issue_created_webhooks
 bp = Blueprint("issues", __name__)
 
 
-def _org_unit_in_tenant(db, org_unit_id: Optional[int], tenant_id: int) -> bool:
+def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
     """Return True if org_unit_id is unset or belongs to tenant_id.
 
     Org-unit counterpart to identity_in_tenant: guards against cross-tenant
@@ -52,11 +52,11 @@ def _org_unit_in_tenant(db, org_unit_id: Optional[int], tenant_id: int) -> bool:
 
 
 def _resolve_assignee_type(
-    db,
+    db: Any,
     tenant_id: int,
     assignee_id: Optional[int],
     assignee_type: Optional[str],
-) -> tuple:
+) -> Tuple[Optional[str], bool]:
     """Resolve the polymorphic assignee_type and validate assignee_id is in tenant.
 
     Returns (resolved_type, ok). resolved_type is None when assignee_id is
@@ -300,6 +300,12 @@ async def create_issue(body: CreateIssueRequest):
         return jsonify({"error": "Organization not found"}), 404
     if not org.tenant_id:
         return jsonify({"error": "Organization must have a tenant"}), 400
+    # Cross-tenant IDOR guard: the org must belong to the caller's own
+    # tenant, not merely exist. Treat a foreign-tenant org as not-found
+    # (matches documents.py:91, streams.py:62,108) rather than leaking its
+    # existence via a distinct error.
+    if org.tenant_id != tenant_id:
+        return jsonify({"error": "Organization not found"}), 404
 
     # Resolve + validate the polymorphic assignee (IDOR guard: target must be
     # in the caller's tenant) before persisting.
@@ -442,8 +448,8 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     if not tenant_id:
         return jsonify({"error": "Tenant not found"}), 403
 
-    # If organization is being changed, validate and get tenant
-    org_tenant_id = None
+    # If organization is being changed, validate it exists and belongs to
+    # the caller's own tenant before persisting.
     if body.organization_id:
 
         def get_org():
@@ -454,7 +460,10 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             return jsonify({"error": "Organization not found"}), 404
         if not org.tenant_id:
             return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
+        # Cross-tenant IDOR guard: treat a foreign-tenant org as not-found
+        # (matches documents.py:91, streams.py:62,108).
+        if org.tenant_id != tenant_id:
+            return jsonify({"error": "Organization not found"}), 404
 
     # Resolve + validate the polymorphic assignee (IDOR guard: target must be
     # in the caller's tenant) before persisting.

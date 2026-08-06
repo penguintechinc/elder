@@ -88,6 +88,7 @@ class IssueDTO(ImmutableModel):
     issue_type: str
     reporter_id: int
     assignee_id: Optional[int] = None
+    assignee_type: Optional[str] = None
     organization_id: Optional[int] = None
     is_incident: int
     closed_at: Optional[datetime] = None

@@ -375,3 +375,197 @@ class TestIssueSubResourceTenantIsolation:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 404
+
+
+def _foreign_tenant_org(db, name: str = "Foreign Org") -> int:
+    """Create an organization owned by a freshly created (non-1) tenant.
+
+    Shared fixture for the `organization_id` IDOR regression tests below --
+    each only needs an org that exists but belongs to a different tenant
+    than the caller, to verify create/update reject it as not-found rather
+    than silently linking (and webhook-firing) across tenants.
+    """
+    other_tenant_id = _foreign_tenant(db)
+    now = datetime.now(timezone.utc)
+    org_id = db.organizations.insert(
+        name=name,
+        tenant_id=other_tenant_id,
+        created_at=now,
+        updated_at=now,
+    )
+    db.commit()
+    return org_id
+
+
+def _foreign_tenant_identity(db, username: str = "foreign_identity") -> int:
+    """Create an identity owned by a freshly created (non-1) tenant.
+
+    Shared fixture for the assignee IDOR regression tests -- an identity
+    that exists but belongs to a different tenant than the caller, to
+    verify assignment rejects it as not-found rather than linking a
+    tenant-1 issue to a tenant-2 identity.
+    """
+    other_tenant_id = _foreign_tenant(db)
+    now = datetime.now(timezone.utc)
+    identity_id = db.identities.insert(
+        identity_type="human",
+        username=f"{username}_{uuid4().hex[:8]}",
+        email=f"{username}_{uuid4().hex[:8]}@example.com",
+        tenant_id=other_tenant_id,
+        auth_provider="local",
+        is_active=True,
+        is_superuser=False,
+        mfa_enabled=False,
+        must_change_password=False,
+        portal_role="viewer",
+        created_at=now,
+        updated_at=now,
+    )
+    db.commit()
+    return identity_id
+
+
+class TestIssuesOrganizationAndAssigneeIdor:
+    """Regression coverage for the cross-tenant `organization_id` IDOR
+    (final-review finding 1): `create_issue`/`update_issue` must verify a
+    referenced organization belongs to the CALLER's tenant, not merely that
+    it exists -- otherwise a tenant-1 caller can link an issue to (and fire
+    webhooks at) a tenant-2 org. Also covers the polymorphic assignee IDOR
+    guard (`_resolve_assignee_type`) for both `identity` and `org_unit`
+    assignee types.
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_issue_rejects_foreign_tenant_organization(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues with a different tenant's organization_id must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            foreign_org_id = _foreign_tenant_org(db)
+        resp = await async_client.post(
+            "/api/v1/issues",
+            json={"title": "Cross-tenant org", "organization_id": foreign_org_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()[:200]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_update_issue_rejects_foreign_tenant_organization(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/<id> re-pointing organization_id to another tenant's
+        org must 404, not re-link the issue cross-tenant."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Tenant1 Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            iid = db.issues.insert(
+                title="Reassign org",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                is_incident=0,
+                resource_type="organization",
+                resource_id=org_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            foreign_org_id = _foreign_tenant_org(db)
+        resp = await async_client.patch(
+            f"/api/v1/issues/{iid}",
+            json={"organization_id": foreign_org_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()[:200]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_update_issue_rejects_foreign_tenant_identity_assignee(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/<id> assignee_type="identity" with a different
+        tenant's identity id must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Tenant1 Org 2",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            iid = db.issues.insert(
+                title="Assign foreign identity",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                is_incident=0,
+                resource_type="organization",
+                resource_id=org_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            foreign_identity_id = _foreign_tenant_identity(db)
+        resp = await async_client.patch(
+            f"/api/v1/issues/{iid}",
+            json={"assignee_type": "identity", "assignee_id": foreign_identity_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()[:200]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_update_issue_rejects_foreign_tenant_org_unit_assignee(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/<id> assignee_type="org_unit" with a different
+        tenant's organization id must 404."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Tenant1 Org 3",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            iid = db.issues.insert(
+                title="Assign foreign org_unit",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                is_incident=0,
+                resource_type="organization",
+                resource_id=org_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            foreign_org_unit_id = _foreign_tenant_org(db, name="Foreign Org Unit")
+        resp = await async_client.patch(
+            f"/api/v1/issues/{iid}",
+            json={"assignee_type": "org_unit", "assignee_id": foreign_org_unit_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()[:200]
