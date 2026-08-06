@@ -13,7 +13,6 @@ from pydantic import Field
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
-from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import (
     IssueCommentDTO,
     IssueDTO,
@@ -297,7 +296,6 @@ async def get_issue(id: int):
 @bp.route("/<int:id>", methods=["PATCH"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 @validated_request(body_model=UpdateIssueRequest)
 async def update_issue(id: int, body: UpdateIssueRequest):
     """
@@ -357,12 +355,12 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.description is not None:
             update_fields["description"] = body.description
         if body.status is not None:
-            update_fields["status"] = body.status
+            update_fields["status"] = body.status.upper()
             # Set closed_at if closing
-            if body.status in ("closed", "resolved"):
+            if body.status.upper() in ("CLOSED", "RESOLVED"):
                 update_fields["closed_at"] = datetime.now(timezone.utc)
         if body.priority is not None:
-            update_fields["priority"] = body.priority
+            update_fields["priority"] = body.priority.upper()
         if body.assignee_id is not None:
             update_fields["assignee_id"] = body.assignee_id
         if body.organization_id is not None:
@@ -389,7 +387,6 @@ async def update_issue(id: int, body: UpdateIssueRequest):
 @bp.route("/<int:id>", methods=["DELETE"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 async def delete_issue(id: int):
     """
     Delete an issue.
@@ -436,7 +433,6 @@ async def delete_issue(id: int):
 @bp.route("/<int:id>/comments", methods=["GET"])
 @login_required
 @require_scope("issues:read")
-@license_required("enterprise")
 async def list_issue_comments(id: int):
     """
     List comments for an issue.
@@ -484,7 +480,6 @@ async def list_issue_comments(id: int):
 @bp.route("/<int:id>/comments", methods=["POST"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 @validated_request(body_model=CreateIssueCommentRequest)
 async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
     """
@@ -540,7 +535,6 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
 @bp.route("/<int:id>/comments/<int:comment_id>", methods=["DELETE"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 async def delete_issue_comment(id: int, comment_id: int):
     """
     Delete a comment from an issue.
@@ -596,7 +590,6 @@ async def delete_issue_comment(id: int, comment_id: int):
 @bp.route("/labels", methods=["GET"])
 @login_required
 @require_scope("issues:read")
-@license_required("enterprise")
 async def list_issue_labels():
     """
     List all available issue labels.
@@ -626,7 +619,6 @@ async def list_issue_labels():
 @bp.route("/labels", methods=["POST"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 @validated_request(body_model=CreateIssueLabelRequest)
 async def create_issue_label(body: CreateIssueLabelRequest):
     """
@@ -680,7 +672,6 @@ async def create_issue_label(body: CreateIssueLabelRequest):
 @bp.route("/<int:id>/labels", methods=["GET"])
 @login_required
 @require_scope("issues:read")
-@license_required("enterprise")
 async def list_issue_labels_for_issue(id: int):
     """
     List all labels assigned to a specific issue.
@@ -725,7 +716,6 @@ async def list_issue_labels_for_issue(id: int):
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 @validated_request(body_model=AddIssueLabelRequest)
 async def add_issue_label(id: int, body: AddIssueLabelRequest):
     """
@@ -797,7 +787,6 @@ async def add_issue_label(id: int, body: AddIssueLabelRequest):
 @bp.route("/<int:id>/labels/<int:label_id>", methods=["DELETE"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 async def remove_issue_label(id: int, label_id: int):
     """
     Remove a label from an issue.
@@ -851,7 +840,6 @@ async def remove_issue_label(id: int, label_id: int):
 @bp.route("/<int:id>/links", methods=["GET"])
 @login_required
 @require_scope("issues:read")
-@license_required("enterprise")
 async def list_issue_entity_links(id: int):
     """
     List entity links for an issue.
@@ -904,7 +892,6 @@ async def list_issue_entity_links(id: int):
 @bp.route("/<int:id>/links", methods=["POST"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 @validated_request(body_model=CreateIssueEntityLinkRequest)
 async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
     """
@@ -987,7 +974,6 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
 @bp.route("/<int:id>/links/<int:link_id>", methods=["DELETE"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 async def delete_issue_entity_link(id: int, link_id: int):
     """
     Remove an entity link from an issue.
@@ -1034,7 +1020,6 @@ async def delete_issue_entity_link(id: int, link_id: int):
 @bp.route("/<int:id>/links/by-entity/<int:entity_id>", methods=["DELETE"])
 @login_required
 @require_scope("issues:write")
-@license_required("enterprise")
 async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
     """
     Remove an entity link from an issue by entity ID.
