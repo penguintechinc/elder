@@ -191,7 +191,11 @@ def _register_before_request(app: Quart) -> None:
             identity_id = None
         g.claims = {
             "sub": sub,
-            "tenant": payload.get("tenant", ""),
+            # Portal-auth JWTs carry the tenant under `tenant_id`, not `tenant`.
+            # The absorbed modules (streams/diagrams/documents/pages/helpdesk/
+            # flows) read g.claims["tenant"], so map tenant_id through here —
+            # otherwise every one of them 403s with "Tenant not found".
+            "tenant": payload.get("tenant") or payload.get("tenant_id", ""),
             "roles": payload.get("roles", []),
             "scope": payload.get("scope", []),
             # The subject IS the authenticated identity id; expose it under the

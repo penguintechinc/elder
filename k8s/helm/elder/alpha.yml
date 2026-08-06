@@ -151,7 +151,7 @@ api:
     DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DB_HOST: elder-postgres
     DB_PASSWORD: elder_dev_password
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    REDIS_URL: "redis://elder-redis:6379/0"
   resources:
     requests:
       memory: "256Mi"
@@ -207,7 +207,7 @@ worker:
     DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DATABASE_READ_URL: ""
     DB_POOL_SIZE: "5"
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    REDIS_URL: "redis://elder-redis:6379/0"
   resources:
     requests:
       memory: "128Mi"
@@ -233,7 +233,7 @@ flows-invoker:
     DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DATABASE_READ_URL: ""
     DB_POOL_SIZE: "2"
-    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    REDIS_URL: "redis://elder-redis:6379/0"
     FLOWS_WORKSPACE_ROOT: "/workspace"
   resources:
     requests:
