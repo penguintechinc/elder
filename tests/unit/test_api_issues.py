@@ -55,6 +55,7 @@ class TestIssuesAPI:
                 resource_type="organization",
                 resource_id=org_id,
                 is_incident=0,
+                tenant_id=1,
                 created_at=now,
                 updated_at=now,
             )
@@ -109,6 +110,7 @@ class TestIssuesAPI:
                 resource_id=org_id,
                 is_incident=0,
                 closed_at=None,
+                tenant_id=1,
                 created_at=now,
                 updated_at=now,
             )

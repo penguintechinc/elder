@@ -29,6 +29,18 @@ from shared.webhooks import send_issue_created_webhooks
 bp = Blueprint("issues", __name__)
 
 
+def _tenant_id() -> Optional[int]:
+    """Tenant id from validated JWT claims (populated by before_request)."""
+    claims = getattr(g, "claims", {}) or {}
+    raw = claims.get("tenant", "")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        return None
+
+
 # ============================================================================
 # Request Models
 # ============================================================================
@@ -124,12 +136,16 @@ async def list_issues():
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_issues():
-        query = db.issues.id > 0
+        query = db.issues.tenant_id == tenant_id
 
         # Apply filters
         # Note: organization_id is not a column in issues table (removed)
@@ -209,6 +225,10 @@ async def create_issue(body: CreateIssueRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get organization to derive tenant_id
     def get_org():
         return db.organizations[body.organization_id]
@@ -236,6 +256,7 @@ async def create_issue(body: CreateIssueRequest):
             resource_type="organization",
             resource_id=body.organization_id,
             is_incident=body.is_incident,
+            tenant_id=tenant_id,
             created_at=now,
             updated_at=now,
         )
@@ -284,7 +305,15 @@ async def get_issue(id: int):
     """
     db = current_app.db
 
-    issue = await run_in_threadpool(lambda: db.issues[id])
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    issue = await run_in_threadpool(
+        lambda: db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+        .select()
+        .first()
+    )
 
     if not issue:
         return jsonify({"error": "Issue not found"}), 404
@@ -327,6 +356,10 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # If organization is being changed, validate and get tenant
     org_tenant_id = None
     if body.organization_id:
@@ -342,8 +375,12 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         org_tenant_id = org.tenant_id
 
     def update():
-        # Check if issue exists
-        issue = db.issues[id]
+        # Check if issue exists and belongs to caller's tenant
+        issue = (
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not issue:
             return None, "Issue not found", 404
 
@@ -369,8 +406,10 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.is_incident is not None:
             update_fields["is_incident"] = body.is_incident
 
-        # Update issue
-        db(db.issues.id == id).update(**update_fields)
+        # Update issue (re-scoped to tenant for defense-in-depth)
+        db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).update(
+            **update_fields
+        )
         db.commit()
 
         return db.issues[id], None, None
@@ -406,13 +445,22 @@ async def delete_issue(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        issue = db.issues[id]
+        issue = (
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not issue:
             return None, "Issue not found", 404
 
-        # Delete issue (cascade deletes comments, labels, links)
-        db(db.issues.id == id).delete()
+        # Delete issue (cascade deletes comments, labels, links); re-scoped
+        # to tenant for defense-in-depth.
+        db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).delete()
         db.commit()
 
         return True, None, None

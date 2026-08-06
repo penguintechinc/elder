@@ -278,7 +278,9 @@ class TestCreateIssueRegression:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_create_issue_returns_201(self, mock_get_user, async_client, app):
+    async def test_create_issue_returns_201(
+        self, mock_get_user, async_client, generate_token, app
+    ):
         async with app.app_context():
             db = current_app.db
             tenant_id = _get_or_create_tenant(
@@ -287,6 +289,10 @@ class TestCreateIssueRegression:
             org_id = _create_org(db, tenant_id, "Issues Regress Org")
 
         mock_get_user.return_value = _superuser_mock(tenant_id)
+        # Issue create now enforces tenant scoping (g.claims["tenant"]), which
+        # only a verifiable JWT populates -- a bare "fake-token" leaves
+        # g.claims unset and 403s with "Tenant not found".
+        token = generate_token(tenant_id=tenant_id, scopes=["issues:write"])
 
         title = f"regress-issue-{uuid.uuid4().hex[:8]}"
         payload = {
@@ -300,7 +306,7 @@ class TestCreateIssueRegression:
         response = await async_client.post(
             "/api/v1/issues",
             json=payload,
-            headers={"Authorization": "Bearer fake-token"},
+            headers={"Authorization": f"Bearer {token}"},
         )
 
         body = await response.get_data()
