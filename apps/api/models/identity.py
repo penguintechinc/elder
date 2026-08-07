@@ -6,7 +6,16 @@
 import enum
 from typing import List
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -130,6 +139,13 @@ class Identity(Base, IDMixin, TimestampMixin):
 
     # village_id for cross-system reference
     village_id = Column(String(32), unique=True, nullable=True, index=True)
+
+    # Universal metadata bag (universal-audits plan). `metadata` is reserved
+    # on SQLAlchemy declarative models, so it's mapped via a differently-
+    # named Python attribute, exactly like Vulnerability.extra_metadata in
+    # apps/api/models/security.py. Plan 03 (CRM) uses this for optional
+    # customer-contact details (phone, location, etc.).
+    identity_metadata = Column("metadata", JSON, nullable=True)
 
     # Last activity
     last_login_at = Column(
