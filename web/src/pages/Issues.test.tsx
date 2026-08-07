@@ -183,6 +183,10 @@ describe('CreateIssueModal', () => {
     expect(call.title).toBe('Test issue')
     expect(call.organization_id).toBe(5)
     expect(call.issue_type).toBe('support')
+    // Assignee wiring: clicking the picker set the org-unit assignee, which
+    // must flow through handleSubmit into the createIssue payload.
+    expect(call.assignee_type).toBe('org_unit')
+    expect(call.assignee_id).toBe(7)
   })
 
 })
