@@ -235,8 +235,8 @@ function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.createWebhook(data as Parameters<typeof api.createWebhook>[0]),
-    onSuccess: () => {
-      console.log('[Webhooks] Create { name: "...", events: [...], filter_issue_type: "...", filter_assignee_type: "..." }')
+    onSuccess: (result) => {
+      console.log('[Webhooks] Create', { name: result?.name, events: result?.events, filter_issue_type: result?.filter_issue_type })
       toast.success('Webhook created')
       onSuccess()
     },
@@ -338,8 +338,8 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
 
   const updateMutation = useMutation({
     mutationFn: (data: Parameters<typeof api.updateWebhook>[1]) => api.updateWebhook(webhook.id, data),
-    onSuccess: async () => {
-      console.log('[Webhooks] Update { name: "...", is_active: true, filter_issue_type: "..." }')
+    onSuccess: async (result) => {
+      console.log('[Webhooks] Update', { name: result?.name, is_active: result?.is_active, filter_issue_type: result?.filter_issue_type })
       toast.success('Webhook updated')
       await onSuccess()
     },
