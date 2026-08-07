@@ -156,6 +156,9 @@ make db-init
 # Seed with mock data (3-4 items per entity)
 make seed-mock-data
 
+# Seed native unified-model demo data (support issues, CRM, intake forms, webhooks)
+make seed-demo-unified
+
 # Verify database connection
 make db-health
 ```
@@ -252,6 +255,7 @@ curl -X POST http://localhost:5000/api/v1/auth/login \
 ```bash
 make dev              # Start all services
 make seed-mock-data   # Populate with test data (3-4 items per entity)
+make seed-demo-unified # Populate unified-model demo data (support issues, CRM, intake forms, webhooks)
 ```
 
 ### 2. Make Code Changes
@@ -295,6 +299,15 @@ make seed-mock-data
 # - Resources (identities, software, data stores)
 # - Dependencies and relationships
 # - Village IDs for all created items
+
+# For the unified Issues/support/CRM model specifically:
+make seed-demo-unified
+
+# This creates sample:
+# - Native support issues (issue_type=support) with polymorphic assignees
+# - customer_company / customer_contact CRM entities
+# - Intake forms (public and private)
+# - Assignment (issue.assigned) webhooks
 ```
 
 ### 5. Village ID System Testing
@@ -471,6 +484,7 @@ docker compose exec postgres psql -U elder -d elder
 docker compose down -v
 make db-init
 make seed-mock-data
+make seed-demo-unified
 ```
 
 **Run migrations**:

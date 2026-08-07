@@ -196,6 +196,51 @@ class Dependency:
 web-server (source) ──depends on──> database (target)
 ```
 
+#### Issue
+
+```python
+class Issue:
+    id: int
+    resource_type: str             # entity or organization
+    resource_id: int
+    title: str
+    description: str | None
+    status: IssueStatus            # open, in_progress, resolved, closed
+    priority: IssuePriority        # low, medium, high, urgent, critical
+    issue_type: IssueType          # operations, code, config, security,
+                                    # architecture, process, approval,
+                                    # feature, bug, support, other
+    reporter_id: int | None        # identities.id
+    assignee_type: str | None      # 'identity' or 'org_unit' (polymorphic)
+    assignee_id: int | None        # identities.id or organizations.id,
+                                    # disambiguated by assignee_type
+    organization_id: int | None
+    channel: str | None            # support intake channel (email, chat, ...)
+    category: str | None           # support category/topic
+    requester_contact_id: int | None  # identities.id (customer_contact)
+    sla_breach_at: datetime | None
+    first_response_at: datetime | None
+    resolved_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+```
+
+Issue is a **unified** model — `issue_type=support` is what used to be a
+separate "helpdesk ticket." There is no distinct ticket table; a support
+request is an Issue with the support-only fields (`channel`, `category`,
+`requester_contact_id`, `sla_breach_at`, ...) populated. Assignment is
+polymorphic rather than identity-only: `assignee_type` selects whether
+`assignee_id` points at `identities` or `organizations` (an org unit), and
+the UI exposes this as a single combined identity+org-unit search picker.
+
+Admin-configurable **intake forms** (`hd_intake_forms` table) are the
+public entry point into support Issues: an unauthenticated submission,
+optionally protected by an Altcha captcha (`captcha_required` per form;
+off by default), upserts a `customer_contact` identity and creates a
+native Issue of the form's configured `issue_type` (default `support`).
+CRM entities are not separate tables either — `customer_company` is an
+`organization_type` and `customer_contact` is an `identity_type`.
+
 ### Relationship Model
 
 ```
@@ -208,7 +253,8 @@ Organizations (Hierarchical)
     │
     └── has many ──> Issues
                         │
-                        └── linked to ──> Entities
+                        ├── linked to ──> Entities or Organizations (resource_type/resource_id)
+                        └── assigned to ──> Identity or Org Unit (assignee_type/assignee_id)
 ```
 
 ## Authentication & Authorization
@@ -269,16 +315,22 @@ Global Role → Organization Role → Entity Role
 - `organizations` - Organizational hierarchy
 - `entities` - Infrastructure entities
 - `dependencies` - Entity relationships
-- `identities` - Users and service accounts
+- `identities` - Users, service accounts, and CRM `customer_contact` records
 - `identity_groups` - User groups
-- `issues` - Issue tracking
+- `issues` - Unified issue tracking, including support tickets (`issue_type=support`) with a polymorphic `assignee_type`/`assignee_id` (identity or org unit)
 - `issue_comments` - Issue comments
 - `issue_labels` - Issue labels
+- `hd_intake_forms` - Admin-configurable public support intake forms
+- `webhooks` - Outbound event subscriptions, including `issue.assigned` with `issue_type`/assignee filters
 - `projects` - Project management
 - `milestones` - Project milestones
 - `resource_roles` - Fine-grained permissions
 - `metadata_fields` - Type-validated metadata
 - `alert_configurations` - Alerting rules
+
+`organizations` also carries a `customer_company` `organization_type` for
+CRM company records — CRM entities are not separate tables, they are
+identity/organization type variants.
 
 **Indexes:**
 - Organizations: `name`, `parent_id`, `ldap_dn`

@@ -82,11 +82,10 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - `PATCH /api/v1/identities/{id}` - Update identity (partial)
 - `DELETE /api/v1/identities/{id}` - Delete identity
 
-### Issues (14 endpoints)
+### Issues (12 endpoints)
 - `GET /api/v1/issues` - List issues
 - `POST /api/v1/issues` - Create issue
 - `GET /api/v1/issues/{id}` - Get issue details
-- `PUT /api/v1/issues/{id}` - Update issue
 - `PATCH /api/v1/issues/{id}` - Update issue (partial)
 - `DELETE /api/v1/issues/{id}` - Delete issue
 - `POST /api/v1/issues/{id}/comments` - Add comment
@@ -96,7 +95,27 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - `DELETE /api/v1/issues/{id}/labels/{label_id}` - Remove label from issue
 - `POST /api/v1/issues/{id}/entities` - Link entity to issue
 - `DELETE /api/v1/issues/{id}/entities/{entity_id}` - Unlink entity from issue
-- `GET /api/v1/issues/{id}/timeline` - Get issue timeline
+
+*Issues are unified: a support ticket is an Issue with `issue_type=support`
+(alongside `operations`, `code`, `config`, `security`, `architecture`,
+`process`, `approval`, `feature`, `bug`, `other`). Assignment is
+polymorphic — `assignee_type` (`identity` or `org_unit`) plus
+`assignee_id` — surfaced in the UI as one combined identity+org-unit
+search picker.*
+
+### Intake Forms (7 endpoints)
+- `GET /api/v1/intake-forms` - List intake forms (admin)
+- `POST /api/v1/intake-forms` - Create intake form (admin)
+- `GET /api/v1/intake-forms/{id}` - Get intake form details (admin)
+- `PATCH /api/v1/intake-forms/{id}` - Update intake form (admin)
+- `DELETE /api/v1/intake-forms/{id}` - Delete intake form (admin)
+- `GET /api/v1/intake/{slug}` - Get public form definition (unauthenticated)
+- `POST /api/v1/intake/{slug}/submit` - Submit public form, optionally protected by an Altcha captcha (unauthenticated)
+
+*The submit endpoint is gated by Altcha only when the form has
+`captcha_required=true` (off by default). A successful public submission
+upserts a `customer_contact` identity and creates a native Issue of the
+form's configured `issue_type` (default `support`).*
 
 ### Projects & Milestones (11 endpoints)
 - `GET /api/v1/projects` - List projects
@@ -289,6 +308,13 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - `POST /api/v1/webhooks/{id}/test` - Test webhook
 - `GET /api/v1/webhooks/{id}/deliveries` - Get webhook deliveries
 
+*Supports an `issue.assigned` event, fired on any assignee change
+(create, update, or an intake-form's default-assign). Each webhook can
+filter `issue.assigned` deliveries by `issue_type` and by assignee
+(`assignee_type` + `assignee_id`); an unset filter matches every
+assignment. Deliveries are HMAC-signed (`X-Elder-Signature`) and
+non-blocking.*
+
 ### Backups (7 endpoints)
 - `GET /api/v1/backups` - List backups
 - `POST /api/v1/backups` - Create backup
@@ -317,7 +343,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ---
 
-## Total API Endpoints: 204
+## Total API Endpoints: 209+ (Issues corrected from 14 to 12 — removed two endpoints that don't exist in the code — and adds the 7 Intake Forms endpoints above; the IAM Providers total is itself "33+", so this is a floor, not an exact count)
 
 ## Detailed Endpoint Documentation
 
