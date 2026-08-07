@@ -10,10 +10,10 @@ import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
 import { ISSUE_TYPES, issueTypeLabel } from '@/lib/constants/issueTypes'
 import { Issue, IssueStatus, IssuePriority, IssueType, Organization, Entity, IssueLabel } from '@/types'
 import Button from '@/components/Button'
-import Card, { CardContent } from '@/components/Card'
+import Card, { CardContent, CardHeader } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
 
 export default function Issues() {
   const [search, setSearch] = useState('')
@@ -259,7 +259,25 @@ export interface CreateIssueModalProps {
   parentIssueId?: number
 }
 
-export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, defaultEntityId, parentIssueId }: CreateIssueModalProps) {
+export function CreateIssueModal({
+  onClose,
+  onSuccess,
+  defaultOrganizationId,
+  defaultEntityId,
+  parentIssueId,
+}: CreateIssueModalProps) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [priority, setPriority] = useState<IssuePriority>('medium')
+  const [issueType, setIssueType] = useState<IssueType>('other')
+  const [organizationId, setOrganizationId] = useState(defaultOrganizationId ? String(defaultOrganizationId) : '')
+  const [assignee, setAssignee] = useState<AssigneeValue | null>(null)
+  const [entityIds, setEntityIds] = useState<number[]>(defaultEntityId ? [defaultEntityId] : [])
+  const [labelIds, setLabelIds] = useState<number[]>([])
+  const [isIncident, setIsIncident] = useState(false)
+  const [channel, setChannel] = useState('')
+  const [category, setCategory] = useState('')
+
   const { data: organizations } = useQuery({
     queryKey: ['organizations-all'],
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
@@ -276,16 +294,32 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: {
+    mutationFn: async (data: {
       title: string
       description?: string
       priority: string
-      organization_id?: number
-      entity_ids?: number[]
-      label_ids?: number[]
-      is_incident?: number
+      issue_type: string
+      organization_id: number
+      assignee_id?: number
+      assignee_type?: 'identity' | 'org_unit'
+      is_incident: number
+      channel?: string
+      category?: string
       parent_issue_id?: number
-    }) => api.createIssue(data),
+    }) => {
+      console.log('[CreateIssueModal] Submit', {
+        title: data.title,
+        issueType: data.issue_type,
+        organizationId: data.organization_id,
+      })
+      const issue = await api.createIssue(data)
+      // CreateIssueRequest has no entity_ids/label_ids field (see Task 2
+      // recon) — link each selection as a follow-up call against the
+      // existing per-item endpoints, same as IssueDetail.tsx's sidebar.
+      await Promise.all(entityIds.map((entityId) => api.linkIssueEntity(issue.id, entityId)))
+      await Promise.all(labelIds.map((labelId) => api.addIssueLabel(issue.id, labelId)))
+      return issue
+    },
     onSuccess: () => {
       toast.success(parentIssueId ? 'Sub-task created successfully' : 'Issue created successfully')
       onSuccess()
@@ -295,137 +329,179 @@ export function CreateIssueModal({ onClose, onSuccess, defaultOrganizationId, de
     },
   })
 
-  // Build form fields dynamically based on available data
-  const fields: FormField[] = useMemo(() => [
-    {
-      name: 'title',
-      type: 'text' as const,
-      label: 'Title',
-      required: true,
-      placeholder: 'Enter issue title',
-    },
-    {
-      name: 'description',
-      type: 'textarea' as const,
-      label: 'Description',
-      placeholder: 'Enter description (optional)',
-      rows: 4,
-    },
-    {
-      name: 'priority',
-      type: 'select' as const,
-      label: 'Priority',
-      required: true,
-      defaultValue: 'medium',
-      options: [
-        { value: 'low', label: 'Low' },
-        { value: 'medium', label: 'Medium' },
-        { value: 'high', label: 'High' },
-        { value: 'critical', label: 'Critical' },
-      ],
-    },
-    {
-      name: 'assignment_type',
-      type: 'radio' as const,
-      label: 'Assign To',
-      defaultValue: 'organization',
-      options: [
-        { value: 'organization', label: 'Organization' },
-        { value: 'entity', label: 'Entity' },
-      ],
-    },
-    {
-      name: 'organization_id',
-      type: 'select' as const,
-      label: 'Organization',
-      defaultValue: defaultOrganizationId?.toString() || '',
-      options: [
-        { value: '', label: 'None' },
-        ...(organizations?.items?.map((org: Organization) => ({
-          value: org.id.toString(),
-          label: org.name,
-        })) || []),
-      ],
-      showWhen: (values: Record<string, unknown>) => values.assignment_type === 'organization',
-    },
-    {
-      name: 'entity_ids',
-      type: 'checkbox_multi' as const,
-      label: 'Entities',
-      helpText: 'Select one or more entities to assign this issue',
-      defaultValue: defaultEntityId ? defaultEntityId.toString() : '',
-      options: entities?.items?.map((entity: Entity) => ({
-        value: entity.id.toString(),
-        label: entity.name,
-      })) || [],
-      showWhen: (values: Record<string, unknown>) => values.assignment_type === 'entity',
-    },
-    {
-      name: 'label_ids',
-      type: 'checkbox_multi' as const,
-      label: 'Labels',
-      helpText: 'Optionally select labels to categorize this issue',
-      options: labels?.items?.map((label: IssueLabel) => ({
-        value: label.id.toString(),
-        label: label.name,
-      })) || [],
-    },
-    {
-      name: 'is_incident',
-      type: 'checkbox' as const,
-      label: 'Mark as Incident',
-      defaultValue: false,
-    },
-  ], [organizations, entities, labels, defaultOrganizationId, defaultEntityId])
+  const toggleEntity = (id: number) => {
+    setEntityIds((prev) => (prev.includes(id) ? prev.filter((e) => e !== id) : [...prev, id]))
+  }
 
-  const handleSubmit = async (data: Record<string, unknown>) => {
-    // Convert form data to API format
-    interface ApiIssueData {
-      title: string
-      description?: string
-      priority: string
-      is_incident: number
-      organization_id?: number
-      entity_ids?: number[]
-      label_ids?: number[]
-      parent_issue_id?: number
-    }
-    const apiData: ApiIssueData = {
-      title: data.title as string,
-      description: (data.description as string | undefined) || undefined,
-      priority: data.priority as string,
-      is_incident: (data.is_incident as boolean) ? 1 : 0,
-    }
+  const toggleLabel = (id: number) => {
+    setLabelIds((prev) => (prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]))
+  }
 
-    // Handle assignment
-    if (data.assignment_type === 'organization' && data.organization_id) {
-      apiData.organization_id = parseInt(data.organization_id as string)
-    } else if (data.assignment_type === 'entity' && Array.isArray(data.entity_ids) && data.entity_ids.length > 0) {
-      apiData.entity_ids = data.entity_ids.map((id: unknown) => parseInt(id as string))
-    }
-
-    // Handle labels
-    if (Array.isArray(data.label_ids) && data.label_ids.length > 0) {
-      apiData.label_ids = data.label_ids.map((id: unknown) => parseInt(id as string))
-    }
-
-    // Handle parent issue for sub-tasks
-    if (parentIssueId) {
-      apiData.parent_issue_id = parentIssueId
-    }
-
-    createMutation.mutate(apiData)
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!title.trim() || !organizationId) return
+    createMutation.mutate({
+      title: title.trim(),
+      description: description.trim() || undefined,
+      priority,
+      issue_type: issueType,
+      organization_id: parseInt(organizationId),
+      assignee_id: assignee?.assignee_id,
+      assignee_type: assignee?.assignee_type,
+      is_incident: isIncident ? 1 : 0,
+      channel: issueType === 'support' ? (channel.trim() || undefined) : undefined,
+      category: issueType === 'support' ? (category.trim() || undefined) : undefined,
+      parent_issue_id: parentIssueId,
+    })
   }
 
   return (
-    <FormModalBuilder
-      title={parentIssueId ? 'Create Sub-Task' : 'Create Issue'}
-      fields={fields}
-      isOpen={true}
-      onClose={onClose}
-      onSubmit={handleSubmit}
-      submitButtonText={parentIssueId ? 'Create Sub-Task' : 'Create Issue'}
-      cancelButtonText="Cancel"
-    />
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <h2 className="text-xl font-semibold text-white">
+            {parentIssueId ? 'Create Sub-Task' : 'Create Issue'}
+          </h2>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4" data-testid="create-issue-form">
+            <Input
+              label="Title"
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Enter issue title"
+              data-testid="issue-title-input"
+            />
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Description</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Enter description (optional)"
+                rows={4}
+                className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <Select
+                label="Priority"
+                required
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as IssuePriority)}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </Select>
+              <Select
+                label="Issue Type"
+                required
+                value={issueType}
+                onChange={(e) => setIssueType(e.target.value as IssueType)}
+                data-testid="issue-type-select"
+              >
+                {ISSUE_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Select
+              label="Organization"
+              required
+              value={organizationId}
+              onChange={(e) => setOrganizationId(e.target.value)}
+              data-testid="issue-organization-select"
+            >
+              <option value="">Select organization</option>
+              {organizations?.items?.map((org: Organization) => (
+                <option key={org.id} value={org.id}>
+                  {org.name}
+                </option>
+              ))}
+            </Select>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Assignee</label>
+              <AssigneePicker value={assignee} onChange={setAssignee} />
+            </div>
+            {issueType === 'support' && (
+              <div
+                className="grid grid-cols-2 gap-4 p-4 bg-slate-800/30 rounded-lg"
+                data-testid="support-fields"
+              >
+                <Input
+                  label="Channel"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value)}
+                  placeholder="email, chat, phone..."
+                />
+                <Input
+                  label="Category"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="billing, technical..."
+                />
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Entities</label>
+              <div className="max-h-32 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
+                {entities?.items?.map((entity: Entity) => (
+                  <label key={entity.id} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={entityIds.includes(entity.id)}
+                      onChange={() => toggleEntity(entity.id)}
+                      className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
+                    />
+                    {entity.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Labels</label>
+              <div className="max-h-32 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
+                {labels?.items?.map((label: IssueLabel) => (
+                  <label
+                    key={label.id}
+                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    style={{ color: label.color }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={labelIds.includes(label.id)}
+                      onChange={() => toggleLabel(label.id)}
+                      className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
+                    />
+                    {label.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isIncident}
+                onChange={(e) => setIsIncident(e.target.checked)}
+                className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
+              />
+              <span className="text-sm text-slate-300">Mark as Incident</span>
+            </label>
+            <div className="flex justify-end gap-3 mt-6">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={createMutation.isPending} data-testid="submit-issue-button">
+                {parentIssueId ? 'Create Sub-Task' : 'Create Issue'}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   )
 }

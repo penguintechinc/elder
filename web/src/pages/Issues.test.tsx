@@ -11,15 +11,15 @@ vi.mock('@/lib/api', () => ({
     getEntities: vi.fn().mockResolvedValue({ items: [] }),
     getLabels: vi.fn().mockResolvedValue({ items: [] }),
     updateIssue: vi.fn(),
+    createIssue: vi.fn(),
+    linkIssueEntity: vi.fn(),
+    addIssueLabel: vi.fn(),
   },
 }))
 
-vi.mock('@penguintechinc/react-libs/components', () => ({
-  FormModalBuilder: ({ isOpen, title }: { isOpen: boolean; title: string }) => {
-    if (!isOpen) return null
-    return <div data-testid="create-issue-modal">{title}</div>
-  },
-  FormField: {},
+vi.mock('@/components/AssigneePicker', () => ({
+  default: () => <div data-testid="assignee-picker" />,
+  AssigneeValue: {},
 }))
 
 import Issues from './Issues'
@@ -76,5 +76,61 @@ describe('Issues list', () => {
     fireEvent.change(searchInput, { target: { value: 'login' } })
     // After searching for 'login', only the login issue should show
     await waitFor(() => expect(screen.queryByText('Server down')).toBeNull(), { timeout: 1000 })
+  })
+})
+
+describe('CreateIssueModal', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.getOrganizations).mockResolvedValue({
+      items: [
+        {
+          id: 5,
+          name: 'Acme Corp',
+          created_at: '2026-01-01',
+          updated_at: '2026-01-01',
+        },
+      ],
+    })
+    vi.mocked(api.getEntities).mockResolvedValue({ items: [] })
+    vi.mocked(api.getLabels).mockResolvedValue({ items: [] })
+  })
+
+  it('shows support fields only when issue_type is support', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <Issues />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByText('Create Issue'))
+    await waitFor(() => expect(screen.queryByTestId('support-fields')).toBeNull())
+    fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'support' } })
+    await waitFor(() => {
+      const supportFields = screen.queryByTestId('support-fields')
+      expect(supportFields).toBeDefined()
+    })
+  })
+
+  it('submits with organization_id required and issue_type/assignee forwarded', async () => {
+    vi.mocked(api.createIssue).mockResolvedValue({ id: 99 })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <Issues />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByText('Create Issue'))
+    await waitFor(() => screen.getByTestId('create-issue-form'))
+    fireEvent.change(screen.getByTestId('issue-title-input'), { target: { value: 'New issue' } })
+    fireEvent.change(screen.getByTestId('issue-organization-select'), { target: { value: '5' } })
+    fireEvent.click(screen.getByTestId('submit-issue-button'))
+    await waitFor(() => expect(api.createIssue).toHaveBeenCalled())
+    const call = vi.mocked(api.createIssue).mock.calls[0][0]
+    expect(call.title).toBe('New issue')
+    expect(call.organization_id).toBe(5)
+    expect(call.issue_type).toBe('other')
   })
 })
