@@ -237,6 +237,7 @@ do_deploy() {
         --set "web.image.tag=${TAG}" \
         --set "worker.image.tag=${TAG}" \
         --set "scanner.image.tag=${TAG}" \
+        --force-conflicts \
         --wait --timeout 300s; then
         print_error "Failed to apply Helm release"
         return 1
