@@ -1,0 +1,158 @@
+"""Public intake-form submission: customer_contact upsert + native Issue creation.
+
+Turns an anonymous public intake-form submission into two rows: a reused-or-
+created `customer_contact` identity (tenant-scoped, keyed on email) and a
+native support Issue (see `apps/api/modules/issues/models/issue.py`). Wires
+together the form model (Task 1), the field validator (Task 2), and the
+Altcha challenge/verify pair (Task 3) with the actual unauthenticated submit
+path.
+"""
+
+from datetime import datetime, timezone
+from typing import Any, Optional
+from uuid import uuid4
+
+from shared.utils.village_id import generate_village_id
+
+
+def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
+    """Mint a village_id via Redis, falling back to a random id in tests.
+
+    Mirrors the fallback used throughout the helpdesk routes (e.g.
+    `intake_forms.create_form`) for environments without a live Redis
+    connection, such as the unit test suite.
+    """
+    if redis_client:
+        return generate_village_id(tenant_id, redis_client)
+    return f"test-{uuid4().hex[:8]}"
+
+
+def upsert_customer_contact(
+    db: Any,
+    tenant_id: int,
+    email: str,
+    details: Optional[dict[str, Any]],
+    redis: Optional[Any],
+) -> int:
+    """Find or create a `customer_contact` identity for a public submitter.
+
+    Looks up an existing identity scoped to `tenant_id` by (lowercased)
+    `email` as `username`; reuses it if found. Otherwise inserts a new
+    `customer_contact` identity carrying `details` (e.g. phone, other
+    submitted fields) as its metadata bag. Returns the identity id either
+    way — never creates a duplicate contact for the same email+tenant.
+    """
+    existing = (
+        db(
+            (db.identities.tenant_id == tenant_id)
+            & (db.identities.username == email)
+        )
+        .select()
+        .first()
+    )
+    if existing:
+        return existing.id
+
+    now = datetime.now(timezone.utc)
+
+    # penguin-dal's insert() does not apply SQLAlchemy Column `default=`
+    # values, so every NOT NULL column is passed explicitly (see
+    # tests/unit/test_crm_entity_types.py for the reference pattern).
+    contact_id = db.identities.insert(
+        username=email,
+        email=email,
+        identity_type="customer_contact",
+        auth_provider="local",
+        is_active=True,
+        is_superuser=False,
+        mfa_enabled=False,
+        must_change_password=False,
+        portal_role="observer",
+        tenant_id=tenant_id,
+        metadata=details,
+        village_id=_mint_village_id(tenant_id, redis),
+        created_at=now,
+        updated_at=now,
+    )
+    db.commit()
+    return contact_id
+
+
+def _resolve_resource_id(db: Any, form: Any) -> Optional[int]:
+    """Resolve the owning organization id for issues created from `form`.
+
+    Uses the form's own `organization_id` when set; otherwise falls back to
+    the tenant's first (lowest-id) organization. Returns None if neither is
+    available so the caller can surface a clear error instead of failing a
+    NOT NULL constraint on `issues.resource_id`.
+    """
+    if form.organization_id:
+        return form.organization_id
+
+    root_org = (
+        db(db.organizations.tenant_id == form.tenant_id)
+        .select(orderby=db.organizations.id, limitby=(0, 1))
+        .first()
+    )
+    return root_org.id if root_org else None
+
+
+def create_support_issue_from_form(
+    db: Any,
+    form: Any,
+    validated: dict[str, Any],
+    contact_id: int,
+    redis: Optional[Any],
+) -> str:
+    """Insert a native support Issue from a validated intake-form submission.
+
+    Mirrors `issues/routes/issues.py::create_issue`'s field set for an
+    anonymous submitter: `reporter_id` is the resolved customer_contact
+    identity (never `g.current_user`, which doesn't exist here),
+    `resource_type`/`resource_id` point at the form's owning organization,
+    and a fresh village_id is minted as the public-safe reference returned
+    to the submitter. Raises ValueError if no owning organization can be
+    resolved for the form's tenant.
+
+    Returns:
+        The created issue's village_id.
+    """
+    resource_id = _resolve_resource_id(db, form)
+    if not resource_id:
+        raise ValueError(
+            f"no organization available for tenant {form.tenant_id}; "
+            "cannot create support issue"
+        )
+
+    now = datetime.now(timezone.utc)
+
+    title = validated.get("subject") or form.name
+    description = "\n".join(
+        f"{key}: {value}" for key, value in validated.items() if value is not None
+    )
+
+    insert_data: dict[str, Any] = {
+        "title": title,
+        "description": description,
+        "status": "OPEN",
+        "priority": str(validated.get("priority") or "medium").upper(),
+        "issue_type": "SUPPORT",
+        "is_incident": 0,
+        "channel": "web",
+        "reporter_id": contact_id,
+        "resource_type": "organization",
+        "resource_id": resource_id,
+        "tenant_id": form.tenant_id,
+        "village_id": _mint_village_id(form.tenant_id, redis),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    if form.default_assignee_type and form.default_assignee_id:
+        insert_data["assignee_type"] = form.default_assignee_type
+        insert_data["assignee_id"] = form.default_assignee_id
+
+    issue_id = db.issues.insert(**insert_data)
+    db.commit()
+
+    return db(db.issues.id == issue_id).select().first().village_id

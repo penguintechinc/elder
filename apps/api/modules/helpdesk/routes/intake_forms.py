@@ -1,10 +1,12 @@
-"""Admin CRUD for configurable intake forms (hd_intake_forms) using penguin-dal.
+"""Admin CRUD + public submit routes for configurable intake forms.
 
-Intake forms are the CRM-facing entry point into the unified Issues model: a
-public submission against one of these forms creates a native Issue rather
-than an hd_tickets row (see HdTicketForm for that older path). This module
-covers admin management only; the unauthenticated public GET/submit routes
-are added in a later task.
+Intake forms (hd_intake_forms) are the CRM-facing entry point into the
+unified Issues model: a public submission against one of these forms creates
+a native Issue rather than an hd_tickets row (see HdTicketForm for that
+older path). `bp` covers admin management (login + helpdesk:admin scope);
+`bp_public` covers the unauthenticated GET/submit routes a form's own public
+page uses, mounted separately at `/api/v1/intake` so the two never share a
+URL prefix or an auth posture.
 """
 
 import json
@@ -15,6 +17,12 @@ from uuid import uuid4
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.modules.helpdesk.services.altcha import create_challenge, verify_solution
+from apps.api.modules.helpdesk.services.form_validation import validate_submission
+from apps.api.modules.helpdesk.services.intake_submit import (
+    create_support_issue_from_form,
+    upsert_customer_contact,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -22,6 +30,7 @@ from apps.api.utils.pydal_helpers import PaginationParams
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("helpdesk_intake_forms", __name__)
+bp_public = Blueprint("helpdesk_intake_public", __name__)
 
 
 def _get_tenant_id() -> int | None:
@@ -377,3 +386,130 @@ async def delete_form(form_id):
         return ApiResponse.not_found("Form")
 
     return "", 204
+
+
+# ---------------------------------------------------------------------------
+# Public routes (no auth) — mounted at /api/v1/intake via bp_public.
+# ---------------------------------------------------------------------------
+
+
+def _fetch_public_form(db, slug: str):
+    """Return the active+public form matching `slug`, or None.
+
+    Shared by both public routes below. A single "not active AND public"
+    filter (rather than checking each independently) means a private or
+    inactive form 404s exactly like a nonexistent slug — the public route
+    never distinguishes "doesn't exist" from "exists but isn't public".
+    """
+    return (
+        db(
+            (db.hd_intake_forms.slug == slug)
+            & (db.hd_intake_forms.is_active == True)  # noqa: E712
+            & (db.hd_intake_forms.is_public == True)  # noqa: E712
+        )
+        .select()
+        .first()
+    )
+
+
+@bp_public.route("/<slug>", methods=["GET"])
+async def get_public_intake_form(slug):
+    """
+    Get a public intake form's schema for rendering a submission UI (no auth).
+
+    Path parameters:
+        slug: Form slug (globally unique)
+
+    Returns:
+        200: {name, description, fields, captcha_required, altcha_challenge?}
+             (altcha_challenge is present only when captcha_required)
+        404: Form not found, inactive, or not public
+    """
+    db = current_app.db
+
+    form_row = await run_in_threadpool(lambda: _fetch_public_form(db, slug))
+
+    if not form_row:
+        return ApiResponse.not_found("Form")
+
+    fields = json.loads(form_row.fields) if form_row.fields else []
+
+    response = {
+        "name": form_row.name,
+        "description": form_row.description,
+        "fields": fields,
+        "captcha_required": form_row.captcha_required,
+    }
+    if form_row.captcha_required:
+        response["altcha_challenge"] = create_challenge()
+
+    return jsonify(response), 200
+
+
+@bp_public.route("/<slug>/submit", methods=["POST"])
+async def submit_public_intake_form(slug):
+    """
+    Submit a public intake form (no auth): creates a customer_contact + Issue.
+
+    Request body:
+        {
+            "fields": {"email": "...", "subject": "...", ...},
+            "altcha": {...}   # required iff the form has captcha_required=True
+        }
+
+    Returns:
+        201: {"status": "created", "reference": "<issue village_id>"}
+        400: CAPTCHA verification failed, field validation failed, or the
+             form has no resolvable "email" field/value for the contact
+        404: Form not found, inactive, or not public
+
+    The response deliberately omits internal ids and the tenant — only the
+    issue's public village_id reference is returned to an unauthenticated
+    caller.
+    """
+    db = current_app.db
+    data = await request.get_json() or {}
+
+    form_row = await run_in_threadpool(lambda: _fetch_public_form(db, slug))
+
+    if not form_row:
+        return ApiResponse.not_found("Form")
+
+    if form_row.captcha_required:
+        if not verify_solution(data.get("altcha")):
+            return ApiResponse.error("CAPTCHA verification failed", 400)
+
+    fields_spec = json.loads(form_row.fields) if form_row.fields else []
+    submitted = data.get("fields") or {}
+
+    try:
+        validated, errors = validate_submission(fields_spec, submitted)
+    except ValueError as exc:
+        return ApiResponse.error(f"Unsupported field in form: {exc}", 400)
+
+    if errors:
+        return ApiResponse.error("Validation failed", 400, messages=errors)
+
+    email = (validated.get("email") or "").strip().lower()
+    if not email:
+        return ApiResponse.error("email is required to submit this form", 400)
+
+    tenant_id = form_row.tenant_id
+    redis_client = getattr(current_app, "redis_client", None)
+    details = {key: value for key, value in validated.items() if key != "email"}
+
+    def submit():
+        contact_id = upsert_customer_contact(
+            db, tenant_id, email, details, redis_client
+        )
+        return create_support_issue_from_form(
+            db, form_row, validated, contact_id, redis_client
+        )
+
+    try:
+        village_id = await run_in_threadpool(submit)
+    except ValueError as exc:
+        logger.error(f"Intake form submit failed for slug={slug}: {exc}")
+        return ApiResponse.error("Unable to create support issue", 400)
+
+    return jsonify({"status": "created", "reference": village_id}), 201

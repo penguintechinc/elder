@@ -303,6 +303,10 @@ def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
         # model (create native Issues, not hd_tickets) — mounted at the
         # top-level /api/v1/intake-forms, not under /api/v1/helpdesk, per plan.
         (intake_forms.bp, "/api/v1/intake-forms"),
+        # Public (unauthenticated) GET/submit routes for the same forms, on
+        # their own top-level prefix so they never share a URL space or an
+        # auth posture with the admin CRUD blueprint above.
+        (intake_forms.bp_public, "/api/v1/intake"),
     ]
 
 
