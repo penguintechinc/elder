@@ -11,6 +11,7 @@ import Input from '@/components/Input'
 import { NetworkGraph } from '@/components/NetworkGraph'
 import CreateIdentityModal from '@/components/CreateIdentityModal'
 import OnCallBadge from '@/components/OnCallBadge'
+import { ORGANIZATION_TYPES } from '@/lib/constants/organizationTypes'
 
 interface TreeNode {
   type: 'organization' | 'entity'
@@ -1338,14 +1339,6 @@ function EditOrganizationModal({ organization, onClose, onSuccess }: EditOrganiz
   const [name, setName] = useState(organization.name)
   const [description, setDescription] = useState(organization.description || '')
   const [organizationType, setOrganizationType] = useState(organization.organization_type || 'organization')
-
-  const ORGANIZATION_TYPES = [
-    { value: 'department', label: 'Department' },
-    { value: 'organization', label: 'Organization' },
-    { value: 'team', label: 'Team' },
-    { value: 'collection', label: 'Collection' },
-    { value: 'other', label: 'Other' },
-  ]
 
   const updateMutation = useMutation({
     mutationFn: (data: { name: string; description?: string; organization_type?: string }) =>

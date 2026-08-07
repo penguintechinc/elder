@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { IDENTITY_TYPES } from '@/lib/constants/identityTypes'
 
 interface ApiError {
   response?: {
@@ -12,16 +13,6 @@ interface ApiError {
   }
   message?: string
 }
-
-const IDENTITY_TYPES = [
-  { value: 'employee', label: 'Employee' },
-  { value: 'vendor', label: 'Vendor' },
-  { value: 'bot', label: 'Bot' },
-  { value: 'serviceAccount', label: 'Service Account' },
-  { value: 'integration', label: 'Integration' },
-  { value: 'otherHuman', label: 'Other Human' },
-  { value: 'other', label: 'Other' },
-]
 
 interface CreateIdentityModalProps {
   isOpen: boolean

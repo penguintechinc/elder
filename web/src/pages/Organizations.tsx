@@ -12,6 +12,7 @@ import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { ORGANIZATION_TYPES } from '@/lib/constants/organizationTypes'
 
 // Form fields for organization creation
 const orgFields: FormField[] = [
@@ -21,6 +22,14 @@ const orgFields: FormField[] = [
     type: 'text',
     required: true,
     placeholder: 'Enter organization name'
+  },
+  {
+    name: 'organization_type',
+    label: 'Type',
+    type: 'select',
+    required: true,
+    defaultValue: 'organization',
+    options: ORGANIZATION_TYPES,
   },
   {
     name: 'description',
@@ -53,7 +62,7 @@ export default function Organizations() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; description?: string; parent_id?: number }) =>
+    mutationFn: (data: { name: string; description?: string; organization_type?: string; parent_id?: number }) =>
       api.createOrganization(data),
     onSuccess: async () => {
       await invalidateCache.organizations(queryClient)
@@ -70,7 +79,7 @@ export default function Organizations() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string; organization_type?: string } }) =>
       api.updateOrganization(id, data),
     onSuccess: async () => {
       await invalidateCache.organizations(queryClient)
@@ -110,6 +119,14 @@ export default function Organizations() {
         defaultValue: editingOrg.name,
       },
       {
+        name: 'organization_type',
+        label: 'Type',
+        type: 'select',
+        required: true,
+        defaultValue: editingOrg.organization_type || 'organization',
+        options: ORGANIZATION_TYPES,
+      },
+      {
         name: 'description',
         label: 'Description',
         type: 'textarea',
@@ -121,9 +138,10 @@ export default function Organizations() {
   }, [editingOrg])
 
   const handleCreate = (formData: Record<string, unknown>) => {
-    const data: { name: string; description?: string; parent_id?: number } = {
+    const data: { name: string; description?: string; organization_type?: string; parent_id?: number } = {
       name: formData.name as string,
       description: (formData.description as string) || undefined,
+      organization_type: formData.organization_type as string,
     }
     if (initialParentId) {
       data.parent_id = parseInt(initialParentId)
@@ -138,6 +156,7 @@ export default function Organizations() {
       data: {
         name: formData.name as string,
         description: (formData.description as string) || undefined,
+        organization_type: formData.organization_type as string,
       }
     })
   }
