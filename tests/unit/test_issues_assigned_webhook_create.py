@@ -1,6 +1,8 @@
 """issue.assigned must fire when an issue is created with an assignee, and
 must NOT fire when created without one."""
 
+import asyncio
+import time
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -28,6 +30,30 @@ def _insert_webhook(db, tenant_id=1):
     )
     db.commit()
     return webhook_id
+
+
+async def _wait_for_delivery(db, webhook_id, timeout=5.0, event_type="issue.assigned"):
+    """Poll for webhook delivery row, waiting up to timeout seconds.
+
+    Fire-and-forget webhook dispatch via asyncio.create_task is non-blocking,
+    so the row may not appear immediately. Poll with small delays to avoid
+    test flake from timing gaps between the async task's insert and the test's
+    read.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        delivery = (
+            db(
+                (db.webhook_deliveries.webhook_id == webhook_id)
+                & (db.webhook_deliveries.event_type == event_type)
+            )
+            .select()
+            .first()
+        )
+        if delivery is not None:
+            return delivery
+        await asyncio.sleep(0.1)
+    return None
 
 
 @pytest.mark.asyncio
@@ -61,25 +87,14 @@ async def test_create_issue_with_assignee_fires_webhook(
     )
     assert resp.status_code == 201, (await resp.get_data()).decode()[:300]
 
-    # asyncio.create_task fire-and-forget: give the event loop a tick.
-    import asyncio
-
-    await asyncio.sleep(0.1)
-
     async with app.app_context():
         db = current_app.db
         # webhook_deliveries is session-scoped and never truncated between
         # tests, so scope the lookup to this test's own webhook_id — an
         # unscoped query could pass vacuously on a stale row from another
         # test (mirrors test_webhook_assignment_dispatch.py's approach).
-        delivery = (
-            db(
-                (db.webhook_deliveries.webhook_id == webhook_id)
-                & (db.webhook_deliveries.event_type == "issue.assigned")
-            )
-            .select()
-            .first()
-        )
+        # Poll for the row since dispatch is fire-and-forget via asyncio.create_task.
+        delivery = await _wait_for_delivery(db, webhook_id)
         assert delivery is not None
 
 
