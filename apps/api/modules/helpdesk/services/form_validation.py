@@ -7,9 +7,16 @@ no hand-written model per form.
 """
 
 from datetime import date
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 
-from pydantic import BaseModel, EmailStr, HttpUrl, ValidationError, create_model
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, ValidationError, create_model
+
+#: Upper bound on any free-text field's length. Applied to every
+#: string-family type (``text``, ``textarea``, ``string``, and a
+#: freeform ``select`` without an explicit ``options`` list) so a wildly
+#: oversized submitted value fails validation with a clean 400 instead of
+#: reaching the database as a multi-megabyte string (security review).
+_MAX_STRING_LENGTH = 10000
 
 #: Maps a field spec's ``type`` string to the Python/pydantic type used for
 #: that field. Types not present here (including ``file``) are unsupported.
@@ -28,13 +35,19 @@ _TYPE_MAP: dict[str, type] = {
     "url": HttpUrl,
 }
 
+#: Bounded-length variant of ``str``, used in place of the bare type for
+#: every plain-string field (see ``_MAX_STRING_LENGTH``).
+_BOUNDED_STR = Annotated[str, Field(max_length=_MAX_STRING_LENGTH)]
+
 
 def _field_type(spec: dict[str, Any]) -> type:
     """Resolve the Python/pydantic type for a single field spec.
 
     ``select`` fields with an ``options`` list are narrowed to a
     ``Literal`` of those options; everything else uses the static
-    ``_TYPE_MAP``. Raises ``ValueError`` for unknown or ``file`` types.
+    ``_TYPE_MAP``, with plain ``str`` swapped for the length-bounded
+    ``_BOUNDED_STR`` variant. Raises ``ValueError`` for unknown or
+    ``file`` types.
     """
     field_type = spec.get("type")
 
@@ -44,7 +57,8 @@ def _field_type(spec: dict[str, Any]) -> type:
     if field_type not in _TYPE_MAP:
         raise ValueError(f"unsupported field type: {field_type}")
 
-    return _TYPE_MAP[field_type]
+    resolved = _TYPE_MAP[field_type]
+    return _BOUNDED_STR if resolved is str else resolved
 
 
 def build_form_model(fields: list[dict[str, Any]]) -> type[BaseModel]:

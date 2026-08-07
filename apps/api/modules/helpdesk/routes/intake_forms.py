@@ -12,12 +12,18 @@ URL prefix or an auth posture.
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Any, Optional
 from uuid import uuid4
 
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
-from apps.api.modules.helpdesk.services.altcha import create_challenge, verify_solution
+from apps.api.modules.helpdesk.common import identity_in_tenant
+from apps.api.modules.helpdesk.services.altcha import (
+    create_challenge,
+    extract_challenge,
+    verify_solution,
+)
 from apps.api.modules.helpdesk.services.form_validation import validate_submission
 from apps.api.modules.helpdesk.services.intake_submit import (
     ContactResolutionError,
@@ -33,6 +39,11 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("helpdesk_intake_forms", __name__)
 bp_public = Blueprint("helpdesk_intake_public", __name__)
 
+#: Only these polymorphic assignee target types are resolvable/valid — any
+#: other value (or a `default_assignee_id` submitted without one of these)
+#: is rejected rather than persisted unvalidated.
+_VALID_ASSIGNEE_TYPES = ("identity", "org_unit")
+
 
 def _get_tenant_id() -> int | None:
     """Extract tenant_id from g.claims (populated by before_request)."""
@@ -44,6 +55,73 @@ def _get_tenant_id() -> int | None:
         return int(tenant_str)
     except (ValueError, TypeError):
         return None
+
+
+def _validate_organization_ref(db, tenant_id: int, organization_id: Any) -> bool:
+    """Return True if `organization_id` is None or belongs to `tenant_id`.
+
+    Guards `create_form`/`update_form` against a cross-tenant IDOR: without
+    this, an admin in tenant A could point a form's `organization_id` (or a
+    `default_assignee_id` of type `org_unit`) at an organization owned by a
+    different tenant.
+    """
+    if organization_id is None:
+        return True
+    return (
+        db(
+            (db.organizations.id == organization_id)
+            & (db.organizations.tenant_id == tenant_id)
+        )
+        .select()
+        .first()
+        is not None
+    )
+
+
+def _validate_assignee_ref(
+    db, tenant_id: int, assignee_type: Any, assignee_id: Any
+) -> tuple[bool, Optional[str]]:
+    """Validate a (`default_assignee_type`, `default_assignee_id`) pair.
+
+    Returns `(True, None)` if the pair is valid — including both unset, or
+    a type set with no id. Returns `(False, "invalid_assignee_type")` if a
+    type is present but not one of `_VALID_ASSIGNEE_TYPES`, or an id is
+    present without a recognized type to resolve it against. Returns
+    `(False, "invalid_assignee")` if a recognized type + id pair doesn't
+    resolve to an identity/organization within `tenant_id` (cross-tenant
+    IDOR guard, mirroring `issues/routes/issues.py::create_issue`).
+    """
+    if assignee_type is not None and assignee_type not in _VALID_ASSIGNEE_TYPES:
+        return False, "invalid_assignee_type"
+
+    if assignee_id is None:
+        return True, None
+
+    if assignee_type == "identity":
+        if not identity_in_tenant(db, assignee_id, tenant_id):
+            return False, "invalid_assignee"
+        return True, None
+
+    if assignee_type == "org_unit":
+        if not _validate_organization_ref(db, tenant_id, assignee_id):
+            return False, "invalid_assignee"
+        return True, None
+
+    # assignee_id given but no recognized type to validate it against.
+    return False, "invalid_assignee_type"
+
+
+_ERROR_RESPONSES = {
+    "invalid_organization": lambda: ApiResponse.error(
+        "organization_id not found in tenant", 400
+    ),
+    "invalid_assignee_type": lambda: ApiResponse.error(
+        "default_assignee_type must be 'identity' or 'org_unit'", 400
+    ),
+    "invalid_assignee": lambda: ApiResponse.error(
+        "default_assignee_id not found in tenant", 400
+    ),
+}
 
 
 def _serialize(form_row) -> dict:
@@ -192,6 +270,18 @@ async def create_form():
         if existing:
             return None, "duplicate_slug"
 
+        organization_id = data.get("organization_id")
+        if not _validate_organization_ref(db, tenant_id, organization_id):
+            return None, "invalid_organization"
+
+        assignee_type = data.get("default_assignee_type")
+        assignee_id = data.get("default_assignee_id")
+        assignee_ok, assignee_error = _validate_assignee_ref(
+            db, tenant_id, assignee_type, assignee_id
+        )
+        if not assignee_ok:
+            return None, assignee_error
+
         if redis_client:
             village_id = generate_village_id(tenant_id, redis_client)
         else:
@@ -210,9 +300,9 @@ async def create_form():
             "description": data.get("description"),
             "fields": json.dumps(fields),
             "issue_type": data.get("issue_type", "support"),
-            "default_assignee_type": data.get("default_assignee_type"),
-            "default_assignee_id": data.get("default_assignee_id"),
-            "organization_id": data.get("organization_id"),
+            "default_assignee_type": assignee_type,
+            "default_assignee_id": assignee_id,
+            "organization_id": organization_id,
             "is_public": data.get("is_public", False),
             "captcha_required": data.get("captcha_required", False),
             "is_active": data.get("is_active", True),
@@ -230,6 +320,9 @@ async def create_form():
 
     if error == "duplicate_slug":
         return ApiResponse.conflict("Form slug must be globally unique")
+
+    if error in _ERROR_RESPONSES:
+        return _ERROR_RESPONSES[error]()
 
     if not form_row:
         return ApiResponse.error("Failed to create form", 400)
@@ -304,7 +397,27 @@ async def update_form(form_id):
         )
 
         if not form_row:
-            return None
+            return None, "not_found"
+
+        # Cross-tenant IDOR guards: validate against the caller's tenant_id,
+        # resolving against the row's existing value whenever a field isn't
+        # part of this partial update (e.g. changing default_assignee_id
+        # without resending default_assignee_type still gets validated
+        # against the type already on the row).
+        if "organization_id" in data:
+            if not _validate_organization_ref(db, tenant_id, data["organization_id"]):
+                return None, "invalid_organization"
+
+        if "default_assignee_type" in data or "default_assignee_id" in data:
+            assignee_type = data.get(
+                "default_assignee_type", form_row.default_assignee_type
+            )
+            assignee_id = data.get("default_assignee_id", form_row.default_assignee_id)
+            assignee_ok, assignee_error = _validate_assignee_ref(
+                db, tenant_id, assignee_type, assignee_id
+            )
+            if not assignee_ok:
+                return None, assignee_error
 
         now = datetime.now(timezone.utc)
         updates = {"updated_at": now}
@@ -336,9 +449,15 @@ async def update_form(form_id):
         db(db.hd_intake_forms.id == form_id).update(**updates)
         db.commit()
 
-        return db(db.hd_intake_forms.id == form_id).select().first()
+        return db(db.hd_intake_forms.id == form_id).select().first(), None
 
-    form_row = await run_in_threadpool(update)
+    form_row, error = await run_in_threadpool(update)
+
+    if error == "not_found":
+        return ApiResponse.not_found("Form")
+
+    if error in _ERROR_RESPONSES:
+        return _ERROR_RESPONSES[error]()
 
     if not form_row:
         return ApiResponse.not_found("Form")
@@ -460,8 +579,9 @@ async def submit_public_intake_form(slug):
 
     Returns:
         201: {"status": "created", "reference": "<issue village_id>"}
-        400: CAPTCHA verification failed, field validation failed, or the
-             form has no resolvable "email" field/value for the contact
+        400: CAPTCHA verification failed, CAPTCHA already used (replay),
+             field validation failed, or the form has no resolvable
+             "email" field/value for the contact
         404: Form not found, inactive, or not public
 
     The response deliberately omits internal ids and the tenant — only the
@@ -482,9 +602,31 @@ async def submit_public_intake_form(slug):
     if not form_row:
         return ApiResponse.not_found("Form")
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     if form_row.captcha_required:
-        if not verify_solution(data.get("altcha")):
+        altcha_payload = data.get("altcha")
+        if not verify_solution(altcha_payload):
             return ApiResponse.error("CAPTCHA verification failed", 400)
+
+        # Single-use enforcement: verify_solution alone accepts a solution
+        # for CHALLENGE_TTL_SECONDS after issuance, so without this a
+        # captured, already-solved challenge could be replayed against this
+        # endpoint repeatedly within that window. `SET NX` atomically claims
+        # the challenge id the first time it's redeemed; a falsy result
+        # means another request already consumed it. Best-effort — skipped
+        # (never a crash) when Redis is unavailable, since expiry alone
+        # still bounds the exposure in that case.
+        if redis_client is not None:
+            challenge = extract_challenge(altcha_payload)
+            if challenge:
+                consumed_now = await run_in_threadpool(
+                    lambda: redis_client.set(
+                        f"altcha:used:{challenge}", "1", nx=True, ex=300
+                    )
+                )
+                if not consumed_now:
+                    return ApiResponse.error("captcha already used", 400)
 
     fields_spec = json.loads(form_row.fields) if form_row.fields else []
     submitted = data.get("fields") or {}
@@ -502,7 +644,6 @@ async def submit_public_intake_form(slug):
         return ApiResponse.error("email is required to submit this form", 400)
 
     tenant_id = form_row.tenant_id
-    redis_client = getattr(current_app, "redis_client", None)
     details = {key: value for key, value in validated.items() if key != "email"}
 
     def submit():

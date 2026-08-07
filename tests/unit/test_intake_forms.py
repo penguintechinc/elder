@@ -1,11 +1,14 @@
 """Admin CRUD + public submit tests for the IntakeForm model (hd_intake_forms).
 
 Covers create + tenant-scoped list, global slug-uniqueness enforcement
-(mirroring the HdTicketForm admin route test pattern), and the
-unauthenticated public GET/submit routes that turn a form submission into a
-native support Issue + customer_contact identity (Task 4).
+(mirroring the HdTicketForm admin route test pattern), the unauthenticated
+public GET/submit routes that turn a form submission into a native support
+Issue + customer_contact identity (Task 4), and the security-review fixes:
+Altcha replay/single-use protection and cross-tenant FK IDOR guards on the
+admin CRUD routes.
 """
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -13,6 +16,29 @@ from uuid import uuid4
 
 import pytest
 from quart import current_app
+
+
+def _solve_altcha(challenge: dict) -> dict:
+    """Brute-force a real Altcha proof-of-work challenge for use in tests.
+
+    Mirrors `tests/unit/test_altcha.py::_solve`, but against a challenge
+    fetched from the live public GET route (which includes the signed
+    `timestamp` field) rather than one built directly via `create_challenge`.
+    """
+    for n in range(challenge["maxnumber"] + 1):
+        if (
+            hashlib.sha256(f"{challenge['salt']}{n}".encode()).hexdigest()
+            == challenge["challenge"]
+        ):
+            return {
+                "algorithm": challenge["algorithm"],
+                "challenge": challenge["challenge"],
+                "number": n,
+                "salt": challenge["salt"],
+                "signature": challenge["signature"],
+                "timestamp": challenge["timestamp"],
+            }
+    raise AssertionError("unsolvable altcha challenge")
 
 
 class TestIntakeFormsAdmin:
@@ -94,6 +120,143 @@ class TestIntakeFormsAdmin:
         assert second.status_code in (400, 409), (
             await second.get_data()
         ).decode()[:300]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_form_rejects_cross_tenant_organization_id(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression (security review): `organization_id` must belong to
+        the caller's own tenant — an org owned by a DIFFERENT tenant is
+        rejected with 400, not silently accepted (cross-tenant FK IDOR)."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            tenant2_id = db.tenants.insert(
+                name="Cross Tenant IDOR Two",
+                slug=f"idor-tenant-{uuid4().hex[:8]}",
+                is_active=True,
+            )
+            db.commit()
+            foreign_org_id = db.organizations.insert(
+                name="Foreign Org",
+                tenant_id=tenant2_id,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+        resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Cross Tenant Org Form",
+                "slug": f"idor-org-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "organization_id": foreign_org_id,
+                "is_public": True,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_form_rejects_cross_tenant_assignee_identity(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression (security review): `default_assignee_id` (type
+        `identity`) must belong to the caller's own tenant — an identity in
+        a DIFFERENT tenant is rejected with 400."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            tenant2_id = db.tenants.insert(
+                name="Cross Tenant IDOR Assignee",
+                slug=f"idor-assignee-tenant-{uuid4().hex[:8]}",
+                is_active=True,
+            )
+            db.commit()
+            foreign_identity_id = db.identities.insert(
+                identity_type="human",
+                username=f"foreign-{uuid4().hex[:8]}",
+                email=f"foreign-{uuid4().hex[:8]}@example.com",
+                tenant_id=tenant2_id,
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="observer",
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+        resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Cross Tenant Assignee Form",
+                "slug": f"idor-assignee-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "default_assignee_type": "identity",
+                "default_assignee_id": foreign_identity_id,
+                "is_public": True,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_form_rejects_invalid_assignee_type(
+        self, mock_get_user, async_client, generate_token
+    ):
+        """Regression (security review): `default_assignee_type` is
+        allow-listed to `identity`/`org_unit` — an unrecognized value is
+        rejected with 400 rather than persisted unvalidated."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Bad Assignee Type Form",
+                "slug": f"bad-assignee-type-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "default_assignee_type": "not_a_real_type",
+                "default_assignee_id": 1,
+                "is_public": True,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
 
 
 class TestIntakeFormsPublicSubmit:
@@ -594,3 +757,138 @@ class TestIntakeFormsPublicSubmit:
                 f"body={bad_body!r} -> {resp.status_code} "
                 f"{(await resp.get_data()).decode()[:200]}"
             )
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_public_submit_captcha_single_use_rejects_replay(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression (security review): replaying the SAME solved Altcha
+        solution against a second submit is rejected with 400 — a solved
+        challenge is single-use, not redeemable repeatedly within its
+        validity window (see altcha.py CHALLENGE_TTL_SECONDS + the Redis
+        `SET NX` single-use marker in intake_forms.py)."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Replay Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        slug = f"replay-{uuid4().hex[:8]}"
+        create_resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Replay Form",
+                "slug": slug,
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "organization_id": org_id,
+                "is_public": True,
+                "captcha_required": True,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert create_resp.status_code in (200, 201), (
+            await create_resp.get_data()
+        ).decode()[:300]
+
+        get_resp = await async_client.get(f"/api/v1/intake/{slug}")
+        assert get_resp.status_code == 200, (await get_resp.get_data()).decode()[:300]
+        challenge = json.loads(await get_resp.get_data())["altcha_challenge"]
+        solved = _solve_altcha(challenge)
+
+        email = f"replay-{uuid4().hex[:8]}@example.com"
+
+        first = await async_client.post(
+            f"/api/v1/intake/{slug}/submit",
+            json={"fields": {"email": email}, "altcha": solved},
+        )
+        assert first.status_code in (200, 201), (
+            await first.get_data()
+        ).decode()[:300]
+
+        second = await async_client.post(
+            f"/api/v1/intake/{slug}/submit",
+            json={"fields": {"email": email}, "altcha": solved},
+        )
+        assert second.status_code == 400, (
+            await second.get_data()
+        ).decode()[:300]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_public_submit_oversized_field_returns_400(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression (security review): a submitted string field far
+        exceeding the per-field length bound is a clean 400 (Pydantic
+        validation failure), not a 500 or an unbounded value reaching the
+        database (see form_validation.py _MAX_STRING_LENGTH)."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Oversized Field Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        slug = f"oversized-{uuid4().hex[:8]}"
+        create_resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Oversized Field Form",
+                "slug": slug,
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    },
+                    {
+                        "id": "notes",
+                        "label": "Notes",
+                        "type": "text",
+                        "required": False,
+                    },
+                ],
+                "organization_id": org_id,
+                "is_public": True,
+                "captcha_required": False,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert create_resp.status_code in (200, 201), (
+            await create_resp.get_data()
+        ).decode()[:300]
+
+        resp = await async_client.post(
+            f"/api/v1/intake/{slug}/submit",
+            json={
+                "fields": {
+                    "email": f"oversized-{uuid4().hex[:8]}@example.com",
+                    "notes": "x" * 10001,
+                }
+            },
+        )
+        assert resp.status_code == 400, (await resp.get_data()).decode()[:300]

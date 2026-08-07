@@ -14,6 +14,17 @@ from uuid import uuid4
 
 from shared.utils.village_id import generate_village_id
 
+#: Matches `issues.title` (VARCHAR(255) — see
+#: apps/api/modules/issues/models/issue.py). A derived title longer than
+#: this is truncated with an ellipsis rather than failing the insert; the
+#: full text is still preserved in `description`.
+_ISSUE_TITLE_MAX_LENGTH = 255
+
+#: Matches `IssuePriority` (apps/api/modules/issues/models/issue.py). A
+#: submitted `priority` outside this set is not a valid enum value for the
+#: column, so it's defaulted to MEDIUM rather than passed through.
+_VALID_ISSUE_PRIORITIES = {"LOW", "MEDIUM", "HIGH", "URGENT", "CRITICAL"}
+
 
 class ContactResolutionError(Exception):
     """Raised when a customer_contact identity can neither be found nor
@@ -152,7 +163,12 @@ def create_support_issue_from_form(
     identity (never `g.current_user`, which doesn't exist here),
     `resource_type`/`resource_id` point at the form's owning organization,
     and a fresh village_id is minted as the public-safe reference returned
-    to the submitter. Raises ValueError if no owning organization can be
+    to the submitter. `issue_type` honors the form's own admin-configured
+    value (default "support") rather than a hardcoded constant; `priority`
+    is allow-listed against `IssuePriority`, defaulting to MEDIUM for any
+    unrecognized submitted value; `title` is truncated to fit
+    `issues.title`'s VARCHAR(255) column, with the full text preserved in
+    `description`. Raises ValueError if no owning organization can be
     resolved for the form's tenant.
 
     Returns:
@@ -167,17 +183,25 @@ def create_support_issue_from_form(
 
     now = datetime.now(timezone.utc)
 
-    title = validated.get("subject") or form.name
+    raw_title = str(validated.get("subject") or form.name)
+    if len(raw_title) > _ISSUE_TITLE_MAX_LENGTH:
+        title = raw_title[: _ISSUE_TITLE_MAX_LENGTH - 1] + "…"
+    else:
+        title = raw_title
     description = "\n".join(
         f"{key}: {value}" for key, value in validated.items() if value is not None
     )
+
+    priority = str(validated.get("priority") or "medium").upper()
+    if priority not in _VALID_ISSUE_PRIORITIES:
+        priority = "MEDIUM"
 
     insert_data: dict[str, Any] = {
         "title": title,
         "description": description,
         "status": "OPEN",
-        "priority": str(validated.get("priority") or "medium").upper(),
-        "issue_type": "SUPPORT",
+        "priority": priority,
+        "issue_type": (form.issue_type or "support").upper(),
         "is_incident": 0,
         "channel": "web",
         "reporter_id": contact_id,
