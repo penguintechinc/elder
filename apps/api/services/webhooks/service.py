@@ -1054,7 +1054,11 @@ class WebhookService:
     # ===========================
 
     def broadcast_event(
-        self, event_type: str, payload: Dict[str, Any], organization_id: int
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        organization_id: int,
+        tenant_id: int,
     ) -> Dict[str, Any]:
         """
         Broadcast an event to all applicable webhooks and notification rules.
@@ -1063,6 +1067,10 @@ class WebhookService:
             event_type: Event type (e.g., "entity.created")
             payload: Event payload
             organization_id: Organization ID
+            tenant_id: Owning tenant (from the caller's validated JWT, never
+                client input) — scopes webhook selection so a caller can
+                never trigger delivery to another tenant's webhooks by
+                supplying a foreign organization_id (cross-tenant IDOR fix)
 
         Returns:
             Broadcast result with counts
@@ -1076,6 +1084,7 @@ class WebhookService:
         # left unchanged here.
         webhooks = self.db(
             (self.db.webhooks.organization_id == organization_id)
+            & (self.db.webhooks.tenant_id == tenant_id)
             & (self.db.webhooks.is_active == True)  # noqa: E712
         ).select()
 

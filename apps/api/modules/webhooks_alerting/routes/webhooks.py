@@ -204,6 +204,14 @@ async def create_webhook():
 
         service = get_webhook_service()
 
+        # Cross-tenant IDOR guard: organization_id is optional (a webhook
+        # need not belong to an org), so an unset value stays valid per
+        # _org_unit_in_tenant's normal semantics — only a *set* org id that
+        # resolves outside the caller's tenant is rejected.
+        organization_id = data.get("organization_id")
+        if not _org_unit_in_tenant(service.db, organization_id, tenant_id):
+            return jsonify({"error": "organization_id not found in tenant"}), 400
+
         filter_assignee_type = data.get("filter_assignee_type")
         filter_assignee_id = data.get("filter_assignee_id")
         assignee_error = _validate_filter_assignee_ref(
@@ -218,7 +226,7 @@ async def create_webhook():
             url=data["url"],
             events=data["events"],
             redis_client=redis_client,
-            organization_id=data.get("organization_id"),
+            organization_id=organization_id,
             secret=data.get("secret"),
             headers=data.get("headers"),
             filter_issue_type=data.get("filter_issue_type"),
@@ -686,7 +694,8 @@ def test_notification_rule(rule_id):
 @require_scope("webhooks_alerting:admin")
 async def broadcast_event():
     """
-    Broadcast an event to all applicable webhooks and notification rules.
+    Broadcast an event to all applicable webhooks and notification rules
+    belonging to the caller's tenant.
 
     Request body:
         {
@@ -698,8 +707,14 @@ async def broadcast_event():
     Returns:
         200: Event broadcasted
         400: Invalid request
+        403: Tenant not found
+        404: organization_id not found in tenant
     """
     try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
         data = await request.get_json()
 
         if not data:
@@ -714,10 +729,26 @@ async def broadcast_event():
             )
 
         service = get_webhook_service()
+
+        # Cross-tenant IDOR guard: organization_id is caller-supplied, so it
+        # must be proven to belong to the caller's own tenant before it's
+        # used to select which webhooks receive this payload. A `None`
+        # organization_id is treated as invalid here (unlike
+        # _org_unit_in_tenant's normal "unset filter" semantics elsewhere in
+        # this file) because organization_id is a REQUIRED field on this
+        # endpoint — `_org_unit_in_tenant(db, None, tenant_id)` returning
+        # True would otherwise let an explicit JSON `null` bypass the check.
+        organization_id = data["organization_id"]
+        if organization_id is None or not _org_unit_in_tenant(
+            service.db, organization_id, tenant_id
+        ):
+            return jsonify({"error": "organization_id not found in tenant"}), 404
+
         result = service.broadcast_event(
             event_type=data["event_type"],
             payload=data["payload"],
-            organization_id=data["organization_id"],
+            organization_id=organization_id,
+            tenant_id=tenant_id,
         )
 
         return jsonify(result), 200

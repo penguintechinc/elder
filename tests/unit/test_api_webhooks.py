@@ -331,3 +331,124 @@ async def test_update_webhook_accepts_valid_in_tenant_filter_assignee_pair(
     persisted = json.loads(await get_resp.get_data())
     assert persisted["filter_assignee_type"] == "identity"
     assert persisted["filter_assignee_id"] == in_tenant_identity_id
+
+
+@pytest.mark.asyncio
+@patch("apps.api.services.webhooks.service.requests.post")
+@patch("apps.api.auth.decorators.get_current_user")
+async def test_broadcast_event_rejects_cross_tenant_organization_id(
+    mock_get_user, mock_post, async_client, generate_token, app
+):
+    """Regression (security review, HIGH): POST /broadcast selected webhooks
+    by `organization_id` alone, with no tenant scoping — a tenant-1 admin
+    could broadcast an attacker-controlled payload to a DIFFERENT tenant's
+    webhooks (HMAC-signed with THAT webhook's own secret) just by knowing
+    or guessing its organization_id. The org must now be proven to belong
+    to the caller's own tenant before any delivery is attempted — the
+    request is rejected AND no delivery attempt reaches the target
+    webhook's URL."""
+    mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+    mock_post.return_value = MagicMock(status_code=200, text="ok")
+
+    async with app.app_context():
+        db = current_app.db
+        now = datetime.now(timezone.utc)
+        tenant2_id = db.tenants.insert(
+            name="Cross Tenant Broadcast Target",
+            slug=f"idor-broadcast-{uuid4().hex[:8]}",
+            is_active=True,
+        )
+        db.commit()
+        org2_id = db.organizations.insert(
+            name="Tenant 2 Org",
+            tenant_id=tenant2_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+
+    token_t2 = generate_token(tenant_id=tenant2_id, scopes=["webhooks_alerting:admin"])
+    create_resp = await async_client.post(
+        "/api/v1/webhooks",
+        json={
+            "name": "Tenant 2 broadcast target",
+            "url": "https://hooks.example.com/t2-broadcast-target",
+            "events": ["entity.created"],
+            "organization_id": org2_id,
+        },
+        headers={"Authorization": f"Bearer {token_t2}"},
+    )
+    assert create_resp.status_code == 201, (await create_resp.get_data()).decode()[:300]
+
+    token_t1 = generate_token(tenant_id=1, scopes=["webhooks_alerting:admin"])
+    broadcast_resp = await async_client.post(
+        "/api/v1/webhooks/broadcast",
+        json={
+            "event_type": "entity.created",
+            "payload": {"attacker": "controlled"},
+            "organization_id": org2_id,
+        },
+        headers={"Authorization": f"Bearer {token_t1}"},
+    )
+    assert broadcast_resp.status_code == 404, (
+        await broadcast_resp.get_data()
+    ).decode()[:300]
+
+    # The strongest proof of the fix: no HTTP delivery was ever attempted
+    # against tenant 2's webhook, regardless of the response status code.
+    mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("apps.api.auth.decorators.get_current_user")
+async def test_create_webhook_rejects_cross_tenant_organization_id(
+    mock_get_user, async_client, generate_token, app
+):
+    """Regression (security review, LOW): create_webhook did not validate
+    that `organization_id` belongs to the caller's own tenant — an org
+    owned by a DIFFERENT tenant was silently accepted and persisted.
+    Mirrors
+    test_intake_forms.py::test_create_form_rejects_cross_tenant_organization_id."""
+    mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+
+    async with app.app_context():
+        db = current_app.db
+        now = datetime.now(timezone.utc)
+        tenant2_id = db.tenants.insert(
+            name="Cross Tenant Webhook Org",
+            slug=f"idor-webhook-org-{uuid4().hex[:8]}",
+            is_active=True,
+        )
+        db.commit()
+        foreign_org_id = db.organizations.insert(
+            name="Foreign Org For Webhook",
+            tenant_id=tenant2_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+
+    token = generate_token(tenant_id=1, scopes=["webhooks_alerting:admin"])
+    resp = await async_client.post(
+        "/api/v1/webhooks",
+        json={
+            "name": "Cross tenant org webhook",
+            "url": "https://hooks.example.com/idor-org",
+            "events": ["issue.assigned"],
+            "organization_id": foreign_org_id,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
+
+    async with app.app_context():
+        db = current_app.db
+        leaked = (
+            db(
+                (db.webhooks.tenant_id == 1)
+                & (db.webhooks.organization_id == foreign_org_id)
+            )
+            .select()
+            .first()
+        )
+        assert leaked is None
