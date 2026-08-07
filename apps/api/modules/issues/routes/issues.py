@@ -492,6 +492,11 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     if not tenant_id:
         return jsonify({"error": "Tenant not found"}), 403
 
+    # Capture current_user before thread pool (Flask/Quart g doesn't
+    # propagate to threads) so it is available for the assignee-changed
+    # webhook actor_id below.
+    current_user_id = g.current_user.id
+
     # If organization is being changed, validate it exists and belongs to
     # the caller's own tenant before persisting.
     if body.organization_id:
@@ -532,7 +537,13 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             .first()
         )
         if not issue:
-            return None, "Issue not found", 404
+            return None, "Issue not found", 404, False
+
+        # Snapshot the pre-update assignee so the post-update diff below can
+        # tell an actual assignee change apart from a same-value resend or a
+        # PATCH that never touched assignment at all.
+        old_assignee_id = issue.assignee_id
+        old_assignee_type = issue.assignee_type
 
         # Build update fields
         update_fields = {}
@@ -571,12 +582,61 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         )
         db.commit()
 
-        return get_tenant_scoped_issue(db, id, tenant_id), None, None
+        # Only a request that actually supplies a new assignee_id can change
+        # assignment: assignee_id is never cleared by this endpoint (the
+        # schema has no way to distinguish "field absent" from "explicit
+        # null", and update_fields above only ever sets assignee_id, never
+        # unsets it), so `body.assignee_id is not None` alone already covers
+        # "assignee_id absent from the body" (does not fire). Re-sending the
+        # same (assignee_id, assignee_type) pair is also not a change.
+        assignee_changed = body.assignee_id is not None and (
+            old_assignee_id != body.assignee_id
+            or old_assignee_type != assignee_type_resolved
+        )
 
-    result, error, status = await run_in_threadpool(update)
+        return get_tenant_scoped_issue(db, id, tenant_id), None, None, assignee_changed
+
+    result, error, status, assignee_changed = await run_in_threadpool(update)
 
     if error:
         return jsonify({"error": error}), status
+
+    # Send issue.assigned webhooks asynchronously (fire and forget) when this
+    # PATCH actually changed the assignee. Must never delay or fail the
+    # update response: building AssignmentEvent and scheduling the task both
+    # happen eagerly on the request path (before asyncio.create_task hands
+    # off), so both are guarded here, mirroring create_issue above.
+    # `getattr` covers issues.village_id being absent from the physical
+    # table on DBs built by `alembic upgrade head` (no migration adds it,
+    # only the ORM model declares it via VillageIDMixin — PyDAL raises
+    # AttributeError for a physically-missing column, not None), and the
+    # try/except is belt-and-suspenders against any other unexpected failure
+    # in event construction or scheduling. This must not wrap the DB
+    # update/commit above or the response below.
+    if assignee_changed:
+        try:
+            asyncio.create_task(
+                send_issue_assigned_webhooks(
+                    db,
+                    AssignmentEvent(
+                        issue_id=result.id,
+                        village_id=getattr(result, "village_id", None),
+                        issue_type=result.issue_type,
+                        status=result.status,
+                        assignee_type=result.assignee_type,
+                        assignee_id=result.assignee_id,
+                        tenant_id=tenant_id,
+                        actor_id=current_user_id,
+                    ),
+                )
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail update_issue
+            logger.warning(
+                "issue_assigned_webhook_schedule_failed",
+                extra={"issue_id": result.id, "error": str(exc)[:200]},
+            )
 
     issue_dto = from_pydal_row(result, IssueDTO)
     return jsonify(asdict(issue_dto)), 200
