@@ -654,7 +654,11 @@ def seed_streams(
             owner_identity_id=admin_id,
             created_by_identity_id=admin_id,
             trigger_type=stream_data["trigger_type"],
-            is_public=False,
+            # Public so the demo's global executions view shows them regardless of
+            # which admin identity is logged in (owner-only would hide them from
+            # the bootstrap admin). _can_read_stream lets any tenant user read a
+            # public stream.
+            is_public=True,
             is_template=stream_data.get("is_template", False),
             is_enabled=True,
             status="active",
