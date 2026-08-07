@@ -151,7 +151,7 @@ describe('CreateIssueModal', () => {
     })
   })
 
-  it('submits with organization_id, issue_type, and support fields wired correctly', async () => {
+  it('submits with organization_id, issue_type, and support fields wired correctly, and assignee picker renders', async () => {
     vi.mocked(api.createIssue).mockResolvedValue({ id: 99 })
     vi.mocked(api.linkIssueEntity).mockResolvedValue({})
     vi.mocked(api.addIssueLabel).mockResolvedValue({})
@@ -164,12 +164,17 @@ describe('CreateIssueModal', () => {
     )
     fireEvent.click(screen.getByText('Create Issue'))
     const titleInput = await waitFor(() => screen.getByTestId('issue-title-input'), { timeout: 5000 })
+    // Verify AssigneePicker mock is rendered (proves component renders + mock button exists)
+    expect(screen.getByTestId('assignee-picker')).toBeDefined()
+    expect(screen.getByTestId('assignee-picker-select-button')).toBeDefined()
     // Fill in the form
     fireEvent.change(titleInput, { target: { value: 'Test issue' } })
     fireEvent.change(screen.getByTestId('issue-organization-select'), { target: { value: '5' } })
     fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'support' } })
     // Support fields should now be visible
     expect(screen.queryByTestId('support-fields')).toBeDefined()
+    // Click assignee picker button to exercise the component (assignee payload wiring verified in IssueDetail tests)
+    fireEvent.click(screen.getByTestId('assignee-picker-select-button'))
     // Submit the form
     fireEvent.click(screen.getByTestId('submit-issue-button'))
     // Verify createIssue was called with correct payload
