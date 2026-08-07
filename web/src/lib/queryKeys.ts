@@ -196,24 +196,6 @@ export const queryKeys = {
     escalations: (rotationId: number) => ['on-call', rotationId, 'escalations'] as const,
     current: (scopeType: string, scopeId: number) => ['on-call', 'current', scopeType, scopeId] as const,
   },
-
-  // Helpdesk
-  helpdesk: {
-    all: ['helpdesk'] as const,
-    dashboard: () => ['helpdesk', 'dashboard', 'stats'] as const,
-    tickets: (filters?: Record<string, unknown>) => ['helpdesk', 'tickets', filters] as const,
-    ticket: (id: string) => ['helpdesk', 'ticket', id] as const,
-    messages: (ticketId: string) => ['helpdesk', 'ticket', ticketId, 'messages'] as const,
-    slaPolicies: () => ['helpdesk', 'sla-policies'] as const,
-    responses: () => ['helpdesk', 'canned-responses'] as const,
-    teams: () => ['helpdesk', 'teams'] as const,
-    emailAccounts: () => ['helpdesk', 'email-accounts'] as const,
-    ticketForms: () => ['helpdesk', 'ticket-forms'] as const,
-    companies: (filters?: Record<string, unknown>) => ['helpdesk', 'companies', filters] as const,
-    company: (id: string) => ['helpdesk', 'company', id] as const,
-    contacts: (filters?: Record<string, unknown>) => ['helpdesk', 'contacts', filters] as const,
-    contact: (id: string) => ['helpdesk', 'contact', id] as const,
-  },
 } as const
 
 export type QueryKeys = typeof queryKeys

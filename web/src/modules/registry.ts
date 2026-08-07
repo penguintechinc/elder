@@ -12,7 +12,6 @@ import discoveryModule from './discovery'
 import secretsModule from './secrets'
 import webhooksAlertingModule from './webhooks_alerting'
 import accessReviewsModule from './access_reviews'
-import helpdeskModule from './helpdesk'
 import diagramsModule from './diagrams'
 import documentsModule from './documents'
 import pagesModule from './pages'
@@ -32,7 +31,6 @@ export const MODULES: FrontendModule[] = [
   secretsModule,
   webhooksAlertingModule,
   accessReviewsModule,
-  helpdeskModule,
   diagramsModule,
   documentsModule,
   pagesModule,
