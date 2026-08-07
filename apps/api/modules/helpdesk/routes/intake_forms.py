@@ -74,13 +74,12 @@ _VALID_ISSUE_TYPES = (
 _VILLAGE_ID_UNIQUE_CONSTRAINT = "hd_intake_forms_village_id_key"
 
 #: Cap on re-mint attempts in `_insert_form_with_unique_village_id` before
-#: giving up and re-raising the last collision. Each attempt re-`INCR`s the
-#: per-tenant Redis counter, so a bounded number of attempts is always
-#: sufficient to walk past a counter that's merely behind the max persisted
-#: village_id — an unbounded retry would only be needed for a pathological
-#: Redis state that keeps resetting concurrently, which is not a case this
-#: guards against.
-_MAX_VILLAGE_ID_MINT_ATTEMPTS = 5
+#: giving up and re-raising the last collision. Recovery is O(1) (see
+#: `_raise_village_id_counter_to_table_max`) — each attempt after the first
+#: mints from a counter already raised past every existing row for this
+#: tenant, so 3 is generous headroom for a rare concurrent-writer race, not
+#: a walk-one-at-a-time budget.
+_MAX_VILLAGE_ID_MINT_ATTEMPTS = 3
 
 
 def _is_village_id_conflict(exc: IntegrityError) -> bool:
@@ -100,6 +99,58 @@ def _is_village_id_conflict(exc: IntegrityError) -> bool:
     return _VILLAGE_ID_UNIQUE_CONSTRAINT in str(exc)
 
 
+def _village_id_seq(village_id: Optional[str]) -> Optional[int]:
+    """Parse the object-seq (trailing 16 hex chars) out of a village_id.
+
+    Returns None for anything that doesn't match the `TTTTTTTT-OOOO...`
+    format — notably the `test-<uuid>` fallback minted when no Redis
+    connection is available — rather than raising, so a mixed-format table
+    (real mints alongside test fallbacks) never breaks the max-seq scan in
+    `_raise_village_id_counter_to_table_max`.
+    """
+    if not village_id or "-" not in village_id:
+        return None
+    _, seq_hex = village_id.split("-", 1)
+    try:
+        return int(seq_hex, 16)
+    except ValueError:
+        return None
+
+
+def _raise_village_id_counter_to_table_max(
+    db: Any, tenant_id: int, redis_client: Any
+) -> None:
+    """Raise the tenant's Redis village_id counter to >= the highest
+    object-seq already persisted in hd_intake_forms for this tenant.
+
+    A bare `+1` retry (re-`INCR`) only recovers a counter that's behind by a
+    handful of values — once more than a few rows already exist for the
+    tenant, a capped +1 loop can't walk far enough. The counter can
+    legitimately fall far behind the max persisted village_id: a Redis
+    restart/eviction in production, or a `flushdb` mid-suite in the
+    shared-DB test suite. Jumping straight to `max(current, table_max)`
+    recovers in O(1) regardless of how far behind the counter is.
+
+    The counter key (`elder:vid:{tenant:08x}`) is SHARED across every table
+    that mints village_ids for this tenant (issues, identities, documents,
+    ...), so this only ever RAISES it — never lowers it, which would desync
+    those other mints.
+    """
+    counter_key = f"elder:vid:{tenant_id:08x}"
+
+    rows = db(db.hd_intake_forms.tenant_id == tenant_id).select(
+        db.hd_intake_forms.village_id
+    )
+    table_max = 0
+    for row in rows:
+        seq = _village_id_seq(row.village_id)
+        if seq is not None:
+            table_max = max(table_max, seq)
+
+    current = int(redis_client.get(counter_key) or 0)
+    redis_client.set(counter_key, max(current, table_max))
+
+
 def _insert_form_with_unique_village_id(
     db: Any, tenant_id: int, redis_client: Any, insert_data: dict[str, Any]
 ) -> int:
@@ -110,12 +161,14 @@ def _insert_form_with_unique_village_id(
     village_id already persisted for the tenant — a Redis restart/eviction
     in production, or a flushdb in the shared-DB test suite — INCR can
     return a sequence value an existing row already holds, and the insert
-    raises a unique-constraint IntegrityError on `village_id`. This mints a
-    fresh village_id and retries (INCR walks forward past the collision) up
-    to `_MAX_VILLAGE_ID_MINT_ATTEMPTS` times before re-raising the last
-    error. Each `TableProxy.insert()` call runs in its own short-lived
-    SQLAlchemy session (opened and closed within the call), so a failed
-    attempt needs no explicit rollback before the next attempt reuses `db`.
+    raises a unique-constraint IntegrityError on `village_id`. On that
+    collision this raises the counter to the table's current max
+    (`_raise_village_id_counter_to_table_max`, O(1) — not a `+1` walk) and
+    retries, up to `_MAX_VILLAGE_ID_MINT_ATTEMPTS` times, before re-raising
+    the last error. Each `TableProxy.insert()` call runs in its own
+    short-lived SQLAlchemy session (opened and closed within the call), so a
+    failed attempt needs no explicit rollback before the next attempt reuses
+    `db`.
 
     Any IntegrityError NOT on the village_id constraint (e.g. a concurrent
     slug collision) propagates immediately, unretried.
@@ -139,6 +192,8 @@ def _insert_form_with_unique_village_id(
             if not _is_village_id_conflict(exc):
                 raise
             last_error = exc
+            if redis_client:
+                _raise_village_id_counter_to_table_max(db, tenant_id, redis_client)
 
     assert last_error is not None  # loop always executes >= 1 iteration
     raise last_error

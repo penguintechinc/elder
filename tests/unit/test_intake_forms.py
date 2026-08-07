@@ -131,36 +131,58 @@ class TestIntakeFormsAdmin:
         restart/eviction in production, or a `flushdb` mid-suite here), the
         next mint's INCR can return a sequence value an existing row already
         holds, and the raw insert raises an unhandled IntegrityError -> 500.
-        `create_form` must catch that village_id collision, re-mint, and
-        retry the insert -- not 500 (see
-        `_insert_form_with_unique_village_id` in intake_forms.py)."""
+
+        Creates SIX forms first (so at least six village_ids are already
+        persisted for tenant 1), zeroes the Redis counter, then creates a
+        seventh. A naive `+1`-re-INCR retry capped at a handful of attempts
+        could only walk past a small gap; it cannot clear six-plus existing
+        rows in a bounded number of `+1` steps. The fix instead raises the
+        counter straight to the table's current max on collision (O(1) —
+        see `_raise_village_id_counter_to_table_max` in intake_forms.py), so
+        the 7th create succeeds (201) and its village_id sequence is greater
+        than all six that came before it -- proof the recovery jumped past
+        the whole gap in one step, not incrementally.
+
+        Restores the counter to the new max before returning so this test
+        leaves no polluted counter state for tests that run after it.
+        """
         mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
         token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
 
-        first = await async_client.post(
-            "/api/v1/intake-forms",
-            json={
-                "name": "Village Collision Form A",
-                "slug": f"vid-collide-a-{uuid4().hex[:8]}",
-                "fields": [
-                    {
-                        "id": "email",
-                        "label": "Email",
-                        "type": "email",
-                        "required": True,
-                    }
-                ],
-            },
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert first.status_code in (200, 201), (
-            await first.get_data()
-        ).decode()[:300]
-        village_id_x = json.loads(await first.get_data())["village_id"]
+        async def _create(label: str) -> str:
+            resp = await async_client.post(
+                "/api/v1/intake-forms",
+                json={
+                    "name": f"Village Collision Form {label}",
+                    "slug": f"vid-collide-{label.lower()}-{uuid4().hex[:8]}",
+                    "fields": [
+                        {
+                            "id": "email",
+                            "label": "Email",
+                            "type": "email",
+                            "required": True,
+                        }
+                    ],
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code in (200, 201), (
+                await resp.get_data()
+            ).decode()[:300]
+            return json.loads(await resp.get_data())["village_id"]
 
-        # Reset the tenant's Redis village_id counter behind the value
-        # already persisted for form A, forcing the next mint's INCR to
-        # collide deterministically -- no dependency on suite ordering.
+        def _seq(village_id: str) -> int:
+            return int(village_id.split("-", 1)[1], 16)
+
+        existing_village_ids = [
+            await _create(label) for label in ("A", "B", "C", "D", "E", "F")
+        ]
+        existing_seqs = [_seq(v) for v in existing_village_ids]
+
+        # Zero the tenant's Redis village_id counter -- far behind the max
+        # already persisted (six rows just created, plus whatever earlier
+        # tests in this session left behind), forcing an immediate mint
+        # collision with no dependency on suite ordering.
         async with app.app_context():
             redis_client = current_app.redis_client
             assert redis_client is not None, (
@@ -169,30 +191,18 @@ class TestIntakeFormsAdmin:
             )
             redis_client.set("elder:vid:00000001", 0)
 
-        second = await async_client.post(
-            "/api/v1/intake-forms",
-            json={
-                "name": "Village Collision Form B",
-                "slug": f"vid-collide-b-{uuid4().hex[:8]}",
-                "fields": [
-                    {
-                        "id": "email",
-                        "label": "Email",
-                        "type": "email",
-                        "required": True,
-                    }
-                ],
-            },
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        assert second.status_code in (200, 201), (
-            await second.get_data()
-        ).decode()[:300]
-        village_id_y = json.loads(await second.get_data())["village_id"]
+        seventh_village_id = await _create("G")
+        seventh_seq = _seq(seventh_village_id)
 
-        # The retry walked past the collision to a fresh, distinct
-        # village_id -- not the one form A already holds.
-        assert village_id_y != village_id_x
+        # The recovery jumped straight past every pre-existing row for this
+        # tenant, not just the six created above -- impossible for a
+        # bounded `+1` retry once the gap exceeds the retry cap.
+        assert seventh_seq > max(existing_seqs)
+
+        # Leave the counter at (at least) the new max so later tests never
+        # see a village_id collision seeded by this test's reset.
+        async with app.app_context():
+            current_app.redis_client.set("elder:vid:00000001", seventh_seq)
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
