@@ -68,20 +68,35 @@ def _validate_filter_assignee_ref(
     filter_assignee_type: Optional[str],
     filter_assignee_id: Optional[int],
 ) -> Optional[str]:
-    """Validate a (filter_assignee_type, filter_assignee_id) pair against tenant_id.
+    """Validate an EFFECTIVE (filter_assignee_type, filter_assignee_id) pair
+    — i.e. the values that will actually be persisted after the request is
+    applied — against tenant_id.
 
     Returns None if the pair is valid (including both unset). Returns an
-    error message string if filter_assignee_id is set with a recognized type
-    but doesn't resolve to an identity/organization within tenant_id — the
-    same cross-tenant IDOR guard applied to issues.assignee_id
-    (issues/routes/issues.py::_resolve_assignee_type) and
-    hd_intake_forms.default_assignee_id
-    (helpdesk/routes/intake_forms.py::_validate_assignee_ref). Pairing
-    ("must be set together") and allow-listing filter_assignee_type itself
-    are validated downstream by WebhookService — this only guards the
-    referenced row's tenant when both are present and the type is
-    recognized.
+    error message string if:
+      - exactly one of the pair is set ("must be set together" — mirrors
+        WebhookService.create_webhook's own `(type is None) != (id is None)`
+        check. WebhookService.update_webhook does NOT enforce this pairing
+        invariant on its own — see service.py's update_webhook, which only
+        allow-lists the type value when one is explicitly given. The route
+        is therefore the only place this is enforced on the update path,
+        and callers MUST pass effective post-patch values, not raw
+        request-body values, or a PUT that sets only one half of the pair
+        while the other half already has a stored value defeats this check),
+      - or a recognized type (identity/org_unit) is set but the id doesn't
+        resolve to a row within tenant_id — the same cross-tenant IDOR guard
+        applied to issues.assignee_id
+        (issues/routes/issues.py::_resolve_assignee_type) and
+        hd_intake_forms.default_assignee_id
+        (helpdesk/routes/intake_forms.py::_validate_assignee_ref).
+
+    An unrecognized filter_assignee_type with both fields set is left to
+    WebhookService's own allow-list check (enforced on both create and
+    update) rather than duplicated here.
     """
+    if (filter_assignee_type is None) != (filter_assignee_id is None):
+        return "filter_assignee_type and filter_assignee_id must be set together"
+
     if filter_assignee_id is None:
         return None
 
@@ -95,8 +110,9 @@ def _validate_filter_assignee_ref(
             return "filter_assignee_id not found in tenant"
         return None
 
-    # Unrecognized/missing filter_assignee_type — WebhookService rejects this
-    # combination itself (invalid type, or id without a type to resolve it).
+    # Unrecognized filter_assignee_type — WebhookService's own allow-list
+    # check rejects this (both create_webhook and update_webhook validate it
+    # whenever a non-None type is passed through).
     return None
 
 
@@ -282,20 +298,30 @@ async def update_webhook(webhook_id):
 
         service = get_webhook_service()
 
-        # Cross-tenant IDOR guard: only re-validate when this update actually
-        # touches the assignee filter — falls back to the existing row's
-        # value for whichever of the pair isn't part of this partial update
-        # (mirrors helpdesk/routes/intake_forms.py::update_form). get_webhook
-        # raises "... not found" for a missing/cross-tenant webhook_id, which
-        # the except block below already maps to 404.
+        # Cross-tenant IDOR + pairing guard: only re-validate when this
+        # update actually touches the assignee filter — falls back to the
+        # existing row's value (via dict.get's default, which only applies
+        # when the key is ABSENT, so an explicit `null` in the request body
+        # is honored rather than silently replaced by the stored value) for
+        # whichever half of the pair isn't part of this partial update
+        # (mirrors helpdesk/routes/intake_forms.py::update_form). The
+        # resulting (eff_type, eff_id) is the EFFECTIVE pair that will be
+        # persisted, which _validate_filter_assignee_ref must see — passing
+        # raw per-field request values here (instead of resolving against
+        # `current`) would let a PUT that sets only `filter_assignee_id`
+        # persist it against whatever `filter_assignee_type` the row
+        # already had (including None), skipping the in-tenant check
+        # entirely. WebhookService.update_webhook does NOT enforce this
+        # pairing invariant itself (only create_webhook does), so the route
+        # is the sole enforcement point on this path. get_webhook raises
+        # "... not found" for a missing/cross-tenant webhook_id, which the
+        # except block below already maps to 404.
         if "filter_assignee_type" in data or "filter_assignee_id" in data:
             current = service.get_webhook(webhook_id, tenant_id)
-            resolved_type = data.get(
-                "filter_assignee_type", current["filter_assignee_type"]
-            )
-            resolved_id = data.get("filter_assignee_id", current["filter_assignee_id"])
+            eff_type = data.get("filter_assignee_type", current["filter_assignee_type"])
+            eff_id = data.get("filter_assignee_id", current["filter_assignee_id"])
             assignee_error = _validate_filter_assignee_ref(
-                service.db, tenant_id, resolved_type, resolved_id
+                service.db, tenant_id, eff_type, eff_id
             )
             if assignee_error:
                 return jsonify({"error": assignee_error}), 400
