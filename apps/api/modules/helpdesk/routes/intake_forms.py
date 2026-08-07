@@ -9,6 +9,7 @@ page uses, mounted separately at `/api/v1/intake` so the two never share a
 URL prefix or an auth posture.
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -30,6 +31,10 @@ from apps.api.modules.helpdesk.services.intake_submit import (
     ContactResolutionError,
     create_support_issue_from_form,
     upsert_customer_contact,
+)
+from apps.api.services.webhooks.assignment import (
+    AssignmentEvent,
+    send_issue_assigned_webhooks,
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
@@ -819,7 +824,7 @@ async def submit_public_intake_form(slug):
         )
 
     try:
-        village_id = await run_in_threadpool(submit)
+        issue = await run_in_threadpool(submit)
     except ContactResolutionError as exc:
         logger.error(f"Intake form contact resolution failed for slug={slug}: {exc}")
         return ApiResponse.conflict("Unable to resolve contact; please retry")
@@ -827,4 +832,45 @@ async def submit_public_intake_form(slug):
         logger.error(f"Intake form submit failed for slug={slug}: {exc}")
         return ApiResponse.error("Unable to create support issue", 400)
 
-    return jsonify({"status": "created", "reference": village_id}), 201
+    # Send issue.assigned webhooks asynchronously (fire and forget) when the
+    # form has a default assignee configured, so the created issue already
+    # carries one. This is an unauthenticated public endpoint — the submit
+    # must never fail or be delayed by webhook dispatch, so both building
+    # AssignmentEvent and scheduling the task are guarded here: `getattr`
+    # covers issues.village_id being absent from the physical table on DBs
+    # built by `alembic upgrade head` (no migration adds it, only the ORM
+    # model declares it via VillageIDMixin — PyDAL raises AttributeError for
+    # a physically-missing column, not None), and the try/except is
+    # belt-and-suspenders against any other unexpected failure in event
+    # construction or scheduling. There is no authenticated user on this
+    # path — the resolved customer_contact (also the issue's reporter_id) is
+    # the closest analog to "actor" for a system-generated default-assign.
+    if issue.assignee_id is not None:
+        try:
+            asyncio.create_task(
+                send_issue_assigned_webhooks(
+                    db,
+                    AssignmentEvent(
+                        issue_id=issue.id,
+                        village_id=getattr(issue, "village_id", None),
+                        issue_type=issue.issue_type,
+                        status=issue.status,
+                        assignee_type=issue.assignee_type,
+                        assignee_id=issue.assignee_id,
+                        tenant_id=issue.tenant_id,
+                        actor_id=issue.reporter_id,
+                    ),
+                )
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail public submit
+            logger.warning(
+                "issue_assigned_webhook_schedule_failed",
+                extra={"issue_id": issue.id, "error": str(exc)[:200]},
+            )
+
+    return (
+        jsonify({"status": "created", "reference": getattr(issue, "village_id", None)}),
+        201,
+    )
