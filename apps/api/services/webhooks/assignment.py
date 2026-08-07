@@ -11,11 +11,18 @@ apps/api/modules/helpdesk/routes/intake_forms.py::submit_public_intake_form
 (when the form has a default assignee configured).
 """
 
+import asyncio
+import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from apps.api.services.webhooks.service import _parse_json_column
+import requests
+
+from apps.api.services.webhooks.service import _parse_json_column, generate_signature
+
+logger = logging.getLogger(__name__)
 
 ASSIGNMENT_EVENT_TYPE = "issue.assigned"
 
@@ -103,3 +110,110 @@ def build_assignment_payload(event: AssignmentEvent) -> Dict[str, Any]:
         "tenant_id": event.tenant_id,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Deliver `payload` to a single webhook synchronously and record the attempt.
+
+    Runs entirely inside asyncio.to_thread (see send_issue_assigned_webhooks)
+    — blocking I/O here never touches the event loop. Never raises: any
+    failure (network error, non-2xx response) is captured on the
+    webhook_deliveries row and returned in the result dict instead of
+    propagating, so one webhook's failure can never break another's
+    delivery or the caller's fire-and-forget task.
+    """
+    payload_str = json.dumps(payload, sort_keys=True)
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Elder-Webhook/1.2.0",
+    }
+    if webhook.headers:
+        # JSON columns may come back from a pydal SELECT already parsed or
+        # as a raw string — see _parse_json_column; mirrors
+        # WebhookService._attempt_delivery's identical header-merge.
+        headers.update(_parse_json_column(webhook.headers))
+    if webhook.secret:
+        headers["X-Elder-Signature"] = generate_signature(webhook.secret, payload_str)
+
+    now = datetime.now(timezone.utc)
+    delivery_id = db.webhook_deliveries.insert(
+        webhook_id=webhook.id,
+        event_type=ASSIGNMENT_EVENT_TYPE,
+        request_payload=payload,
+        attempt_count=1,
+        created_at=now,
+    )
+    db.commit()
+
+    try:
+        response = requests.post(webhook.url, json=payload, headers=headers, timeout=30)
+        success = 200 <= response.status_code < 300
+        db(db.webhook_deliveries.id == delivery_id).update(
+            status="success" if success else "failed",
+            http_status=response.status_code,
+            response_body=response.text[:1000],
+            delivered_at=datetime.now(timezone.utc) if success else None,
+        )
+        db.commit()
+        return {
+            "webhook_id": webhook.id,
+            "delivery_id": delivery_id,
+            "success": success,
+            "http_status": response.status_code,
+        }
+    except Exception as exc:
+        db(db.webhook_deliveries.id == delivery_id).update(
+            status="failed",
+            error_message=str(exc)[:500],
+        )
+        db.commit()
+        logger.warning(
+            "issue_assigned_webhook_delivery_failed",
+            extra={"webhook_id": webhook.id, "error": str(exc)[:200]},
+        )
+        return {
+            "webhook_id": webhook.id,
+            "delivery_id": delivery_id,
+            "success": False,
+            "error": str(exc),
+        }
+
+
+async def send_issue_assigned_webhooks(
+    db: Any, event: AssignmentEvent
+) -> List[Dict[str, Any]]:
+    """Match `event` against every active webhook in its tenant and deliver
+    issue.assigned to each match, HMAC-signed, non-blocking.
+
+    Fire-and-forget: callers wrap this in asyncio.create_task from an async
+    route handler right after the assignment-changing DB write commits.
+    Every blocking call (DB queries + requests.post) runs inside
+    asyncio.to_thread so this never blocks the event loop; a failure in
+    matching or in any single delivery is caught and logged rather than
+    raised, so it can never fail the issue create/update/intake-submit it
+    was triggered by.
+    """
+    try:
+        matched = await asyncio.to_thread(find_matching_webhooks, db, event)
+    except Exception as exc:  # pragma: no cover - defensive; matching is pure/cheap
+        logger.warning(
+            "issue_assigned_webhook_match_failed", extra={"error": str(exc)[:200]}
+        )
+        return []
+
+    if not matched:
+        return []
+
+    payload = build_assignment_payload(event)
+    results = []
+    for webhook in matched:
+        try:
+            result = await asyncio.to_thread(_dispatch_one, db, webhook, payload)
+        except Exception as exc:  # pragma: no cover - _dispatch_one already catches
+            logger.warning(
+                "issue_assigned_webhook_dispatch_failed",
+                extra={"webhook_id": webhook.id, "error": str(exc)[:200]},
+            )
+            result = {"webhook_id": webhook.id, "success": False, "error": str(exc)}
+        results.append(result)
+    return results
