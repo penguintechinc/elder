@@ -233,12 +233,13 @@ polymorphic rather than identity-only: `assignee_type` selects whether
 `assignee_id` points at `identities` or `organizations` (an org unit), and
 the UI exposes this as a single combined identity+org-unit search picker.
 
-Admin-configurable **intake forms** (`intake_forms` table) are the public
-entry point into support Issues: an unauthenticated submission (behind an
-Altcha captcha) upserts a `customer_contact` identity and creates a native
-`issue_type=support` Issue. CRM entities are not separate tables either —
-`customer_company` is an `organization_type` and `customer_contact` is an
-`identity_type`.
+Admin-configurable **intake forms** (`hd_intake_forms` table) are the
+public entry point into support Issues: an unauthenticated submission,
+optionally protected by an Altcha captcha (`captcha_required` per form;
+off by default), upserts a `customer_contact` identity and creates a
+native Issue of the form's configured `issue_type` (default `support`).
+CRM entities are not separate tables either — `customer_company` is an
+`organization_type` and `customer_contact` is an `identity_type`.
 
 ### Relationship Model
 
@@ -319,7 +320,7 @@ Global Role → Organization Role → Entity Role
 - `issues` - Unified issue tracking, including support tickets (`issue_type=support`) with a polymorphic `assignee_type`/`assignee_id` (identity or org unit)
 - `issue_comments` - Issue comments
 - `issue_labels` - Issue labels
-- `intake_forms` - Admin-configurable public support intake forms
+- `hd_intake_forms` - Admin-configurable public support intake forms
 - `webhooks` - Outbound event subscriptions, including `issue.assigned` with `issue_type`/assignee filters
 - `projects` - Project management
 - `milestones` - Project milestones

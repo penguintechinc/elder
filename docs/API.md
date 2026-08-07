@@ -116,10 +116,11 @@ POST   /api/v1/intake/{slug}/submit       # Submit a public form (unauthenticate
 
 `/api/v1/intake-forms` is admin-authenticated and defines dynamic,
 Pydantic-validated fields (text, email, textarea, select, etc.). The
-public `/api/v1/intake/{slug}` routes require no auth but the submit
-endpoint is protected by an Altcha proof-of-work captcha. A successful
-submission upserts a `customer_contact` identity and creates a native
-`issue_type=support` Issue.
+public `/api/v1/intake/{slug}` routes require no auth; the submit
+endpoint is optionally protected by an Altcha proof-of-work captcha
+(`captcha_required` per form, off by default). A successful submission
+upserts a `customer_contact` identity and creates a native Issue of the
+form's configured `issue_type` (default `support`).
 
 #### Entity Types
 ```

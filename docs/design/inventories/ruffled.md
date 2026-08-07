@@ -7,7 +7,8 @@
 > `assignee_type`/`assignee_id` (identity or org unit); CRM companies and
 > contacts are `customer_company`/`customer_contact` organization/identity
 > types, not separate tables. Public ticket intake is now the
-> `/api/v1/intake-forms` + `/api/v1/intake/<slug>` flow (Altcha captcha).
+> `/api/v1/intake-forms` + `/api/v1/intake/<slug>` flow (`hd_intake_forms`
+> table, optional per-form Altcha captcha).
 > Left in place as historical record of the original migration scope —
 > see `docs/RELEASE_NOTES.md` ("Issues ↔ Tickets Unification") for the
 > current model.

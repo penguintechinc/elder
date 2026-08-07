@@ -40,13 +40,15 @@ resource — a support request is now just an Issue.
   `org_unit`) + `assignee_id` replaces an identity-only assignee — an
   Issue can be assigned to a person or to an organizational unit. The web
   UI exposes this as a single combined identity+org-unit search picker
-- **Intake forms**: admin-configurable forms (`/api/v1/intake-forms`)
-  define dynamic, Pydantic-validated fields; the public,
-  unauthenticated `/api/v1/intake/<slug>` (GET) and
-  `/api/v1/intake/<slug>/submit` (POST) routes serve them. Public
-  submission is protected by an **Altcha** proof-of-work captcha; a
-  successful submit upserts a `customer_contact` identity and creates a
-  native `issue_type=support` Issue
+- **Intake forms**: admin-configurable forms (`/api/v1/intake-forms`,
+  backed by the `hd_intake_forms` table) define dynamic,
+  Pydantic-validated fields; the public, unauthenticated
+  `/api/v1/intake/<slug>` (GET) and `/api/v1/intake/<slug>/submit`
+  (POST) routes serve them. Public submission is optionally protected
+  by an **Altcha** proof-of-work captcha (`captcha_required` per form,
+  off by default); a successful submit upserts a `customer_contact`
+  identity and creates a native Issue of the form's configured
+  `issue_type` (default `support`)
 - **Assignment webhooks**: a new `issue.assigned` event fires on every
   assignee change (create, update, or an intake form's default-assign),
   HMAC-signed (`X-Elder-Signature`) and delivered non-blocking. Each

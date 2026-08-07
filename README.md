@@ -238,7 +238,7 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **RESTful & gRPC APIs**: Complete API coverage
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
-- ✅ **Unified Support & CRM**: Support tickets are native Issues (`issue_type=support`) with a combined identity+org-unit assignee picker, admin-configurable intake forms (public submission protected by Altcha captcha), `customer_company`/`customer_contact` CRM entities, and `issue.assigned` assignment webhooks
+- ✅ **Unified Support & CRM**: Support tickets are native Issues (`issue_type=support`) with a combined identity+org-unit assignee picker, admin-configurable intake forms (public submission optionally protected by an Altcha captcha — `captcha_required` per form, off by default), `customer_company`/`customer_contact` CRM entities, and `issue.assigned` assignment webhooks
 
 ### v3.2.3 Highlights (Latest)
 - **AWS IAM Identity Sync Fix** (Issue #112): `AuthProvider` enum was missing `AWS = "aws"` and both `auth_provider` and `identity_type` SQLAlchemy columns were storing uppercase enum member names (`LOCAL`, `HUMAN`) instead of lowercase values (`local`, `human`) due to missing `values_callable`. Fix adds `AWS` provider, normalises all stored values via Alembic migration 014, and adds regression tests to prevent recurrence.
