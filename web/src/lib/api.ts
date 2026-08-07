@@ -1286,7 +1286,7 @@ class ApiClient {
     organization_id?: number
     events: string[]
     secret?: string
-    enabled?: boolean
+    is_active?: boolean
     headers?: Record<string, string>
     filter_issue_type?: string
     filter_assignee_type?: 'identity' | 'org_unit'
@@ -1302,7 +1302,7 @@ class ApiClient {
     url: string
     events: string[]
     secret: string
-    enabled: boolean
+    is_active: boolean
     headers: Record<string, string>
     filter_issue_type: string
     filter_assignee_type: 'identity' | 'org_unit'
