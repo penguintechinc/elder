@@ -15,7 +15,9 @@ from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from penguin_libs.pydantic.types import Name255
 from pydantic import Field, field_validator
 
-OrganizationType = Literal["department", "organization", "team", "collection", "other"]
+OrganizationType = Literal[
+    "department", "organization", "team", "collection", "other", "customer_company"
+]
 """Organization unit type enumeration."""
 
 

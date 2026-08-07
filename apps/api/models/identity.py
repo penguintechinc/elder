@@ -34,6 +34,10 @@ class IdentityType(enum.Enum):
     INTEGRATION = "integration"
     OTHER_HUMAN = "otherHuman"
     OTHER = "other"
+    # v4.x: CRM entities (Ruffled) -- external customer contact, not a
+    # platform user. Optional details (phone, location, etc.) live in
+    # identity_metadata (see 033_identity_metadata.py).
+    CUSTOMER_CONTACT = "customer_contact"
 
 
 class AuthProvider(enum.Enum):
