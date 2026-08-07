@@ -123,6 +123,79 @@ class TestIntakeFormsAdmin:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_form_retries_past_village_id_counter_desync(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression: if the tenant's Redis village_id counter falls behind
+        the max village_id already persisted for the tenant (a Redis
+        restart/eviction in production, or a `flushdb` mid-suite here), the
+        next mint's INCR can return a sequence value an existing row already
+        holds, and the raw insert raises an unhandled IntegrityError -> 500.
+        `create_form` must catch that village_id collision, re-mint, and
+        retry the insert -- not 500 (see
+        `_insert_form_with_unique_village_id` in intake_forms.py)."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        first = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Village Collision Form A",
+                "slug": f"vid-collide-a-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert first.status_code in (200, 201), (
+            await first.get_data()
+        ).decode()[:300]
+        village_id_x = json.loads(await first.get_data())["village_id"]
+
+        # Reset the tenant's Redis village_id counter behind the value
+        # already persisted for form A, forcing the next mint's INCR to
+        # collide deterministically -- no dependency on suite ordering.
+        async with app.app_context():
+            redis_client = current_app.redis_client
+            assert redis_client is not None, (
+                "test requires a live Redis connection to reproduce the "
+                "counter-desync collision deterministically"
+            )
+            redis_client.set("elder:vid:00000001", 0)
+
+        second = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Village Collision Form B",
+                "slug": f"vid-collide-b-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert second.status_code in (200, 201), (
+            await second.get_data()
+        ).decode()[:300]
+        village_id_y = json.loads(await second.get_data())["village_id"]
+
+        # The retry walked past the collision to a fresh, distinct
+        # village_id -- not the one form A already holds.
+        assert village_id_y != village_id_x
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     async def test_create_form_rejects_cross_tenant_organization_id(
         self, mock_get_user, async_client, generate_token, app
     ):

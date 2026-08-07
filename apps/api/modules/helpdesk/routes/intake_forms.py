@@ -16,6 +16,7 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from quart import Blueprint, current_app, g, jsonify, request
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.modules.helpdesk.common import identity_in_tenant
@@ -63,6 +64,84 @@ _VALID_ISSUE_TYPES = (
     "support",
     "other",
 )
+
+#: Postgres's auto-generated name for the inline `unique=True` constraint on
+#: `hd_intake_forms.village_id` (see `VillageIDMixin`,
+#: apps/api/models/base.py). Used to scope the mint-collision retry in
+#: `_insert_form_with_unique_village_id` to village_id ONLY — any other
+#: IntegrityError (notably `uq_intake_form_slug`, the explicit constraint
+#: name for the slug column) must propagate unretried.
+_VILLAGE_ID_UNIQUE_CONSTRAINT = "hd_intake_forms_village_id_key"
+
+#: Cap on re-mint attempts in `_insert_form_with_unique_village_id` before
+#: giving up and re-raising the last collision. Each attempt re-`INCR`s the
+#: per-tenant Redis counter, so a bounded number of attempts is always
+#: sufficient to walk past a counter that's merely behind the max persisted
+#: village_id — an unbounded retry would only be needed for a pathological
+#: Redis state that keeps resetting concurrently, which is not a case this
+#: guards against.
+_MAX_VILLAGE_ID_MINT_ATTEMPTS = 5
+
+
+def _is_village_id_conflict(exc: IntegrityError) -> bool:
+    """Return True only if `exc` is the village_id unique-constraint violation.
+
+    Inspects the DB driver's reported constraint name (psycopg2 exposes it
+    at `exc.orig.diag.constraint_name`) so this never matches a different
+    constraint on the same table — notably `uq_intake_form_slug` — which
+    must propagate unretried to preserve the existing duplicate-slug 409
+    behavior. Falls back to a substring check on the exception text for
+    drivers/backends that don't expose `.diag`.
+    """
+    orig = getattr(exc, "orig", None)
+    constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint_name is not None:
+        return constraint_name == _VILLAGE_ID_UNIQUE_CONSTRAINT
+    return _VILLAGE_ID_UNIQUE_CONSTRAINT in str(exc)
+
+
+def _insert_form_with_unique_village_id(
+    db: Any, tenant_id: int, redis_client: Any, insert_data: dict[str, Any]
+) -> int:
+    """Insert `insert_data` into hd_intake_forms with a collision-safe village_id.
+
+    `generate_village_id` mints via a per-tenant Redis INCR counter
+    (`elder:vid:{tenant:08x}`). If that counter is ever behind the max
+    village_id already persisted for the tenant — a Redis restart/eviction
+    in production, or a flushdb in the shared-DB test suite — INCR can
+    return a sequence value an existing row already holds, and the insert
+    raises a unique-constraint IntegrityError on `village_id`. This mints a
+    fresh village_id and retries (INCR walks forward past the collision) up
+    to `_MAX_VILLAGE_ID_MINT_ATTEMPTS` times before re-raising the last
+    error. Each `TableProxy.insert()` call runs in its own short-lived
+    SQLAlchemy session (opened and closed within the call), so a failed
+    attempt needs no explicit rollback before the next attempt reuses `db`.
+
+    Any IntegrityError NOT on the village_id constraint (e.g. a concurrent
+    slug collision) propagates immediately, unretried.
+
+    Returns:
+        The inserted row's primary key.
+    """
+    from shared.utils.village_id import generate_village_id
+
+    last_error: Optional[IntegrityError] = None
+    for _ in range(_MAX_VILLAGE_ID_MINT_ATTEMPTS):
+        if redis_client:
+            village_id = generate_village_id(tenant_id, redis_client)
+        else:
+            # Fallback for test environments without a live Redis connection.
+            village_id = f"test-{uuid4().hex[:8]}"
+
+        try:
+            return db.hd_intake_forms.insert(village_id=village_id, **insert_data)
+        except IntegrityError as exc:
+            if not _is_village_id_conflict(exc):
+                raise
+            last_error = exc
+
+    assert last_error is not None  # loop always executes >= 1 iteration
+    raise last_error
 
 
 def _get_tenant_id() -> int | None:
@@ -281,8 +360,6 @@ async def create_form():
     redis_client = getattr(current_app, "redis_client", None)
 
     def create():
-        from shared.utils.village_id import generate_village_id
-
         now = datetime.now(timezone.utc)
 
         # Slug must be GLOBALLY unique (public URL /api/v1/intake/<slug> has
@@ -307,19 +384,13 @@ async def create_form():
         if not isinstance(issue_type, str) or issue_type.lower() not in _VALID_ISSUE_TYPES:
             return None, "invalid_issue_type"
 
-        if redis_client:
-            village_id = generate_village_id(tenant_id, redis_client)
-        else:
-            # Fallback for test environments without a live Redis connection.
-            village_id = f"test-{uuid4().hex[:8]}"
-
         metadata = data.get("metadata")
 
         # penguin-dal insert() does not apply SQLAlchemy Column(default=...),
-        # so every NOT-NULL column is passed explicitly.
+        # so every NOT-NULL column is passed explicitly. village_id is minted
+        # (and re-minted on collision) by _insert_form_with_unique_village_id.
         insert_data = {
             "tenant_id": tenant_id,
-            "village_id": village_id,
             "name": name,
             "slug": slug,
             "description": data.get("description"),
@@ -336,7 +407,9 @@ async def create_form():
             "updated_at": now,
         }
 
-        form_id = db.hd_intake_forms.insert(**insert_data)
+        form_id = _insert_form_with_unique_village_id(
+            db, tenant_id, redis_client, insert_data
+        )
         db.commit()
 
         return db(db.hd_intake_forms.id == form_id).select().first(), None
