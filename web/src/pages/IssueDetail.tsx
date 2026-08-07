@@ -7,10 +7,11 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { Entity, Identity, IssueLabel, Issue, IssueStatus, IssuePriority } from '@/types'
+import { Entity, IssueLabel, Issue, IssueStatus, IssuePriority, IssueAssigneeType } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
+import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
 import { CreateIssueModal } from '@/pages/Issues'
 
 interface IssueComment {
@@ -27,6 +28,7 @@ interface IssueUpdatePayload {
   status?: IssueStatus
   priority?: IssuePriority
   assignee_id?: number | null
+  assignee_type?: IssueAssigneeType
 }
 
 export default function IssueDetail() {
@@ -82,11 +84,6 @@ export default function IssueDetail() {
     queryFn: () => api.getEntities({ per_page: 1000 }),
   })
 
-  const { data: allIdentities } = useQuery({
-    queryKey: ['identities-all'],
-    queryFn: () => api.getIdentities({ per_page: 1000 }),
-  })
-
   const { data: allProjects } = useQuery({
     queryKey: ['projects-all'],
     queryFn: () => api.getProjects({ per_page: 1000 }),
@@ -95,6 +92,12 @@ export default function IssueDetail() {
   const { data: allMilestones } = useQuery({
     queryKey: ['milestones-all'],
     queryFn: () => api.getMilestones({ per_page: 1000 }),
+  })
+
+  const { data: requesterContact } = useQuery({
+    queryKey: ['identity', issue?.requester_contact_id],
+    queryFn: () => api.getIdentity(issue!.requester_contact_id!),
+    enabled: !!issue && issue.issue_type === 'support' && !!issue.requester_contact_id,
   })
 
   const updateMutation = useMutation({
@@ -264,6 +267,18 @@ export default function IssueDetail() {
     if (newComment.trim()) {
       addCommentMutation.mutate(newComment.trim())
     }
+  }
+
+  const handleAssigneeChange = (value: AssigneeValue | null) => {
+    if (!value) {
+      // PATCH /issues/:id never clears assignee_id once set — see
+      // apps/api/modules/issues/routes/issues.py::update_issue ("assignee_id
+      // is never cleared by this endpoint"). Surface this instead of
+      // silently no-op-ing and reverting the UI on refetch.
+      toast.error('Clearing an assignee is not supported yet — pick a new assignee instead')
+      return
+    }
+    updateMutation.mutate({ assignee_id: value.assignee_id, assignee_type: value.assignee_type })
   }
 
   const getStatusColor = (status: IssueStatus) => {
@@ -529,19 +544,69 @@ export default function IssueDetail() {
               <h3 className="text-lg font-semibold text-white">Assignee</h3>
             </CardHeader>
             <CardContent>
-              <Select
-                value={issue.assignee_id || ''}
-                onChange={(e) => updateMutation.mutate({ assignee_id: e.target.value ? parseInt(e.target.value) : null })}
-              >
-                <option value="">Unassigned</option>
-                {allIdentities?.items?.map((identity: Identity) => (
-                  <option key={identity.id} value={identity.id}>
-                    {identity.full_name || identity.username}
-                  </option>
-                ))}
-              </Select>
+              <AssigneePicker
+                value={
+                  issue.assignee_id && issue.assignee_type
+                    ? { assignee_type: issue.assignee_type, assignee_id: issue.assignee_id }
+                    : null
+                }
+                onChange={handleAssigneeChange}
+              />
             </CardContent>
           </Card>
+
+          {/* Support Details (issue_type=support only) */}
+          {issue.issue_type?.toLowerCase() === 'support' && (
+            <Card data-testid="issue-support-section">
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-white">Support Details</h3>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {issue.channel && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Channel</dt>
+                    <dd className="text-sm text-slate-300">{issue.channel}</dd>
+                  </div>
+                )}
+                {issue.category && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Category</dt>
+                    <dd className="text-sm text-slate-300">{issue.category}</dd>
+                  </div>
+                )}
+                {requesterContact && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Requester Contact</dt>
+                    <dd className="text-sm text-slate-300">
+                      {requesterContact.full_name || requesterContact.username}
+                    </dd>
+                  </div>
+                )}
+                {issue.sla_breach_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">SLA Breach</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.sla_breach_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {issue.first_response_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">First Response</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.first_response_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {issue.resolved_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Resolved</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.resolved_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {!issue.channel && !issue.category && !requesterContact && !issue.sla_breach_at &&
+                  !issue.first_response_at && !issue.resolved_at && (
+                  <p className="text-slate-500 text-sm">No support details recorded</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Labels */}
           <Card>
@@ -775,7 +840,7 @@ export default function IssueDetail() {
             })
             setShowCreateSubTask(false)
           }}
-          defaultOrganizationId={issue?.organization_id}
+          defaultOrganizationId={issue?.resource_type === 'organization' ? issue.resource_id : undefined}
           parentIssueId={parseInt(id!)}
         />
       )}
