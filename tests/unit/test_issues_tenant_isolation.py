@@ -244,6 +244,42 @@ class TestIssuesTenantIsolation:
             row = db.issues[issue_id]
             assert row.tenant_id == 1
 
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_comment_gets_village_id_and_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """POST /issues/<id>/comments must stamp the created row with a
+        village_id and the parent issue's tenant_id (universal rules)."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            iid = db.issues.insert(
+                title="I",
+                status="OPEN",
+                priority="LOW",
+                issue_type="OTHER",
+                is_incident=0,
+                tenant_id=1,
+                resource_type="organization",
+                resource_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.post(
+            f"/api/v1/issues/{iid}/comments",
+            json={"content": "hi"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code in (200, 201)
+        cid = json.loads(await resp.get_data())["id"]
+        async with app.app_context():
+            row = current_app.db.issue_comments[cid]
+            assert row.village_id and row.tenant_id == 1
+
 
 class TestIssueSubResourceTenantIsolation:
     """Every issue sub-resource lookup must be gated by the parent issue's

@@ -400,7 +400,7 @@ class IssueLabel(Base, IDMixin, TimestampMixin):
         return f"<IssueLabel(id={self.id}, name='{self.name}', color='{self.color}')>"
 
 
-class IssueComment(Base, IDMixin, TimestampMixin):
+class IssueComment(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Comment on an issue.
 
@@ -408,6 +408,14 @@ class IssueComment(Base, IDMixin, TimestampMixin):
     """
 
     __tablename__ = "issue_comments"
+
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced NOT NULL in a follow-up once populated
+        index=True,
+        comment="Tenant this comment belongs to (nullable during backfill)",
+    )
 
     issue_id = Column(
         Integer,
@@ -429,6 +437,16 @@ class IssueComment(Base, IDMixin, TimestampMixin):
         Text,
         nullable=False,
         comment="Comment content (supports Markdown)",
+    )
+
+    # `metadata` is reserved on SQLAlchemy declarative models, so the Python
+    # attribute is named comment_metadata while the DB column stays
+    # `metadata` (same pattern as Issue.issue_metadata / Organization.org_metadata).
+    comment_metadata = Column(
+        "metadata",
+        JSON,
+        nullable=True,
+        comment="Universal free-form JSON metadata bag",
     )
 
     # Relationships
