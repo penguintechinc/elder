@@ -9,6 +9,7 @@ location, etc.) live in the `identities.metadata` JSON bag added in Plan 02
 import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from quart import current_app
@@ -27,8 +28,9 @@ class TestCrmEntityTypes:
             # sites, e.g. tests/unit/test_api_diagram_collab.py) -- every
             # NOT NULL column without a server_default must be passed
             # explicitly.
+            unique_email = f"cust-{uuid4().hex[:8]}@example.com"
             iid = db.identities.insert(
-                username="cust@example.com", email="cust@example.com",
+                username=unique_email, email=unique_email,
                 identity_type="customer_contact", tenant_id=1,
                 auth_provider="local", is_active=True, is_superuser=False,
                 mfa_enabled=False, must_change_password=False,
