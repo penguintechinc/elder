@@ -626,7 +626,9 @@ class ApiClient {
     project_id?: number
     status?: string
     priority?: string
+    issue_type?: string
     assigned_to?: number
+    assignee_id?: number
     search?: string
   }) {
     const response = await this.client.get('/issues', { params })
@@ -640,25 +642,40 @@ class ApiClient {
 
   async createIssue(data: {
     title: string
-    description?: string
-    priority?: string
     organization_id?: number
-    entity_ids?: number[]
-    assigned_to?: number
-    label_ids?: number[]
+    description?: string
+    status?: string
+    priority?: string
+    issue_type?: string
+    assignee_id?: number
+    assignee_type?: 'identity' | 'org_unit'
+    is_incident?: number
+    channel?: string
+    category?: string
+    parent_issue_id?: number
   }) {
     const response = await this.client.post('/issues', data)
     return response.data
   }
 
+  // Note: apps/api/modules/issues/routes/issues.py::update_issue only
+  // registers PATCH for /issues/:id (no PUT route exists) — using PUT here
+  // 405s every issue update.
   async updateIssue(id: number, data: Partial<{
     title: string
     description: string
     status: string
     priority: string
-    assignee_id: number | null
+    issue_type: string
+    assignee_id: number
+    assignee_type: 'identity' | 'org_unit'
+    organization_id: number
+    is_incident: number
+    channel: string
+    category: string
+    parent_issue_id: number
   }>) {
-    const response = await this.client.put(`/issues/${id}`, data)
+    const response = await this.client.patch(`/issues/${id}`, data)
     return response.data
   }
 
@@ -712,6 +729,68 @@ class ApiClient {
 
   async unlinkIssueEntity(issueId: number, entityId: number) {
     const response = await this.client.delete(`/issues/${issueId}/links/by-entity/${entityId}`)
+    return response.data
+  }
+
+  // Intake Forms (admin) — /api/v1/intake-forms
+  async getIntakeForms(params?: { page?: number; per_page?: number; is_active?: boolean }) {
+    const response = await this.client.get('/intake-forms', { params })
+    return response.data
+  }
+
+  async getIntakeForm(id: number) {
+    const response = await this.client.get(`/intake-forms/${id}`)
+    return response.data
+  }
+
+  async createIntakeForm(data: {
+    name: string
+    slug: string
+    description?: string
+    fields: Array<{ id: string; label: string; type: string; required: boolean; options?: string[] }>
+    issue_type?: string
+    default_assignee_type?: 'identity' | 'org_unit'
+    default_assignee_id?: number
+    organization_id?: number
+    is_public?: boolean
+    captcha_required?: boolean
+    is_active?: boolean
+    metadata?: Record<string, unknown>
+  }) {
+    const response = await this.client.post('/intake-forms', data)
+    return response.data
+  }
+
+  async updateIntakeForm(id: number, data: Partial<{
+    name: string
+    description: string
+    fields: Array<{ id: string; label: string; type: string; required: boolean; options?: string[] }>
+    issue_type: string
+    default_assignee_type: 'identity' | 'org_unit'
+    default_assignee_id: number
+    organization_id: number
+    is_public: boolean
+    captcha_required: boolean
+    is_active: boolean
+    metadata: Record<string, unknown>
+  }>) {
+    const response = await this.client.patch(`/intake-forms/${id}`, data)
+    return response.data
+  }
+
+  async deleteIntakeForm(id: number) {
+    const response = await this.client.delete(`/intake-forms/${id}`)
+    return response.data
+  }
+
+  // Intake Forms (public, unauthenticated) — /api/v1/intake
+  async getPublicIntakeForm(slug: string) {
+    const response = await this.client.get(`/intake/${slug}`)
+    return response.data
+  }
+
+  async submitPublicIntakeForm(slug: string, data: { fields: Record<string, unknown>; altcha?: unknown }) {
+    const response = await this.client.post(`/intake/${slug}/submit`, data)
     return response.data
   }
 
@@ -1204,16 +1283,32 @@ class ApiClient {
   async createWebhook(data: {
     name: string
     url: string
-    organization_id: number
+    organization_id?: number
     events: string[]
     secret?: string
     enabled?: boolean
+    headers?: Record<string, string>
+    filter_issue_type?: string
+    filter_assignee_type?: 'identity' | 'org_unit'
+    filter_assignee_id?: number
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/webhooks', data)
     return response.data
   }
 
-  async updateWebhook(id: number, data: Partial<{ name: string; url: string; events: string[]; secret: string; enabled: boolean }>) {
+  async updateWebhook(id: number, data: Partial<{
+    name: string
+    url: string
+    events: string[]
+    secret: string
+    enabled: boolean
+    headers: Record<string, string>
+    filter_issue_type: string
+    filter_assignee_type: 'identity' | 'org_unit'
+    filter_assignee_id: number
+    metadata: Record<string, unknown>
+  }>) {
     const response = await this.client.put(`/webhooks/${id}`, data)
     return response.data
   }
