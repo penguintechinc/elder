@@ -13,7 +13,18 @@ from pydantic import BaseModel, SecretStr, model_validator
 
 # ==================== Type Definitions ====================
 
-IdentityType = Literal["human", "service_account"]
+IdentityType = Literal[
+    "human",
+    "service_account",
+    "employee",
+    "vendor",
+    "bot",
+    "serviceAccount",
+    "integration",
+    "otherHuman",
+    "other",
+    "customer_contact",
+]
 AuthProvider = Literal[
     "local",
     "ldap",
