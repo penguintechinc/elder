@@ -19,6 +19,7 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.modules.issues.routes.common import _tenant_id
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 
@@ -43,18 +44,23 @@ async def list_milestones():
     Returns:
         200: List of milestones with pagination
         400: Invalid parameters
+        403: Tenant not found
 
     Example:
         GET /api/v1/milestones?organization_id=1&status=open
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_milestones():
-        query = db.milestones.id > 0
+        query = db.milestones.tenant_id == tenant_id
 
         # Apply filters
         if request.args.get("organization_id"):
@@ -127,11 +133,16 @@ async def create_milestone():
         201: Milestone created
         400: Invalid request
         403: Insufficient permissions
+        404: Organization not found
 
     Example:
         POST /api/v1/milestones
     """
     db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
 
     data = await request.get_json()
     if not data:
@@ -152,6 +163,10 @@ async def create_milestone():
         return jsonify({"error": "Organization not found"}), 404
     if not org.tenant_id:
         return jsonify({"error": "Organization must have a tenant"}), 400
+    # Cross-tenant IDOR guard: the org must belong to the caller's own
+    # tenant, not merely exist (matches projects.py:create_project).
+    if org.tenant_id != tenant_id:
+        return jsonify({"error": "Organization not found"}), 404
 
     def create():
         # Create milestone
@@ -163,12 +178,13 @@ async def create_milestone():
             organization_id=data["organization_id"],
             project_id=data.get("project_id"),
             due_date=data.get("due_date"),
+            tenant_id=tenant_id,
             created_at=now,
             updated_at=now,
         )
         db.commit()
 
-        return db.milestones[milestone_id]
+        return db(db.milestones.id == milestone_id).select().first()
 
     milestone = await run_in_threadpool(create)
 
@@ -188,6 +204,7 @@ async def get_milestone(id: int):
 
     Returns:
         200: Milestone details
+        403: Tenant not found
         404: Milestone not found
 
     Example:
@@ -195,7 +212,15 @@ async def get_milestone(id: int):
     """
     db = current_app.db
 
-    milestone = await run_in_threadpool(lambda: db.milestones[id])
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    milestone = await run_in_threadpool(
+        lambda: db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+        .select()
+        .first()
+    )
 
     if not milestone:
         return jsonify({"error": "Milestone not found"}), 404
@@ -234,12 +259,15 @@ async def update_milestone(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
 
     # If organization is being changed, validate and get tenant
-    org_tenant_id = None
     if "organization_id" in data:
 
         def get_org():
@@ -250,10 +278,17 @@ async def update_milestone(id: int):
             return jsonify({"error": "Organization not found"}), 404
         if not org.tenant_id:
             return jsonify({"error": "Organization must have a tenant"}), 400
-        org_tenant_id = org.tenant_id
+        # Cross-tenant IDOR guard: re-pointing a milestone at another
+        # tenant's org must not silently re-link it cross-tenant.
+        if org.tenant_id != tenant_id:
+            return jsonify({"error": "Organization not found"}), 404
 
     def update():
-        milestone = db.milestones[id]
+        milestone = (
+            db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not milestone:
             return None
 
@@ -278,10 +313,16 @@ async def update_milestone(id: int):
             update_dict["organization_id"] = data["organization_id"]
 
         if update_dict:
-            db(db.milestones.id == id).update(**update_dict)
+            db(
+                (db.milestones.id == id) & (db.milestones.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
-        return db.milestones[id]
+        return (
+            db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
     milestone = await run_in_threadpool(update)
 
@@ -315,12 +356,20 @@ async def delete_milestone(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        milestone = db.milestones[id]
+        milestone = (
+            db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not milestone:
             return False
 
-        del db.milestones[id]
+        db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id)).delete()
         db.commit()
         return True
 
@@ -344,6 +393,7 @@ async def get_milestone_issues(id: int):
 
     Returns:
         200: List of issues
+        403: Tenant not found
         404: Milestone not found
 
     Example:
@@ -351,8 +401,16 @@ async def get_milestone_issues(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def get_issues():
-        milestone = db.milestones[id]
+        milestone = (
+            db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not milestone:
             return None, []
 
@@ -363,8 +421,12 @@ async def get_milestone_issues(id: int):
         if not issue_ids:
             return milestone, []
 
-        # Get issues
-        issues = db(db.issues.id.belongs(issue_ids)).select()
+        # Get issues, additionally scoped to the caller's tenant so a
+        # milestone can never surface another tenant's issues even if the
+        # link table itself were ever populated cross-tenant.
+        issues = db(
+            (db.issues.id.belongs(issue_ids)) & (db.issues.tenant_id == tenant_id)
+        ).select()
         return milestone, issues
 
     milestone, issues = await run_in_threadpool(get_issues)

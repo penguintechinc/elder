@@ -1441,8 +1441,15 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
         if not issue:
             return None, "Issue not found", 404
 
-        # Verify milestone exists
-        milestone = db.milestones[body.milestone_id]
+        # Verify milestone exists and belongs to caller's tenant
+        milestone = (
+            db(
+                (db.milestones.id == body.milestone_id)
+                & (db.milestones.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
         if not milestone:
             return None, "Milestone not found", 404
 

@@ -241,3 +241,336 @@ class TestProjectsTenantIsolation:
             db = current_app.db
             row = db.projects[pid]
             assert row.tenant_id == 1
+
+
+class TestMilestonesTenantColumn:
+    """Verify the `milestones` table carries a `tenant_id` column."""
+
+    @pytest.mark.asyncio
+    async def test_milestones_table_has_tenant_id(self, app):
+        async with app.app_context():
+            db = current_app.db
+            assert (
+                "tenant_id" in db.milestones.table.columns
+            ), "milestones must have a tenant_id column"
+
+
+class TestMilestonesTenantIsolation:
+    """Verify milestone reads/writes are scoped to the caller's tenant.
+
+    `milestones` had no `tenant_id` and every lookup in `milestones.py` was
+    an unscoped `db.milestones[id]` bracket lookup, so any tenant could
+    read, update, or delete another tenant's milestone by guessing its
+    numeric id. This class covers the fix.
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_milestone_rejects_other_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = _org_for_tenant(db, tenant_id=2)
+            mid = db.milestones.insert(
+                title="T2 milestone",
+                status="open",
+                organization_id=org_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.get(
+            f"/api/v1/milestones/{mid}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_get_milestone_same_tenant_succeeds(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = _org_for_tenant(db, tenant_id=1)
+            mid = db.milestones.insert(
+                title="T1 milestone",
+                status="open",
+                organization_id=org_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.get(
+            f"/api/v1/milestones/{mid}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        body = json.loads(await resp.get_data())
+        assert body["title"] == "T1 milestone"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_list_milestones_excludes_other_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org1_id = _org_for_tenant(db, tenant_id=1)
+            org2_id = _org_for_tenant(db, tenant_id=2)
+            db.milestones.insert(
+                title="T1 list milestone",
+                status="open",
+                organization_id=org1_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.milestones.insert(
+                title="T2 list milestone",
+                status="open",
+                organization_id=org2_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.get(
+            "/api/v1/milestones?per_page=100",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        titles = [m["title"] for m in json.loads(await resp.get_data())["items"]]
+        assert "T1 list milestone" in titles
+        assert (
+            "T2 list milestone" not in titles
+        ), "tenant 1 must not see tenant 2 milestones"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_update_milestone_rejects_other_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        # is_superuser=True: see comment in
+        # TestProjectsTenantIsolation.test_update_project_rejects_other_tenant
+        # -- bypasses the same pre-existing resource_role_required
+        # resource_type-inference bug, unrelated to tenant scoping.
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = _org_for_tenant(db, tenant_id=2)
+            mid = db.milestones.insert(
+                title="T2 milestone update",
+                status="open",
+                organization_id=org_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.put(
+            f"/api/v1/milestones/{mid}",
+            json={"title": "hijacked"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+        async with app.app_context():
+            db = current_app.db
+            row = db.milestones[mid]
+            assert (
+                row.title == "T2 milestone update"
+            ), "cross-tenant update must not succeed"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_delete_milestone_rejects_other_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        # is_superuser=True: see comment above -- bypasses the same
+        # pre-existing resource_role_required bug, unrelated to tenant
+        # scoping.
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = _org_for_tenant(db, tenant_id=2)
+            mid = db.milestones.insert(
+                title="T2 milestone delete",
+                status="open",
+                organization_id=org_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.delete(
+            f"/api/v1/milestones/{mid}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+        async with app.app_context():
+            db = current_app.db
+            still_there = db.milestones[mid]
+            assert still_there is not None, "cross-tenant delete must not succeed"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_milestone_sets_caller_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            org_id = _org_for_tenant(db, tenant_id=1)
+        resp = await async_client.post(
+            "/api/v1/milestones",
+            json={"title": "New milestone", "organization_id": org_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        mid = json.loads(await resp.get_data())["id"]
+        async with app.app_context():
+            db = current_app.db
+            row = db.milestones[mid]
+            assert row.tenant_id == 1
+
+
+class TestMilestoneIssuesTenantIsolation:
+    """Verify `GET /milestones/<id>/issues` does not leak cross-tenant data.
+
+    Covers both the milestone lookup itself (404 on a foreign/missing
+    milestone) and the returned issue list (filtered to the caller's
+    tenant even if the link table were ever populated cross-tenant).
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_milestone_issues_404_on_other_tenant_milestone(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = _org_for_tenant(db, tenant_id=2)
+            mid = db.milestones.insert(
+                title="T2 ms",
+                status="open",
+                organization_id=org_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.get(
+            f"/api/v1/milestones/{mid}/issues",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_milestone_issues_404_on_missing_milestone(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        resp = await async_client.get(
+            "/api/v1/milestones/999999/issues",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_milestone_issues_same_tenant_excludes_other_tenant_issues(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Same-tenant milestone + its issues return 200 with only this
+        tenant's issues, even if the link table were ever cross-populated.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org1_id = _org_for_tenant(db, tenant_id=1)
+            org2_id = _org_for_tenant(db, tenant_id=2)
+
+            mid = db.milestones.insert(
+                title="T1 ms with issues",
+                status="open",
+                organization_id=org1_id,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+
+            own_issue_id = db.issues.insert(
+                title="T1 own issue",
+                description="Test",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org1_id,
+                is_incident=0,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            foreign_issue_id = db.issues.insert(
+                title="T2 foreign issue",
+                description="Test",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org2_id,
+                is_incident=0,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.issue_milestone_links.insert(
+                issue_id=own_issue_id, milestone_id=mid, created_at=now
+            )
+            # Simulate a cross-tenant link ever existing (defense in depth):
+            # the response must still exclude it even though the link row
+            # itself points a tenant-2 issue at a tenant-1 milestone.
+            db.issue_milestone_links.insert(
+                issue_id=foreign_issue_id, milestone_id=mid, created_at=now
+            )
+            db.commit()
+
+        resp = await async_client.get(
+            f"/api/v1/milestones/{mid}/issues",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        titles = [i["title"] for i in json.loads(await resp.get_data())["issues"]]
+        assert "T1 own issue" in titles
+        assert (
+            "T2 foreign issue" not in titles
+        ), "tenant 1 must not see tenant 2's issue via a shared milestone link"
