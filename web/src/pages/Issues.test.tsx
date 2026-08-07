@@ -17,8 +17,18 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
+// Mock AssigneePicker with a button to trigger onChange so tests can verify assignee wiring
 vi.mock('@/components/AssigneePicker', () => ({
-  default: () => <div data-testid="assignee-picker" />,
+  default: ({ onChange }: { onChange: (val: { assignee_type: 'identity' | 'org_unit'; assignee_id: number } | null) => void }) => (
+    <div data-testid="assignee-picker">
+      <button
+        data-testid="assignee-picker-select-button"
+        onClick={() => onChange({ assignee_type: 'org_unit', assignee_id: 7 })}
+      >
+        Select Assignee
+      </button>
+    </div>
+  ),
   AssigneeValue: {},
 }))
 
@@ -96,24 +106,7 @@ describe('CreateIssueModal', () => {
     vi.mocked(api.getLabels).mockResolvedValue({ items: [] })
   })
 
-  it('shows support fields only when issue_type is support', async () => {
-    render(
-      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-        <MemoryRouter>
-          <Issues />
-        </MemoryRouter>
-      </QueryClientProvider>
-    )
-    fireEvent.click(screen.getByText('Create Issue'))
-    await waitFor(() => expect(screen.queryByTestId('support-fields')).toBeNull())
-    fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'support' } })
-    await waitFor(() => {
-      const supportFields = screen.queryByTestId('support-fields')
-      expect(supportFields).toBeDefined()
-    })
-  })
-
-  it('submits with organization_id required and issue_type/assignee forwarded', async () => {
+  it('blocks submit when organization is not selected (client validation)', async () => {
     vi.mocked(api.createIssue).mockResolvedValue({ id: 99 })
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -124,13 +117,67 @@ describe('CreateIssueModal', () => {
     )
     fireEvent.click(screen.getByText('Create Issue'))
     await waitFor(() => screen.getByTestId('create-issue-form'))
+    // Fill title but leave organization empty
     fireEvent.change(screen.getByTestId('issue-title-input'), { target: { value: 'New issue' } })
-    fireEvent.change(screen.getByTestId('issue-organization-select'), { target: { value: '5' } })
+    // Try to submit without selecting organization
     fireEvent.click(screen.getByTestId('submit-issue-button'))
-    await waitFor(() => expect(api.createIssue).toHaveBeenCalled())
-    const call = vi.mocked(api.createIssue).mock.calls[0][0]
-    expect(call.title).toBe('New issue')
-    expect(call.organization_id).toBe(5)
-    expect(call.issue_type).toBe('other')
+    // Verify createIssue was NOT called because client validation blocked it
+    expect(api.createIssue).not.toHaveBeenCalled()
   })
+
+  it('shows support fields only when issue_type is support', async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <Issues />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByText('Create Issue'))
+    await waitFor(() => screen.getByTestId('create-issue-form'))
+    // Initially support fields should not exist
+    expect(screen.queryByTestId('support-fields')).toBeNull()
+    // Change issue type to support
+    fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'support' } })
+    // Now support fields should be visible
+    await waitFor(() => {
+      expect(screen.queryByTestId('support-fields')).toBeDefined()
+    })
+    // Change back to other
+    fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'other' } })
+    // Support fields should disappear
+    await waitFor(() => {
+      expect(screen.queryByTestId('support-fields')).toBeNull()
+    })
+  })
+
+  it('submits with organization_id, issue_type, and support fields wired correctly', async () => {
+    vi.mocked(api.createIssue).mockResolvedValue({ id: 99 })
+    vi.mocked(api.linkIssueEntity).mockResolvedValue({})
+    vi.mocked(api.addIssueLabel).mockResolvedValue({})
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter>
+          <Issues />
+        </MemoryRouter>
+      </QueryClientProvider>
+    )
+    fireEvent.click(screen.getByText('Create Issue'))
+    const titleInput = await waitFor(() => screen.getByTestId('issue-title-input'), { timeout: 5000 })
+    // Fill in the form
+    fireEvent.change(titleInput, { target: { value: 'Test issue' } })
+    fireEvent.change(screen.getByTestId('issue-organization-select'), { target: { value: '5' } })
+    fireEvent.change(screen.getByTestId('issue-type-select'), { target: { value: 'support' } })
+    // Support fields should now be visible
+    expect(screen.queryByTestId('support-fields')).toBeDefined()
+    // Submit the form
+    fireEvent.click(screen.getByTestId('submit-issue-button'))
+    // Verify createIssue was called with correct payload
+    await waitFor(() => expect(api.createIssue).toHaveBeenCalled(), { timeout: 5000 })
+    const call = vi.mocked(api.createIssue).mock.calls[0][0]
+    expect(call.title).toBe('Test issue')
+    expect(call.organization_id).toBe(5)
+    expect(call.issue_type).toBe('support')
+  })
+
 })

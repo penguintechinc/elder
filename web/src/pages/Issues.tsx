@@ -7,7 +7,7 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { invalidateCache } from '@/lib/invalidateCache'
 import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
-import { ISSUE_TYPES, issueTypeLabel } from '@/lib/constants/issueTypes'
+import { ISSUE_TYPES, issueTypeLabel, SUPPORT_ISSUE_TYPE } from '@/lib/constants/issueTypes'
 import { Issue, IssueStatus, IssuePriority, IssueType, Organization, Entity, IssueLabel } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent, CardHeader } from '@/components/Card'
@@ -312,16 +312,47 @@ export function CreateIssueModal({
         issueType: data.issue_type,
         organizationId: data.organization_id,
       })
+      // Create the issue first — this is the critical operation.
       const issue = await api.createIssue(data)
+
       // CreateIssueRequest has no entity_ids/label_ids field (see Task 2
-      // recon) — link each selection as a follow-up call against the
-      // existing per-item endpoints, same as IssueDetail.tsx's sidebar.
-      await Promise.all(entityIds.map((entityId) => api.linkIssueEntity(issue.id, entityId)))
-      await Promise.all(labelIds.map((labelId) => api.addIssueLabel(issue.id, labelId)))
-      return issue
+      // recon) — link each selection as follow-up calls against the existing
+      // per-item endpoints (same as IssueDetail.tsx's sidebar). These are
+      // best-effort: if they fail, the issue is already created and the UI
+      // must reflect that. Failures here must NOT reject the mutation or
+      // prevent the modal from closing.
+      const failedLinks: string[] = []
+
+      for (const entityId of entityIds) {
+        try {
+          await api.linkIssueEntity(issue.id, entityId)
+        } catch (err) {
+          console.warn('[CreateIssueModal] Failed to link entity', { entityId, error: err })
+          failedLinks.push(`entity ${entityId}`)
+        }
+      }
+
+      for (const labelId of labelIds) {
+        try {
+          await api.addIssueLabel(issue.id, labelId)
+        } catch (err) {
+          console.warn('[CreateIssueModal] Failed to link label', { labelId, error: err })
+          failedLinks.push(`label ${labelId}`)
+        }
+      }
+
+      // Return issue + any failed links for the success handler to decide
+      // whether to show a secondary warning.
+      return { issue, failedLinks }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       toast.success(parentIssueId ? 'Sub-task created successfully' : 'Issue created successfully')
+      // If some entity/label links failed, show a secondary non-fatal warning.
+      // The issue itself was created; this is just a heads-up that some
+      // relationships couldn't be established.
+      if (result.failedLinks.length > 0) {
+        toast.error(`Issue created, but some links couldn't be established (${result.failedLinks.join(', ')})`)
+      }
       onSuccess()
     },
     onError: () => {
@@ -349,8 +380,8 @@ export function CreateIssueModal({
       assignee_id: assignee?.assignee_id,
       assignee_type: assignee?.assignee_type,
       is_incident: isIncident ? 1 : 0,
-      channel: issueType === 'support' ? (channel.trim() || undefined) : undefined,
-      category: issueType === 'support' ? (category.trim() || undefined) : undefined,
+      channel: issueType === SUPPORT_ISSUE_TYPE ? (channel.trim() || undefined) : undefined,
+      category: issueType === SUPPORT_ISSUE_TYPE ? (category.trim() || undefined) : undefined,
       parent_issue_id: parentIssueId,
     })
   }
@@ -427,7 +458,7 @@ export function CreateIssueModal({
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Assignee</label>
               <AssigneePicker value={assignee} onChange={setAssignee} />
             </div>
-            {issueType === 'support' && (
+            {issueType === SUPPORT_ISSUE_TYPE && (
               <div
                 className="grid grid-cols-2 gap-4 p-4 bg-slate-800/30 rounded-lg"
                 data-testid="support-fields"
