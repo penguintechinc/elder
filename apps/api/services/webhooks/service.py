@@ -239,6 +239,7 @@ class WebhookService:
         filter_assignee_type: Optional[str] = None,
         filter_assignee_id: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        is_active: bool = True,
     ) -> Dict[str, Any]:
         """
         Create a new tenant-scoped webhook.
@@ -260,6 +261,7 @@ class WebhookService:
             filter_assignee_id: Optional assignee_id filter; required together
                 with filter_assignee_type
             metadata: Optional free-form JSON metadata bag
+            is_active: Whether the webhook is active (defaults to True)
 
         Returns:
             Created webhook dictionary (see _sanitize_webhook for the exact shape)
@@ -299,7 +301,7 @@ class WebhookService:
             "events": events,
             "secret": secret,
             "headers": headers,
-            "is_active": True,
+            "is_active": is_active,
             "filter_issue_type": filter_issue_type,
             "filter_assignee_type": filter_assignee_type,
             "filter_assignee_id": filter_assignee_id,

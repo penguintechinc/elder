@@ -104,6 +104,40 @@ async def test_create_webhook_missing_required_field(
 
 @pytest.mark.asyncio
 @patch("apps.api.auth.decorators.get_current_user")
+async def test_create_webhook_inactive_via_route(
+    mock_get_user, async_client, generate_token
+):
+    """Regression: POST /webhooks with is_active=false persists an inactive webhook."""
+    mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+    token = generate_token(
+        tenant_id=1, scopes=["webhooks_alerting:admin", "webhooks_alerting:read"]
+    )
+
+    resp = await async_client.post(
+        "/api/v1/webhooks",
+        json={
+            "name": "Route inactive webhook",
+            "url": "https://hooks.example.com/route-inactive",
+            "events": ["issue.assigned"],
+            "is_active": False,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 201, (await resp.get_data()).decode()[:300]
+    created = json.loads(await resp.get_data())
+    assert created["is_active"] is False
+
+    get_resp = await async_client.get(
+        f"/api/v1/webhooks/{created['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert get_resp.status_code == 200
+    persisted = json.loads(await get_resp.get_data())
+    assert persisted["is_active"] is False
+
+
+@pytest.mark.asyncio
+@patch("apps.api.auth.decorators.get_current_user")
 async def test_webhook_tenant_isolation_list_update_delete(
     mock_get_user, async_client, generate_token
 ):
