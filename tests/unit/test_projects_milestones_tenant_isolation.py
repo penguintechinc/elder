@@ -15,6 +15,62 @@ import pytest
 from quart import current_app
 
 
+@pytest.fixture(scope="function", autouse=True)
+def _ensure_tenant_2_exists(app):
+    """Guarantee a tenant row with id=2 exists before each test runs.
+
+    Every test in this module references a second tenant by the literal id
+    `2` (organizations/projects/milestones all carry a real FK to
+    `tenants.id`) rather than creating one per test. Tenant id 1 ("Default")
+    is auto-created by `shared.database`'s default-tenant bootstrap on app
+    init, so historically tenant id 2 only existed by accident -- whichever
+    other test file happened to run first in a full-suite session and
+    called `db.tenants.insert()` for its own fixtures. Against a freshly
+    reset database (or a targeted run of just this module), nothing else
+    creates it, so this fixture creates it explicitly. It is idempotent
+    (checked, not assumed) so it is a no-op in a full-suite run where
+    pollution from earlier files already produced a tenant with id 2.
+    """
+    if not app.config.get("TESTING"):
+        yield
+        return
+
+    try:
+        from quart import current_app as ctx_app
+
+        async def ensure():
+            async with app.app_context():
+                db = ctx_app.db
+                if not db(db.tenants.id == 2).select().first():
+                    now = datetime.now(timezone.utc)
+                    db.tenants.insert(
+                        name="Tenant 2",
+                        slug=f"tenant-2-{uuid4().hex[:8]}",
+                        is_active=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    db.commit()
+
+        import asyncio
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Loop is closed")
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        loop.run_until_complete(ensure())
+    except Exception:
+        # Mirrors conftest.enable_helpdesk_module: best-effort seeding, never
+        # fails the test session if the DB is unavailable for some reason.
+        pass
+
+    yield
+
+
 def _org_for_tenant(db, tenant_id: int, name: str = "Org") -> int:
     """Create an organization owned by the given tenant.
 
@@ -574,3 +630,71 @@ class TestMilestoneIssuesTenantIsolation:
         assert (
             "T2 foreign issue" not in titles
         ), "tenant 1 must not see tenant 2's issue via a shared milestone link"
+
+
+class TestLinkIssueToProjectTenantIsolation:
+    """Verify `POST /issues/<id>/projects` rejects cross-tenant project links.
+
+    `link_issue_to_project` used to look up the target project with an
+    unscoped `db.projects[body.project_id]` bracket lookup, so a caller in
+    tenant 1 could confirm (and link to) a tenant-2 project by guessing its
+    numeric id -- a cross-tenant IDOR oracle. The fix scopes the lookup to
+    `(db.projects.id == project_id) & (db.projects.tenant_id == tenant_id)`.
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_link_issue_to_project_rejects_other_tenant(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org1_id = _org_for_tenant(db, tenant_id=1)
+            org2_id = _org_for_tenant(db, tenant_id=2)
+
+            issue_id = db.issues.insert(
+                title="T1 issue for link",
+                description="Test",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org1_id,
+                is_incident=0,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            other_project_id = db.projects.insert(
+                name="T2 proj for link",
+                status="active",
+                organization_id=org2_id,
+                tenant_id=2,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        resp = await async_client.post(
+            f"/api/v1/issues/{issue_id}/projects",
+            json={"project_id": other_project_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404
+
+        async with app.app_context():
+            db = current_app.db
+            link = (
+                db(
+                    (db.issue_project_links.issue_id == issue_id)
+                    & (db.issue_project_links.project_id == other_project_id)
+                )
+                .select()
+                .first()
+            )
+            assert link is None, "cross-tenant link must not be created"

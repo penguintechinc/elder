@@ -1319,8 +1319,15 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
         if not issue:
             return None, "Issue not found", 404
 
-        # Verify project exists
-        project = db.projects[body.project_id]
+        # Verify project exists and belongs to caller's tenant
+        project = (
+            db(
+                (db.projects.id == body.project_id)
+                & (db.projects.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
         if not project:
             return None, "Project not found", 404
 

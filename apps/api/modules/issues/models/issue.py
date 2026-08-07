@@ -13,10 +13,12 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, relationship
 
@@ -83,6 +85,62 @@ issue_label_assignments = Table(
         ForeignKey("issue_labels.id", ondelete="CASCADE"),
         primary_key=True,
     ),
+)
+
+
+# Association table linking issues to milestones (many-to-many). The actual
+# table is created in production by alembic/versions/009_add_issue_link_tables.py
+# (it straddles the Alembic-managed `issues` table and the `milestones` table);
+# it is registered here too, mirroring that migration's schema exactly, so
+# Base.metadata.create_all() also builds it for test databases.
+issue_milestone_links = Table(
+    "issue_milestone_links",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "milestone_id",
+        Integer,
+        ForeignKey("milestones.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "milestone_id", name="uix_issue_milestone"),
+    Index("ix_issue_milestone_links_issue_id", "issue_id"),
+    Index("ix_issue_milestone_links_milestone_id", "milestone_id"),
+)
+
+
+# Association table linking issues to projects (many-to-many). The actual
+# table is created in production by alembic/versions/009_add_issue_link_tables.py
+# (it straddles the Alembic-managed `issues` table and the `projects` table);
+# it is registered here too, mirroring that migration's schema exactly, so
+# Base.metadata.create_all() also builds it for test databases.
+issue_project_links = Table(
+    "issue_project_links",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "project_id",
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "project_id", name="uix_issue_project"),
+    Index("ix_issue_project_links_issue_id", "issue_id"),
+    Index("ix_issue_project_links_project_id", "project_id"),
 )
 
 
