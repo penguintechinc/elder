@@ -73,8 +73,8 @@ class TestIssuesAPI:
                 f"{(await response.get_data()).decode()[:200]}"
             )
             data = json.loads(await response.get_data())
-            assert data["status"] == "IN_PROGRESS"
-            assert data["priority"] == "HIGH"
+            assert data["status"] == "in_progress"
+            assert data["priority"] == "high"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -128,7 +128,7 @@ class TestIssuesAPI:
                 f"{(await response.get_data()).decode()[:200]}"
             )
             data = json.loads(await response.get_data())
-            assert data["status"] == "CLOSED"
+            assert data["status"] == "closed"
             assert data.get("closed_at") is not None
 
     @pytest.mark.asyncio
@@ -162,8 +162,8 @@ class TestIssuesAPI:
         )
         assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
         data = json.loads(await resp.get_data())
-        assert data["issue_type"] == "SUPPORT"
-        assert data["priority"] == "URGENT"
+        assert data["issue_type"] == "support"
+        assert data["priority"] == "urgent"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -356,3 +356,182 @@ class TestIssuesAPI:
         assert get_resp.status_code == 200, (await get_resp.get_data()).decode()[:200]
         get_data = json.loads(await get_resp.get_data())
         assert get_data["reporter_id"] == 1
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_filter_by_status_lowercase(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """GET /issues?status=open returns issues with uppercase OPEN in DB.
+
+        Regression: filter was comparing lowercase param to uppercase DB column,
+        so ?status=open returned 0 results. Fix: .upper() the param before
+        comparing to DB column.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:read"])
+
+        issue_title = f"Open Issue {uuid4().hex[:8]}"
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Filter Test Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            # Create an issue with UPPERCASE status in DB
+            db.issues.insert(
+                title=issue_title,
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org_id,
+                is_incident=0,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        # Query with lowercase status param
+        resp = await async_client.get(
+            "/api/v1/issues?status=open",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = json.loads(await resp.get_data())
+        # Should find the issue (not return empty list)
+        assert data["total"] >= 1
+        # Verify our specific issue is in results
+        found = any(item["title"] == issue_title for item in data["items"])
+        assert found, f"Issue {issue_title} not found in filtered results"
+        # All returned items should have status lowercase
+        assert all(item["status"] == "open" for item in data["items"])
+
+        # Query with a different status should not include the open issue
+        resp = await async_client.get(
+            "/api/v1/issues?status=closed",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = json.loads(await resp.get_data())
+        # Our open issue should not be in closed results
+        found = any(item["title"] == issue_title for item in data["items"])
+        assert not found, f"Open issue {issue_title} should not appear in closed filter"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_responses_return_lowercase_casing(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """GET/POST/PATCH /issues return status/priority/issue_type in lowercase.
+
+        Regression: responses returned raw UPPERCASE from DB. Create and
+        retrieve an issue, verify response fields are lowercase.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write", "issues:read"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Case Test Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        # POST: create issue response returns lowercase
+        create_resp = await async_client.post(
+            "/api/v1/issues",
+            json={
+                "title": "Case Test",
+                "status": "open",
+                "priority": "high",
+                "issue_type": "support",
+                "organization_id": org_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert create_resp.status_code == 201
+        create_data = json.loads(await create_resp.get_data())
+        assert create_data["status"] == "open"
+        assert create_data["priority"] == "high"
+        assert create_data["issue_type"] == "support"
+        issue_id = create_data["id"]
+
+        # GET: retrieve issue response returns lowercase
+        get_resp = await async_client.get(
+            f"/api/v1/issues/{issue_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_resp.status_code == 200
+        get_data = json.loads(await get_resp.get_data())
+        assert get_data["status"] == "open"
+        assert get_data["priority"] == "high"
+        assert get_data["issue_type"] == "support"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_patch_issue_type_persists(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """PATCH /issues/{id} with issue_type persists and returns it.
+
+        Regression: UpdateIssueRequest accepted issue_type but the update
+        closure had no block to write it to the DB. Fix: add issue_type
+        block in update_fields, .upper() before persist.
+        """
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write", "issues:read"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Issue Type Test Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            issue_id = db.issues.insert(
+                title="Type Change",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org_id,
+                is_incident=0,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        # PATCH: update issue_type
+        patch_resp = await async_client.patch(
+            f"/api/v1/issues/{issue_id}",
+            json={"issue_type": "support"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert patch_resp.status_code == 200
+        patch_data = json.loads(await patch_resp.get_data())
+        assert patch_data["issue_type"] == "support"
+
+        # GET: verify the new type persisted
+        get_resp = await async_client.get(
+            f"/api/v1/issues/{issue_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert get_resp.status_code == 200
+        get_data = json.loads(await get_resp.get_data())
+        assert get_data["issue_type"] == "support"

@@ -38,6 +38,22 @@ bp = Blueprint("issues", __name__)
 logger = logging.getLogger(__name__)
 
 
+def _lowercase_issue_casing(dto: IssueDTO) -> IssueDTO:
+    """Normalize status, priority, issue_type to lowercase for API responses.
+
+    DB stores these as UPPERCASE enum names (OPEN, HIGH, SUPPORT). This helper
+    normalizes them to lowercase for a clean lowercase API contract.
+    """
+    dto_dict = asdict(dto)
+    if dto_dict.get("status"):
+        dto_dict["status"] = dto_dict["status"].lower()
+    if dto_dict.get("priority"):
+        dto_dict["priority"] = dto_dict["priority"].lower()
+    if dto_dict.get("issue_type"):
+        dto_dict["issue_type"] = dto_dict["issue_type"].lower()
+    return IssueDTO(**dto_dict)
+
+
 def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
     """Return True if org_unit_id is unset or belongs to tenant_id.
 
@@ -223,10 +239,10 @@ async def list_issues():
         #     query &= db.issues.organization_id == org_id
 
         if request.args.get("status"):
-            query &= db.issues.status == request.args.get("status")
+            query &= db.issues.status == request.args.get("status").upper()
 
         if request.args.get("priority"):
-            query &= db.issues.priority == request.args.get("priority")
+            query &= db.issues.priority == request.args.get("priority").upper()
 
         if request.args.get("assignee_id"):
             assignee_id = request.args.get("assignee_id", type=int)
@@ -250,8 +266,9 @@ async def list_issues():
     # Calculate total pages
     pages = pagination.calculate_pages(total)
 
-    # Convert to DTOs
+    # Convert to DTOs and normalize casing
     items = from_pydal_rows(rows, IssueDTO)
+    items = [_lowercase_issue_casing(item) for item in items]
 
     # Create paginated response
     response = PaginatedResponse(
@@ -414,6 +431,7 @@ async def create_issue(body: CreateIssueRequest):
             )
 
     issue_dto = from_pydal_row(issue, IssueDTO)
+    issue_dto = _lowercase_issue_casing(issue_dto)
     return jsonify(asdict(issue_dto)), 201
 
 
@@ -451,6 +469,7 @@ async def get_issue(id: int):
         return jsonify({"error": "Issue not found"}), 404
 
     issue_dto = from_pydal_row(issue, IssueDTO)
+    issue_dto = _lowercase_issue_casing(issue_dto)
     return jsonify(asdict(issue_dto)), 200
 
 
@@ -559,6 +578,8 @@ async def update_issue(id: int, body: UpdateIssueRequest):
                 update_fields["closed_at"] = datetime.now(timezone.utc)
         if body.priority is not None:
             update_fields["priority"] = body.priority.upper()
+        if body.issue_type is not None:
+            update_fields["issue_type"] = body.issue_type.upper()
         if body.assignee_id is not None:
             update_fields["assignee_id"] = body.assignee_id
             update_fields["assignee_type"] = assignee_type_resolved
@@ -639,6 +660,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             )
 
     issue_dto = from_pydal_row(result, IssueDTO)
+    issue_dto = _lowercase_issue_casing(issue_dto)
     return jsonify(asdict(issue_dto)), 200
 
 
