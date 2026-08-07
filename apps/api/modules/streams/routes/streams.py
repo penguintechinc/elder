@@ -166,9 +166,18 @@ def _serialize_stream(db, stream_row, version_row=None, lock_info=None):
     return result
 
 
-def _serialize_execution(execution):
-    """Serialize an execution record to JSON-friendly dict."""
-    return {
+def _serialize_execution(execution, stream_id=None, stream_name=None):
+    """Serialize an execution record to JSON-friendly dict.
+
+    Args:
+        execution: Execution row from database
+        stream_id: Optional stream/playbook ID (for tenant-wide queries)
+        stream_name: Optional stream/playbook name (for tenant-wide queries)
+
+    Returns:
+        Dict with execution details including stream identity for tenant-wide views
+    """
+    result = {
         "id": execution.id,
         "execution_id": execution.execution_id,
         "playbook_id": execution.playbook_id,
@@ -183,8 +192,17 @@ def _serialize_execution(execution):
         "completed_at": (
             execution.completed_at.isoformat() if execution.completed_at else None
         ),
+        "created_at": (
+            execution.started_at.isoformat() if execution.started_at else None
+        ),
         "duration_ms": execution.duration_ms,
     }
+    # Include stream identity if provided (used in tenant-wide listing)
+    if stream_id is not None:
+        result["stream_id"] = stream_id
+    if stream_name is not None:
+        result["stream_name"] = stream_name
+    return result
 
 
 def _serialize_lock(lock, user_is_holder=False):
@@ -1118,6 +1136,104 @@ async def execute_stream(stream_id):
         return ApiResponse.success(data=result, status_code=200)
 
     return ApiResponse.success(data=result, status_code=status_code)
+
+
+@bp.route("/executions", methods=["GET"])
+@login_required
+@require_scope("streams:read")
+async def list_all_executions():
+    """List execution history across all streams for the tenant (global view).
+
+    Query params:
+        - page: Page number (default: 1)
+        - per_page: Items per page (default: 20, max: 100)
+        - status: Filter by status
+        - stream_id: Optional filter by specific stream
+
+    Returns:
+        200: Paginated list of executions across all tenant streams
+    """
+    db = current_app.db
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    pagination = PaginationParams.from_request()
+    status_filter = request.args.get("status")
+    stream_filter = request.args.get("stream_id")
+
+    def list_all_execs():
+        # Build query scoped to tenant
+        query = db.stream_executions.tenant_id == tenant_id
+
+        # Optional stream filter
+        if stream_filter:
+            try:
+                stream_id = int(stream_filter)
+                query = query & (db.stream_executions.playbook_id == stream_id)
+            except (ValueError, TypeError):
+                pass
+
+        # Optional status filter
+        if status_filter:
+            query = query & (db.stream_executions.status == status_filter)
+
+        # Count total
+        total = db(query).count()
+
+        # Fetch paginated executions
+        executions = db(query).select(
+            orderby=~db.stream_executions.started_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
+        )
+
+        # Pre-fetch all unique streams needed for this page
+        stream_ids_in_page = {e.playbook_id for e in executions}
+        streams_map = {}
+        if stream_ids_in_page:
+            streams = db(
+                (db.stream_playbooks.id.belongs(stream_ids_in_page))
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            ).select()
+            for stream in streams:
+                streams_map[stream.id] = stream
+
+        result = []
+        for exec_row in executions:
+            stream_row = streams_map.get(exec_row.playbook_id)
+
+            # Check stream access before including execution
+            # (execution inherits access from stream)
+            if stream_row:
+                can_read = _can_read_stream(db, stream_row, tenant_id, identity_id)
+                if not can_read:
+                    continue
+
+                serialized = _serialize_execution(
+                    exec_row,
+                    stream_id=stream_row.id,
+                    stream_name=stream_row.name,
+                )
+            else:
+                # No stream (orphaned execution) — skip
+                continue
+
+            result.append(serialized)
+
+        return result, total
+
+    result, total = await run_in_threadpool(list_all_execs)
+
+    return ApiResponse.success(
+        {
+            "data": result,
+            "total": total,
+            "page": pagination.page,
+            "per_page": pagination.per_page,
+        }
+    )
 
 
 @bp.route("/<int:stream_id>/executions", methods=["GET"])

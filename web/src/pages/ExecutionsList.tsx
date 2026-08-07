@@ -3,12 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 
 interface Execution {
-  id: string
+  id: number
+  execution_id: string
   stream_id: number
   stream_name: string
   status: string
   trigger_type?: string
+  playbook_id?: number
+  input_data?: Record<string, unknown>
+  output_data?: Record<string, unknown>
+  error_message?: string
+  started_at?: string
+  completed_at?: string
   created_at: string
+  duration_ms?: number
 }
 
 export default function ExecutionsList() {
@@ -16,10 +24,10 @@ export default function ExecutionsList() {
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['stream-executions'],
-    queryFn: () => api.listStreamExecutions(0, { page: 1, per_page: 50 }),
+    queryFn: () => api.listAllStreamExecutions({ page: 1, per_page: 50 }),
   })
 
-  const executions: Execution[] = response?.items || []
+  const executions: Execution[] = response?.data || []
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -78,9 +86,9 @@ export default function ExecutionsList() {
               </thead>
               <tbody>
                 {executions.map((exec) => (
-                  <tr key={exec.id} className="border-b border-slate-700 hover:bg-slate-700 transition-colors">
-                    <td className="px-6 py-4 text-slate-300 text-sm font-mono">{exec.id.slice(0, 8)}</td>
-                    <td className="px-6 py-4 text-amber-400 font-medium">{exec.stream_name}</td>
+                  <tr key={exec.execution_id} className="border-b border-slate-700 hover:bg-slate-700 transition-colors">
+                    <td className="px-6 py-4 text-slate-300 text-sm font-mono" data-testid="execution-id">{exec.execution_id.slice(0, 8)}</td>
+                    <td className="px-6 py-4 text-amber-400 font-medium" data-testid="stream-name">{exec.stream_name}</td>
                     <td className="px-6 py-4 text-slate-300 text-sm">{exec.trigger_type || '-'}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(exec.status)}`}>
@@ -92,8 +100,9 @@ export default function ExecutionsList() {
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
-                        onClick={() => navigate(`/streams/executions/${exec.id}`)}
+                        onClick={() => navigate(`/streams/executions/${exec.execution_id}`)}
                         className="text-amber-400 hover:text-amber-300 font-semibold text-sm"
+                        data-testid="view-details-btn"
                       >
                         View Details
                       </button>

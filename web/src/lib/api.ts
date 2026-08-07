@@ -2835,6 +2835,11 @@ class ApiClient {
     return response.data
   }
 
+  async listAllStreamExecutions(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/streams/executions', { params })
+    return response.data
+  }
+
   async getStreamExecution(id: number, executionId: string) {
     const response = await this.client.get(`/streams/${id}/executions/${executionId}`)
     return response.data

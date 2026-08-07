@@ -589,3 +589,236 @@ class TestStreams:
         body = await listed.get_json()
         rows = body.get("items", body) if isinstance(body, dict) else body
         assert len(rows) >= 1
+
+    @pytest.mark.asyncio
+    async def test_list_all_executions_tenant_wide(self, app, client):
+        """GET /streams/executions returns executions from all streams in tenant.
+
+        regression: streams-executions-frontend-#xyz
+        """
+        db = app.db
+        t = self.fixtures["tenant_id"]
+        owner_id = self.fixtures["identity_id"]
+        token = self._token(app, t, owner_id)
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        def _create():
+            now = datetime.now(timezone.utc)
+            # Create 2 streams
+            stream_ids = []
+            for i in range(2):
+                stream_id = db.stream_playbooks.insert(
+                    tenant_id=t,
+                    village_id=f"test-{uuid.uuid4().hex[:24]}",
+                    name=f"Stream {i + 1}",
+                    description=f"Test stream {i + 1}",
+                    owner_identity_id=owner_id,
+                    created_by_identity_id=owner_id,
+                    trigger_type="manual",
+                    is_public=False,
+                    is_template=False,
+                    is_enabled=False,
+                    tags=[],
+                    status="draft",
+                    execution_count=0,
+                    success_count=0,
+                    failure_count=0,
+                    created_at=now,
+                    updated_at=now,
+                )
+                stream_ids.append(stream_id)
+
+                # Create 2 executions per stream
+                for j in range(2):
+                    exec_uuid = str(uuid.uuid4())
+                    db.stream_executions.insert(
+                        tenant_id=t,
+                        playbook_id=stream_id,
+                        execution_id=exec_uuid,
+                        status="completed",
+                        trigger_type="manual",
+                        triggered_by_identity_id=owner_id,
+                        input_json={"test": f"input-{i}-{j}"},
+                        output_json={"result": "success"},
+                        started_at=now - timedelta(hours=i * 2 + j),
+                        completed_at=now
+                        - timedelta(hours=i * 2 + j)
+                        + timedelta(seconds=30),
+                        duration_ms=30000,
+                        created_at=now - timedelta(hours=i * 2 + j),
+                        updated_at=now
+                        - timedelta(hours=i * 2 + j)
+                        + timedelta(seconds=30),
+                    )
+                db.commit()
+            return stream_ids
+
+        stream_ids = await run_in_threadpool(_create)
+
+        # List all executions in the tenant
+        response = await client.get(
+            "/api/v1/streams/executions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = await response.get_json()
+        assert "data" in body
+        execs = body["data"]
+        assert len(execs) >= 4  # At least 4 executions (2 streams × 2 execs)
+
+        # Verify each execution has stream identity fields
+        for exec_data in execs:
+            assert "stream_id" in exec_data, "Execution must include stream_id"
+            assert "stream_name" in exec_data, "Execution must include stream_name"
+            assert "execution_id" in exec_data
+            assert "status" in exec_data
+            assert "created_at" in exec_data, "Execution must include created_at"
+
+        # Verify both streams' executions appear
+        stream_ids_in_response = {e["stream_id"] for e in execs}
+        assert stream_ids[0] in stream_ids_in_response
+        assert stream_ids[1] in stream_ids_in_response
+
+    @pytest.mark.asyncio
+    async def test_list_all_executions_tenant_isolation(self, app, client):
+        """GET /streams/executions does not leak executions from other tenants."""
+        db = app.db
+        t = self.fixtures["tenant_id"]
+        owner_id = self.fixtures["identity_id"]
+        token = self._token(app, t, owner_id)
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        def _create():
+            now = datetime.now(timezone.utc)
+
+            # Create execution in THIS tenant
+            stream_id = db.stream_playbooks.insert(
+                tenant_id=t,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                name="My Stream",
+                description="",
+                owner_identity_id=owner_id,
+                created_by_identity_id=owner_id,
+                trigger_type="manual",
+                is_public=False,
+                is_template=False,
+                is_enabled=False,
+                tags=[],
+                status="draft",
+                execution_count=0,
+                success_count=0,
+                failure_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            exec_uuid = str(uuid.uuid4())
+            db.stream_executions.insert(
+                tenant_id=t,
+                playbook_id=stream_id,
+                execution_id=exec_uuid,
+                status="completed",
+                trigger_type="manual",
+                triggered_by_identity_id=owner_id,
+                started_at=now,
+                completed_at=now + timedelta(seconds=10),
+                duration_ms=10000,
+                created_at=now,
+                updated_at=now + timedelta(seconds=10),
+            )
+
+            # Create execution in OTHER tenant
+            other_tenant = db.tenants.insert(
+                name="Other Tenant",
+                slug=f"oth-{uuid.uuid4().hex[:8]}",
+                is_active=True,
+                created_at=now,
+                updated_at=now,
+            )
+            other_ident = db.identities.insert(
+                tenant_id=other_tenant,
+                username=f"other-{uuid.uuid4().hex[:8]}@test.local",
+                email=f"other-{uuid.uuid4().hex[:8]}@test.local",
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                full_name="Other User",
+                created_at=now,
+                updated_at=now,
+            )
+            other_stream = db.stream_playbooks.insert(
+                tenant_id=other_tenant,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                name="Other Tenant Stream",
+                description="",
+                owner_identity_id=other_ident,
+                created_by_identity_id=other_ident,
+                trigger_type="manual",
+                is_public=False,
+                is_template=False,
+                is_enabled=False,
+                tags=[],
+                status="draft",
+                execution_count=0,
+                success_count=0,
+                failure_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            other_exec_uuid = str(uuid.uuid4())
+            db.stream_executions.insert(
+                tenant_id=other_tenant,
+                playbook_id=other_stream,
+                execution_id=other_exec_uuid,
+                status="completed",
+                trigger_type="manual",
+                triggered_by_identity_id=other_ident,
+                started_at=now,
+                completed_at=now + timedelta(seconds=10),
+                duration_ms=10000,
+                created_at=now,
+                updated_at=now + timedelta(seconds=10),
+            )
+            db.commit()
+            return exec_uuid, other_exec_uuid
+
+        my_exec_id, other_exec_id = await run_in_threadpool(_create)
+
+        # List all executions for THIS tenant
+        response = await client.get(
+            "/api/v1/streams/executions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = await response.get_json()
+        exec_ids = {e["execution_id"] for e in body["data"]}
+
+        # Should see MY execution
+        assert my_exec_id in exec_ids
+
+        # Should NOT see OTHER tenant's execution
+        assert other_exec_id not in exec_ids
+
+    @pytest.mark.asyncio
+    async def test_list_all_executions_empty(self, app, client):
+        """GET /streams/executions returns empty data array when no executions exist."""
+        t = self.fixtures["tenant_id"]
+        owner_id = self.fixtures["identity_id"]
+        token = self._token(app, t, owner_id)
+
+        # No streams/executions created yet, should return empty
+        response = await client.get(
+            "/api/v1/streams/executions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = await response.get_json()
+        assert "data" in body
+        assert body["data"] == []
+        assert body.get("total", 0) >= 0
