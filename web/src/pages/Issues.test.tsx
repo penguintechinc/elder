@@ -22,6 +22,7 @@ vi.mock('@/components/AssigneePicker', () => ({
   default: ({ onChange }: { onChange: (val: { assignee_type: 'identity' | 'org_unit'; assignee_id: number } | null) => void }) => (
     <div data-testid="assignee-picker">
       <button
+        type="button"
         data-testid="assignee-picker-select-button"
         onClick={() => onChange({ assignee_type: 'org_unit', assignee_id: 7 })}
       >
