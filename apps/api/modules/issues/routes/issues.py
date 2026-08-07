@@ -25,6 +25,10 @@ from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.services.webhooks.assignment import (
+    AssignmentEvent,
+    send_issue_assigned_webhooks,
+)
 from apps.api.utils.quart_validation import validated_request
 from shared.webhooks import send_issue_created_webhooks
 
@@ -366,6 +370,28 @@ async def create_issue(body: CreateIssueRequest):
                 is_incident=issue.is_incident if hasattr(issue, "is_incident") else 0,
                 organization_id=issue.resource_id,
                 web_url_base=current_app.config.get("WEB_URL", "http://localhost:3000"),
+            )
+        )
+
+    # Send issue.assigned webhooks asynchronously (fire and forget) when the
+    # issue was created with an assignee already set. Never allowed to delay
+    # or fail issue creation: dispatch is inherently fire-and-forget-safe
+    # (see send_issue_assigned_webhooks), and building the event + scheduling
+    # the task is trivial/pure, so no additional try/except is needed here.
+    if issue.assignee_id is not None:
+        asyncio.create_task(
+            send_issue_assigned_webhooks(
+                db,
+                AssignmentEvent(
+                    issue_id=issue.id,
+                    village_id=issue.village_id,
+                    issue_type=issue.issue_type,
+                    status=issue.status,
+                    assignee_type=issue.assignee_type,
+                    assignee_id=issue.assignee_id,
+                    tenant_id=tenant_id,
+                    actor_id=current_user_id,
+                ),
             )
         )
 
