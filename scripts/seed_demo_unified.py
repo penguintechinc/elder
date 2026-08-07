@@ -520,8 +520,10 @@ def seed_issue_comments(
             issue_id=first_issue_id,
             author_id=comment_data["author_id"],
             content=comment_data["content"],
-            # Note: penguin-dal doesn't support SQLAlchemy column name mapping (comment_metadata="metadata")
-            # so we skip the metadata field for now and rely on the content text
+            # The DB column is literally "metadata" (the SQLAlchemy attr is renamed
+            # comment_metadata to dodge the reserved name, but penguin-dal addresses
+            # the real column name) — same pattern as the identities insert above.
+            metadata=json.dumps(comment_data["metadata"]),
             village_id=_mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
