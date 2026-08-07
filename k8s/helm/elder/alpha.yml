@@ -136,7 +136,9 @@ api:
   image:
     repository: elder-api
     tag: alpha-latest
-    pullPolicy: IfNotPresent
+    # Always: so a same-tag redeploy still re-pulls (deploy-alpha.sh also uses a
+    # fresh per-deploy tag, but this keeps manual redeploys correct too).
+    pullPolicy: Always
   service:
     type: NodePort
     port: 5000
@@ -210,7 +212,7 @@ worker:
   image:
     repository: elder-worker
     tag: alpha-latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   env:
     LOG_LEVEL: DEBUG
     LOG_FORMAT: json

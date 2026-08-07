@@ -58,7 +58,10 @@ declare -A SERVICE_CONTEXT=(
 readonly APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
 
 # Defaults
-declare TAG="alpha-latest"
+# Fresh epoch tag per deploy: a UNIQUE tag guarantees the node re-pulls the new
+# image. A static tag (e.g. alpha-latest) with pullPolicy IfNotPresent silently
+# keeps the cached old image, so the deploy "succeeds" but ships stale code.
+declare TAG="alpha-$(date +%s)"
 declare SERVICE_FILTER=""
 declare SKIP_BUILD=false
 declare DRY_RUN=false
@@ -218,6 +221,10 @@ do_deploy() {
             --namespace "${NAMESPACE}" \
             --create-namespace \
             --values "${PROJECT_ROOT}/${VALUES_FILE}" \
+            --set "api.image.tag=${TAG}" \
+            --set "web.image.tag=${TAG}" \
+            --set "worker.image.tag=${TAG}" \
+            --set "scanner.image.tag=${TAG}" \
             --dry-run --debug
         return 0
     fi
@@ -226,6 +233,11 @@ do_deploy() {
         --namespace "${NAMESPACE}" \
         --create-namespace \
         --values "${PROJECT_ROOT}/${VALUES_FILE}" \
+        --set "api.image.tag=${TAG}" \
+        --set "web.image.tag=${TAG}" \
+        --set "worker.image.tag=${TAG}" \
+        --set "scanner.image.tag=${TAG}" \
+        --force-conflicts \
         --wait --timeout 300s; then
         print_error "Failed to apply Helm release"
         return 1
