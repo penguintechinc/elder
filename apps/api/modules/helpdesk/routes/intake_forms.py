@@ -20,6 +20,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.modules.helpdesk.services.altcha import create_challenge, verify_solution
 from apps.api.modules.helpdesk.services.form_validation import validate_submission
 from apps.api.modules.helpdesk.services.intake_submit import (
+    ContactResolutionError,
     create_support_issue_from_form,
     upsert_customer_contact,
 )
@@ -470,6 +471,12 @@ async def submit_public_intake_form(slug):
     db = current_app.db
     data = await request.get_json() or {}
 
+    # A body like `42`, `[1, 2]`, or `"x"` is valid JSON but not an object —
+    # request.get_json() happily returns it, and the .get() calls below
+    # would raise AttributeError (-> unhandled 500) on anything but a dict.
+    if not isinstance(data, dict):
+        return ApiResponse.error("Invalid request body", 400)
+
     form_row = await run_in_threadpool(lambda: _fetch_public_form(db, slug))
 
     if not form_row:
@@ -508,6 +515,9 @@ async def submit_public_intake_form(slug):
 
     try:
         village_id = await run_in_threadpool(submit)
+    except ContactResolutionError as exc:
+        logger.error(f"Intake form contact resolution failed for slug={slug}: {exc}")
+        return ApiResponse.conflict("Unable to resolve contact; please retry")
     except ValueError as exc:
         logger.error(f"Intake form submit failed for slug={slug}: {exc}")
         return ApiResponse.error("Unable to create support issue", 400)

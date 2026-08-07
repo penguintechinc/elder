@@ -1,11 +1,11 @@
 """Public intake-form submission: customer_contact upsert + native Issue creation.
 
 Turns an anonymous public intake-form submission into two rows: a reused-or-
-created `customer_contact` identity (tenant-scoped, keyed on email) and a
-native support Issue (see `apps/api/modules/issues/models/issue.py`). Wires
-together the form model (Task 1), the field validator (Task 2), and the
-Altcha challenge/verify pair (Task 3) with the actual unauthenticated submit
-path.
+created `customer_contact` identity (tenant-scoped, keyed on a namespaced
+username derived from email) and a native support Issue (see
+`apps/api/modules/issues/models/issue.py`). Wires together the form model
+(Task 1), the field validator (Task 2), and the Altcha challenge/verify pair
+(Task 3) with the actual unauthenticated submit path.
 """
 
 from datetime import datetime, timezone
@@ -13,6 +13,15 @@ from typing import Any, Optional
 from uuid import uuid4
 
 from shared.utils.village_id import generate_village_id
+
+
+class ContactResolutionError(Exception):
+    """Raised when a customer_contact identity can neither be found nor
+    created (insert failed and a follow-up re-select still found nothing).
+
+    The route maps this to a 409 rather than a 500 — this is an expected,
+    if rare, concurrent-submission race, not a server bug.
+    """
 
 
 def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
@@ -36,46 +45,78 @@ def upsert_customer_contact(
 ) -> int:
     """Find or create a `customer_contact` identity for a public submitter.
 
-    Looks up an existing identity scoped to `tenant_id` by (lowercased)
-    `email` as `username`; reuses it if found. Otherwise inserts a new
-    `customer_contact` identity carrying `details` (e.g. phone, other
-    submitted fields) as its metadata bag. Returns the identity id either
+    `identities.username` is GLOBALLY unique and is also where real staff
+    accounts store their login (frequently their email). Keying a contact
+    lookup/insert on the bare email would let an anonymous public submitter
+    either (a) attach an issue to a real staff/admin identity whose username
+    happens to match the submitted email, or (b) collide across tenants,
+    since the same email submitted to two different tenants' forms would
+    resolve to the same globally-unique username.
+
+    Instead this keys on a namespaced `contact:{tenant_id}:{email}` username
+    — globally unique, tenant-scoped, and structurally incapable of matching
+    a real user's plain-email username. The real email is still stored in
+    the `email` column for display/search. Returns the identity id either
     way — never creates a duplicate contact for the same email+tenant.
+
+    Raises:
+        ContactResolutionError: the insert failed (e.g. a concurrent
+            request won a unique-constraint race) and a follow-up re-select
+            still found no matching row.
     """
-    existing = (
-        db(
-            (db.identities.tenant_id == tenant_id)
-            & (db.identities.username == email)
+    contact_username = f"contact:{tenant_id}:{email}"
+
+    def find_existing() -> Any:
+        return (
+            db(
+                (db.identities.username == contact_username)
+                & (db.identities.identity_type == "customer_contact")
+            )
+            .select()
+            .first()
         )
-        .select()
-        .first()
-    )
+
+    existing = find_existing()
     if existing:
         return existing.id
 
     now = datetime.now(timezone.utc)
 
-    # penguin-dal's insert() does not apply SQLAlchemy Column `default=`
-    # values, so every NOT NULL column is passed explicitly (see
-    # tests/unit/test_crm_entity_types.py for the reference pattern).
-    contact_id = db.identities.insert(
-        username=email,
-        email=email,
-        identity_type="customer_contact",
-        auth_provider="local",
-        is_active=True,
-        is_superuser=False,
-        mfa_enabled=False,
-        must_change_password=False,
-        portal_role="observer",
-        tenant_id=tenant_id,
-        metadata=details,
-        village_id=_mint_village_id(tenant_id, redis),
-        created_at=now,
-        updated_at=now,
-    )
-    db.commit()
-    return contact_id
+    try:
+        # penguin-dal's insert() does not apply SQLAlchemy Column `default=`
+        # values, so every NOT NULL column is passed explicitly (see
+        # tests/unit/test_crm_entity_types.py for the reference pattern).
+        contact_id = db.identities.insert(
+            username=contact_username,
+            email=email,
+            identity_type="customer_contact",
+            auth_provider="local",
+            is_active=True,
+            is_superuser=False,
+            mfa_enabled=False,
+            must_change_password=False,
+            portal_role="observer",
+            tenant_id=tenant_id,
+            metadata=details,
+            village_id=_mint_village_id(tenant_id, redis),
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+        return contact_id
+    except Exception:
+        # Belt-and-suspenders: a concurrent submission may have inserted the
+        # same contact_username between our lookup and this insert (unique
+        # constraint collision on `username`). Roll back the failed insert
+        # and re-select the now-existing row rather than 500ing.
+        db.rollback()
+        existing = find_existing()
+        if existing:
+            return existing.id
+        raise ContactResolutionError(
+            f"failed to create or resolve customer_contact identity for "
+            f"tenant {tenant_id}"
+        )
 
 
 def _resolve_resource_id(db: Any, form: Any) -> Optional[int]:
