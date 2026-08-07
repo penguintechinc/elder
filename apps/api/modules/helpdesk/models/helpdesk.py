@@ -253,6 +253,40 @@ class HdTicketForm(Base, IDMixin, TenantScopedMixin, TimestampMixin):
     __table_args__ = (UniqueConstraint("slug", name="uq_form_slug"),)
 
 
+class IntakeForm(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
+    """Configurable public/internal intake form that creates a native Issue on submit.
+
+    Distinct from HdTicketForm (which creates an hd_tickets row): submissions
+    from an IntakeForm create an Issue (issue_type=support by default), so
+    intake forms are the CRM-facing entry point into the unified Issues model.
+    """
+
+    __tablename__ = "hd_intake_forms"
+
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    fields = Column(JSON, nullable=False, comment="Field spec array")
+    issue_type = Column(String(30), default="support", nullable=False)
+    default_assignee_type = Column(String(16), nullable=True)
+    default_assignee_id = Column(Integer, nullable=True)
+    organization_id = Column(
+        Integer,
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="Owning org for issues created from this form; falls back to "
+        "the tenant's root org when null",
+    )
+    is_public = Column(Boolean, default=False, nullable=False)
+    captcha_required = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    intake_metadata = Column("metadata", JSON, nullable=True)
+
+    # Slug is GLOBALLY unique for the same reason as HdTicketForm.slug: the
+    # public form URL (/api/v1/intake/<slug>) carries no tenant component.
+    __table_args__ = (UniqueConstraint("slug", name="uq_intake_form_slug"),)
+
+
 class HdCompany(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """CRM company / account record."""
 
