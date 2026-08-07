@@ -1,5 +1,17 @@
 # Ruffled (Helpdesk) — Feature Parity Checklist
 
+> **SUPERSEDED**: this checklist tracked pre-unification feature parity
+> against a standalone `helpdesk` ticket/CRM module. Tickets and CRM have
+> since been unified into Elder's native Issue model — a support ticket is
+> now an Issue with `issue_type=support` and a polymorphic
+> `assignee_type`/`assignee_id` (identity or org unit); CRM companies and
+> contacts are `customer_company`/`customer_contact` organization/identity
+> types, not separate tables. Public ticket intake is now the
+> `/api/v1/intake-forms` + `/api/v1/intake/<slug>` flow (Altcha captcha).
+> Left in place as historical record of the original migration scope —
+> see `docs/RELEASE_NOTES.md` ("Issues ↔ Tickets Unification") for the
+> current model.
+
 Source: /home/penguin/code/ruffledfeathers. Target module: `helpdesk` (+ KB → shared documents story, AI → `ai_search`).
 
 ## API surface (services/api/api/v1/)

@@ -98,6 +98,25 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - `DELETE /api/v1/issues/{id}/entities/{entity_id}` - Unlink entity from issue
 - `GET /api/v1/issues/{id}/timeline` - Get issue timeline
 
+*Issues are unified: a support ticket is an Issue with `issue_type=support`
+(alongside `operations`, `code`, `config`, `security`, `architecture`,
+`process`, `approval`, `feature`, `bug`, `other`). Assignment is
+polymorphic — `assignee_type` (`identity` or `org_unit`) plus
+`assignee_id` — surfaced in the UI as one combined identity+org-unit
+search picker.*
+
+### Intake Forms (7 endpoints)
+- `GET /api/v1/intake-forms` - List intake forms (admin)
+- `POST /api/v1/intake-forms` - Create intake form (admin)
+- `GET /api/v1/intake-forms/{id}` - Get intake form details (admin)
+- `PATCH /api/v1/intake-forms/{id}` - Update intake form (admin)
+- `DELETE /api/v1/intake-forms/{id}` - Delete intake form (admin)
+- `GET /api/v1/intake/{slug}` - Get public form definition (unauthenticated)
+- `POST /api/v1/intake/{slug}/submit` - Submit public form, protected by Altcha captcha (unauthenticated)
+
+*A successful public submission upserts a `customer_contact` identity and
+creates a native `issue_type=support` Issue.*
+
 ### Projects & Milestones (11 endpoints)
 - `GET /api/v1/projects` - List projects
 - `POST /api/v1/projects` - Create project
@@ -289,6 +308,13 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 - `POST /api/v1/webhooks/{id}/test` - Test webhook
 - `GET /api/v1/webhooks/{id}/deliveries` - Get webhook deliveries
 
+*Supports an `issue.assigned` event, fired on any assignee change
+(create, update, or an intake-form's default-assign). Each webhook can
+filter `issue.assigned` deliveries by `issue_type` and by assignee
+(`assignee_type` + `assignee_id`); an unset filter matches every
+assignment. Deliveries are HMAC-signed (`X-Elder-Signature`) and
+non-blocking.*
+
 ### Backups (7 endpoints)
 - `GET /api/v1/backups` - List backups
 - `POST /api/v1/backups` - Create backup
@@ -317,7 +343,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 
 ---
 
-## Total API Endpoints: 204
+## Total API Endpoints: 211+ (adds the 7 Intake Forms endpoints above; the IAM Providers total is itself "33+", so this is a floor, not an exact count)
 
 ## Detailed Endpoint Documentation
 

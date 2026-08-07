@@ -19,10 +19,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`flows`**: CI/CD pipeline module, merged in from IceFlows
 
 #### Ruffled Merge — Helpdesk & Knowledge Base (#166, #173)
-- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled
+- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled — subsequently unified into native Issues, see below
 - **`documents`**: Knowledge base module, merged in from Ruffled
 - **`pages`**: Documentation pages module, merged in from Ruffled
 - Rookery was intentionally excluded from this merge
+
+### ✨ Issues ↔ Tickets Unification
+
+Following the Ruffled merge, helpdesk tickets and CRM were folded into
+Elder's native, unified Issue model instead of staying a parallel
+resource — a support request is now just an Issue.
+
+- **Support is an `issue_type`, not a separate table**: `IssueType` gained
+  a `support` value (alongside `operations`, `code`, `config`, `security`,
+  `architecture`, `process`, `approval`, `feature`, `bug`, `other`).
+  Support-only fields (`channel`, `category`, `requester_contact_id`,
+  `sla_breach_at`, `first_response_at`, `resolved_at`) live directly on
+  `issues`, nullable for non-support issue types
+- **Polymorphic assignee**: `issues.assignee_type` (`identity` or
+  `org_unit`) + `assignee_id` replaces an identity-only assignee — an
+  Issue can be assigned to a person or to an organizational unit. The web
+  UI exposes this as a single combined identity+org-unit search picker
+- **Intake forms**: admin-configurable forms (`/api/v1/intake-forms`)
+  define dynamic, Pydantic-validated fields; the public,
+  unauthenticated `/api/v1/intake/<slug>` (GET) and
+  `/api/v1/intake/<slug>/submit` (POST) routes serve them. Public
+  submission is protected by an **Altcha** proof-of-work captcha; a
+  successful submit upserts a `customer_contact` identity and creates a
+  native `issue_type=support` Issue
+- **Assignment webhooks**: a new `issue.assigned` event fires on every
+  assignee change (create, update, or an intake form's default-assign),
+  HMAC-signed (`X-Elder-Signature`) and delivered non-blocking. Each
+  webhook can filter by `issue_type` and by assignee
+  (`assignee_type`/`assignee_id`); an unset filter matches everything
+- **CRM as identity/organization types, not new tables**:
+  `customer_company` is an `organization_type` and `customer_contact` is
+  an `identity_type` — CRM records are organizations and identities, not
+  a separate schema
+- **`/helpdesk` frontend surface retired**: the web UI now offers only
+  the unified Issues experience — support issues render a support
+  section, and the intake-form builder lives under the Issues area.
+  Backend helpdesk endpoints (`/api/v1/helpdesk/tickets`,
+  `/companies`, `/contacts`, etc.) still exist during the phase-out but
+  are no longer the primary path
+- **Demo data**: `make seed-demo-unified` (`scripts/seed_demo_unified.py`)
+  seeds native support issues, `customer_company`/`customer_contact` CRM
+  entities, intake forms (public and private), and assignment webhooks
 
 ### 🏗️ Architecture — Modular Monolith Restructure (#164)
 - Feature-domain code moved from the flat `apps/api/models/*.py` + `apps/api/api/v1/*` layout into per-module packages `apps/api/modules/<name>/{models,routes}/` — 15 modules total: `infrastructure`, `ipam`, `sbom`, `services_oncall`, `issues`, `discovery`, `secrets`, `webhooks_alerting`, `access_reviews`, `documents`, `pages`, `diagrams`, `streams`, `flows`, `helpdesk`

@@ -45,7 +45,7 @@ Elder is a multi-tier infrastructure tracking platform built with Python, Flask,
 - **Organizations** - Hierarchical structures (Company → Dept → Team)
 - **Entities** - Infrastructure resources (compute, network, users)
 - **Dependencies** - Relationships between entities
-- **Issues** - GitHub-style issue tracking
+- **Issues** - GitHub-style issue tracking, unified with support: a support ticket is an Issue with `issue_type=support`, assigned to an identity or an org unit (polymorphic `assignee_type`/`assignee_id`); public intake forms + Altcha captcha create these from unauthenticated submitters
 - **Identities** - Users and service accounts
 
 📖 **[Complete Data Model](ARCHITECTURE.md#data-model)**
