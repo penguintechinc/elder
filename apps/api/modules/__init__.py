@@ -272,6 +272,7 @@ def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
         contacts,
         dashboard,
         email_accounts,
+        intake_forms,
         messages,
         sla_policies,
         teams,
@@ -298,6 +299,10 @@ def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
         (teams.bp, f"{api_prefix}/teams"),
         (companies.bp, f"{api_prefix}/companies"),
         (contacts.bp, f"{api_prefix}/contacts"),
+        # Intake forms are the CRM-facing entry point into the unified Issues
+        # model (create native Issues, not hd_tickets) — mounted at the
+        # top-level /api/v1/intake-forms, not under /api/v1/helpdesk, per plan.
+        (intake_forms.bp, "/api/v1/intake-forms"),
     ]
 
 
