@@ -42,11 +42,13 @@ export default function Issues() {
   // (apps/api/modules/issues/routes/issues.py::list_issues only applies
   // status/priority/assignee_id/reporter_id) — filter client-side over the
   // fetched page so the search box and type filter actually narrow results.
+  // Backend stores issue_type as UPPERCASE (SUPPORT, BUG, etc.); normalize to
+  // lowercase for comparison against the constants (which are lowercase).
   const filteredIssues = useMemo(() => {
     const allItems: Issue[] = data?.items || []
     const q = search.trim().toLowerCase()
     return allItems.filter((issue) => {
-      const matchesType = !issueTypeFilter || issue.issue_type === issueTypeFilter
+      const matchesType = !issueTypeFilter || (issue.issue_type?.toLowerCase() === issueTypeFilter)
       const matchesSearch =
         !q ||
         issue.title.toLowerCase().includes(q) ||

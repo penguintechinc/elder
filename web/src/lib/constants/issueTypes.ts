@@ -29,8 +29,14 @@ export const ISSUE_TYPES: IssueTypeOption[] = [
  * support section in the detail view, support fields in create/edit). */
 export const SUPPORT_ISSUE_TYPE: IssueType = 'support'
 
-/** Resolve a raw issue_type string to its display label, falling back to
- * the raw value itself for anything not in ISSUE_TYPES. */
-export function issueTypeLabel(value: string): string {
-  return ISSUE_TYPES.find((t) => t.value === value)?.label ?? value
+/** Resolve a raw issue_type string to its display label, normalizing case to
+ * handle both lowercase (constant) and UPPERCASE (backend) values. Falls back
+ * to Title-Cased raw value for anything not in ISSUE_TYPES. */
+export function issueTypeLabel(value: string | null | undefined): string {
+  if (!value) return '—'
+  const normalized = value.toLowerCase()
+  const found = ISSUE_TYPES.find((t) => t.value === normalized)?.label
+  if (found) return found
+  // Fallback: Title-case the raw value (e.g. "SUPPORT" → "Support")
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase()
 }

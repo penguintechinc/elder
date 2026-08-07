@@ -35,9 +35,11 @@ function renderIssues() {
   )
 }
 
-const items = [
-  { id: 1, title: 'Server down', status: 'open' as const, priority: 'high' as const, issue_type: 'operations' as const, created_at: '2026-01-01', updated_at: '2026-01-01' },
-  { id: 2, title: 'Customer cannot log in', status: 'open' as const, priority: 'medium' as const, issue_type: 'support' as const, created_at: '2026-01-01', updated_at: '2026-01-01' },
+// Backend stores issue_type as UPPERCASE (SUPPORT, BUG, etc.) — test against real data
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const items: Array<{ id: number; title: string; status: 'open'; priority: 'high' | 'medium'; issue_type: any; created_at: string; updated_at: string }> = [
+  { id: 1, title: 'Server down', status: 'open' as const, priority: 'high' as const, issue_type: 'OPERATIONS', created_at: '2026-01-01', updated_at: '2026-01-01' },
+  { id: 2, title: 'Customer cannot log in', status: 'open' as const, priority: 'medium' as const, issue_type: 'SUPPORT', created_at: '2026-01-01', updated_at: '2026-01-01' },
 ]
 
 describe('Issues list', () => {
@@ -46,14 +48,15 @@ describe('Issues list', () => {
     vi.mocked(api.getIssues).mockResolvedValue({ items, total: 2, page: 1, pages: 1, per_page: 50 })
   })
 
-  it('renders an issue_type badge per issue and a type filter dropdown', async () => {
+  it('renders an issue_type badge per issue (case-insensitive, uppercase backend)', async () => {
     renderIssues()
     await waitFor(() => screen.getByText('Server down'))
-    // Verify the filter dropdown exists
+    // Verify the filter dropdown exists with options
     const typeFilter = screen.getByTestId('issue-type-filter') as HTMLSelectElement
     expect(typeFilter).toBeDefined()
     expect(typeFilter.options.length).toBeGreaterThan(1)
-    // Verify issue_type badges are rendered
+    // Verify badges render friendly labels even though backend sends UPPERCASE
+    // ("SUPPORT" → "Support", "OPERATIONS" → "Operations")
     expect(screen.getAllByText(/Operations|Support/)).toBeDefined()
   })
 
