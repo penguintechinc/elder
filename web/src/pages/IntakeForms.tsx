@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FileText, Trash2, Edit } from 'lucide-react'
+import { Plus, FileText, Trash2, Edit, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
@@ -8,7 +8,7 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
-import { ISSUE_TYPES } from '@/lib/constants/issueTypes'
+import { ISSUE_TYPES, issueTypeLabel } from '@/lib/constants/issueTypes'
 import type { Organization } from '@/types'
 
 interface IntakeFormFieldSpec {
@@ -58,7 +58,10 @@ export default function IntakeForms() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.deleteIntakeForm(id),
+    mutationFn: (id: number) => {
+      console.log('[IntakeForms] Delete form', { id })
+      return api.deleteIntakeForm(id)
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['intake-forms'], refetchType: 'all' })
       toast.success('Intake form deleted')
@@ -115,7 +118,7 @@ export default function IntakeForms() {
                     <p className="text-sm text-slate-400 font-mono">/intake/{form.slug}</p>
                     <div className="flex gap-2 mt-2">
                       <span className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400">
-                        {form.issue_type}
+                        {issueTypeLabel(form.issue_type)}
                       </span>
                       {form.is_public && (
                         <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">public</span>
@@ -164,7 +167,7 @@ function IntakeFormModal({ existing, onClose, onSuccess }: IntakeFormModalProps)
   const [name, setName] = useState(existing?.name || '')
   const [slug, setSlug] = useState(existing?.slug || '')
   const [description, setDescription] = useState(existing?.description || '')
-  const [issueType, setIssueType] = useState(existing?.issue_type || 'support')
+  const [issueType, setIssueType] = useState(existing?.issue_type?.toLowerCase() || 'support')
   const [organizationId, setOrganizationId] = useState(existing?.organization_id ? String(existing.organization_id) : '')
   const [assignee, setAssignee] = useState<AssigneeValue | null>(
     existing?.default_assignee_id && existing?.default_assignee_type
@@ -196,6 +199,8 @@ function IntakeFormModal({ existing, onClose, onSuccess }: IntakeFormModalProps)
         is_public: isPublic,
         captcha_required: captchaRequired,
       }
+      const action = existing ? 'Update form' : 'Create form'
+      console.log(`[IntakeForms] ${action}`, { slug, fieldCount: fields.length, issueType, isPublic })
       return existing ? api.updateIntakeForm(existing.id, payload) : api.createIntakeForm(payload)
     },
     onSuccess: async () => {
@@ -213,6 +218,12 @@ function IntakeFormModal({ existing, onClose, onSuccess }: IntakeFormModalProps)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim() || !slug.trim() || fields.length === 0) return
+    // Validate select fields have at least one option
+    const hasInvalidSelect = fields.some((f) => f.type === 'select' && (!f.options || f.options.length === 0))
+    if (hasInvalidSelect) {
+      toast.error('Select fields must have at least one option')
+      return
+    }
     saveMutation.mutate()
   }
 
@@ -278,42 +289,84 @@ function IntakeFormModal({ existing, onClose, onSuccess }: IntakeFormModalProps)
                   <Plus className="w-4 h-4 mr-1" /> Add Field
                 </Button>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {fields.map((field, index) => (
-                  <div key={index} className="flex gap-2 items-center bg-slate-800/30 p-2 rounded">
-                    <input
-                      className="flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
-                      placeholder="field id (e.g. email)"
-                      value={field.id}
-                      onChange={(e) => updateField(index, { id: e.target.value })}
-                    />
-                    <input
-                      className="flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
-                      placeholder="Label"
-                      value={field.label}
-                      onChange={(e) => updateField(index, { label: e.target.value })}
-                    />
-                    <select
-                      className="px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
-                      value={field.type}
-                      onChange={(e) => updateField(index, { type: e.target.value as IntakeFormFieldSpec['type'] })}
-                    >
-                      <option value="text">Text</option>
-                      <option value="email">Email</option>
-                      <option value="textarea">Textarea</option>
-                      <option value="select">Select</option>
-                    </select>
-                    <label className="flex items-center gap-1 text-xs text-slate-400">
+                  <div key={index} className="bg-slate-800/30 p-3 rounded space-y-2">
+                    <div className="flex gap-2 items-center">
                       <input
-                        type="checkbox"
-                        checked={field.required}
-                        onChange={(e) => updateField(index, { required: e.target.checked })}
+                        className="flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
+                        placeholder="field id (e.g. email)"
+                        value={field.id}
+                        onChange={(e) => updateField(index, { id: e.target.value })}
                       />
-                      req
-                    </label>
-                    <button type="button" onClick={() => removeField(index)} className="p-1 text-slate-400 hover:text-red-500">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                      <input
+                        className="flex-1 px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
+                        placeholder="Label"
+                        value={field.label}
+                        onChange={(e) => updateField(index, { label: e.target.value })}
+                      />
+                      <select
+                        className="px-2 py-1 text-sm bg-slate-900 border border-slate-700 rounded text-white"
+                        value={field.type}
+                        onChange={(e) => updateField(index, { type: e.target.value as IntakeFormFieldSpec['type'] })}
+                      >
+                        <option value="text">Text</option>
+                        <option value="email">Email</option>
+                        <option value="textarea">Textarea</option>
+                        <option value="select">Select</option>
+                      </select>
+                      <label className="flex items-center gap-1 text-xs text-slate-400">
+                        <input
+                          type="checkbox"
+                          checked={field.required}
+                          onChange={(e) => updateField(index, { required: e.target.checked })}
+                        />
+                        req
+                      </label>
+                      <button type="button" onClick={() => removeField(index)} className="p-1 text-slate-400 hover:text-red-500">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {field.type === 'select' && (
+                      <div className="pl-2 border-l-2 border-slate-700">
+                        <div className="text-xs text-slate-400 mb-1">Options</div>
+                        <div className="space-y-1">
+                          {(field.options || []).map((option, optIndex) => (
+                            <div key={optIndex} className="flex gap-1">
+                              <input
+                                className="flex-1 px-2 py-1 text-xs bg-slate-900 border border-slate-700 rounded text-white"
+                                value={option}
+                                onChange={(e) => {
+                                  const newOptions = [...(field.options || [])]
+                                  newOptions[optIndex] = e.target.value
+                                  updateField(index, { options: newOptions })
+                                }}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newOptions = (field.options || []).filter((_, i) => i !== optIndex)
+                                  updateField(index, { options: newOptions })
+                                }}
+                                className="p-1 text-slate-400 hover:text-red-500"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newOptions = [...(field.options || []), '']
+                              updateField(index, { options: newOptions })
+                            }}
+                            className="text-xs text-primary-400 hover:text-primary-300"
+                          >
+                            + Add option
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

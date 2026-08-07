@@ -36,7 +36,11 @@ export default function IntakePublicForm() {
   })
 
   const submitMutation = useMutation({
-    mutationFn: () => api.submitPublicIntakeForm(slug!, { fields: values }),
+    mutationFn: () => {
+      const fieldCount = Object.keys(values).length
+      console.log('[PublicIntake] Submit form', { slug, fieldCount })
+      return api.submitPublicIntakeForm(slug!, { fields: values })
+    },
     onSuccess: () => setSubmitted(true),
   })
 
@@ -101,6 +105,21 @@ export default function IntakePublicForm() {
                     rows={4}
                     className="block w-full px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                   />
+                ) : field.type === 'select' ? (
+                  <select
+                    id={`field-${field.id}`}
+                    required={field.required}
+                    value={values[field.id] || ''}
+                    onChange={(e) => handleChange(field.id, e.target.value)}
+                    className="block w-full px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  >
+                    <option value="">Select an option</option>
+                    {(field.options || []).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
                   <input
                     id={`field-${field.id}`}

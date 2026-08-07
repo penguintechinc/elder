@@ -39,6 +39,8 @@ describe('IntakeForms admin page', () => {
     })
     renderPage()
     await waitFor(() => screen.getByText('Support Request'))
-    expect(screen.getByText('/intake/support-request')).toBeTruthy()
+    const slugElement = screen.getByText('/intake/support-request')
+    expect(slugElement).toBeTruthy()
   })
+
 })

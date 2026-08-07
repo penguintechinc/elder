@@ -50,4 +50,26 @@ describe('IntakePublicForm', () => {
     renderPublicForm()
     await waitFor(() => screen.getByText('This form is not available.'))
   })
+
+  it('renders select field with options and submits value', async () => {
+    vi.mocked(api.getPublicIntakeForm).mockResolvedValue({
+      name: 'Feedback Form',
+      description: 'Give us feedback',
+      fields: [
+        { id: 'category', label: 'Category', type: 'select', required: true, options: ['Bug', 'Feature', 'Other'] },
+      ],
+      captcha_required: false,
+    })
+    vi.mocked(api.submitPublicIntakeForm).mockResolvedValue({ status: 'created', reference: 'xyz-789' })
+
+    renderPublicForm()
+    await waitFor(() => screen.getByText('Feedback Form'))
+    const selectElement = screen.getByDisplayValue('Select an option') as HTMLSelectElement
+    expect(selectElement).toBeTruthy()
+    expect(selectElement.options.length).toBe(4) // Select an option + Bug + Feature + Other
+    fireEvent.change(selectElement, { target: { value: 'Feature' } })
+    fireEvent.click(screen.getByRole('button', { name: /submit/i }))
+    await waitFor(() => screen.getByText('Thank you'))
+    expect(api.submitPublicIntakeForm).toHaveBeenCalledWith('support-request', { fields: { category: 'Feature' } })
+  })
 })
