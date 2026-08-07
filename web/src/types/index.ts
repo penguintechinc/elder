@@ -12,7 +12,7 @@ export interface Organization {
   updated_at: string
 }
 
-export type OrganizationType = 'department' | 'organization' | 'team' | 'collection' | 'other'
+export type OrganizationType = 'department' | 'organization' | 'team' | 'collection' | 'customer_company' | 'other'
 
 export interface EntityLocation {
   city?: string
@@ -102,12 +102,49 @@ export interface Dependency {
 
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'
 
+// Matches apps/api/modules/issues/models/issue.py IssueType enum — the DB
+// column is Enum(IssueType) and serializes to UPPERCASE over the wire (e.g. "SUPPORT").
+// Frontend normalizes to lowercase for comparison against these type constants.
+export type IssueType =
+  | 'operations'
+  | 'code'
+  | 'config'
+  | 'security'
+  | 'architecture'
+  | 'process'
+  | 'approval'
+  | 'feature'
+  | 'bug'
+  | 'support'
+  | 'other'
+
+// Disambiguates the polymorphic Issue.assignee_id: 'identity' resolves
+// against identities.id, 'org_unit' against organizations.id. Matches
+// apps/api/modules/issues/routes/issues.py::_resolve_assignee_type and
+// apps/api/modules/helpdesk/routes/intake_forms.py::_VALID_ASSIGNEE_TYPES.
+export type IssueAssigneeType = 'identity' | 'org_unit'
+
+// Matches apps/api/models/identity.py IdentityType enum (the DB column).
+// NOTE: apps/api/models/pydantic/identity.py's CreateIdentityRequest
+// currently restricts identity_type to Literal["human","service_account"]
+// only, rejecting every other value below with a 422 — a pre-existing
+// backend gap (see this plan's Global Constraints), not fixed here.
 export interface Identity {
   id: number
   username: string
   email: string
   full_name: string
-  identity_type: 'human' | 'service_account'
+  identity_type:
+    | 'human'
+    | 'service_account'
+    | 'employee'
+    | 'vendor'
+    | 'bot'
+    | 'serviceAccount'
+    | 'integration'
+    | 'otherHuman'
+    | 'other'
+    | 'customer_contact'
   auth_provider: 'local' | 'saml' | 'oauth2' | 'ldap'
   is_active: boolean
   is_superuser: boolean
@@ -129,20 +166,40 @@ export interface Issue {
   description?: string
   status: IssueStatus
   priority: IssuePriority
-  organization_id?: number
-  assigned_to?: number
+  issue_type: IssueType
+  reporter_id?: number
   assignee_id?: number
-  created_by: number
-  village_id?: string
-  tenant_id?: number
+  assignee_type?: IssueAssigneeType
+  resource_type?: string
+  resource_id?: number
+  is_incident?: number | boolean
+  channel?: string
+  category?: string
+  requester_contact_id?: number
+  hd_sla_policy_id?: number
+  sla_breach_at?: string
+  first_response_at?: string
+  resolved_at?: string
+  parent_issue_id?: number
+  closed_at?: string
   created_at: string
   updated_at: string
-  closed_at?: string
+  // Legacy/enrichment-only fields: NOT part of apps/api/models/dataclasses.py
+  // IssueDTO (the real GET /issues and GET /issues/:id response shape,
+  // confirmed by reading the backend directly). Kept optional so existing
+  // call sites that populate them via a *separate* fetch (labels,
+  // entity_links) or that were already reading dead fields (organization_id,
+  // village_id, created_by, tenant_id, assignee) keep compiling. Do not add
+  // new reads of these without confirming the backend actually returns them
+  // for that specific endpoint.
+  organization_id?: number
+  assigned_to?: number
+  created_by?: number
+  village_id?: string
+  tenant_id?: number
   labels?: IssueLabel[]
   entity_links?: Entity[]
   assignee?: Identity
-  is_incident?: number | boolean
-  issue_type?: string
 }
 
 export type IssueStatus = 'open' | 'in_progress' | 'resolved' | 'closed'

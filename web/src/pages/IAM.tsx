@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Shield, Users, User, Bot, Cloud, RefreshCw, Search, Link2, Trash2, Building2, Box, Server, Check, X, Clock } from 'lucide-react'
+import { Plus, Shield, Users, User, Cloud, RefreshCw, Search, Link2, Trash2, Building2, Box, Server, Check, X, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
@@ -11,6 +11,7 @@ import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/componen
 import GroupMembershipManager from '@/components/GroupMembershipManager'
 import AccessReviewManager from '@/components/AccessReviewManager'
 import { getStatusColor } from '@/lib/colorHelpers'
+import { IDENTITY_TYPES } from '@/lib/constants/identityTypes'
 
 interface ApiError {
   response?: {
@@ -54,16 +55,6 @@ const PROVIDER_TYPES = [
   { value: 'azure_ad', label: 'Azure AD', icon: Cloud },
   { value: 'google_workspace', label: 'Google Workspace', icon: Cloud },
   { value: 'kubernetes', label: 'Kubernetes RBAC', icon: Shield },
-]
-
-const IDENTITY_TYPES = [
-  { value: 'employee', label: 'Employee', icon: User, color: 'blue' },
-  { value: 'vendor', label: 'Vendor', icon: User, color: 'purple' },
-  { value: 'bot', label: 'Bot', icon: Bot, color: 'green' },
-  { value: 'serviceAccount', label: 'Service Account', icon: Shield, color: 'orange' },
-  { value: 'integration', label: 'Integration', icon: Shield, color: 'cyan' },
-  { value: 'otherHuman', label: 'Other Human', icon: User, color: 'slate' },
-  { value: 'other', label: 'Other', icon: User, color: 'slate' },
 ]
 
 // PendingApprovalsTab - Displays pending group membership requests

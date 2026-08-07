@@ -1,6 +1,6 @@
 import { lazy } from 'react'
 import type { RouteObject } from 'react-router-dom'
-import type { MenuCategory } from '@penguintechinc/react-libs/components'
+import type { MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
 import type { FrontendModule } from '../types'
 import { AlertCircle, Tag, Flag, FolderKanban, HardDrive } from 'lucide-react'
 
@@ -19,6 +19,8 @@ const Milestones = lazy(() => import('@/pages/Milestones'))
 const Labels = lazy(() => import('@/pages/Labels'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const DataStores = lazy(() => import('@/pages/DataStores'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
+const IntakeForms = lazy(() => import('@/pages/IntakeForms'))
 // eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
@@ -35,8 +37,13 @@ const navigation: MenuCategory[] = [
   },
 ]
 
+const adminNav: MenuItem[] = [
+  { name: 'Intake Forms', href: '/issues/intake-forms' },
+]
+
 const routes: RouteObject[] = [
   { path: 'issues', element: <Issues /> },
+  { path: 'issues/intake-forms', element: <IntakeForms /> },
   { path: 'issues/:id', element: <IssueDetail /> },
   { path: 'projects', element: <Projects /> },
   { path: 'projects/:id', element: <ProjectDetail /> },
@@ -49,6 +56,7 @@ const issuesModule: FrontendModule = {
   id: 'issues',
   name: 'Issues & Tracking',
   nav: navigation,
+  adminNav,
   routes,
 }
 

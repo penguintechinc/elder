@@ -7,10 +7,13 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
-import { Entity, Identity, IssueLabel, Issue, IssueStatus, IssuePriority } from '@/types'
+import { Entity, IssueLabel, Issue, IssueStatus, IssuePriority, IssueAssigneeType } from '@/types'
+import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
+import { SUPPORT_ISSUE_TYPE } from '@/lib/constants/issueTypes'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Select from '@/components/Select'
+import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
 import { CreateIssueModal } from '@/pages/Issues'
 
 interface IssueComment {
@@ -27,6 +30,17 @@ interface IssueUpdatePayload {
   status?: IssueStatus
   priority?: IssuePriority
   assignee_id?: number | null
+  assignee_type?: IssueAssigneeType
+}
+
+/** Convert snake_case/UPPERCASE status or priority to Title Case display format */
+function formatStatusLabel(value: string | null | undefined): string {
+  if (!value) return '—'
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
 export default function IssueDetail() {
@@ -82,11 +96,6 @@ export default function IssueDetail() {
     queryFn: () => api.getEntities({ per_page: 1000 }),
   })
 
-  const { data: allIdentities } = useQuery({
-    queryKey: ['identities-all'],
-    queryFn: () => api.getIdentities({ per_page: 1000 }),
-  })
-
   const { data: allProjects } = useQuery({
     queryKey: ['projects-all'],
     queryFn: () => api.getProjects({ per_page: 1000 }),
@@ -95,6 +104,12 @@ export default function IssueDetail() {
   const { data: allMilestones } = useQuery({
     queryKey: ['milestones-all'],
     queryFn: () => api.getMilestones({ per_page: 1000 }),
+  })
+
+  const { data: requesterContact } = useQuery({
+    queryKey: ['identity', issue?.requester_contact_id],
+    queryFn: () => api.getIdentity(issue!.requester_contact_id!),
+    enabled: !!issue && issue.issue_type?.toLowerCase() === SUPPORT_ISSUE_TYPE && !!issue.requester_contact_id,
   })
 
   const updateMutation = useMutation({
@@ -266,29 +281,18 @@ export default function IssueDetail() {
     }
   }
 
-  const getStatusColor = (status: IssueStatus) => {
-    switch (status) {
-      case 'open':
-        return 'bg-green-500/20 text-green-400'
-      case 'in_progress':
-        return 'bg-blue-500/20 text-blue-400'
-      case 'closed':
-        return 'bg-slate-500/20 text-slate-400'
+  const handleAssigneeChange = (value: AssigneeValue | null) => {
+    if (!value) {
+      // PATCH /issues/:id never clears assignee_id once set — see
+      // apps/api/modules/issues/routes/issues.py::update_issue ("assignee_id
+      // is never cleared by this endpoint"). Surface this instead of
+      // silently no-op-ing and reverting the UI on refetch.
+      toast.error('Clearing an assignee is not supported yet — pick a new assignee instead')
+      return
     }
+    updateMutation.mutate({ assignee_id: value.assignee_id, assignee_type: value.assignee_type })
   }
 
-  const getPriorityColor = (priority: IssuePriority) => {
-    switch (priority) {
-      case 'critical':
-        return 'bg-red-500/20 text-red-400'
-      case 'high':
-        return 'bg-orange-500/20 text-orange-400'
-      case 'medium':
-        return 'bg-yellow-500/20 text-yellow-400'
-      case 'low':
-        return 'bg-slate-500/20 text-slate-400'
-    }
-  }
 
   if (isLoading) {
     return (
@@ -356,10 +360,10 @@ export default function IssueDetail() {
               )}
               <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-slate-700">
                 <span className={`text-sm px-3 py-1 rounded ${getStatusColor(issue.status)}`}>
-                  {issue.status.replace('_', ' ')}
+                  {formatStatusLabel(issue.status)}
                 </span>
                 <span className={`text-sm px-3 py-1 rounded ${getPriorityColor(issue.priority)}`}>
-                  {issue.priority}
+                  {formatStatusLabel(issue.priority)}
                 </span>
                 <span className="text-sm text-slate-400">
                   Created {new Date(issue.created_at).toLocaleString()}
@@ -477,10 +481,10 @@ export default function IssueDetail() {
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs text-slate-500">#{subtask.id}</span>
                             <span className={`text-xs px-2 py-0.5 rounded ${getStatusColor(subtask.status)}`}>
-                              {subtask.status.replace('_', ' ')}
+                              {formatStatusLabel(subtask.status)}
                             </span>
                             <span className={`text-xs px-2 py-0.5 rounded ${getPriorityColor(subtask.priority)}`}>
-                              {subtask.priority}
+                              {formatStatusLabel(subtask.priority)}
                             </span>
                           </div>
                         </div>
@@ -503,7 +507,7 @@ export default function IssueDetail() {
             <CardContent className="space-y-3">
               <Select
                 label="Status"
-                value={issue.status}
+                value={issue.status?.toLowerCase() || ''}
                 onChange={(e) => updateMutation.mutate({ status: e.target.value as IssueStatus })}
               >
                 <option value="open">Open</option>
@@ -512,7 +516,7 @@ export default function IssueDetail() {
               </Select>
               <Select
                 label="Priority"
-                value={issue.priority}
+                value={issue.priority?.toLowerCase() || ''}
                 onChange={(e) => updateMutation.mutate({ priority: e.target.value as IssuePriority })}
               >
                 <option value="low">Low</option>
@@ -529,19 +533,69 @@ export default function IssueDetail() {
               <h3 className="text-lg font-semibold text-white">Assignee</h3>
             </CardHeader>
             <CardContent>
-              <Select
-                value={issue.assignee_id || ''}
-                onChange={(e) => updateMutation.mutate({ assignee_id: e.target.value ? parseInt(e.target.value) : null })}
-              >
-                <option value="">Unassigned</option>
-                {allIdentities?.items?.map((identity: Identity) => (
-                  <option key={identity.id} value={identity.id}>
-                    {identity.full_name || identity.username}
-                  </option>
-                ))}
-              </Select>
+              <AssigneePicker
+                value={
+                  issue.assignee_id && issue.assignee_type
+                    ? { assignee_type: issue.assignee_type, assignee_id: issue.assignee_id }
+                    : null
+                }
+                onChange={handleAssigneeChange}
+              />
             </CardContent>
           </Card>
+
+          {/* Support Details (issue_type=support only) */}
+          {issue.issue_type?.toLowerCase() === 'support' && (
+            <Card data-testid="issue-support-section">
+              <CardHeader>
+                <h3 className="text-lg font-semibold text-white">Support Details</h3>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {issue.channel && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Channel</dt>
+                    <dd className="text-sm text-slate-300">{issue.channel}</dd>
+                  </div>
+                )}
+                {issue.category && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Category</dt>
+                    <dd className="text-sm text-slate-300">{issue.category}</dd>
+                  </div>
+                )}
+                {requesterContact && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Requester Contact</dt>
+                    <dd className="text-sm text-slate-300">
+                      {requesterContact.full_name || requesterContact.username}
+                    </dd>
+                  </div>
+                )}
+                {issue.sla_breach_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">SLA Breach</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.sla_breach_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {issue.first_response_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">First Response</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.first_response_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {issue.resolved_at && (
+                  <div>
+                    <dt className="text-xs font-medium text-slate-500">Resolved</dt>
+                    <dd className="text-sm text-slate-300">{new Date(issue.resolved_at).toLocaleString()}</dd>
+                  </div>
+                )}
+                {!issue.channel && !issue.category && !requesterContact && !issue.sla_breach_at &&
+                  !issue.first_response_at && !issue.resolved_at && (
+                  <p className="text-slate-500 text-sm">No support details recorded</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Labels */}
           <Card>
@@ -775,7 +829,7 @@ export default function IssueDetail() {
             })
             setShowCreateSubTask(false)
           }}
-          defaultOrganizationId={issue?.organization_id}
+          defaultOrganizationId={issue?.resource_type === 'organization' ? issue.resource_id : undefined}
           parentIssueId={parseInt(id!)}
         />
       )}
