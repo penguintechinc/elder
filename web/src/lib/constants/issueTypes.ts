@@ -9,7 +9,7 @@ export interface IssueTypeOption {
  * Canonical issue_type dropdown/badge options — single source of truth for
  * the unified Issues list, detail, and create/edit views, and the intake
  * form builder. Matches apps/api/modules/issues/models/issue.py IssueType
- * enum values exactly (lowercase over the wire).
+ * enum values (backend returns UPPERCASE; frontend normalizes to lowercase for comparison).
  */
 export const ISSUE_TYPES: IssueTypeOption[] = [
   { value: 'operations', label: 'Operations' },

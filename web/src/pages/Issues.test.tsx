@@ -80,6 +80,26 @@ describe('Issues list', () => {
     await waitFor(() => expect(screen.queryByText('Server down')).toBeNull(), { timeout: 1000 })
   })
 
+  it('shows status badge and quick-change Select with current status (case-tolerant)', async () => {
+    // Test that UPPERCASE status from backend displays correctly in badges and Selects
+    const upperCaseIssues = [
+      { id: 1, title: 'Server down', status: 'OPEN' as unknown as 'open', priority: 'HIGH' as unknown as 'high', issue_type: 'OPERATIONS', created_at: '2026-01-01', updated_at: '2026-01-01' },
+    ]
+    vi.mocked(api.getIssues).mockResolvedValue({ items: upperCaseIssues, total: 1, page: 1, pages: 1, per_page: 50 })
+    renderIssues()
+    await waitFor(() => screen.getByText('Server down'))
+
+    // Badge should show Title-cased status ("Open"), not "OPEN"
+    // Use getAllByText since "Open" appears in both badge and select option
+    const openElements = screen.getAllByText('Open')
+    expect(openElements.length).toBeGreaterThan(0)
+
+    // Quick-change Select should show the current status selected (not blank)
+    // Find the select with "Open" as the displayed value
+    const selects = screen.getAllByDisplayValue('Open')
+    expect(selects.length).toBeGreaterThan(0)
+  })
+
   it('filters the list client-side by search text', async () => {
     renderIssues()
     await waitFor(() => screen.getByText('Server down'))

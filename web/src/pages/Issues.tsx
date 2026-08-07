@@ -15,6 +15,16 @@ import Input from '@/components/Input'
 import Select from '@/components/Select'
 import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
 
+/** Convert snake_case/UPPERCASE status or priority to Title Case display format */
+function formatStatusLabel(value: string | null | undefined): string {
+  if (!value) return '—'
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+}
+
 export default function Issues() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
@@ -183,10 +193,10 @@ export default function Issues() {
                             </span>
                           )}
                           <span className={`text-xs px-2 py-0.5 rounded border ${getStatusColor(issue.status)}`}>
-                            {issue.status.replace('_', ' ')}
+                            {formatStatusLabel(issue.status)}
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded border ${getPriorityColor(issue.priority)}`}>
-                            {issue.priority}
+                            {formatStatusLabel(issue.priority)}
                           </span>
                           <span className="text-xs px-2 py-0.5 rounded border border-slate-600 bg-slate-700/40 text-slate-300">
                             {issueTypeLabel(issue.issue_type)}
@@ -209,7 +219,7 @@ export default function Issues() {
                       {/* Quick Status Change */}
                       <div onClick={(e) => e.stopPropagation()}>
                         <Select
-                          value={issue.status}
+                          value={issue.status?.toLowerCase() || ''}
                           onChange={(e) =>
                             updateStatusMutation.mutate({
                               id: issue.id,

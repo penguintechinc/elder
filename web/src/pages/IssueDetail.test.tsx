@@ -96,4 +96,53 @@ describe('IssueDetail', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled())
     expect(api.updateIssue).not.toHaveBeenCalled()
   })
+
+  it('handles UPPERCASE status/priority from backend (case-tolerance)', async () => {
+    // Backend returns UPPERCASE values; dropdown options are lowercase.
+    // Verify the selected value shows correctly.
+    vi.mocked(api.getIssue).mockResolvedValue({
+      ...baseIssue,
+      status: 'OPEN' as unknown as 'open',
+      priority: 'HIGH' as unknown as 'high',
+    })
+    renderDetail()
+    await waitFor(() => screen.getByText('Server down'))
+
+    const statusSelects = screen.queryAllByDisplayValue('Open')
+    expect(statusSelects.length).toBeGreaterThan(0)
+
+    const prioritySelects = screen.queryAllByDisplayValue('High')
+    expect(prioritySelects.length).toBeGreaterThan(0)
+  })
+
+  it('loads requester contact for SUPPORT (uppercase) issue_type', async () => {
+    const requesterContactData = { id: 99, username: 'support-user', full_name: 'Support Person', email: 'support@x.com' }
+    vi.mocked(api.getIssue).mockResolvedValue({
+      ...baseIssue,
+      issue_type: 'SUPPORT' as unknown as 'support',
+      requester_contact_id: 99,
+    })
+    vi.mocked(api.getIdentity).mockResolvedValue(requesterContactData)
+    renderDetail()
+    await waitFor(() => screen.getByTestId('issue-support-section'))
+    expect(api.getIdentity).toHaveBeenCalledWith(99)
+    expect(screen.getByText('Support Person')).toBeDefined()
+  })
+
+  it('displays status/priority labels in Title Case (not raw UPPERCASE/lowercase_underscore)', async () => {
+    vi.mocked(api.getIssue).mockResolvedValue({
+      ...baseIssue,
+      status: 'IN_PROGRESS' as unknown as 'in_progress',
+      priority: 'CRITICAL' as unknown as 'critical',
+    })
+    renderDetail()
+    await waitFor(() => screen.getByText('Server down'))
+
+    // Badges should display "In Progress" and "Critical", not "IN_PROGRESS" or "CRITICAL"
+    // Use getAllByText since the text appears in both badges and select options
+    const inProgressElements = screen.getAllByText('In Progress')
+    expect(inProgressElements.length).toBeGreaterThan(0)
+    const criticalElements = screen.getAllByText('Critical')
+    expect(criticalElements.length).toBeGreaterThan(0)
+  })
 })

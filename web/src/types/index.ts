@@ -103,8 +103,8 @@ export interface Dependency {
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'
 
 // Matches apps/api/modules/issues/models/issue.py IssueType enum — the DB
-// column is Enum(IssueType) but every value over the wire is the lowercase
-// .value string (e.g. "support"), never the Python member name.
+// column is Enum(IssueType) and serializes to UPPERCASE over the wire (e.g. "SUPPORT").
+// Frontend normalizes to lowercase for comparison against these type constants.
 export type IssueType =
   | 'operations'
   | 'code'

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
@@ -41,7 +42,13 @@ export default function IntakePublicForm() {
       console.log('[PublicIntake] Submit form', { slug, fieldCount })
       return api.submitPublicIntakeForm(slug!, { fields: values })
     },
-    onSuccess: () => setSubmitted(true),
+    onSuccess: () => {
+      toast.success('Form submitted successfully')
+      setSubmitted(true)
+    },
+    onError: () => {
+      toast.error('Failed to submit form. Please try again.')
+    },
   })
 
   const handleChange = (fieldId: string, value: string) => {
