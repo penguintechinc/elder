@@ -121,6 +121,13 @@ def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, A
     webhook_deliveries row and returned in the result dict instead of
     propagating, so one webhook's failure can never break another's
     delivery or the caller's fire-and-forget task.
+
+    The payload is serialized to a string exactly once and that same string
+    is both signed and sent as the raw request body (`data=`, not `json=`).
+    `requests`' own `json=` re-serialization doesn't preserve key order/
+    formatting, so signing `payload_str` while posting `json=payload` would
+    sign different bytes than a receiver actually gets — the HMAC would
+    never verify.
     """
     payload_str = json.dumps(payload, sort_keys=True)
     headers = {
@@ -146,7 +153,9 @@ def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, A
     db.commit()
 
     try:
-        response = requests.post(webhook.url, json=payload, headers=headers, timeout=30)
+        response = requests.post(
+            webhook.url, data=payload_str.encode("utf-8"), headers=headers, timeout=30
+        )
         success = 200 <= response.status_code < 300
         db(db.webhook_deliveries.id == delivery_id).update(
             status="success" if success else "failed",
@@ -204,7 +213,17 @@ async def send_issue_assigned_webhooks(
     if not matched:
         return []
 
-    payload = build_assignment_payload(event)
+    try:
+        payload = build_assignment_payload(event)
+    except (
+        Exception
+    ) as exc:  # pragma: no cover - defensive; payload build is pure/cheap
+        logger.warning(
+            "issue_assigned_webhook_payload_build_failed",
+            extra={"error": str(exc)[:200]},
+        )
+        return []
+
     results = []
     for webhook in matched:
         try:

@@ -92,6 +92,18 @@ async def test_send_delivers_to_matching_webhook_signed(mock_post, app):
         sent_headers = mock_post.call_args.kwargs["headers"]
         assert "X-Elder-Signature" in sent_headers
 
+        # Recompute the signature over the ACTUAL bytes posted (mock_post's
+        # `data=` kwarg), not just assert the header is present — a
+        # presence-only check doesn't catch signing different bytes than
+        # were sent (e.g. signing json.dumps(payload) but posting
+        # json=payload, which requests re-serializes differently).
+        from apps.api.services.webhooks.service import generate_signature
+
+        sent_body = mock_post.call_args.kwargs["data"]
+        assert isinstance(sent_body, bytes)
+        expected_signature = generate_signature("s3cr3t", sent_body.decode("utf-8"))
+        assert sent_headers["X-Elder-Signature"] == expected_signature
+
         delivery = (
             db(
                 (db.webhook_deliveries.webhook_id == webhook_id)

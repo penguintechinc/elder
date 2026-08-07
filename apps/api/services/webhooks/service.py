@@ -532,6 +532,13 @@ class WebhookService:
         next_attempt_count += 1
 
         try:
+            # Serialize once — this exact string is both signed and posted
+            # as the raw body. `requests`' own `json=` re-serialization
+            # doesn't preserve key order/formatting, so signing this string
+            # while posting `json=payload` would sign different bytes than
+            # a receiver actually gets and the HMAC would never verify.
+            payload_str = json.dumps(payload, sort_keys=True)
+
             headers = {
                 "Content-Type": "application/json",
                 "User-Agent": "Elder-Webhook/1.2.0",
@@ -541,13 +548,14 @@ class WebhookService:
                 headers.update(_parse_json_column(webhook.headers))
 
             if webhook.secret:
-                signature = generate_signature(
-                    webhook.secret, json.dumps(payload, sort_keys=True)
-                )
+                signature = generate_signature(webhook.secret, payload_str)
                 headers["X-Elder-Signature"] = signature
 
             response = requests.post(
-                webhook.url, json=payload, headers=headers, timeout=30
+                webhook.url,
+                data=payload_str.encode("utf-8"),
+                headers=headers,
+                timeout=30,
             )
 
             success = 200 <= response.status_code < 300
