@@ -176,7 +176,7 @@ def create_support_issue_from_form(
     validated: dict[str, Any],
     contact_id: int,
     redis: Optional[Any],
-) -> str:
+) -> Any:
     """Insert a native support Issue from a validated intake-form submission.
 
     Mirrors `issues/routes/issues.py::create_issue`'s field set for an
@@ -195,7 +195,12 @@ def create_support_issue_from_form(
     resolved for the form's tenant.
 
     Returns:
-        The created issue's village_id.
+        The created issue row (all columns, including village_id, id,
+        assignee_id, assignee_type, issue_type, status, tenant_id — the
+        caller uses these to decide whether to fire an issue.assigned
+        webhook, since this function itself cannot: it runs inside
+        run_in_threadpool, off the event loop, where asyncio.create_task
+        has no running loop to attach to).
     """
     resource_id = _resolve_resource_id(db, form)
     if not resource_id:
@@ -251,4 +256,4 @@ def create_support_issue_from_form(
     issue_id = db.issues.insert(**insert_data)
     db.commit()
 
-    return db(db.issues.id == issue_id).select().first().village_id
+    return db(db.issues.id == issue_id).select().first()
