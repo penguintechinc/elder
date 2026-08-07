@@ -14,7 +14,7 @@ import json
 import os
 import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -602,6 +602,105 @@ def seed_intake_forms(db: Any, tenant_id: int) -> None:
         print(f"  {form_data['name']}: {form_id} (created)")
 
 
+def seed_streams(
+    db: Any,
+    tenant_id: int,
+    redis_client: Optional[Any],
+    admin_id: int,
+) -> list[int]:
+    """Seed demo stream playbooks and executions for the tenant.
+
+    Returns a list of stream playbook IDs created.
+    """
+    now = datetime.now(timezone.utc)
+    created_stream_ids = []
+
+    streams = [
+        {
+            "name": "Payment Processing Workflow",
+            "description": "Automated workflow for processing customer payments",
+            "trigger_type": "webhook",
+            "is_template": False,
+        },
+        {
+            "name": "Data Import Pipeline",
+            "description": "Bulk import and transformation pipeline for customer data",
+            "trigger_type": "manual",
+            "is_template": True,
+        },
+    ]
+
+    for stream_data in streams:
+        # Idempotency check by name + tenant
+        existing = (
+            db(
+                (db.stream_playbooks.tenant_id == tenant_id)
+                & (db.stream_playbooks.name == stream_data["name"])
+            )
+            .select()
+            .first()
+        )
+        if existing:
+            created_stream_ids.append(int(existing.id))
+            print(f"  {stream_data['name']}: {existing.id} (existing)")
+            continue
+
+        # Create stream playbook
+        stream_id = db.stream_playbooks.insert(
+            tenant_id=tenant_id,
+            village_id=_mint_village_id(tenant_id, redis_client),
+            name=stream_data["name"],
+            description=stream_data["description"],
+            owner_identity_id=admin_id,
+            created_by_identity_id=admin_id,
+            trigger_type=stream_data["trigger_type"],
+            is_public=False,
+            is_template=stream_data.get("is_template", False),
+            is_enabled=True,
+            status="active",
+            tags=["demo"],
+            execution_count=0,
+            success_count=0,
+            failure_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+
+        # Create demo executions for this stream
+        statuses = ["completed", "running", "failed"]
+        for i, status in enumerate(statuses):
+            exec_uuid = str(uuid4())
+            start_time = now - timedelta(hours=3 - i)
+            end_time = (
+                start_time + timedelta(seconds=45) if status == "completed" else None
+            )
+            duration = 45000 if status == "completed" else None
+
+            db.stream_executions.insert(
+                tenant_id=tenant_id,
+                playbook_id=stream_id,
+                execution_id=exec_uuid,
+                status=status,
+                trigger_type="manual",
+                triggered_by_identity_id=admin_id,
+                input_json={"sample": "input", "timestamp": start_time.isoformat()},
+                output_json={"result": "success"} if status == "completed" else None,
+                error_message="Execution timeout" if status == "failed" else None,
+                started_at=start_time,
+                completed_at=end_time,
+                duration_ms=duration,
+                created_at=start_time,
+                updated_at=start_time if end_time is None else end_time,
+            )
+            db.commit()
+
+        created_stream_ids.append(int(stream_id))
+        print(f"  {stream_data['name']}: {stream_id} (created, 3 executions)")
+
+    return created_stream_ids
+
+
 def seed_webhooks(
     db: Any,
     tenant_id: int,
@@ -719,6 +818,11 @@ def seed_demo_unified() -> None:
     # Seed webhooks
     print("Seeding webhook configurations:")
     seed_webhooks(db, tenant_id, redis_client, bot_id, org_units)
+    print()
+
+    # Seed streams
+    print("Seeding stream playbooks and executions:")
+    stream_ids = seed_streams(db, tenant_id, redis_client, admin_id)
     print()
 
     # Summary
