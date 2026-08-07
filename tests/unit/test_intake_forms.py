@@ -179,17 +179,21 @@ class TestIntakeFormsAdmin:
         ]
         existing_seqs = [_seq(v) for v in existing_village_ids]
 
-        # Zero the tenant's Redis village_id counter -- far behind the max
-        # already persisted (six rows just created, plus whatever earlier
-        # tests in this session left behind), forcing an immediate mint
-        # collision with no dependency on suite ordering.
+        # Rewind the tenant's Redis village_id counter to just below this
+        # test's OWN first form seq. The counter is shared across every
+        # object type, so earlier tests may have advanced it via non-form
+        # objects -- rewinding to a fixed 0 would not necessarily collide
+        # with a *form* row. Rewinding to min(existing_seqs) - 1 guarantees
+        # the next INCR lands on a seq this test already persisted as a
+        # form, forcing the desync collision deterministically regardless of
+        # suite ordering.
         async with app.app_context():
             redis_client = current_app.redis_client
             assert redis_client is not None, (
                 "test requires a live Redis connection to reproduce the "
                 "counter-desync collision deterministically"
             )
-            redis_client.set("elder:vid:00000001", 0)
+            redis_client.set("elder:vid:00000001", min(existing_seqs) - 1)
 
         seventh_village_id = await _create("G")
         seventh_seq = _seq(seventh_village_id)
