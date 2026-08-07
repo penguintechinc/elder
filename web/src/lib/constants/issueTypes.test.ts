@@ -15,8 +15,17 @@ describe('issueTypes constants', () => {
     expect(ISSUE_TYPES.some((t) => t.value === SUPPORT_ISSUE_TYPE)).toBe(true)
   })
 
-  it('issueTypeLabel resolves a known value and falls back to the raw value otherwise', () => {
+  it('issueTypeLabel resolves known values case-insensitively (backend returns UPPERCASE)', () => {
     expect(issueTypeLabel('support')).toBe('Support')
-    expect(issueTypeLabel('made-up')).toBe('made-up')
+    // Backend stores/returns issue_type as UPPERCASE — must still resolve.
+    expect(issueTypeLabel('SUPPORT')).toBe('Support')
+    expect(issueTypeLabel('OPERATIONS')).toBe('Operations')
+  })
+
+  it('issueTypeLabel Title-Cases unknown values and shows a dash for null/undefined', () => {
+    expect(issueTypeLabel('made-up')).toBe('Made-up')
+    expect(issueTypeLabel(null)).toBe('—')
+    expect(issueTypeLabel(undefined)).toBe('—')
+    expect(issueTypeLabel('')).toBe('—')
   })
 })
