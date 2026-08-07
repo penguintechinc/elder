@@ -23,7 +23,7 @@ export default function StreamsList() {
     queryFn: () => api.listStreams({ page: 1, per_page: 50 }),
   })
 
-  const streams: Stream[] = response?.items || []
+  const streams: Stream[] = response?.data || []
 
   const createMutation = useMutation({
     mutationFn: () =>
