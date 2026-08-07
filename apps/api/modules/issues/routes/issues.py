@@ -4,6 +4,7 @@
 
 
 import asyncio
+import logging
 from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional, Tuple
@@ -23,16 +24,18 @@ from apps.api.models.dataclasses import (
 )
 from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
-from apps.api.utils.async_utils import run_in_threadpool
-from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.services.webhooks.assignment import (
     AssignmentEvent,
     send_issue_assigned_webhooks,
 )
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
+
+logger = logging.getLogger(__name__)
 
 
 def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
@@ -374,26 +377,41 @@ async def create_issue(body: CreateIssueRequest):
         )
 
     # Send issue.assigned webhooks asynchronously (fire and forget) when the
-    # issue was created with an assignee already set. Never allowed to delay
-    # or fail issue creation: dispatch is inherently fire-and-forget-safe
-    # (see send_issue_assigned_webhooks), and building the event + scheduling
-    # the task is trivial/pure, so no additional try/except is needed here.
+    # issue was created with an assignee already set. This must never delay
+    # or fail issue creation. send_issue_assigned_webhooks itself is
+    # fire-and-forget-safe internally, but building AssignmentEvent and
+    # scheduling the task both happen eagerly on the request path (before
+    # asyncio.create_task hands off), so both are guarded here too:
+    # `getattr` covers issues.village_id being absent from the physical
+    # table on DBs built by `alembic upgrade head` (no migration adds it,
+    # only the ORM model declares it via VillageIDMixin — PyDAL raises
+    # AttributeError for a physically-missing column, not None), and the
+    # try/except is belt-and-suspenders against any other unexpected
+    # failure in event construction or scheduling.
     if issue.assignee_id is not None:
-        asyncio.create_task(
-            send_issue_assigned_webhooks(
-                db,
-                AssignmentEvent(
-                    issue_id=issue.id,
-                    village_id=issue.village_id,
-                    issue_type=issue.issue_type,
-                    status=issue.status,
-                    assignee_type=issue.assignee_type,
-                    assignee_id=issue.assignee_id,
-                    tenant_id=tenant_id,
-                    actor_id=current_user_id,
-                ),
+        try:
+            asyncio.create_task(
+                send_issue_assigned_webhooks(
+                    db,
+                    AssignmentEvent(
+                        issue_id=issue.id,
+                        village_id=getattr(issue, "village_id", None),
+                        issue_type=issue.issue_type,
+                        status=issue.status,
+                        assignee_type=issue.assignee_type,
+                        assignee_id=issue.assignee_id,
+                        tenant_id=tenant_id,
+                        actor_id=current_user_id,
+                    ),
+                )
             )
-        )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail create_issue
+            logger.warning(
+                "issue_assigned_webhook_schedule_failed",
+                extra={"issue_id": issue.id, "error": str(exc)[:200]},
+            )
 
     issue_dto = from_pydal_row(issue, IssueDTO)
     return jsonify(asdict(issue_dto)), 201

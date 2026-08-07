@@ -47,7 +47,7 @@ async def test_create_issue_with_assignee_fires_webhook(
             name="Org", tenant_id=1, created_at=now, updated_at=now
         )
         db.commit()
-        _insert_webhook(db)
+        webhook_id = _insert_webhook(db)
 
     resp = await async_client.post(
         "/api/v1/issues",
@@ -68,8 +68,17 @@ async def test_create_issue_with_assignee_fires_webhook(
 
     async with app.app_context():
         db = current_app.db
+        # webhook_deliveries is session-scoped and never truncated between
+        # tests, so scope the lookup to this test's own webhook_id — an
+        # unscoped query could pass vacuously on a stale row from another
+        # test (mirrors test_webhook_assignment_dispatch.py's approach).
         delivery = (
-            db(db.webhook_deliveries.event_type == "issue.assigned").select().first()
+            db(
+                (db.webhook_deliveries.webhook_id == webhook_id)
+                & (db.webhook_deliveries.event_type == "issue.assigned")
+            )
+            .select()
+            .first()
         )
         assert delivery is not None
 
