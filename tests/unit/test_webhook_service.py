@@ -116,3 +116,50 @@ async def test_deliver_webhook_signs_and_records_delivery(mock_post, app):
         assert len(deliveries) == 1
         assert deliveries[0]["status"] == "success"
         assert deliveries[0]["http_status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_create_webhook_inactive(app):
+    """Regression: creating a webhook with is_active=False persists as inactive."""
+    async with app.app_context():
+        from apps.api.services.webhooks.service import WebhookService
+
+        db = current_app.db
+        service = WebhookService(db)
+
+        webhook = service.create_webhook(
+            tenant_id=1,
+            name="Inactive webhook",
+            url="https://hooks.example.com/inactive",
+            events=["issue.assigned"],
+            is_active=False,
+        )
+
+        assert webhook["is_active"] is False
+
+        # Verify persistence: fetch and re-check
+        persisted = service.get_webhook(webhook["id"], tenant_id=1)
+        assert persisted["is_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_create_webhook_defaults_active(app):
+    """Regression: creating a webhook without is_active defaults to True."""
+    async with app.app_context():
+        from apps.api.services.webhooks.service import WebhookService
+
+        db = current_app.db
+        service = WebhookService(db)
+
+        webhook = service.create_webhook(
+            tenant_id=1,
+            name="Active by default webhook",
+            url="https://hooks.example.com/default-active",
+            events=["issue.assigned"],
+        )
+
+        assert webhook["is_active"] is True
+
+        # Verify persistence: fetch and re-check
+        persisted = service.get_webhook(webhook["id"], tenant_id=1)
+        assert persisted["is_active"] is True

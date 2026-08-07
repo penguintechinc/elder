@@ -233,6 +233,7 @@ async def create_webhook():
             filter_assignee_type=filter_assignee_type,
             filter_assignee_id=filter_assignee_id,
             metadata=data.get("metadata"),
+            is_active=data.get("is_active", True),
         )
 
         return jsonify(webhook), 201
