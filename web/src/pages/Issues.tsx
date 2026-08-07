@@ -7,7 +7,8 @@ import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { invalidateCache } from '@/lib/invalidateCache'
 import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
-import { Issue, IssueStatus, IssuePriority, Organization, Entity, IssueLabel } from '@/types'
+import { ISSUE_TYPES, issueTypeLabel } from '@/lib/constants/issueTypes'
+import { Issue, IssueStatus, IssuePriority, IssueType, Organization, Entity, IssueLabel } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
@@ -18,6 +19,7 @@ export default function Issues() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<IssueStatus | ''>('')
   const [priorityFilter, setPriorityFilter] = useState<IssuePriority | ''>('')
+  const [issueTypeFilter, setIssueTypeFilter] = useState<IssueType | ''>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
@@ -27,15 +29,31 @@ export default function Issues() {
   const entityId = searchParams.get('entity_id')
 
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.issues.list({ search, status: statusFilter, priority: priorityFilter, organizationId, entityId }),
+    queryKey: queryKeys.issues.list({ status: statusFilter, priority: priorityFilter, organizationId, entityId }),
     queryFn: () => api.getIssues({
-      search,
       status: statusFilter || undefined,
       priority: priorityFilter || undefined,
       organization_id: organizationId ? parseInt(organizationId) : undefined,
       entity_id: entityId ? parseInt(entityId) : undefined,
     }),
   })
+
+  // GET /issues has no server-side `search` or `issue_type` filter
+  // (apps/api/modules/issues/routes/issues.py::list_issues only applies
+  // status/priority/assignee_id/reporter_id) — filter client-side over the
+  // fetched page so the search box and type filter actually narrow results.
+  const filteredIssues = useMemo(() => {
+    const allItems: Issue[] = data?.items || []
+    const q = search.trim().toLowerCase()
+    return allItems.filter((issue) => {
+      const matchesType = !issueTypeFilter || issue.issue_type === issueTypeFilter
+      const matchesSearch =
+        !q ||
+        issue.title.toLowerCase().includes(q) ||
+        (issue.description || '').toLowerCase().includes(q)
+      return matchesType && matchesSearch
+    })
+  }, [data, search, issueTypeFilter])
 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: IssueStatus }) =>
@@ -67,7 +85,7 @@ export default function Issues() {
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
           <Input
@@ -97,6 +115,16 @@ export default function Issues() {
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </Select>
+        <Select
+          value={issueTypeFilter}
+          onChange={(e) => setIssueTypeFilter(e.target.value as IssueType | '')}
+          data-testid="issue-type-filter"
+        >
+          <option value="">All Types</option>
+          {ISSUE_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </Select>
       </div>
 
       {/* Issues List */}
@@ -104,7 +132,7 @@ export default function Issues() {
         <div className="flex items-center justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
         </div>
-      ) : data?.items?.length === 0 ? (
+      ) : filteredIssues.length === 0 ? (
         <Card>
           <CardContent className="text-center py-12">
             <p className="text-slate-400">No issues found</p>
@@ -115,11 +143,12 @@ export default function Issues() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {data?.items?.map((issue: Issue) => (
+          {filteredIssues.map((issue: Issue) => (
             <Card
               key={issue.id}
               className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
               onClick={() => navigate(`/issues/${issue.id}`)}
+              data-testid={`issue-card-${issue.id}`}
             >
               <CardContent>
                 <div className="flex items-start gap-4">
@@ -156,6 +185,9 @@ export default function Issues() {
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded border ${getPriorityColor(issue.priority)}`}>
                             {issue.priority}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded border border-slate-600 bg-slate-700/40 text-slate-300">
+                            {issueTypeLabel(issue.issue_type)}
                           </span>
                           {issue.assignee_id && (
                             <span className="flex items-center gap-1 text-xs text-slate-400">
