@@ -870,4 +870,7 @@ async def submit_public_intake_form(slug):
                 extra={"issue_id": issue.id, "error": str(exc)[:200]},
             )
 
-    return jsonify({"status": "created", "reference": issue.village_id}), 201
+    return (
+        jsonify({"status": "created", "reference": getattr(issue, "village_id", None)}),
+        201,
+    )

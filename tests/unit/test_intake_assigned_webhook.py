@@ -111,3 +111,54 @@ async def test_submit_without_default_assignee_does_not_fire(
 
     await asyncio.sleep(0.1)
     mock_post.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("apps.api.modules.helpdesk.routes.intake_forms.AssignmentEvent")
+async def test_submit_survives_dispatch_scheduling_failure(
+    mock_event, async_client, app
+):
+    """The `try/except Exception` around the `AssignmentEvent(...)` build +
+    `asyncio.create_task(...)` scheduling is the sole guard stopping a
+    webhook-dispatch failure from 500ing this public unauthenticated
+    submission. Force the build itself to raise and prove the submit still
+    succeeds (issue still created, 201 still returned)."""
+    mock_event.side_effect = RuntimeError("boom")
+
+    async with app.app_context():
+        db = current_app.db
+        form_row, webhook_id = _setup_form_and_webhook(db, default_assignee_id=7)
+        slug = form_row.slug
+
+    resp = await async_client.post(
+        f"/api/v1/intake/{slug}/submit",
+        json={"fields": {"email": "user3@example.com"}},
+    )
+    assert resp.status_code == 201, (await resp.get_data()).decode()[:300]
+    body = json.loads(await resp.get_data())
+    assert body["status"] == "created"
+    assert body["reference"]
+
+    await asyncio.sleep(0.1)
+
+    async with app.app_context():
+        db = current_app.db
+        # The issue itself must still have been created with its assignee
+        # set, despite the webhook-dispatch build raising. No delivery
+        # could possibly have been scheduled, since AssignmentEvent itself
+        # never successfully constructed — scope by webhook_id to avoid a
+        # vacuous pass against a stale row from another test.
+        assert (
+            db(
+                (db.issues.village_id == body["reference"])
+                & (db.issues.assignee_id == 7)
+            ).count()
+            == 1
+        )
+        assert (
+            db(
+                (db.webhook_deliveries.webhook_id == webhook_id)
+                & (db.webhook_deliveries.event_type == "issue.assigned")
+            ).count()
+            == 0
+        )
