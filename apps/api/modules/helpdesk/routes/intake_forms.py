@@ -436,7 +436,10 @@ async def create_form():
             return None, assignee_error
 
         issue_type = data.get("issue_type") or "support"
-        if not isinstance(issue_type, str) or issue_type.lower() not in _VALID_ISSUE_TYPES:
+        if (
+            not isinstance(issue_type, str)
+            or issue_type.lower() not in _VALID_ISSUE_TYPES
+        ):
             return None, "invalid_issue_type"
 
         metadata = data.get("metadata")
