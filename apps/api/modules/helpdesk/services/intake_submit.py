@@ -25,6 +25,27 @@ _ISSUE_TITLE_MAX_LENGTH = 255
 #: column, so it's defaulted to MEDIUM rather than passed through.
 _VALID_ISSUE_PRIORITIES = {"LOW", "MEDIUM", "HIGH", "URGENT", "CRITICAL"}
 
+#: Matches `IssueType` (apps/api/modules/issues/models/issue.py), lowercase
+#: enum values. `hd_intake_forms.issue_type` is an unconstrained String(30)
+#: — `intake_forms.py`'s admin routes allow-list new/updated values against
+#: this same set, but a pre-existing/legacy form row could still carry a
+#: stale out-of-enum value, so this is checked again defensively here too
+#: (defense in depth): never let a bad value reach the strict Enum column
+#: and 500 every public submit against that form.
+_VALID_ISSUE_TYPES = {
+    "operations",
+    "code",
+    "config",
+    "security",
+    "architecture",
+    "process",
+    "approval",
+    "feature",
+    "bug",
+    "support",
+    "other",
+}
+
 
 class ContactResolutionError(Exception):
     """Raised when a customer_contact identity can neither be found nor
@@ -164,9 +185,11 @@ def create_support_issue_from_form(
     `resource_type`/`resource_id` point at the form's owning organization,
     and a fresh village_id is minted as the public-safe reference returned
     to the submitter. `issue_type` honors the form's own admin-configured
-    value (default "support") rather than a hardcoded constant; `priority`
-    is allow-listed against `IssuePriority`, defaulting to MEDIUM for any
-    unrecognized submitted value; `title` is truncated to fit
+    value (default "support") rather than a hardcoded constant, allow-listed
+    against `IssueType` with a defensive fallback to "support" for any
+    stale/out-of-enum value already on the row (see `_VALID_ISSUE_TYPES`);
+    `priority` is allow-listed against `IssuePriority`, defaulting to MEDIUM
+    for any unrecognized submitted value; `title` is truncated to fit
     `issues.title`'s VARCHAR(255) column, with the full text preserved in
     `description`. Raises ValueError if no owning organization can be
     resolved for the form's tenant.
@@ -196,12 +219,20 @@ def create_support_issue_from_form(
     if priority not in _VALID_ISSUE_PRIORITIES:
         priority = "MEDIUM"
 
+    issue_type = str(form.issue_type or "support").lower()
+    if issue_type not in _VALID_ISSUE_TYPES:
+        # Defensive fallback: intake_forms.py allow-lists issue_type at
+        # create/update time, but a pre-existing/legacy form row could still
+        # carry a stale out-of-enum value — never let that reach the strict
+        # Enum column and 500 every public submit against the form.
+        issue_type = "support"
+
     insert_data: dict[str, Any] = {
         "title": title,
         "description": description,
         "status": "OPEN",
         "priority": priority,
-        "issue_type": (form.issue_type or "support").upper(),
+        "issue_type": issue_type.upper(),
         "is_incident": 0,
         "channel": "web",
         "reporter_id": contact_id,

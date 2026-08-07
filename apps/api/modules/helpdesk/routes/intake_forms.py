@@ -44,6 +44,26 @@ bp_public = Blueprint("helpdesk_intake_public", __name__)
 #: is rejected rather than persisted unvalidated.
 _VALID_ASSIGNEE_TYPES = ("identity", "org_unit")
 
+#: Mirrors `IssueType` (apps/api/modules/issues/models/issue.py) — the
+#: strict Enum column `issues.issue_type` is inserted into by
+#: `create_support_issue_from_form`. `hd_intake_forms.issue_type` itself is
+#: an unconstrained String(30), so without this allow-list an admin could
+#: save a form with an out-of-enum value (e.g. "ticket") that then 500s
+#: every public submit at the DB layer (security review regression fix).
+_VALID_ISSUE_TYPES = (
+    "operations",
+    "code",
+    "config",
+    "security",
+    "architecture",
+    "process",
+    "approval",
+    "feature",
+    "bug",
+    "support",
+    "other",
+)
+
 
 def _get_tenant_id() -> int | None:
     """Extract tenant_id from g.claims (populated by before_request)."""
@@ -121,6 +141,7 @@ _ERROR_RESPONSES = {
     "invalid_assignee": lambda: ApiResponse.error(
         "default_assignee_id not found in tenant", 400
     ),
+    "invalid_issue_type": lambda: ApiResponse.error("invalid issue_type", 400),
 }
 
 
@@ -282,6 +303,10 @@ async def create_form():
         if not assignee_ok:
             return None, assignee_error
 
+        issue_type = data.get("issue_type") or "support"
+        if not isinstance(issue_type, str) or issue_type.lower() not in _VALID_ISSUE_TYPES:
+            return None, "invalid_issue_type"
+
         if redis_client:
             village_id = generate_village_id(tenant_id, redis_client)
         else:
@@ -299,7 +324,7 @@ async def create_form():
             "slug": slug,
             "description": data.get("description"),
             "fields": json.dumps(fields),
-            "issue_type": data.get("issue_type", "support"),
+            "issue_type": issue_type,
             "default_assignee_type": assignee_type,
             "default_assignee_id": assignee_id,
             "organization_id": organization_id,
@@ -418,6 +443,14 @@ async def update_form(form_id):
             )
             if not assignee_ok:
                 return None, assignee_error
+
+        if "issue_type" in data:
+            issue_type = data["issue_type"] or "support"
+            if (
+                not isinstance(issue_type, str)
+                or issue_type.lower() not in _VALID_ISSUE_TYPES
+            ):
+                return None, "invalid_issue_type"
 
         now = datetime.now(timezone.utc)
         updates = {"updated_at": now}

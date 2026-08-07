@@ -258,6 +258,39 @@ class TestIntakeFormsAdmin:
         )
         assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
 
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_form_rejects_invalid_issue_type(
+        self, mock_get_user, async_client, generate_token
+    ):
+        """Regression: `hd_intake_forms.issue_type` is an unconstrained
+        String(30), but `issues.issue_type` (inserted by
+        create_support_issue_from_form) is a strict Enum(IssueType). An
+        out-of-enum value like "ticket" must be rejected with 400 at
+        create-time, not saved and left to 500 every public submit."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Bad Issue Type Form",
+                "slug": f"bad-issue-type-{uuid4().hex[:8]}",
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "issue_type": "ticket",
+                "is_public": True,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
+
 
 class TestIntakeFormsPublicSubmit:
     """Public (unauthenticated) GET/submit routes mounted at /api/v1/intake."""
@@ -892,3 +925,65 @@ class TestIntakeFormsPublicSubmit:
             },
         )
         assert resp.status_code == 400, (await resp.get_data()).decode()[:300]
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_public_submit_honors_valid_non_default_issue_type(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """A form created with a valid, non-default `issue_type` (e.g.
+        "bug") is accepted (201), and a public submit against it creates a
+        native Issue with `issue_type == "BUG"` — not the previous
+        hardcoded "SUPPORT"."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["helpdesk:admin"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Bug Issue Type Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+        slug = f"bug-type-{uuid4().hex[:8]}"
+        create_resp = await async_client.post(
+            "/api/v1/intake-forms",
+            json={
+                "name": "Bug Report Form",
+                "slug": slug,
+                "fields": [
+                    {
+                        "id": "email",
+                        "label": "Email",
+                        "type": "email",
+                        "required": True,
+                    }
+                ],
+                "issue_type": "bug",
+                "organization_id": org_id,
+                "is_public": True,
+                "captcha_required": False,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert create_resp.status_code in (200, 201), (
+            await create_resp.get_data()
+        ).decode()[:300]
+
+        email = f"bugreport-{uuid4().hex[:8]}@example.com"
+        resp = await async_client.post(
+            f"/api/v1/intake/{slug}/submit",
+            json={"fields": {"email": email}},
+        )
+        assert resp.status_code in (200, 201), (await resp.get_data()).decode()[:300]
+        reference = json.loads(await resp.get_data())["reference"]
+
+        async with app.app_context():
+            db = current_app.db
+            issue_row = db(db.issues.village_id == reference).select().first()
+            assert issue_row is not None
+            assert issue_row.issue_type == "BUG"
