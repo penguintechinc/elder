@@ -19,6 +19,7 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
+from apps.api.modules.issues.routes.common import _tenant_id
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 
@@ -48,12 +49,16 @@ async def list_projects():
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     # Get pagination params
     pagination = PaginationParams.from_request()
 
     # Build query
     def get_projects():
-        query = db.projects.id > 0
+        query = db.projects.tenant_id == tenant_id
 
         # Apply filters
         if request.args.get("organization_id"):
@@ -128,6 +133,10 @@ async def create_project():
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
@@ -147,6 +156,10 @@ async def create_project():
         return jsonify({"error": "Organization not found"}), 404
     if not org.tenant_id:
         return jsonify({"error": "Organization must have a tenant"}), 400
+    # Cross-tenant IDOR guard: the org must belong to the caller's own
+    # tenant, not merely exist (matches issues.py:create_issue).
+    if org.tenant_id != tenant_id:
+        return jsonify({"error": "Organization not found"}), 404
 
     def create():
         # Create project
@@ -156,12 +169,13 @@ async def create_project():
             description=data.get("description"),
             status=data.get("status", "active"),
             organization_id=data["organization_id"],
+            tenant_id=tenant_id,
             created_at=now,
             updated_at=now,
         )
         db.commit()
 
-        return db.projects[project_id]
+        return db(db.projects.id == project_id).select().first()
 
     project = await run_in_threadpool(create)
 
@@ -188,7 +202,15 @@ async def get_project(id: int):
     """
     db = current_app.db
 
-    project = await run_in_threadpool(lambda: db.projects[id])
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    project = await run_in_threadpool(
+        lambda: db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
+        .select()
+        .first()
+    )
 
     if not project:
         return jsonify({"error": "Project not found"}), 404
@@ -227,6 +249,10 @@ async def update_project(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     data = await request.get_json()
     if not data:
         return jsonify({"error": "Request body must be JSON"}), 400
@@ -240,9 +266,17 @@ async def update_project(id: int):
         org = await run_in_threadpool(get_org)
         if not org:
             return jsonify({"error": "Organization not found"}), 404
+        # Cross-tenant IDOR guard: re-pointing a project at another
+        # tenant's org must not silently re-link it cross-tenant.
+        if org.tenant_id != tenant_id:
+            return jsonify({"error": "Organization not found"}), 404
 
     def update():
-        project = db.projects[id]
+        project = (
+            db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not project:
             return None
 
@@ -258,10 +292,16 @@ async def update_project(id: int):
             update_dict["organization_id"] = data["organization_id"]
 
         if update_dict:
-            db(db.projects.id == id).update(**update_dict)
+            db((db.projects.id == id) & (db.projects.tenant_id == tenant_id)).update(
+                **update_dict
+            )
             db.commit()
 
-        return db.projects[id]
+        return (
+            db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
 
     project = await run_in_threadpool(update)
 
@@ -295,12 +335,20 @@ async def delete_project(id: int):
     """
     db = current_app.db
 
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
     def delete():
-        project = db.projects[id]
+        project = (
+            db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
         if not project:
             return False
 
-        del db.projects[id]
+        db((db.projects.id == id) & (db.projects.tenant_id == tenant_id)).delete()
         db.commit()
         return True
 
