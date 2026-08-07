@@ -14,6 +14,7 @@ interface SearchableSelectProps {
   isLoading?: boolean
   disabled?: boolean
   className?: string
+  ariaLabel?: string
 }
 
 export default function SearchableSelect({
@@ -25,6 +26,7 @@ export default function SearchableSelect({
   isLoading = false,
   disabled = false,
   className = '',
+  ariaLabel,
 }: SearchableSelectProps) {
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -119,6 +121,10 @@ export default function SearchableSelect({
       <input
         ref={inputRef}
         type="text"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={isOpen}
+        aria-autocomplete="list"
         value={isOpen ? query : selectedOption?.label || ''}
         onChange={(e) => handleQueryChange(e.target.value)}
         onFocus={() => {
