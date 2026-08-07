@@ -21,6 +21,14 @@ class Project(Base, IDMixin, VillageIDMixin, TimestampMixin):
 
     __tablename__ = "projects"
 
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced via migration backfill
+        index=True,
+        comment="Tenant this project belongs to (nullable during backfill)",
+    )
+
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     status = Column(String(50), nullable=False)
@@ -33,6 +41,14 @@ class Milestone(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Project milestones."""
 
     __tablename__ = "milestones"
+
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced via migration backfill
+        index=True,
+        comment="Tenant this milestone belongs to (nullable during backfill)",
+    )
 
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)

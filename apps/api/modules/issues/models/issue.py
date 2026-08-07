@@ -13,10 +13,12 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, relationship
 
@@ -83,6 +85,62 @@ issue_label_assignments = Table(
         ForeignKey("issue_labels.id", ondelete="CASCADE"),
         primary_key=True,
     ),
+)
+
+
+# Association table linking issues to milestones (many-to-many). The actual
+# table is created in production by alembic/versions/009_add_issue_link_tables.py
+# (it straddles the Alembic-managed `issues` table and the `milestones` table);
+# it is registered here too, mirroring that migration's schema exactly, so
+# Base.metadata.create_all() also builds it for test databases.
+issue_milestone_links = Table(
+    "issue_milestone_links",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "milestone_id",
+        Integer,
+        ForeignKey("milestones.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "milestone_id", name="uix_issue_milestone"),
+    Index("ix_issue_milestone_links_issue_id", "issue_id"),
+    Index("ix_issue_milestone_links_milestone_id", "milestone_id"),
+)
+
+
+# Association table linking issues to projects (many-to-many). The actual
+# table is created in production by alembic/versions/009_add_issue_link_tables.py
+# (it straddles the Alembic-managed `issues` table and the `projects` table);
+# it is registered here too, mirroring that migration's schema exactly, so
+# Base.metadata.create_all() also builds it for test databases.
+issue_project_links = Table(
+    "issue_project_links",
+    Base.metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column(
+        "issue_id",
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column(
+        "project_id",
+        Integer,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("created_at", DateTime(timezone=True), nullable=True),
+    UniqueConstraint("issue_id", "project_id", name="uix_issue_project"),
+    Index("ix_issue_project_links_issue_id", "issue_id"),
+    Index("ix_issue_project_links_project_id", "project_id"),
 )
 
 
@@ -400,7 +458,7 @@ class IssueLabel(Base, IDMixin, TimestampMixin):
         return f"<IssueLabel(id={self.id}, name='{self.name}', color='{self.color}')>"
 
 
-class IssueComment(Base, IDMixin, TimestampMixin):
+class IssueComment(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Comment on an issue.
 
@@ -408,6 +466,14 @@ class IssueComment(Base, IDMixin, TimestampMixin):
     """
 
     __tablename__ = "issue_comments"
+
+    tenant_id = Column(
+        Integer,
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=True,  # nullable for backfill; enforced NOT NULL in a follow-up once populated
+        index=True,
+        comment="Tenant this comment belongs to (nullable during backfill)",
+    )
 
     issue_id = Column(
         Integer,
@@ -429,6 +495,16 @@ class IssueComment(Base, IDMixin, TimestampMixin):
         Text,
         nullable=False,
         comment="Comment content (supports Markdown)",
+    )
+
+    # `metadata` is reserved on SQLAlchemy declarative models, so the Python
+    # attribute is named comment_metadata while the DB column stays
+    # `metadata` (same pattern as Issue.issue_metadata / Organization.org_metadata).
+    comment_metadata = Column(
+        "metadata",
+        JSON,
+        nullable=True,
+        comment="Universal free-form JSON metadata bag",
     )
 
     # Relationships

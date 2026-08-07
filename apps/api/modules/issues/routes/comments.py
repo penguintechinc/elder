@@ -118,6 +118,8 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
         return jsonify({"error": "Tenant not found"}), 403
 
     def create():
+        from shared.utils.village_id import generate_village_id
+
         # Verify issue exists and belongs to caller's tenant
         issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
@@ -125,10 +127,14 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
 
         # Create comment
         now = datetime.now(timezone.utc)
+        redis_client = current_app.redis_client
+        village_id = generate_village_id(issue.tenant_id, redis_client)
         comment_id = db.issue_comments.insert(
             issue_id=id,
             author_id=g.current_user.id,
             content=body.content,
+            tenant_id=issue.tenant_id,
+            village_id=village_id,
             created_at=now,
             updated_at=now,
         )

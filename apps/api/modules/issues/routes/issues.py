@@ -676,6 +676,8 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
         return jsonify({"error": "Tenant not found"}), 403
 
     def create():
+        from shared.utils.village_id import generate_village_id
+
         # Verify issue exists and belongs to caller's tenant
         issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
@@ -683,10 +685,14 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
 
         # Create comment
         now = datetime.now(timezone.utc)
+        redis_client = current_app.redis_client
+        village_id = generate_village_id(issue.tenant_id, redis_client)
         comment_id = db.issue_comments.insert(
             issue_id=id,
             author_id=g.current_user.id,
             content=body.content,
+            tenant_id=issue.tenant_id,
+            village_id=village_id,
             created_at=now,
             updated_at=now,
         )
@@ -1313,8 +1319,15 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
         if not issue:
             return None, "Issue not found", 404
 
-        # Verify project exists
-        project = db.projects[body.project_id]
+        # Verify project exists and belongs to caller's tenant
+        project = (
+            db(
+                (db.projects.id == body.project_id)
+                & (db.projects.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
         if not project:
             return None, "Project not found", 404
 
@@ -1441,8 +1454,15 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
         if not issue:
             return None, "Issue not found", 404
 
-        # Verify milestone exists
-        milestone = db.milestones[body.milestone_id]
+        # Verify milestone exists and belongs to caller's tenant
+        milestone = (
+            db(
+                (db.milestones.id == body.milestone_id)
+                & (db.milestones.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
         if not milestone:
             return None, "Milestone not found", 404
 
