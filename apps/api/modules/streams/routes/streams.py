@@ -1169,12 +1169,9 @@ async def list_all_executions():
         query = db.stream_executions.tenant_id == tenant_id
 
         # Determine which streams this caller can read (public, owned, or shared)
-        readable_streams_query = (
-            (db.stream_playbooks.tenant_id == tenant_id)
-            & (
-                (db.stream_playbooks.is_public == True)
-                | (db.stream_playbooks.owner_identity_id == identity_id)
-            )
+        readable_streams_query = (db.stream_playbooks.tenant_id == tenant_id) & (
+            (db.stream_playbooks.is_public == True)
+            | (db.stream_playbooks.owner_identity_id == identity_id)
         )
         readable_stream_ids = db(readable_streams_query).select(db.stream_playbooks.id)
         readable_ids_set = {s.id for s in readable_stream_ids}
