@@ -14,6 +14,10 @@ import requests
 from penguin_dal import DAL
 from sqlalchemy.exc import IntegrityError
 
+#: Sentinel to distinguish "field absent from request" from "field present with null value".
+#: Used in update_webhook to allow clearing filters (null) vs skipping them (absent).
+_UNSET = object()
+
 #: Matches IssueType member names (apps/api/modules/issues/models/issue.py).
 #: filter_issue_type is stored uppercase (matching how issues.issue_type
 #: itself is stored — see create_issue's `.upper()`), so it's validated
@@ -328,9 +332,9 @@ class WebhookService:
         secret: Optional[str] = None,
         headers: Optional[Dict[str, str]] = None,
         is_active: Optional[bool] = None,
-        filter_issue_type: Optional[str] = None,
-        filter_assignee_type: Optional[str] = None,
-        filter_assignee_id: Optional[int] = None,
+        filter_issue_type: Any = _UNSET,
+        filter_assignee_type: Any = _UNSET,
+        filter_assignee_id: Any = _UNSET,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
@@ -339,7 +343,15 @@ class WebhookService:
         Args:
             webhook_id: Webhook id
             tenant_id: Owning tenant (from the caller's validated JWT)
-            (remaining args: see create_webhook — same semantics, all optional)
+            name, url, events, secret, headers, is_active, metadata: Optional fields to update
+                (see create_webhook for semantics); _UNSET (default) means field is absent from the
+                request and will not be updated; None means explicit null (clear the field)
+            filter_issue_type, filter_assignee_type, filter_assignee_id: Filter fields using
+                sentinel pattern — _UNSET (default) = absent (skip), None = explicit null (clear),
+                real value = set. This allows both clearing and skipping filters in a single call.
+                filter_assignee_type and filter_assignee_id must be cleared together (the route
+                validates the effective pair); the service will only update whichever fields are
+                not _UNSET.
 
         Returns:
             Updated webhook dictionary
@@ -383,22 +395,31 @@ class WebhookService:
         if is_active is not None:
             update_data["is_active"] = is_active
 
-        if filter_issue_type is not None:
-            resolved = filter_issue_type.upper()
-            if resolved not in _VALID_ISSUE_TYPES_UPPER:
-                raise Exception(
-                    f"Invalid filter_issue_type. Must be one of: {', '.join(sorted(_VALID_ISSUE_TYPES_UPPER))}"
-                )
-            update_data["filter_issue_type"] = resolved
+        if filter_issue_type is not _UNSET:
+            # Explicit None clears the filter; real value validates and sets
+            if filter_issue_type is not None:
+                resolved = filter_issue_type.upper()
+                if resolved not in _VALID_ISSUE_TYPES_UPPER:
+                    raise Exception(
+                        f"Invalid filter_issue_type. Must be one of: {', '.join(sorted(_VALID_ISSUE_TYPES_UPPER))}"
+                    )
+                update_data["filter_issue_type"] = resolved
+            else:
+                update_data["filter_issue_type"] = None
 
-        if filter_assignee_type is not None:
-            if filter_assignee_type not in _VALID_ASSIGNEE_TYPES:
-                raise Exception(
-                    f"Invalid filter_assignee_type. Must be one of: {', '.join(sorted(_VALID_ASSIGNEE_TYPES))}"
-                )
-            update_data["filter_assignee_type"] = filter_assignee_type
+        if filter_assignee_type is not _UNSET:
+            # Explicit None clears the filter; real value validates and sets
+            if filter_assignee_type is not None:
+                if filter_assignee_type not in _VALID_ASSIGNEE_TYPES:
+                    raise Exception(
+                        f"Invalid filter_assignee_type. Must be one of: {', '.join(sorted(_VALID_ASSIGNEE_TYPES))}"
+                    )
+                update_data["filter_assignee_type"] = filter_assignee_type
+            else:
+                update_data["filter_assignee_type"] = None
 
-        if filter_assignee_id is not None:
+        if filter_assignee_id is not _UNSET:
+            # Explicit None clears the filter; real value sets it
             update_data["filter_assignee_id"] = filter_assignee_id
 
         if metadata is not None:

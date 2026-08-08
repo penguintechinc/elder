@@ -163,3 +163,91 @@ async def test_create_webhook_defaults_active(app):
         # Verify persistence: fetch and re-check
         persisted = service.get_webhook(webhook["id"], tenant_id=1)
         assert persisted["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_webhook_clears_filter_on_explicit_null(app):
+    """Regression: update_webhook must allow clearing a filter (null != absent).
+
+    The sentinel pattern distinguishes:
+      - Absent field (_UNSET): skip update, preserve existing value
+      - Explicit null (None): clear the field (update to None)
+      - Real value: update to the value
+
+    This test verifies all three cases for filter_issue_type and the
+    filter_assignee_type/filter_assignee_id pair.
+    """
+    async with app.app_context():
+        from apps.api.services.webhooks.service import _UNSET, WebhookService
+
+        db = current_app.db
+        service = WebhookService(db)
+
+        # Create webhook WITH filter_issue_type and assignee filter set
+        webhook = service.create_webhook(
+            tenant_id=1,
+            name="Filter test webhook",
+            url="https://hooks.example.com/filter-test",
+            events=["issue.assigned"],
+            filter_issue_type="support",
+            filter_assignee_type="identity",
+            filter_assignee_id=42,
+        )
+
+        webhook_id = webhook["id"]
+        assert webhook["filter_issue_type"] == "SUPPORT"
+        assert webhook["filter_assignee_type"] == "identity"
+        assert webhook["filter_assignee_id"] == 42
+
+        # (a) Clear filter_issue_type by passing explicit None
+        updated = service.update_webhook(
+            webhook_id=webhook_id,
+            tenant_id=1,
+            filter_issue_type=None,  # explicit null = clear
+        )
+        assert updated["filter_issue_type"] is None
+        assert updated["filter_assignee_type"] == "identity"  # unchanged
+        assert updated["filter_assignee_id"] == 42  # unchanged
+
+        # Verify persistence
+        persisted = service.get_webhook(webhook_id, tenant_id=1)
+        assert persisted["filter_issue_type"] is None
+
+        # (b) Clear both assignee filter fields together
+        updated = service.update_webhook(
+            webhook_id=webhook_id,
+            tenant_id=1,
+            filter_assignee_type=None,  # explicit null = clear
+            filter_assignee_id=None,  # explicit null = clear
+        )
+        assert updated["filter_assignee_type"] is None
+        assert updated["filter_assignee_id"] is None
+        assert updated["filter_issue_type"] is None  # still cleared
+
+        # Verify persistence
+        persisted = service.get_webhook(webhook_id, tenant_id=1)
+        assert persisted["filter_assignee_type"] is None
+        assert persisted["filter_assignee_id"] is None
+
+        # (c) Skip updating filter_issue_type (omitted = _UNSET)
+        # Re-set a filter first so we can verify it's preserved
+        updated = service.update_webhook(
+            webhook_id=webhook_id,
+            tenant_id=1,
+            filter_issue_type="bug",
+        )
+        assert updated["filter_issue_type"] == "BUG"
+
+        # Now update something else, omitting filter_issue_type (default _UNSET)
+        updated = service.update_webhook(
+            webhook_id=webhook_id,
+            tenant_id=1,
+            name="Updated name only",
+            filter_issue_type=_UNSET,  # absent = skip
+        )
+        assert updated["name"] == "Updated name only"
+        assert updated["filter_issue_type"] == "BUG"  # preserved, not cleared
+
+        # Verify persistence
+        persisted = service.get_webhook(webhook_id, tenant_id=1)
+        assert persisted["filter_issue_type"] == "BUG"
