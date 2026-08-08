@@ -1168,11 +1168,40 @@ async def list_all_executions():
         # Build query scoped to tenant
         query = db.stream_executions.tenant_id == tenant_id
 
-        # Optional stream filter
+        # Determine which streams this caller can read (public, owned, or shared)
+        readable_streams_query = (
+            (db.stream_playbooks.tenant_id == tenant_id)
+            & (
+                (db.stream_playbooks.is_public == True)
+                | (db.stream_playbooks.owner_identity_id == identity_id)
+            )
+        )
+        readable_stream_ids = db(readable_streams_query).select(db.stream_playbooks.id)
+        readable_ids_set = {s.id for s in readable_stream_ids}
+
+        # Add shared streams
+        if identity_id:
+            shared_streams = db(
+                db.stream_shares.shared_with_identity_id == identity_id
+            ).select(db.stream_shares.playbook_id)
+            readable_ids_set.update(s.playbook_id for s in shared_streams)
+
+        # Filter executions to only readable streams
+        if readable_ids_set:
+            query = query & (db.stream_executions.playbook_id.belongs(readable_ids_set))
+        else:
+            # No readable streams, return empty
+            return [], 0
+
+        # Optional stream filter (must be readable)
         if stream_filter:
             try:
                 stream_id = int(stream_filter)
-                query = query & (db.stream_executions.playbook_id == stream_id)
+                if stream_id in readable_ids_set:
+                    query = query & (db.stream_executions.playbook_id == stream_id)
+                else:
+                    # Requested stream not readable
+                    return [], 0
             except (ValueError, TypeError):
                 pass
 
@@ -1180,7 +1209,7 @@ async def list_all_executions():
         if status_filter:
             query = query & (db.stream_executions.status == status_filter)
 
-        # Count total
+        # Count total (now access-filtered)
         total = db(query).count()
 
         # Fetch paginated executions
