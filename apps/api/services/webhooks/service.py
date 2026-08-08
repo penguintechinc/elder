@@ -731,21 +731,43 @@ class WebhookService:
     # ===========================
 
     def list_notification_rules(
-        self, organization_id: Optional[int] = None, channel: Optional[str] = None
+        self,
+        tenant_id: int,
+        organization_id: Optional[int] = None,
+        channel: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        List notification rules with optional filtering.
+        List notification rules scoped to tenant_id.
+
+        Tenant isolation: only rules whose organization_id belongs to
+        tenant_id are returned. If organization_id filter is set, it is
+        validated against tenant_id; an org not belonging to the tenant
+        returns an empty list.
 
         Args:
-            organization_id: Filter by organization
+            tenant_id: Tenant to scope results to (required)
+            organization_id: Filter by organization (must belong to tenant_id)
             channel: Filter by channel type
 
         Returns:
-            List of notification rule dictionaries
+            List of notification rule dictionaries scoped to tenant_id
         """
-        query = self.db.notification_rules.id > 0
+        # Resolve tenant's org_ids to scalar list (penguin-dal cannot adapt
+        # column==column comparisons; must use scalar membership via .belongs)
+        org_ids = [
+            r.id
+            for r in self.db(self.db.organizations.tenant_id == tenant_id).select(
+                self.db.organizations.id
+            )
+        ]
+        if not org_ids:
+            return []
+
+        # Base query: notification_rules.organization_id in the tenant's orgs
+        query = self.db.notification_rules.organization_id.belongs(org_ids)
 
         if organization_id is not None:
+            # Already tenant-bounded by belongs; just add the org filter
             query &= self.db.notification_rules.organization_id == organization_id
 
         if channel is not None:
@@ -755,22 +777,32 @@ class WebhookService:
 
         return [r.as_dict() for r in rules]
 
-    def get_notification_rule(self, rule_id: int) -> Dict[str, Any]:
+    def get_notification_rule(self, rule_id: int, tenant_id: int) -> Dict[str, Any]:
         """
-        Get notification rule by ID.
+        Get notification rule by ID, scoped to tenant_id.
+
+        Tenant isolation: returns the rule only if its organization_id
+        resolves (via organizations.tenant_id) to tenant_id. Cross-tenant
+        access returns "not found" (no existence leak).
 
         Args:
             rule_id: Notification rule ID
+            tenant_id: Tenant to scope access to (required)
 
         Returns:
             Notification rule dictionary
 
         Raises:
-            Exception: If rule not found
+            Exception: If rule not found or not in tenant_id
         """
         rule = self.db.notification_rules[rule_id]
 
         if not rule:
+            raise Exception(f"Notification rule {rule_id} not found")
+
+        # Verify rule's organization belongs to the caller's tenant
+        org = self.db.organizations[rule.organization_id]
+        if not org or org.tenant_id != tenant_id:
             raise Exception(f"Notification rule {rule_id} not found")
 
         return rule.as_dict()

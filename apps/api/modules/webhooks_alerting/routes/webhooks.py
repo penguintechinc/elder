@@ -492,7 +492,7 @@ def redeliver_webhook(webhook_id, delivery_id):
 @require_scope("webhooks_alerting:read")
 def list_notification_rules():
     """
-    List all notification rules.
+    List all notification rules scoped to caller's tenant.
 
     Query params:
         - organization_id: Filter by organization
@@ -503,12 +503,13 @@ def list_notification_rules():
     """
     try:
         service = get_webhook_service()
+        tenant_id = _tenant_id()
 
         organization_id = request.args.get("organization_id", type=int)
         channel = request.args.get("channel")
 
         rules = service.list_notification_rules(
-            organization_id=organization_id, channel=channel
+            tenant_id=tenant_id, organization_id=organization_id, channel=channel
         )
 
         return jsonify({"rules": rules, "count": len(rules)}), 200
@@ -577,15 +578,16 @@ async def create_notification_rule():
 @require_scope("webhooks_alerting:read")
 def get_notification_rule(rule_id):
     """
-    Get notification rule details.
+    Get notification rule details, scoped to caller's tenant.
 
     Returns:
         200: Rule details
-        404: Rule not found
+        404: Rule not found or cross-tenant
     """
     try:
         service = get_webhook_service()
-        rule = service.get_notification_rule(rule_id)
+        tenant_id = _tenant_id()
+        rule = service.get_notification_rule(rule_id, tenant_id=tenant_id)
         return jsonify(rule), 200
 
     except Exception as e:
