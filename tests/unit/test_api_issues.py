@@ -78,6 +78,70 @@ class TestIssuesAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
+    async def test_patch_issue_empty_body_is_noop_not_500(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression: PATCH /issues/{id} with no updatable fields is a 200
+        no-op, not a 500.
+
+        update_issue built an empty update_fields dict when the body supplied
+        no recognized fields and called db(...).update() with no kwargs, which
+        emits `UPDATE issues SET  WHERE ...` (no SET clause) and raised an
+        unhandled 500. The fix guards the write on `if update_fields`.
+        # regression: empty PATCH must not 500
+        """
+        mock_user = MagicMock()
+        mock_user.id = 1
+        mock_user.is_superuser = True
+        mock_get_user.return_value = mock_user
+
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+
+            org_id = db.organizations.insert(
+                name="Test Org Empty Patch",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            issue_id = db.issues.insert(
+                title="Untouched Issue",
+                description="Original",
+                status="OPEN",
+                priority="MEDIUM",
+                issue_type="OTHER",
+                reporter_id=None,
+                assignee_id=None,
+                resource_type="organization",
+                resource_id=org_id,
+                is_incident=0,
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+
+            response = await async_client.patch(
+                f"/api/v1/issues/{issue_id}",
+                json={},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200 no-op, got {response.status_code}: "
+                f"{(await response.get_data()).decode()[:200]}"
+            )
+            data = json.loads(await response.get_data())
+            # Row is unchanged by an empty PATCH
+            assert data["status"] == "open"
+            assert data["priority"] == "medium"
+            assert data["title"] == "Untouched Issue"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
     async def test_patch_issue_close_sets_closed_at(
         self, mock_get_user, async_client, generate_token, app
     ):
