@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional, Tuple
 from uuid import uuid4
@@ -448,6 +448,10 @@ async def create_issue(body: CreateIssueRequest):
 
     issue_dto = from_pydal_row(issue, IssueDTO)
     issue_dto = _lowercase_issue_casing(issue_dto)
+    # Ensure village_id is included in response (may be missing from physical
+    # table on alembic-built DBs; getattr handles the missing-column case)
+    if issue_dto.village_id is None:
+        issue_dto = replace(issue_dto, village_id=getattr(issue, "village_id", None))
     return jsonify(asdict(issue_dto)), 201
 
 

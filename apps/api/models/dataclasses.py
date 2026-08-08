@@ -334,6 +334,7 @@ class IssueDTO:
     resolved_at: Optional[datetime] = None
     metadata: Optional[dict] = None
     parent_issue_id: Optional[int] = None
+    village_id: Optional[str] = None
 
 
 @dataclass(slots=True)
