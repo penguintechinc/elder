@@ -12,6 +12,7 @@ from apps.api.auth.decorators import admin_required, login_required, require_sco
 from apps.api.logging_config import log_error_and_respond
 from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.services.webhooks import WebhookService
+from apps.api.services.webhooks.service import _UNSET
 
 logger = logging.getLogger(__name__)
 
@@ -344,9 +345,9 @@ async def update_webhook(webhook_id):
             secret=data.get("secret"),
             headers=data.get("headers"),
             is_active=data.get("is_active"),
-            filter_issue_type=data.get("filter_issue_type"),
-            filter_assignee_type=data.get("filter_assignee_type"),
-            filter_assignee_id=data.get("filter_assignee_id"),
+            filter_issue_type=data.get("filter_issue_type", _UNSET),
+            filter_assignee_type=data.get("filter_assignee_type", _UNSET),
+            filter_assignee_id=data.get("filter_assignee_id", _UNSET),
             metadata=data.get("metadata"),
         )
 
