@@ -822,3 +822,139 @@ class TestStreams:
         assert "data" in body
         assert body["data"] == []
         assert body.get("total", 0) >= 0
+
+    @pytest.mark.asyncio
+    async def test_list_all_executions_total_access_filtered(self, app, client):
+        """GET /streams/executions: total must be access-filtered, not raw count.
+
+        regression: streams/executions total must be access-filtered
+        - Create PUBLIC stream with K executions (readable by caller)
+        - Create PRIVATE stream with M executions (not readable by caller)
+        - Assert total == K (NOT K+M) and len(data) == K
+        """
+        db = app.db
+        t = self.fixtures["tenant_id"]
+        reader_id = self.fixtures["identity_id"]  # Will only be able to read public
+        token = self._token(app, t, reader_id)
+        from apps.api.utils.async_utils import run_in_threadpool
+
+        def _create():
+            now = datetime.now(timezone.utc)
+
+            # Create a second identity (owner of private stream)
+            private_owner_id = db.identities.insert(
+                tenant_id=t,
+                username=f"private-owner-{uuid.uuid4().hex[:8]}@test.local",
+                email=f"private-owner-{uuid.uuid4().hex[:8]}@test.local",
+                identity_type="human",
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
+                portal_role="viewer",
+                full_name="Private Owner",
+                created_at=now,
+                updated_at=now,
+            )
+
+            # Create PUBLIC stream with 3 executions (readable by reader_id)
+            public_stream_id = db.stream_playbooks.insert(
+                tenant_id=t,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                name="Public Stream",
+                description="A public stream",
+                owner_identity_id=reader_id,
+                created_by_identity_id=reader_id,
+                trigger_type="manual",
+                is_public=True,
+                is_template=False,
+                is_enabled=False,
+                tags=[],
+                status="draft",
+                execution_count=0,
+                success_count=0,
+                failure_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            for j in range(3):
+                exec_uuid = str(uuid.uuid4())
+                db.stream_executions.insert(
+                    tenant_id=t,
+                    playbook_id=public_stream_id,
+                    execution_id=exec_uuid,
+                    status="completed",
+                    trigger_type="manual",
+                    triggered_by_identity_id=reader_id,
+                    input_json={"test": f"public-input-{j}"},
+                    output_json={"result": "success"},
+                    started_at=now - timedelta(hours=j),
+                    completed_at=now - timedelta(hours=j) + timedelta(seconds=30),
+                    duration_ms=30000,
+                    created_at=now - timedelta(hours=j),
+                    updated_at=now - timedelta(hours=j) + timedelta(seconds=30),
+                )
+
+            # Create PRIVATE stream with 2 executions (NOT readable by reader_id)
+            private_stream_id = db.stream_playbooks.insert(
+                tenant_id=t,
+                village_id=f"test-{uuid.uuid4().hex[:24]}",
+                name="Private Stream",
+                description="A private stream",
+                owner_identity_id=private_owner_id,
+                created_by_identity_id=private_owner_id,
+                trigger_type="manual",
+                is_public=False,
+                is_template=False,
+                is_enabled=False,
+                tags=[],
+                status="draft",
+                execution_count=0,
+                success_count=0,
+                failure_count=0,
+                created_at=now,
+                updated_at=now,
+            )
+            for j in range(2):
+                exec_uuid = str(uuid.uuid4())
+                db.stream_executions.insert(
+                    tenant_id=t,
+                    playbook_id=private_stream_id,
+                    execution_id=exec_uuid,
+                    status="completed",
+                    trigger_type="manual",
+                    triggered_by_identity_id=private_owner_id,
+                    input_json={"test": f"private-input-{j}"},
+                    output_json={"result": "success"},
+                    started_at=now - timedelta(hours=10 + j),
+                    completed_at=now - timedelta(hours=10 + j) + timedelta(seconds=30),
+                    duration_ms=30000,
+                    created_at=now - timedelta(hours=10 + j),
+                    updated_at=now - timedelta(hours=10 + j) + timedelta(seconds=30),
+                )
+
+            db.commit()
+
+        await run_in_threadpool(_create)
+
+        # List all executions as reader_id (can only read public)
+        response = await client.get(
+            "/api/v1/streams/executions",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        body = await response.get_json()
+        assert "data" in body
+        assert "total" in body
+
+        # Total must be 3 (public only), NOT 5 (public + private)
+        assert body["total"] == 3, f"Expected total=3, got {body['total']}"
+
+        # Data must be 3 executions
+        assert len(body["data"]) == 3, f"Expected 3 executions, got {len(body['data'])}"
+
+        # Verify all returned executions are from public stream
+        for exec_data in body["data"]:
+            assert exec_data["stream_name"] == "Public Stream"
