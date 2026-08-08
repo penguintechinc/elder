@@ -5,9 +5,10 @@
 
 import asyncio
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional, Tuple
+from uuid import uuid4
 
 from penguin_libs.pydantic import RequestModel
 from pydantic import Field
@@ -31,6 +32,7 @@ from apps.api.services.webhooks.assignment import (
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from shared.utils.village_id import generate_village_id
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
@@ -94,6 +96,18 @@ def _resolve_assignee_type(
     if resolved == "identity":
         return resolved, identity_in_tenant(db, assignee_id, tenant_id)
     return resolved, _org_unit_in_tenant(db, assignee_id, tenant_id)
+
+
+def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
+    """Mint a village_id via Redis, falling back to a random id in tests.
+
+    Mirrors the fallback used throughout the helpdesk routes (e.g.
+    `intake_forms.create_form`) for environments without a live Redis
+    connection, such as the unit test suite.
+    """
+    if redis_client:
+        return generate_village_id(tenant_id, redis_client)
+    return f"test-{uuid4().hex[:8]}"
 
 
 # ============================================================================
@@ -346,8 +360,9 @@ async def create_issue(body: CreateIssueRequest):
     else:
         assignee_type_resolved = None
 
-    # Capture current_user before thread pool (Flask g doesn't propagate to threads)
+    # Capture current_user and redis_client before thread pool (Flask g doesn't propagate to threads)
     current_user_id = g.current_user.id
+    redis_client = getattr(current_app, "redis_client", None)
 
     def create():
         # Create issue
@@ -369,6 +384,7 @@ async def create_issue(body: CreateIssueRequest):
             metadata=body.metadata,
             parent_issue_id=body.parent_issue_id,
             tenant_id=tenant_id,
+            village_id=_mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )
@@ -432,6 +448,10 @@ async def create_issue(body: CreateIssueRequest):
 
     issue_dto = from_pydal_row(issue, IssueDTO)
     issue_dto = _lowercase_issue_casing(issue_dto)
+    # Ensure village_id is included in response (may be missing from physical
+    # table on alembic-built DBs; getattr handles the missing-column case)
+    if issue_dto.village_id is None:
+        issue_dto = replace(issue_dto, village_id=getattr(issue, "village_id", None))
     return jsonify(asdict(issue_dto)), 201
 
 

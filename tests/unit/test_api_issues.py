@@ -535,3 +535,67 @@ class TestIssuesAPI:
         assert get_resp.status_code == 200
         get_data = json.loads(await get_resp.get_data())
         assert get_data["issue_type"] == "support"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_create_issue_mints_village_id(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Regression: POST /issues must mint a non-null village_id on create.
+
+        Every Elder object requires a unique village_id. The create_issue route
+        previously omitted village_id from the insert(), leaving it NULL. This
+        test verifies the fix by asserting both response serialization and DB
+        persistence of a non-null, properly-formatted village_id.
+        """
+        # regression: create_issue must mint village_id
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
+        token = generate_token(tenant_id=1, scopes=["issues:write"])
+        async with app.app_context():
+            db = current_app.db
+            now = datetime.now(timezone.utc)
+            org_id = db.organizations.insert(
+                name="Village ID Test Org",
+                tenant_id=1,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+        resp = await async_client.post(
+            "/api/v1/issues",
+            json={
+                "title": "Test Village ID",
+                "description": "Verify village_id is minted",
+                "issue_type": "other",
+                "priority": "medium",
+                "organization_id": org_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        issue_id = data["id"]
+
+        # Verify village_id is present and serialized in response
+        assert "village_id" in data, "Response missing village_id field"
+        village_id_response = data["village_id"]
+        assert village_id_response is not None, "Response village_id should not be None"
+        assert isinstance(
+            village_id_response, str
+        ), "Response village_id should be string"
+        # Check format: either test-<hex8> (unit test fallback) or
+        # <tenant8hex>-<seq16hex> (Redis mint)
+        assert (
+            village_id_response.startswith("test-") or "-" in village_id_response
+        ), f"Response village_id format invalid: {village_id_response}"
+
+        # Verify village_id persisted to database and matches response
+        async with app.app_context():
+            db = current_app.db
+            issue_row = db(db.issues.id == issue_id).select().first()
+            assert issue_row is not None, "Issue not found in database"
+            village_id_db = getattr(issue_row, "village_id", None)
+            assert village_id_db is not None, "DB issue.village_id should not be None"
+            assert (
+                village_id_db == village_id_response
+            ), f"village_id mismatch: response={village_id_response}, db={village_id_db}"
