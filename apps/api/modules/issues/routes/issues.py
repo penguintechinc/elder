@@ -617,11 +617,17 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.parent_issue_id is not None:
             update_fields["parent_issue_id"] = body.parent_issue_id
 
-        # Update issue (re-scoped to tenant for defense-in-depth)
-        db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).update(
-            **update_fields
-        )
-        db.commit()
+        # Update issue (re-scoped to tenant for defense-in-depth). Guard the
+        # empty-body case: penguin-dal's .update() with no kwargs emits an
+        # `UPDATE issues SET  WHERE ...` (no SET clause) that raises at the DB
+        # layer and surfaces as an unhandled 500. A PATCH that supplies no
+        # updatable fields is a valid no-op — skip the write and return the
+        # unchanged row (200).
+        if update_fields:
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id)).update(
+                **update_fields
+            )
+            db.commit()
 
         # Only a request that actually supplies a new assignee_id can change
         # assignment: assignee_id is never cleared by this endpoint (the
