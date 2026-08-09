@@ -41,10 +41,16 @@ async def send_issue_created_webhooks(
         )
         return []
 
-    # Get all webhook configurations for this organization
+    # Get all webhook configurations for this organization.
+    # NOTE: destination_type is a SQLAlchemy Enum(AlertDestinationType) column
+    # with no values_callable, so it persists the member NAME — the pg enum
+    # `alertdestinationtype` accepts EMAIL/WEBHOOK/PAGERDUTY/SLACK (upper), not
+    # the lowercase `.value`. Comparing to "webhook" raised
+    # InvalidTextRepresentation and silently killed this fire-and-forget task,
+    # so issue-created webhooks never dispatched. Match the stored name.
     webhook_configs = db(
         (db.alert_configurations.organization_id == organization_id)
-        & (db.alert_configurations.destination_type == "webhook")
+        & (db.alert_configurations.destination_type == "WEBHOOK")
         & (db.alert_configurations.enabled == 1)
     ).select()
 
