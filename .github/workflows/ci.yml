@@ -56,16 +56,13 @@ jobs:
     - name: Install linting tools
       run: |
         python -m pip install --upgrade pip
-        pip install black isort flake8 mypy
+        pip install ruff==0.8.4 mypy
 
-    - name: Black
-      run: black --check --diff apps/ shared/ --exclude=apps/api/grpc/generated
+    - name: ruff check
+      run: ruff check .
 
-    - name: isort
-      run: isort --check-only --diff apps/ shared/ --skip apps/api/grpc/generated
-
-    - name: flake8
-      run: flake8 apps/ shared/ --exclude=apps/api/grpc/generated,node_modules,__pycache__
+    - name: ruff format --check
+      run: ruff format --check .
 
     - name: mypy
       run: mypy apps/ shared/ --ignore-missing-imports --exclude apps/api/grpc/generated
