@@ -1,7 +1,7 @@
 # Elder - Entity Relationship Tracking Application Makefile
 
 .PHONY: help \
-        setup setup-env setup-python \
+        setup setup-env setup-python install-hooks verify-hooks \
         dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
         smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
@@ -45,8 +45,14 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-28s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ── Setup ──────────────────────────────────────────────────────────────────
-setup: setup-env setup-python ## Install all dependencies and initialize the project
+setup: setup-env setup-python install-hooks ## Install all dependencies and initialize the project
 	@echo "$(GREEN)Setup complete! Edit .env, then run 'make dev'$(RESET)"
+
+install-hooks: ## Install pre-commit framework + register pre-commit and pre-push hooks
+	@./scripts/install-pre-commit.sh
+
+verify-hooks: ## Report whether pre-commit/pre-push hooks are installed and non-empty
+	@./scripts/install-pre-commit.sh --verify
 
 setup-env: ## Create .env from template (no-op if already exists)
 	@if [ ! -f .env ]; then \
@@ -288,31 +294,29 @@ pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-tes
 	@echo "$(GREEN)All pre-commit checks passed$(RESET)"
 
 # ── Code Quality ───────────────────────────────────────────────────────────
-lint: ## Run all linters (flake8, black, isort, mypy, hadolint, shellcheck)
-	@echo "$(BLUE)[1/6] flake8 — Python style...$(RESET)"
-	@$(PYTHON) -m flake8 apps/ shared/ --max-line-length=120 --exclude=.git,__pycache__,venv,node_modules || true
-	@echo "$(BLUE)[2/6] black — Python formatting...$(RESET)"
-	@$(PYTHON) -m black --check apps/ shared/ tests/ --exclude '/(\.git|venv|__pycache__|node_modules)/' || true
-	@echo "$(BLUE)[3/6] isort — Python import ordering...$(RESET)"
-	@$(PYTHON) -m isort --check-only apps/ shared/ tests/ || true
-	@echo "$(BLUE)[4/6] mypy — Python type checking...$(RESET)"
+lint: ## Run all linters (ruff, mypy, hadolint, shellcheck, eslint)
+	@echo "$(BLUE)[1/5] ruff — Python lint...$(RESET)"
+	@$(PYTHON) -m ruff check . || true
+	@echo "$(BLUE)[2/5] ruff format --check — Python formatting...$(RESET)"
+	@$(PYTHON) -m ruff format --check . || true
+	@echo "$(BLUE)[3/5] mypy — Python type checking...$(RESET)"
 	@$(PYTHON) -m mypy apps/ shared/ --ignore-missing-imports || true
-	@echo "$(BLUE)[5/6] hadolint — Dockerfile linting...$(RESET)"
+	@echo "$(BLUE)[4/5] hadolint — Dockerfile linting...$(RESET)"
 	@find . -name "Dockerfile*" -not -path "*/.git/*" | xargs -I {} sh -c 'echo "  Checking {}..."; docker run --rm -i hadolint/hadolint:2.12.0 < {} || true'
-	@echo "$(BLUE)[6/6] shellcheck — Shell script linting...$(RESET)"
+	@echo "$(BLUE)[5/5] shellcheck — Shell script linting...$(RESET)"
 	@find . -name "*.sh" -not -path "*/.git/*" -not -path "*/node_modules/*" | xargs -I {} sh -c 'echo "  Checking {}..."; shellcheck {} || true'
 	@echo "$(BLUE)Running web linters...$(RESET)"
 	@cd web && npm run lint
 	@echo "$(GREEN)All linters passed$(RESET)"
 
-format: ## Auto-format Python code (black + isort)
-	@$(PYTHON) -m black apps/ shared/ tests/
-	@$(PYTHON) -m isort apps/ shared/ tests/
+format: ## Auto-format Python code (ruff)
+	@$(PYTHON) -m ruff check --fix .
+	@$(PYTHON) -m ruff format .
 	@echo "$(GREEN)Code formatted$(RESET)"
 
 format-check: ## Check Python formatting without modifying files
-	@$(PYTHON) -m black --check apps/ shared/ tests/
-	@$(PYTHON) -m isort --check apps/ shared/ tests/
+	@$(PYTHON) -m ruff check .
+	@$(PYTHON) -m ruff format --check .
 
 # ── Build ──────────────────────────────────────────────────────────────────
 build: docker-build ## Build all service containers

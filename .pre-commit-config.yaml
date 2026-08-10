@@ -1,0 +1,133 @@
+# PenguinTech standard git hooks for Elder.
+#
+# Install:  make install-hooks
+# Verify:   make verify-hooks
+# Run all:  pre-commit run --all-files
+#
+# Two stages, matching devops.md "Git Hooks (Mandatory)":
+#   pre-commit — fast checks only (<30s), blocks the commit
+#   pre-push   — heavier security scans, blocks the push
+#
+# Revs are pinned. Update deliberately via `pre-commit autoupdate` or Renovate,
+# never by floating to a branch.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+exclude: |
+  (?x)^(
+    apps/api/grpc/generated/.*|
+    web/node_modules/.*|
+    web/dist/.*|
+    web/coverage/.*
+  )$
+
+repos:
+  # ── Hygiene ────────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        # Helm templates are Go-templated YAML, not valid standalone YAML
+        # (e.g. a bare `{{-` at the start of a document line).
+        exclude: ^(k8s|infrastructure)/helm/.*/templates/.*\.ya?ml$
+      - id: check-json
+        # tsconfig.json is JSONC (allows comments) by TS convention.
+        exclude: ^web/tsconfig\.json$
+      - id: check-executables-have-shebangs
+      - id: detect-private-key
+
+  # ── Secrets (mandatory, every repo) ────────────────────────────────────────
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  # ── Shell (Bash must stay 3.2-compatible — see general.md) ─────────────────
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+
+  # ── Python — ruff ONLY, never alongside flake8/black/isort ─────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # ── Node/TS (web/) — local, via npx so it uses the pinned package.json vers.
+  # pass_filenames: false — pre-commit passes repo-relative paths (e.g.
+  # "web/src/App.tsx"), but eslint/prettier run with cwd=web/, so a passed
+  # path would resolve to "web/web/src/App.tsx" and never match. Run the
+  # same whole-directory command the Makefile/CI already use instead.
+  - repo: local
+    hooks:
+      - id: web-eslint
+        name: eslint (web)
+        entry: bash -c 'cd web && npx eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0'
+        language: system
+        files: ^web/.*\.(ts|tsx|js|jsx)$
+        exclude: ^web/(node_modules|dist|coverage)/.*$
+        pass_filenames: false
+
+      - id: web-prettier
+        name: prettier --check (web)
+        entry: bash -c 'cd web && npx prettier --check .'
+        language: system
+        files: ^web/.*\.(ts|tsx|js|jsx|json|css|md)$
+        exclude: ^web/(node_modules|dist|coverage)/.*$
+        pass_filenames: false
+
+  # ── Dockerfiles (apps/*/Dockerfile, web/Dockerfile, tests/Dockerfile) ───────
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.13.1-beta
+    hooks:
+      - id: hadolint-docker
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.4
+    hooks:
+      - id: actionlint
+        # .github/workflows/.ansible-lint is an ansible-lint config file, not
+        # a workflow — it doesn't belong in this directory (GitHub itself
+        # ignores dotfiles here), but excluded rather than moved since that's
+        # outside this change's scope.
+        exclude: ^\.github/workflows/\.ansible-lint$
+
+  # ── Security (pre-push — heavier, keeps commits fast) ──────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: [-q]
+        exclude: ^(tests/|apps/api/grpc/generated/)
+        stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: dockerfile-rootless
+        name: Dockerfile runs as non-root
+        entry: scripts/hooks/check-dockerfile-rootless.sh
+        language: script
+        files: (^|/)Dockerfile[^/]*$
+        stages: [pre-push]
+
+      - id: helm-config-scan
+        name: Trivy config scan (Helm/K8s)
+        entry: >-
+          bash -c 'docker run --rm -v "$PWD":/project aquasec/trivy:0.69.3
+          config /project/k8s/helm --exit-code 1 --severity HIGH,CRITICAL --quiet'
+        language: system
+        files: ^k8s/helm/.*\.ya?ml$
+        pass_filenames: false
+        stages: [pre-push]

@@ -71,6 +71,7 @@ eggs/
 .eggs/
 lib/
 !web/src/lib/
+!scripts/lib/
 lib64/
 parts/
 sdist/
