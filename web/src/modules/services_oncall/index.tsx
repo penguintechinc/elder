@@ -34,6 +34,7 @@ const routes: RouteObject[] = [
 const servicesOncallModule: FrontendModule = {
   id: 'services_oncall',
   name: 'Services & On-Call',
+  group: 'core',
   nav: navigation,
   routes,
 }

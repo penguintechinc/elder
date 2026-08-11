@@ -34,6 +34,7 @@ const routes: RouteObject[] = [
 const pagesModule: FrontendModule = {
   id: 'nav_pages',
   name: 'Pages',
+  group: 'kb',
   nav: navigation,
   routes,
 }

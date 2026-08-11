@@ -10,6 +10,8 @@ export interface FrontendModule {
   id: string
   /** Human-readable module name */
   name: string
+  /** Group bucket: core|crm|workflow|kb (matches backend) */
+  group: string
   /** Navigation categories to add to sidebar when module is enabled */
   nav: MenuCategory[]
   /** Optional admin navigation items to add to admin section when module is enabled */
@@ -37,6 +39,7 @@ export interface ModuleInfo {
   tenant_enabled: boolean
   effective: boolean
   nav_id: string
+  group?: string
   capabilities: ModuleCapabilities
 }
 
