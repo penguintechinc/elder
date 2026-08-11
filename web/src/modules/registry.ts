@@ -55,20 +55,35 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
 }
 
 /**
- * Get navigation categories for enabled modules.
+ * Get navigation categories for enabled modules, grouped by Core/CRM/Workflow/KB.
+ * Each group is preceded by a header category before its navigation items.
  * @param enabledModuleIds Set of module IDs that are enabled
- * @returns MenuCategory[] with only nav from enabled modules
+ * @returns MenuCategory[] with headers for each group followed by that group's nav items
  */
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
-  const navCategories: MenuCategory[] = []
+  const GROUP_ORDER: [string, string][] = [
+    ['core', 'Core'],
+    ['crm', 'CRM'],
+    ['workflow', 'Workflow'],
+    ['kb', 'Knowledge Base'],
+  ]
 
-  for (const module of MODULES) {
-    if (enabledModuleIds.has(module.id)) {
-      navCategories.push(...module.nav)
+  const out: MenuCategory[] = []
+
+  for (const [key, label] of GROUP_ORDER) {
+    const cats: MenuCategory[] = []
+    for (const module of MODULES) {
+      if (module.group === key && enabledModuleIds.has(module.id)) {
+        cats.push(...module.nav)
+      }
+    }
+    if (cats.length) {
+      out.push({ header: label, key: `group-${key}`, items: [] })
+      out.push(...cats)
     }
   }
 
-  return navCategories
+  return out
 }
 
 /**
