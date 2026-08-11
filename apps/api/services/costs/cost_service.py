@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
@@ -28,7 +28,7 @@ class CostService:
         self.db = db
 
     def _get_provider(
-        self, provider_name: str, config: Dict[str, Any]
+        self, provider_name: str, config: dict[str, Any]
     ) -> BaseCostProvider:
         """Get configured cost provider instance."""
         provider_cls = self.PROVIDER_MAP.get(provider_name)
@@ -38,7 +38,7 @@ class CostService:
 
     def get_resource_costs(
         self, resource_type: str, resource_id: int
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Get cost summary for a resource."""
         record = (
             self.db(
@@ -63,7 +63,7 @@ class CostService:
         return result
 
     def update_resource_costs(
-        self, resource_type: str, resource_id: int, cost_data: Dict[str, Any]
+        self, resource_type: str, resource_id: int, cost_data: dict[str, Any]
     ) -> int:
         """Create or update cost entry for a resource."""
         existing = (
@@ -75,7 +75,7 @@ class CostService:
             .first()
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_fields = {
             "cost_to_date": cost_data.get("cost_to_date"),
             "cost_ytd": cost_data.get("cost_ytd"),
@@ -108,7 +108,7 @@ class CostService:
 
         return self.db.resource_costs.insert(**update_fields)
 
-    def sync_costs_from_provider(self, job_id: int) -> Dict[str, Any]:
+    def sync_costs_from_provider(self, job_id: int) -> dict[str, Any]:
         """Run a cost sync job from a configured provider."""
         job = self.db.cost_sync_jobs[job_id]
         if not job:
@@ -119,7 +119,7 @@ class CostService:
 
         # Update job run time
         self.db(self.db.cost_sync_jobs.id == job_id).update(
-            last_run_at=datetime.now(timezone.utc)
+            last_run_at=datetime.now(UTC)
         )
 
         synced = 0
@@ -144,7 +144,7 @@ class CostService:
                     end_date,
                 )
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 for cost_entry in costs:
                     self.db.cost_history.insert(
                         resource_cost_id=resource.id,
@@ -165,7 +165,7 @@ class CostService:
                 if recs:
                     self.db(self.db.resource_costs.id == resource.id).update(
                         recommendations=recs,
-                        updated_at=datetime.now(timezone.utc),
+                        updated_at=datetime.now(UTC),
                     )
 
                 synced += 1
@@ -220,5 +220,5 @@ class CostService:
             cost_to_date=cost_to_date,
             cost_ytd=cost_ytd,
             cost_mtd=cost_mtd,
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )

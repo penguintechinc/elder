@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -17,9 +16,9 @@ async def send_issue_created_webhooks(
     issue_title: str,
     issue_type: str,
     is_incident: int,
-    organization_id: Optional[int],
+    organization_id: int | None,
     web_url_base: str = "http://localhost:3000",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Send webhook notifications for a newly created issue to all configured webhooks for the organization.
 

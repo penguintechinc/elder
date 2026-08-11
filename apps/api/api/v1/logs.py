@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 
 import structlog
@@ -44,7 +43,7 @@ def get_logs():
         return ApiResponse.error("Log file not found", 404)
 
     try:
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
             last_100 = lines[-100:] if len(lines) > 100 else lines
 
@@ -91,7 +90,7 @@ def search_logs():
         return ApiResponse.error("Log file not found", 404)
 
     try:
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             # Case-insensitive search
             matches = [line.rstrip() for line in f if query.lower() in line.lower()]
             last_100 = matches[-100:] if len(matches) > 100 else matches

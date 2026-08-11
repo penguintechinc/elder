@@ -1,7 +1,7 @@
 """Tests for tenant scoping on the `issues` table (issues foundation, tasks 1-2)."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -51,7 +51,7 @@ def _other_tenant_issue(db, title: str = "T2") -> int:
     ever touched.
     """
     other_tenant_id = _foreign_tenant(db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     issue_id = db.issues.insert(
         title=title,
         status="OPEN",
@@ -81,7 +81,7 @@ class TestIssuesTenantIsolation:
         async with app.app_context():
             db = current_app.db
             other_tenant_id = _foreign_tenant(db)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.issues.insert(
                 title="T1 issue",
                 status="OPEN",
@@ -127,7 +127,7 @@ class TestIssuesTenantIsolation:
         async with app.app_context():
             db = current_app.db
             other_tenant_id = _foreign_tenant(db)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_issue_id = db.issues.insert(
                 title="T2 only issue",
                 status="OPEN",
@@ -158,7 +158,7 @@ class TestIssuesTenantIsolation:
         async with app.app_context():
             db = current_app.db
             other_tenant_id = _foreign_tenant(db)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_issue_id = db.issues.insert(
                 title="T2 only issue",
                 status="OPEN",
@@ -190,7 +190,7 @@ class TestIssuesTenantIsolation:
         async with app.app_context():
             db = current_app.db
             other_tenant_id = _foreign_tenant(db)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_issue_id = db.issues.insert(
                 title="T2 only issue",
                 status="OPEN",
@@ -224,7 +224,7 @@ class TestIssuesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Tenant1 Org",
                 tenant_id=1,
@@ -255,7 +255,7 @@ class TestIssuesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             iid = db.issues.insert(
                 title="I",
                 status="OPEN",
@@ -422,7 +422,7 @@ def _foreign_tenant_org(db, name: str = "Foreign Org") -> int:
     than silently linking (and webhook-firing) across tenants.
     """
     other_tenant_id = _foreign_tenant(db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         name=name,
         tenant_id=other_tenant_id,
@@ -442,7 +442,7 @@ def _foreign_tenant_identity(db, username: str = "foreign_identity") -> int:
     tenant-1 issue to a tenant-2 identity.
     """
     other_tenant_id = _foreign_tenant(db)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     identity_id = db.identities.insert(
         identity_type="human",
         username=f"{username}_{uuid4().hex[:8]}",
@@ -500,7 +500,7 @@ class TestIssuesOrganizationAndAssigneeIdor:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Tenant1 Org",
                 tenant_id=1,
@@ -539,7 +539,7 @@ class TestIssuesOrganizationAndAssigneeIdor:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Tenant1 Org 2",
                 tenant_id=1,
@@ -578,7 +578,7 @@ class TestIssuesOrganizationAndAssigneeIdor:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Tenant1 Org 3",
                 tenant_id=1,

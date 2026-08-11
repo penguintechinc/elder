@@ -8,7 +8,7 @@ Requires API key authentication (VULTR_API_KEY env var or config['api_key']).
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
@@ -32,7 +32,7 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
     Set VULTR_API_KEY env var or config['api_key'].
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.provider_type = "vultr"
         self.api_key = config.get("api_key") or os.getenv("VULTR_API_KEY", "")
@@ -41,7 +41,7 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             "Content-Type": "application/json",
         }
 
-    def _get(self, path: str) -> Dict[str, Any]:
+    def _get(self, path: str) -> dict[str, Any]:
         """Make authenticated GET request to Vultr API."""
         if not _HTTPX_AVAILABLE:
             logger.warning("httpx not available — Vultr API calls disabled")
@@ -62,9 +62,9 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
     def validate_config(self) -> bool:
         return bool(self.api_key)
 
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """Discover Vultr instances (VPS/bare metal)."""
-        resources: List[Dict[str, Any]] = []
+        resources: list[dict[str, Any]] = []
         instances = self._get("/instances").get("instances", [])
         for inst in instances:
             resources.append(
@@ -97,9 +97,9 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             )
         return resources
 
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """Discover Vultr block storage volumes and object storage."""
-        resources: List[Dict[str, Any]] = []
+        resources: list[dict[str, Any]] = []
         blocks = self._get("/blocks").get("blocks", [])
         for blk in blocks:
             resources.append(
@@ -127,9 +127,9 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             )
         return resources
 
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """Discover Vultr VPCs and reserved IPs."""
-        resources: List[Dict[str, Any]] = []
+        resources: list[dict[str, Any]] = []
         vpcs = self._get("/vpcs").get("vpcs", [])
         for vpc in vpcs:
             resources.append(
@@ -156,9 +156,9 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             )
         return resources
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Discover Vultr managed databases."""
-        resources: List[Dict[str, Any]] = []
+        resources: list[dict[str, Any]] = []
         dbs = self._get("/databases").get("databases", [])
         for db in dbs:
             resources.append(
@@ -174,12 +174,12 @@ class VultrDiscoveryClient(BaseDiscoveryProvider):
             )
         return resources
 
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """Vultr does not offer serverless/FaaS — returns empty list."""
         return []
 
-    def discover_all(self) -> Dict[str, Any]:
-        start = datetime.now(timezone.utc)
+    def discover_all(self) -> dict[str, Any]:
+        start = datetime.now(UTC)
         compute = self.discover_compute()
         storage = self.discover_storage()
         network = self.discover_network()

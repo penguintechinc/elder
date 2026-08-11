@@ -7,7 +7,7 @@ covers the fix: a `tenant_id` column + tenant-scoped queries on every route.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -42,7 +42,7 @@ def _ensure_tenant_2_exists(app):
             async with app.app_context():
                 db = ctx_app.db
                 if not db(db.tenants.id == 2).select().first():
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     db.tenants.insert(
                         name="Tenant 2",
                         slug=f"tenant-2-{uuid4().hex[:8]}",
@@ -77,7 +77,7 @@ def _org_for_tenant(db, tenant_id: int, name: str = "Org") -> int:
     `projects.organization_id` is a NOT NULL FK, so every project fixture
     needs a real organization row to point at.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         name=f"{name} {uuid4().hex[:8]}",
         tenant_id=tenant_id,
@@ -112,7 +112,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             pid = db.projects.insert(
                 name="T2 proj",
@@ -138,7 +138,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=1)
             pid = db.projects.insert(
                 name="T1 proj",
@@ -166,7 +166,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org1_id = _org_for_tenant(db, tenant_id=1)
             org2_id = _org_for_tenant(db, tenant_id=2)
             db.projects.insert(
@@ -213,7 +213,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             pid = db.projects.insert(
                 name="T2 proj update",
@@ -248,7 +248,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             pid = db.projects.insert(
                 name="T2 proj delete",
@@ -278,7 +278,7 @@ class TestProjectsTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Tenant1 Org",
                 tenant_id=1,
@@ -329,7 +329,7 @@ class TestMilestonesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             mid = db.milestones.insert(
                 title="T2 milestone",
@@ -355,7 +355,7 @@ class TestMilestonesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=1)
             mid = db.milestones.insert(
                 title="T1 milestone",
@@ -383,7 +383,7 @@ class TestMilestonesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org1_id = _org_for_tenant(db, tenant_id=1)
             org2_id = _org_for_tenant(db, tenant_id=2)
             db.milestones.insert(
@@ -427,7 +427,7 @@ class TestMilestonesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             mid = db.milestones.insert(
                 title="T2 milestone update",
@@ -463,7 +463,7 @@ class TestMilestonesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             mid = db.milestones.insert(
                 title="T2 milestone delete",
@@ -524,7 +524,7 @@ class TestMilestoneIssuesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = _org_for_tenant(db, tenant_id=2)
             mid = db.milestones.insert(
                 title="T2 ms",
@@ -566,7 +566,7 @@ class TestMilestoneIssuesTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:read"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org1_id = _org_for_tenant(db, tenant_id=1)
             org2_id = _org_for_tenant(db, tenant_id=2)
 
@@ -651,7 +651,7 @@ class TestLinkIssueToProjectTenantIsolation:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org1_id = _org_for_tenant(db, tenant_id=1)
             org2_id = _org_for_tenant(db, tenant_id=2)
 

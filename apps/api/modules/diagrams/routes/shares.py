@@ -4,7 +4,7 @@
 
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -56,11 +56,14 @@ async def create_share(diagram_id):
 
     # Pre-check: diagram exists and caller can read it
     pre_diagram = await run_in_threadpool(
-        lambda: db(
-            (db.dg_diagrams.id == diagram_id) & (db.dg_diagrams.tenant_id == tenant_id)
+        lambda: (
+            db(
+                (db.dg_diagrams.id == diagram_id)
+                & (db.dg_diagrams.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
         )
-        .select()
-        .first()
     )
     if pre_diagram is None:
         return ApiResponse.not_found("Diagram")
@@ -71,7 +74,7 @@ async def create_share(diagram_id):
         return ApiResponse.not_found("Diagram")
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         is_public = data.get("is_public", False)
         share_token = None
         if is_public:
@@ -277,7 +280,7 @@ async def get_shared_diagram(share_token):
     user_agent = request.headers.get("User-Agent", "")
 
     def fetch():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Find the share by token
         share = (
@@ -318,7 +321,7 @@ async def get_shared_diagram(share_token):
 
     # Record analytics
     def record_analytics():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         db.dg_share_analytics.insert(
             tenant_id=diagram.tenant_id,

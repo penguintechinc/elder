@@ -8,7 +8,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def create_infisical_session(config: Dict[str, Any]) -> Tuple[requests.Session, str]:
+def create_infisical_session(config: dict[str, Any]) -> tuple[requests.Session, str]:
     """
     Create and configure an Infisical HTTP session.
 

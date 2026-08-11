@@ -6,6 +6,7 @@ import asyncio
 import smtplib
 import ssl
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Any
 
 import structlog
@@ -90,22 +91,22 @@ def _send_smtp_message(
 
         # Build message headers
         headers = f"""From: {from_addr}\r
-To: {', '.join(to_addrs)}\r
+To: {", ".join(to_addrs)}\r
 Subject: {subject}\r
 """
         if body_html:
-            headers += """MIME-Version: 1.0\r
+            headers += f"""MIME-Version: 1.0\r
 Content-Type: multipart/alternative; boundary="boundary"\r
 \r
 --boundary\r
 Content-Type: text/plain; charset="utf-8"\r
 \r
-{}\r
+{body_text}\r
 --boundary\r
 Content-Type: text/html; charset="utf-8"\r
 \r
-{}\r
---boundary--""".format(body_text, body_html)
+{body_html}\r
+--boundary--"""
         else:
             headers += f"""Content-Type: text/plain; charset="utf-8"\r
 \r
@@ -171,7 +172,7 @@ async def send_email(
         if email_account_id:
             account = db.hd_email_accounts[email_account_id]
         else:
-            rows = db((db.hd_email_accounts.is_active == True)).select(  # noqa: E712
+            rows = db(db.hd_email_accounts.is_active == True).select(  # noqa: E712
                 limitby=(0, 1)
             )
             account = rows[0] if rows else None
@@ -211,7 +212,7 @@ async def send_email(
                 to_addr=",".join(to_addrs),
                 subject=subject,
                 status="sent",
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db.commit()
 
@@ -240,7 +241,7 @@ async def send_email(
                 subject=subject,
                 status="failed",
                 error=str(e),
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db.commit()
 

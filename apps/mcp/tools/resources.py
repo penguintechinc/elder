@@ -9,7 +9,7 @@ from client import ElderClient
 
 async def list_organizations(
     client: ElderClient,
-    search: Optional[str] = None,
+    search: str | None = None,
     limit: int = 20,
 ) -> dict:
     """
@@ -53,8 +53,8 @@ async def get_organization(client: ElderClient, organization_id: int) -> dict:
 
 async def list_identities(
     client: ElderClient,
-    search: Optional[str] = None,
-    auth_provider: Optional[str] = None,
+    search: str | None = None,
+    auth_provider: str | None = None,
     limit: int = 20,
 ) -> dict:
     """
@@ -85,8 +85,8 @@ async def list_identities(
 
 async def search_services(
     client: ElderClient,
-    query: Optional[str] = None,
-    organization_id: Optional[int] = None,
+    query: str | None = None,
+    organization_id: int | None = None,
     limit: int = 20,
 ) -> dict:
     """

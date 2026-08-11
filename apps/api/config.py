@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 from datetime import timedelta
 from typing import Any, Dict
@@ -226,7 +225,7 @@ class TestingConfig(Config):
 
 
 # Configuration dictionary
-config_by_name: Dict[str, type] = {
+config_by_name: dict[str, type] = {
     "development": DevelopmentConfig,
     "production": ProductionConfig,
     "testing": TestingConfig,

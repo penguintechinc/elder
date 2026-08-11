@@ -25,7 +25,7 @@ class ForEachConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the for-each node."""
         return [
             {
@@ -37,7 +37,7 @@ class ForEachConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the for-each node."""
         return [
             {
@@ -57,7 +57,7 @@ class ForEachConditional(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate for-each node configuration."""
         errors = []
         field = config.get("field")
@@ -79,7 +79,7 @@ class ForEachConditional(BaseNode):
                 return None
         return value
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the for-each iteration."""
         if "array" not in inputs:
             raise ValueError("Required input 'array' is missing")

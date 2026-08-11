@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
@@ -11,7 +10,7 @@ class BaseScanner(ABC):
     """Abstract base class for all scanners."""
 
     @abstractmethod
-    async def scan(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def scan(self, config: dict[str, Any]) -> dict[str, Any]:
         """Execute the scan with the given configuration.
 
         Args:
@@ -21,7 +20,7 @@ class BaseScanner(ABC):
             Dictionary containing scan results
         """
 
-    def validate_config(self, config: Dict[str, Any], required_fields: list) -> None:
+    def validate_config(self, config: dict[str, Any], required_fields: list) -> None:
         """Validate that required fields are present in config.
 
         Args:

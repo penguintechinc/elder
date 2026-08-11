@@ -7,7 +7,7 @@ Coverage:
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -23,7 +23,7 @@ async def _setup_collab_db(app, test_database_url):
     db = app.db
 
     def setup():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create tenant
         tenant_id = db.tenants.insert(
@@ -240,7 +240,7 @@ async def test_ws_viewer_permission_cursor_allowed(
     db = app.db
 
     # Share diagram with viewer as viewer
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.dg_shares.insert(
         diagram_id=diagram_id,
         shared_with_identity_id=viewer_id,
@@ -333,7 +333,7 @@ def _token(app, identity_id: int, tenant_id: int) -> str:
 
     import jwt
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(identity_id),
         "iat": now,

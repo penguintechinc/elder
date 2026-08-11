@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import sys
-import pytest
 from datetime import datetime, timezone
 from email.message import EmailMessage
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Mock penguin_sal before importing worker modules
 sys.modules["penguin_sal"] = MagicMock()
 
 from apps.api.modules.helpdesk.worker.poll import (
-    parse_email,
-    ParsedEmail,
     ParsedAttachment,
+    ParsedEmail,
+    parse_email,
 )
 from apps.api.modules.helpdesk.worker.send import SmtpConfig
 
@@ -372,6 +373,7 @@ class TestEmailWorkerIntegration:
     def test_worker_groups_resolved(self):
         """Test that helpdesk worker groups are resolved."""
         import os
+
         from apps.worker.jobs.groups import resolve_worker_groups
 
         # Enable helpdesk module in env

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import base64
 from typing import Any, Dict, Optional
 
@@ -19,7 +18,7 @@ from apps.api.services.keys.base import BaseKeyProvider
 class AWSKMSClient(BaseKeyProvider):
     """AWS KMS implementation of key management provider."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize AWS KMS client.
 
@@ -38,10 +37,10 @@ class AWSKMSClient(BaseKeyProvider):
         self,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new KMS key.
 
@@ -114,7 +113,7 @@ class AWSKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"AWS KMS create key error: {str(e)}")
 
-    def get_key(self, key_id: str) -> Dict[str, Any]:
+    def get_key(self, key_id: str) -> dict[str, Any]:
         """
         Get key metadata.
 
@@ -157,8 +156,8 @@ class AWSKMSClient(BaseKeyProvider):
             raise Exception(f"AWS KMS get key error: {str(e)}")
 
     def list_keys(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all KMS keys.
 
@@ -201,7 +200,7 @@ class AWSKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"AWS KMS list keys error: {str(e)}")
 
-    def enable_key(self, key_id: str) -> Dict[str, Any]:
+    def enable_key(self, key_id: str) -> dict[str, Any]:
         """Enable a disabled key."""
         try:
             self.client.enable_key(KeyId=key_id)
@@ -214,7 +213,7 @@ class AWSKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"AWS KMS enable key error: {str(e)}")
 
-    def disable_key(self, key_id: str) -> Dict[str, Any]:
+    def disable_key(self, key_id: str) -> dict[str, Any]:
         """Disable a key."""
         try:
             self.client.disable_key(KeyId=key_id)
@@ -229,7 +228,7 @@ class AWSKMSClient(BaseKeyProvider):
 
     def schedule_key_deletion(
         self, key_id: str, pending_days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule key deletion.
 
@@ -261,7 +260,7 @@ class AWSKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"AWS KMS schedule key deletion error: {str(e)}")
 
-    def cancel_key_deletion(self, key_id: str) -> Dict[str, Any]:
+    def cancel_key_deletion(self, key_id: str) -> dict[str, Any]:
         """Cancel scheduled key deletion."""
         try:
             response = self.client.cancel_key_deletion(KeyId=key_id)
@@ -279,8 +278,8 @@ class AWSKMSClient(BaseKeyProvider):
             raise Exception(f"AWS KMS cancel key deletion error: {str(e)}")
 
     def encrypt(
-        self, key_id: str, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Encrypt data using KMS key.
 
@@ -313,8 +312,8 @@ class AWSKMSClient(BaseKeyProvider):
             raise Exception(f"AWS KMS encrypt error: {str(e)}")
 
     def decrypt(
-        self, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Decrypt data.
 
@@ -349,8 +348,8 @@ class AWSKMSClient(BaseKeyProvider):
         self,
         key_id: str,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a data encryption key.
 
@@ -392,7 +391,7 @@ class AWSKMSClient(BaseKeyProvider):
         key_id: str,
         message: str,
         signing_algorithm: str = "RSASSA_PSS_SHA_256",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Sign a message using an asymmetric KMS key.
 
@@ -424,7 +423,7 @@ class AWSKMSClient(BaseKeyProvider):
 
     def verify(
         self, key_id: str, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Verify a message signature.
 
@@ -457,7 +456,7 @@ class AWSKMSClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"AWS KMS verify error: {str(e)}")
 
-    def rotate_key(self, key_id: str) -> Dict[str, Any]:
+    def rotate_key(self, key_id: str) -> dict[str, Any]:
         """
         Enable automatic key rotation or rotate key immediately.
 

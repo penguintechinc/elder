@@ -25,7 +25,7 @@ class SwitchConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the switch node."""
         return [
             {
@@ -37,7 +37,7 @@ class SwitchConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the switch node."""
         return [
             {
@@ -67,7 +67,7 @@ class SwitchConditional(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate switch conditional configuration."""
         errors = []
 
@@ -110,14 +110,14 @@ class SwitchConditional(BaseNode):
                 return None
         return value
 
-    def _find_matching_output(self, field_value: Any, cases: List[Dict]) -> str:
+    def _find_matching_output(self, field_value: Any, cases: list[dict]) -> str:
         """Find the first matching case output for a field value."""
         for case in cases:
             if field_value == case.get("value"):
                 return case.get("output", "default")
         return "default"
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the switch conditional."""
         if "in" not in inputs:
             raise ValueError("Required input 'in' is missing")

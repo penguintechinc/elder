@@ -7,9 +7,9 @@ and validation support. These helpers reduce code duplication across API endpoin
 
 # flake8: noqa: E501
 
-
+from collections.abc import Callable
 from dataclasses import asdict
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from quart import current_app, jsonify, request
 
@@ -36,10 +36,10 @@ class CrudHelper:
     async def list_resources(
         table: Any,
         resource_type: str = "Resource",
-        base_query: Optional[Any] = None,
-        filter_fn: Optional[Callable[[Any], Any]] = None,
-        orderby: Optional[Any] = None,
-        transform_fn: Optional[Callable[[Any], Dict]] = None,
+        base_query: Any | None = None,
+        filter_fn: Callable[[Any], Any] | None = None,
+        orderby: Any | None = None,
+        transform_fn: Callable[[Any], dict] | None = None,
         default_per_page: int = 50,
         max_per_page: int = 1000,
     ) -> tuple[Any, int]:
@@ -123,11 +123,11 @@ class CrudHelper:
     async def create_resource(
         table: Any,
         resource_type: str = "Resource",
-        required_fields: Optional[List[str]] = None,
-        validate_fn: Optional[Callable[[Dict], Optional[tuple]]] = None,
-        pre_insert_fn: Optional[Callable[[Dict], Dict]] = None,
-        post_insert_fn: Optional[Callable[[int, Any], None]] = None,
-        transform_fn: Optional[Callable[[Any], Dict]] = None,
+        required_fields: list[str] | None = None,
+        validate_fn: Callable[[dict], tuple | None] | None = None,
+        pre_insert_fn: Callable[[dict], dict] | None = None,
+        post_insert_fn: Callable[[int, Any], None] | None = None,
+        transform_fn: Callable[[Any], dict] | None = None,
     ) -> tuple[Any, int]:
         """
         Generic create endpoint with validation.
@@ -207,8 +207,8 @@ class CrudHelper:
         table: Any,
         resource_id: int,
         resource_type: str = "Resource",
-        transform_fn: Optional[Callable[[Any], Dict]] = None,
-        include_related_fn: Optional[Callable[[Any], Dict]] = None,
+        transform_fn: Callable[[Any], dict] | None = None,
+        include_related_fn: Callable[[Any], dict] | None = None,
     ) -> tuple[Any, int]:
         """
         Generic get endpoint by ID.
@@ -255,11 +255,11 @@ class CrudHelper:
         table: Any,
         resource_id: int,
         resource_type: str = "Resource",
-        updateable_fields: Optional[List[str]] = None,
-        validate_fn: Optional[Callable[[Dict, Any], Optional[tuple]]] = None,
-        pre_update_fn: Optional[Callable[[Dict, Any], Dict]] = None,
-        post_update_fn: Optional[Callable[[int, Dict, Any], None]] = None,
-        transform_fn: Optional[Callable[[Any], Dict]] = None,
+        updateable_fields: list[str] | None = None,
+        validate_fn: Callable[[dict, Any], tuple | None] | None = None,
+        pre_update_fn: Callable[[dict, Any], dict] | None = None,
+        post_update_fn: Callable[[int, dict, Any], None] | None = None,
+        transform_fn: Callable[[Any], dict] | None = None,
     ) -> tuple[Any, int]:
         """
         Generic update endpoint by ID.
@@ -353,9 +353,9 @@ class CrudHelper:
         table: Any,
         resource_id: int,
         resource_type: str = "Resource",
-        validate_fn: Optional[Callable[[Any], Optional[tuple]]] = None,
-        pre_delete_fn: Optional[Callable[[Any], None]] = None,
-        post_delete_fn: Optional[Callable[[int], None]] = None,
+        validate_fn: Callable[[Any], tuple | None] | None = None,
+        pre_delete_fn: Callable[[Any], None] | None = None,
+        post_delete_fn: Callable[[int], None] | None = None,
     ) -> tuple[Any, int]:
         """
         Generic delete endpoint by ID.

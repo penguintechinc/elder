@@ -37,9 +37,7 @@ def upgrade():
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("slug", sa.String(255), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
-        sa.Column(
-            "fields", sa.JSON(), nullable=False, comment="Field spec array"
-        ),
+        sa.Column("fields", sa.JSON(), nullable=False, comment="Field spec array"),
         sa.Column(
             "issue_type",
             sa.String(30),
@@ -55,12 +53,8 @@ def upgrade():
             comment="Owning org for issues created from this form; falls back "
             "to the tenant's root org when null",
         ),
-        sa.Column(
-            "is_public", sa.Boolean(), nullable=False, server_default="0"
-        ),
-        sa.Column(
-            "captcha_required", sa.Boolean(), nullable=False, server_default="0"
-        ),
+        sa.Column("is_public", sa.Boolean(), nullable=False, server_default="0"),
+        sa.Column("captcha_required", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("metadata", sa.JSON(), nullable=True),
         sa.Column(
@@ -86,9 +80,7 @@ def upgrade():
         # model docstring and hd_ticket_forms in 018).
         sa.UniqueConstraint("slug", name="uq_intake_form_slug"),
     )
-    op.create_index(
-        "ix_hd_intake_forms_tenant_id", "hd_intake_forms", ["tenant_id"]
-    )
+    op.create_index("ix_hd_intake_forms_tenant_id", "hd_intake_forms", ["tenant_id"])
     op.create_index(
         "ix_hd_intake_forms_organization_id", "hd_intake_forms", ["organization_id"]
     )

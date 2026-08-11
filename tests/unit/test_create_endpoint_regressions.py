@@ -22,7 +22,7 @@ regress.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,7 +41,7 @@ def _get_or_create_tenant(db, slug: str, name: str) -> int:
 
 def _create_org(db, tenant_id: int, name: str) -> int:
     """Create an organization scoped to the given tenant, returning its id."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         name=name, tenant_id=tenant_id, created_at=now, updated_at=now
     )

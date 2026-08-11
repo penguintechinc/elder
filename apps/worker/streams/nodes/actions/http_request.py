@@ -49,7 +49,7 @@ class HttpRequestAction(BaseNode):
     category = "actions"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the HTTP request node."""
         return [
             {
@@ -85,7 +85,7 @@ class HttpRequestAction(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the HTTP request node."""
         return [
             {
@@ -114,9 +114,9 @@ class HttpRequestAction(BaseNode):
         self,
         url: str,
         method: str,
-        headers: Optional[Dict[str, str]],
-        params: Optional[Dict[str, str]],
-        body: Optional[Any],
+        headers: dict[str, str] | None,
+        params: dict[str, str] | None,
+        body: Any | None,
         timeout: float,
         retry_config: RetryConfig,
     ) -> httpx.Response:
@@ -210,7 +210,7 @@ class HttpRequestAction(BaseNode):
 
         return response.text
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute HTTP request."""
         start_time = time.perf_counter()
 
@@ -279,7 +279,7 @@ class HttpRequestAction(BaseNode):
                 },
             }
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             self.log_error(f"HTTP request timeout: {e}")
             raise
 

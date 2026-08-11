@@ -6,7 +6,7 @@ No network calls or real database required.
 """
 
 import json
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -44,9 +44,15 @@ class TestCrudHelperList:
     async def test_list_resources_basic(self, app, mock_table, mock_db):
         """Test basic list resources."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.PaginationParams") as mock_pagination_class, \
-                 patch("apps.api.utils.crud_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.PaginationParams"
+                ) as mock_pagination_class,
+                patch(
+                    "apps.api.utils.crud_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 # Setup mocks
                 mock_app.db = mock_db
                 mock_pagination = Mock()
@@ -83,9 +89,15 @@ class TestCrudHelperList:
     async def test_list_resources_with_filter(self, app, mock_table, mock_db):
         """Test list resources with custom filter."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.PaginationParams") as mock_pagination_class, \
-                 patch("apps.api.utils.crud_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.PaginationParams"
+                ) as mock_pagination_class,
+                patch(
+                    "apps.api.utils.crud_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_app.db = mock_db
                 mock_pagination = Mock()
                 mock_pagination.page = 1
@@ -117,10 +129,16 @@ class TestCrudHelperCreate:
     async def test_create_resource_success(self, app, mock_table, mock_db):
         """Test successful resource creation."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.request", new=Mock()) as mock_request, \
-                 patch("apps.api.utils.crud_helpers.run_in_threadpool") as mock_threadpool, \
-                 patch("apps.api.utils.crud_helpers.get_by_id") as mock_get_by_id:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.request", new=Mock()
+                ) as mock_request,
+                patch(
+                    "apps.api.utils.crud_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+                patch("apps.api.utils.crud_helpers.get_by_id") as mock_get_by_id,
+            ):
                 mock_app.db = mock_db
                 mock_request.get_json = AsyncMock(
                     return_value={"name": "Test", "type": "server"}
@@ -149,8 +167,12 @@ class TestCrudHelperCreate:
     async def test_create_resource_no_json(self, app, mock_table, mock_db):
         """Test create resource with no JSON body."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.request", new=Mock()) as mock_request:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.request", new=Mock()
+                ) as mock_request,
+            ):
                 mock_app.db = mock_db
                 mock_request.get_json = AsyncMock(return_value=None)
 
@@ -163,11 +185,17 @@ class TestCrudHelperCreate:
                 assert "JSON" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_create_resource_missing_required_field(self, app, mock_table, mock_db):
+    async def test_create_resource_missing_required_field(
+        self, app, mock_table, mock_db
+    ):
         """Test create resource with missing required field."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.request", new=Mock()) as mock_request:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.request", new=Mock()
+                ) as mock_request,
+            ):
                 mock_app.db = mock_db
                 mock_request.get_json = AsyncMock(return_value={"name": "Test"})
 
@@ -187,7 +215,9 @@ class TestCrudHelperGet:
     async def test_get_resource_success(self, app, mock_table):
         """Test successful get resource."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate:
+            with patch(
+                "apps.api.utils.crud_helpers.validate_resource_exists"
+            ) as mock_validate:
                 mock_record = Mock()
                 mock_record.as_dict = Mock(return_value={"id": 1, "name": "Test"})
                 mock_validate.return_value = (mock_record, None)
@@ -205,7 +235,9 @@ class TestCrudHelperGet:
     async def test_get_resource_not_found(self, app, mock_table):
         """Test get resource when not found."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate:
+            with patch(
+                "apps.api.utils.crud_helpers.validate_resource_exists"
+            ) as mock_validate:
                 from apps.api.utils.api_responses import ApiResponse
 
                 error_response = ApiResponse.not_found("Entity", 999)
@@ -225,10 +257,18 @@ class TestCrudHelperUpdate:
     async def test_update_resource_success(self, app, mock_table, mock_db):
         """Test successful resource update."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.request", new=Mock()) as mock_request, \
-                 patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate, \
-                 patch("apps.api.utils.crud_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.request", new=Mock()
+                ) as mock_request,
+                patch(
+                    "apps.api.utils.crud_helpers.validate_resource_exists"
+                ) as mock_validate,
+                patch(
+                    "apps.api.utils.crud_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_app.db = mock_db
                 mock_request.get_json = AsyncMock(return_value={"name": "Updated"})
 
@@ -253,9 +293,15 @@ class TestCrudHelperUpdate:
     async def test_update_resource_not_found(self, app, mock_table, mock_db):
         """Test update resource when not found."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.request", new=Mock()) as mock_request, \
-                 patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.request", new=Mock()
+                ) as mock_request,
+                patch(
+                    "apps.api.utils.crud_helpers.validate_resource_exists"
+                ) as mock_validate,
+            ):
                 mock_app.db = mock_db
                 mock_request.get_json = AsyncMock(return_value={"name": "Updated"})
 
@@ -278,9 +324,15 @@ class TestCrudHelperDelete:
     async def test_delete_resource_success(self, app, mock_table, mock_db):
         """Test successful resource deletion."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate, \
-                 patch("apps.api.utils.crud_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.validate_resource_exists"
+                ) as mock_validate,
+                patch(
+                    "apps.api.utils.crud_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_app.db = mock_db
 
                 mock_record = Mock()
@@ -299,8 +351,12 @@ class TestCrudHelperDelete:
     async def test_delete_resource_not_found(self, app, mock_table, mock_db):
         """Test delete resource when not found."""
         async with app.app_context():
-            with patch("apps.api.utils.crud_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.crud_helpers.validate_resource_exists") as mock_validate:
+            with (
+                patch("apps.api.utils.crud_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.crud_helpers.validate_resource_exists"
+                ) as mock_validate,
+            ):
                 mock_app.db = mock_db
                 from apps.api.utils.api_responses import ApiResponse
 

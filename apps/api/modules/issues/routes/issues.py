@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, Literal, Optional, Tuple
 from uuid import uuid4
 
@@ -56,7 +55,7 @@ def _lowercase_issue_casing(dto: IssueDTO) -> IssueDTO:
     return IssueDTO(**dto_dict)
 
 
-def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
+def _org_unit_in_tenant(db: Any, org_unit_id: int | None, tenant_id: int) -> bool:
     """Return True if org_unit_id is unset or belongs to tenant_id.
 
     Org-unit counterpart to identity_in_tenant: guards against cross-tenant
@@ -79,9 +78,9 @@ def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> 
 def _resolve_assignee_type(
     db: Any,
     tenant_id: int,
-    assignee_id: Optional[int],
-    assignee_type: Optional[str],
-) -> Tuple[Optional[str], bool]:
+    assignee_id: int | None,
+    assignee_type: str | None,
+) -> tuple[str | None, bool]:
     """Resolve the polymorphic assignee_type and validate assignee_id is in tenant.
 
     Returns (resolved_type, ok). resolved_type is None when assignee_id is
@@ -98,7 +97,7 @@ def _resolve_assignee_type(
     return resolved, _org_unit_in_tenant(db, assignee_id, tenant_id)
 
 
-def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
+def _mint_village_id(tenant_id: int, redis_client: Any | None) -> str:
     """Mint a village_id via Redis, falling back to a random id in tests.
 
     Mirrors the fallback used throughout the helpdesk routes (e.g.
@@ -120,30 +119,30 @@ class CreateIssueRequest(RequestModel):
 
     title: str = Field(..., min_length=1, max_length=255, description="Issue title")
     organization_id: int = Field(..., ge=1, description="Organization ID")
-    description: Optional[str] = Field(default=None, description="Issue description")
+    description: str | None = Field(default=None, description="Issue description")
     status: str = Field(default="open", description="Issue status")
     priority: str = Field(default="medium", description="Priority level")
     issue_type: str = Field(default="other", description="Issue type")
-    assignee_id: Optional[int] = Field(default=None, ge=1, description="Assignee ID")
-    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+    assignee_id: int | None = Field(default=None, ge=1, description="Assignee ID")
+    assignee_type: Literal["identity", "org_unit"] | None = Field(
         default=None,
         description="Disambiguates assignee_id: identities.id or organizations.id",
     )
     is_incident: int = Field(default=0, description="Is incident flag")
-    channel: Optional[str] = Field(
+    channel: str | None = Field(
         default=None,
         max_length=20,
         description="Support channel the issue was raised through (e.g. email, chat, phone)",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         max_length=100,
         description="Support category/topic (e.g. billing, technical)",
     )
-    metadata: Optional[Dict[str, Any]] = Field(
+    metadata: dict[str, Any] | None = Field(
         default=None, description="Universal free-form JSON metadata bag"
     )
-    parent_issue_id: Optional[int] = Field(
+    parent_issue_id: int | None = Field(
         default=None, ge=1, description="Parent issue id for sub-tasks"
     )
 
@@ -151,24 +150,24 @@ class CreateIssueRequest(RequestModel):
 class UpdateIssueRequest(RequestModel):
     """Request to update an existing issue."""
 
-    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    description: Optional[str] = Field(default=None)
-    status: Optional[str] = Field(default=None)
-    priority: Optional[str] = Field(default=None)
-    issue_type: Optional[str] = Field(default=None)
-    assignee_id: Optional[int] = Field(default=None, ge=1)
-    assignee_type: Optional[Literal["identity", "org_unit"]] = Field(
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = Field(default=None)
+    status: str | None = Field(default=None)
+    priority: str | None = Field(default=None)
+    issue_type: str | None = Field(default=None)
+    assignee_id: int | None = Field(default=None, ge=1)
+    assignee_type: Literal["identity", "org_unit"] | None = Field(
         default=None,
         description="Disambiguates assignee_id: identities.id or organizations.id",
     )
-    organization_id: Optional[int] = Field(default=None, ge=1)
-    is_incident: Optional[int] = Field(default=None)
-    channel: Optional[str] = Field(default=None, max_length=20)
-    category: Optional[str] = Field(default=None, max_length=100)
-    metadata: Optional[Dict[str, Any]] = Field(
+    organization_id: int | None = Field(default=None, ge=1)
+    is_incident: int | None = Field(default=None)
+    channel: str | None = Field(default=None, max_length=20)
+    category: str | None = Field(default=None, max_length=100)
+    metadata: dict[str, Any] | None = Field(
         default=None, description="Universal free-form JSON metadata bag"
     )
-    parent_issue_id: Optional[int] = Field(default=None, ge=1)
+    parent_issue_id: int | None = Field(default=None, ge=1)
 
 
 class CreateIssueCommentRequest(RequestModel):
@@ -182,7 +181,7 @@ class CreateIssueLabelRequest(RequestModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Label name")
     color: str = Field(..., description="Label color (hex)")
-    description: Optional[str] = Field(default=None, description="Label description")
+    description: str | None = Field(default=None, description="Label description")
 
 
 class AddIssueLabelRequest(RequestModel):
@@ -366,7 +365,7 @@ async def create_issue(body: CreateIssueRequest):
 
     def create():
         # Create issue
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         issue_id = db.issues.insert(
             title=body.title,
             description=body.description,
@@ -480,9 +479,11 @@ async def get_issue(id: int):
         return jsonify({"error": "Tenant not found"}), 403
 
     issue = await run_in_threadpool(
-        lambda: db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
-        .select()
-        .first()
+        lambda: (
+            db((db.issues.id == id) & (db.issues.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
     )
 
     if not issue:
@@ -595,7 +596,7 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             update_fields["status"] = body.status.upper()
             # Set closed_at if closing
             if body.status.upper() in ("CLOSED", "RESOLVED"):
-                update_fields["closed_at"] = datetime.now(timezone.utc)
+                update_fields["closed_at"] = datetime.now(UTC)
         if body.priority is not None:
             update_fields["priority"] = body.priority.upper()
         if body.issue_type is not None:
@@ -836,7 +837,7 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
             return None, "Issue not found", 404
 
         # Create comment
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         redis_client = current_app.redis_client
         village_id = generate_village_id(issue.tenant_id, redis_client)
         comment_id = db.issue_comments.insert(
@@ -981,7 +982,7 @@ async def create_issue_label(body: CreateIssueLabelRequest):
             return None, "Label already exists", 409
 
         # Create label
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         label_id = db.issue_labels.insert(
             name=body.name,
             color=body.color,

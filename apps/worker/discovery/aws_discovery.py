@@ -9,10 +9,9 @@ Supports multiple authentication methods:
 
 # flake8: noqa: E501
 
-
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
@@ -42,7 +41,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
     AUTH_WEB_IDENTITY = "web_identity"
     AUTH_ENVIRONMENT = "environment"
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize AWS discovery client.
 
@@ -85,7 +84,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         # Initialize boto3 session based on authentication method
         self.session = self._create_session(config)
 
-    def _create_session(self, config: Dict[str, Any]) -> "boto3.Session":
+    def _create_session(self, config: dict[str, Any]) -> "boto3.Session":
         """
         Create boto3 session using the appropriate authentication method.
 
@@ -153,11 +152,11 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         """
         # Read the web identity token
         try:
-            with open(token_file, "r") as f:
+            with open(token_file) as f:
                 web_identity_token = f.read().strip()
         except FileNotFoundError:
             raise ValueError(f"Web identity token file not found: {token_file}")
-        except IOError as e:
+        except OSError as e:
             raise ValueError(f"Failed to read web identity token: {e}")
 
         # Create a basic session to call STS
@@ -193,7 +192,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         """Return the authentication method being used."""
         return self.auth_method or "unknown"
 
-    def get_caller_identity(self) -> Optional[Dict[str, str]]:
+    def get_caller_identity(self) -> dict[str, str] | None:
         """
         Get the AWS identity of the current session.
 
@@ -221,7 +220,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         except (ClientError, BotoCoreError):
             return False
 
-    def get_supported_services(self) -> List[str]:
+    def get_supported_services(self) -> list[str]:
         """Get list of AWS services supported for discovery."""
         return [
             "ec2",  # EC2 instances
@@ -246,9 +245,9 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
             "route53",  # Route 53 hosted zones
         ]
 
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """Discover all AWS resources."""
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         results = {
             "compute": [],
@@ -301,10 +300,8 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         return {
             **results,
             "resources_count": resources_count,
-            "discovery_time": datetime.now(timezone.utc),
-            "duration_seconds": (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds(),
+            "discovery_time": datetime.now(UTC),
+            "duration_seconds": (datetime.now(UTC) - start_time).total_seconds(),
         }
 
     # EC2 keeps terminated instances visible to describe_instances for roughly
@@ -318,7 +315,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         "stopped",
     ]
 
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """Discover EC2 instances, excluding terminated ones."""
         resources = []
 
@@ -429,7 +426,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """Discover S3 buckets, EBS volumes, and Free Tier storage services."""
         resources = []
 
@@ -545,7 +542,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """Discover VPCs, subnets, load balancers, and Free Tier networking services."""
         resources = []
 
@@ -720,7 +717,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_security_groups(self) -> List[Dict[str, Any]]:
+    def discover_security_groups(self) -> list[dict[str, Any]]:
         """Discover security groups and their VPC associations."""
         resources = []
 
@@ -766,7 +763,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Discover RDS databases and DynamoDB tables."""
         resources = []
 
@@ -841,7 +838,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """Discover Lambda functions and Free Tier messaging services."""
         resources = []
 
@@ -936,7 +933,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_dynamodb(self) -> List[Dict[str, Any]]:
+    def discover_dynamodb(self) -> list[dict[str, Any]]:
         """Discover DynamoDB tables."""
         resources = []
 
@@ -1001,7 +998,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_sqs(self) -> List[Dict[str, Any]]:
+    def discover_sqs(self) -> list[dict[str, Any]]:
         """Discover SQS queues."""
         resources = []
 
@@ -1058,7 +1055,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_sns(self) -> List[Dict[str, Any]]:
+    def discover_sns(self) -> list[dict[str, Any]]:
         """Discover SNS topics."""
         resources = []
 
@@ -1110,7 +1107,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_ecr(self) -> List[Dict[str, Any]]:
+    def discover_ecr(self) -> list[dict[str, Any]]:
         """Discover ECR repositories."""
         resources = []
 
@@ -1149,7 +1146,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_logs(self) -> List[Dict[str, Any]]:
+    def discover_logs(self) -> list[dict[str, Any]]:
         """Discover CloudWatch log groups."""
         resources = []
 
@@ -1179,7 +1176,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_stepfunctions(self) -> List[Dict[str, Any]]:
+    def discover_stepfunctions(self) -> list[dict[str, Any]]:
         """Discover Step Functions state machines."""
         resources = []
 
@@ -1211,7 +1208,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_events(self) -> List[Dict[str, Any]]:
+    def discover_events(self) -> list[dict[str, Any]]:
         """Discover EventBridge rules."""
         resources = []
 
@@ -1246,7 +1243,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_apigateway(self) -> List[Dict[str, Any]]:
+    def discover_apigateway(self) -> list[dict[str, Any]]:
         """Discover API Gateway REST APIs."""
         resources = []
 
@@ -1281,7 +1278,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_efs(self) -> List[Dict[str, Any]]:
+    def discover_efs(self) -> list[dict[str, Any]]:
         """Discover EFS file systems."""
         resources = []
 
@@ -1320,7 +1317,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_elasticache(self) -> List[Dict[str, Any]]:
+    def discover_elasticache(self) -> list[dict[str, Any]]:
         """Discover ElastiCache clusters."""
         resources = []
 
@@ -1362,7 +1359,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_cloudfront(self) -> List[Dict[str, Any]]:
+    def discover_cloudfront(self) -> list[dict[str, Any]]:
         """Discover CloudFront distributions (global service)."""
         resources = []
 
@@ -1405,7 +1402,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_route53(self) -> List[Dict[str, Any]]:
+    def discover_route53(self) -> list[dict[str, Any]]:
         """Discover Route 53 hosted zones (global service)."""
         resources = []
 
@@ -1438,7 +1435,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_iam(self) -> List[Dict[str, Any]]:
+    def discover_iam(self) -> list[dict[str, Any]]:
         """
         Discover IAM users and roles.
 
@@ -1563,7 +1560,7 @@ class AWSDiscoveryClient(BaseDiscoveryProvider):
         return resources
 
     def _get_name_from_tags(
-        self, tags: List[Dict[str, str]], fallback: str = "Unnamed"
+        self, tags: list[dict[str, str]], fallback: str = "Unnamed"
     ) -> str:
         """
         Extract the Name tag from an AWS tags list.

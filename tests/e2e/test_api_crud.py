@@ -102,7 +102,11 @@ class TestEntityCRUD:
             f"{api_url}/api/v1/organizations",
             headers=auth_headers,
         )
-        org_id = orgs_response.json()["items"][0]["id"] if orgs_response.status_code == 200 and orgs_response.json().get("items") else None
+        org_id = (
+            orgs_response.json()["items"][0]["id"]
+            if orgs_response.status_code == 200 and orgs_response.json().get("items")
+            else None
+        )
 
         entity_data = {
             "name": "E2E Test Entity",
@@ -162,7 +166,15 @@ class TestEntityCRUD:
         entitytype enum with uppercase member names (e.g. 'NETWORK') while
         PyDAL queries passed lowercase ('network'), causing a 500.
         """
-        for entity_type in ["datacenter", "vpc", "subnet", "compute", "network", "user", "security_issue"]:
+        for entity_type in [
+            "datacenter",
+            "vpc",
+            "subnet",
+            "compute",
+            "network",
+            "user",
+            "security_issue",
+        ]:
             response = requests.get(
                 f"{api_url}/api/v1/entities",
                 headers=auth_headers,
@@ -184,7 +196,11 @@ class TestServiceCRUD:
             f"{api_url}/api/v1/organizations",
             headers=auth_headers,
         )
-        org_id = orgs_response.json()["items"][0]["id"] if orgs_response.status_code == 200 and orgs_response.json().get("items") else None
+        org_id = (
+            orgs_response.json()["items"][0]["id"]
+            if orgs_response.status_code == 200 and orgs_response.json().get("items")
+            else None
+        )
 
         service_data = {
             "name": "E2E Test Service",

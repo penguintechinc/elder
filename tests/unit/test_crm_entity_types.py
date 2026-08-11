@@ -7,7 +7,7 @@ location, etc.) live in the `identities.metadata` JSON bag added in Plan 02
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -22,7 +22,7 @@ class TestCrmEntityTypes:
     async def test_create_customer_contact_identity(self, app):
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             # penguin-dal's insert() does not apply SQLAlchemy Column
             # `default=` values (see other db.identities.insert() call
             # sites, e.g. tests/unit/test_api_diagram_collab.py) -- every
@@ -30,13 +30,19 @@ class TestCrmEntityTypes:
             # explicitly.
             unique_email = f"cust-{uuid4().hex[:8]}@example.com"
             iid = db.identities.insert(
-                username=unique_email, email=unique_email,
-                identity_type="customer_contact", tenant_id=1,
-                auth_provider="local", is_active=True, is_superuser=False,
-                mfa_enabled=False, must_change_password=False,
+                username=unique_email,
+                email=unique_email,
+                identity_type="customer_contact",
+                tenant_id=1,
+                auth_provider="local",
+                is_active=True,
+                is_superuser=False,
+                mfa_enabled=False,
+                must_change_password=False,
                 portal_role="observer",
                 metadata={"phone": "+1-555-0100"},
-                created_at=now, updated_at=now,
+                created_at=now,
+                updated_at=now,
             )
             db.commit()
             row = db.identities[iid]

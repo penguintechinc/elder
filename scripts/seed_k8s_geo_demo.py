@@ -44,7 +44,7 @@ Usage:
 import importlib.util
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -77,7 +77,7 @@ def _load_seed_cloud_discovery() -> Any:
 # Part A: Kubernetes cluster hierarchy
 # ---------------------------------------------------------------------------
 
-CLUSTERS: List[Dict[str, Any]] = [
+CLUSTERS: list[dict[str, Any]] = [
     {
         "name": "prod-use2-eks",
         "region": "us-east-2",
@@ -258,12 +258,12 @@ def _upsert_entity(
     name: str,
     entity_type: str,
     sub_type: str,
-    tags: Dict[str, Any],
-    metadata: Dict[str, Any],
-    parent_id: Optional[int] = None,
-    external_id: Optional[str] = None,
-    region: Optional[str] = None,
-    cloud_provider: Optional[str] = None,
+    tags: dict[str, Any],
+    metadata: dict[str, Any],
+    parent_id: int | None = None,
+    external_id: str | None = None,
+    region: str | None = None,
+    cloud_provider: str | None = None,
 ) -> int:
     """Create or update an ``entities`` row with ``tags``/``metadata`` merged
     (not replaced) on re-run, and an explicit ``parent_id``.
@@ -284,12 +284,12 @@ def _upsert_entity(
         .select()
         .first()
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if existing:
         merged_tags = {**(existing.tags or {}), **tags}
         merged_metadata = {**(existing.metadata or {}), **metadata}
-        update_data: Dict[str, Any] = {
+        update_data: dict[str, Any] = {
             "tags": merged_tags,
             "metadata": merged_metadata,
             "updated_at": now,
@@ -305,7 +305,7 @@ def _upsert_entity(
         db(db.entities.id == existing.id).update(**update_data)
         return int(existing.id)
 
-    insert_data: Dict[str, Any] = {
+    insert_data: dict[str, Any] = {
         "name": name,
         "type": entity_type,
         "sub_type": sub_type,
@@ -328,14 +328,14 @@ def _seed_cluster(
     db: Any,
     organization_id: int,
     tenant_id: int,
-    spec: Dict[str, Any],
-) -> Dict[str, int]:
+    spec: dict[str, Any],
+) -> dict[str, int]:
     """Seed one cluster's full hierarchy: cluster -> namespaces, nodes, pods,
     deployments, services — all parented (directly or via dependencies edges)
     to the cluster entity.
     """
     cluster_name = spec["name"]
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(UTC).isoformat()
     cloud_provider = spec["metadata"].get("cloud_provider")
 
     cluster_id = _upsert_entity(
@@ -354,7 +354,7 @@ def _seed_cluster(
     # Namespaces -> networking_resources, dual-linked to the cluster entity.
     # Same DiscoveryService helper _ensure_intermediate_networking uses for
     # AWS VPCs / K8s namespaces, so the shape matches production exactly.
-    namespace_net_ids: Dict[str, Optional[int]] = {}
+    namespace_net_ids: dict[str, int | None] = {}
     for ns_name in spec["namespaces"]:
         net_id = service._upsert_networking_resource(
             organization_id=organization_id,
@@ -370,8 +370,8 @@ def _seed_cluster(
         namespace_net_ids[ns_name] = net_id
 
     # Nodes -> entities, parent_id=cluster.
-    node_ids: List[int] = []
-    node_names: List[str] = []
+    node_ids: list[int] = []
+    node_names: list[str] = []
     for node_spec in spec["nodes"]:
         node_id = _upsert_entity(
             db,
@@ -510,7 +510,7 @@ def _seed_cluster(
 # Part B: geo-located entities (for the Map view)
 # ---------------------------------------------------------------------------
 
-GEO_LOCATIONS: List[Dict[str, Any]] = [
+GEO_LOCATIONS: list[dict[str, Any]] = [
     {
         "name": "Ashburn DC1",
         "sub_type": "data_center",
@@ -637,7 +637,7 @@ def _seed_geo_entities(db: Any, organization_id: int) -> int:
                     "latitude": loc["latitude"],
                     "longitude": loc["longitude"],
                 },
-                "discovered_at": datetime.now(timezone.utc).isoformat(),
+                "discovered_at": datetime.now(UTC).isoformat(),
             },
             external_id=f"geo:{loc['name']}",
         )
@@ -673,7 +673,7 @@ def seed_k8s_geo_demo() -> None:
         "namespaces": 0,
         "services": 0,
     }
-    cluster_ids: Dict[str, int] = {}
+    cluster_ids: dict[str, int] = {}
     for spec in CLUSTERS:
         counts = _seed_cluster(service, db, organization_id, tenant_id, spec)
         cluster_ids[spec["name"]] = counts["cluster_id"]

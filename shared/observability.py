@@ -229,7 +229,7 @@ def auto_instrument_app(app: Quart) -> None:
 
 
 def setup_structlog_otel_bridge(
-    logger_provider: Optional[Any] = None,
+    logger_provider: Any | None = None,
 ) -> None:
     """Bridge structlog → OTel logs.
 

@@ -6,7 +6,9 @@ Handlers receive a JobEnvelope and return a result dict.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from datetime import UTC
+from typing import Any, Optional
 
 import structlog
 
@@ -506,7 +508,7 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
             }
 
         # Update execution to "running"
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db(db.stream_executions.id == execution.id).update(
             status="running",
             started_at=now,
@@ -535,9 +537,9 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
             status="success" if result.success else "failed",
             output_json=result.to_dict(),
             error_message=result.error,
-            completed_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(UTC),
             duration_ms=int(result.execution_time_ms),
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         db.commit()
 
@@ -560,8 +562,8 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
                 started_at=node_result.started_at,
                 completed_at=node_result.completed_at,
                 duration_ms=int(node_result.execution_time_ms),
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
         db.commit()
 
@@ -604,7 +606,7 @@ HANDLER_REGISTRY: dict[str, JobHandler] = {
 }
 
 
-def get_handler(group: str) -> Optional[JobHandler]:
+def get_handler(group: str) -> JobHandler | None:
     """Get handler for a job group.
 
     Args:

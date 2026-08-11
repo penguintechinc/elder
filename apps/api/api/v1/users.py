@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
@@ -144,7 +143,7 @@ async def create_user():
             default_tenant = db(db.tenants.id > 0).select(limitby=(0, 1)).first()
             tenant_id = default_tenant.id if default_tenant else None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user_id = db.identities.insert(
             created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
         )

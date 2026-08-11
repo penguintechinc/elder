@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import hashlib
 import secrets
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -137,7 +136,7 @@ async def create_api_key():
 
     # Insert into database
     def create_key():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         key_id = db.api_keys.insert(created_at=now, updated_at=now, **insert_data)
         db.commit()
         return db.api_keys[key_id]

@@ -7,7 +7,6 @@ ensuring uniform error handling and success responses.
 
 # flake8: noqa: E501
 
-
 from typing import Any, Optional, Tuple
 
 from quart import jsonify
@@ -17,7 +16,7 @@ class ApiResponse:
     """Standardized API response helpers for consistent response formatting."""
 
     @staticmethod
-    def error(message: str, status_code: int = 400, **kwargs) -> Tuple[Any, int]:
+    def error(message: str, status_code: int = 400, **kwargs) -> tuple[Any, int]:
         """
         Generate a standard error response.
 
@@ -37,7 +36,7 @@ class ApiResponse:
         return jsonify(response_data), status_code
 
     @staticmethod
-    def validation_error(field: str, message: str = "is required") -> Tuple[Any, int]:
+    def validation_error(field: str, message: str = "is required") -> tuple[Any, int]:
         """
         Generate a validation error response.
 
@@ -55,8 +54,8 @@ class ApiResponse:
 
     @staticmethod
     def not_found(
-        resource_type: str = "Resource", resource_id: Optional[Any] = None
-    ) -> Tuple[Any, int]:
+        resource_type: str = "Resource", resource_id: Any | None = None
+    ) -> tuple[Any, int]:
         """
         Generate a not found error response.
 
@@ -77,7 +76,7 @@ class ApiResponse:
         return jsonify({"error": message}), 404
 
     @staticmethod
-    def forbidden(message: str = "Access denied") -> Tuple[Any, int]:
+    def forbidden(message: str = "Access denied") -> tuple[Any, int]:
         """
         Generate a forbidden access response.
 
@@ -93,7 +92,7 @@ class ApiResponse:
         return jsonify({"error": message}), 403
 
     @staticmethod
-    def unauthorized(message: str = "Authentication required") -> Tuple[Any, int]:
+    def unauthorized(message: str = "Authentication required") -> tuple[Any, int]:
         """
         Generate an unauthorized response.
 
@@ -109,7 +108,7 @@ class ApiResponse:
         return jsonify({"error": message}), 401
 
     @staticmethod
-    def success(data: Any, status_code: int = 200) -> Tuple[Any, int]:
+    def success(data: Any, status_code: int = 200) -> tuple[Any, int]:
         """
         Generate a success response.
 
@@ -126,7 +125,7 @@ class ApiResponse:
         return jsonify(data), status_code
 
     @staticmethod
-    def created(data: Any) -> Tuple[Any, int]:
+    def created(data: Any) -> tuple[Any, int]:
         """
         Generate a resource created response.
 
@@ -142,7 +141,7 @@ class ApiResponse:
         return jsonify(data), 201
 
     @staticmethod
-    def no_content() -> Tuple[str, int]:
+    def no_content() -> tuple[str, int]:
         """
         Generate a no content response (typically for successful deletes).
 
@@ -155,7 +154,7 @@ class ApiResponse:
         return "", 204
 
     @staticmethod
-    def bad_request(message: str = "Bad request") -> Tuple[Any, int]:
+    def bad_request(message: str = "Bad request") -> tuple[Any, int]:
         """
         Generate a bad request response.
 
@@ -171,7 +170,7 @@ class ApiResponse:
         return jsonify({"error": message}), 400
 
     @staticmethod
-    def conflict(message: str) -> Tuple[Any, int]:
+    def conflict(message: str) -> tuple[Any, int]:
         """
         Generate a conflict response (e.g., duplicate entry).
 
@@ -187,7 +186,7 @@ class ApiResponse:
         return jsonify({"error": message}), 409
 
     @staticmethod
-    def internal_error(message: str = "Internal server error") -> Tuple[Any, int]:
+    def internal_error(message: str = "Internal server error") -> tuple[Any, int]:
         """
         Generate an internal server error response.
 

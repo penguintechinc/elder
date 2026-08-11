@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 

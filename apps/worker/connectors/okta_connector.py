@@ -10,7 +10,6 @@ Requires Enterprise license.
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List, Optional
 
@@ -38,10 +37,10 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
     def __init__(self):
         """Initialize Okta connector."""
         super().__init__("okta")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.base_url: Optional[str] = None
-        self.headers: Dict[str, str] = {}
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self.elder_client: ElderAPIClient | None = None
+        self.base_url: str | None = None
+        self.headers: dict[str, str] = {}
+        self._http_client: httpx.AsyncClient | None = None
 
     async def connect(self) -> None:
         """Establish connection to Okta API and Elder API."""
@@ -202,7 +201,7 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
 
         self.logger.info("Okta groups synced", count=len(groups))
 
-    async def _paginate(self, endpoint: str) -> List[Dict[str, Any]]:
+    async def _paginate(self, endpoint: str) -> list[dict[str, Any]]:
         """
         Handle Okta pagination using Link headers.
 
@@ -231,7 +230,7 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
 
         return results
 
-    def _get_next_link(self, link_header: Optional[str]) -> Optional[str]:
+    def _get_next_link(self, link_header: str | None) -> str | None:
         """
         Parse Link header to get next page URL.
 
@@ -420,7 +419,7 @@ class OktaConnector(BaseConnector, GroupOperationsMixin):
                 error=str(e),
             )
 
-    async def get_group_members(self, group_id: str) -> List[str]:
+    async def get_group_members(self, group_id: str) -> list[str]:
         """
         Get current members of an Okta group.
 

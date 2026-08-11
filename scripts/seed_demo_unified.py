@@ -14,7 +14,7 @@ import json
 import os
 import secrets
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -45,7 +45,7 @@ def _resolve_or_create_demo_tenant(db: Any) -> int:
     if existing:
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tenant_id = db.tenants.insert(
         name=DEMO_TENANT_NAME,
         slug=DEMO_TENANT_SLUG,
@@ -71,7 +71,7 @@ def _resolve_or_create_demo_org(db: Any, tenant_id: int) -> int:
     if existing:
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         tenant_id=tenant_id,
         name=DEMO_ORG_NAME,
@@ -91,7 +91,7 @@ def _resolve_or_create_demo_admin(db: Any, tenant_id: int) -> int:
     if existing:
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pwd_hash = generate_password_hash(DEMO_ADMIN_PASSWORD)
 
     admin_id = db.identities.insert(
@@ -114,7 +114,7 @@ def _resolve_or_create_demo_admin(db: Any, tenant_id: int) -> int:
     return int(admin_id)
 
 
-def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
+def _mint_village_id(tenant_id: int, redis_client: Any | None) -> str:
     """Mint a village_id via Redis, falling back to a random id in tests."""
     if redis_client:
         return generate_village_id(tenant_id, redis_client)
@@ -126,7 +126,7 @@ def seed_org_units(db: Any, tenant_id: int) -> dict[str, int]:
 
     Returns a dict mapping org names to their IDs for later reference.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     created_orgs = {}
 
     # Create 2 customer companies
@@ -190,13 +190,13 @@ def seed_org_units(db: Any, tenant_id: int) -> dict[str, int]:
 
 
 def seed_customer_contacts(
-    db: Any, tenant_id: int, redis_client: Optional[Any]
+    db: Any, tenant_id: int, redis_client: Any | None
 ) -> dict[str, int]:
     """Seed customer contact identities (external CRM contacts).
 
     Returns a dict mapping email to identity IDs.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     created_contacts = {}
 
     for email, company in [
@@ -259,7 +259,7 @@ def seed_customer_contacts(
     return created_contacts
 
 
-def seed_support_bot(db: Any, tenant_id: int, redis_client: Optional[Any]) -> int:
+def seed_support_bot(db: Any, tenant_id: int, redis_client: Any | None) -> int:
     """Seed a support-bot service account for issue assignments."""
     bot_username = "support-bot"
     existing = (
@@ -274,7 +274,7 @@ def seed_support_bot(db: Any, tenant_id: int, redis_client: Optional[Any]) -> in
         print(f"  {bot_username}: {existing.id} (existing)")
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     bot_id = db.identities.insert(
         username=bot_username,
         email="support-bot@elderrms.app",
@@ -298,14 +298,14 @@ def seed_support_bot(db: Any, tenant_id: int, redis_client: Optional[Any]) -> in
 def seed_support_issues(
     db: Any,
     tenant_id: int,
-    redis_client: Optional[Any],
+    redis_client: Any | None,
     admin_id: int,
     bot_id: int,
     customer_contacts: dict[str, int],
     org_units: dict[str, int],
 ) -> list[int]:
     """Seed support and non-support issues."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     created_issue_ids = []
 
     issues = [
@@ -464,13 +464,13 @@ def seed_support_issues(
 def seed_issue_comments(
     db: Any,
     tenant_id: int,
-    redis_client: Optional[Any],
+    redis_client: Any | None,
     admin_id: int,
     customer_contacts: dict[str, int],
     first_issue_id: int,
 ) -> None:
     """Seed issue comments with email metadata for one issue."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Find or create comments on the first issue
     existing_count = db(db.issue_comments.issue_id == first_issue_id).count()
@@ -534,7 +534,7 @@ def seed_issue_comments(
 
 def seed_intake_forms(db: Any, tenant_id: int) -> None:
     """Seed public and private intake forms."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     forms = [
         {
@@ -580,7 +580,7 @@ def seed_intake_forms(db: Any, tenant_id: int) -> None:
     )
 
     for form_data in forms:
-        existing = db((db.hd_intake_forms.slug == form_data["slug"])).select().first()
+        existing = db(db.hd_intake_forms.slug == form_data["slug"]).select().first()
         if existing:
             print(f"  {form_data['name']}: {existing.id} (existing)")
             continue
@@ -605,14 +605,14 @@ def seed_intake_forms(db: Any, tenant_id: int) -> None:
 def seed_streams(
     db: Any,
     tenant_id: int,
-    redis_client: Optional[Any],
+    redis_client: Any | None,
     admin_id: int,
 ) -> list[int]:
     """Seed demo stream playbooks and executions for the tenant.
 
     Returns a list of stream playbook IDs created.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     created_stream_ids = []
 
     streams = [
@@ -708,12 +708,12 @@ def seed_streams(
 def seed_webhooks(
     db: Any,
     tenant_id: int,
-    redis_client: Optional[Any],
+    redis_client: Any | None,
     bot_id: int,
     org_units: dict[str, int],
 ) -> None:
     """Seed webhook configurations for issue.assigned events."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     webhooks = [
         {

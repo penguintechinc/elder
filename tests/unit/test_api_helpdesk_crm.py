@@ -6,11 +6,12 @@ Module enablement via ELDER_MODULE_HELPDESK=true in conftest.
 """
 
 import json
+from datetime import UTC, datetime, timezone
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
-from uuid import uuid4
 from quart import current_app
 
 
@@ -146,7 +147,7 @@ class TestHelpDeskCompaniesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Insert test company
             company_id = db.hd_companies.insert(
@@ -209,7 +210,7 @@ class TestHelpDeskCompaniesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             company_id = db.hd_companies.insert(
                 tenant_id=1,
@@ -254,7 +255,7 @@ class TestHelpDeskCompaniesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             company_id = db.hd_companies.insert(
                 tenant_id=1,
@@ -293,7 +294,7 @@ class TestHelpDeskCompaniesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Insert multiple companies
             db.hd_companies.insert(
@@ -337,7 +338,7 @@ class TestHelpDeskCompaniesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Clean up to ensure empty start
             db(db.hd_companies.tenant_id == 1).delete()
@@ -401,7 +402,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create test company
             company_id = db.hd_companies.insert(
@@ -484,7 +485,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             contact_id = db.hd_contacts.insert(
                 tenant_id=1,
@@ -524,7 +525,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             contact_id = db.hd_contacts.insert(
                 tenant_id=1,
@@ -569,7 +570,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             contact_id = db.hd_contacts.insert(
                 tenant_id=1,
@@ -608,7 +609,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             db.hd_contacts.insert(
                 tenant_id=1,
@@ -651,7 +652,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Clean up to ensure empty start
             db(db.hd_contacts.tenant_id == 1).delete()
@@ -682,7 +683,7 @@ class TestHelpDeskContactsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create company
             company_id = db.hd_companies.insert(

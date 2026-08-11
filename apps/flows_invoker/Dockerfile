@@ -25,9 +25,11 @@ WORKDIR /app
 # Install runtime dependencies and create user.
 # git: required to clone/merge/push user repos ahead of sandboxed stage execution.
 # ca-certificates: required for TLS-verified git-over-https and outbound calls.
+# Versions pinned to the candidates resolved from the base image digest above;
+# bump alongside a base image digest update.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    ca-certificates \
+    git=1:2.39.5-0+deb12u3 \
+    ca-certificates=20250419~deb12u1 \
     && rm -rf /var/lib/apt/lists/* && \
     useradd -m -u 1000 appuser
 
@@ -44,10 +46,8 @@ COPY shared /app/shared
 # Writable sandbox workspace — git clones + stage execution happen here.
 # readOnlyRootFilesystem is enforced in K8s; this is backed by an emptyDir
 # volume mounted at runtime (see k8s manifests).
-RUN mkdir -p /workspace
-
-# Fix permissions for non-root user
-RUN chown -R appuser:appuser /app /workspace
+# Fix permissions for non-root user in the same layer.
+RUN mkdir -p /workspace && chown -R appuser:appuser /app /workspace
 
 # Set Python path and include site-packages
 ENV PATH=/app/.local/bin:$PATH
@@ -59,11 +59,11 @@ ENV FLOWS_WORKSPACE_ROOT=/workspace
 VOLUME ["/workspace"]
 
 # Switch to non-root user
-USER appuser
+USER 1000
 
 # Health check (native Python, no HTTP server in this service)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python3 apps/flows_invoker/healthcheck.py || exit 1
+    CMD ["python3", "apps/flows_invoker/healthcheck.py"]
 
 # Run the flows invoker service (Redis Streams consumer)
 CMD ["python3", "-m", "apps.flows_invoker.main"]

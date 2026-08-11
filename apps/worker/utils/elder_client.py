@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -20,12 +19,12 @@ class Organization:
     """Organization data model."""
 
     name: str
-    description: Optional[str] = None
-    parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
+    description: str | None = None
+    parent_id: int | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
 
 
 @dataclass
@@ -35,14 +34,14 @@ class Entity:
     name: str
     entity_type: str
     organization_id: int
-    description: Optional[str] = None
-    sub_type: Optional[str] = None  # v1.2.1: Entity sub-type
-    parent_id: Optional[int] = None
-    owner_identity_id: Optional[int] = None
-    external_id: Optional[str] = None
-    attributes: Optional[Dict[str, Any]] = None
-    status_metadata: Optional[Dict[str, Any]] = None  # v1.2.1: Status tracking
-    tags: Optional[List[str]] = None
+    description: str | None = None
+    sub_type: str | None = None  # v1.2.1: Entity sub-type
+    parent_id: int | None = None
+    owner_identity_id: int | None = None
+    external_id: str | None = None
+    attributes: dict[str, Any] | None = None
+    status_metadata: dict[str, Any] | None = None  # v1.2.1: Status tracking
+    tags: list[str] | None = None
     is_active: bool = True
 
 
@@ -53,11 +52,11 @@ class Identity:
     username: str
     identity_type: str
     auth_provider: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    auth_provider_id: Optional[str] = None
+    email: str | None = None
+    full_name: str | None = None
+    auth_provider_id: str | None = None
     is_active: bool = True
-    tenant_id: Optional[int] = None
+    tenant_id: int | None = None
 
 
 @dataclass
@@ -67,8 +66,8 @@ class Dependency:
     source_entity_id: int
     target_entity_id: int
     dependency_type: str  # uses, requires, contains, connects_to, etc.
-    description: Optional[str] = None
-    attributes: Optional[Dict[str, Any]] = None
+    description: str | None = None
+    attributes: dict[str, Any] | None = None
     is_active: bool = True
 
 
@@ -77,8 +76,8 @@ class ElderAPIClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        api_key: Optional[str] = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
     ):
         """
         Initialize Elder API client.
@@ -89,7 +88,7 @@ class ElderAPIClient:
         """
         self.base_url = (base_url or settings.elder_api_url).rstrip("/")
         self.api_key = api_key or settings.elder_api_key
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -129,7 +128,7 @@ class ElderAPIClient:
         method: str,
         endpoint: str,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Make HTTP request to Elder API with retry logic.
 
@@ -166,8 +165,8 @@ class ElderAPIClient:
         self,
         page: int = 1,
         per_page: int = 100,
-        parent_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        parent_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         List organizations with pagination.
 
@@ -185,7 +184,7 @@ class ElderAPIClient:
 
         return await self._request("GET", "/organizations", params=params)
 
-    async def get_organization(self, org_id: int) -> Dict[str, Any]:
+    async def get_organization(self, org_id: int) -> dict[str, Any]:
         """
         Get organization by ID.
 
@@ -197,7 +196,7 @@ class ElderAPIClient:
         """
         return await self._request("GET", f"/organizations/{org_id}")
 
-    async def create_organization(self, org: Organization) -> Dict[str, Any]:
+    async def create_organization(self, org: Organization) -> dict[str, Any]:
         """
         Create a new organization.
 
@@ -226,7 +225,7 @@ class ElderAPIClient:
         self,
         org_id: int,
         org: Organization,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Update an existing organization.
 
@@ -257,10 +256,10 @@ class ElderAPIClient:
         self,
         page: int = 1,
         per_page: int = 100,
-        organization_id: Optional[int] = None,
-        entity_type: Optional[str] = None,
-        external_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        organization_id: int | None = None,
+        entity_type: str | None = None,
+        external_id: str | None = None,
+    ) -> dict[str, Any]:
         """
         List entities with pagination.
 
@@ -287,8 +286,8 @@ class ElderAPIClient:
     async def get_entity_by_external_id(
         self,
         external_id: str,
-        organization_id: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
+        organization_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """
         Look up a single entity by external_id.
 
@@ -302,7 +301,7 @@ class ElderAPIClient:
         items = result.get("items", [])
         return items[0] if items else None
 
-    async def get_entity(self, entity_id: int) -> Dict[str, Any]:
+    async def get_entity(self, entity_id: int) -> dict[str, Any]:
         """
         Get entity by ID.
 
@@ -314,7 +313,7 @@ class ElderAPIClient:
         """
         return await self._request("GET", f"/entities/{entity_id}")
 
-    async def create_entity(self, entity: Entity) -> Dict[str, Any]:
+    async def create_entity(self, entity: Entity) -> dict[str, Any]:
         """
         Create a new entity.
 
@@ -352,7 +351,7 @@ class ElderAPIClient:
         self,
         entity_id: int,
         entity: Entity,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Update an existing entity.
 
@@ -397,9 +396,9 @@ class ElderAPIClient:
         self,
         page: int = 1,
         per_page: int = 100,
-        source_entity_id: Optional[int] = None,
-        target_entity_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        source_entity_id: int | None = None,
+        target_entity_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         List dependencies with pagination.
 
@@ -420,7 +419,7 @@ class ElderAPIClient:
 
         return await self._request("GET", "/dependencies", params=params)
 
-    async def create_dependency(self, dep: Dependency) -> Dict[str, Any]:
+    async def create_dependency(self, dep: Dependency) -> dict[str, Any]:
         """
         Create a new dependency/relationship.
 
@@ -454,9 +453,9 @@ class ElderAPIClient:
         source_entity_id: int,
         target_entity_id: int,
         dependency_type: str,
-        description: Optional[str] = None,
-        attributes: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        description: str | None = None,
+        attributes: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Get existing dependency or create new one.
 
@@ -497,18 +496,18 @@ class ElderAPIClient:
         self,
         page: int = 1,
         per_page: int = 100,
-        auth_provider: Optional[str] = None,
-        auth_provider_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        auth_provider: str | None = None,
+        auth_provider_id: str | None = None,
+    ) -> dict[str, Any]:
         """List identities with optional auth_provider / auth_provider_id filters."""
-        params: Dict[str, Any] = {"page": page, "per_page": per_page}
+        params: dict[str, Any] = {"page": page, "per_page": per_page}
         if auth_provider:
             params["auth_provider"] = auth_provider
         if auth_provider_id:
             params["auth_provider_id"] = auth_provider_id
         return await self._request("GET", "/identities", params=params)
 
-    async def create_identity(self, identity: Identity) -> Dict[str, Any]:
+    async def create_identity(self, identity: Identity) -> dict[str, Any]:
         """Create a new identity."""
         data = {
             "username": identity.username,
@@ -523,7 +522,7 @@ class ElderAPIClient:
         data = {k: v for k, v in data.items() if v is not None}
         return await self._request("POST", "/identities", json=data)
 
-    async def get_or_create_identity(self, identity: Identity) -> Dict[str, Any]:
+    async def get_or_create_identity(self, identity: Identity) -> dict[str, Any]:
         """Get existing identity by auth_provider + auth_provider_id, or create it."""
         if identity.auth_provider_id:
             result = await self.list_identities(

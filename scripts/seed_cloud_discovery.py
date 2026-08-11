@@ -23,7 +23,7 @@ Usage:
 import os
 import secrets
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict
 
 # Add parent directory to path (matches scripts/seed_access_reviews.py)
@@ -70,7 +70,7 @@ ELB_ARN = (
 LAMBDA_ARN = f"arn:aws:lambda:{AWS_REGION}:{AWS_ACCOUNT_ID}:function:demo-processor"
 
 
-def build_discovery_results() -> Dict[str, Any]:
+def build_discovery_results() -> dict[str, Any]:
     """Build a canned AWS ``discover_all()``-shaped discovery_results payload.
 
     Mirrors the real ``AWSDiscoveryClient`` category keys ("compute",
@@ -89,7 +89,7 @@ def build_discovery_results() -> Dict[str, Any]:
     (plus the linker's automatic discovered_from edges to the provider
     root entity).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     network = [
         {
@@ -472,7 +472,7 @@ def _resolve_or_create_demo_tenant(db: Any) -> int:
     if existing:
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     tenant_id = db.tenants.insert(
         name=DEMO_TENANT_NAME,
         slug=DEMO_TENANT_SLUG,
@@ -498,7 +498,7 @@ def _resolve_or_create_demo_org(db: Any, tenant_id: int) -> int:
     if existing:
         return int(existing.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         tenant_id=tenant_id,
         name=DEMO_ORG_NAME,
@@ -519,7 +519,7 @@ def _resolve_or_create_demo_admin(db: Any, tenant_id: int) -> None:
     ``identities`` row for JWT/API auth. Creating only the identity (as an
     earlier version did) leaves the UI login failing with INVALID_CREDENTIALS.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pwd_hash = generate_password_hash(DEMO_ADMIN_PASSWORD)
 
     if not db(db.portal_users.email == DEMO_ADMIN_USERNAME).select().first():
@@ -554,9 +554,9 @@ def _resolve_or_create_demo_admin(db: Any, tenant_id: int) -> None:
     db.commit()
 
 
-def _summarize_by_resource_type(discovery_results: Dict[str, Any]) -> Dict[str, int]:
+def _summarize_by_resource_type(discovery_results: dict[str, Any]) -> dict[str, int]:
     """Count seeded resources by resource_type for the summary print."""
-    counts: Dict[str, int] = {}
+    counts: dict[str, int] = {}
     for category, items in discovery_results.items():
         if category in ("resources_count", "discovery_time", "duration_seconds"):
             continue

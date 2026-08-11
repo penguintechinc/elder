@@ -128,7 +128,7 @@ def check_tables_exist(engine: Engine) -> tuple[bool, list[str]]:
         return True, []
 
 
-def needs_migration(engine: Engine) -> tuple[bool, Optional[str]]:
+def needs_migration(engine: Engine) -> tuple[bool, str | None]:
     """Check if database schema needs migration.
 
     This performs basic schema version checking by looking at table columns.

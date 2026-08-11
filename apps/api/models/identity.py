@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import enum
 from typing import List
 
@@ -159,13 +158,13 @@ class Identity(Base, IDMixin, TimestampMixin):
     )
 
     # Relationships
-    group_memberships: Mapped[List["IdentityGroupMembership"]] = relationship(
+    group_memberships: Mapped[list["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",
         back_populates="identity",
         cascade="all, delete-orphan",
     )
 
-    roles: Mapped[List["UserRole"]] = relationship(
+    roles: Mapped[list["UserRole"]] = relationship(
         "UserRole",
         back_populates="identity",
         cascade="all, delete-orphan",
@@ -180,7 +179,7 @@ class Identity(Base, IDMixin, TimestampMixin):
         """Get display name (full name or username)."""
         return self.full_name or self.username
 
-    def get_groups(self) -> List["IdentityGroup"]:
+    def get_groups(self) -> list["IdentityGroup"]:
         """
         Get all identity groups this identity belongs to.
 
@@ -269,7 +268,7 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
     review_auto_apply = Column(Boolean, nullable=False, default=True)
 
     # Relationships
-    memberships: Mapped[List["IdentityGroupMembership"]] = relationship(
+    memberships: Mapped[list["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",
         back_populates="group",
         cascade="all, delete-orphan",
@@ -279,7 +278,7 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
         """String representation of identity group."""
         return f"<IdentityGroup(id={self.id}, name='{self.name}')>"
 
-    def get_members(self) -> List["Identity"]:
+    def get_members(self) -> list["Identity"]:
         """
         Get all identities that are members of this group.
 

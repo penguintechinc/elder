@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
 import os
@@ -63,7 +62,7 @@ class SBOMScanner(BaseScanner):
         "Gemfile.lock": "ruby",
     }
 
-    async def scan(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def scan(self, config: dict[str, Any]) -> dict[str, Any]:
         """Execute SBOM scan on a git repository.
 
         Config schema:
@@ -154,7 +153,7 @@ class SBOMScanner(BaseScanner):
 
                 # Read file content
                 try:
-                    with open(dep_file["path"], "r", encoding="utf-8") as f:
+                    with open(dep_file["path"], encoding="utf-8") as f:
                         content = f.read()
                 except Exception as e:
                     logger.error(f"Failed to read {dep_file['path']}: {e}")
@@ -214,8 +213,8 @@ class SBOMScanner(BaseScanner):
                     logger.warning(f"Failed to cleanup temp dir {temp_dir}: {e}")
 
     async def _clone_repository(
-        self, repo_url: str, branch: str, dest_dir: str, token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, repo_url: str, branch: str, dest_dir: str, token: str | None = None
+    ) -> dict[str, Any]:
         """Clone git repository using subprocess.
 
         Returns:
@@ -265,7 +264,7 @@ class SBOMScanner(BaseScanner):
             logger.error(f"Git clone exception for {safe_url}: {e}")
             return {"success": False, "error": str(e)}
 
-    async def _get_commit_hash(self, repo_dir: str) -> Optional[str]:
+    async def _get_commit_hash(self, repo_dir: str) -> str | None:
         """Get current commit hash from cloned repository."""
         try:
             process = await asyncio.create_subprocess_exec(
@@ -288,7 +287,7 @@ class SBOMScanner(BaseScanner):
 
         return None
 
-    def _build_authenticated_url(self, repo_url: str, token: Optional[str]) -> str:
+    def _build_authenticated_url(self, repo_url: str, token: str | None) -> str:
         """Build authenticated git URL with token for private repositories.
 
         Args:
@@ -367,7 +366,7 @@ class SBOMScanner(BaseScanner):
             )
         )
 
-    def _find_dependency_files(self, root_dir: str) -> List[Dict[str, Any]]:
+    def _find_dependency_files(self, root_dir: str) -> list[dict[str, Any]]:
         """Recursively find all dependency files in directory.
 
         Returns:
@@ -416,7 +415,7 @@ class SBOMScanner(BaseScanner):
 
     async def _parse_file_via_api(
         self, api_url: str, filename: str, content: str, ecosystem: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse dependency file by calling Elder API parser endpoint.
 
         This delegates parsing to the API's parser service which has all
@@ -465,7 +464,7 @@ class SBOMScanner(BaseScanner):
             logger.error(f"Parser failed for {filename}: {e}")
             return []
 
-    def _detect_endpoints(self, repo_dir: str) -> List[Dict]:
+    def _detect_endpoints(self, repo_dir: str) -> list[dict]:
         """Detect API endpoints in the cloned repository.
 
         Args:
@@ -510,7 +509,7 @@ class SBOMScanner(BaseScanner):
                         try:
                             # Read file content
                             with open(
-                                file_path, "r", encoding="utf-8", errors="ignore"
+                                file_path, encoding="utf-8", errors="ignore"
                             ) as f:
                                 content = f.read()
 

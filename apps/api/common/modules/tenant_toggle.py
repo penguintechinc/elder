@@ -8,7 +8,6 @@ Uses penguin-dal for all database queries (never SQLAlchemy at runtime).
 
 # flake8: noqa: E501
 
-
 import logging
 from typing import Any, Optional
 
@@ -77,7 +76,7 @@ def set_module_enabled(
     tenant_id: int,
     module_name: str,
     enabled: bool,
-    settings: Optional[dict] = None,
+    settings: dict | None = None,
 ) -> None:
     """
     Set module enablement state for a tenant and bust Redis cache.

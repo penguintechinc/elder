@@ -6,7 +6,7 @@ lowercase enum .value ("webhook"), or PostgreSQL raises
 InvalidTextRepresentation and the fire-and-forget dispatch silently dies.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -31,7 +31,7 @@ class TestSendIssueCreatedWebhooks:
         """
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Webhook Org",
@@ -75,7 +75,7 @@ class TestSendIssueCreatedWebhooks:
         """
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="No Hook Org",
                 tenant_id=1,

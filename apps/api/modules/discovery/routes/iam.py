@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 
 from quart import Blueprint, current_app, jsonify, request
@@ -105,7 +104,7 @@ async def create_provider():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 
@@ -633,7 +632,7 @@ async def create_policy(provider_id):
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 

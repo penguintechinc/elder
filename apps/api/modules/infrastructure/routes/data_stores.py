@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -160,7 +159,7 @@ async def create_data_store():
         return error
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         data_store_id = db.data_stores.insert(
             name=data["name"],
             description=data.get("description"),

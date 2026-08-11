@@ -13,6 +13,7 @@ Configuration:
 
 import importlib
 import os
+from datetime import UTC
 
 import pytest
 import pytest_asyncio
@@ -255,7 +256,7 @@ def generate_token(app):
         secret = app.config.get("JWT_SECRET_KEY") or app.config.get("SECRET_KEY")
         algorithm = app.config.get("JWT_ALGORITHM", "HS256")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": "test-user-123",
             "tenant": str(tenant_id),  # Important: tenant claim as string

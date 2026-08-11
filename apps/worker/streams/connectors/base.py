@@ -34,7 +34,7 @@ class AuthMethod:
     token_prefix: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> AuthMethod:
+    def from_dict(cls, data: dict[str, Any]) -> AuthMethod:
         """Create AuthMethod from dictionary."""
         return cls(
             type=AuthType(data.get("type", "none")),
@@ -59,7 +59,7 @@ class ConfigField:
     description: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> ConfigField:
+    def from_dict(cls, data: dict[str, Any]) -> ConfigField:
         """Create ConfigField from dictionary."""
         options = data.get("options", [])
         return cls(
@@ -85,7 +85,7 @@ class PortDefinition:
     required: bool = True
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> PortDefinition:
+    def from_dict(cls, data: dict[str, Any]) -> PortDefinition:
         """Create PortDefinition from dictionary."""
         return cls(
             name=data["name"],
@@ -108,7 +108,7 @@ class TriggerDefinition:
     config_schema: tuple = ()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TriggerDefinition:
+    def from_dict(cls, data: dict[str, Any]) -> TriggerDefinition:
         """Create TriggerDefinition from dictionary."""
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
         config_schema = tuple(
@@ -141,7 +141,7 @@ class ActionDefinition:
     request_body_template: str = ""
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> ActionDefinition:
+    def from_dict(cls, data: dict[str, Any]) -> ActionDefinition:
         """Create ActionDefinition from dictionary."""
         inputs = tuple(PortDefinition.from_dict(i) for i in data.get("inputs", []))
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
@@ -177,7 +177,7 @@ class TransformDefinition:
     config_schema: tuple = ()
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> TransformDefinition:
+    def from_dict(cls, data: dict[str, Any]) -> TransformDefinition:
         """Create TransformDefinition from dictionary."""
         inputs = tuple(PortDefinition.from_dict(i) for i in data.get("inputs", []))
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
@@ -219,7 +219,7 @@ class ConnectorManifest:
     @classmethod
     def from_yaml(cls, yaml_path: str) -> ConnectorManifest:
         """Load connector manifest from YAML file."""
-        with open(yaml_path, "r") as f:
+        with open(yaml_path) as f:
             data = yaml.safe_load(f)
 
         connector = data.get("connector", data)

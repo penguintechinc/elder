@@ -8,7 +8,7 @@ username derived from email) and a native support Issue (see
 (Task 3) with the actual unauthenticated submit path.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -56,7 +56,7 @@ class ContactResolutionError(Exception):
     """
 
 
-def _mint_village_id(tenant_id: int, redis_client: Optional[Any]) -> str:
+def _mint_village_id(tenant_id: int, redis_client: Any | None) -> str:
     """Mint a village_id via Redis, falling back to a random id in tests.
 
     Mirrors the fallback used throughout the helpdesk routes (e.g.
@@ -72,8 +72,8 @@ def upsert_customer_contact(
     db: Any,
     tenant_id: int,
     email: str,
-    details: Optional[dict[str, Any]],
-    redis: Optional[Any],
+    details: dict[str, Any] | None,
+    redis: Any | None,
 ) -> int:
     """Find or create a `customer_contact` identity for a public submitter.
 
@@ -112,7 +112,7 @@ def upsert_customer_contact(
     if existing:
         return existing.id
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     try:
         # penguin-dal's insert() does not apply SQLAlchemy Column `default=`
@@ -151,7 +151,7 @@ def upsert_customer_contact(
         )
 
 
-def _resolve_resource_id(db: Any, form: Any) -> Optional[int]:
+def _resolve_resource_id(db: Any, form: Any) -> int | None:
     """Resolve the owning organization id for issues created from `form`.
 
     Uses the form's own `organization_id` when set; otherwise falls back to
@@ -175,7 +175,7 @@ def create_support_issue_from_form(
     form: Any,
     validated: dict[str, Any],
     contact_id: int,
-    redis: Optional[Any],
+    redis: Any | None,
 ) -> Any:
     """Insert a native support Issue from a validated intake-form submission.
 
@@ -209,7 +209,7 @@ def create_support_issue_from_form(
             "cannot create support issue"
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     raw_title = str(validated.get("subject") or form.name)
     if len(raw_title) > _ISSUE_TITLE_MAX_LENGTH:

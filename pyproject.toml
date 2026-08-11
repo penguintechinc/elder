@@ -1,7 +1,39 @@
-[tool.black]
+[tool.ruff]
 line-length = 88
-target-version = ['py312']
+target-version = "py312"
 
-[tool.isort]
-profile = "black"
-line_length = 88
+[tool.ruff.lint]
+select = ["E", "W", "F", "I"]
+ignore = [
+    "E203",   # Whitespace before ':'
+    "E401",   # Multiple imports on one line
+    "E402",   # Module level import not at top
+    "E501",   # Line too long
+    "E303",   # Too many blank lines
+    "E712",   # Comparison to True with ==
+    "E741",   # Ambiguous variable name
+    "F401",   # Imported but unused
+    "F403",   # May be undefined from star import
+    "F405",   # Name may be undefined
+    "F541",   # f-string without placeholder
+    "F821",   # Undefined name
+    "F841",   # Local variable assigned but never used
+    "E722",   # Do not use bare except
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Star imports in pydal_models.py
+"apps/api/models/*.py" = ["F821"]
+# current_user from decorator context
+"apps/api/api/v1/search.py" = ["F821"]
+"apps/api/api/v1/sync.py" = ["F821"]
+# Unused imports in __init__.py
+"__init__.py" = ["F401"]
+# Line too long in migrations
+"alembic/versions/*.py" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.bandit]
+exclude_dirs = ["tests", "scripts", ".venv", "node_modules"]

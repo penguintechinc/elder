@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -26,20 +25,20 @@ class NetworkingService:
         name: str,
         network_type: str,
         organization_id: int,
-        description: Optional[str] = None,
-        parent_id: Optional[int] = None,
-        region: Optional[str] = None,
-        location: Optional[str] = None,
-        cidr: Optional[str] = None,
-        gateway: Optional[str] = None,
-        vlan_id: Optional[int] = None,
-        mtu: Optional[int] = None,
-        poc: Optional[str] = None,
-        organizational_unit: Optional[str] = None,
-        attributes: Optional[Dict[str, Any]] = None,
-        status_metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        description: str | None = None,
+        parent_id: int | None = None,
+        region: str | None = None,
+        location: str | None = None,
+        cidr: str | None = None,
+        gateway: str | None = None,
+        vlan_id: int | None = None,
+        mtu: int | None = None,
+        poc: str | None = None,
+        organizational_unit: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        status_metadata: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Create a new networking resource."""
         try:
             network_id = self.db.networking_resources.insert(
@@ -74,7 +73,7 @@ class NetworkingService:
             logger.error(f"Failed to create networking resource: {str(e)}")
             raise Exception(f"Failed to create networking resource: {str(e)}")
 
-    def get_network(self, network_id: int) -> Dict[str, Any]:
+    def get_network(self, network_id: int) -> dict[str, Any]:
         """Get networking resource by ID."""
         try:
             network = self.db.networking_resources[network_id]
@@ -92,13 +91,13 @@ class NetworkingService:
 
     def list_networks(
         self,
-        organization_id: Optional[int] = None,
-        network_type: Optional[str] = None,
-        parent_id: Optional[int] = None,
-        region: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = 0,
-    ) -> Dict[str, Any]:
+        organization_id: int | None = None,
+        network_type: str | None = None,
+        parent_id: int | None = None,
+        region: str | None = None,
+        limit: int | None = None,
+        offset: int | None = 0,
+    ) -> dict[str, Any]:
         """List networking resources with filters."""
         try:
             query = self.db.networking_resources.id > 0  # Base query: all records
@@ -138,16 +137,16 @@ class NetworkingService:
     def update_network(
         self,
         network_id: int,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        region: Optional[str] = None,
-        location: Optional[str] = None,
-        poc: Optional[str] = None,
-        organizational_unit: Optional[str] = None,
-        attributes: Optional[Dict[str, Any]] = None,
-        status_metadata: Optional[Dict[str, Any]] = None,
-        tags: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        description: str | None = None,
+        region: str | None = None,
+        location: str | None = None,
+        poc: str | None = None,
+        organizational_unit: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        status_metadata: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Update networking resource."""
         try:
             network = self.db.networking_resources[network_id]
@@ -193,7 +192,7 @@ class NetworkingService:
 
     def delete_network(
         self, network_id: int, hard_delete: bool = False
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Delete networking resource (soft delete by default)."""
         try:
             network = self.db.networking_resources[network_id]
@@ -247,10 +246,10 @@ class NetworkingService:
         source_network_id: int,
         target_network_id: int,
         connection_type: str,
-        bandwidth: Optional[int] = None,
-        latency: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        bandwidth: int | None = None,
+        latency: int | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Create a network topology connection."""
         try:
             # Verify both networks exist
@@ -284,7 +283,7 @@ class NetworkingService:
             logger.error(f"Failed to create topology connection: {str(e)}")
             raise Exception(f"Failed to create topology connection: {str(e)}")
 
-    def get_topology_connection(self, connection_id: int) -> Dict[str, Any]:
+    def get_topology_connection(self, connection_id: int) -> dict[str, Any]:
         """Get topology connection by ID."""
         try:
             connection = self.db.network_topology[connection_id]
@@ -302,9 +301,9 @@ class NetworkingService:
 
     def list_topology_connections(
         self,
-        network_id: Optional[int] = None,
-        connection_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        network_id: int | None = None,
+        connection_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List topology connections, optionally filtered by network or type."""
         try:
             query = self.db.network_topology.id > 0
@@ -325,7 +324,7 @@ class NetworkingService:
             logger.error(f"Failed to list topology connections: {str(e)}")
             raise Exception(f"Failed to list topology connections: {str(e)}")
 
-    def delete_topology_connection(self, connection_id: int) -> Dict[str, Any]:
+    def delete_topology_connection(self, connection_id: int) -> dict[str, Any]:
         """Delete a topology connection."""
         try:
             connection = self.db.network_topology[connection_id]
@@ -354,8 +353,8 @@ class NetworkingService:
         network_id: int,
         entity_id: int,
         relationship_type: str,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Map an entity to a network."""
         try:
             # Verify network and entity exist
@@ -387,7 +386,7 @@ class NetworkingService:
             logger.error(f"Failed to map entity to network: {str(e)}")
             raise Exception(f"Failed to map entity to network: {str(e)}")
 
-    def get_entity_mapping(self, mapping_id: int) -> Dict[str, Any]:
+    def get_entity_mapping(self, mapping_id: int) -> dict[str, Any]:
         """Get entity-network mapping by ID."""
         try:
             mapping = self.db.network_entity_mappings[mapping_id]
@@ -405,10 +404,10 @@ class NetworkingService:
 
     def list_entity_mappings(
         self,
-        network_id: Optional[int] = None,
-        entity_id: Optional[int] = None,
-        relationship_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        network_id: int | None = None,
+        entity_id: int | None = None,
+        relationship_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """List entity-network mappings with filters."""
         try:
             query = self.db.network_entity_mappings.id > 0
@@ -433,7 +432,7 @@ class NetworkingService:
             logger.error(f"Failed to list entity mappings: {str(e)}")
             raise Exception(f"Failed to list entity mappings: {str(e)}")
 
-    def delete_entity_mapping(self, mapping_id: int) -> Dict[str, Any]:
+    def delete_entity_mapping(self, mapping_id: int) -> dict[str, Any]:
         """Delete an entity-network mapping."""
         try:
             mapping = self.db.network_entity_mappings[mapping_id]
@@ -461,7 +460,7 @@ class NetworkingService:
         self,
         organization_id: int,
         include_entities: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get network topology as a graph structure for visualization."""
         try:
             # Get all networks for the organization
@@ -534,7 +533,7 @@ class NetworkingService:
 
     # Helper methods
 
-    def _serialize_network(self, network: Any) -> Dict[str, Any]:
+    def _serialize_network(self, network: Any) -> dict[str, Any]:
         """Serialize networking resource to dict."""
         return {
             "id": network.id,
@@ -560,7 +559,7 @@ class NetworkingService:
             ),
         }
 
-    def _serialize_topology_connection(self, connection: Any) -> Dict[str, Any]:
+    def _serialize_topology_connection(self, connection: Any) -> dict[str, Any]:
         """Serialize topology connection to dict."""
         return {
             "id": connection.id,
@@ -572,7 +571,7 @@ class NetworkingService:
             "metadata": connection.metadata,
         }
 
-    def _serialize_entity_mapping(self, mapping: Any) -> Dict[str, Any]:
+    def _serialize_entity_mapping(self, mapping: Any) -> dict[str, Any]:
         """Serialize entity mapping to dict."""
         return {
             "id": mapping.id,
@@ -582,7 +581,7 @@ class NetworkingService:
             "metadata": mapping.metadata,
         }
 
-    def _serialize_network_node(self, network: Any) -> Dict[str, Any]:
+    def _serialize_network_node(self, network: Any) -> dict[str, Any]:
         """Serialize network for graph visualization."""
         return {
             "id": f"network_{network.id}",
@@ -597,7 +596,7 @@ class NetworkingService:
             ),
         }
 
-    def _serialize_topology_edge(self, connection: Any) -> Dict[str, Any]:
+    def _serialize_topology_edge(self, connection: Any) -> dict[str, Any]:
         """Serialize topology connection for graph visualization."""
         return {
             "id": f"connection_{connection.id}",

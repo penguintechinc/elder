@@ -10,8 +10,8 @@ from client import ElderClient
 async def search_entities(
     client: ElderClient,
     query: str,
-    organization_id: Optional[int] = None,
-    entity_type: Optional[str] = None,
+    organization_id: int | None = None,
+    entity_type: str | None = None,
     limit: int = 20,
 ) -> dict:
     """
@@ -64,9 +64,9 @@ async def get_entity(client: ElderClient, entity_id: int) -> dict:
 async def update_entity(
     client: ElderClient,
     entity_id: int,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
-    metadata: Optional[dict] = None,
+    name: str | None = None,
+    description: str | None = None,
+    metadata: dict | None = None,
 ) -> dict:
     """
     Update entity properties (partial update).

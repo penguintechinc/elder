@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -65,7 +65,7 @@ async def create_comment(diagram_id: int):
             return None, "forbidden"
 
         # Create comment
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         comment_id = db.dg_comments.insert(
             diagram_id=diagram_id,
             tenant_id=tenant_id,
@@ -268,7 +268,7 @@ async def add_reply(diagram_id: int, comment_id: int):
             return None, "comment_not_found"
 
         # Create reply
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         reply_id = db.dg_comment_replies.insert(
             comment_id=comment_id,
             tenant_id=tenant_id,
@@ -366,7 +366,7 @@ async def update_comment(diagram_id: int, comment_id: int):
             return None, "forbidden"
 
         # Update fields
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_dict = {"updated_at": now}
 
         if "text_content" in data:

@@ -34,9 +34,9 @@ jobs:
         id: check
         run: |
           if [ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ] && [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ] && [ -n "${{ secrets.AWS_REGION }}" ]; then
-            echo "aws-configured=true" >> $GITHUB_OUTPUT
+            echo "aws-configured=true" >> "$GITHUB_OUTPUT"
           else
-            echo "aws-configured=false" >> $GITHUB_OUTPUT
+            echo "aws-configured=false" >> "$GITHUB_OUTPUT"
             echo "⚠️ AWS credentials not configured. Skipping deployment."
             echo "To enable deployments, configure the following secrets:"
             echo "  - AWS_ACCESS_KEY_ID"
@@ -175,7 +175,7 @@ jobs:
         aws ecs create-service \
           --cluster project-template-prod \
           --service-name project-template-prod-green \
-          --task-definition project-template-prod:$NEW_REVISION \
+          --task-definition "project-template-prod:$NEW_REVISION" \
           --desired-count 2 \
           --load-balancers targetGroupArn=${{ secrets.TARGET_GROUP_ARN }},containerName=api,containerPort=8080
 
@@ -211,7 +211,7 @@ jobs:
         aws ecs create-service \
           --cluster project-template-prod \
           --service-name project-template-prod-service \
-          --task-definition project-template-prod:$NEW_REVISION \
+          --task-definition "project-template-prod:$NEW_REVISION" \
           --desired-count 3 \
           --load-balancers targetGroupArn=${{ secrets.TARGET_GROUP_ARN }},containerName=api,containerPort=8080
 

@@ -18,7 +18,7 @@ likewise scoped to each test's own webhook_id or tenant_id, since neither
 table is truncated between test functions within a session.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -43,7 +43,7 @@ def _make_tenant(db, name: str) -> int:
 
 
 def _insert_webhook(db, tenant_id, **overrides):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     defaults = dict(
         tenant_id=tenant_id,
         village_id=f"{tenant_id:08x}-{uuid4().hex[:16]}",

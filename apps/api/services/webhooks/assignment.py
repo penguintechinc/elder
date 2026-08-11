@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -36,13 +36,13 @@ class AssignmentEvent:
     """
 
     issue_id: int
-    village_id: Optional[str]
+    village_id: str | None
     issue_type: str
     status: str
-    assignee_type: Optional[str]
-    assignee_id: Optional[int]
+    assignee_type: str | None
+    assignee_id: int | None
     tenant_id: int
-    actor_id: Optional[int]
+    actor_id: int | None
 
 
 def webhook_matches_assignment(webhook: Any, event: AssignmentEvent) -> bool:
@@ -72,14 +72,13 @@ def webhook_matches_assignment(webhook: Any, event: AssignmentEvent) -> bool:
     return True
 
 
-def find_matching_webhooks(db: Any, event: AssignmentEvent) -> List[Any]:
+def find_matching_webhooks(db: Any, event: AssignmentEvent) -> list[Any]:
     """Return every active, tenant-scoped webhook subscribed to issue.assigned
     whose filters match `event`. Synchronous/blocking — callers offload this
     via asyncio.to_thread (see send_issue_assigned_webhooks).
     """
     candidates = db(
-        (db.webhooks.tenant_id == event.tenant_id)
-        & (db.webhooks.is_active == True)  # noqa: E712
+        (db.webhooks.tenant_id == event.tenant_id) & (db.webhooks.is_active == True)  # noqa: E712
     ).select()
 
     matched = []
@@ -95,7 +94,7 @@ def find_matching_webhooks(db: Any, event: AssignmentEvent) -> List[Any]:
     return matched
 
 
-def build_assignment_payload(event: AssignmentEvent) -> Dict[str, Any]:
+def build_assignment_payload(event: AssignmentEvent) -> dict[str, Any]:
     """Build the issue.assigned webhook payload body (spec §7)."""
     return {
         "event": ASSIGNMENT_EVENT_TYPE,
@@ -108,11 +107,11 @@ def build_assignment_payload(event: AssignmentEvent) -> Dict[str, Any]:
         },
         "actor": event.actor_id,
         "tenant_id": event.tenant_id,
-        "ts": datetime.now(timezone.utc).isoformat(),
+        "ts": datetime.now(UTC).isoformat(),
     }
 
 
-def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+def _dispatch_one(db: Any, webhook: Any, payload: dict[str, Any]) -> dict[str, Any]:
     """Deliver `payload` to a single webhook synchronously and record the attempt.
 
     Runs entirely inside asyncio.to_thread (see send_issue_assigned_webhooks)
@@ -142,7 +141,7 @@ def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, A
     if webhook.secret:
         headers["X-Elder-Signature"] = generate_signature(webhook.secret, payload_str)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     delivery_id = db.webhook_deliveries.insert(
         webhook_id=webhook.id,
         event_type=ASSIGNMENT_EVENT_TYPE,
@@ -161,7 +160,7 @@ def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, A
             status="success" if success else "failed",
             http_status=response.status_code,
             response_body=response.text[:1000],
-            delivered_at=datetime.now(timezone.utc) if success else None,
+            delivered_at=datetime.now(UTC) if success else None,
         )
         db.commit()
         return {
@@ -190,7 +189,7 @@ def _dispatch_one(db: Any, webhook: Any, payload: Dict[str, Any]) -> Dict[str, A
 
 async def send_issue_assigned_webhooks(
     db: Any, event: AssignmentEvent
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Match `event` against every active webhook in its tenant and deliver
     issue.assigned to each match, HMAC-signed, non-blocking.
 

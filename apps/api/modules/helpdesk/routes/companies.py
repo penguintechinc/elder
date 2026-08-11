@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -158,7 +158,7 @@ async def create_company():
     def create():
         from shared.utils.village_id import generate_village_id
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Generate village_id
         village_id = generate_village_id(tenant_id, redis_client)
@@ -298,7 +298,7 @@ async def update_company(company_id):
         if not company_row:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         # Only update provided fields

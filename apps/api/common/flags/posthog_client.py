@@ -27,7 +27,7 @@ class PostHogClient:
     """PostHog feature-flag client with graceful degradation."""
 
     def __init__(
-        self, api_key: Optional[str], host: str = "https://license.penguintech.io"
+        self, api_key: str | None, host: str = "https://license.penguintech.io"
     ) -> None:
         """Initialize PostHog client.
 
@@ -141,7 +141,7 @@ class PostHogClient:
 
 
 # Module-level client instance (initialized later by init_posthog)
-_client: Optional[PostHogClient] = None
+_client: PostHogClient | None = None
 
 
 def init_posthog(app: Any) -> None:

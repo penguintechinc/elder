@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import json
 import logging
@@ -16,7 +15,7 @@ logger = logging.getLogger("scanner.network")
 class NetworkScanner(BaseScanner):
     """Network port scanner using masscan."""
 
-    async def scan(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def scan(self, config: dict[str, Any]) -> dict[str, Any]:
         """Execute a network scan using masscan.
 
         Config schema:
@@ -146,7 +145,7 @@ class NetworkScanner(BaseScanner):
                             continue
 
             # Process results into our format
-            hosts_dict: Dict[str, List[Dict[str, Any]]] = {}
+            hosts_dict: dict[str, list[dict[str, Any]]] = {}
 
             for entry in scan_results:
                 if "ip" in entry and "ports" in entry:

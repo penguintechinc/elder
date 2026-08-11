@@ -12,7 +12,7 @@ URL prefix or an auth posture.
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -104,7 +104,7 @@ def _is_village_id_conflict(exc: IntegrityError) -> bool:
     return _VILLAGE_ID_UNIQUE_CONSTRAINT in str(exc)
 
 
-def _village_id_seq(village_id: Optional[str]) -> Optional[int]:
+def _village_id_seq(village_id: str | None) -> int | None:
     """Parse the object-seq (trailing 16 hex chars) out of a village_id.
 
     Returns None for anything that doesn't match the `TTTTTTTT-OOOO...`
@@ -183,7 +183,7 @@ def _insert_form_with_unique_village_id(
     """
     from shared.utils.village_id import generate_village_id
 
-    last_error: Optional[IntegrityError] = None
+    last_error: IntegrityError | None = None
     for _ in range(_MAX_VILLAGE_ID_MINT_ATTEMPTS):
         if redis_client:
             village_id = generate_village_id(tenant_id, redis_client)
@@ -239,7 +239,7 @@ def _validate_organization_ref(db, tenant_id: int, organization_id: Any) -> bool
 
 def _validate_assignee_ref(
     db, tenant_id: int, assignee_type: Any, assignee_id: Any
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Validate a (`default_assignee_type`, `default_assignee_id`) pair.
 
     Returns `(True, None)` if the pair is valid — including both unset, or
@@ -420,7 +420,7 @@ async def create_form():
     redis_client = getattr(current_app, "redis_client", None)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Slug must be GLOBALLY unique (public URL /api/v1/intake/<slug> has
         # no tenant component). Reject collisions across ALL tenants.
@@ -588,7 +588,7 @@ async def update_form(form_id):
             ):
                 return None, "invalid_issue_type"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         if "name" in data:

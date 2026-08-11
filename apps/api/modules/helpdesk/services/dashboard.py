@@ -7,7 +7,7 @@ Provides aggregated statistics for tickets:
 - SLA compliance percentage
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 import structlog
@@ -50,7 +50,7 @@ async def get_dashboard_stats(db: Any, tenant_id: int) -> dict:
     """
 
     def do_get_stats():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         # Total tickets

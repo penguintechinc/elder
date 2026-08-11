@@ -16,25 +16,27 @@ except ImportError:
     sys.exit(2)
 
 # Color codes for output
-RED = '\033[0;31m'
-GREEN = '\033[0;32m'
-YELLOW = '\033[1;33m'
-BLUE = '\033[0;34m'
-NC = '\033[0m'  # No Color
+RED = "\033[0;31m"
+GREEN = "\033[0;32m"
+YELLOW = "\033[1;33m"
+BLUE = "\033[0;34m"
+NC = "\033[0m"  # No Color
 
 
 class GrpcApiTester:
     """Test suite for Elder gRPC API."""
 
-    def __init__(self, host: str, port: int, use_tls: bool = False, verbose: bool = False):
+    def __init__(
+        self, host: str, port: int, use_tls: bool = False, verbose: bool = False
+    ):
         self.host = host
         self.port = port
         self.use_tls = use_tls
         self.verbose = verbose
-        self.access_token: Optional[str] = None
+        self.access_token: str | None = None
         self.tests_passed = 0
         self.tests_failed = 0
-        self.failed_tests: List[str] = []
+        self.failed_tests: list[str] = []
         self.channel = None
         self.stub = None
 
@@ -61,8 +63,16 @@ class GrpcApiTester:
         """Establish gRPC connection."""
         try:
             # Import generated protobuf code
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-            from apps.api.grpc.generated import elder_pb2_grpc, common_pb2, auth_pb2, organization_pb2, entity_pb2, dependency_pb2, graph_pb2
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+            from apps.api.grpc.generated import (
+                auth_pb2,
+                common_pb2,
+                dependency_pb2,
+                elder_pb2_grpc,
+                entity_pb2,
+                graph_pb2,
+                organization_pb2,
+            )
 
             self.pb2_grpc = elder_pb2_grpc
             self.common_pb2 = common_pb2
@@ -95,7 +105,7 @@ class GrpcApiTester:
     def get_metadata(self):
         """Get metadata for authenticated requests."""
         if self.access_token:
-            return [('authorization', f'Bearer {self.access_token}')]
+            return [("authorization", f"Bearer {self.access_token}")]
         return []
 
     def test_health_check(self) -> bool:
@@ -114,10 +124,7 @@ class GrpcApiTester:
         """Test Login RPC and store access token."""
         self.log_info("Testing Login RPC...")
         try:
-            request = self.auth_pb2.LoginRequest(
-                username=username,
-                password=password
-            )
+            request = self.auth_pb2.LoginRequest(username=username, password=password)
             response = self.stub.Login(request)
             if response.access_token:
                 self.access_token = response.access_token
@@ -130,7 +137,9 @@ class GrpcApiTester:
             self.log_fail(f"Login RPC failed: {e.code()} - {e.details()}")
             return False
 
-    def test_rpc(self, name: str, request_obj, expected_codes: List[grpc.StatusCode] = None) -> bool:
+    def test_rpc(
+        self, name: str, request_obj, expected_codes: list[grpc.StatusCode] = None
+    ) -> bool:
         """Generic RPC test."""
         if expected_codes is None:
             expected_codes = [grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND]
@@ -178,42 +187,78 @@ class GrpcApiTester:
         self.log_info("Authentication & Identity Management...")
         pagination = self.common_pb2.PaginationRequest(page=1, per_page=10)
 
-        self.test_rpc('ListIdentities', self.auth_pb2.ListIdentitiesRequest(pagination=pagination))
+        self.test_rpc(
+            "ListIdentities", self.auth_pb2.ListIdentitiesRequest(pagination=pagination)
+        )
         # GetCurrentIdentity requires access_token in the request body
-        self.test_rpc('GetCurrentIdentity', self.auth_pb2.GetCurrentIdentityRequest(access_token=self.access_token))
+        self.test_rpc(
+            "GetCurrentIdentity",
+            self.auth_pb2.GetCurrentIdentityRequest(access_token=self.access_token),
+        )
 
         # Organization Management (7 RPCs)
         self.log_info("")
         self.log_info("Organization Management...")
-        self.test_rpc('ListOrganizations', self.organization_pb2.ListOrganizationsRequest(pagination=pagination))
+        self.test_rpc(
+            "ListOrganizations",
+            self.organization_pb2.ListOrganizationsRequest(pagination=pagination),
+        )
         # GetOrganization will return NOT_FOUND for invalid ID, which is acceptable
-        self.test_rpc('GetOrganization', self.organization_pb2.GetOrganizationRequest(id=999999),
-                      expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND])
+        self.test_rpc(
+            "GetOrganization",
+            self.organization_pb2.GetOrganizationRequest(id=999999),
+            expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND],
+        )
 
         # Entity Management (7 RPCs)
         self.log_info("")
         self.log_info("Entity Management...")
-        self.test_rpc('ListEntities', self.entity_pb2.ListEntitiesRequest(pagination=pagination))
+        self.test_rpc(
+            "ListEntities", self.entity_pb2.ListEntitiesRequest(pagination=pagination)
+        )
         # GetEntity will return NOT_FOUND for invalid ID, which is acceptable
-        self.test_rpc('GetEntity', self.entity_pb2.GetEntityRequest(id=999999),
-                      expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND])
+        self.test_rpc(
+            "GetEntity",
+            self.entity_pb2.GetEntityRequest(id=999999),
+            expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND],
+        )
 
         # Dependency Management (7 RPCs)
         self.log_info("")
         self.log_info("Dependency Management...")
-        self.test_rpc('ListDependencies', self.dependency_pb2.ListDependenciesRequest(pagination=pagination))
+        self.test_rpc(
+            "ListDependencies",
+            self.dependency_pb2.ListDependenciesRequest(pagination=pagination),
+        )
         # GetDependency will return NOT_FOUND for invalid ID, which is acceptable
-        self.test_rpc('GetDependency', self.dependency_pb2.GetDependencyRequest(id=999999),
-                      expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND])
+        self.test_rpc(
+            "GetDependency",
+            self.dependency_pb2.GetDependencyRequest(id=999999),
+            expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND],
+        )
 
         # Graph Operations (4 RPCs)
         self.log_info("")
         self.log_info("Graph Operations...")
         # These might return NOT_FOUND or INVALID_ARGUMENT for test data
-        self.test_rpc('GetDependencyGraph', self.graph_pb2.GetDependencyGraphRequest(organization_id=1),
-                      expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT])
-        self.test_rpc('AnalyzeGraph', self.graph_pb2.AnalyzeGraphRequest(organization_id=1),
-                      expected_codes=[grpc.StatusCode.OK, grpc.StatusCode.NOT_FOUND, grpc.StatusCode.INVALID_ARGUMENT])
+        self.test_rpc(
+            "GetDependencyGraph",
+            self.graph_pb2.GetDependencyGraphRequest(organization_id=1),
+            expected_codes=[
+                grpc.StatusCode.OK,
+                grpc.StatusCode.NOT_FOUND,
+                grpc.StatusCode.INVALID_ARGUMENT,
+            ],
+        )
+        self.test_rpc(
+            "AnalyzeGraph",
+            self.graph_pb2.AnalyzeGraphRequest(organization_id=1),
+            expected_codes=[
+                grpc.StatusCode.OK,
+                grpc.StatusCode.NOT_FOUND,
+                grpc.StatusCode.INVALID_ARGUMENT,
+            ],
+        )
 
         # Close connection
         if self.channel:
@@ -239,32 +284,42 @@ class GrpcApiTester:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Elder gRPC API smoke tests')
-    parser.add_argument('--host', default=os.getenv('GRPC_HOST', 'localhost'),
-                        help='gRPC server host (default: localhost)')
-    parser.add_argument('--port', type=int, default=int(os.getenv('GRPC_PORT', '50051')),
-                        help='gRPC server port (default: 50051)')
-    parser.add_argument('--username', default=os.getenv('ADMIN_USERNAME', 'admin@localhost.local'),
-                        help='Admin username')
-    parser.add_argument('--password', default=os.getenv('ADMIN_PASSWORD', 'admin123'),
-                        help='Admin password')
-    parser.add_argument('--tls', action='store_true',
-                        help='Use TLS for connection')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='Enable verbose output')
+    parser = argparse.ArgumentParser(description="Elder gRPC API smoke tests")
+    parser.add_argument(
+        "--host",
+        default=os.getenv("GRPC_HOST", "localhost"),
+        help="gRPC server host (default: localhost)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("GRPC_PORT", "50051")),
+        help="gRPC server port (default: 50051)",
+    )
+    parser.add_argument(
+        "--username",
+        default=os.getenv("ADMIN_USERNAME", "admin@localhost.local"),
+        help="Admin username",
+    )
+    parser.add_argument(
+        "--password",
+        default=os.getenv("ADMIN_PASSWORD", "admin123"),
+        help="Admin password",
+    )
+    parser.add_argument("--tls", action="store_true", help="Use TLS for connection")
+    parser.add_argument(
+        "--verbose", "-v", action="store_true", help="Enable verbose output"
+    )
 
     args = parser.parse_args()
 
     tester = GrpcApiTester(
-        host=args.host,
-        port=args.port,
-        use_tls=args.tls,
-        verbose=args.verbose
+        host=args.host, port=args.port, use_tls=args.tls, verbose=args.verbose
     )
 
     tester.run_all_tests(args.username, args.password)
     sys.exit(tester.print_summary())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

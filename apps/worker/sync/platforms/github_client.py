@@ -12,8 +12,7 @@ GitHub API: REST API v3 + GraphQL for complex queries
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -39,7 +38,7 @@ class GitHubSyncClient(BaseSyncClient):
 
     def __init__(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         db: DAL,
         sync_config_id: int,
         logger: Any,
@@ -323,7 +322,7 @@ class GitHubSyncClient(BaseSyncClient):
                 )
 
             # Create issue in Elder
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             issue_id = self.db.issues.insert(
                 title=elder_data["title"],
                 description=elder_data["description"],
@@ -497,7 +496,7 @@ class GitHubSyncClient(BaseSyncClient):
     def batch_sync(
         self,
         resource_type: ResourceType,
-        since: Optional[datetime] = None,
+        since: datetime | None = None,
     ) -> SyncResult:
         """Perform batch synchronization for GitHub resources.
 
@@ -527,7 +526,7 @@ class GitHubSyncClient(BaseSyncClient):
             metadata={"not_implemented": True},
         )
 
-    def _batch_sync_issues(self, since: Optional[datetime] = None) -> SyncResult:
+    def _batch_sync_issues(self, since: datetime | None = None) -> SyncResult:
         """Batch sync GitHub issues.
 
         Args:
@@ -617,7 +616,7 @@ class GitHubSyncClient(BaseSyncClient):
             errors=errors,
         )
 
-    def handle_webhook(self, webhook_data: Dict[str, Any]) -> SyncResult:
+    def handle_webhook(self, webhook_data: dict[str, Any]) -> SyncResult:
         """Handle GitHub webhook event.
 
         Args:
@@ -658,7 +657,7 @@ class GitHubSyncClient(BaseSyncClient):
 
         return self._sync_issue_from_github(operation)
 
-    def _map_github_labels_to_priority(self, labels: List[Dict[str, Any]]) -> str:
+    def _map_github_labels_to_priority(self, labels: list[dict[str, Any]]) -> str:
         """Map GitHub labels to Elder priority.
 
         Args:

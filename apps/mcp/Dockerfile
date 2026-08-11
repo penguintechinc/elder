@@ -13,7 +13,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . .
 RUN chmod -R go-w /app
 
-USER appuser
+USER 1000
 ENV PYTHONUNBUFFERED=1
 
 ENTRYPOINT ["python3", "server.py"]

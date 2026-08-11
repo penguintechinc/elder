@@ -346,11 +346,9 @@ if [[ $FAILED -gt 0 ]]; then
     log_error "API suite: $FAILED/$TOTAL_API failed"
     for ep in "${FAILED_ENDPOINTS[@]}"; do echo "    $ep"; done
     PHASE_RESULTS+=("API Suite: FAIL ($FAILED/$TOTAL_API failed)")
-    API_SUITE_FAILED=true
 else
     log_success "API suite: $PASSED/$TOTAL_API passed"
     PHASE_RESULTS+=("API Suite: PASS ($PASSED/$TOTAL_API)")
-    API_SUITE_FAILED=false
 fi
 
 ###############################################################################

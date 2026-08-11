@@ -26,7 +26,7 @@ class SplitTransform(BaseNode):
     category = "transforms"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the split node."""
         return [
             {
@@ -38,7 +38,7 @@ class SplitTransform(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the split node."""
         return [
             {
@@ -63,7 +63,7 @@ class SplitTransform(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate split node configuration."""
         errors = []
 
@@ -105,11 +105,11 @@ class SplitTransform(BaseNode):
                 return None
         return value
 
-    def _chunk_list(self, lst: List, size: int) -> List[List]:
+    def _chunk_list(self, lst: list, size: int) -> list[list]:
         """Split a list into chunks of given size."""
         return [lst[i : i + size] for i in range(0, len(lst), size)]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the split transform."""
         if "in" not in inputs:
             raise ValueError("Required input 'in' is missing")
@@ -117,7 +117,7 @@ class SplitTransform(BaseNode):
         input_data = inputs.get("in")
         mode = self.get_config_value("mode", "array")
 
-        items: List[Any] = []
+        items: list[Any] = []
 
         try:
             if mode == "array":

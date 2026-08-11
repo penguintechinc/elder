@@ -18,6 +18,7 @@ village_id: VillageIDMixin on hd_tickets, hd_companies, hd_contacts only.
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "018"

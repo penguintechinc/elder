@@ -11,7 +11,6 @@ information compatible with the SBOM service.
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List, Optional
 from xml.etree.ElementTree import Element  # For type hints only
@@ -51,7 +50,7 @@ class DotnetParser(BaseDependencyParser):
             for pattern in self.SUPPORTED_FILES
         )
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency file patterns.
 
         Returns:
@@ -59,7 +58,7 @@ class DotnetParser(BaseDependencyParser):
         """
         return self.SUPPORTED_FILES.copy()
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse a .NET dependency file and extract package information.
 
         Args:
@@ -92,7 +91,7 @@ class DotnetParser(BaseDependencyParser):
         except Exception as e:
             raise ValueError(f"Error parsing {filename}: {str(e)}")
 
-    def _parse_project_file(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_project_file(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse .csproj or .fsproj file for package references.
 
         Args:
@@ -102,7 +101,7 @@ class DotnetParser(BaseDependencyParser):
         Returns:
             List of parsed package dictionaries.
         """
-        packages: List[Dict[str, Any]] = []
+        packages: list[dict[str, Any]] = []
 
         try:
             root = ET.fromstring(content)
@@ -127,7 +126,7 @@ class DotnetParser(BaseDependencyParser):
 
     def _parse_packages_config(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse legacy packages.config file for package definitions.
 
         Args:
@@ -137,7 +136,7 @@ class DotnetParser(BaseDependencyParser):
         Returns:
             List of parsed package dictionaries.
         """
-        packages: List[Dict[str, Any]] = []
+        packages: list[dict[str, Any]] = []
 
         try:
             root = ET.fromstring(content)
@@ -156,7 +155,7 @@ class DotnetParser(BaseDependencyParser):
 
     def _extract_package_reference(
         self, element: Element, filename: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Extract package information from PackageReference element.
 
         Args:
@@ -190,7 +189,7 @@ class DotnetParser(BaseDependencyParser):
 
     def _extract_package_config(
         self, element: Element, filename: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Extract package information from packages.config element.
 
         Args:

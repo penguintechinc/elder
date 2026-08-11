@@ -94,7 +94,7 @@ class ResourceLimits:
     file_size_bytes: int = 512 * 1024 * 1024  # 512 MiB
 
     @classmethod
-    def from_env(cls) -> "ResourceLimits":
+    def from_env(cls) -> ResourceLimits:
         """Build limits, allowing env overrides for ops tuning."""
 
         def _int(name: str, default: int) -> int:
@@ -122,7 +122,7 @@ class CommandResult:
     timed_out: bool
     duration_seconds: float
     truncated: bool
-    argv: List[str] = field(default_factory=list)
+    argv: list[str] = field(default_factory=list)
 
     @property
     def success(self) -> bool:
@@ -137,7 +137,7 @@ def allowed_binaries() -> frozenset:
     return DEFAULT_ALLOWED_BINARIES
 
 
-def parse_command(command: str) -> List[str]:
+def parse_command(command: str) -> list[str]:
     """Split a command string into an argv list (no shell interpretation)."""
     if not command or not command.strip():
         raise SandboxError("empty command")
@@ -151,7 +151,7 @@ def parse_command(command: str) -> List[str]:
 
 
 def resolve_executable(
-    argv0: str, workspace: str, extra_allowed: Optional[frozenset] = None
+    argv0: str, workspace: str, extra_allowed: frozenset | None = None
 ) -> None:
     """Validate argv[0] against the allowlist / workspace containment.
 
@@ -176,14 +176,13 @@ def resolve_executable(
         permitted = permitted | extra_allowed
     if argv0 not in permitted:
         raise SandboxError(
-            f"binary not allowlisted: {argv0!r} "
-            f"(set FLOWS_ALLOWED_BINARIES to permit)"
+            f"binary not allowlisted: {argv0!r} (set FLOWS_ALLOWED_BINARIES to permit)"
         )
 
 
-def build_env(workspace: str, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+def build_env(workspace: str, extra: dict[str, str] | None = None) -> dict[str, str]:
     """Build a minimal, curated environment (parent env is NOT inherited)."""
-    env: Dict[str, str] = {
+    env: dict[str, str] = {
         "PATH": os.environ.get(
             "PATH", "/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin"
         ),
@@ -231,14 +230,14 @@ def _limit_preexec(limits: ResourceLimits):
 
 
 def run_command(
-    argv: List[str],
+    argv: list[str],
     workspace: str,
     *,
     timeout: int = 600,
-    env: Optional[Dict[str, str]] = None,
-    limits: Optional[ResourceLimits] = None,
+    env: dict[str, str] | None = None,
+    limits: ResourceLimits | None = None,
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
-    extra_allowed: Optional[frozenset] = None,
+    extra_allowed: frozenset | None = None,
 ) -> CommandResult:
     """Run ``argv`` inside ``workspace`` under the full sandbox policy.
 

@@ -1,6 +1,7 @@
 """Integration tests for village_id module with real Redis."""
 
 import os
+
 import pytest
 import redis
 
@@ -111,7 +112,7 @@ class TestVillageIdWithRealRedis:
 
     def test_large_tenant_id(self, redis_client):
         """Test with a large tenant ID."""
-        large_tenant_id = 0xdeadbeef
+        large_tenant_id = 0xDEADBEEF
 
         village_id = generate_village_id(large_tenant_id, redis_client)
 

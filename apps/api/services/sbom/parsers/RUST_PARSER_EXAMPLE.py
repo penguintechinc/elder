@@ -9,7 +9,6 @@ Run this file to see example output:
 
 # flake8: noqa: E501
 
-
 from apps.api.services.sbom.parsers.rust_parser import RustDependencyParser
 
 

@@ -5,7 +5,6 @@ Uses real async client, JWT token generation, and mocked auth for proper scope/t
 
 # flake8: noqa: E501
 
-
 import json
 from unittest.mock import MagicMock, patch
 
@@ -212,7 +211,11 @@ class TestTenantModulesAPI:
 
         response = await async_client.put(
             "/api/v1/tenants/1/modules",
-            json={"module_name": "infrastructure", "enabled": False, "settings": {"key": "val"}},
+            json={
+                "module_name": "infrastructure",
+                "enabled": False,
+                "settings": {"key": "val"},
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
 

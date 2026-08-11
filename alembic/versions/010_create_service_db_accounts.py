@@ -13,10 +13,9 @@ The main 'elder' user (API) retains full access.
 
 from alembic import op
 
-
 # revision identifiers, used by Alembic.
-revision = '010'
-down_revision = '009'
+revision = "010"
+down_revision = "009"
 branch_labels = None
 depends_on = None
 

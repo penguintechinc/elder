@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import os
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from pydantic import ValidationError
 from quart import Blueprint, current_app, g, jsonify, make_response, request
@@ -89,7 +88,7 @@ async def register():
         default_tenant_id = default_tenant.id if default_tenant else None
 
         # Create new identity
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         identity_id = db.identities.insert(
             username=validated_data.username,
             email=validated_data.email,
@@ -236,9 +235,7 @@ async def login():
             return None, "Account is inactive", 401
 
         # Update last login
-        db(db.identities.id == identity.id).update(
-            last_login_at=datetime.now(timezone.utc)
-        )
+        db(db.identities.id == identity.id).update(last_login_at=datetime.now(UTC))
         db.commit()
 
         # Refresh identity data after update
@@ -508,7 +505,7 @@ def _create_audit_log_sync(
     ip_address and user_agent must be passed in from the async context
     (request context is not available inside a threadpool).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.audit_logs.insert(
         identity_id=identity_id,
         action_name=action,

@@ -7,7 +7,6 @@ simplifying the use of run_in_threadpool with database queries.
 
 # flake8: noqa: E501
 
-
 from typing import Any, List, Optional
 
 from quart import request
@@ -15,7 +14,7 @@ from quart import request
 from apps.api.utils.async_utils import run_in_threadpool
 
 
-async def get_by_id(table: Any, resource_id: int) -> Optional[Any]:
+async def get_by_id(table: Any, resource_id: int) -> Any | None:
     """
     Get a record by ID with async support.
 
@@ -52,8 +51,8 @@ async def query_count(query: Any) -> int:
 
 
 async def query_select(
-    query: Any, orderby: Optional[Any] = None, limitby: Optional[tuple] = None, **kwargs
-) -> List[Any]:
+    query: Any, orderby: Any | None = None, limitby: tuple | None = None, **kwargs
+) -> list[Any]:
     """
     Execute a select query with async support.
 
@@ -293,8 +292,8 @@ class PaginationParams:
 
 
 async def paginated_query(
-    query: Any, pagination: PaginationParams, orderby: Optional[Any] = None
-) -> tuple[List[Any], int]:
+    query: Any, pagination: PaginationParams, orderby: Any | None = None
+) -> tuple[list[Any], int]:
     """
     Execute a paginated query with count.
 

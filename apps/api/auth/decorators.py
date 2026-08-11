@@ -2,10 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import inspect
+from collections.abc import Callable
 from functools import wraps
-from typing import Callable, List
+from typing import List
 
 from penguin_dal import Row
 from quart import current_app, g, jsonify, request
@@ -106,7 +106,7 @@ def permission_required(permission_name: str) -> Callable:
 
 
 def permissions_required(
-    permission_names: List[str], require_all: bool = True
+    permission_names: list[str], require_all: bool = True
 ) -> Callable:
     """
     Decorator to require multiple permissions.

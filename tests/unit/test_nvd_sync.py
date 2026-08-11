@@ -8,16 +8,16 @@ Tests cover:
 """
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from apps.api.services.sbom.vulnerability.nvd_client import NVDVulnerability
 from apps.api.services.sbom.vulnerability.nvd_sync import (
-    NVDSyncService,
     MAX_VULNS_PER_SYNC,
     NVD_SYNC_INTERVAL_HOURS,
+    NVDSyncService,
 )
 
 
@@ -85,8 +85,12 @@ class TestGetVulnsNeedingSync:
 
         mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
         mock_db.vulnerabilities.nvd_last_sync = MagicMock()
-        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
-        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(
+            return_value=query_mock
+        )
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(
+            return_value=query_mock
+        )
 
         result = nvd_sync_service._get_vulns_needing_sync(
             max_vulns=100, force_refresh=False
@@ -131,8 +135,12 @@ class TestGetVulnsNeedingSync:
 
         # Mock db.vulnerabilities.nvd_last_sync comparisons
         mock_db.vulnerabilities.nvd_last_sync = MagicMock()
-        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
-        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(
+            return_value=query_mock
+        )
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(
+            return_value=query_mock
+        )
 
         # Mock db(query) to return query_mock which has select method
         mock_db.return_value = query_mock
@@ -153,8 +161,12 @@ class TestGetVulnsNeedingSync:
 
         mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
         mock_db.vulnerabilities.nvd_last_sync = MagicMock()
-        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
-        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(
+            return_value=query_mock
+        )
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(
+            return_value=query_mock
+        )
 
         nvd_sync_service._get_vulns_needing_sync(max_vulns=100, force_refresh=False)
 
@@ -169,12 +181,14 @@ class TestGetVulnsNeedingSync:
 
         mock_db.vulnerabilities.cve_id.startswith = MagicMock(return_value=query_mock)
         mock_db.vulnerabilities.nvd_last_sync = MagicMock()
-        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(return_value=query_mock)
-        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(return_value=query_mock)
-
-        nvd_sync_service._get_vulns_needing_sync(
-            max_vulns=100, force_refresh=False
+        mock_db.vulnerabilities.nvd_last_sync.__eq__ = MagicMock(
+            return_value=query_mock
         )
+        mock_db.vulnerabilities.nvd_last_sync.__lt__ = MagicMock(
+            return_value=query_mock
+        )
+
+        nvd_sync_service._get_vulns_needing_sync(max_vulns=100, force_refresh=False)
 
         # Verify the query includes time-based filtering
         query_mock.__iand__.assert_called()
@@ -220,9 +234,7 @@ class TestSyncSingleVulnerability:
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_sync_single_vuln_cve_not_found(
-        self, nvd_sync_service, mock_db
-    ):
+    async def test_sync_single_vuln_cve_not_found(self, nvd_sync_service, mock_db):
         """Test syncing when CVE is not found in NVD."""
         mock_vuln = MagicMock()
         mock_vuln.id = 1
@@ -246,9 +258,7 @@ class TestSyncSingleVulnerability:
         mock_db.commit.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_sync_single_vuln_updates_timestamp(
-        self, nvd_sync_service, mock_db
-    ):
+    async def test_sync_single_vuln_updates_timestamp(self, nvd_sync_service, mock_db):
         """Test that nvd_last_sync timestamp is updated."""
         mock_vuln = MagicMock()
         mock_vuln.id = 1
@@ -263,7 +273,7 @@ class TestSyncSingleVulnerability:
         with patch(
             "apps.api.services.sbom.vulnerability.nvd_sync.datetime"
         ) as mock_datetime:
-            mock_now = datetime.now(timezone.utc)
+            mock_now = datetime.now(UTC)
             mock_datetime.now.return_value = mock_now
             mock_datetime.side_effect = lambda *args, **kwargs: datetime(
                 *args, **kwargs
@@ -329,7 +339,9 @@ class TestSyncVulnerabilities:
     """Test sync_vulnerabilities method."""
 
     @pytest.mark.asyncio
-    async def test_sync_vulnerabilities_no_vulns_to_sync(self, nvd_sync_service, mock_db):
+    async def test_sync_vulnerabilities_no_vulns_to_sync(
+        self, nvd_sync_service, mock_db
+    ):
         """Test sync when no vulnerabilities need syncing."""
         nvd_sync_service._get_vulns_needing_sync = MagicMock(return_value=[])
 
@@ -341,7 +353,9 @@ class TestSyncVulnerabilities:
         assert stats["errors"] == 0
 
     @pytest.mark.asyncio
-    async def test_sync_vulnerabilities_successful_sync(self, nvd_sync_service, mock_db):
+    async def test_sync_vulnerabilities_successful_sync(
+        self, nvd_sync_service, mock_db
+    ):
         """Test successful sync of multiple vulnerabilities."""
         mock_vulns = [MagicMock() for _ in range(3)]
         for i, vuln in enumerate(mock_vulns):
@@ -383,7 +397,12 @@ class TestSyncVulnerabilities:
     async def test_sync_vulnerabilities_stats_reset(self, nvd_sync_service, mock_db):
         """Test that stats are reset for each sync run."""
         nvd_sync_service._get_vulns_needing_sync = MagicMock(return_value=[])
-        nvd_sync_service.stats = {"processed": 10, "updated": 5, "skipped": 2, "errors": 1}
+        nvd_sync_service.stats = {
+            "processed": 10,
+            "updated": 5,
+            "skipped": 2,
+            "errors": 1,
+        }
 
         stats = await nvd_sync_service.sync_vulnerabilities()
 
@@ -417,9 +436,7 @@ class TestSyncVulnerabilities:
         )
 
     @pytest.mark.asyncio
-    async def test_sync_vulnerabilities_mixed_results(
-        self, nvd_sync_service, mock_db
-    ):
+    async def test_sync_vulnerabilities_mixed_results(self, nvd_sync_service, mock_db):
         """Test sync with mixed results (updated, skipped, errors)."""
         mock_vulns = [MagicMock() for _ in range(3)]
         for i, vuln in enumerate(mock_vulns):
@@ -476,9 +493,7 @@ class TestEdgeCases:
         assert service.nvd_api_key == ""
 
     @pytest.mark.asyncio
-    async def test_database_commit_called_per_vuln(
-        self, nvd_sync_service, mock_db
-    ):
+    async def test_database_commit_called_per_vuln(self, nvd_sync_service, mock_db):
         """Test that database commit is called for each synced vulnerability."""
         mock_vuln = MagicMock()
         mock_vuln.id = 1
@@ -491,9 +506,7 @@ class TestEdgeCases:
         mock_db.return_value.update = MagicMock(return_value=query_result)
         mock_db.commit = MagicMock()
 
-        await nvd_sync_service._sync_single_vulnerability(
-            mock_nvd_client, mock_vuln
-        )
+        await nvd_sync_service._sync_single_vulnerability(mock_nvd_client, mock_vuln)
 
         mock_db.commit.assert_called_once()
 

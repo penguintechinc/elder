@@ -4,7 +4,7 @@ regression: streams-approvals-hooks-phase4b3c
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ class TestStreamApprovals:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Approvals Tenant",
                 slug=f"apr-{uuid.uuid4().hex[:8]}",
@@ -152,7 +152,7 @@ class TestStreamApprovals:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["streams:read", "streams:write", "streams:execute"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -239,7 +239,7 @@ class TestStreamApprovals:
         t = self.fixtures["tenant_id"]
 
         # Create a new identity that is not an approver
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         email = f"other-{uuid.uuid4().hex[:8]}@test.local"
         other_id = db.identities.insert(
             tenant_id=t,
@@ -316,7 +316,7 @@ class TestStreamApprovals:
         token = self._token(app, t, approver_id)
 
         # Create another paused execution
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         execution_id = str(uuid.uuid4())
 
         def _create_exec():
@@ -409,7 +409,7 @@ class TestStreamApprovals:
         t = self.fixtures["tenant_id"]
 
         # Create a non-approver identity
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         email = f"non-approver-{uuid.uuid4().hex[:8]}@test.local"
         non_approver_id = db.identities.insert(
             tenant_id=t,
@@ -449,7 +449,7 @@ class TestStreamApprovals:
         db = app.db
 
         # Create another tenant
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         other_tenant_id = db.tenants.insert(
             name="Other Tenant",
             slug=f"other-{uuid.uuid4().hex[:8]}",
@@ -509,7 +509,7 @@ class TestStreamWebhookHooks:
         def _setup():
             import secrets
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Hooks Tenant",
                 slug=f"hks-{uuid.uuid4().hex[:8]}",
@@ -637,7 +637,7 @@ class TestStreamWebhookHooks:
         db = app.db
         import secrets
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create webhook with only POST allowed
         def _create_restricted():

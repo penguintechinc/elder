@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -167,7 +167,7 @@ async def create_stage(flow_id: str):
 
         # Create stage
         stage_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         db_id = db.iceflows_stages.insert(
             tenant_id=tenant_id,
@@ -302,7 +302,7 @@ async def update_stage(flow_id: str, stage_id: str):
             return None, 404
 
         # Build update dict
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         for key in [
             "branch_name",

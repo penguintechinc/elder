@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import fnmatch
 from dataclasses import asdict
 

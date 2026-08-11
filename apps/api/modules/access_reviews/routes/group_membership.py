@@ -5,7 +5,6 @@ Enterprise feature for group ownership, access requests, and provider write-back
 
 # flake8: noqa: E501
 
-
 import logging
 
 from quart import Blueprint, current_app, g, jsonify, request

@@ -33,11 +33,11 @@ def seed_access_reviews():
         db = app.db
         service = AccessReviewService(db)
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Get existing groups (need groups with members)
         groups = db(
-            (db.identity_groups.is_active == True)  # noqa: E712
+            db.identity_groups.is_active == True  # noqa: E712
         ).select(limitby=(0, 4))
 
         if len(groups) == 0:
@@ -94,7 +94,7 @@ def seed_access_reviews():
 
             print(
                 f"Created in-progress review {review2['id']} for group '{group2.name}' "
-                f"with {len(items)//2} decisions"
+                f"with {len(items) // 2} decisions"
             )
 
         # Review 3: Completed (all decisions made and applied)

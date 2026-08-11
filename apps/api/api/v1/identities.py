@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
@@ -214,7 +213,7 @@ async def create_identity(body: CreateIdentityRequest):
         }
 
         # Create identity
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         identity_id = db.identities.insert(
             created_at=now, updated_at=now, **insert_data
         )

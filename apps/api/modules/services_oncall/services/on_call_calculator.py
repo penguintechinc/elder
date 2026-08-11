@@ -12,7 +12,6 @@ Supports multiple schedule types:
 
 # flake8: noqa: E501
 
-
 import datetime
 from dataclasses import dataclass
 from typing import Optional
@@ -45,8 +44,8 @@ class OnCallCalculator:
 
     @staticmethod
     async def get_current_oncall(
-        db, rotation_id: int, target_datetime: Optional[datetime.datetime] = None
-    ) -> Optional[CurrentOnCallDTO]:
+        db, rotation_id: int, target_datetime: datetime.datetime | None = None
+    ) -> CurrentOnCallDTO | None:
         """
         Get the current on-call person for a rotation.
 
@@ -65,7 +64,7 @@ class OnCallCalculator:
             CurrentOnCallDTO if someone is on-call, None otherwise
         """
         if target_datetime is None:
-            target_datetime = datetime.datetime.now(datetime.timezone.utc)
+            target_datetime = datetime.datetime.now(datetime.UTC)
 
         def get_rotation_and_current():
             rotation = db.on_call_rotations[rotation_id]
@@ -148,7 +147,7 @@ class OnCallCalculator:
     @staticmethod
     async def calculate_weekly_rotation(
         db, rotation, target_datetime: datetime.datetime
-    ) -> Optional[OnCallShiftInfo]:
+    ) -> OnCallShiftInfo | None:
         """
         Calculate on-call shift for weekly rotation.
 
@@ -188,12 +187,12 @@ class OnCallCalculator:
             start_date = datetime.datetime.fromisoformat(start_date).date()
 
         rotation_start_dt = datetime.datetime.combine(
-            start_date, datetime.time.min, tzinfo=datetime.timezone.utc
+            start_date, datetime.time.min, tzinfo=datetime.UTC
         )
 
         # Calculate elapsed days since rotation start
         elapsed_days = (
-            target_datetime.replace(tzinfo=datetime.timezone.utc) - rotation_start_dt
+            target_datetime.replace(tzinfo=datetime.UTC) - rotation_start_dt
         ).days
 
         # Calculate cycle length: num_participants * rotation_length_days
@@ -221,7 +220,7 @@ class OnCallCalculator:
     @staticmethod
     async def calculate_cron_rotation(
         db, rotation, target_datetime: datetime.datetime
-    ) -> Optional[OnCallShiftInfo]:
+    ) -> OnCallShiftInfo | None:
         """
         Calculate on-call shift for cron-based rotation.
 
@@ -261,7 +260,7 @@ class OnCallCalculator:
                 start_date = datetime.datetime.fromisoformat(start_date).date()
 
             rotation_start_dt = datetime.datetime.combine(
-                start_date, datetime.time.min, tzinfo=datetime.timezone.utc
+                start_date, datetime.time.min, tzinfo=datetime.UTC
             )
 
             # Create cron iterator from rotation start
@@ -304,7 +303,7 @@ class OnCallCalculator:
     @staticmethod
     async def calculate_followthesun_rotation(
         db, rotation, target_datetime: datetime.datetime
-    ) -> Optional[OnCallShiftInfo]:
+    ) -> OnCallShiftInfo | None:
         """
         Calculate on-call shift for follow-the-sun rotation with timezones.
 
@@ -394,10 +393,8 @@ class OnCallCalculator:
                         hour=shift_end_hour, minute=0, second=0, microsecond=0
                     )
 
-                    shift_start_utc = shift_start_local.astimezone(
-                        datetime.timezone.utc
-                    )
-                    shift_end_utc = shift_end_local.astimezone(datetime.timezone.utc)
+                    shift_start_utc = shift_start_local.astimezone(datetime.UTC)
+                    shift_end_utc = shift_end_local.astimezone(datetime.UTC)
 
                     return OnCallShiftInfo(
                         identity_id=participant.identity_id,

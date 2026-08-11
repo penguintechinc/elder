@@ -88,9 +88,9 @@ def test_insert_kwargs_are_real_columns(path, tables):
         unknown = sorted(n for n in names if n not in table.columns)
         if unknown:
             problems.append(f"{path.name}:{lineno} {table_name} -> unknown {unknown}")
-    assert (
-        not problems
-    ), "discovery insert references non-existent columns:\n" + "\n".join(problems)
+    assert not problems, (
+        "discovery insert references non-existent columns:\n" + "\n".join(problems)
+    )
 
 
 @pytest.mark.parametrize("path", SERVICE_FILES, ids=lambda p: p.parent.parent.name)

@@ -29,7 +29,7 @@ class VillageId:
     object_seq: int
 
 
-def generate_village_id(tenant_id: int, redis_client: Optional[Redis] = None) -> str:
+def generate_village_id(tenant_id: int, redis_client: Redis | None = None) -> str:
     """Generate a village ID for the given tenant.
 
     Uses the AD-3 format: TTTTTTTT-OOOOOOOOOOOOOOOO
@@ -61,7 +61,7 @@ def generate_village_id(tenant_id: int, redis_client: Optional[Redis] = None) ->
 
 
 async def agenerate_village_id(
-    tenant_id: int, redis_client: Optional[AsyncRedis] = None
+    tenant_id: int, redis_client: AsyncRedis | None = None
 ) -> str:
     """Generate a village ID asynchronously.
 

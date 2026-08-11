@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional
 
 from penguin_libs.pydantic import Description1000, Name255, RequestModel
@@ -26,7 +25,7 @@ bp = Blueprint("labels", __name__)
 class ListLabelsQuery(RequestModel):
     """Query parameters for listing labels."""
 
-    search: Optional[str] = None
+    search: str | None = None
     page: int = 1
     per_page: int = 50
 
@@ -41,16 +40,16 @@ class CreateLabelRequest(RequestModel):
     """Request body for creating a label."""
 
     name: Name255
-    description: Optional[Description1000] = None
+    description: Description1000 | None = None
     color: str = "#cccccc"
 
 
 class UpdateLabelRequest(RequestModel):
     """Request body for updating a label."""
 
-    name: Optional[Name255] = None
-    description: Optional[Description1000] = None
-    color: Optional[str] = None
+    name: Name255 | None = None
+    description: Description1000 | None = None
+    color: str | None = None
 
 
 @bp.route("", methods=["GET"])
@@ -152,7 +151,7 @@ async def create_label(body: CreateLabelRequest):
             return None
 
         # Create label
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         label_id = db.issue_labels.insert(
             name=body.name,
             description=body.description,

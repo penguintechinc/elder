@@ -6,7 +6,6 @@ with tenant context for multi-tenancy support.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Optional
@@ -29,9 +28,9 @@ class PortalAuthService:
         tenant_id: int,
         email: str,
         password: str,
-        full_name: Optional[str] = None,
+        full_name: str | None = None,
         tenant_role: str = "reader",
-        global_role: Optional[str] = None,
+        global_role: str | None = None,
     ) -> dict:
         """Create a new portal user.
 
@@ -79,7 +78,7 @@ class PortalAuthService:
             is_active=True,
             email_verified=False,
             failed_login_attempts=0,
-            password_changed_at=datetime.datetime.now(datetime.timezone.utc),
+            password_changed_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -117,14 +116,14 @@ class PortalAuthService:
 
         # Check if account is locked
         if user.locked_until:
-            if user.locked_until > datetime.datetime.now(datetime.timezone.utc):
+            if user.locked_until > datetime.datetime.now(datetime.UTC):
                 return {"error": "Account locked. Try again later."}
             else:
                 # Unlock account
                 current_app.db(current_app.db.portal_users.id == user.id).update(
                     locked_until=None,
                     failed_login_attempts=0,
-                    updated_at=datetime.datetime.now(datetime.timezone.utc),
+                    updated_at=datetime.datetime.now(datetime.UTC),
                 )
                 current_app.db.commit()
 
@@ -140,12 +139,12 @@ class PortalAuthService:
 
             if attempts >= PortalAuthService.MAX_LOGIN_ATTEMPTS:
                 updates["locked_until"] = datetime.datetime.now(
-                    datetime.timezone.utc
+                    datetime.UTC
                 ) + datetime.timedelta(
                     minutes=PortalAuthService.LOCKOUT_DURATION_MINUTES
                 )
 
-            updates["updated_at"] = datetime.datetime.now(datetime.timezone.utc)
+            updates["updated_at"] = datetime.datetime.now(datetime.UTC)
             current_app.db(current_app.db.portal_users.id == user.id).update(**updates)
             current_app.db.commit()
             return {"error": "Invalid credentials"}
@@ -153,8 +152,8 @@ class PortalAuthService:
         # Reset failed attempts on successful login
         current_app.db(current_app.db.portal_users.id == user.id).update(
             failed_login_attempts=0,
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -230,7 +229,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=secret,
             mfa_backup_codes=backup_codes,
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -261,7 +260,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=None,
             mfa_backup_codes=None,
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -296,8 +295,8 @@ class PortalAuthService:
         # Update password
         current_app.db(current_app.db.portal_users.id == user.id).update(
             password_hash=generate_password_hash(new_password),
-            password_changed_at=datetime.datetime.now(datetime.timezone.utc),
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            password_changed_at=datetime.datetime.now(datetime.UTC),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 

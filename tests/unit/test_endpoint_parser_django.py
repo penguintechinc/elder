@@ -5,6 +5,7 @@ and DRF router registrations with various configurations and edge cases.
 """
 
 import pytest
+
 from apps.scanner.parsers.endpoint_parser_django import DjangoEndpointParser
 
 
@@ -44,11 +45,11 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/api/users/'
-        assert endpoint['view_name'] == 'views.user_list'
-        assert endpoint['framework'] == 'django'
-        assert endpoint['source_file'] == 'urls.py'
-        assert endpoint['url_name'] is None
+        assert endpoint["path"] == "/api/users/"
+        assert endpoint["view_name"] == "views.user_list"
+        assert endpoint["framework"] == "django"
+        assert endpoint["source_file"] == "urls.py"
+        assert endpoint["url_name"] is None
 
     def test_parse_path_with_name(self, parser: DjangoEndpointParser) -> None:
         """Test parsing path() pattern with named URL."""
@@ -57,8 +58,8 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/api/posts/'
-        assert endpoint['url_name'] == 'post_list'
+        assert endpoint["path"] == "/api/posts/"
+        assert endpoint["url_name"] == "post_list"
 
     def test_parse_path_with_int_converter(self, parser: DjangoEndpointParser) -> None:
         """Test parsing path() with integer converter."""
@@ -67,7 +68,7 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/users/{pk}/'
+        assert endpoint["path"] == "/users/{pk}/"
 
     def test_parse_path_with_slug_converter(self, parser: DjangoEndpointParser) -> None:
         """Test parsing path() with slug converter."""
@@ -76,7 +77,7 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/posts/{post_slug}/'
+        assert endpoint["path"] == "/posts/{post_slug}/"
 
     def test_parse_path_with_uuid_converter(self, parser: DjangoEndpointParser) -> None:
         """Test parsing path() with UUID converter."""
@@ -85,47 +86,57 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/items/{item_id}/'
+        assert endpoint["path"] == "/items/{item_id}/"
 
-    def test_parse_path_method_inference_list(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_path_method_inference_list(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test HTTP method inference from list view name."""
         content = "path('api/users/', views.user_list)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["methods"] == ["GET"]
 
-    def test_parse_path_method_inference_create(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_path_method_inference_create(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test HTTP method inference from create view name."""
         content = "path('api/users/', views.create_user)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['POST']
+        assert endpoints[0]["methods"] == ["POST"]
 
-    def test_parse_path_method_inference_detail(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_path_method_inference_detail(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test HTTP method inference from detail view name."""
         content = "path('api/users/<int:pk>/', views.user_detail)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["methods"] == ["GET"]
 
-    def test_parse_path_method_inference_update(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_path_method_inference_update(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test HTTP method inference from update view name."""
         content = "path('api/users/<int:pk>/', views.update_user)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['PUT', 'PATCH']
+        assert endpoints[0]["methods"] == ["PUT", "PATCH"]
 
-    def test_parse_path_method_inference_delete(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_path_method_inference_delete(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test HTTP method inference from delete view name."""
         content = "path('api/users/<int:pk>/', views.delete_user)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['DELETE']
+        assert endpoints[0]["methods"] == ["DELETE"]
 
     # ==================== parse() with re_path() patterns ====================
 
@@ -136,9 +147,9 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/api/users/'
-        assert endpoint['view_name'] == 'views.user_list'
-        assert endpoint['framework'] == 'django'
+        assert endpoint["path"] == "/api/users/"
+        assert endpoint["view_name"] == "views.user_list"
+        assert endpoint["framework"] == "django"
 
     def test_parse_re_path_with_named_group(self, parser: DjangoEndpointParser) -> None:
         """Test parsing re_path() with named capture group."""
@@ -147,7 +158,7 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert '{pk}' in endpoint['path']
+        assert "{pk}" in endpoint["path"]
 
     def test_parse_re_path_with_name(self, parser: DjangoEndpointParser) -> None:
         """Test parsing re_path() with named URL."""
@@ -155,7 +166,7 @@ class TestDjangoEndpointParser:
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['url_name'] == 'post_list'
+        assert endpoints[0]["url_name"] == "post_list"
 
     def test_parse_re_path_removes_anchors(self, parser: DjangoEndpointParser) -> None:
         """Test that re_path parser removes regex anchors."""
@@ -164,8 +175,8 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert not endpoint['path'].startswith('^')
-        assert not endpoint['path'].endswith('$')
+        assert not endpoint["path"].startswith("^")
+        assert not endpoint["path"].endswith("$")
 
     # ==================== parse() with legacy url() patterns ====================
 
@@ -176,18 +187,20 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/api/users/'
-        assert endpoint['view_name'] == 'views.user_list'
-        assert endpoint['framework'] == 'django'
+        assert endpoint["path"] == "/api/users/"
+        assert endpoint["view_name"] == "views.user_list"
+        assert endpoint["framework"] == "django"
 
-    def test_parse_legacy_url_with_parameter(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_legacy_url_with_parameter(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test parsing legacy url() with regex parameter."""
         content = "url(r'^users/(?P<user_id>\\d+)/$', views.user_detail)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert '{user_id}' in endpoint['path']
+        assert "{user_id}" in endpoint["path"]
 
     def test_parse_legacy_url_with_name(self, parser: DjangoEndpointParser) -> None:
         """Test parsing legacy url() with named URL."""
@@ -195,7 +208,7 @@ class TestDjangoEndpointParser:
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['url_name'] == 'data'
+        assert endpoints[0]["url_name"] == "data"
 
     # ==================== parse() with DRF router patterns ====================
 
@@ -206,19 +219,21 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/users/'
-        assert endpoint['view_name'] == 'UserViewSet'
-        assert endpoint['framework'] == 'django'
+        assert endpoint["path"] == "/users/"
+        assert endpoint["view_name"] == "UserViewSet"
+        assert endpoint["framework"] == "django"
 
-    def test_parse_drf_router_all_crud_methods(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_drf_router_all_crud_methods(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test that DRF ViewSets get all CRUD methods."""
         content = "router.register('posts', PostViewSet)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        expected_methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
-        assert sorted(endpoint['methods']) == sorted(expected_methods)
+        expected_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        assert sorted(endpoint["methods"]) == sorted(expected_methods)
 
     def test_parse_drf_router_with_prefix(self, parser: DjangoEndpointParser) -> None:
         """Test parsing DRF router with custom prefix."""
@@ -227,16 +242,18 @@ class TestDjangoEndpointParser:
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/api/v1/comments/'
+        assert endpoint["path"] == "/api/v1/comments/"
 
-    def test_parse_drf_router_with_raw_string(self, parser: DjangoEndpointParser) -> None:
+    def test_parse_drf_router_with_raw_string(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test parsing DRF router with raw string prefix."""
         content = "router.register(r'items', ItemViewSet)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/items/'
+        assert endpoint["path"] == "/items/"
 
     # ==================== Line number tracking ====================
 
@@ -251,8 +268,8 @@ path('api/posts/', views.post_list)
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 2
-        assert endpoints[0]['line_number'] == 3
-        assert endpoints[1]['line_number'] == 5
+        assert endpoints[0]["line_number"] == 3
+        assert endpoints[1]["line_number"] == 5
 
     # ==================== Multiple patterns in one file ====================
 
@@ -269,11 +286,11 @@ router.register('items', ItemViewSet)
         assert len(endpoints) == 4
 
         # Verify all endpoints are present
-        paths = [ep['path'] for ep in endpoints]
-        assert '/api/users/' in paths
-        assert '/api/posts/' in paths
-        assert '/api/comments/' in paths
-        assert '/items/' in paths
+        paths = [ep["path"] for ep in endpoints]
+        assert "/api/users/" in paths
+        assert "/api/posts/" in paths
+        assert "/api/comments/" in paths
+        assert "/items/" in paths
 
     def test_parse_empty_content(self, parser: DjangoEndpointParser) -> None:
         """Test parsing empty content returns empty list."""
@@ -301,31 +318,38 @@ some_variable = 'test'
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'].startswith('/')
+        assert endpoints[0]["path"].startswith("/")
 
-    def test_normalize_path_parameter_conversion(self, parser: DjangoEndpointParser) -> None:
+    def test_normalize_path_parameter_conversion(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test that path converter parameters are normalized."""
         test_cases = [
-            ("path('users/<int:id>/', views.detail)", '/users/{id}/'),
-            ("path('posts/<str:slug>/', views.detail)", '/posts/{slug}/'),
-            ("path('items/<uuid:uuid>/', views.detail)", '/items/{uuid}/'),
-            ("path('articles/<slug:article_slug>/', views.detail)", '/articles/{article_slug}/'),
+            ("path('users/<int:id>/', views.detail)", "/users/{id}/"),
+            ("path('posts/<str:slug>/', views.detail)", "/posts/{slug}/"),
+            ("path('items/<uuid:uuid>/', views.detail)", "/items/{uuid}/"),
+            (
+                "path('articles/<slug:article_slug>/', views.detail)",
+                "/articles/{article_slug}/",
+            ),
         ]
 
         for content, expected_path in test_cases:
             endpoints = parser.parse(content, "urls.py")
             assert len(endpoints) == 1
-            assert endpoints[0]['path'] == expected_path
+            assert endpoints[0]["path"] == expected_path
 
-    def test_normalize_regex_path_removes_anchors(self, parser: DjangoEndpointParser) -> None:
+    def test_normalize_regex_path_removes_anchors(
+        self, parser: DjangoEndpointParser
+    ) -> None:
         """Test that regex anchors are removed from paths."""
         content = "re_path(r'^api/v1/data/$', views.data)"
         endpoints = parser.parse(content, "urls.py")
 
         assert len(endpoints) == 1
-        path = endpoints[0]['path']
-        assert not path.startswith('^')
-        assert not path.endswith('$')
+        path = endpoints[0]["path"]
+        assert not path.startswith("^")
+        assert not path.endswith("$")
 
     def test_normalize_regex_named_groups(self, parser: DjangoEndpointParser) -> None:
         """Test that regex named groups are converted to parameters."""
@@ -334,7 +358,7 @@ some_variable = 'test'
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert '{user_id}' in endpoint['path']
+        assert "{user_id}" in endpoint["path"]
 
     def test_normalize_regex_digit_pattern(self, parser: DjangoEndpointParser) -> None:
         """Test that \\d+ regex patterns are normalized to {id}."""
@@ -344,7 +368,7 @@ some_variable = 'test'
         assert len(endpoints) == 1
         endpoint = endpoints[0]
         # Should contain some parameter placeholder
-        assert '{' in endpoint['path']
+        assert "{" in endpoint["path"]
 
     # ==================== Framework field verification ====================
 
@@ -358,7 +382,7 @@ router.register('items', ItemViewSet)
 """
         endpoints = parser.parse(content, "urls.py")
 
-        assert all(ep['framework'] == 'django' for ep in endpoints)
+        assert all(ep["framework"] == "django" for ep in endpoints)
 
     # ==================== Source file field verification ====================
 
@@ -367,13 +391,13 @@ router.register('items', ItemViewSet)
         content = "path('api/users/', views.user_list)"
 
         endpoints1 = parser.parse(content, "urls.py")
-        assert endpoints1[0]['source_file'] == 'urls.py'
+        assert endpoints1[0]["source_file"] == "urls.py"
 
         endpoints2 = parser.parse(content, "api/urls.py")
-        assert endpoints2[0]['source_file'] == 'api/urls.py'
+        assert endpoints2[0]["source_file"] == "api/urls.py"
 
         endpoints3 = parser.parse(content, "v1_urls.py")
-        assert endpoints3[0]['source_file'] == 'v1_urls.py'
+        assert endpoints3[0]["source_file"] == "v1_urls.py"
 
 
 if __name__ == "__main__":

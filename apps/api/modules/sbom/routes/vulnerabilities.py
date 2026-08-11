@@ -2,8 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
+from datetime import UTC
 
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -475,7 +475,7 @@ async def update_component_vulnerability(id: int):
             if validated_req.status == "remediated":
                 from datetime import datetime, timezone
 
-                update_dict["remediated_at"] = datetime.now(timezone.utc)
+                update_dict["remediated_at"] = datetime.now(UTC)
 
         if validated_req.remediation_notes is not None:
             update_dict["remediation_notes"] = validated_req.remediation_notes
@@ -581,7 +581,7 @@ async def get_nvd_sync_status():
     db = current_app.db
 
     def get_status():
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_time = datetime.now(UTC) - timedelta(hours=24)
 
         # Count CVEs that need syncing
         total_cves = db(db.vulnerabilities.cve_id.startswith("CVE-")).count()

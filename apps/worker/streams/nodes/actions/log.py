@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
@@ -28,7 +28,7 @@ class LogAction(BaseNode):
     category = "actions"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the log node."""
         return [
             {
@@ -46,7 +46,7 @@ class LogAction(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the log node."""
         return [
             {
@@ -59,7 +59,7 @@ class LogAction(BaseNode):
     def _format_log_entry(self, level: str, message: str, data: Any) -> str:
         """Format log entry as JSON with context."""
         entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": level,
             "message": message,
             "execution_id": self.context.get("execution_id"),
@@ -70,7 +70,7 @@ class LogAction(BaseNode):
             entry["data"] = data
         return json.dumps(entry)
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute log action."""
         start_time = time.perf_counter()
 

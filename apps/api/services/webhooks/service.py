@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import hashlib
 import hmac
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -92,7 +91,7 @@ def _is_village_id_conflict(exc: IntegrityError) -> bool:
     return _VILLAGE_ID_UNIQUE_CONSTRAINT in str(exc)
 
 
-def _village_id_seq(village_id: Optional[str]) -> Optional[int]:
+def _village_id_seq(village_id: str | None) -> int | None:
     """Parse the object-seq (trailing 16 hex chars) out of a village_id.
 
     Returns None for anything that doesn't match the `TTTTTTTT-OOOO...`
@@ -133,7 +132,7 @@ def _raise_village_id_counter_to_table_max(
 
 
 def _insert_webhook_with_unique_village_id(
-    db: DAL, tenant_id: int, redis_client: Any, insert_data: Dict[str, Any]
+    db: DAL, tenant_id: int, redis_client: Any, insert_data: dict[str, Any]
 ) -> int:
     """Insert `insert_data` into webhooks with a collision-safe village_id.
 
@@ -143,7 +142,7 @@ def _insert_webhook_with_unique_village_id(
     """
     from shared.utils.village_id import generate_village_id
 
-    last_error: Optional[IntegrityError] = None
+    last_error: IntegrityError | None = None
     for _ in range(_MAX_VILLAGE_ID_MINT_ATTEMPTS):
         if redis_client:
             village_id = generate_village_id(tenant_id, redis_client)
@@ -180,8 +179,8 @@ class WebhookService:
     # ===========================
 
     def list_webhooks(
-        self, tenant_id: int, enabled: Optional[bool] = None
-    ) -> List[Dict[str, Any]]:
+        self, tenant_id: int, enabled: bool | None = None
+    ) -> list[dict[str, Any]]:
         """
         List all webhooks for a tenant, optionally filtered by active status.
 
@@ -201,7 +200,7 @@ class WebhookService:
 
         return [self._sanitize_webhook(w) for w in webhooks]
 
-    def get_webhook(self, webhook_id: int, tenant_id: int) -> Dict[str, Any]:
+    def get_webhook(self, webhook_id: int, tenant_id: int) -> dict[str, Any]:
         """
         Get webhook details by id, scoped to tenant_id.
 
@@ -234,17 +233,17 @@ class WebhookService:
         tenant_id: int,
         name: str,
         url: str,
-        events: List[str],
-        redis_client: Optional[Any] = None,
-        organization_id: Optional[int] = None,
-        secret: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
-        filter_issue_type: Optional[str] = None,
-        filter_assignee_type: Optional[str] = None,
-        filter_assignee_id: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        events: list[str],
+        redis_client: Any | None = None,
+        organization_id: int | None = None,
+        secret: str | None = None,
+        headers: dict[str, str] | None = None,
+        filter_issue_type: str | None = None,
+        filter_assignee_type: str | None = None,
+        filter_assignee_id: int | None = None,
+        metadata: dict[str, Any] | None = None,
         is_active: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a new tenant-scoped webhook.
 
@@ -296,7 +295,7 @@ class WebhookService:
                 f"Invalid filter_assignee_type. Must be one of: {', '.join(sorted(_VALID_ASSIGNEE_TYPES))}"
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         insert_data = {
             "tenant_id": tenant_id,
             "organization_id": organization_id,
@@ -326,17 +325,17 @@ class WebhookService:
         self,
         webhook_id: int,
         tenant_id: int,
-        name: Optional[str] = None,
-        url: Optional[str] = None,
-        events: Optional[List[str]] = None,
-        secret: Optional[str] = None,
-        headers: Optional[Dict[str, str]] = None,
-        is_active: Optional[bool] = None,
+        name: str | None = None,
+        url: str | None = None,
+        events: list[str] | None = None,
+        secret: str | None = None,
+        headers: dict[str, str] | None = None,
+        is_active: bool | None = None,
         filter_issue_type: Any = _UNSET,
         filter_assignee_type: Any = _UNSET,
         filter_assignee_id: Any = _UNSET,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Update a tenant-scoped webhook configuration.
 
@@ -371,7 +370,7 @@ class WebhookService:
         if not webhook:
             raise Exception(f"Webhook {webhook_id} not found")
 
-        update_data: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+        update_data: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
             update_data["name"] = name
@@ -434,7 +433,7 @@ class WebhookService:
         webhook = self.db.webhooks[webhook_id]
         return self._sanitize_webhook(webhook)
 
-    def delete_webhook(self, webhook_id: int, tenant_id: int) -> Dict[str, str]:
+    def delete_webhook(self, webhook_id: int, tenant_id: int) -> dict[str, str]:
         """
         Delete a tenant-scoped webhook and its delivery history.
 
@@ -474,8 +473,8 @@ class WebhookService:
     # ===========================
 
     def deliver_webhook(
-        self, webhook_id: int, tenant_id: int, event_type: str, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, webhook_id: int, tenant_id: int, event_type: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Deliver a webhook event.
 
@@ -513,11 +512,11 @@ class WebhookService:
 
         delivery_payload = {
             "event": event_type,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "data": payload,
         }
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         delivery_id = self.db.webhook_deliveries.insert(
             webhook_id=webhook_id,
             event_type=event_type,
@@ -530,8 +529,8 @@ class WebhookService:
         return self._attempt_delivery(delivery_id, webhook, delivery_payload)
 
     def _attempt_delivery(
-        self, delivery_id: int, webhook: Any, payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, delivery_id: int, webhook: Any, payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Attempt to deliver a webhook, HMAC-signed if a secret is configured.
 
@@ -588,7 +587,7 @@ class WebhookService:
                 status="success" if success else "failed",
                 http_status=response.status_code,
                 response_body=response.text[:1000],
-                delivered_at=datetime.now(timezone.utc) if success else None,
+                delivered_at=datetime.now(UTC) if success else None,
             )
             self.db.commit()
 
@@ -610,7 +609,7 @@ class WebhookService:
 
     def redeliver_webhook(
         self, webhook_id: int, tenant_id: int, delivery_id: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Retry a failed webhook delivery.
 
@@ -654,8 +653,8 @@ class WebhookService:
         webhook_id: int,
         tenant_id: int,
         limit: int = 50,
-        status: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get webhook delivery history.
 
@@ -710,7 +709,7 @@ class WebhookService:
             for d in deliveries
         ]
 
-    def test_webhook(self, webhook_id: int, tenant_id: int) -> Dict[str, Any]:
+    def test_webhook(self, webhook_id: int, tenant_id: int) -> dict[str, Any]:
         """
         Send a test event to webhook (uses its first subscribed event type).
 
@@ -754,9 +753,9 @@ class WebhookService:
     def list_notification_rules(
         self,
         tenant_id: int,
-        organization_id: Optional[int] = None,
-        channel: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        organization_id: int | None = None,
+        channel: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List notification rules scoped to tenant_id.
 
@@ -798,7 +797,7 @@ class WebhookService:
 
         return [r.as_dict() for r in rules]
 
-    def get_notification_rule(self, rule_id: int, tenant_id: int) -> Dict[str, Any]:
+    def get_notification_rule(self, rule_id: int, tenant_id: int) -> dict[str, Any]:
         """
         Get notification rule by ID, scoped to tenant_id.
 
@@ -832,11 +831,11 @@ class WebhookService:
         self,
         name: str,
         channel: str,
-        events: List[str],
-        config: Dict[str, Any],
+        events: list[str],
+        config: dict[str, Any],
         organization_id: int,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Create a notification rule.
 
@@ -866,7 +865,7 @@ class WebhookService:
         if not config or not isinstance(config, dict):
             raise Exception("Config must be a non-empty dictionary")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         rule_id = self.db.notification_rules.insert(
             name=name,
             channel=channel,
@@ -887,12 +886,12 @@ class WebhookService:
     def update_notification_rule(
         self,
         rule_id: int,
-        name: Optional[str] = None,
-        events: Optional[List[str]] = None,
-        config: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        events: list[str] | None = None,
+        config: dict[str, Any] | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """
         Update notification rule.
 
@@ -915,7 +914,7 @@ class WebhookService:
         if not rule:
             raise Exception(f"Notification rule {rule_id} not found")
 
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
             update_data["name"] = name
@@ -942,7 +941,7 @@ class WebhookService:
         rule = self.db.notification_rules[rule_id]
         return rule.as_dict()
 
-    def delete_notification_rule(self, rule_id: int) -> Dict[str, str]:
+    def delete_notification_rule(self, rule_id: int) -> dict[str, str]:
         """
         Delete a notification rule.
 
@@ -965,7 +964,7 @@ class WebhookService:
 
         return {"message": "Notification rule deleted successfully"}
 
-    def test_notification_rule(self, rule_id: int) -> Dict[str, Any]:
+    def test_notification_rule(self, rule_id: int) -> dict[str, Any]:
         """
         Send a test notification for a rule.
 
@@ -992,7 +991,7 @@ class WebhookService:
 
         return self._send_notification(rule, test_payload)
 
-    def _send_notification(self, rule: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _send_notification(self, rule: Any, payload: dict[str, Any]) -> dict[str, Any]:
         """
         Send notification via configured channel.
 
@@ -1021,8 +1020,8 @@ class WebhookService:
             return {"success": False, "error": str(e)}
 
     def _send_email_notification(
-        self, config: Dict[str, Any], payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, config: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """Send email notification."""
         # NOTE: In production, integrate with SMTP or email service (SendGrid, SES, etc.)
         # For now, return success indicating email would be sent
@@ -1034,8 +1033,8 @@ class WebhookService:
         }
 
     def _send_slack_notification(
-        self, config: Dict[str, Any], payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, config: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """Send Slack notification."""
         webhook_url = config.get("webhook_url")
         if not webhook_url:
@@ -1054,8 +1053,8 @@ class WebhookService:
             return {"success": False, "channel": "slack", "error": str(e)}
 
     def _send_teams_notification(
-        self, config: Dict[str, Any], payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, config: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """Send Microsoft Teams notification."""
         webhook_url = config.get("webhook_url")
         if not webhook_url:
@@ -1074,8 +1073,8 @@ class WebhookService:
             return {"success": False, "channel": "teams", "error": str(e)}
 
     def _send_pagerduty_notification(
-        self, config: Dict[str, Any], payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, config: dict[str, Any], payload: dict[str, Any]
+    ) -> dict[str, Any]:
         """Send PagerDuty notification."""
         routing_key = config.get("routing_key")
         if not routing_key:
@@ -1111,10 +1110,10 @@ class WebhookService:
     def broadcast_event(
         self,
         event_type: str,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         organization_id: int,
         tenant_id: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Broadcast an event to all applicable webhooks and notification rules.
 
@@ -1196,7 +1195,7 @@ class WebhookService:
         (back-compat for any existing caller of the instance method)."""
         return generate_signature(secret, payload)
 
-    def _sanitize_webhook(self, webhook: Any) -> Dict[str, Any]:
+    def _sanitize_webhook(self, webhook: Any) -> dict[str, Any]:
         """
         Build the exact public webhook response shape from a pydal Row.
 

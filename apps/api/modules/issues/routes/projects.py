@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -163,7 +162,7 @@ async def create_project():
 
     def create():
         # Create project
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         project_id = db.projects.insert(
             name=data["name"],
             description=data.get("description"),
@@ -207,9 +206,11 @@ async def get_project(id: int):
         return jsonify({"error": "Tenant not found"}), 403
 
     project = await run_in_threadpool(
-        lambda: db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
-        .select()
-        .first()
+        lambda: (
+            db((db.projects.id == id) & (db.projects.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
     )
 
     if not project:

@@ -9,7 +9,7 @@ import hashlib
 import hmac
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -157,12 +157,12 @@ async def trigger_webhook(webhook_id: str):
         input_data["__webhook__"] = {
             "method": method,
             "remote_addr": remote_addr,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Create promotion record
         promotion_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get source and target stages
         source_stage = (

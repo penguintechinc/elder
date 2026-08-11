@@ -10,7 +10,7 @@ admin CRUD routes.
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -117,9 +117,9 @@ class TestIntakeFormsAdmin:
             json=payload,
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert second.status_code in (400, 409), (
-            await second.get_data()
-        ).decode()[:300]
+        assert second.status_code in (400, 409), (await second.get_data()).decode()[
+            :300
+        ]
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -166,9 +166,9 @@ class TestIntakeFormsAdmin:
                 },
                 headers={"Authorization": f"Bearer {token}"},
             )
-            assert resp.status_code in (200, 201), (
-                await resp.get_data()
-            ).decode()[:300]
+            assert resp.status_code in (200, 201), (await resp.get_data()).decode()[
+                :300
+            ]
             return json.loads(await resp.get_data())["village_id"]
 
         def _seq(village_id: str) -> int:
@@ -220,7 +220,7 @@ class TestIntakeFormsAdmin:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant2_id = db.tenants.insert(
                 name="Cross Tenant IDOR Two",
                 slug=f"idor-tenant-{uuid4().hex[:8]}",
@@ -268,7 +268,7 @@ class TestIntakeFormsAdmin:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant2_id = db.tenants.insert(
                 name="Cross Tenant IDOR Assignee",
                 slug=f"idor-assignee-tenant-{uuid4().hex[:8]}",
@@ -395,7 +395,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Public Submit Org",
                 tenant_id=1,
@@ -480,7 +480,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Captcha Org",
                 tenant_id=1,
@@ -518,9 +518,7 @@ class TestIntakeFormsPublicSubmit:
             f"/api/v1/intake/{slug}/submit",
             json={"fields": {"email": "cust@example.com"}},
         )
-        assert no_altcha.status_code == 400, (
-            await no_altcha.get_data()
-        ).decode()[:300]
+        assert no_altcha.status_code == 400, (await no_altcha.get_data()).decode()[:300]
 
         # Well-formed but bogus altcha solution.
         bad_altcha = await async_client.post(
@@ -536,9 +534,9 @@ class TestIntakeFormsPublicSubmit:
                 },
             },
         )
-        assert bad_altcha.status_code == 400, (
-            await bad_altcha.get_data()
-        ).decode()[:300]
+        assert bad_altcha.status_code == 400, (await bad_altcha.get_data()).decode()[
+            :300
+        ]
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -588,7 +586,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.organizations.insert(
                 name="Root Org For Tenant 1",
                 tenant_id=1,
@@ -644,7 +642,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Staff Collision Org",
                 tenant_id=1,
@@ -734,7 +732,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org1_id = db.organizations.insert(
                 name="Tenant1 Cross Org",
                 tenant_id=1,
@@ -760,9 +758,7 @@ class TestIntakeFormsPublicSubmit:
 
         slug1 = f"cross1-{uuid4().hex[:8]}"
         slug2 = f"cross2-{uuid4().hex[:8]}"
-        fields = [
-            {"id": "email", "label": "Email", "type": "email", "required": True}
-        ]
+        fields = [{"id": "email", "label": "Email", "type": "email", "required": True}]
 
         r1 = await async_client.post(
             "/api/v1/intake-forms",
@@ -798,17 +794,17 @@ class TestIntakeFormsPublicSubmit:
             f"/api/v1/intake/{slug1}/submit",
             json={"fields": {"email": shared_email}},
         )
-        assert submit1.status_code in (200, 201), (
-            await submit1.get_data()
-        ).decode()[:300]
+        assert submit1.status_code in (200, 201), (await submit1.get_data()).decode()[
+            :300
+        ]
 
         submit2 = await async_client.post(
             f"/api/v1/intake/{slug2}/submit",
             json={"fields": {"email": shared_email}},
         )
-        assert submit2.status_code in (200, 201), (
-            await submit2.get_data()
-        ).decode()[:300]
+        assert submit2.status_code in (200, 201), (await submit2.get_data()).decode()[
+            :300
+        ]
 
         async with app.app_context():
             db = current_app.db
@@ -836,7 +832,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Nonobject Body Org",
                 tenant_id=1,
@@ -893,7 +889,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Replay Org",
                 tenant_id=1,
@@ -937,17 +933,13 @@ class TestIntakeFormsPublicSubmit:
             f"/api/v1/intake/{slug}/submit",
             json={"fields": {"email": email}, "altcha": solved},
         )
-        assert first.status_code in (200, 201), (
-            await first.get_data()
-        ).decode()[:300]
+        assert first.status_code in (200, 201), (await first.get_data()).decode()[:300]
 
         second = await async_client.post(
             f"/api/v1/intake/{slug}/submit",
             json={"fields": {"email": email}, "altcha": solved},
         )
-        assert second.status_code == 400, (
-            await second.get_data()
-        ).decode()[:300]
+        assert second.status_code == 400, (await second.get_data()).decode()[:300]
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -963,7 +955,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Oversized Field Org",
                 tenant_id=1,
@@ -1027,7 +1019,7 @@ class TestIntakeFormsPublicSubmit:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Bug Issue Type Org",
                 tenant_id=1,

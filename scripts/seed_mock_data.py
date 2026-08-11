@@ -23,7 +23,7 @@ Example:
 import argparse
 import random
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -566,7 +566,7 @@ class MockDataSeeder:
 
         for project in self.created["projects"][: self.count // 2]:
             for i, name in enumerate(milestone_names[: random.randint(2, 4)]):
-                due_date = datetime.now(timezone.utc) + timedelta(days=30 * (i + 1))
+                due_date = datetime.now(UTC) + timedelta(days=30 * (i + 1))
                 result = self._api_post(
                     "/api/v1/milestones",
                     {
@@ -723,8 +723,7 @@ class MockDataSeeder:
                     "seats": random.randint(10, 500),
                     "cost_monthly": float(random.randint(100, 5000)),
                     "renewal_date": (
-                        datetime.now(timezone.utc)
-                        + timedelta(days=random.randint(30, 365))
+                        datetime.now(UTC) + timedelta(days=random.randint(30, 365))
                     )
                     .date()
                     .isoformat(),
@@ -1000,7 +999,7 @@ class MockDataSeeder:
                 # Calculate expiration (30-365 days from now)
                 expires_days = random.randint(30, 365)
                 expires_at = (
-                    datetime.now(timezone.utc) + timedelta(days=expires_days)
+                    datetime.now(UTC) + timedelta(days=expires_days)
                 ).isoformat()
 
                 result = self._api_post(
@@ -1040,9 +1039,7 @@ class MockDataSeeder:
             common_name = random.choice(domains)
 
             # Generate issue and expiration dates
-            issue_date = datetime.now(timezone.utc) - timedelta(
-                days=random.randint(1, 300)
-            )
+            issue_date = datetime.now(UTC) - timedelta(days=random.randint(1, 300))
             expiration_date = issue_date + timedelta(days=random.choice([90, 180, 365]))
 
             result = self._api_post(

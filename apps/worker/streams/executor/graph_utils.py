@@ -25,7 +25,7 @@ class GraphError(Exception):
 class CycleDetectedError(GraphError):
     """Raised when a cycle is detected in the graph."""
 
-    cycle_nodes: Tuple[str, ...]
+    cycle_nodes: tuple[str, ...]
 
     def __str__(self) -> str:
         cycle_str = " -> ".join(self.cycle_nodes)
@@ -35,14 +35,14 @@ class CycleDetectedError(GraphError):
 class TopologicalSorter:
     """Topological sorting using Kahn's algorithm with cycle detection."""
 
-    def __init__(self, nodes: List[Dict], edges: List[Dict]) -> None:
+    def __init__(self, nodes: list[dict], edges: list[dict]) -> None:
         self.nodes = nodes
         self.edges = edges
         self._node_ids = {node["id"] for node in nodes}
         self._adjacency_list = self._build_adjacency_list()
         self._in_degree = self._calculate_in_degree()
 
-    def _build_adjacency_list(self) -> Dict[str, Set[str]]:
+    def _build_adjacency_list(self) -> dict[str, set[str]]:
         """Build adjacency list representation."""
         adj_list = defaultdict(set)
         for node_id in self._node_ids:
@@ -59,7 +59,7 @@ class TopologicalSorter:
                 adj_list[source].add(target)
         return dict(adj_list)
 
-    def _calculate_in_degree(self) -> Dict[str, int]:
+    def _calculate_in_degree(self) -> dict[str, int]:
         """Calculate in-degree for each node."""
         in_degree = {node_id: 0 for node_id in self._node_ids}
         for edge in self.edges:
@@ -68,7 +68,7 @@ class TopologicalSorter:
                 in_degree[target] += 1
         return in_degree
 
-    def sort(self) -> List[str]:
+    def sort(self) -> list[str]:
         """Perform topological sort. Returns node IDs in execution order."""
         in_degree = self._in_degree.copy()
         result = []
@@ -91,13 +91,13 @@ class TopologicalSorter:
 
         return result
 
-    def _find_cycle(self, remaining_nodes: List[str]) -> List[str]:
+    def _find_cycle(self, remaining_nodes: list[str]) -> list[str]:
         """Find a cycle using DFS."""
         visited = set()
         rec_stack = set()
         parent = {}
 
-        def dfs(node: str) -> Optional[str]:
+        def dfs(node: str) -> str | None:
             visited.add(node)
             rec_stack.add(node)
             for neighbor in self._adjacency_list.get(node, set()):
@@ -129,7 +129,7 @@ class TopologicalSorter:
         return remaining_nodes
 
 
-def get_upstream_nodes(node_id: str, edges: List[Dict]) -> List[str]:
+def get_upstream_nodes(node_id: str, edges: list[dict]) -> list[str]:
     """Get all nodes that feed into the specified node."""
     upstream = []
     for edge in edges:
@@ -140,7 +140,7 @@ def get_upstream_nodes(node_id: str, edges: List[Dict]) -> List[str]:
     return upstream
 
 
-def get_downstream_nodes(node_id: str, edges: List[Dict]) -> List[str]:
+def get_downstream_nodes(node_id: str, edges: list[dict]) -> list[str]:
     """Get all nodes that this node feeds into."""
     downstream = []
     for edge in edges:
@@ -151,7 +151,7 @@ def get_downstream_nodes(node_id: str, edges: List[Dict]) -> List[str]:
     return downstream
 
 
-def get_node_inputs(node_id: str, edges: List[Dict]) -> Dict[str, Tuple[str, str]]:
+def get_node_inputs(node_id: str, edges: list[dict]) -> dict[str, tuple[str, str]]:
     """Get input mapping for a node (targetHandle -> (source_node_id, sourceHandle))."""
     inputs = {}
     for edge in edges:
@@ -165,8 +165,8 @@ def get_node_inputs(node_id: str, edges: List[Dict]) -> Dict[str, Tuple[str, str
 
 
 def get_node_outputs(
-    node_id: str, edges: List[Dict]
-) -> Dict[str, List[Tuple[str, str]]]:
+    node_id: str, edges: list[dict]
+) -> dict[str, list[tuple[str, str]]]:
     """Get output routing for a node (sourceHandle -> [(target_node_id, targetHandle)])."""
     outputs = defaultdict(list)
     for edge in edges:
@@ -179,7 +179,7 @@ def get_node_outputs(
     return dict(outputs)
 
 
-def find_trigger_nodes(nodes: List[Dict]) -> List[str]:
+def find_trigger_nodes(nodes: list[dict]) -> list[str]:
     """Find all trigger nodes (category='triggers')."""
     triggers = []
     for node in nodes:
@@ -190,7 +190,7 @@ def find_trigger_nodes(nodes: List[Dict]) -> List[str]:
     return triggers
 
 
-def validate_graph(nodes: List[Dict], edges: List[Dict]) -> List[str]:
+def validate_graph(nodes: list[dict], edges: list[dict]) -> list[str]:
     """Validate graph structure. Returns list of error messages."""
     errors = []
 

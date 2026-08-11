@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
 from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
 from apps.worker.discovery.base import BaseDiscoveryProvider

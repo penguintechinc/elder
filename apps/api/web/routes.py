@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 
 from quart import Blueprint, flash, redirect, render_template, url_for

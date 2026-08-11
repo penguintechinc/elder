@@ -12,7 +12,7 @@ Provides:
 import asyncio
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -32,7 +32,7 @@ log = structlog.get_logger()
 collab_bp = Blueprint("diagram_collab", __name__)
 
 
-def _is_collaboration_enabled(app, identity_id: str) -> tuple[bool, Optional[str]]:
+def _is_collaboration_enabled(app, identity_id: str) -> tuple[bool, str | None]:
     """Check if collaboration is enabled via license + PostHog flag.
 
     Args:
@@ -255,7 +255,7 @@ async def collab_ws(diagram_id: int):
 
         # Register presence in database
         def register_session():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             return current_app.db.dg_collaboration_sessions.insert(
                 diagram_id=diagram_id,
                 identity_id=identity_id,
@@ -364,7 +364,7 @@ async def collab_ws(diagram_id: int):
                                 ).update(
                                     last_cursor_x=x,
                                     last_cursor_y=y,
-                                    last_active_at=datetime.now(timezone.utc),
+                                    last_active_at=datetime.now(UTC),
                                 )
                                 current_app.db.commit()
 
@@ -463,7 +463,7 @@ async def collab_ws(diagram_id: int):
                         == session_id
                     ).update(
                         is_active=False,
-                        left_at=datetime.now(timezone.utc),
+                        left_at=datetime.now(UTC),
                     )
                     current_app.db.commit()
 

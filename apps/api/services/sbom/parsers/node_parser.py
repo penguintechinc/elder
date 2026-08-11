@@ -12,7 +12,6 @@ component dictionaries with package names, versions, and metadata.
 
 # flake8: noqa: E501
 
-
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -50,7 +49,7 @@ class NodeDependencyParser(BaseDependencyParser):
         ]
         return filename in supported_patterns
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency filenames.
 
         Returns:
@@ -63,7 +62,7 @@ class NodeDependencyParser(BaseDependencyParser):
             "pnpm-lock.yaml",
         ]
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse a Node.js dependency file and extract components.
 
         Routes parsing to the appropriate handler based on filename.
@@ -103,7 +102,7 @@ class NodeDependencyParser(BaseDependencyParser):
         except (json.JSONDecodeError, yaml.YAMLError, ValueError) as e:
             raise ValueError(f"Failed to parse {filename}: {str(e)}")
 
-    def _parse_package_json(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_package_json(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse package.json and extract direct dependencies.
 
         Args:
@@ -113,7 +112,7 @@ class NodeDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries from the package.json file.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
         data = json.loads(content)
 
         # Process runtime dependencies
@@ -148,7 +147,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
     def _parse_package_lock_json(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse package-lock.json and extract dependencies.
 
         Handles both npm v6 (dependencies key) and npm v7+ (packages key) formats.
@@ -160,7 +159,7 @@ class NodeDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries from the lock file.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
         data = json.loads(content)
 
         # npm v7+ format uses 'packages' key
@@ -196,7 +195,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
         return components
 
-    def _parse_yarn_lock(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_yarn_lock(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse yarn.lock and extract dependencies.
 
         Parses Yarn's custom lock file format which uses:
@@ -211,7 +210,7 @@ class NodeDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries from the Yarn lock file.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
         lines = content.split("\n")
         i = 0
 
@@ -263,7 +262,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
         return components
 
-    def _parse_yarn_key(self, key: str) -> Optional[tuple]:
+    def _parse_yarn_key(self, key: str) -> tuple | None:
         """Parse a Yarn lock file key to extract package name and version spec.
 
         Handles both scoped (@scope/package@version) and unscoped (package@version) formats.
@@ -297,7 +296,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
         return None
 
-    def _extract_yarn_resolved_version(self, resolved_line: str) -> Optional[str]:
+    def _extract_yarn_resolved_version(self, resolved_line: str) -> str | None:
         """Extract version from Yarn's resolved line.
 
         Args:
@@ -322,7 +321,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
     def _parse_pnpm_lock_yaml(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse pnpm-lock.yaml and extract dependencies.
 
         Args:
@@ -332,7 +331,7 @@ class NodeDependencyParser(BaseDependencyParser):
         Returns:
             List of dependency dictionaries from the pnpm lock file.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
 
         try:
             data = yaml.safe_load(content)
@@ -383,7 +382,7 @@ class NodeDependencyParser(BaseDependencyParser):
 
         return components
 
-    def _parse_pnpm_package_key(self, package_key: str) -> Optional[tuple]:
+    def _parse_pnpm_package_key(self, package_key: str) -> tuple | None:
         """Parse a pnpm package key to extract name and version.
 
         Handles both scoped and unscoped packages.
@@ -434,11 +433,11 @@ class NodeDependencyParser(BaseDependencyParser):
     def _create_component(
         self,
         name: str,
-        version: Optional[str],
+        version: str | None,
         scope: str,
         direct: bool,
         source_file: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a standardized component dictionary.
 
         Args:
@@ -467,7 +466,7 @@ class NodeDependencyParser(BaseDependencyParser):
             "source_file": source_file,
         }
 
-    def _generate_purl(self, name: str, version: Optional[str]) -> str:
+    def _generate_purl(self, name: str, version: str | None) -> str:
         """Generate a Package URL (purl) for an npm package.
 
         Args:

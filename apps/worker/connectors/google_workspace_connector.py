@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict, Optional
 
 from google.oauth2 import service_account
@@ -31,10 +30,10 @@ class GoogleWorkspaceConnector(BaseConnector):
     def __init__(self):
         """Initialize Google Workspace connector."""
         super().__init__("google_workspace")
-        self.elder_client: Optional[ElderAPIClient] = None
+        self.elder_client: ElderAPIClient | None = None
         self.admin_service = None
-        self.organization_cache: Dict[str, int] = {}
-        self.orgunit_cache: Dict[str, int] = {}  # Map org unit path to Elder org ID
+        self.organization_cache: dict[str, int] = {}
+        self.orgunit_cache: dict[str, int] = {}  # Map org unit path to Elder org ID
 
     async def connect(self) -> None:
         """Establish connection to Google Workspace and Elder API."""
@@ -93,7 +92,7 @@ class GoogleWorkspaceConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """
         Get or create an organization in Elder.

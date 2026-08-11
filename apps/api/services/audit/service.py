@@ -6,7 +6,6 @@ HIPAA, and GDPR compliance requirements.
 
 # flake8: noqa: E501
 
-
 import datetime
 from typing import Optional
 
@@ -47,18 +46,18 @@ class AuditService:
     def log(
         action: str,
         resource_type: str,
-        resource_id: Optional[int] = None,
-        identity_id: Optional[int] = None,
-        portal_user_id: Optional[int] = None,
-        tenant_id: Optional[int] = None,
-        details: Optional[dict] = None,
+        resource_id: int | None = None,
+        identity_id: int | None = None,
+        portal_user_id: int | None = None,
+        tenant_id: int | None = None,
+        details: dict | None = None,
         success: bool = True,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        category: Optional[str] = None,
-        old_values: Optional[dict] = None,
-        new_values: Optional[dict] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        correlation_id: str | None = None,
+        category: str | None = None,
+        old_values: dict | None = None,
+        new_values: dict | None = None,
     ) -> int:
         """Log an audit event.
 
@@ -125,10 +124,10 @@ class AuditService:
         email: str,
         tenant_id: int,
         success: bool = True,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        details: Optional[dict] = None,
-        portal_user_id: Optional[int] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        details: dict | None = None,
+        portal_user_id: int | None = None,
     ) -> int:
         """Log an authentication event.
 
@@ -167,8 +166,8 @@ class AuditService:
         resource_id: int,
         portal_user_id: int,
         tenant_id: int,
-        fields_accessed: Optional[list] = None,
-        ip_address: Optional[str] = None,
+        fields_accessed: list | None = None,
+        ip_address: str | None = None,
     ) -> int:
         """Log a data access event (for sensitive data).
 
@@ -205,9 +204,9 @@ class AuditService:
         resource_id: int,
         portal_user_id: int,
         tenant_id: int,
-        old_values: Optional[dict] = None,
-        new_values: Optional[dict] = None,
-        ip_address: Optional[str] = None,
+        old_values: dict | None = None,
+        new_values: dict | None = None,
+        ip_address: str | None = None,
     ) -> int:
         """Log a data modification event.
 
@@ -238,16 +237,16 @@ class AuditService:
 
     @staticmethod
     def query_logs(
-        tenant_id: Optional[int] = None,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[int] = None,
-        action: Optional[str] = None,
-        category: Optional[str] = None,
-        identity_id: Optional[int] = None,
-        portal_user_id: Optional[int] = None,
-        start_date: Optional[datetime.datetime] = None,
-        end_date: Optional[datetime.datetime] = None,
-        success: Optional[bool] = None,
+        tenant_id: int | None = None,
+        resource_type: str | None = None,
+        resource_id: int | None = None,
+        action: str | None = None,
+        category: str | None = None,
+        identity_id: int | None = None,
+        portal_user_id: int | None = None,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        success: bool | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> dict:
@@ -452,7 +451,7 @@ class AuditService:
                 "unique_resources": unique_resources,
             },
             "events": [AuditService._log_to_dict(log) for log in logs],
-            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
 
     @staticmethod
@@ -494,7 +493,7 @@ class AuditService:
             return {"error": "Tenant not found"}
 
         retention_days = tenant.data_retention_days or 90
-        cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        cutoff_date = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             days=retention_days
         )
 

@@ -4,7 +4,7 @@ regression: diagrams-sharing-collections-phase4b2
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ class TestDiagramSharing:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Sharing Tenant",
                 slug=f"shr-{uuid.uuid4().hex[:8]}",
@@ -107,7 +107,7 @@ class TestDiagramSharing:
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
         # CRITICAL: scope must be a LIST, not a space-joined string
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -136,7 +136,7 @@ class TestDiagramSharing:
         reader = self.fixtures["identity_id_2"]
 
         def _mk_public():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             did = db.dg_diagrams.insert(
                 tenant_id=t,
                 village_id=uuid.uuid4().hex[:24],
@@ -324,7 +324,7 @@ class TestDiagramSharing:
         def create_expired_share():
             import secrets
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             expired_token = f"expired-{secrets.token_urlsafe(32)}"
             share_id = db.dg_shares.insert(
                 tenant_id=tenant_id,
@@ -398,7 +398,7 @@ class TestDiagramCollections:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Collections Tenant",
                 slug=f"col-{uuid.uuid4().hex[:8]}",
@@ -474,7 +474,7 @@ class TestDiagramCollections:
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
         # CRITICAL: scope must be a LIST
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -734,7 +734,7 @@ class TestDiagramCollections:
 
         # Create a different tenant with a collection
         def create_other_tenant_collection():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_tenant_id = db.tenants.insert(
                 name="Other Tenant",
                 slug=f"oth-{uuid.uuid4().hex[:8]}",

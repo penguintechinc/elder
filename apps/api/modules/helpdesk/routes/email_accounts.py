@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -169,7 +169,7 @@ async def create_email_account():
     is_default = data.get("is_default", False)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Build update dict with only provided fields (pyDAL gotcha: defaults not applied)
         insert_data = {
@@ -337,7 +337,7 @@ async def update_email_account(account_id):
         if not account_row:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         # Only update provided fields

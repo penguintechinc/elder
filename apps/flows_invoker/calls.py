@@ -22,7 +22,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -39,14 +39,14 @@ class CallOutcome:
 
     dispatched: bool
     passed: bool
-    execution_id: Optional[str] = None
-    final_status: Optional[str] = None
-    error: Optional[str] = None
+    execution_id: str | None = None
+    final_status: str | None = None
+    error: str | None = None
     attempts: int = 1
-    detail: Dict[str, Any] = field(default_factory=dict)
+    detail: dict[str, Any] = field(default_factory=dict)
 
 
-def _enqueue_streams_job(payload: Dict[str, Any], tenant_id: int) -> None:
+def _enqueue_streams_job(payload: dict[str, Any], tenant_id: int) -> None:
     """Enqueue an execute_playbook job (fresh loop/connection, then closed)."""
     from apps.worker.config.settings import settings
 
@@ -66,7 +66,7 @@ def _enqueue_streams_job(payload: Dict[str, Any], tenant_id: int) -> None:
                 "streams",
                 "execute_playbook",
                 payload,
-                enqueued_at=datetime.now(timezone.utc).isoformat(),
+                enqueued_at=datetime.now(UTC).isoformat(),
                 tenant_id=tenant_id,
                 idempotency_key=payload.get("execution_id"),
             )
@@ -80,7 +80,7 @@ def _dispatch_icestreams(
     db,
     tenant_id: int,
     call,
-    context: Dict[str, Any],
+    context: dict[str, Any],
 ) -> CallOutcome:
     """Create a stream_executions row and enqueue the playbook job."""
     try:
@@ -106,7 +106,7 @@ def _dispatch_icestreams(
         )
 
     execution_uuid = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     input_json = dict(call.input_template or {})
     input_json["_flows"] = context
 
@@ -137,7 +137,7 @@ def _dispatch_icestreams(
         db(db.stream_executions.execution_id == execution_uuid).update(
             status="failed",
             error_message=f"flows call enqueue failed: {e}",
-            updated_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(UTC),
         )
         db.commit()
         return CallOutcome(
@@ -155,7 +155,7 @@ def _wait_for_streams_result(
 ) -> CallOutcome:
     """Poll the stream_executions row until terminal status or timeout."""
     deadline = time.monotonic() + max(1, timeout_seconds)
-    final_status: Optional[str] = None
+    final_status: str | None = None
     while time.monotonic() < deadline:
         row = db(db.stream_executions.execution_id == execution_uuid).select().first()
         final_status = row.status if row else None
@@ -188,7 +188,7 @@ def dispatch_stage_call(
     db,
     tenant_id: int,
     call,
-    context: Dict[str, Any],
+    context: dict[str, Any],
 ) -> CallOutcome:
     """Dispatch one configured stage call, honoring blocking + retry policy."""
     call_type = (call.call_type or "").lower()

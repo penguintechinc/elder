@@ -9,8 +9,8 @@ Implements lazy loading and conditional mounting of feature modules based on:
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Callable, Mapping
 
 import structlog
 from quart import Blueprint, Quart

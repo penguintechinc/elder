@@ -1,7 +1,8 @@
 """Unit tests for village_id module (AD-3 format: TTTTTTTT-OOOOOOOOOOOOOOOO)."""
 
+from unittest.mock import MagicMock, Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
 
 from shared.utils.village_id import (
     VILLAGE_ID_RE,
@@ -80,7 +81,7 @@ class TestGenerateVillageId:
     def test_generate_includes_sequence_in_hex(self):
         """Test sequence is correctly formatted in hex (16 hex chars)."""
         redis_client = Mock()
-        redis_client.incr.return_value = 0xf3c1
+        redis_client.incr.return_value = 0xF3C1
 
         village_id = generate_village_id(42, redis_client)
 
@@ -152,9 +153,9 @@ class TestGenerateVillageId:
     def test_length_fits_string_32(self):
         """Test generated ID length is <= 32 chars (String(32) column)."""
         redis_client = Mock()
-        redis_client.incr.return_value = 0xffffffffffffffff
+        redis_client.incr.return_value = 0xFFFFFFFFFFFFFFFF
 
-        village_id = generate_village_id(0xffffffff, redis_client)
+        village_id = generate_village_id(0xFFFFFFFF, redis_client)
 
         assert len(village_id) <= 32
         assert len(village_id) == 25  # Exact expected length
@@ -169,7 +170,7 @@ class TestParseVillageId:
 
         assert isinstance(result, VillageId)
         assert result.tenant_id == 42
-        assert result.object_seq == 0xf3c1
+        assert result.object_seq == 0xF3C1
 
     def test_parse_extracts_tenant_id_correctly(self):
         """Test tenant ID is correctly extracted from hex."""
@@ -194,13 +195,13 @@ class TestParseVillageId:
     def test_parse_round_trip(self):
         """Test round-trip: generate -> parse -> values match."""
         redis_client = Mock()
-        redis_client.incr.return_value = 0xdeadbeef
+        redis_client.incr.return_value = 0xDEADBEEF
 
         generated = generate_village_id(0x12345678, redis_client)
         parsed = parse_village_id(generated)
 
         assert parsed.tenant_id == 0x12345678
-        assert parsed.object_seq == 0xdeadbeef
+        assert parsed.object_seq == 0xDEADBEEF
 
 
 class TestVillageIdDataclass:
@@ -228,7 +229,7 @@ class TestEdgeCases:
         redis_client.incr.return_value = 1
 
         # Max 32-bit: 0xffffffff (4294967295)
-        village_id = generate_village_id(0xffffffff, redis_client)
+        village_id = generate_village_id(0xFFFFFFFF, redis_client)
 
         assert village_id.startswith("ffffffff-")
         assert is_valid_village_id(village_id)

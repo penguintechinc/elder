@@ -19,7 +19,6 @@ is implemented.
 
 # flake8: noqa: E501
 
-
 from .dotnet_parser import DotnetParser
 from .go_parser import GoParser
 from .java_parser import JavaDependencyParser

@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, request
 
@@ -138,7 +138,7 @@ async def create_canned_response():
         return ApiResponse.validation_error("body_html", "is required")
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         response_id = db.hd_canned_responses.insert(
             tenant_id=tenant_id,
             title=title,
@@ -224,7 +224,7 @@ async def update_canned_response(response_id: int):
         if "is_shared" in data:
             update_data["is_shared"] = data["is_shared"]
 
-        update_data["updated_at"] = datetime.now(timezone.utc)
+        update_data["updated_at"] = datetime.now(UTC)
 
         if update_data:
             db(query).update(**update_data)

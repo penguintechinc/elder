@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from markdown_it import MarkdownIt
 from quart import Blueprint, current_app, g, jsonify, request
@@ -299,7 +299,7 @@ async def create_document():
         # Render markdown to HTML and sanitize
         body_text, body_html = _render_and_sanitize_body(body)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Parse visibility settings
         visibility = data.get("visibility", "authenticated")
@@ -512,7 +512,7 @@ async def update_document(doc_id):
             ):
                 return "visibility_users_not_in_tenant"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         # If title changes, regenerate slug and validate uniqueness
@@ -721,7 +721,7 @@ async def publish_document(doc_id):
         if not _can_read_document(db, doc, tenant_id, identity_id, user_roles):
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db(db.doc_documents.id == doc_id).update(
             status="published",
             published_at=now,

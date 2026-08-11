@@ -4,7 +4,6 @@ Express.js endpoint parser for detecting routes in JavaScript/TypeScript source 
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Dict, List, Optional
 
@@ -52,7 +51,7 @@ class ExpressEndpointParser:
         """
         return filename.endswith((".js", ".ts", ".mjs", ".tsx", ".jsx"))
 
-    def parse(self, content: str, filename: str) -> List[Dict]:
+    def parse(self, content: str, filename: str) -> list[dict]:
         """
         Parse Express.js routes from source code.
 
@@ -84,7 +83,7 @@ class ExpressEndpointParser:
 
     def _parse_method_routes(
         self, line: str, line_num: int, filename: str
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Parse method-specific routes like app.get('/path', handler)."""
         endpoints = []
 
@@ -114,7 +113,7 @@ class ExpressEndpointParser:
 
         return endpoints
 
-    def _parse_use_routes(self, line: str, line_num: int, filename: str) -> List[Dict]:
+    def _parse_use_routes(self, line: str, line_num: int, filename: str) -> list[dict]:
         """Parse app.use('/path', router) routes."""
         endpoints = []
 
@@ -136,7 +135,7 @@ class ExpressEndpointParser:
 
         return endpoints
 
-    def _parse_chained_routes(self, content: str, filename: str) -> List[Dict]:
+    def _parse_chained_routes(self, content: str, filename: str) -> list[dict]:
         """Parse chained routes like app.route('/path').get().post()."""
         endpoints = []
 
@@ -197,7 +196,7 @@ class ExpressEndpointParser:
         # Count commas (if > 1, there are middleware functions)
         return remainder.count(",") > 1
 
-    def _find_handler_name(self, line: str, start_pos: int) -> Optional[str]:
+    def _find_handler_name(self, line: str, start_pos: int) -> str | None:
         """
         Try to find the handler function name.
 

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 from typing import Any, Optional
 
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("webhooks", __name__)
 
 
-def _tenant_id() -> Optional[int]:
+def _tenant_id() -> int | None:
     """Tenant id from validated JWT claims (populated by before_request).
 
     Duplicated locally rather than imported cross-module — matches the
@@ -42,7 +41,7 @@ def get_webhook_service():
     return WebhookService(current_app.db)
 
 
-def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> bool:
+def _org_unit_in_tenant(db: Any, org_unit_id: int | None, tenant_id: int) -> bool:
     """Return True if org_unit_id is unset or belongs to tenant_id.
 
     Org-unit counterpart to identity_in_tenant: guards a webhook's
@@ -66,9 +65,9 @@ def _org_unit_in_tenant(db: Any, org_unit_id: Optional[int], tenant_id: int) -> 
 def _validate_filter_assignee_ref(
     db: Any,
     tenant_id: int,
-    filter_assignee_type: Optional[str],
-    filter_assignee_id: Optional[int],
-) -> Optional[str]:
+    filter_assignee_type: str | None,
+    filter_assignee_id: int | None,
+) -> str | None:
     """Validate an EFFECTIVE (filter_assignee_type, filter_assignee_id) pair
     — i.e. the values that will actually be persisted after the request is
     applied — against tenant_id.
@@ -197,7 +196,7 @@ async def create_webhook():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 
@@ -554,7 +553,7 @@ async def create_notification_rule():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 
@@ -728,7 +727,7 @@ async def broadcast_event():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 

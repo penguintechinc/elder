@@ -16,9 +16,9 @@ class DecoratorValidator:
     def __init__(self, api_path: str):
         """Initialize validator with path to API directory."""
         self.api_path = Path(api_path)
-        self.issues: List[Dict[str, str]] = []
+        self.issues: list[dict[str, str]] = []
 
-    def find_endpoint_files(self) -> List[Path]:
+    def find_endpoint_files(self) -> list[Path]:
         """Find all Python files in the API v1 directory."""
         v1_path = self.api_path / "api" / "v1"
         if not v1_path.exists():
@@ -27,10 +27,10 @@ class DecoratorValidator:
 
     def parse_file(self, file_path: Path) -> ast.Module:
         """Parse a Python file into an AST."""
-        with open(file_path, "r") as f:
+        with open(file_path) as f:
             return ast.parse(f.read(), filename=str(file_path))
 
-    def get_decorators(self, node: ast.FunctionDef) -> Set[str]:
+    def get_decorators(self, node: ast.FunctionDef) -> set[str]:
         """Extract decorator names from a function definition."""
         decorators = set()
         for decorator in node.decorator_list:
@@ -41,7 +41,7 @@ class DecoratorValidator:
                     decorators.add(decorator.func.id)
         return decorators
 
-    def get_route_methods(self, node: ast.FunctionDef) -> List[str]:
+    def get_route_methods(self, node: ast.FunctionDef) -> list[str]:
         """Extract HTTP methods from @bp.route decorator."""
         for decorator in node.decorator_list:
             if isinstance(decorator, ast.Call):
@@ -61,7 +61,7 @@ class DecoratorValidator:
                                 ]
         return []
 
-    def is_create_function(self, func_name: str, methods: List[str]) -> bool:
+    def is_create_function(self, func_name: str, methods: list[str]) -> bool:
         """Determine if a function is a CREATE endpoint."""
         # Check if it's a POST method and function name suggests creation
         if "POST" in methods:
@@ -114,7 +114,7 @@ class DecoratorValidator:
                             }
                         )
 
-    def validate_all(self) -> List[Dict[str, str]]:
+    def validate_all(self) -> list[dict[str, str]]:
         """Validate all API endpoint files."""
         files = self.find_endpoint_files()
         for file_path in files:

@@ -37,9 +37,11 @@ class TestCreateIdentityTenantId:
         """
         When tenant_id not in body but g.current_user.tenant_id exists, use it.
         """
-        from apps.api.models.pydantic.identity import CreateIdentityRequest
         from unittest.mock import MagicMock
+
         from flask import Flask, g
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
 
         app = Flask(__name__)
         with app.app_context():
@@ -67,9 +69,11 @@ class TestCreateIdentityTenantId:
         When tenant_id not in body and g.current_user.tenant_id is None,
         fall back to default tenant from database.
         """
-        from apps.api.models.pydantic.identity import CreateIdentityRequest
         from unittest.mock import MagicMock
+
         from flask import Flask, g
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
 
         app = Flask(__name__)
         with app.app_context():
@@ -196,6 +200,7 @@ class TestCreateUserTenantId:
         When tenant_id not in body but g.current_user.tenant_id exists, use it.
         """
         from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -225,6 +230,7 @@ class TestCreateUserTenantId:
         When tenant_id not in body and no current_user, fall back to default tenant from DB.
         """
         from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -262,6 +268,7 @@ class TestCreateUserTenantId:
         After the fix, the insert call must include tenant_id parameter.
         """
         from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -348,8 +355,9 @@ class TestIdentityTypeLiteral:
         """
         When identity_type="not_a_type", CreateIdentityRequest should reject it (400).
         """
-        from apps.api.models.pydantic.identity import CreateIdentityRequest
         from pydantic import ValidationError
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
 
         # Should raise ValidationError
         with pytest.raises(ValidationError):

@@ -24,9 +24,9 @@ class TestAPIHealth:
             data = response.json()
             assert "version" in data or "api_version" in data
             version = data.get("version") or data.get("api_version", "")
-            assert version != "0.0.0", (
-                f"Version is '0.0.0' — APP_VERSION build-arg was not injected correctly"
-            )
+            assert (
+                version != "0.0.0"
+            ), f"Version is '0.0.0' — APP_VERSION build-arg was not injected correctly"
 
 
 class TestAPIAuthentication:

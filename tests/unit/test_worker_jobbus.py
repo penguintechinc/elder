@@ -11,7 +11,7 @@ Tests the following components:
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,7 +22,6 @@ from redis.asyncio import Redis
 from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from shared.jobbus import JobBus, JobEnvelope
-
 
 # Test Redis configuration (use DB 6 for isolation)
 TEST_REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:56379/6")
@@ -122,7 +121,7 @@ class TestHandlerRegistry:
             job_id="test-123",
             job_type="sbom_scan",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         with pytest.raises(NotImplementedError, match="SBOM scan worker logic"):
@@ -141,7 +140,7 @@ class TestConsumerDispatch:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={"config": "test"},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job
@@ -166,7 +165,7 @@ class TestConsumerDispatch:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job
@@ -227,7 +226,7 @@ class TestIdempotency:
             job_id=job_id,
             job_type="discovery_sync",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Simulate consumer checking idempotency
@@ -266,7 +265,7 @@ class TestExceptionHandling:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job
@@ -301,7 +300,7 @@ class TestXAUTOCLAIM:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job on consumer-1
@@ -339,7 +338,7 @@ class TestXAUTOCLAIM:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job
@@ -398,7 +397,7 @@ class TestConsumerEndToEnd:
             stream_group="discovery",
             job_type="discovery_sync",
             payload={"config": "test"},
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
         )
 
         # Read the job

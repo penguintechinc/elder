@@ -6,7 +6,7 @@ import asyncio
 import imaplib
 import ssl
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from email import message_from_bytes
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -353,8 +353,8 @@ async def poll_email_account(
                                 village_id=contact_vid,
                                 email=parsed.from_addr,
                                 first_name=parsed.from_addr.split("@")[0],
-                                created_at=datetime.now(timezone.utc),
-                                updated_at=datetime.now(timezone.utc),
+                                created_at=datetime.now(UTC),
+                                updated_at=datetime.now(UTC),
                             )
                             db.commit()
                             requester_contact_id = contact_id
@@ -368,8 +368,8 @@ async def poll_email_account(
                             channel="email",
                             requester_contact_id=requester_contact_id,
                             requester_identity_id=None,
-                            created_at=datetime.now(timezone.utc),
-                            updated_at=datetime.now(timezone.utc),
+                            created_at=datetime.now(UTC),
+                            updated_at=datetime.now(UTC),
                         )
                         db.commit()
 
@@ -400,8 +400,8 @@ async def poll_email_account(
                         body_html=parsed.body_html,
                         is_internal=False,
                         email_message_id=parsed.message_id,
-                        created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc),
+                        created_at=datetime.now(UTC),
+                        updated_at=datetime.now(UTC),
                     )
                     db.commit()
 
@@ -423,7 +423,7 @@ async def poll_email_account(
                         to_addr=",".join(parsed.to_addrs),
                         subject=parsed.subject,
                         status="received",
-                        created_at=datetime.now(timezone.utc),
+                        created_at=datetime.now(UTC),
                     )
                     db.commit()
 

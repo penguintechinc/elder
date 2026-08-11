@@ -90,7 +90,7 @@ def _decode_payload(payload: dict[str, Any] | str) -> dict[str, Any]:
     return payload
 
 
-def extract_challenge(payload: dict[str, Any] | str) -> Optional[str]:
+def extract_challenge(payload: dict[str, Any] | str) -> str | None:
     """Return the `challenge` id embedded in a submitted Altcha payload.
 
     Used to key the single-use "already consumed" Redis marker independent

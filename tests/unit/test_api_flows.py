@@ -6,7 +6,7 @@ regression: flows-crud-phase4a
 import os
 import subprocess
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -57,7 +57,7 @@ class TestFlows:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Flows Tenant",
                 slug=f"fl-{uuid.uuid4().hex[:8]}",
@@ -91,7 +91,7 @@ class TestFlows:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["flows:read", "flows:write", "flows:approve"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -139,7 +139,7 @@ class TestFlows:
 
         # Create a pipeline first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             pipeline_id = db.iceflows.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -184,7 +184,7 @@ class TestFlows:
 
         # Create a pipeline first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             pipeline_id = db.iceflows.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -229,7 +229,7 @@ class TestFlows:
 
         # Create a pipeline in a DIFFERENT tenant
         def _create_other():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_tenant_id = db.tenants.insert(
                 name="Other Tenant",
                 slug=f"ot-{uuid.uuid4().hex[:8]}",
@@ -359,7 +359,7 @@ class TestFlows:
         db = app.db
 
         def _mk():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             flow_id = db.iceflows.insert(
                 tenant_id=tenant_id,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -507,7 +507,7 @@ class TestFlows:
         identity_id = self.fixtures["identity_id"]
 
         def _mk_flow():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             fid = db.iceflows.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -557,7 +557,7 @@ class TestFlows:
         db = app.db
 
         def _mk():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             flow_id = db.iceflows.insert(
                 tenant_id=tenant_id,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -753,7 +753,7 @@ class TestFlows:
         db = app.db
 
         def _other():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             ot = db.tenants.insert(
                 name="Other",
                 slug=f"ot-{uuid.uuid4().hex[:8]}",
@@ -799,7 +799,7 @@ class TestFlows:
         origin_url, _seed = _make_git_origin(tmp_path)
 
         def _mk():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             flow_id = db.iceflows.insert(
                 tenant_id=tenant_id,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -1118,7 +1118,7 @@ class TestFlows:
         db = app.db
 
         def _mk_playbook():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             pb_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",

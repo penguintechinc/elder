@@ -8,7 +8,7 @@ import boto3
 logger = logging.getLogger(__name__)
 
 
-def create_aws_session_and_client(config: Dict[str, Any], service_name: str) -> Any:
+def create_aws_session_and_client(config: dict[str, Any], service_name: str) -> Any:
     """
     Create and return an AWS boto3 client for the specified service.
 

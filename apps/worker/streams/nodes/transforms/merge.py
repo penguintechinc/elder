@@ -26,7 +26,7 @@ class MergeTransform(BaseNode):
     category = "transforms"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for merge node."""
         return [
             {
@@ -56,7 +56,7 @@ class MergeTransform(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for merge node."""
         return [
             {
@@ -66,7 +66,7 @@ class MergeTransform(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate merge node configuration."""
         errors = []
 
@@ -85,7 +85,7 @@ class MergeTransform(BaseNode):
 
         return errors
 
-    def _deep_merge(self, base: Dict, override: Dict) -> Dict:
+    def _deep_merge(self, base: dict, override: dict) -> dict:
         """Recursively merge two dictionaries with override taking precedence."""
         result = dict(base)
         for key, value in override.items():
@@ -99,7 +99,7 @@ class MergeTransform(BaseNode):
                 result[key] = value
         return result
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the merge transform."""
         if "in1" not in inputs:
             raise ValueError("Required input 'in1' is missing")

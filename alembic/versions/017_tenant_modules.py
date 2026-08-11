@@ -8,6 +8,7 @@ Tenant-specific module enablement and settings storage.
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "017"

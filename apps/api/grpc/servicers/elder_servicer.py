@@ -9,8 +9,7 @@ For now, all methods return UNIMPLEMENTED status until proper penguin-dal integr
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Optional
 
 import grpc
@@ -77,7 +76,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
     # Helper Methods
     # ========================================================================
 
-    def _create_timestamp(self, dt: Optional[datetime]) -> common_pb2.Timestamp:
+    def _create_timestamp(self, dt: datetime | None) -> common_pb2.Timestamp:
         """Convert datetime to protobuf Timestamp."""
         if dt is None:
             return common_pb2.Timestamp(seconds=0, nanos=0)
@@ -121,7 +120,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         else:
             expires_delta = self.jwt_refresh_token_expires
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity.id),
             "username": identity.username,
@@ -133,7 +132,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
         token = jwt.encode(payload, self.jwt_secret, algorithm=self.jwt_algorithm)
         return token
 
-    def _verify_jwt_token(self, token: str) -> Optional[dict]:
+    def _verify_jwt_token(self, token: str) -> dict | None:
         """Verify and decode JWT token."""
         try:
             payload = jwt.decode(
@@ -188,9 +187,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 return auth_pb2.LoginResponse()
 
             # Update last login
-            db(db.identities.id == identity.id).update(
-                last_login_at=datetime.now(timezone.utc)
-            )
+            db(db.identities.id == identity.id).update(last_login_at=datetime.now(UTC))
             db.commit()
 
             # Refresh identity data
@@ -364,7 +361,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 identity_type = "service_account"
 
             # Create identity
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = db.identities.insert(
                 username=request.username,
                 email=request.email,
@@ -721,7 +718,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["owner_group_id"] = request.owner_group_id
 
             # Create organization using PyDAL
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             data["created_at"] = now
             data["updated_at"] = now
             org_id = db.organizations.insert(**data)
@@ -1000,7 +997,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = org.tenant_id
 
             # Create entity using PyDAL
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             data["created_at"] = now
             data["updated_at"] = now
             entity_id = db.entities.insert(**data)
@@ -1159,7 +1156,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = org.tenant_id
 
                     # Create entity
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     data["created_at"] = now
                     data["updated_at"] = now
                     entity_id = db.entities.insert(**data)
@@ -1297,7 +1294,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                 data["tenant_id"] = 1  # Default tenant
 
             # Create dependency using PyDAL
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             data["created_at"] = now
             data["updated_at"] = now
             dep_id = db.dependencies.insert(**data)
@@ -1419,7 +1416,7 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
                     data["tenant_id"] = source_entity.tenant_id
 
                     # Create dependency
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     data["created_at"] = now
                     data["updated_at"] = now
                     dep_id = db.dependencies.insert(**data)

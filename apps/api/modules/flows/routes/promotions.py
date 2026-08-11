@@ -5,7 +5,7 @@ Provides promotion request and approval workflow management.
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -265,7 +265,7 @@ async def approve_promotion(promotion_id: str):
             .first()
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if existing:
             # Update decision
@@ -411,7 +411,7 @@ async def reject_promotion(promotion_id: str):
             .first()
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         if existing:
             # Update decision
@@ -503,7 +503,7 @@ async def execute_promotion(promotion_id: str):
         # Create the execution row BEFORE enqueue so a dropped job is always
         # visible (status stays "pending") instead of silently lost.
         execution_uuid = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db.iceflows_executions.insert(
             tenant_id=tenant_id,
             execution_id=execution_uuid,
@@ -526,7 +526,7 @@ async def execute_promotion(promotion_id: str):
 
     promo_db_id = result[0]
     execution_uuid = result[2]
-    enqueue_time = datetime.now(timezone.utc)
+    enqueue_time = datetime.now(UTC)
     enqueue_error = None
     try:
         import redis.asyncio
@@ -572,8 +572,8 @@ async def execute_promotion(promotion_id: str):
             ).update(
                 status="failed",
                 error_message="job enqueue failed",
-                completed_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.commit()
 

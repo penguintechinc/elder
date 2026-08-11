@@ -5,7 +5,7 @@ regression: diagrams-storage-providers-export-phase4b4
 
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -25,7 +25,7 @@ class TestDiagramStorageProviders:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Storage Tenant",
                 slug=f"stor-{uuid.uuid4().hex[:8]}",
@@ -120,7 +120,7 @@ class TestDiagramStorageProviders:
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
         # CRITICAL: scope must be a LIST, not a space-joined string
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -193,7 +193,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -243,7 +243,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -281,7 +281,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_system_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -319,7 +319,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -358,7 +358,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -396,7 +396,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_incomplete_provider():
             # Provider missing required keys
@@ -442,7 +442,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_good_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -485,7 +485,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider():
             provider_id = db.dg_storage_providers.insert(
@@ -559,7 +559,7 @@ class TestDiagramStorageProviders:
         from apps.api.utils.async_utils import run_in_threadpool
 
         db = app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         def _insert_provider_with_nested_secrets():
             provider_id = db.dg_storage_providers.insert(
@@ -646,7 +646,7 @@ class TestDiagramExport:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Export Tenant",
                 slug=f"exp-{uuid.uuid4().hex[:8]}",
@@ -727,7 +727,7 @@ class TestDiagramExport:
     def _token(self, app, tenant_id, identity_id, scopes=None):
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -836,7 +836,7 @@ class TestDiagramExport:
         db = app.db
 
         def _create_other_diagram():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id_2 = db.identities.insert(
                 tenant_id=self.fixtures["tenant_id"],
                 username=f"exp-other-{uuid.uuid4().hex[:8]}@test.local",

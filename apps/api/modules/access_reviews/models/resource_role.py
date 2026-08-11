@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import enum
 from typing import List, Optional
 
@@ -199,8 +198,8 @@ class ResourceRole(Base, IDMixin, VillageIDMixin, TimestampMixin):
         cls,
         resource_type: ResourceType,
         resource_id: int,
-        role_type: Optional[ResourceRoleType] = None,
-    ) -> List["ResourceRole"]:
+        role_type: ResourceRoleType | None = None,
+    ) -> list["ResourceRole"]:
         """
         Get all users with roles on a specific resource.
 
@@ -228,14 +227,14 @@ class ResourceRole(Base, IDMixin, VillageIDMixin, TimestampMixin):
 # Extension methods for Entity and Organization models
 
 
-def get_entity_role(entity_id: int, identity_id: int) -> Optional[ResourceRole]:
+def get_entity_role(entity_id: int, identity_id: int) -> ResourceRole | None:
     """Get user's role for an entity."""
     return ResourceRole.get_user_role(identity_id, ResourceType.ENTITY, entity_id)
 
 
 def get_organization_role(
     organization_id: int, identity_id: int
-) -> Optional[ResourceRole]:
+) -> ResourceRole | None:
     """Get user's role for an organization."""
     return ResourceRole.get_user_role(
         identity_id, ResourceType.ORGANIZATION, organization_id
@@ -261,15 +260,15 @@ def check_organization_permission(
 
 
 def get_entity_users_with_role(
-    entity_id: int, role_type: Optional[ResourceRoleType] = None
-) -> List[ResourceRole]:
+    entity_id: int, role_type: ResourceRoleType | None = None
+) -> list[ResourceRole]:
     """Get all users with roles on an entity."""
     return ResourceRole.get_users_with_role(ResourceType.ENTITY, entity_id, role_type)
 
 
 def get_organization_users_with_role(
-    organization_id: int, role_type: Optional[ResourceRoleType] = None
-) -> List[ResourceRole]:
+    organization_id: int, role_type: ResourceRoleType | None = None
+) -> list[ResourceRole]:
     """Get all users with roles on an organization."""
     return ResourceRole.get_users_with_role(
         ResourceType.ORGANIZATION, organization_id, role_type

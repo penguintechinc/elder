@@ -3,13 +3,14 @@
 Parity tests against Ruffled's SLA engine with golden values for business hours calculations.
 """
 
+from datetime import UTC, datetime, timedelta, timezone
+
 import pytest
 import pytest_asyncio
-from datetime import datetime, timezone, timedelta
 
 from apps.api.modules.helpdesk.services.sla import (
-    calculate_breach_time,
     apply_sla_policy,
+    calculate_breach_time,
     check_sla_breaches,
 )
 
@@ -19,9 +20,9 @@ class TestCalculateBreachTime:
 
     def test_calculate_breach_time_no_business_hours(self):
         """Test simple time addition without business hours logic."""
-        start = datetime(2025, 1, 22, 10, 0, 0, tzinfo=timezone.utc)  # Wed 10am
+        start = datetime(2025, 1, 22, 10, 0, 0, tzinfo=UTC)  # Wed 10am
         breach = calculate_breach_time(start, 4, business_hours_only=False)
-        assert breach == datetime(2025, 1, 22, 14, 0, 0, tzinfo=timezone.utc)  # Wed 2pm
+        assert breach == datetime(2025, 1, 22, 14, 0, 0, tzinfo=UTC)  # Wed 2pm
 
     def test_calculate_breach_time_4_hours_mid_day(self):
         """Parity: Friday 3pm + 4 business hours = Monday 12pm (noon).
@@ -30,9 +31,9 @@ class TestCalculateBreachTime:
         Monday 9am + 1h = 10am, +1h = 11am, +1h = 12pm
         Total: 4 hours (Fri 4pm, Mon 9am-12pm)
         """
-        start = datetime(2025, 1, 24, 15, 0, 0, tzinfo=timezone.utc)  # Fri 3pm
+        start = datetime(2025, 1, 24, 15, 0, 0, tzinfo=UTC)  # Fri 3pm
         breach = calculate_breach_time(start, 4, business_hours_only=True)
-        expected = datetime(2025, 1, 27, 12, 0, 0, tzinfo=timezone.utc)  # Mon 12pm
+        expected = datetime(2025, 1, 27, 12, 0, 0, tzinfo=UTC)  # Mon 12pm
         assert breach == expected
 
     def test_calculate_breach_time_wednesday_to_thursday(self):
@@ -46,9 +47,9 @@ class TestCalculateBreachTime:
         Thu 10am: count 1h -> 11am
         Total: 4 hours, breach at Thu 11am
         """
-        start = datetime(2025, 1, 22, 14, 0, 0, tzinfo=timezone.utc)  # Wed 2pm
+        start = datetime(2025, 1, 22, 14, 0, 0, tzinfo=UTC)  # Wed 2pm
         breach = calculate_breach_time(start, 4, business_hours_only=True)
-        expected = datetime(2025, 1, 23, 11, 0, 0, tzinfo=timezone.utc)  # Thu 11am
+        expected = datetime(2025, 1, 23, 11, 0, 0, tzinfo=UTC)  # Thu 11am
         assert breach == expected
 
     def test_calculate_breach_time_saturday_skips_to_monday(self):
@@ -59,9 +60,9 @@ class TestCalculateBreachTime:
         Mon 10am: count 1h
         Total: 2 hours, breach at Mon 11am
         """
-        start = datetime(2025, 1, 25, 10, 0, 0, tzinfo=timezone.utc)  # Sat 10am
+        start = datetime(2025, 1, 25, 10, 0, 0, tzinfo=UTC)  # Sat 10am
         breach = calculate_breach_time(start, 2, business_hours_only=True)
-        expected = datetime(2025, 1, 27, 11, 0, 0, tzinfo=timezone.utc)  # Mon 11am
+        expected = datetime(2025, 1, 27, 11, 0, 0, tzinfo=UTC)  # Mon 11am
         assert breach == expected
 
     def test_calculate_breach_time_friday_to_monday(self):
@@ -72,9 +73,9 @@ class TestCalculateBreachTime:
         Mon 9am: count 1h
         Total: 1 hour, breach at Mon 10am
         """
-        start = datetime(2025, 1, 24, 16, 30, 0, tzinfo=timezone.utc)  # Fri 4:30pm
+        start = datetime(2025, 1, 24, 16, 30, 0, tzinfo=UTC)  # Fri 4:30pm
         breach = calculate_breach_time(start, 1, business_hours_only=True)
-        expected = datetime(2025, 1, 27, 10, 0, 0, tzinfo=timezone.utc)  # Mon 10am
+        expected = datetime(2025, 1, 27, 10, 0, 0, tzinfo=UTC)  # Mon 10am
         assert breach == expected
 
     def test_calculate_breach_time_midnight_jumps_to_9am(self):
@@ -85,9 +86,9 @@ class TestCalculateBreachTime:
         Wed 10am: count 1h
         Total: 2 hours, breach at Wed 11am
         """
-        start = datetime(2025, 1, 22, 0, 0, 0, tzinfo=timezone.utc)  # Wed midnight
+        start = datetime(2025, 1, 22, 0, 0, 0, tzinfo=UTC)  # Wed midnight
         breach = calculate_breach_time(start, 2, business_hours_only=True)
-        expected = datetime(2025, 1, 22, 11, 0, 0, tzinfo=timezone.utc)  # Wed 11am
+        expected = datetime(2025, 1, 22, 11, 0, 0, tzinfo=UTC)  # Wed 11am
         assert breach == expected
 
     def test_calculate_breach_time_24_business_hours(self):
@@ -117,14 +118,14 @@ class TestCalculateBreachTime:
         Loop exits when hours_added >= 24
         Return Fri 5pm
         """
-        start = datetime(2025, 1, 22, 9, 0, 0, tzinfo=timezone.utc)  # Wed 9am
+        start = datetime(2025, 1, 22, 9, 0, 0, tzinfo=UTC)  # Wed 9am
         breach = calculate_breach_time(start, 24, business_hours_only=True)
-        expected = datetime(2025, 1, 27, 12, 0, 0, tzinfo=timezone.utc)  # Mon 12pm
+        expected = datetime(2025, 1, 27, 12, 0, 0, tzinfo=UTC)  # Mon 12pm
         assert breach == expected
 
     def test_calculate_breach_time_zero_hours(self):
         """Edge case: 0 hours should return the same time (after business hours check)."""
-        start = datetime(2025, 1, 22, 14, 0, 0, tzinfo=timezone.utc)  # Wed 2pm
+        start = datetime(2025, 1, 22, 14, 0, 0, tzinfo=UTC)  # Wed 2pm
         breach = calculate_breach_time(start, 0, business_hours_only=True)
         # Loop exits immediately, returns start
         assert breach == start
@@ -141,8 +142,9 @@ class TestSlaIntegration:
         if not test_database_url:
             pytest.skip("DATABASE_URL not set")
 
-        from apps.api.utils.async_utils import run_in_threadpool
         import time
+
+        from apps.api.utils.async_utils import run_in_threadpool
 
         def do_setup():
             db = app.db
@@ -221,7 +223,7 @@ class TestSlaIntegration:
                 priority="high",
                 channel="web",
                 requester_identity_id=identity_id,
-                created_at=datetime(2025, 1, 22, 14, 0, 0, tzinfo=timezone.utc),
+                created_at=datetime(2025, 1, 22, 14, 0, 0, tzinfo=UTC),
             )
             db.commit()
             return ticket_id
@@ -236,7 +238,9 @@ class TestSlaIntegration:
         # Wed 2pm + 4 business hours (via max of 2h first_response, 8h resolution) = Thu 11am
         # Resolution (8h) is later, so sla_breach_at should be Thu 5pm (8 business hours)
         expected_breach = calculate_breach_time(
-            datetime(2025, 1, 22, 14, 0, 0, tzinfo=timezone.utc), 8, business_hours_only=True
+            datetime(2025, 1, 22, 14, 0, 0, tzinfo=UTC),
+            8,
+            business_hours_only=True,
         )
         assert result["sla_breach_at"] == expected_breach
 
@@ -258,7 +262,7 @@ class TestSlaIntegration:
                 priority="high",
                 channel="web",
                 requester_identity_id=identity_id,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db.commit()
             return ticket_id
@@ -298,7 +302,7 @@ class TestSlaIntegration:
                 priority="medium",  # No policy for medium
                 channel="web",
                 requester_identity_id=identity_id,
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
             )
             db.commit()
             return ticket_id
@@ -322,7 +326,7 @@ class TestSlaIntegration:
             db = app.db
 
             # Create a ticket with SLA breach in the past
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             breached_time = now - timedelta(hours=1)  # 1 hour ago
 
             ticket_id = db.hd_tickets.insert(
@@ -365,7 +369,9 @@ class TestSlaIntegration:
         assert resolved_ticket_id not in breached_ids
 
     @pytest.mark.asyncio
-    async def test_check_sla_breaches_excludes_resolved_and_closed(self, app, sla_setup):
+    async def test_check_sla_breaches_excludes_resolved_and_closed(
+        self, app, sla_setup
+    ):
         """Test check_sla_breaches does not return resolved/closed tickets."""
         from apps.api.utils.async_utils import run_in_threadpool
 
@@ -375,7 +381,7 @@ class TestSlaIntegration:
 
         def do_setup():
             db = app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             past_breach = now - timedelta(hours=2)
 
             # Create closed ticket

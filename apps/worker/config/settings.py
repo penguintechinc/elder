@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Optional
 
 from pydantic import Field, field_validator
@@ -24,7 +23,7 @@ class Settings(BaseSettings):
         default="http://api:5000",
         description="Elder API base URL",
     )
-    elder_api_key: Optional[str] = Field(
+    elder_api_key: str | None = Field(
         default=None,
         description="Elder API authentication key (if required)",
     )
@@ -35,10 +34,8 @@ class Settings(BaseSettings):
 
     # AWS Configuration
     aws_enabled: bool = Field(default=False, description="Enable AWS connector")
-    aws_access_key_id: Optional[str] = Field(
-        default=None, description="AWS Access Key ID"
-    )
-    aws_secret_access_key: Optional[str] = Field(
+    aws_access_key_id: str | None = Field(default=None, description="AWS Access Key ID")
+    aws_secret_access_key: str | None = Field(
         default=None, description="AWS Secret Access Key"
     )
     aws_default_region: str = Field(
@@ -55,8 +52,8 @@ class Settings(BaseSettings):
 
     # GCP Configuration
     gcp_enabled: bool = Field(default=False, description="Enable GCP connector")
-    gcp_project_id: Optional[str] = Field(default=None, description="GCP Project ID")
-    gcp_credentials_path: Optional[str] = Field(
+    gcp_project_id: str | None = Field(default=None, description="GCP Project ID")
+    gcp_credentials_path: str | None = Field(
         default=None,
         description="Path to GCP service account credentials JSON",
     )
@@ -70,11 +67,11 @@ class Settings(BaseSettings):
         default=False,
         description="Enable Google Workspace connector",
     )
-    google_workspace_credentials_path: Optional[str] = Field(
+    google_workspace_credentials_path: str | None = Field(
         default=None,
         description="Path to Google Workspace service account credentials JSON",
     )
-    google_workspace_admin_email: Optional[str] = Field(
+    google_workspace_admin_email: str | None = Field(
         default=None,
         description="Google Workspace admin email for impersonation",
     )
@@ -89,7 +86,7 @@ class Settings(BaseSettings):
 
     # LDAP/LDAPS Configuration
     ldap_enabled: bool = Field(default=False, description="Enable LDAP connector")
-    ldap_server: Optional[str] = Field(
+    ldap_server: str | None = Field(
         default=None,
         description="LDAP server hostname or IP",
     )
@@ -105,15 +102,15 @@ class Settings(BaseSettings):
         default=True,
         description="Verify SSL certificate for LDAPS",
     )
-    ldap_bind_dn: Optional[str] = Field(
+    ldap_bind_dn: str | None = Field(
         default=None,
         description="LDAP bind DN for authentication",
     )
-    ldap_bind_password: Optional[str] = Field(
+    ldap_bind_password: str | None = Field(
         default=None,
         description="LDAP bind password",
     )
-    ldap_base_dn: Optional[str] = Field(
+    ldap_base_dn: str | None = Field(
         default=None,
         description="LDAP base DN for searches",
     )
@@ -135,11 +132,11 @@ class Settings(BaseSettings):
         default=False,
         description="Enable Okta connector (Enterprise feature)",
     )
-    okta_domain: Optional[str] = Field(
+    okta_domain: str | None = Field(
         default=None,
         description="Okta organization domain (e.g., dev-123456.okta.com)",
     )
-    okta_api_token: Optional[str] = Field(
+    okta_api_token: str | None = Field(
         default=None,
         description="Okta API token (SSWS token) for authentication",
     )
@@ -169,11 +166,11 @@ class Settings(BaseSettings):
         default=False,
         description="Enable Authentik connector (Enterprise feature)",
     )
-    authentik_domain: Optional[str] = Field(
+    authentik_domain: str | None = Field(
         default=None,
         description="Authentik domain (e.g., auth.example.com)",
     )
-    authentik_api_token: Optional[str] = Field(
+    authentik_api_token: str | None = Field(
         default=None,
         description="Authentik API token (Bearer token from admin)",
     )
@@ -204,11 +201,11 @@ class Settings(BaseSettings):
         default="https://api.iboss.com",
         description="iBoss API base URL",
     )
-    iboss_api_key: Optional[str] = Field(
+    iboss_api_key: str | None = Field(
         default=None,
         description="iBoss API key for authentication",
     )
-    iboss_tenant_id: Optional[str] = Field(
+    iboss_tenant_id: str | None = Field(
         default=None,
         description="iBoss tenant ID",
     )
@@ -219,7 +216,7 @@ class Settings(BaseSettings):
 
     # VMware vCenter Configuration
     vcenter_enabled: bool = Field(default=False, description="Enable vCenter connector")
-    vcenter_host: Optional[str] = Field(
+    vcenter_host: str | None = Field(
         default=None,
         description="vCenter server hostname or IP",
     )
@@ -227,11 +224,11 @@ class Settings(BaseSettings):
         default=443,
         description="vCenter server port",
     )
-    vcenter_username: Optional[str] = Field(
+    vcenter_username: str | None = Field(
         default=None,
         description="vCenter username",
     )
-    vcenter_password: Optional[str] = Field(
+    vcenter_password: str | None = Field(
         default=None,
         description="vCenter password",
     )
@@ -246,15 +243,15 @@ class Settings(BaseSettings):
 
     # LXD Configuration
     lxd_enabled: bool = Field(default=False, description="Enable LXD connector")
-    lxd_url: Optional[str] = Field(
+    lxd_url: str | None = Field(
         default=None,
         description="LXD REST API base URL (e.g. https://lxd.example.com:8443)",
     )
-    lxd_cert: Optional[str] = Field(
+    lxd_cert: str | None = Field(
         default=None,
         description="LXD client certificate PEM string for TLS auth",
     )
-    lxd_key: Optional[str] = Field(
+    lxd_key: str | None = Field(
         default=None,
         description="LXD client private key PEM string for TLS auth",
     )
@@ -262,7 +259,7 @@ class Settings(BaseSettings):
         default=False,
         description="Verify LXD server TLS certificate (disable for self-signed)",
     )
-    lxd_trust_token: Optional[str] = Field(
+    lxd_trust_token: str | None = Field(
         default=None,
         description="LXD trust token for bearer token authentication",
     )
@@ -277,7 +274,7 @@ class Settings(BaseSettings):
         default="https://fleet.example.com",
         description="FleetDM server URL",
     )
-    fleetdm_api_token: Optional[str] = Field(
+    fleetdm_api_token: str | None = Field(
         default=None,
         description="FleetDM API token for authentication",
     )
@@ -287,7 +284,7 @@ class Settings(BaseSettings):
     )
 
     # Elder Organization Mapping
-    default_organization_id: Optional[int] = Field(
+    default_organization_id: int | None = Field(
         default=None,
         description="Default Elder organization ID for entities without mapping",
     )
@@ -347,7 +344,7 @@ class Settings(BaseSettings):
         default="https://killkrill.penguintech.io",
         description="KillKrill server URL",
     )
-    killkrill_api_key: Optional[str] = Field(
+    killkrill_api_key: str | None = Field(
         default=None,
         description="KillKrill API authentication key",
     )
@@ -363,11 +360,11 @@ class Settings(BaseSettings):
     )
 
     # Database Configuration (direct DB access for discovery jobs)
-    database_url: Optional[str] = Field(
+    database_url: str | None = Field(
         default=None,
         description="Primary database URL (e.g. postgres://user:pass@host:5432/elder)",
     )
-    database_read_url: Optional[str] = Field(
+    database_read_url: str | None = Field(
         default=None,
         description="Read replica URL (defaults to primary if not set)",
     )

@@ -6,7 +6,6 @@ for SOC 2, ISO 27001, HIPAA, and GDPR requirements.
 
 # flake8: noqa: E501
 
-
 import datetime
 
 from quart import Blueprint, jsonify, request
@@ -132,7 +131,7 @@ def get_compliance_report(report_type):
 
         if not start_date_str or not end_date_str:
             # Default to last 30 days
-            end_date = datetime.datetime.now(datetime.timezone.utc)
+            end_date = datetime.datetime.now(datetime.UTC)
             start_date = end_date - datetime.timedelta(days=30)
         else:
             start_date = datetime.datetime.fromisoformat(

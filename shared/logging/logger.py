@@ -10,12 +10,11 @@ Supports multiple log destinations:
 
 # flake8: noqa: E501
 
-
 import logging
 import os
 import socket
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from logging.handlers import SysLogHandler
 from typing import List, Optional
 
@@ -43,7 +42,7 @@ class KafkaHTTP3Handler(logging.Handler):
     Uses httpx with HTTP/3 support for high-performance log streaming.
     """
 
-    def __init__(self, kafka_url: str, topic: str, api_key: Optional[str] = None):
+    def __init__(self, kafka_url: str, topic: str, api_key: str | None = None):
         super().__init__()
         self.kafka_url = kafka_url
         self.topic = topic
@@ -104,8 +103,8 @@ class CloudWatchHandler(logging.Handler):
         log_group: str,
         log_stream: str,
         region: str = "us-east-1",
-        access_key: Optional[str] = None,
-        secret_key: Optional[str] = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
     ):
         super().__init__()
         self.log_group = log_group
@@ -159,7 +158,7 @@ class CloudWatchHandler(logging.Handler):
                 "logStreamName": self.log_stream,
                 "logEvents": [
                     {
-                        "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                        "timestamp": int(datetime.now(UTC).timestamp() * 1000),
                         "message": self.format(record),
                     }
                 ],
@@ -187,7 +186,7 @@ class StructuredLogger:
         self.app_name = app_name
         self.verbosity = verbosity
         self.logger = None
-        self.handlers: List[logging.Handler] = []
+        self.handlers: list[logging.Handler] = []
 
         # Configure based on verbosity
         self.log_level = self._get_log_level(verbosity)
@@ -201,18 +200,18 @@ class StructuredLogger:
         self,
         enable_console: bool = True,
         enable_syslog: bool = False,
-        syslog_host: Optional[str] = None,
+        syslog_host: str | None = None,
         syslog_port: int = 514,
         enable_kafka: bool = False,
-        kafka_url: Optional[str] = None,
+        kafka_url: str | None = None,
         kafka_topic: str = "elder-logs",
-        kafka_api_key: Optional[str] = None,
+        kafka_api_key: str | None = None,
         enable_cloudwatch: bool = False,
-        cloudwatch_log_group: Optional[str] = None,
-        cloudwatch_log_stream: Optional[str] = None,
+        cloudwatch_log_group: str | None = None,
+        cloudwatch_log_stream: str | None = None,
         cloudwatch_region: str = "us-east-1",
         enable_gcp: bool = False,
-        gcp_project_id: Optional[str] = None,
+        gcp_project_id: str | None = None,
         gcp_log_name: str = "elder",
     ) -> structlog.BoundLogger:
         """
@@ -354,7 +353,7 @@ class StructuredLogger:
         self.logger = structlog.get_logger(self.app_name)
         return self.logger
 
-    def get_logger(self, name: Optional[str] = None) -> structlog.BoundLogger:
+    def get_logger(self, name: str | None = None) -> structlog.BoundLogger:
         """Get a logger instance."""
         if name:
             return structlog.get_logger(name)

@@ -12,7 +12,6 @@ standardized component dictionaries with Package URLs (PURL).
 
 # flake8: noqa: E501
 
-
 import re
 import sys
 from typing import Any, Dict, List, Optional
@@ -78,7 +77,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
         return False
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency filenames and patterns.
 
         Returns:
@@ -92,7 +91,7 @@ class PythonDependencyParser(BaseDependencyParser):
             "setup.py",
         ]
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse a Python dependency file and extract components.
 
         Routes to the appropriate parsing function based on file type
@@ -140,7 +139,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
     def _parse_requirements_txt(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse requirements.txt format.
 
         Handles pip requirements.txt format with support for:
@@ -156,7 +155,7 @@ class PythonDependencyParser(BaseDependencyParser):
         Returns:
             List of component dictionaries.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
 
         for line in content.splitlines():
             # Strip whitespace
@@ -183,7 +182,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
     def _parse_pyproject_toml(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse pyproject.toml format.
 
         Supports multiple Python project formats:
@@ -199,7 +198,7 @@ class PythonDependencyParser(BaseDependencyParser):
         Returns:
             List of component dictionaries.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
 
         if tomllib is None:
             raise ValueError(
@@ -283,7 +282,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
         return components
 
-    def _parse_pipfile(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_pipfile(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Pipfile format (Pipenv).
 
         Handles Pipfile format with support for:
@@ -298,7 +297,7 @@ class PythonDependencyParser(BaseDependencyParser):
         Returns:
             List of component dictionaries.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
 
         if tomllib is None:
             raise ValueError(
@@ -337,7 +336,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
         return components
 
-    def _parse_setup_py(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_setup_py(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse setup.py format (legacy setuptools).
 
         Uses regex to extract install_requires list from setup() calls.
@@ -350,7 +349,7 @@ class PythonDependencyParser(BaseDependencyParser):
         Returns:
             List of component dictionaries.
         """
-        components: List[Dict[str, Any]] = []
+        components: list[dict[str, Any]] = []
 
         # Extract install_requires list using regex
         # Matches: install_requires=[...] or install_requires = [...]
@@ -397,7 +396,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
     def _parse_requirement_line(
         self, line: str, filename: str, scope: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Parse a single pip requirement line.
 
         Handles various version specifier formats:
@@ -475,7 +474,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
     def _parse_poetry_dependency(
         self, name: str, spec: Any, filename: str, scope: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Parse a Poetry dependency specification.
 
         Handles Poetry's flexible dependency format:
@@ -532,7 +531,7 @@ class PythonDependencyParser(BaseDependencyParser):
 
     def _parse_pipfile_dependency(
         self, name: str, spec: Any, filename: str, scope: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Parse a Pipfile dependency specification.
 
         Handles Pipfile's dependency format:

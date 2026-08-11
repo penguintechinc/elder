@@ -4,7 +4,7 @@
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -262,9 +262,9 @@ async def create_page():
             visibility_users=visibility_users,
             is_public=is_public,
             author_identity_id=user_id,
-            published_at=datetime.now(timezone.utc) if status == "published" else None,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
+            published_at=datetime.now(UTC) if status == "published" else None,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
         )
 
         # Rebuild references from wiki-links
@@ -436,7 +436,7 @@ async def update_page(slug: str):
         if "status" in data:
             updates["status"] = data["status"]
             if data["status"] == "published" and not page.published_at:
-                updates["published_at"] = datetime.now(timezone.utc)
+                updates["published_at"] = datetime.now(UTC)
 
         if "visibility" in data:
             updates["visibility"] = data["visibility"]
@@ -467,7 +467,7 @@ async def update_page(slug: str):
 
             updates["slug"] = new_slug
 
-        updates["updated_at"] = datetime.now(timezone.utc)
+        updates["updated_at"] = datetime.now(UTC)
 
         # Update page
         db(db.pg_pages.id == page.id).update(**updates)

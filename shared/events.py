@@ -9,7 +9,7 @@ the request path.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -51,7 +51,7 @@ async def emit_event(
             "resource_id": str(resource_id),
             "tenant_id": tenant_id,
             "payload": payload or {},
-            "emitted_at": datetime.now(timezone.utc).isoformat(),
+            "emitted_at": datetime.now(UTC).isoformat(),
         }
 
         # Connect and emit to stream

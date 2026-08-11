@@ -1,7 +1,7 @@
 """HTTP-level tests for tenant-scoped webhook CRUD (Plan 05)."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -12,7 +12,7 @@ from quart import current_app
 
 def _create_identity(db: Any, tenant_id: int) -> int:
     """Insert a minimal identity row for tenant_id and return its id."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return db.identities.insert(
         identity_type="human",
         username=f"user-{uuid4().hex[:8]}",
@@ -386,7 +386,7 @@ async def test_broadcast_event_rejects_cross_tenant_organization_id(
 
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         tenant2_id = db.tenants.insert(
             name="Cross Tenant Broadcast Target",
             slug=f"idor-broadcast-{uuid4().hex[:8]}",
@@ -447,7 +447,7 @@ async def test_create_webhook_rejects_cross_tenant_organization_id(
 
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         tenant2_id = db.tenants.insert(
             name="Cross Tenant Webhook Org",
             slug=f"idor-webhook-org-{uuid4().hex[:8]}",

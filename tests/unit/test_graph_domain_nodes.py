@@ -11,7 +11,7 @@ regression: cloud-scan-linkage-pr1-core task 6
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -33,7 +33,7 @@ class TestGraphDomainNodes:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Graph Tenant",
                 slug=f"graph-{uuid.uuid4().hex[:8]}",
@@ -64,7 +64,7 @@ class TestGraphDomainNodes:
     def _token(self, app, tenant_id, identity_id, scopes=None):
         """Create a test JWT with the given tenant claim and scopes."""
         scopes = scopes or ["infrastructure:read"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -135,7 +135,7 @@ class TestGraphDomainNodes:
         db = app.db
 
         def _seed():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Tenant A
             tenant_a_id = db.tenants.insert(
@@ -314,7 +314,7 @@ class TestGraphDomainNodes:
         db = app.db
 
         def _seed():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_a = db.tenants.insert(
                 name="Tenant A",
                 slug=f"tenant-a-{uuid.uuid4().hex[:8]}",

@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -170,7 +169,7 @@ async def create_component():
         return ApiResponse.not_found(data["parent_type"], data["parent_id"])
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Create component
         component_id = db.sbom_components.insert(
             parent_type=data["parent_type"],

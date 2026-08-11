@@ -68,12 +68,12 @@ jobs:
     - name: Read version from .version file
       id: version
       run: |
-        VERSION=$(cat .version | tr -d '\n')
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        VERSION=$(tr -d '\n' < .version)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Compute build epoch
       id: epoch
-      run: echo "epoch=$(date +%s)" >> $GITHUB_OUTPUT
+      run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
 
     - name: Sanitize platform name for tag suffix
       id: platform
@@ -81,7 +81,7 @@ jobs:
         PLATFORM: ${{ matrix.platform }}
       run: |
         # linux/amd64 → amd64, linux/arm64 → arm64
-        echo "suffix=$(echo "$PLATFORM" | tr '/' '-' | cut -d'-' -f2-)" >> $GITHUB_OUTPUT
+        echo "suffix=$(echo "$PLATFORM" | tr '/' '-' | cut -d'-' -f2-)" >> "$GITHUB_OUTPUT"
 
     - name: Build and push platform image
       id: build
@@ -132,8 +132,8 @@ jobs:
     - name: Read version from .version file
       id: version
       run: |
-        VERSION=$(cat .version | tr -d '\n')
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        VERSION=$(tr -d '\n' < .version)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Merge platform images into multi-arch manifest
       env:
@@ -202,10 +202,12 @@ jobs:
         else
           git log --pretty=format:"* %s (%h)" >> CHANGELOG.md
         fi
-        echo "" >> CHANGELOG.md
-        echo "### Docker Images" >> CHANGELOG.md
-        echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
-        echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
+        {
+          echo ""
+          echo "### Docker Images"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:${GITHUB_REF_NAME}\`"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:${GITHUB_REF_NAME}\`"
+        } >> CHANGELOG.md
 
     - name: Create Release
       uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e  # v1

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 import os
 import tempfile
@@ -400,7 +399,7 @@ async def export_data():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 

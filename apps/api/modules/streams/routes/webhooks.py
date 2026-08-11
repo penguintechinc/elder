@@ -4,7 +4,7 @@
 
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -150,7 +150,7 @@ async def update_node_metadata(stream_id, node_id):
         if not _can_edit_stream(db, stream, tenant_id, identity_id):
             return None, 403
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Check if metadata exists
         existing = (
@@ -328,7 +328,7 @@ async def create_webhook(stream_id):
 
         # Generate secure token
         token = secrets.token_urlsafe(32)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         webhook_id = db.stream_webhooks.insert(
             tenant_id=tenant_id,

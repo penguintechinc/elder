@@ -5,7 +5,6 @@ Polls the Elder API for pending scan jobs and executes them.
 
 # flake8: noqa: E501
 
-
 import asyncio
 import datetime
 import logging
@@ -67,7 +66,7 @@ class ScannerService:
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
         # Track last NVD sync time
-        self.last_nvd_sync: Optional[datetime.datetime] = None
+        self.last_nvd_sync: datetime.datetime | None = None
 
     async def get_pending_jobs(self) -> list:
         """Fetch pending scan jobs from the API."""
@@ -127,7 +126,7 @@ class ScannerService:
             logger.error(f"Error fetching due schedules: {e}")
             return []
 
-    async def create_scheduled_scan(self, schedule: Dict[str, Any]) -> bool:
+    async def create_scheduled_scan(self, schedule: dict[str, Any]) -> bool:
         """Create a scan job from a schedule and update the schedule."""
         schedule_id = schedule["id"]
         parent_type = schedule["parent_type"]
@@ -151,7 +150,7 @@ class ScannerService:
                     logger.info(f"Created scan job for schedule {schedule_id}")
 
                     # Update schedule with last_run_at and calculate next_run_at
-                    now = datetime.datetime.now(datetime.timezone.utc)
+                    now = datetime.datetime.now(datetime.UTC)
                     cron_expr = schedule.get("schedule_cron", "0 0 * * *")
 
                     try:
@@ -213,8 +212,8 @@ class ScannerService:
         self,
         job_id: int,
         success: bool,
-        results: Dict[str, Any],
-        error_message: Optional[str] = None,
+        results: dict[str, Any],
+        error_message: str | None = None,
     ) -> bool:
         """Submit scan results back to the API."""
         try:
@@ -234,7 +233,7 @@ class ScannerService:
             logger.error(f"Error submitting results for job {job_id}: {e}")
             return False
 
-    async def execute_job(self, job: Dict[str, Any]) -> None:
+    async def execute_job(self, job: dict[str, Any]) -> None:
         """Execute a single scan job."""
         job_id = job["id"]
         provider = job["provider"]
@@ -265,7 +264,7 @@ class ScannerService:
             logger.error(f"Job {job_id} failed: {error_msg}")
             await self.submit_results(job_id, False, {}, error_msg)
 
-    async def execute_sbom_scan(self, scan: Dict[str, Any]) -> None:
+    async def execute_sbom_scan(self, scan: dict[str, Any]) -> None:
         """Execute a single SBOM scan."""
         scan_id = scan["id"]
         repository_url = scan.get("repository_url")
@@ -367,7 +366,7 @@ class ScannerService:
         if self.last_nvd_sync is None:
             return True
 
-        elapsed = datetime.datetime.now(datetime.timezone.utc) - self.last_nvd_sync
+        elapsed = datetime.datetime.now(datetime.UTC) - self.last_nvd_sync
         return elapsed.total_seconds() >= (NVD_SYNC_INTERVAL_HOURS * 3600)
 
     async def run(self) -> None:
@@ -412,9 +411,7 @@ class ScannerService:
                 if self._should_run_nvd_sync():
                     logger.info("Running scheduled NVD sync...")
                     if await self.trigger_nvd_sync():
-                        self.last_nvd_sync = datetime.datetime.now(
-                            datetime.timezone.utc
-                        )
+                        self.last_nvd_sync = datetime.datetime.now(datetime.UTC)
 
             except Exception as e:
                 logger.error(f"Error in poll loop: {e}")
