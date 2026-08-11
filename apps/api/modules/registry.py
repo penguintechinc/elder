@@ -39,6 +39,7 @@ class ModuleManifest:
         worker_task_groups: Tuple of worker task group names for this module
                            (e.g., ('discovery', 'sbom_scan'))
         optional_services: Tuple of optional service names (e.g., ('neo4j', 'minio'))
+        group: Group bucket for module organization (e.g., 'core', 'crm', 'workflow', 'kb')
         default_enabled: Whether module is on by default; False → opt-in via config
     """
 
@@ -53,6 +54,7 @@ class ModuleManifest:
     scopes: tuple[str, ...]
     worker_task_groups: tuple[str, ...]
     optional_services: tuple[str, ...]
+    group: str
     default_enabled: bool = True
 
 
@@ -84,6 +86,20 @@ def resolve_enabled(env: Mapping[str, str]) -> list[ModuleManifest]:
         enabled_names = {m.name for m in MODULES if m.default_enabled}
     else:
         enabled_names = {n.strip() for n in enabled_str.split(",") if n.strip()}
+
+    # Apply group-level overrides (ELDER_GROUP_<GROUP>=true|false).
+    # Precedence: per-module override (below) > group toggle > ELDER_MODULES_ENABLED.
+    groups = {m.group for m in MODULES}
+    for group in groups:
+        env_key = f"ELDER_GROUP_{group.upper()}"
+        if env_key in env:
+            on = env[env_key].lower() in ("true", "1", "yes")
+            for module in MODULES:
+                if module.group == group:
+                    if on:
+                        enabled_names.add(module.name)
+                    else:
+                        enabled_names.discard(module.name)
 
     # Apply per-module overrides
     for module in MODULES:

@@ -14,6 +14,7 @@ from pydantic import Field
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.identity import identity_in_tenant
 from apps.api.models.dataclasses import (
     IssueCommentDTO,
     IssueDTO,
@@ -22,7 +23,6 @@ from apps.api.models.dataclasses import (
     from_pydal_row,
     from_pydal_rows,
 )
-from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
 from apps.api.services.webhooks.assignment import (
     AssignmentEvent,

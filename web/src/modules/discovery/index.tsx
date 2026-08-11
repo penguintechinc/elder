@@ -24,6 +24,7 @@ const routes: RouteObject[] = [
 const discoveryModule: FrontendModule = {
   id: 'discovery',
   name: 'Discovery',
+  group: 'core',
   nav: navigation,
   routes,
 }

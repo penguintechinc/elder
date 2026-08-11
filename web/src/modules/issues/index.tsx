@@ -55,6 +55,7 @@ const routes: RouteObject[] = [
 const issuesModule: FrontendModule = {
   id: 'issues',
   name: 'Issues & Tracking',
+  group: 'workflow',
   nav: navigation,
   adminNav,
   routes,

@@ -10,24 +10,10 @@ from typing import Any
 # so existing ``from ...documents.common import sanitize_html`` imports keep working.
 from apps.api.common.html_sanitize import sanitize_html  # noqa: F401
 
+# Tenant-scoped identity validation, re-exported from common.identity
+from apps.api.common.identity import identity_in_tenant  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-
-def identity_in_tenant(db: Any, identity_id: int | None, tenant_id: int) -> bool:
-    """Return True if identity_id is unset or belongs to tenant_id.
-
-    Guards against cross-tenant IDOR whenever an identity_id is accepted from a
-    request body (document visibility_users, ...).
-    A None id is treated as valid (the reference is simply absent).
-    """
-    if identity_id is None:
-        return True
-    return (
-        db((db.identities.id == identity_id) & (db.identities.tenant_id == tenant_id))
-        .select()
-        .first()
-        is not None
-    )
 
 
 def visibility_users_in_tenant(

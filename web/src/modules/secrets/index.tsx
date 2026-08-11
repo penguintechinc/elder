@@ -38,6 +38,7 @@ const routes: RouteObject[] = [
 const secretsModule: FrontendModule = {
   id: 'secrets',
   name: 'Secrets & Security',
+  group: 'core',
   nav: navigation,
   routes,
 }

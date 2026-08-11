@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timezone
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.identity import identity_in_tenant
 from apps.api.logging_config import log_error_and_respond
-from apps.api.modules.helpdesk.common import identity_in_tenant
 from apps.api.modules.helpdesk.services.sla import apply_sla_policy
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool

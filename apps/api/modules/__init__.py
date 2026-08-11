@@ -333,6 +333,7 @@ MODULES = (
         ),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -347,6 +348,7 @@ MODULES = (
         scopes=("ipam:read", "ipam:write", "ipam:admin"),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -361,6 +363,7 @@ MODULES = (
         scopes=("sbom:read", "sbom:write", "sbom:admin"),
         worker_task_groups=("sbom_scan",),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -379,6 +382,7 @@ MODULES = (
         ),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -397,6 +401,7 @@ MODULES = (
         scopes=("issues:read", "issues:write", "issues:admin"),
         worker_task_groups=(),
         optional_services=(),
+        group="workflow",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -411,6 +416,7 @@ MODULES = (
         scopes=("discovery:read", "discovery:write", "discovery:admin"),
         worker_task_groups=("discovery",),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -425,6 +431,7 @@ MODULES = (
         scopes=("secrets:read", "secrets:write", "secrets:admin"),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -447,6 +454,7 @@ MODULES = (
         ),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -468,6 +476,7 @@ MODULES = (
         ),
         worker_task_groups=(),
         optional_services=(),
+        group="core",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -482,6 +491,7 @@ MODULES = (
         scopes=("documents:read", "documents:write", "documents:admin"),
         worker_task_groups=(),
         optional_services=(),
+        group="kb",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -496,6 +506,7 @@ MODULES = (
         scopes=("pages:read", "pages:write", "pages:admin"),
         worker_task_groups=(),
         optional_services=(),
+        group="kb",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -510,6 +521,7 @@ MODULES = (
         scopes=("diagrams:read", "diagrams:write", "diagrams:admin"),
         worker_task_groups=(),
         optional_services=("minio",),
+        group="kb",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -524,6 +536,7 @@ MODULES = (
         scopes=("streams:read", "streams:write", "streams:admin", "streams:execute"),
         worker_task_groups=("streams",),
         optional_services=(),
+        group="workflow",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -544,6 +557,7 @@ MODULES = (
         ),
         worker_task_groups=(),
         optional_services=(),
+        group="workflow",
         default_enabled=True,
     ),
     ModuleManifest(
@@ -562,6 +576,7 @@ MODULES = (
             "helpdesk_sla_breach",
         ),
         optional_services=(),
+        group="crm",
         default_enabled=True,
     ),
 )

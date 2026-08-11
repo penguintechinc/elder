@@ -93,6 +93,7 @@ async def list_modules() -> tuple[dict[str, Any], int]:
                 "effective": effective,
                 "nav_id": manifest.nav_id,
                 "scopes": manifest.scopes,
+                "group": manifest.group,
                 "capabilities": {},  # TODO Phase 5: add module-specific capabilities
             }
         )
