@@ -87,6 +87,20 @@ def resolve_enabled(env: Mapping[str, str]) -> list[ModuleManifest]:
     else:
         enabled_names = {n.strip() for n in enabled_str.split(",") if n.strip()}
 
+    # Apply group-level overrides (ELDER_GROUP_<GROUP>=true|false).
+    # Precedence: per-module override (below) > group toggle > ELDER_MODULES_ENABLED.
+    groups = {m.group for m in MODULES}
+    for group in groups:
+        env_key = f"ELDER_GROUP_{group.upper()}"
+        if env_key in env:
+            on = env[env_key].lower() in ("true", "1", "yes")
+            for module in MODULES:
+                if module.group == group:
+                    if on:
+                        enabled_names.add(module.name)
+                    else:
+                        enabled_names.discard(module.name)
+
     # Apply per-module overrides
     for module in MODULES:
         env_key = f"ELDER_MODULE_{module.name.upper()}"
