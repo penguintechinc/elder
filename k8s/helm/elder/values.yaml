@@ -96,6 +96,7 @@ postgres:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     capabilities:
       drop:
         - ALL
@@ -134,6 +135,7 @@ redis:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     capabilities:
       drop:
         - ALL
@@ -309,6 +311,11 @@ scanner:
       cpu: "1000m"
   screenshotStorage:
     sizeLimit: "1Gi"
+  # ROOT CAPABILITY EXCEPTION (approved): masscan (apps/scanner/scanners/network.py)
+  # requires CAP_NET_RAW for raw-socket SYN scanning. Process still runs as
+  # non-root UID 1000 with every other capability dropped and a read-only
+  # root filesystem. See apps/scanner/Dockerfile for the matching Docker-side
+  # documentation of this exception.
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000

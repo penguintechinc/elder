@@ -420,7 +420,7 @@ def build_discovery_results() -> dict[str, Any]:
             "name": "demo-ec2-lambda-role",
             "provider": "aws",
             "metadata": {
-                "role_id": "AROADEMOROLE00000001",
+                "role_id": "AROA-DEMOROLE-00000001",
                 "arn": IAM_ROLE_ARN,
                 "path": "/",
                 "description": "Demo EC2/Lambda execution role",
