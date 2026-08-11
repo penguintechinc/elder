@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -90,7 +90,7 @@ async def test_enqueue_basic(jobbus: JobBus) -> None:
     stream_group = "infrastructure"
     job_type = "sync_entity"
     payload = {"entity_id": 123, "action": "refresh"}
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     tenant_id = 42
 
     job_id = await jobbus.enqueue(
@@ -116,7 +116,7 @@ async def test_enqueue_with_idempotency_key(jobbus: JobBus) -> None:
     """Test enqueue with idempotency_key (passed to caller, not generated)."""
     stream_group = "helpdesk"
     idempotency_key = "ticket-123-send-email"
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
 
     job_id = await jobbus.enqueue(
         stream_group=stream_group,
@@ -141,7 +141,7 @@ async def test_read_enqueue_ack_roundtrip(jobbus: JobBus) -> None:
     await jobbus.ensure_group(stream_group)
 
     # Enqueue
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     job_id = await jobbus.enqueue(
         stream_group=stream_group,
         job_type="scan_network",
@@ -270,7 +270,7 @@ async def test_reclaim_stale_basic(jobbus: JobBus) -> None:
     await jobbus.ensure_group(stream_group)
 
     # Consumer-1 enqueues and reads (but doesn't ACK)
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     job_id = await jobbus.enqueue(
         stream_group=stream_group,
         job_type="sync_entity",
@@ -325,7 +325,7 @@ async def test_dlq_after_max_deliveries(jobbus: JobBus) -> None:
     await jobbus_custom.ensure_group(stream_group)
 
     # Enqueue
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     job_id = await jobbus_custom.enqueue(
         stream_group=stream_group,
         job_type="send_email",
@@ -429,7 +429,7 @@ async def test_multiple_jobs_enqueue_and_read(jobbus: JobBus) -> None:
     await jobbus.ensure_group(stream_group)
 
     job_ids = []
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
 
     # Enqueue 5 jobs
     for i in range(5):
@@ -489,7 +489,7 @@ async def test_reclaim_mixed_delivery_counts(jobbus: JobBus) -> None:
     await jobbus_custom.ensure_group(stream_group)
 
     # Enqueue 2 jobs
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     job_id_1 = await jobbus_custom.enqueue(
         stream_group=stream_group,
         job_type="execute_stream",
@@ -553,7 +553,7 @@ async def test_full_workflow_idempotent_retry(jobbus: JobBus) -> None:
     idempotency_key = "sync-aws-account-123"
     await jobbus.ensure_group(stream_group)
 
-    enqueued_at = datetime.now(timezone.utc).isoformat()
+    enqueued_at = datetime.now(UTC).isoformat()
     job_id = await jobbus.enqueue(
         stream_group=stream_group,
         job_type="sync_cloud_provider",

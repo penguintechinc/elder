@@ -9,8 +9,8 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import pytest
-from werkzeug.datastructures import MultiDict
 from flask import Flask
+from werkzeug.datastructures import MultiDict
 
 from apps.api.utils.pydal_helpers import (
     PaginationParams,

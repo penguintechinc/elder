@@ -14,6 +14,7 @@ village_id: VillageIDMixin on pg_pages only.
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "020"

@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -576,7 +576,7 @@ def test_run_discovery_surfaces_edge_counts_in_job_result(seeded, monkeypatch):
             }
         ],
         "resources_count": 1,
-        "discovery_time": datetime.now(timezone.utc),
+        "discovery_time": datetime.now(UTC),
     }
     mock_client = MagicMock()
     mock_client.discover_all.return_value = discovery_results
@@ -636,7 +636,7 @@ def test_run_discovery_without_organization_id_still_persists_zero_counts(
             }
         ],
         "resources_count": 1,
-        "discovery_time": datetime.now(timezone.utc),
+        "discovery_time": datetime.now(UTC),
     }
     mock_client = MagicMock()
     mock_client.discover_all.return_value = discovery_results
@@ -1863,7 +1863,7 @@ def test_phase_b2_lambda_relationships(seeded):
 
     # Pre-create the IAM role as an identity with a unique username per org
     tenant_id = 1
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     role_arn = "arn:aws:iam::123456789012:role/lambda-role"
     username = (
         f"aws:123456789012:lambda-role:org{org_id}"  # Make username unique per org
@@ -2119,7 +2119,7 @@ def test_phase_b2_ec2_assumes_role(seeded):
 
     # Pre-create the IAM role as an identity with a unique username per org
     tenant_id = 1
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     role_arn = "arn:aws:iam::123456789012:role/ec2-role"
     username = f"aws:123456789012:ec2-role:org{org_id}"  # Make username unique per org
 

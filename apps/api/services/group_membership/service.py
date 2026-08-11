@@ -42,7 +42,7 @@ class GroupMembershipService:
     PROVIDER_LDAP = "ldap"
     PROVIDER_OKTA = "okta"
 
-    def __init__(self, db, redis_client: Optional[redis.Redis] = None):
+    def __init__(self, db, redis_client: redis.Redis | None = None):
         """Initialize service with database connection.
 
         Args:
@@ -81,7 +81,7 @@ class GroupMembershipService:
         include_pending: bool = False,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List all groups with optional member counts and pending requests."""
         db = self.db
 
@@ -111,7 +111,7 @@ class GroupMembershipService:
 
         return {"groups": result, "total": total, "limit": limit, "offset": offset}
 
-    def get_group(self, group_id: int) -> Optional[Dict[str, Any]]:
+    def get_group(self, group_id: int) -> dict[str, Any] | None:
         """Get group details including members and ownership info."""
         db = self.db
 
@@ -150,15 +150,15 @@ class GroupMembershipService:
     def update_group(
         self,
         group_id: int,
-        owner_identity_id: Optional[int] = None,
-        owner_group_id: Optional[int] = None,
-        approval_mode: Optional[str] = None,
-        approval_threshold: Optional[int] = None,
-        provider: Optional[str] = None,
-        provider_group_id: Optional[str] = None,
-        sync_enabled: Optional[bool] = None,
-        updated_by: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
+        owner_identity_id: int | None = None,
+        owner_group_id: int | None = None,
+        approval_mode: str | None = None,
+        approval_threshold: int | None = None,
+        provider: str | None = None,
+        provider_group_id: str | None = None,
+        sync_enabled: bool | None = None,
+        updated_by: int | None = None,
+    ) -> dict[str, Any] | None:
         """Update group ownership and provider settings."""
         db = self.db
 
@@ -218,10 +218,10 @@ class GroupMembershipService:
         self,
         group_id: int,
         requester_id: int,
-        reason: Optional[str] = None,
-        expires_at: Optional[datetime.datetime] = None,
+        reason: str | None = None,
+        expires_at: datetime.datetime | None = None,
         tenant_id: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create an access request for a group."""
         db = self.db
 
@@ -251,7 +251,7 @@ class GroupMembershipService:
             raise ValueError("Already have a pending request for this group")
 
         # Create request
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         request_id = db.group_access_requests.insert(
             tenant_id=tenant_id,
             group_id=group_id,
@@ -280,7 +280,7 @@ class GroupMembershipService:
 
         return self.get_request(request_id)
 
-    def get_request(self, request_id: int) -> Optional[Dict[str, Any]]:
+    def get_request(self, request_id: int) -> dict[str, Any] | None:
         """Get access request details."""
         db = self.db
 
@@ -292,12 +292,12 @@ class GroupMembershipService:
 
     def list_requests(
         self,
-        group_id: Optional[int] = None,
-        requester_id: Optional[int] = None,
-        status: Optional[str] = None,
+        group_id: int | None = None,
+        requester_id: int | None = None,
+        status: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List access requests with optional filters."""
         db = self.db
 
@@ -328,7 +328,7 @@ class GroupMembershipService:
         owner_identity_id: int,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get all pending requests for groups owned by this identity."""
         db = self.db
 
@@ -361,8 +361,8 @@ class GroupMembershipService:
         self,
         request_id: int,
         approver_id: int,
-        comment: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        comment: str | None = None,
+    ) -> dict[str, Any]:
         """Record an approval for an access request."""
         db = self.db
 
@@ -378,7 +378,7 @@ class GroupMembershipService:
             raise ValueError("Not authorized to approve this request")
 
         # Record approval
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         db.group_access_approvals.insert(
             tenant_id=request.tenant_id,
             request_id=request_id,
@@ -414,8 +414,8 @@ class GroupMembershipService:
         self,
         request_id: int,
         denier_id: int,
-        comment: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        comment: str | None = None,
+    ) -> dict[str, Any]:
         """Deny an access request."""
         db = self.db
 
@@ -431,7 +431,7 @@ class GroupMembershipService:
             raise ValueError("Not authorized to deny this request")
 
         # Record denial
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         db.group_access_approvals.insert(
             tenant_id=request.tenant_id,
             request_id=request_id,
@@ -445,7 +445,7 @@ class GroupMembershipService:
         # Update request status
         db(db.group_access_requests.id == request_id).update(
             status=self.STATUS_DENIED,
-            decided_at=datetime.datetime.now(datetime.timezone.utc),
+            decided_at=datetime.datetime.now(datetime.UTC),
             decided_by_id=denier_id,
             decision_comment=comment,
         )
@@ -467,7 +467,7 @@ class GroupMembershipService:
 
         return self.get_request(request_id)
 
-    def cancel_request(self, request_id: int, canceller_id: int) -> Dict[str, Any]:
+    def cancel_request(self, request_id: int, canceller_id: int) -> dict[str, Any]:
         """Cancel own access request."""
         db = self.db
 
@@ -490,10 +490,10 @@ class GroupMembershipService:
 
     def bulk_approve_requests(
         self,
-        request_ids: List[int],
+        request_ids: list[int],
         approver_id: int,
-        comment: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        comment: str | None = None,
+    ) -> dict[str, Any]:
         """Bulk approve multiple requests."""
         results = {"approved": [], "failed": []}
 
@@ -513,7 +513,7 @@ class GroupMembershipService:
         group_id: int,
         limit: int = 100,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get all members of a group."""
         db = self.db
 
@@ -552,9 +552,9 @@ class GroupMembershipService:
         group_id: int,
         identity_id: int,
         added_by: int,
-        expires_at: Optional[datetime.datetime] = None,
-        provider_member_id: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        expires_at: datetime.datetime | None = None,
+        provider_member_id: str | None = None,
+    ) -> dict[str, Any]:
         """Directly add a member to a group (admin only)."""
         db = self.db
 
@@ -571,7 +571,7 @@ class GroupMembershipService:
             raise ValueError("Already a member of this group")
 
         # Add membership
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         membership_id = db.identity_group_memberships.insert(
             group_id=group_id,
             identity_id=identity_id,
@@ -607,7 +607,7 @@ class GroupMembershipService:
         group_id: int,
         identity_id: int,
         removed_by: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove a member from a group."""
         db = self.db
 
@@ -676,7 +676,7 @@ class GroupMembershipService:
 
         return False
 
-    def _get_owned_group_ids(self, identity_id: int) -> List[int]:
+    def _get_owned_group_ids(self, identity_id: int) -> list[int]:
         """Get all group IDs owned by this identity."""
         db = self.db
 
@@ -766,7 +766,7 @@ class GroupMembershipService:
                 provider_member_id = attrs.get("okta_id")
 
         # Create membership
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         membership_id = db.identity_group_memberships.insert(
             group_id=request.group_id,
             identity_id=request.requester_id,
@@ -780,7 +780,7 @@ class GroupMembershipService:
         # Update request status
         db(db.group_access_requests.id == request_id).update(
             status=self.STATUS_APPROVED,
-            decided_at=datetime.datetime.now(datetime.timezone.utc),
+            decided_at=datetime.datetime.now(datetime.UTC),
             decided_by_id=final_approver_id,
         )
         db.commit()
@@ -837,7 +837,7 @@ class GroupMembershipService:
             if membership:
                 db(db.identity_group_memberships.id == membership.id).update(
                     provider_synced=True,
-                    provider_synced_at=datetime.datetime.now(datetime.timezone.utc),
+                    provider_synced_at=datetime.datetime.now(datetime.UTC),
                 )
                 db.commit()
 
@@ -873,7 +873,7 @@ class GroupMembershipService:
             )
             return False
 
-    def _group_to_dict(self, group) -> Dict[str, Any]:
+    def _group_to_dict(self, group) -> dict[str, Any]:
         """Convert group record to dictionary."""
         return {
             "id": group.id,
@@ -893,7 +893,7 @@ class GroupMembershipService:
             "updated_at": group.updated_at.isoformat() if group.updated_at else None,
         }
 
-    def _request_to_dict(self, request) -> Dict[str, Any]:
+    def _request_to_dict(self, request) -> dict[str, Any]:
         """Convert request record to dictionary."""
         db = self.db
 
@@ -957,7 +957,7 @@ class GroupMembershipService:
 
     # ==================== Scheduled Tasks ====================
 
-    def process_expired_memberships(self) -> Dict[str, Any]:
+    def process_expired_memberships(self) -> dict[str, Any]:
         """
         Process expired group memberships.
 
@@ -970,7 +970,7 @@ class GroupMembershipService:
             Dict with processing results
         """
         db = self.db
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Find expired memberships
         expired = db(
@@ -1045,7 +1045,7 @@ class GroupMembershipService:
 
         return results
 
-    def process_stale_requests(self, days: int = 30) -> Dict[str, Any]:
+    def process_stale_requests(self, days: int = 30) -> dict[str, Any]:
         """
         Process stale pending requests.
 
@@ -1058,9 +1058,7 @@ class GroupMembershipService:
             Dict with processing results
         """
         db = self.db
-        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
-            days=days
-        )
+        cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=days)
 
         # Find stale pending requests
         stale = db(
@@ -1080,7 +1078,7 @@ class GroupMembershipService:
                 # Update to cancelled/expired status
                 db(db.group_access_requests.id == request.id).update(
                     status="expired",
-                    decided_at=datetime.datetime.now(datetime.timezone.utc),
+                    decided_at=datetime.datetime.now(datetime.UTC),
                     decision_comment=f"Automatically expired after {days} days",
                 )
                 db.commit()

@@ -32,9 +32,7 @@ class TestOrganizationModel:
     def test_organization_hierarchy(self, app):
         """Test parent-child organization relationships."""
         db = app.db
-        parent_id = db.organizations.insert(
-            name="Parent Org", tenant_id=1
-        )
+        parent_id = db.organizations.insert(name="Parent Org", tenant_id=1)
         db.commit()
 
         child_id = db.organizations.insert(
@@ -94,9 +92,7 @@ class TestOrganizationModel:
         """Test village_id column is nullable and can be set explicitly."""
         db = app.db
         # Create org without village_id (should be nullable)
-        org_id = db.organizations.insert(
-            name="Village ID Org", tenant_id=1
-        )
+        org_id = db.organizations.insert(name="Village ID Org", tenant_id=1)
         db.commit()
 
         org = db.organizations[org_id]
@@ -118,9 +114,7 @@ class TestOrganizationModel:
     def test_organization_update(self, app):
         """Test updating organization fields."""
         db = app.db
-        org_id = db.organizations.insert(
-            name="Original Name", tenant_id=1
-        )
+        org_id = db.organizations.insert(name="Original Name", tenant_id=1)
         db.commit()
 
         db(db.organizations.id == org_id).update(
@@ -139,9 +133,7 @@ class TestOrganizationModel:
     def test_organization_deletion(self, app):
         """Test organization deletion."""
         db = app.db
-        org_id = db.organizations.insert(
-            name="Delete Me", tenant_id=1
-        )
+        org_id = db.organizations.insert(name="Delete Me", tenant_id=1)
         db.commit()
 
         db(db.organizations.id == org_id).delete()
@@ -155,9 +147,7 @@ class TestOrganizationModel:
         db = app.db
         ids = []
         for name in ["Org 1", "Org 2", "Org 3"]:
-            ids.append(
-                db.organizations.insert(name=name, tenant_id=1)
-            )
+            ids.append(db.organizations.insert(name=name, tenant_id=1))
         db.commit()
 
         orgs = db(db.organizations.id.belongs(ids)).select()
@@ -174,17 +164,13 @@ class TestOrganizationModel:
     def test_organization_query_by_parent(self, app):
         """Test querying organizations by parent."""
         db = app.db
-        parent_id = db.organizations.insert(
-            name="Parent", tenant_id=1
-        )
+        parent_id = db.organizations.insert(name="Parent", tenant_id=1)
         db.commit()
 
         child_ids = []
         for name in ["Child 1", "Child 2"]:
             child_ids.append(
-                db.organizations.insert(
-                    name=name, parent_id=parent_id, tenant_id=1
-                )
+                db.organizations.insert(name=name, parent_id=parent_id, tenant_id=1)
             )
         db.commit()
 

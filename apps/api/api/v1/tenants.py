@@ -6,8 +6,7 @@ and usage statistics for the Super Admin Console.
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional
 
 import redis
@@ -29,11 +28,11 @@ class CreateTenantRequest(RequestModel):
 
     name: Name255
     slug: SlugStr
-    domain: Optional[str] = Field(default=None, max_length=255)
+    domain: str | None = Field(default=None, max_length=255)
     subscription_tier: str = Field(default="community", max_length=50)
-    license_key: Optional[str] = Field(default=None, max_length=500)
-    settings: Optional[dict] = Field(default=None)
-    feature_flags: Optional[dict] = Field(default=None)
+    license_key: str | None = Field(default=None, max_length=500)
+    settings: dict | None = Field(default=None)
+    feature_flags: dict | None = Field(default=None)
     data_retention_days: int = Field(default=90, ge=1, le=36500)
     storage_quota_gb: int = Field(default=10, ge=1, le=1000000)
 
@@ -41,16 +40,16 @@ class CreateTenantRequest(RequestModel):
 class UpdateTenantRequest(RequestModel):
     """Validation model for updating a tenant."""
 
-    name: Optional[Name255] = None
-    domain: Optional[str] = Field(default=None, max_length=255)
-    slug: Optional[SlugStr] = None
-    subscription_tier: Optional[str] = Field(default=None, max_length=50)
-    license_key: Optional[str] = Field(default=None, max_length=500)
-    settings: Optional[dict] = None
-    feature_flags: Optional[dict] = None
-    data_retention_days: Optional[int] = Field(default=None, ge=1, le=36500)
-    storage_quota_gb: Optional[int] = Field(default=None, ge=1, le=1000000)
-    is_active: Optional[bool] = None
+    name: Name255 | None = None
+    domain: str | None = Field(default=None, max_length=255)
+    slug: SlugStr | None = None
+    subscription_tier: str | None = Field(default=None, max_length=50)
+    license_key: str | None = Field(default=None, max_length=500)
+    settings: dict | None = None
+    feature_flags: dict | None = None
+    data_retention_days: int | None = Field(default=None, ge=1, le=36500)
+    storage_quota_gb: int | None = Field(default=None, ge=1, le=1000000)
+    is_active: bool | None = None
 
 
 def global_admin_required(f):
@@ -220,7 +219,7 @@ async def create_tenant():
         if existing:
             return None, "Slug already exists", 400
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         tenant_id = db.tenants.insert(
             name=body.name,
             slug=body.slug,

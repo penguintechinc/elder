@@ -4,18 +4,15 @@
 # source: graph.proto
 # Protobuf Python Version: 5.29.0
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    29,
-    0,
-    '',
-    'graph.proto'
+    _runtime_version.Domain.PUBLIC, 5, 29, 0, "", "graph.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -25,59 +22,64 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 from . import entity_pb2 as entity__pb2
 
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0bgraph.proto\x12\x0b\x65lder.graph\x1a\x0c\x63ommon.proto\x1a\x0c\x65ntity.proto\"\xbd\x01\n\tGraphNode\x12\n\n\x02id\x18\x01 \x01(\x05\x12\r\n\x05label\x18\x02 \x01(\t\x12&\n\x04type\x18\x03 \x01(\x0e\x32\x18.elder.entity.EntityType\x12:\n\nproperties\x18\x04 \x03(\x0b\x32&.elder.graph.GraphNode.PropertiesEntry\x1a\x31\n\x0fPropertiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xe7\x01\n\tGraphEdge\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x11\n\tsource_id\x18\x02 \x01(\x05\x12\x11\n\ttarget_id\x18\x03 \x01(\x05\x12*\n\x04type\x18\x04 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12\r\n\x05label\x18\x05 \x01(\t\x12:\n\nproperties\x18\x06 \x03(\x0b\x32&.elder.graph.GraphEdge.PropertiesEntry\x1a\x31\n\x0fPropertiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xce\x01\n\x0f\x44\x65pendencyGraph\x12%\n\x05nodes\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphNode\x12%\n\x05\x65\x64ges\x18\x02 \x03(\x0b\x32\x16.elder.graph.GraphEdge\x12<\n\x08metadata\x18\x03 \x03(\x0b\x32*.elder.graph.DependencyGraph.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\xa0\x01\n\x19GetDependencyGraphRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\r\n\x05\x64\x65pth\x18\x03 \x01(\x05\x12.\n\x0c\x65ntity_types\x18\x04 \x03(\x0e\x32\x18.elder.entity.EntityType\x12\x18\n\x10include_metadata\x18\x05 \x01(\x08\"w\n\x1aGetDependencyGraphResponse\x12+\n\x05graph\x18\x01 \x01(\x0b\x32\x1c.elder.graph.DependencyGraph\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"Y\n\x13\x41nalyzeGraphRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\x16\n\x0e\x61nalysis_types\x18\x03 \x03(\t\"\xcf\x01\n\x13GraphAnalysisResult\x12\x15\n\ranalysis_type\x18\x01 \x01(\t\x12(\n\x05items\x18\x02 \x03(\x0b\x32\x19.elder.graph.AnalysisItem\x12\x44\n\nstatistics\x18\x03 \x03(\x0b\x32\x30.elder.graph.GraphAnalysisResult.StatisticsEntry\x1a\x31\n\x0fStatisticsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"\x8c\x01\n\x0c\x41nalysisItem\x12\x11\n\titem_type\x18\x01 \x01(\t\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\x13\n\x0b\x65ntity_name\x18\x03 \x01(\t\x12\x10\n\x08severity\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\x12\x1a\n\x12related_entity_ids\x18\x06 \x03(\x05\"w\n\x14\x41nalyzeGraphResponse\x12\x31\n\x07results\x18\x01 \x03(\x0b\x32 .elder.graph.GraphAnalysisResult\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"\x90\x01\n\x0f\x46indPathRequest\x12\x18\n\x10source_entity_id\x18\x01 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x02 \x01(\x05\x12\x11\n\tmax_depth\x18\x03 \x01(\x05\x12\x36\n\x10\x64\x65pendency_types\x18\x04 \x03(\x0e\x32\x1c.elder.entity.DependencyType\"}\n\tGraphPath\x12%\n\x05nodes\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphNode\x12%\n\x05\x65\x64ges\x18\x02 \x03(\x0b\x32\x16.elder.graph.GraphEdge\x12\x12\n\ntotal_hops\x18\x03 \x01(\x05\x12\x0e\n\x06weight\x18\x04 \x01(\x01\"{\n\x10\x46indPathResponse\x12%\n\x05paths\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphPath\x12\x12\n\npath_found\x18\x02 \x01(\x08\x12,\n\x06status\x18\x03 \x01(\x0b\x32\x1c.elder.common.StatusResponse\">\n\x16GetEntityImpactRequest\x12\x11\n\tentity_id\x18\x01 \x01(\x05\x12\x11\n\tmax_depth\x18\x02 \x01(\x05\"\xd3\x01\n\x0c\x45ntityImpact\x12\x11\n\tentity_id\x18\x01 \x01(\x05\x12\x13\n\x0b\x65ntity_name\x18\x02 \x01(\t\x12\x1b\n\x13\x64irect_dependencies\x18\x03 \x01(\x05\x12\x1d\n\x15indirect_dependencies\x18\x04 \x01(\x05\x12\x18\n\x10\x64\x65pendents_count\x18\x05 \x01(\x05\x12\x14\n\x0cimpact_score\x18\x06 \x01(\x05\x12/\n\x11\x61\x66\x66\x65\x63ted_entities\x18\x07 \x03(\x0b\x32\x14.elder.entity.Entity\"r\n\x17GetEntityImpactResponse\x12)\n\x06impact\x18\x01 \x01(\x0b\x32\x19.elder.graph.EntityImpact\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponseBI\n\x1aio.penguintech.elder.graphZ+github.com/penguintechinc/elder/proto/graphb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0bgraph.proto\x12\x0b\x65lder.graph\x1a\x0c\x63ommon.proto\x1a\x0c\x65ntity.proto"\xbd\x01\n\tGraphNode\x12\n\n\x02id\x18\x01 \x01(\x05\x12\r\n\x05label\x18\x02 \x01(\t\x12&\n\x04type\x18\x03 \x01(\x0e\x32\x18.elder.entity.EntityType\x12:\n\nproperties\x18\x04 \x03(\x0b\x32&.elder.graph.GraphNode.PropertiesEntry\x1a\x31\n\x0fPropertiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\xe7\x01\n\tGraphEdge\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x11\n\tsource_id\x18\x02 \x01(\x05\x12\x11\n\ttarget_id\x18\x03 \x01(\x05\x12*\n\x04type\x18\x04 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12\r\n\x05label\x18\x05 \x01(\t\x12:\n\nproperties\x18\x06 \x03(\x0b\x32&.elder.graph.GraphEdge.PropertiesEntry\x1a\x31\n\x0fPropertiesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\xce\x01\n\x0f\x44\x65pendencyGraph\x12%\n\x05nodes\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphNode\x12%\n\x05\x65\x64ges\x18\x02 \x03(\x0b\x32\x16.elder.graph.GraphEdge\x12<\n\x08metadata\x18\x03 \x03(\x0b\x32*.elder.graph.DependencyGraph.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\xa0\x01\n\x19GetDependencyGraphRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\r\n\x05\x64\x65pth\x18\x03 \x01(\x05\x12.\n\x0c\x65ntity_types\x18\x04 \x03(\x0e\x32\x18.elder.entity.EntityType\x12\x18\n\x10include_metadata\x18\x05 \x01(\x08"w\n\x1aGetDependencyGraphResponse\x12+\n\x05graph\x18\x01 \x01(\x0b\x32\x1c.elder.graph.DependencyGraph\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponse"Y\n\x13\x41nalyzeGraphRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\x16\n\x0e\x61nalysis_types\x18\x03 \x03(\t"\xcf\x01\n\x13GraphAnalysisResult\x12\x15\n\ranalysis_type\x18\x01 \x01(\t\x12(\n\x05items\x18\x02 \x03(\x0b\x32\x19.elder.graph.AnalysisItem\x12\x44\n\nstatistics\x18\x03 \x03(\x0b\x32\x30.elder.graph.GraphAnalysisResult.StatisticsEntry\x1a\x31\n\x0fStatisticsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"\x8c\x01\n\x0c\x41nalysisItem\x12\x11\n\titem_type\x18\x01 \x01(\t\x12\x11\n\tentity_id\x18\x02 \x01(\x05\x12\x13\n\x0b\x65ntity_name\x18\x03 \x01(\t\x12\x10\n\x08severity\x18\x04 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x05 \x01(\t\x12\x1a\n\x12related_entity_ids\x18\x06 \x03(\x05"w\n\x14\x41nalyzeGraphResponse\x12\x31\n\x07results\x18\x01 \x03(\x0b\x32 .elder.graph.GraphAnalysisResult\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponse"\x90\x01\n\x0f\x46indPathRequest\x12\x18\n\x10source_entity_id\x18\x01 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x02 \x01(\x05\x12\x11\n\tmax_depth\x18\x03 \x01(\x05\x12\x36\n\x10\x64\x65pendency_types\x18\x04 \x03(\x0e\x32\x1c.elder.entity.DependencyType"}\n\tGraphPath\x12%\n\x05nodes\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphNode\x12%\n\x05\x65\x64ges\x18\x02 \x03(\x0b\x32\x16.elder.graph.GraphEdge\x12\x12\n\ntotal_hops\x18\x03 \x01(\x05\x12\x0e\n\x06weight\x18\x04 \x01(\x01"{\n\x10\x46indPathResponse\x12%\n\x05paths\x18\x01 \x03(\x0b\x32\x16.elder.graph.GraphPath\x12\x12\n\npath_found\x18\x02 \x01(\x08\x12,\n\x06status\x18\x03 \x01(\x0b\x32\x1c.elder.common.StatusResponse">\n\x16GetEntityImpactRequest\x12\x11\n\tentity_id\x18\x01 \x01(\x05\x12\x11\n\tmax_depth\x18\x02 \x01(\x05"\xd3\x01\n\x0c\x45ntityImpact\x12\x11\n\tentity_id\x18\x01 \x01(\x05\x12\x13\n\x0b\x65ntity_name\x18\x02 \x01(\t\x12\x1b\n\x13\x64irect_dependencies\x18\x03 \x01(\x05\x12\x1d\n\x15indirect_dependencies\x18\x04 \x01(\x05\x12\x18\n\x10\x64\x65pendents_count\x18\x05 \x01(\x05\x12\x14\n\x0cimpact_score\x18\x06 \x01(\x05\x12/\n\x11\x61\x66\x66\x65\x63ted_entities\x18\x07 \x03(\x0b\x32\x14.elder.entity.Entity"r\n\x17GetEntityImpactResponse\x12)\n\x06impact\x18\x01 \x01(\x0b\x32\x19.elder.graph.EntityImpact\x12,\n\x06status\x18\x02 \x01(\x0b\x32\x1c.elder.common.StatusResponseBI\n\x1aio.penguintech.elder.graphZ+github.com/penguintechinc/elder/proto/graphb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'graph_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "graph_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\032io.penguintech.elder.graphZ+github.com/penguintechinc/elder/proto/graph'
-  _globals['_GRAPHNODE_PROPERTIESENTRY']._loaded_options = None
-  _globals['_GRAPHNODE_PROPERTIESENTRY']._serialized_options = b'8\001'
-  _globals['_GRAPHEDGE_PROPERTIESENTRY']._loaded_options = None
-  _globals['_GRAPHEDGE_PROPERTIESENTRY']._serialized_options = b'8\001'
-  _globals['_DEPENDENCYGRAPH_METADATAENTRY']._loaded_options = None
-  _globals['_DEPENDENCYGRAPH_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_GRAPHANALYSISRESULT_STATISTICSENTRY']._loaded_options = None
-  _globals['_GRAPHANALYSISRESULT_STATISTICSENTRY']._serialized_options = b'8\001'
-  _globals['_GRAPHNODE']._serialized_start=57
-  _globals['_GRAPHNODE']._serialized_end=246
-  _globals['_GRAPHNODE_PROPERTIESENTRY']._serialized_start=197
-  _globals['_GRAPHNODE_PROPERTIESENTRY']._serialized_end=246
-  _globals['_GRAPHEDGE']._serialized_start=249
-  _globals['_GRAPHEDGE']._serialized_end=480
-  _globals['_GRAPHEDGE_PROPERTIESENTRY']._serialized_start=197
-  _globals['_GRAPHEDGE_PROPERTIESENTRY']._serialized_end=246
-  _globals['_DEPENDENCYGRAPH']._serialized_start=483
-  _globals['_DEPENDENCYGRAPH']._serialized_end=689
-  _globals['_DEPENDENCYGRAPH_METADATAENTRY']._serialized_start=642
-  _globals['_DEPENDENCYGRAPH_METADATAENTRY']._serialized_end=689
-  _globals['_GETDEPENDENCYGRAPHREQUEST']._serialized_start=692
-  _globals['_GETDEPENDENCYGRAPHREQUEST']._serialized_end=852
-  _globals['_GETDEPENDENCYGRAPHRESPONSE']._serialized_start=854
-  _globals['_GETDEPENDENCYGRAPHRESPONSE']._serialized_end=973
-  _globals['_ANALYZEGRAPHREQUEST']._serialized_start=975
-  _globals['_ANALYZEGRAPHREQUEST']._serialized_end=1064
-  _globals['_GRAPHANALYSISRESULT']._serialized_start=1067
-  _globals['_GRAPHANALYSISRESULT']._serialized_end=1274
-  _globals['_GRAPHANALYSISRESULT_STATISTICSENTRY']._serialized_start=1225
-  _globals['_GRAPHANALYSISRESULT_STATISTICSENTRY']._serialized_end=1274
-  _globals['_ANALYSISITEM']._serialized_start=1277
-  _globals['_ANALYSISITEM']._serialized_end=1417
-  _globals['_ANALYZEGRAPHRESPONSE']._serialized_start=1419
-  _globals['_ANALYZEGRAPHRESPONSE']._serialized_end=1538
-  _globals['_FINDPATHREQUEST']._serialized_start=1541
-  _globals['_FINDPATHREQUEST']._serialized_end=1685
-  _globals['_GRAPHPATH']._serialized_start=1687
-  _globals['_GRAPHPATH']._serialized_end=1812
-  _globals['_FINDPATHRESPONSE']._serialized_start=1814
-  _globals['_FINDPATHRESPONSE']._serialized_end=1937
-  _globals['_GETENTITYIMPACTREQUEST']._serialized_start=1939
-  _globals['_GETENTITYIMPACTREQUEST']._serialized_end=2001
-  _globals['_ENTITYIMPACT']._serialized_start=2004
-  _globals['_ENTITYIMPACT']._serialized_end=2215
-  _globals['_GETENTITYIMPACTRESPONSE']._serialized_start=2217
-  _globals['_GETENTITYIMPACTRESPONSE']._serialized_end=2331
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = (
+        b"\n\032io.penguintech.elder.graphZ+github.com/penguintechinc/elder/proto/graph"
+    )
+    _globals["_GRAPHNODE_PROPERTIESENTRY"]._loaded_options = None
+    _globals["_GRAPHNODE_PROPERTIESENTRY"]._serialized_options = b"8\001"
+    _globals["_GRAPHEDGE_PROPERTIESENTRY"]._loaded_options = None
+    _globals["_GRAPHEDGE_PROPERTIESENTRY"]._serialized_options = b"8\001"
+    _globals["_DEPENDENCYGRAPH_METADATAENTRY"]._loaded_options = None
+    _globals["_DEPENDENCYGRAPH_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_GRAPHANALYSISRESULT_STATISTICSENTRY"]._loaded_options = None
+    _globals["_GRAPHANALYSISRESULT_STATISTICSENTRY"]._serialized_options = b"8\001"
+    _globals["_GRAPHNODE"]._serialized_start = 57
+    _globals["_GRAPHNODE"]._serialized_end = 246
+    _globals["_GRAPHNODE_PROPERTIESENTRY"]._serialized_start = 197
+    _globals["_GRAPHNODE_PROPERTIESENTRY"]._serialized_end = 246
+    _globals["_GRAPHEDGE"]._serialized_start = 249
+    _globals["_GRAPHEDGE"]._serialized_end = 480
+    _globals["_GRAPHEDGE_PROPERTIESENTRY"]._serialized_start = 197
+    _globals["_GRAPHEDGE_PROPERTIESENTRY"]._serialized_end = 246
+    _globals["_DEPENDENCYGRAPH"]._serialized_start = 483
+    _globals["_DEPENDENCYGRAPH"]._serialized_end = 689
+    _globals["_DEPENDENCYGRAPH_METADATAENTRY"]._serialized_start = 642
+    _globals["_DEPENDENCYGRAPH_METADATAENTRY"]._serialized_end = 689
+    _globals["_GETDEPENDENCYGRAPHREQUEST"]._serialized_start = 692
+    _globals["_GETDEPENDENCYGRAPHREQUEST"]._serialized_end = 852
+    _globals["_GETDEPENDENCYGRAPHRESPONSE"]._serialized_start = 854
+    _globals["_GETDEPENDENCYGRAPHRESPONSE"]._serialized_end = 973
+    _globals["_ANALYZEGRAPHREQUEST"]._serialized_start = 975
+    _globals["_ANALYZEGRAPHREQUEST"]._serialized_end = 1064
+    _globals["_GRAPHANALYSISRESULT"]._serialized_start = 1067
+    _globals["_GRAPHANALYSISRESULT"]._serialized_end = 1274
+    _globals["_GRAPHANALYSISRESULT_STATISTICSENTRY"]._serialized_start = 1225
+    _globals["_GRAPHANALYSISRESULT_STATISTICSENTRY"]._serialized_end = 1274
+    _globals["_ANALYSISITEM"]._serialized_start = 1277
+    _globals["_ANALYSISITEM"]._serialized_end = 1417
+    _globals["_ANALYZEGRAPHRESPONSE"]._serialized_start = 1419
+    _globals["_ANALYZEGRAPHRESPONSE"]._serialized_end = 1538
+    _globals["_FINDPATHREQUEST"]._serialized_start = 1541
+    _globals["_FINDPATHREQUEST"]._serialized_end = 1685
+    _globals["_GRAPHPATH"]._serialized_start = 1687
+    _globals["_GRAPHPATH"]._serialized_end = 1812
+    _globals["_FINDPATHRESPONSE"]._serialized_start = 1814
+    _globals["_FINDPATHRESPONSE"]._serialized_end = 1937
+    _globals["_GETENTITYIMPACTREQUEST"]._serialized_start = 1939
+    _globals["_GETENTITYIMPACTREQUEST"]._serialized_end = 2001
+    _globals["_ENTITYIMPACT"]._serialized_start = 2004
+    _globals["_ENTITYIMPACT"]._serialized_end = 2215
+    _globals["_GETENTITYIMPACTRESPONSE"]._serialized_start = 2217
+    _globals["_GETENTITYIMPACTRESPONSE"]._serialized_end = 2331
 # @@protoc_insertion_point(module_scope)

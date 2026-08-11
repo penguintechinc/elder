@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from quart import Blueprint, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope

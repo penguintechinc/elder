@@ -4,7 +4,7 @@ regression: diagrams-comments-templates-libraries-phase4b3
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ class TestDiagramComments:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Comments Tenant",
                 slug=f"cmt-{uuid.uuid4().hex[:8]}",
@@ -96,7 +96,7 @@ class TestDiagramComments:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -309,7 +309,7 @@ class TestDiagramTemplates:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Templates Tenant",
                 slug=f"tpl-{uuid.uuid4().hex[:8]}",
@@ -364,7 +364,7 @@ class TestDiagramTemplates:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -564,7 +564,7 @@ class TestDiagramLibraries:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Libraries Tenant",
                 slug=f"lib-{uuid.uuid4().hex[:8]}",
@@ -619,7 +619,7 @@ class TestDiagramLibraries:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["diagrams:read", "diagrams:write"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,

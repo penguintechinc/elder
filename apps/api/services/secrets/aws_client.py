@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from botocore.exceptions import ClientError
@@ -29,7 +28,7 @@ logger = logging.getLogger(__name__)
 class AWSSecretsManagerClient(SecretProviderClient):
     """AWS Secrets Manager implementation of SecretProviderClient."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize AWS Secrets Manager client.
 
@@ -79,7 +78,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
             logger.error(f"AWS Secrets Manager connection test failed: {str(e)}")
             return False
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """Retrieve a secret from AWS Secrets Manager."""
         try:
             params = {"SecretId": path}
@@ -142,7 +141,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 f"Unexpected error retrieving secret '{path}': {str(e)}"
             )
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in AWS Secrets Manager."""
         try:
             secrets = []
@@ -189,7 +188,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
             raise SecretProviderException(f"Unexpected error listing secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in AWS Secrets Manager."""
         try:
@@ -217,7 +216,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 path=path,
                 is_kv=self._is_json_dict(value),
                 version=response["VersionId"],
-                created_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
                 metadata={"arn": response["ARN"]},
             )
 
@@ -255,7 +254,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 path=path,
                 is_kv=self._is_json_dict(value),
                 version=response["VersionId"],
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
                 metadata={
                     "arn": response["ARN"],
                     "version_stages": response.get("VersionStages", []),
@@ -321,7 +320,7 @@ class AWSSecretsManagerClient(SecretProviderClient):
                 f"Unexpected error deleting secret '{path}': {str(e)}"
             )
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """Get all versions of a secret."""
         try:
             response = self.client.list_secret_version_ids(SecretId=path)

@@ -10,8 +10,9 @@ Uses mocked auth, licensing, and toggle services.
 # flake8: noqa: E501
 
 import json
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 from quart import current_app
 
 

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict, Optional
 
 from google.api_core.exceptions import GoogleAPIError
@@ -20,10 +19,10 @@ class GCPConnector(BaseConnector):
     def __init__(self):
         """Initialize GCP connector."""
         super().__init__("gcp")
-        self.elder_client: Optional[ElderAPIClient] = None
+        self.elder_client: ElderAPIClient | None = None
         self.credentials = None
         self.project_id = settings.gcp_project_id
-        self.organization_cache: Dict[str, int] = {}
+        self.organization_cache: dict[str, int] = {}
 
     async def connect(self) -> None:
         """Establish connection to GCP and Elder API."""
@@ -70,7 +69,7 @@ class GCPConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """
         Get or create an organization in Elder.

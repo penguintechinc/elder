@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -131,11 +130,11 @@ async def create_retention_policy():
             if existing:
                 return (
                     None,
-                    f'Retention policy already exists for {data["name"]}',
+                    f"Retention policy already exists for {data['name']}",
                     400,
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             policy_id = db.audit_retention_policies.insert(
                 resource_type=data.get("resource_type", data.get("name")),
                 description=data.get("description"),
@@ -199,7 +198,7 @@ async def update_retention_policy(policy_id):
                 update_data["description"] = data["description"]
             if "event_types" in data:
                 update_data["event_types"] = data["event_types"]
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             db(db.audit_retention_policies.id == policy_id).update(**update_data)
             db.commit()
@@ -286,9 +285,7 @@ def cleanup_audit_logs():
         total_deleted = 0
 
         for policy in policies:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(
-                days=policy.retention_days
-            )
+            cutoff_date = datetime.now(UTC) - timedelta(days=policy.retention_days)
 
             # Count/delete old audit logs for this resource type
             # Note: This is a simplified implementation
@@ -314,7 +311,7 @@ def cleanup_audit_logs():
                     "dry_run": dry_run,
                     "results": results,
                     "total_deleted": total_deleted,
-                    "executed_at": datetime.now(timezone.utc).isoformat(),
+                    "executed_at": datetime.now(UTC).isoformat(),
                 }
             ),
             200,

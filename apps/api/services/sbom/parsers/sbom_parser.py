@@ -7,7 +7,6 @@ and JSON format for SPDX.
 
 # flake8: noqa: E501
 
-
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -51,7 +50,7 @@ class SBOMParser(BaseDependencyParser):
 
         return False
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse SBOM file and extract components.
 
         Args:
@@ -93,7 +92,7 @@ class SBOMParser(BaseDependencyParser):
         else:
             raise ValueError("Unsupported SBOM format (must be JSON or XML)")
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported SBOM filenames and patterns.
 
         Returns:
@@ -110,8 +109,8 @@ class SBOMParser(BaseDependencyParser):
         ]
 
     def _parse_cyclonedx_json(
-        self, data: Dict[str, Any], filename: str
-    ) -> List[Dict[str, Any]]:
+        self, data: dict[str, Any], filename: str
+    ) -> list[dict[str, Any]]:
         """Parse CycloneDX JSON format.
 
         Args:
@@ -146,8 +145,8 @@ class SBOMParser(BaseDependencyParser):
         return components
 
     def _parse_cyclonedx_component(
-        self, component: Dict[str, Any], filename: str, is_main: bool = False
-    ) -> Optional[Dict[str, Any]]:
+        self, component: dict[str, Any], filename: str, is_main: bool = False
+    ) -> dict[str, Any] | None:
         """Parse a single CycloneDX component.
 
         Args:
@@ -221,7 +220,7 @@ class SBOMParser(BaseDependencyParser):
             },
         }
 
-    def _parse_cyclonedx_xml(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_cyclonedx_xml(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse CycloneDX XML format.
 
         Args:
@@ -253,8 +252,8 @@ class SBOMParser(BaseDependencyParser):
         return components
 
     def _parse_cyclonedx_xml_component(
-        self, elem: Element, filename: str, ns: Dict[str, str]
-    ) -> Optional[Dict[str, Any]]:
+        self, elem: Element, filename: str, ns: dict[str, str]
+    ) -> dict[str, Any] | None:
         """Parse a single CycloneDX XML component element.
 
         Args:
@@ -316,8 +315,8 @@ class SBOMParser(BaseDependencyParser):
         }
 
     def _parse_spdx_json(
-        self, data: Dict[str, Any], filename: str
-    ) -> List[Dict[str, Any]]:
+        self, data: dict[str, Any], filename: str
+    ) -> list[dict[str, Any]]:
         """Parse SPDX JSON format.
 
         Args:
@@ -343,8 +342,8 @@ class SBOMParser(BaseDependencyParser):
         return components
 
     def _parse_spdx_package(
-        self, package: Dict[str, Any], filename: str
-    ) -> Optional[Dict[str, Any]]:
+        self, package: dict[str, Any], filename: str
+    ) -> dict[str, Any] | None:
         """Parse a single SPDX package.
 
         Args:
@@ -426,7 +425,7 @@ class SBOMParser(BaseDependencyParser):
             },
         }
 
-    def _extract_package_type_from_purl(self, purl: str) -> Optional[str]:
+    def _extract_package_type_from_purl(self, purl: str) -> str | None:
         """Extract package type from PURL.
 
         Args:
@@ -457,8 +456,8 @@ class SBOMParser(BaseDependencyParser):
         return None
 
     def _extract_cyclonedx_licenses(
-        self, licenses: List[Dict[str, Any]]
-    ) -> Dict[str, Optional[str]]:
+        self, licenses: list[dict[str, Any]]
+    ) -> dict[str, str | None]:
         """Extract license information from CycloneDX licenses array.
 
         Args:

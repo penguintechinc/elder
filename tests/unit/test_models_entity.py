@@ -15,9 +15,7 @@ class TestEntityModel:
     def setup_org(self, app):
         """Create a test organization for entity tests."""
         db = app.db
-        self.org_id = db.organizations.insert(
-            name="Test Org", tenant_id=1
-        )
+        self.org_id = db.organizations.insert(name="Test Org", tenant_id=1)
         db.commit()
         yield
         # Cleanup org (entities cleaned in each test)
@@ -134,9 +132,7 @@ class TestEntityModel:
         )
         db.commit()
 
-        db(db.entities.id == entity_id).update(
-            name="Updated Name", status="active"
-        )
+        db(db.entities.id == entity_id).update(name="Updated Name", status="active")
         db.commit()
 
         entity = db.entities[entity_id]
@@ -181,9 +177,7 @@ class TestEntityModel:
             )
         db.commit()
 
-        entities = db(
-            db.entities.organization_id == self.org_id
-        ).select()
+        entities = db(db.entities.organization_id == self.org_id).select()
         assert len(entities) >= 3
 
         # Cleanup
@@ -218,14 +212,12 @@ class TestEntityModel:
         db.commit()
 
         compute = db(
-            (db.entities.type == "compute")
-            & (db.entities.id.belongs(ids))
+            (db.entities.type == "compute") & (db.entities.id.belongs(ids))
         ).select()
         assert len(compute) == 2
 
         network = db(
-            (db.entities.type == "network")
-            & (db.entities.id.belongs(ids))
+            (db.entities.type == "network") & (db.entities.id.belongs(ids))
         ).select()
         assert len(network) == 1
 

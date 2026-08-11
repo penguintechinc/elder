@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from sqlalchemy import JSON, Column, ForeignKey, Integer, String
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin

@@ -5,7 +5,7 @@ case handling) — see fix/issues-ungate-and-patch-case.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -37,7 +37,7 @@ class TestIssuesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Test Org",
@@ -99,7 +99,7 @@ class TestIssuesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Test Org Empty Patch",
@@ -155,7 +155,7 @@ class TestIssuesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Test Org Close",
@@ -209,7 +209,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Org", tenant_id=1, created_at=now, updated_at=now
             )
@@ -244,7 +244,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             ou_id = db.organizations.insert(
                 name="Support Team",
                 type="team",
@@ -289,7 +289,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             unique_suffix = uuid4().hex[:8]
             identity_id = db.identities.insert(
                 identity_type="human",
@@ -346,7 +346,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Org", tenant_id=1, created_at=now, updated_at=now
             )
@@ -399,7 +399,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Org", tenant_id=1, created_at=now, updated_at=now
             )
@@ -438,7 +438,7 @@ class TestIssuesAPI:
         issue_title = f"Open Issue {uuid4().hex[:8]}"
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Filter Test Org",
                 tenant_id=1,
@@ -503,7 +503,7 @@ class TestIssuesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Case Test Org",
                 tenant_id=1,
@@ -558,7 +558,7 @@ class TestIssuesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Issue Type Test Org",
                 tenant_id=1,
@@ -617,7 +617,7 @@ class TestIssuesAPI:
         token = generate_token(tenant_id=1, scopes=["issues:write"])
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             org_id = db.organizations.insert(
                 name="Village ID Test Org",
                 tenant_id=1,

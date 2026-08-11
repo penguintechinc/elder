@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import base64
 import logging
 from datetime import datetime
@@ -18,7 +17,7 @@ logger = logging.getLogger(__name__)
 class VaultTransitClient(BaseKeyProvider):
     """Hashicorp Vault Transit Secrets Engine client for key management."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Vault Transit client.
 
@@ -47,7 +46,7 @@ class VaultTransitClient(BaseKeyProvider):
         self.session = create_vault_session(self.config)
         logger.info(f"Initialized Vault Transit client for {self.base_url}")
 
-    def _make_request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         """Make a request to Vault API."""
         url = f"{self.base_url}{path}"
 
@@ -87,10 +86,10 @@ class VaultTransitClient(BaseKeyProvider):
         self,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new encryption key in Vault Transit.
 
@@ -135,7 +134,7 @@ class VaultTransitClient(BaseKeyProvider):
             logger.error(f"Failed to create key '{key_name}': {str(e)}")
             raise Exception(f"Failed to create key: {str(e)}")
 
-    def get_key(self, key_id: str) -> Dict[str, Any]:
+    def get_key(self, key_id: str) -> dict[str, Any]:
         """Get Transit key metadata."""
         try:
             api_path = f"/v1/{self.mount_point}/keys/{key_id}"
@@ -169,8 +168,8 @@ class VaultTransitClient(BaseKeyProvider):
             raise Exception(f"Failed to get key: {str(e)}")
 
     def list_keys(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all Transit keys.
 
@@ -202,7 +201,7 @@ class VaultTransitClient(BaseKeyProvider):
             logger.error(f"Failed to list keys: {str(e)}")
             raise Exception(f"Failed to list keys: {str(e)}")
 
-    def enable_key(self, key_id: str) -> Dict[str, Any]:
+    def enable_key(self, key_id: str) -> dict[str, Any]:
         """
         Enable a Transit key.
 
@@ -227,7 +226,7 @@ class VaultTransitClient(BaseKeyProvider):
             logger.error(f"Failed to enable key '{key_id}': {str(e)}")
             raise Exception(f"Failed to enable key: {str(e)}")
 
-    def disable_key(self, key_id: str) -> Dict[str, Any]:
+    def disable_key(self, key_id: str) -> dict[str, Any]:
         """
         Disable a Transit key (soft delete).
 
@@ -257,7 +256,7 @@ class VaultTransitClient(BaseKeyProvider):
 
     def schedule_key_deletion(
         self, key_id: str, pending_days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule Transit key deletion.
 
@@ -283,7 +282,7 @@ class VaultTransitClient(BaseKeyProvider):
             logger.error(f"Failed to schedule deletion for key '{key_id}': {str(e)}")
             raise Exception(f"Failed to schedule key deletion: {str(e)}")
 
-    def cancel_key_deletion(self, key_id: str) -> Dict[str, Any]:
+    def cancel_key_deletion(self, key_id: str) -> dict[str, Any]:
         """Cancel scheduled Transit key deletion."""
         try:
             # Disallow deletion
@@ -299,8 +298,8 @@ class VaultTransitClient(BaseKeyProvider):
             raise Exception(f"Failed to cancel key deletion: {str(e)}")
 
     def encrypt(
-        self, key_id: str, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """Encrypt data using a Transit key."""
         try:
             # Vault Transit requires base64-encoded plaintext
@@ -328,8 +327,8 @@ class VaultTransitClient(BaseKeyProvider):
             raise Exception(f"Failed to encrypt: {str(e)}")
 
     def decrypt(
-        self, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Decrypt data using Vault Transit.
 
@@ -365,8 +364,8 @@ class VaultTransitClient(BaseKeyProvider):
             raise Exception(f"Failed to decrypt: {str(e)}")
 
     def decrypt_with_key(
-        self, key_id: str, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """Decrypt data using a specific Transit key."""
         try:
             payload = {"ciphertext": ciphertext}
@@ -394,8 +393,8 @@ class VaultTransitClient(BaseKeyProvider):
         self,
         key_id: str,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a data encryption key using Transit.
 
@@ -435,7 +434,7 @@ class VaultTransitClient(BaseKeyProvider):
         key_id: str,
         message: str,
         signing_algorithm: str = "RSASSA_PSS_SHA_256",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sign a message using Transit."""
         try:
             # Map signing algorithm
@@ -469,7 +468,7 @@ class VaultTransitClient(BaseKeyProvider):
 
     def verify(
         self, key_id: str, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Verify a message signature using Transit."""
         try:
             algo_mapping = {
@@ -502,7 +501,7 @@ class VaultTransitClient(BaseKeyProvider):
             logger.error(f"Failed to verify signature with key '{key_id}': {str(e)}")
             raise Exception(f"Failed to verify: {str(e)}")
 
-    def rotate_key(self, key_id: str) -> Dict[str, Any]:
+    def rotate_key(self, key_id: str) -> dict[str, Any]:
         """Rotate a Transit key (create new version)."""
         try:
             api_path = f"/v1/{self.mount_point}/keys/{key_id}/rotate"

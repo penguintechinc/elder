@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
@@ -25,13 +24,13 @@ class TimestampMixin:
     created_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -61,7 +60,7 @@ class TenantScopedMixin:
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
 
 
-def to_dict(obj: Any, exclude: list = None) -> Dict[str, Any]:
+def to_dict(obj: Any, exclude: list = None) -> dict[str, Any]:
     """
     Convert SQLAlchemy model instance to dictionary.
 

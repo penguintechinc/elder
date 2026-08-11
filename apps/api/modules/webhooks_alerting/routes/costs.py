@@ -2,7 +2,7 @@
 
 # flake8: noqa: E501
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, g, jsonify, request
 
@@ -102,7 +102,7 @@ async def create_sync_job():
 
     db = g.db
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         job_id = db.cost_sync_jobs.insert(
             name=data["name"],
             provider=data["provider"],

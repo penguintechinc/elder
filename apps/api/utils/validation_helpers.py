@@ -7,7 +7,6 @@ like organization/tenant validation, required field checks, etc.
 
 # flake8: noqa: E501
 
-
 import datetime
 from typing import Any, Optional, Tuple
 
@@ -22,7 +21,7 @@ from .api_responses import ApiResponse
 
 async def validate_organization_and_get_tenant(
     org_id: int,
-) -> Tuple[Optional[Any], Optional[int], Optional[Tuple[Any, int]]]:
+) -> tuple[Any | None, int | None, tuple[Any, int] | None]:
     """
     Validate that an organization exists and has a tenant assigned.
 
@@ -64,7 +63,7 @@ async def validate_organization_and_get_tenant(
 
 async def validate_tenant_exists(
     tenant_id: int,
-) -> Tuple[Optional[Any], Optional[Tuple[Any, int]]]:
+) -> tuple[Any | None, tuple[Any, int] | None]:
     """
     Validate that a tenant exists.
 
@@ -101,7 +100,7 @@ async def validate_tenant_exists(
 
 def validate_required_fields(
     data: dict, required_fields: list
-) -> Optional[Tuple[Any, int]]:
+) -> tuple[Any, int] | None:
     """
     Validate that all required fields are present in the data dict.
 
@@ -128,7 +127,7 @@ def validate_required_fields(
     return None
 
 
-def validate_json_body(data: Any) -> Optional[Tuple[Any, int]]:
+def validate_json_body(data: Any) -> tuple[Any, int] | None:
     """
     Validate that request body contains JSON data.
 
@@ -156,7 +155,7 @@ def validate_json_body(data: Any) -> Optional[Tuple[Any, int]]:
 
 async def validate_resource_exists(
     table: Any, resource_id: int, resource_type: str = "Resource"
-) -> Tuple[Optional[Any], Optional[Tuple[Any, int]]]:
+) -> tuple[Any | None, tuple[Any, int] | None]:
     """
     Validate that a resource exists in a PyDAL table.
 
@@ -194,7 +193,7 @@ async def validate_resource_exists(
 
 def validate_pagination_params(
     page: int, per_page: int, max_per_page: int = 1000
-) -> Optional[Tuple[Any, int]]:
+) -> tuple[Any, int] | None:
     """
     Validate pagination parameters.
 
@@ -231,7 +230,7 @@ def validate_pagination_params(
 
 def validate_enum_value(
     value: str, allowed_values: list, field_name: str = "value"
-) -> Optional[Tuple[Any, int]]:
+) -> tuple[Any, int] | None:
     """
     Validate that a value is in a list of allowed values (enum validation).
 
@@ -263,7 +262,7 @@ def validate_enum_value(
     return None
 
 
-def validate_cron_expression(cron_expr: str) -> Optional[Tuple[Any, int]]:
+def validate_cron_expression(cron_expr: str) -> tuple[Any, int] | None:
     """
     Validate that a cron expression is valid using croniter.
 
@@ -284,7 +283,7 @@ def validate_cron_expression(cron_expr: str) -> Optional[Tuple[Any, int]]:
             return error
     """
     try:
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         cron = croniter(cron_expr, now)
         cron.get_next(datetime.datetime)
     except Exception as e:
@@ -292,7 +291,7 @@ def validate_cron_expression(cron_expr: str) -> Optional[Tuple[Any, int]]:
     return None
 
 
-def validate_timezone(tz_name: str) -> Optional[Tuple[Any, int]]:
+def validate_timezone(tz_name: str) -> tuple[Any, int] | None:
     """
     Validate that a timezone string is valid using pytz.
 
@@ -322,7 +321,7 @@ def validate_timezone(tz_name: str) -> Optional[Tuple[Any, int]]:
     return None
 
 
-def validate_shift_config(shift_config: dict) -> Optional[Tuple[Any, int]]:
+def validate_shift_config(shift_config: dict) -> tuple[Any, int] | None:
     """
     Validate shift configuration for follow-the-sun rotations.
 
@@ -441,8 +440,8 @@ async def validate_no_overlap(
     identity_id: int,
     start_dt: datetime.datetime,
     end_dt: datetime.datetime,
-    exclude_override_id: Optional[int] = None,
-) -> Optional[Tuple[Any, int]]:
+    exclude_override_id: int | None = None,
+) -> tuple[Any, int] | None:
     """
     Validate that an override doesn't overlap with existing overrides.
 

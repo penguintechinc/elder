@@ -26,7 +26,7 @@ from .executor import ConnectorActionExecutor
 logger = logging.getLogger(__name__)
 
 
-def _port_to_node_input(port: PortDefinition) -> Dict[str, Any]:
+def _port_to_node_input(port: PortDefinition) -> dict[str, Any]:
     """Convert PortDefinition to node input dict."""
     return {
         "name": port.name,
@@ -36,7 +36,7 @@ def _port_to_node_input(port: PortDefinition) -> Dict[str, Any]:
     }
 
 
-def _port_to_node_output(port: PortDefinition) -> Dict[str, Any]:
+def _port_to_node_output(port: PortDefinition) -> dict[str, Any]:
     """Convert PortDefinition to node output dict."""
     return {
         "name": port.name,
@@ -49,7 +49,7 @@ def create_trigger_node(
     connector_id: str,
     trigger: TriggerDefinition,
     manifest: ConnectorManifest,
-) -> Type[BaseNode]:
+) -> type[BaseNode]:
     """Generate a trigger node class from manifest definition.
 
     Args:
@@ -94,15 +94,15 @@ def create_trigger_node(
         config_schema_attr = trig_schema
 
         @classmethod
-        def inputs(cls) -> List[Dict[str, Any]]:
+        def inputs(cls) -> list[dict[str, Any]]:
             """Triggers don't have inputs - they start workflows."""
             return []
 
         @classmethod
-        def outputs(cls) -> List[Dict[str, Any]]:
+        def outputs(cls) -> list[dict[str, Any]]:
             return outs
 
-        def validate_config(self, config: Dict[str, Any]) -> List[str]:
+        def validate_config(self, config: dict[str, Any]) -> list[str]:
             """Validate configuration."""
             errors = []
             for field_name in req_fields:
@@ -110,7 +110,7 @@ def create_trigger_node(
                     errors.append(f"Required field '{field_name}' is missing")
             return errors
 
-        async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
             """Execute trigger node.
 
             For triggers, data comes from the trigger_data in context global_config.
@@ -146,7 +146,7 @@ def create_action_node(
     connector_id: str,
     action: ActionDefinition,
     manifest: ConnectorManifest,
-) -> Type[BaseNode]:
+) -> type[BaseNode]:
     """Generate an action node class from manifest definition.
 
     Args:
@@ -200,14 +200,14 @@ def create_action_node(
         config_schema_attr = act_schema
 
         @classmethod
-        def inputs(cls) -> List[Dict[str, Any]]:
+        def inputs(cls) -> list[dict[str, Any]]:
             return inps
 
         @classmethod
-        def outputs(cls) -> List[Dict[str, Any]]:
+        def outputs(cls) -> list[dict[str, Any]]:
             return outs
 
-        def validate_config(self, config: Dict[str, Any]) -> List[str]:
+        def validate_config(self, config: dict[str, Any]) -> list[str]:
             """Validate configuration."""
             errors = []
             for field_name in req_fields:
@@ -215,7 +215,7 @@ def create_action_node(
                     errors.append(f"Required field '{field_name}' is missing")
             return errors
 
-        async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
             """Execute action by calling connector API via executor."""
             executor = ConnectorActionExecutor()
             config = self.context.get("config", {})
@@ -257,7 +257,7 @@ def create_transform_node(
     connector_id: str,
     transform: TransformDefinition,
     manifest: ConnectorManifest,
-) -> Type[BaseNode]:
+) -> type[BaseNode]:
     """Generate a transform node class from manifest definition.
 
     Args:
@@ -308,14 +308,14 @@ def create_transform_node(
         config_schema_attr = trans_schema
 
         @classmethod
-        def inputs(cls) -> List[Dict[str, Any]]:
+        def inputs(cls) -> list[dict[str, Any]]:
             return inps
 
         @classmethod
-        def outputs(cls) -> List[Dict[str, Any]]:
+        def outputs(cls) -> list[dict[str, Any]]:
             return outs
 
-        def validate_config(self, config: Dict[str, Any]) -> List[str]:
+        def validate_config(self, config: dict[str, Any]) -> list[str]:
             """Validate configuration."""
             errors = []
             for field_name in req_fields:
@@ -323,7 +323,7 @@ def create_transform_node(
                     errors.append(f"Required field '{field_name}' is missing")
             return errors
 
-        async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
             """Execute transform by calling connector API if endpoint exists."""
             config = self.context.get("config", {})
             global_config = self.context.get("global_config", {})

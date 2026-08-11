@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -190,7 +190,7 @@ async def create_ticket():
         ) or not identity_in_tenant(db, assignee_id, tenant_id):
             return "identity_not_in_tenant"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Generate village_id
         redis_client = current_app.redis_client
@@ -382,7 +382,7 @@ async def update_ticket(ticket_id):
         ):
             return "identity_not_in_tenant"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         # Only update provided fields
@@ -534,7 +534,7 @@ async def assign_ticket(ticket_id):
         if not identity_in_tenant(db, assignee_id, tenant_id):
             return "identity_not_in_tenant"
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db(db.hd_tickets.id == ticket_id).update(
             assignee_identity_id=assignee_id,
             updated_at=now,
@@ -647,7 +647,7 @@ async def merge_tickets(ticket_id):
             db(db.hd_ticket_messages.id == msg.id).update(hd_ticket_id=primary.id)
 
         # Mark secondary as closed
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db(db.hd_tickets.id == secondary.id).update(
             status="closed",
             closed_at=now,

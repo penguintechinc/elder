@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from apps.worker.connectors.authentik_connector import AuthentikConnector
 from apps.worker.connectors.aws_connector import AWSConnector
 from apps.worker.connectors.base import BaseConnector, SyncResult

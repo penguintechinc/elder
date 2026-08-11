@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import datetime
 from dataclasses import asdict
 from datetime import timezone
@@ -44,7 +43,7 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     Returns:
         Dictionary with current on-call info or None
     """
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     # Get active shift for this moment
     shift = (
@@ -254,7 +253,7 @@ async def create_rotation():
         pass  # Manual schedule has no special requirements
 
     def create():
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         insert_data = {
             "name": data["name"],
             "scope_type": scope_type,

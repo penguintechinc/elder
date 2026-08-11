@@ -27,7 +27,7 @@ class EqualsConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the equals node."""
         return [
             {
@@ -45,7 +45,7 @@ class EqualsConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the equals node."""
         return [
             {
@@ -60,7 +60,7 @@ class EqualsConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the equals comparison."""
         if "value" not in inputs:
             raise ValueError("Required input 'value' is missing")
@@ -112,7 +112,7 @@ class GreaterThanConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the greater than node."""
         return [
             {
@@ -130,7 +130,7 @@ class GreaterThanConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the greater than node."""
         return [
             {
@@ -145,7 +145,7 @@ class GreaterThanConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the greater than comparison."""
         if "value" not in inputs:
             raise ValueError("Required input 'value' is missing")
@@ -200,7 +200,7 @@ class LessThanConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the less than node."""
         return [
             {
@@ -218,7 +218,7 @@ class LessThanConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the less than node."""
         return [
             {
@@ -233,7 +233,7 @@ class LessThanConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the less than comparison."""
         if "value" not in inputs:
             raise ValueError("Required input 'value' is missing")
@@ -288,7 +288,7 @@ class ContainsConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the contains node."""
         return [
             {
@@ -306,7 +306,7 @@ class ContainsConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the contains node."""
         return [
             {
@@ -321,7 +321,7 @@ class ContainsConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the contains comparison."""
         if "haystack" not in inputs:
             raise ValueError("Required input 'haystack' is missing")
@@ -390,7 +390,7 @@ class RegexConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the regex node."""
         return [
             {
@@ -408,7 +408,7 @@ class RegexConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the regex node."""
         return [
             {
@@ -423,7 +423,7 @@ class RegexConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the regex match comparison."""
         if "text" not in inputs:
             raise ValueError("Required input 'text' is missing")

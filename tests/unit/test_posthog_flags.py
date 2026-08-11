@@ -143,7 +143,9 @@ class TestGracefulDegradation:
         # Second call: Should use cache, not call PostHog
         result2 = client.flag_enabled("test.flag", "user-123", default=False)
         assert result2 is True  # Cached value, ignores new default
-        assert mock_posthog.feature_enabled.call_count == 1  # Not called again (cache hit)
+        assert (
+            mock_posthog.feature_enabled.call_count == 1
+        )  # Not called again (cache hit)
 
 
 class TestModuleLevelApi:
@@ -169,9 +171,7 @@ class TestModuleLevelApi:
 
         result = flag_enabled("test.flag", "user-123")
         assert result is True
-        mock_client.flag_enabled.assert_called_once_with(
-            "test.flag", "user-123", False
-        )
+        mock_client.flag_enabled.assert_called_once_with("test.flag", "user-123", False)
 
 
 class TestInitPosthog:
@@ -182,9 +182,7 @@ class TestInitPosthog:
         mock_app = MagicMock()
         mock_app.extensions = {}
 
-        with patch.object(
-            PostHogClient, "__init__", return_value=None
-        ) as mock_init:
+        with patch.object(PostHogClient, "__init__", return_value=None) as mock_init:
             mock_init.return_value = None
             # Manually set up the mock to avoid real PostHogClient init
             mock_client = MagicMock(spec=PostHogClient)

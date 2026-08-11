@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 try:
@@ -17,7 +16,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 class KubernetesDiscoveryClient(BaseDiscoveryProvider):
     """Kubernetes cluster resource discovery implementation."""
 
-    def __init__(self, config_dict: Dict[str, Any]):
+    def __init__(self, config_dict: dict[str, Any]):
         """Initialize Kubernetes discovery client."""
         super().__init__(config_dict)
 
@@ -74,7 +73,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
         except:
             return False
 
-    def get_supported_services(self) -> List[str]:
+    def get_supported_services(self) -> list[str]:
         """Get supported Kubernetes resources."""
         return [
             "nodes",
@@ -90,7 +89,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
             "cni",
         ]
 
-    def discover_deployments(self) -> List[Dict[str, Any]]:
+    def discover_deployments(self) -> list[dict[str, Any]]:
         """Discover Kubernetes Deployments."""
         resources = []
 
@@ -132,9 +131,9 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """Discover all Kubernetes resources."""
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         results = {
             "compute": self.discover_compute(),
@@ -152,13 +151,11 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
         return {
             **results,
             "resources_count": resources_count,
-            "discovery_time": datetime.now(timezone.utc),
-            "duration_seconds": (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds(),
+            "discovery_time": datetime.now(UTC),
+            "duration_seconds": (datetime.now(UTC) - start_time).total_seconds(),
         }
 
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """Discover Kubernetes nodes and pods."""
         resources = []
 
@@ -309,7 +306,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """Discover Persistent Volumes."""
         resources = []
 
@@ -344,7 +341,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """Discover Kubernetes services."""
         resources = []
 
@@ -383,7 +380,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_ingress(self) -> List[Dict[str, Any]]:
+    def discover_ingress(self) -> list[dict[str, Any]]:
         """Discover Kubernetes Ingress resources."""
         resources = []
 
@@ -448,7 +445,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_pvcs(self) -> List[Dict[str, Any]]:
+    def discover_pvcs(self) -> list[dict[str, Any]]:
         """Discover Kubernetes PersistentVolumeClaims."""
         resources = []
 
@@ -482,7 +479,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_secrets(self) -> List[Dict[str, Any]]:
+    def discover_secrets(self) -> list[dict[str, Any]]:
         """Discover Kubernetes Secrets (metadata only, NEVER values)."""
         resources = []
 
@@ -515,7 +512,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_cert_manager_certs(self) -> List[Dict[str, Any]]:
+    def discover_cert_manager_certs(self) -> list[dict[str, Any]]:
         """Discover cert-manager Certificate resources."""
         resources = []
 
@@ -561,7 +558,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_cni(self) -> List[Dict[str, Any]]:
+    def discover_cni(self) -> list[dict[str, Any]]:
         """Detect the CNI plugin running in the cluster."""
         resources = []
 
@@ -611,7 +608,7 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def _discover_service_accounts(self) -> List[Dict[str, Any]]:
+    def _discover_service_accounts(self) -> list[dict[str, Any]]:
         """Discover Kubernetes service accounts."""
         resources = []
 
@@ -640,10 +637,10 @@ class KubernetesDiscoveryClient(BaseDiscoveryProvider):
 
         return resources
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Not applicable for Kubernetes."""
         return []
 
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """Not applicable for Kubernetes."""
         return []

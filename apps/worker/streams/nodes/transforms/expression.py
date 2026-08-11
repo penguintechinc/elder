@@ -10,7 +10,8 @@ import ast
 import logging
 import math
 import operator
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
@@ -18,7 +19,7 @@ from ..base import BaseNode
 logger = logging.getLogger(__name__)
 
 # Safe binary operators for expression evaluation
-SAFE_OPERATORS: Dict[type, Callable] = {
+SAFE_OPERATORS: dict[type, Callable] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -31,7 +32,7 @@ SAFE_OPERATORS: Dict[type, Callable] = {
 }
 
 # Safe comparison operators
-SAFE_COMPARISONS: Dict[type, Callable] = {
+SAFE_COMPARISONS: dict[type, Callable] = {
     ast.Eq: operator.eq,
     ast.NotEq: operator.ne,
     ast.Lt: operator.lt,
@@ -41,7 +42,7 @@ SAFE_COMPARISONS: Dict[type, Callable] = {
 }
 
 # Safe functions available in expressions
-SAFE_FUNCTIONS: Dict[str, Callable] = {
+SAFE_FUNCTIONS: dict[str, Callable] = {
     "abs": abs,
     "min": min,
     "max": max,
@@ -72,7 +73,7 @@ class ExpressionTransform(BaseNode):
     category = "transforms"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for this node."""
         return [
             {
@@ -84,7 +85,7 @@ class ExpressionTransform(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for this node."""
         return [
             {
@@ -94,7 +95,7 @@ class ExpressionTransform(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate the node configuration."""
         errors = []
 
@@ -109,7 +110,7 @@ class ExpressionTransform(BaseNode):
 
         return errors
 
-    def _safe_eval(self, node: ast.AST, variables: Dict[str, Any]) -> Any:
+    def _safe_eval(self, node: ast.AST, variables: dict[str, Any]) -> Any:
         """Safely evaluate an AST node without using exec/eval."""
         # Handle Expression wrapper
         if isinstance(node, ast.Expression):
@@ -227,7 +228,7 @@ class ExpressionTransform(BaseNode):
         # Unsupported expression type
         raise ValueError(f"Unsupported expression type: {type(node).__name__}")
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the expression transform."""
         if "in" not in inputs:
             raise ValueError("Required input 'in' is missing")

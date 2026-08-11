@@ -5,7 +5,7 @@ absent from the body."""
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +19,7 @@ def _insert_webhook(db, tenant_id=1):
     # a fixed literal — a second insert with the same value would otherwise
     # collide with another test's row (mirrors
     # test_issues_assigned_webhook_create.py).
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     webhook_id = db.webhooks.insert(
         tenant_id=tenant_id,
         village_id=f"{tenant_id:08x}-{uuid.uuid4().hex[:16]}",
@@ -40,7 +40,7 @@ def _insert_identity(db, tenant_id=1, username="assignee"):
     # IDOR guard) -- a bare int like 5 with no backing row is rejected with
     # 404 "Assignee not found in tenant" before the diff logic under test
     # ever runs, so every assignee_id used below must be a real identity.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     identity_id = db.identities.insert(
         identity_type="human",
         username=f"{username}_{uuid.uuid4().hex[:8]}",
@@ -60,7 +60,7 @@ def _insert_identity(db, tenant_id=1, username="assignee"):
 
 
 def _setup(db, tenant_id=1, initial_assignee_id=None):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     org_id = db.organizations.insert(
         name="Org", tenant_id=tenant_id, created_at=now, updated_at=now
     )

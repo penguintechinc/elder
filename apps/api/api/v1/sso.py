@@ -6,7 +6,6 @@ and SCIM 2.0 user provisioning.
 
 # flake8: noqa: E501
 
-
 from functools import wraps
 
 from quart import Blueprint, Response, jsonify, request

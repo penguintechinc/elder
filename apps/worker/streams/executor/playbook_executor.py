@@ -36,13 +36,13 @@ class NodeStatus(str, Enum):
 class NodeData:
     """Standard data transfer object for workflow nodes."""
 
-    data: Dict[str, Any]
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any]
+    metadata: dict[str, Any] = field(default_factory=dict)
     source_node_id: str = ""
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
-def _serialize_output(value: Any) -> Dict[str, Any]:
+def _serialize_output(value: Any) -> dict[str, Any]:
     """Serialize a single node output port to a JSON-safe dict.
 
     Nodes emit plain dicts ({"data", "metadata", "source_node_id"}); the
@@ -88,13 +88,13 @@ class NodeResult:
 
     node_id: str
     status: NodeStatus
-    outputs: Dict[str, NodeData] = field(default_factory=dict)
-    error: Optional[str] = None
+    outputs: dict[str, NodeData] = field(default_factory=dict)
+    error: str | None = None
     execution_time_ms: float = 0.0
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert NodeResult to dictionary for serialization."""
         return {
             "node_id": self.node_id,
@@ -114,14 +114,14 @@ class ExecutionResult:
     """Overall result of playbook execution."""
 
     success: bool
-    node_results: Dict[str, NodeResult] = field(default_factory=dict)
-    error: Optional[str] = None
+    node_results: dict[str, NodeResult] = field(default_factory=dict)
+    error: str | None = None
     execution_time_ms: float = 0.0
-    completed_nodes: List[str] = field(default_factory=list)
-    failed_nodes: List[str] = field(default_factory=list)
-    skipped_nodes: List[str] = field(default_factory=list)
+    completed_nodes: list[str] = field(default_factory=list)
+    failed_nodes: list[str] = field(default_factory=list)
+    skipped_nodes: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert ExecutionResult to dictionary for serialization."""
         return {
             "success": self.success,
@@ -137,11 +137,11 @@ class ExecutionResult:
 class BaseNode:
     """Base class for all node implementations."""
 
-    def __init__(self, context: Dict[str, Any]):
+    def __init__(self, context: dict[str, Any]):
         """Initialize the node with execution context."""
         self.context = context
 
-    async def execute(self, inputs: Dict[str, NodeData]) -> Dict[str, NodeData]:
+    async def execute(self, inputs: dict[str, NodeData]) -> dict[str, NodeData]:
         """Execute the node with given inputs."""
         raise NotImplementedError("Node must implement execute method")
 
@@ -153,7 +153,7 @@ class BaseNode:
 class PassThroughNode(BaseNode):
     """Default node for unregistered types."""
 
-    async def execute(self, inputs: Dict[str, NodeData]) -> Dict[str, NodeData]:
+    async def execute(self, inputs: dict[str, NodeData]) -> dict[str, NodeData]:
         """Pass through inputs to outputs."""
         if "default" in inputs:
             return {"default": inputs["default"]}
@@ -175,15 +175,15 @@ class PlaybookExecutor:
         self.execution_id = execution_id
         self.playbook_id = playbook_id
         self.node_timeout_seconds = node_timeout_seconds
-        self._node_outputs: Dict[str, Dict[str, NodeData]] = {}
-        self._execution_order: List[str] = []
+        self._node_outputs: dict[str, dict[str, NodeData]] = {}
+        self._execution_order: list[str] = []
 
         logger.info(
             f"PlaybookExecutor initialized: execution_id={execution_id}, "
             f"playbook_id={playbook_id}, timeout={node_timeout_seconds}s"
         )
 
-    async def execute(self, playbook_data: Dict[str, Any]) -> ExecutionResult:
+    async def execute(self, playbook_data: dict[str, Any]) -> ExecutionResult:
         """Execute the playbook with given data."""
         start_time = time.time()
         logger.info(
@@ -209,10 +209,10 @@ class PlaybookExecutor:
 
             self._node_outputs = {}
 
-            node_results: Dict[str, NodeResult] = {}
-            completed_nodes: List[str] = []
-            failed_nodes: List[str] = []
-            skipped_nodes: List[str] = []
+            node_results: dict[str, NodeResult] = {}
+            completed_nodes: list[str] = []
+            failed_nodes: list[str] = []
+            skipped_nodes: list[str] = []
 
             nodes_by_id = {node["id"]: node for node in nodes}
 
@@ -276,8 +276,8 @@ class PlaybookExecutor:
             )
 
     def _get_execution_order(
-        self, nodes: List[Dict[str, Any]], edges: List[Dict[str, Any]]
-    ) -> List[str]:
+        self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
+    ) -> list[str]:
         """Compute topological execution order for nodes."""
         try:
             sorter = TopologicalSorter(nodes, edges)
@@ -291,9 +291,9 @@ class PlaybookExecutor:
     async def _execute_node(
         self,
         node_id: str,
-        node_data: Dict[str, Any],
-        inputs: Dict[str, NodeData],
-        global_config: Dict[str, Any],
+        node_data: dict[str, Any],
+        inputs: dict[str, NodeData],
+        global_config: dict[str, Any],
     ) -> NodeResult:
         """Execute a single node with timeout and error handling."""
         started_at = datetime.now(UTC)
@@ -341,7 +341,7 @@ class PlaybookExecutor:
                 outputs = await asyncio.wait_for(
                     node_instance.execute(inputs), timeout=self.node_timeout_seconds
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise TimeoutError(
                     f"Node execution exceeded timeout of {self.node_timeout_seconds}s"
                 )
@@ -381,11 +381,11 @@ class PlaybookExecutor:
     def _gather_inputs(
         self,
         node_id: str,
-        edges: List[Dict[str, Any]],
-        node_outputs: Dict[str, Dict[str, NodeData]],
-    ) -> Dict[str, NodeData]:
+        edges: list[dict[str, Any]],
+        node_outputs: dict[str, dict[str, NodeData]],
+    ) -> dict[str, NodeData]:
         """Gather input data for a node from upstream outputs."""
-        inputs: Dict[str, NodeData] = {}
+        inputs: dict[str, NodeData] = {}
 
         incoming_edges = [edge for edge in edges if edge.get("target") == node_id]
 
@@ -411,7 +411,7 @@ class PlaybookExecutor:
         self,
         node_id: str,
         result: NodeResult,
-        edges: List[Dict[str, Any]],
+        edges: list[dict[str, Any]],
     ) -> None:
         """Store node outputs for downstream consumption."""
         self._node_outputs[node_id] = result.outputs

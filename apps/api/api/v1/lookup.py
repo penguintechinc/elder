@@ -6,7 +6,6 @@ Currently uses regular entity ID. TODO: Add unique_id field to entities table.
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
 
 from quart import Blueprint, current_app, jsonify, request

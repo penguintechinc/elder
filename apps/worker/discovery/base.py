@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 
@@ -15,7 +14,7 @@ class BaseDiscoveryProvider(ABC):
     Supports AWS, GCP, Azure, and Kubernetes resource discovery.
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize discovery provider.
 
@@ -29,7 +28,7 @@ class BaseDiscoveryProvider(ABC):
     # Core Discovery Methods
 
     @abstractmethod
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """
         Discover all resources from the cloud provider.
 
@@ -47,7 +46,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """
         Discover compute resources (VMs, instances, containers, etc.).
 
@@ -56,7 +55,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """
         Discover storage resources (buckets, disks, volumes, etc.).
 
@@ -65,7 +64,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """
         Discover network resources (VPCs, subnets, load balancers, etc.).
 
@@ -74,7 +73,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """
         Discover database resources (RDS, Cloud SQL, Cosmos DB, etc.).
 
@@ -83,7 +82,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """
         Discover serverless resources (Lambda, Cloud Functions, Azure Functions, etc.).
 
@@ -103,7 +102,7 @@ class BaseDiscoveryProvider(ABC):
         """
 
     @abstractmethod
-    def get_supported_services(self) -> List[str]:
+    def get_supported_services(self) -> list[str]:
         """
         Get list of supported services for discovery.
 
@@ -116,12 +115,12 @@ class BaseDiscoveryProvider(ABC):
         resource_id: str,
         resource_type: str,
         name: str,
-        metadata: Dict[str, Any],
-        region: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-        external_id: Optional[str] = None,
-        relationships: Optional[List[Dict[str, Any]]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any],
+        region: str | None = None,
+        tags: dict[str, str] | None = None,
+        external_id: str | None = None,
+        relationships: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """
         Format discovered resource into standard Elder format.
 
@@ -155,10 +154,10 @@ class BaseDiscoveryProvider(ABC):
             "metadata": metadata,
             "external_id": external_id,
             "relationships": relationships or [],
-            "discovered_at": datetime.now(timezone.utc).isoformat(),
+            "discovered_at": datetime.now(UTC).isoformat(),
         }
 
-    def _normalize_tags(self, tags: Any) -> Dict[str, str]:
+    def _normalize_tags(self, tags: Any) -> dict[str, str]:
         """
         Normalize tags from various cloud provider formats.
 
@@ -181,7 +180,7 @@ class BaseDiscoveryProvider(ABC):
 
         return {}
 
-    def _extract_region(self, resource_data: Dict[str, Any]) -> Optional[str]:
+    def _extract_region(self, resource_data: dict[str, Any]) -> str | None:
         """
         Extract region from resource data (provider-specific implementation).
 
@@ -196,7 +195,7 @@ class BaseDiscoveryProvider(ABC):
 
     # Helper Methods
 
-    def get_provider_info(self) -> Dict[str, Any]:
+    def get_provider_info(self) -> dict[str, Any]:
         """
         Get provider information.
 

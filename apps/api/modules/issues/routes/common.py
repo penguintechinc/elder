@@ -13,7 +13,7 @@ from typing import Optional
 from quart import g
 
 
-def _tenant_id() -> Optional[int]:
+def _tenant_id() -> int | None:
     """Tenant id from validated JWT claims (populated by before_request)."""
     claims = getattr(g, "claims", {}) or {}
     raw = claims.get("tenant", "")

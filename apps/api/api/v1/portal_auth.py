@@ -6,8 +6,7 @@ MFA management, and password operations with tenant context.
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from functools import wraps
 
 import jwt
@@ -65,7 +64,7 @@ def generate_tokens(user: dict) -> dict:
     access_token_expires = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
     refresh_token_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Access token
     access_payload = PortalAuthService.generate_jwt_claims(user)

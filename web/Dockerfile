@@ -47,6 +47,10 @@ FROM nginxinc/nginx-unprivileged:1.27-bookworm@sha256:f9dfa9c20b2b0b7c5cc830374f
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY web/nginx.conf /etc/nginx/conf.d/default.conf
 
+# Explicit non-root user. The nginx-unprivileged base already runs as this
+# uid; declared here so the rootless check + reviewers can see it plainly.
+USER 101
+
 EXPOSE 8080
 
 # No curl/wget/node in this image to build a native HEALTHCHECK around;

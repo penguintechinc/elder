@@ -6,10 +6,11 @@ Module enablement via ELDER_MODULE_HELPDESK=true in conftest.
 """
 
 import json
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, timezone
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
+import pytest
 from quart import current_app
 
 
@@ -126,7 +127,7 @@ class TestHelpDeskSLAPoliciesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             policy_id = db.hd_sla_policies.insert(
                 tenant_id=1,
                 name="Original SLA",
@@ -346,7 +347,7 @@ class TestHelpDeskCannedResponsesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             response_id = db.hd_canned_responses.insert(
                 tenant_id=1,
                 title="Original Title",
@@ -389,7 +390,7 @@ class TestHelpDeskCannedResponsesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             response_id = db.hd_canned_responses.insert(
                 tenant_id=1,
                 title="Delete Me",
@@ -423,7 +424,7 @@ class TestHelpDeskCannedResponsesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             response_id = db.hd_canned_responses.insert(
                 tenant_id=1,
                 title="Tenant 1 Response",
@@ -553,7 +554,7 @@ class TestHelpDeskTeamsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create identity for team member
             identity_id = db.identities.insert(
@@ -616,7 +617,7 @@ class TestHelpDeskTeamsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             team_id = db.hd_teams.insert(
                 tenant_id=1,
                 village_id=f"team-{uuid4().hex[:8]}",
@@ -656,7 +657,7 @@ class TestHelpDeskTeamsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create identity
             identity_id = db.identities.insert(
@@ -718,7 +719,7 @@ class TestHelpDeskTeamsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create identity
             identity_id = db.identities.insert(
@@ -777,7 +778,7 @@ class TestHelpDeskTeamsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             team_id = db.hd_teams.insert(
                 tenant_id=1,
                 village_id=f"team-{uuid4().hex[:8]}",

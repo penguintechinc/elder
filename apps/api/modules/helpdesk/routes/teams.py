@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 from quart import Blueprint, current_app, g, request
@@ -128,7 +128,7 @@ async def create_team():
     def create():
         from shared.utils.village_id import generate_village_id
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         # Use redis_client if available, otherwise generate_village_id will handle it
         if redis_client:
             village_id = generate_village_id(tenant_id, redis_client)
@@ -261,7 +261,7 @@ async def update_team(team_id: int):
             description = data["description"].strip() or None
             update_data["description"] = description
 
-        update_data["updated_at"] = datetime.now(timezone.utc)
+        update_data["updated_at"] = datetime.now(UTC)
 
         if update_data:
             db(team_query).update(**update_data)

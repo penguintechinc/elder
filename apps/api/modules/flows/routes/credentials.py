@@ -6,7 +6,7 @@ SECURITY GATE: access_token is stored in plaintext (field encryption not impleme
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -186,7 +186,7 @@ async def update_credential(credential_id: str):
             return None, 404
 
         # Build update dict (never update access_token)
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         if "name" in data:
             update_data["name"] = data["name"]

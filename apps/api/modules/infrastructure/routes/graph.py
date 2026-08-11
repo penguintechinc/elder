@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict
 
 import networkx as nx
@@ -1034,7 +1033,7 @@ def _get_entity_subgraph(db, entity, depth: int):
     return all_entities
 
 
-def _count_by_type(entities) -> Dict[str, int]:
+def _count_by_type(entities) -> dict[str, int]:
     """Count entities by type."""
     counts = {}
     for entity in entities:

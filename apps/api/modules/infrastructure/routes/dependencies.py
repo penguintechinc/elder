@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
 from dataclasses import asdict
@@ -74,7 +73,7 @@ class CreateDependencyRequest(RequestModel):
         ...,
         description="Type of dependency relationship",
     )
-    metadata: Optional[dict] = Field(
+    metadata: dict | None = Field(
         default=None,
         description="Optional custom metadata",
     )
@@ -83,29 +82,29 @@ class CreateDependencyRequest(RequestModel):
 class UpdateDependencyRequest(RequestModel):
     """Request to update an existing dependency."""
 
-    source_type: Optional[str] = Field(
+    source_type: str | None = Field(
         default=None,
         description="Type of source resource",
     )
-    source_id: Optional[int] = Field(
+    source_id: int | None = Field(
         default=None,
         ge=1,
         description="ID of source resource (must be positive)",
     )
-    target_type: Optional[str] = Field(
+    target_type: str | None = Field(
         default=None,
         description="Type of target resource",
     )
-    target_id: Optional[int] = Field(
+    target_id: int | None = Field(
         default=None,
         ge=1,
         description="ID of target resource (must be positive)",
     )
-    dependency_type: Optional[str] = Field(
+    dependency_type: str | None = Field(
         default=None,
         description="Type of dependency relationship",
     )
-    metadata: Optional[dict] = Field(
+    metadata: dict | None = Field(
         default=None,
         description="Custom metadata",
     )

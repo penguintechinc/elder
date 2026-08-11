@@ -12,6 +12,7 @@ Fresh database (no existing data), so this is a simple type conversion.
 """
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "015"

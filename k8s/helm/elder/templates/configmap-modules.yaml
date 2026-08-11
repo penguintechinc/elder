@@ -1,3 +1,8 @@
+# False positive on ELDER_MODULE_SECRETS: this renders .Values.modules.secrets
+# (true/false), a feature-toggle flag for Elder's own "Secrets" module (a
+# product feature for managing secrets), not a credential value. All values
+# in this ConfigMap are booleans from .Values.modules — no actual secret
+# material is ever placed here.
 apiVersion: v1
 kind: ConfigMap
 metadata:

@@ -5,7 +5,7 @@
 import logging
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -247,7 +247,7 @@ async def create_pipeline():
         flow_id = str(uuid.uuid4())
         webhook_secret = secrets.token_hex(32)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create pipeline record
         db_id = db.iceflows.insert(
@@ -354,7 +354,7 @@ async def update_pipeline(pipeline_id: str):
             return None, 404
 
         # Build update dict
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         if "name" in data:
             update_data["name"] = data["name"]
@@ -479,7 +479,7 @@ async def enable_pipeline(pipeline_id: str):
             return None, 404
 
         db(db.iceflows.id == pipeline.id).update(
-            is_enabled=True, updated_at=datetime.now(timezone.utc)
+            is_enabled=True, updated_at=datetime.now(UTC)
         )
         db.commit()
 
@@ -522,7 +522,7 @@ async def disable_pipeline(pipeline_id: str):
             return None, 404
 
         db(db.iceflows.id == pipeline.id).update(
-            is_enabled=False, updated_at=datetime.now(timezone.utc)
+            is_enabled=False, updated_at=datetime.now(UTC)
         )
         db.commit()
 
@@ -575,7 +575,7 @@ async def duplicate_pipeline(pipeline_id: str):
         new_flow_id = str(uuid.uuid4())
         webhook_secret = secrets.token_hex(32)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         db_id = db.iceflows.insert(
             tenant_id=tenant_id,

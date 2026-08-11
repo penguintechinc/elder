@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 import signal
 import sys
@@ -22,7 +21,7 @@ logger = structlog.get_logger(__name__)
 
 def serve(
     app,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0",  # nosec B104
     port: int = 50051,
     max_workers: int = 10,
     require_license: bool = True,
@@ -128,7 +127,7 @@ def serve(
 
 if __name__ == "__main__":
     # Get configuration from environment
-    host = os.getenv("GRPC_HOST", "0.0.0.0")
+    host = os.getenv("GRPC_HOST", "0.0.0.0")  # nosec B104
     port = int(os.getenv("GRPC_PORT", "50051"))
     max_workers = int(os.getenv("GRPC_MAX_WORKERS", "10"))
     require_license = os.getenv("GRPC_REQUIRE_LICENSE", "true").lower() == "true"

@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import List, Optional
 
 from sqlalchemy import (
@@ -367,20 +366,20 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         backref="closed_issues",
     )
 
-    labels: Mapped[List["IssueLabel"]] = relationship(
+    labels: Mapped[list["IssueLabel"]] = relationship(
         "IssueLabel",
         secondary=issue_label_assignments,
         back_populates="issues",
     )
 
-    comments: Mapped[List["IssueComment"]] = relationship(
+    comments: Mapped[list["IssueComment"]] = relationship(
         "IssueComment",
         back_populates="issue",
         cascade="all, delete-orphan",
         order_by="IssueComment.created_at",
     )
 
-    entity_links: Mapped[List["IssueEntityLink"]] = relationship(
+    entity_links: Mapped[list["IssueEntityLink"]] = relationship(
         "IssueEntityLink",
         back_populates="issue",
         cascade="all, delete-orphan",
@@ -398,7 +397,7 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
             closed_by_id: Identity ID of user closing the issue
         """
         self.status = IssueStatus.CLOSED
-        self.closed_at = datetime.now(timezone.utc)
+        self.closed_at = datetime.now(UTC)
         self.closed_by_id = closed_by_id
 
     def reopen(self) -> None:
@@ -413,7 +412,7 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
             return False
         if self.status in [IssueStatus.CLOSED, IssueStatus.RESOLVED]:
             return False
-        return datetime.now(timezone.utc) > self.due_date
+        return datetime.now(UTC) > self.due_date
 
 
 class IssueLabel(Base, IDMixin, TimestampMixin):
@@ -447,7 +446,7 @@ class IssueLabel(Base, IDMixin, TimestampMixin):
     )
 
     # Relationships
-    issues: Mapped[List["Issue"]] = relationship(
+    issues: Mapped[list["Issue"]] = relationship(
         "Issue",
         secondary=issue_label_assignments,
         back_populates="labels",
@@ -577,7 +576,7 @@ class IssueEntityLink(Base, IDMixin, TimestampMixin):
 # Helper functions for recursive issue queries
 
 
-def get_organization_issues_recursive(organization_id: int) -> List[Issue]:
+def get_organization_issues_recursive(organization_id: int) -> list[Issue]:
     """
     Get all issues for an organization recursively.
 
@@ -638,7 +637,7 @@ def get_organization_issues_recursive(organization_id: int) -> List[Issue]:
     return unique_issues
 
 
-def get_entity_issues(entity_id: int) -> List[Issue]:
+def get_entity_issues(entity_id: int) -> list[Issue]:
     """
     Get all issues directly attached to an entity.
 

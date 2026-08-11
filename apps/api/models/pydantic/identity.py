@@ -5,7 +5,6 @@ Provides validation, serialization, and type safety for identity operations.
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -73,20 +72,20 @@ class IdentityDTO(ImmutableModel):
     id: int
     identity_type: IdentityType
     username: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    organization_id: Optional[int] = None
+    email: str | None = None
+    full_name: str | None = None
+    organization_id: int | None = None
     portal_role: PortalRole
     auth_provider: AuthProvider
-    auth_provider_id: Optional[str] = None
+    auth_provider_id: str | None = None
     is_active: bool
     is_superuser: bool
     mfa_enabled: bool
-    last_login_at: Optional[datetime] = None
+    last_login_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
-    tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
+    tenant_id: int | None = None
+    village_id: str | None = None
 
     model_config = {
         "frozen": True,
@@ -107,15 +106,15 @@ class CreateIdentityRequest(RequestModel):
     username: str
     identity_type: IdentityType
     auth_provider: AuthProvider
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    password: Optional[SecretStr] = None
-    auth_provider_id: Optional[str] = None
+    email: str | None = None
+    full_name: str | None = None
+    password: SecretStr | None = None
+    auth_provider_id: str | None = None
     is_active: bool = True
     is_superuser: bool = False
     mfa_enabled: bool = False
-    organization_id: Optional[int] = None
-    tenant_id: Optional[int] = None
+    organization_id: int | None = None
+    tenant_id: int | None = None
 
     @model_validator(mode="after")
     def validate_local_auth_requires_password(self) -> "CreateIdentityRequest":
@@ -131,13 +130,13 @@ class UpdateIdentityRequest(RequestModel):
     All fields are optional.
     """
 
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    password: Optional[SecretStr] = None
-    is_active: Optional[bool] = None
-    mfa_enabled: Optional[bool] = None
-    portal_role: Optional[PortalRole] = None
-    organization_id: Optional[int] = None
+    email: str | None = None
+    full_name: str | None = None
+    password: SecretStr | None = None
+    is_active: bool | None = None
+    mfa_enabled: bool | None = None
+    portal_role: PortalRole | None = None
+    organization_id: int | None = None
 
 
 # ==================== Identity Group DTOs ====================
@@ -148,9 +147,9 @@ class IdentityGroupDTO(ImmutableModel):
 
     id: int
     name: str
-    description: Optional[str] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
+    description: str | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -163,9 +162,9 @@ class CreateIdentityGroupRequest(RequestModel):
     """Request to create a new Identity Group."""
 
     name: str
-    description: Optional[str] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
+    description: str | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
     is_active: bool = True
 
 
@@ -175,8 +174,8 @@ class UpdateIdentityGroupRequest(RequestModel):
     All fields are optional.
     """
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
+    is_active: bool | None = None

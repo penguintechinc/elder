@@ -6,9 +6,10 @@ Module enablement via conftest enable_helpdesk_module fixture.
 """
 
 import json
+from datetime import UTC, datetime, timezone
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
 from quart import current_app
 
 
@@ -167,7 +168,7 @@ class TestHelpDeskEmailAccountsAPI:
             db(db.hd_email_accounts.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             account_id = db.hd_email_accounts.insert(
                 tenant_id=1,
                 email_address="test@example.com",
@@ -240,7 +241,7 @@ class TestHelpDeskEmailAccountsAPI:
             db(db.hd_email_accounts.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             account_id = db.hd_email_accounts.insert(
                 tenant_id=1,
                 email_address="test@example.com",
@@ -289,7 +290,7 @@ class TestHelpDeskEmailAccountsAPI:
             db(db.hd_email_accounts.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             account_id = db.hd_email_accounts.insert(
                 tenant_id=1,
                 email_address="test@example.com",
@@ -327,7 +328,7 @@ class TestHelpDeskEmailAccountsAPI:
             db(db.hd_email_accounts.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             account_id = db.hd_email_accounts.insert(
                 tenant_id=1,
                 email_address="test@example.com",
@@ -373,7 +374,7 @@ class TestHelpDeskEmailAccountsAPI:
             db(db.hd_email_accounts.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create multiple accounts for tenant 1
             for i in range(3):
@@ -504,7 +505,7 @@ class TestHelpDeskTicketFormsAPI:
             db(db.hd_ticket_forms.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="First Form",
@@ -547,7 +548,7 @@ class TestHelpDeskTicketFormsAPI:
             db(db.hd_ticket_forms.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             form_id = db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Test Form",
@@ -592,7 +593,7 @@ class TestHelpDeskTicketFormsAPI:
             db(db.hd_ticket_forms.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             form_id = db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Original Name",
@@ -641,7 +642,7 @@ class TestHelpDeskTicketFormsAPI:
             db(db.hd_ticket_forms.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             form_id = db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Test Form",
@@ -667,10 +668,10 @@ class TestHelpDeskTicketFormsAPI:
         """Test GET /api/v1/helpdesk/ticket-forms/public/:slug (public, no auth)."""
         async with app.app_context():
             db = current_app.db
-            db((db.hd_ticket_forms.slug == "public-form")).delete()
+            db(db.hd_ticket_forms.slug == "public-form").delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Public Form",
@@ -687,7 +688,9 @@ class TestHelpDeskTicketFormsAPI:
             )
             db.commit()
 
-        response = await async_client.get("/api/v1/helpdesk/ticket-forms/public/public-form")
+        response = await async_client.get(
+            "/api/v1/helpdesk/ticket-forms/public/public-form"
+        )
 
         assert response.status_code == 200
         data = json.loads(await response.get_data())
@@ -711,11 +714,11 @@ class TestHelpDeskTicketFormsAPI:
         """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit without CAPTCHA token."""
         async with app.app_context():
             db = current_app.db
-            db((db.hd_ticket_forms.slug == "form-with-captcha")).delete()
+            db(db.hd_ticket_forms.slug == "form-with-captcha").delete()
             db(db.hd_tickets.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Captcha Form",
@@ -756,10 +759,10 @@ class TestHelpDeskTicketFormsAPI:
         """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit with missing required field."""
         async with app.app_context():
             db = current_app.db
-            db((db.hd_ticket_forms.slug == "required-field-form")).delete()
+            db(db.hd_ticket_forms.slug == "required-field-form").delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.hd_ticket_forms.insert(
                 tenant_id=1,
                 name="Required Field Form",
@@ -797,11 +800,11 @@ class TestHelpDeskTicketFormsAPI:
         """Test POST /api/v1/helpdesk/ticket-forms/public/:slug/submit creates a ticket."""
         async with app.app_context():
             db = current_app.db
-            db((db.hd_ticket_forms.slug == "submit-form")).delete()
+            db(db.hd_ticket_forms.slug == "submit-form").delete()
             db(db.hd_tickets.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             form_id = db.hd_ticket_forms.insert(
                 tenant_id=1,
@@ -875,7 +878,7 @@ class TestHelpDeskTicketFormsAPI:
             db(db.hd_ticket_forms.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create active form
             db.hd_ticket_forms.insert(

@@ -6,7 +6,6 @@ at both global and tenant levels using Authlib.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Any, Dict, Optional
@@ -22,7 +21,7 @@ class OIDCService:
     """OpenID Connect authentication service."""
 
     @staticmethod
-    def get_idp_config(idp_id: int) -> Optional[Dict[str, Any]]:
+    def get_idp_config(idp_id: int) -> dict[str, Any] | None:
         """Get OIDC IdP configuration by ID.
 
         Args:
@@ -49,8 +48,8 @@ class OIDCService:
 
     @staticmethod
     def get_idp_config_by_tenant(
-        tenant_id: Optional[int] = None,
-    ) -> Optional[Dict[str, Any]]:
+        tenant_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """Get OIDC IdP configuration for a tenant or global.
 
         Args:
@@ -92,7 +91,7 @@ class OIDCService:
         return None
 
     @staticmethod
-    def _config_to_dict(config) -> Dict[str, Any]:
+    def _config_to_dict(config) -> dict[str, Any]:
         """Convert IdP config record to dict."""
         return {
             "id": config.id,
@@ -112,7 +111,7 @@ class OIDCService:
         }
 
     @staticmethod
-    def discover_configuration(issuer_url: str) -> Dict[str, Any]:
+    def discover_configuration(issuer_url: str) -> dict[str, Any]:
         """Perform OIDC Discovery to get provider configuration.
 
         Args:
@@ -138,8 +137,8 @@ class OIDCService:
 
     @staticmethod
     def get_authorization_url(
-        idp_id: int, redirect_uri: str, state: Optional[str] = None
-    ) -> Dict[str, Any]:
+        idp_id: int, redirect_uri: str, state: str | None = None
+    ) -> dict[str, Any]:
         """Generate OIDC authorization URL.
 
         Args:
@@ -194,7 +193,7 @@ class OIDCService:
     @staticmethod
     def exchange_code_for_tokens(
         idp_id: int, code: str, redirect_uri: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Exchange authorization code for tokens.
 
         Args:
@@ -249,7 +248,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def validate_id_token(idp_id: int, id_token: str) -> Dict[str, Any]:
+    def validate_id_token(idp_id: int, id_token: str) -> dict[str, Any]:
         """Validate and decode OIDC ID token.
 
         Args:
@@ -313,7 +312,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def get_userinfo(idp_id: int, access_token: str) -> Dict[str, Any]:
+    def get_userinfo(idp_id: int, access_token: str) -> dict[str, Any]:
         """Get user information from userinfo endpoint.
 
         Args:
@@ -349,7 +348,7 @@ class OIDCService:
             return {"error": str(e)}
 
     @staticmethod
-    def refresh_tokens(idp_id: int, refresh_token: str) -> Dict[str, Any]:
+    def refresh_tokens(idp_id: int, refresh_token: str) -> dict[str, Any]:
         """Refresh access token using refresh token.
 
         Args:
@@ -403,10 +402,10 @@ class OIDCService:
     @staticmethod
     def jit_provision_user(
         tenant_id: int,
-        idp_config: Dict[str, Any],
-        id_token_claims: Dict[str, Any],
-        userinfo: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        idp_config: dict[str, Any],
+        id_token_claims: dict[str, Any],
+        userinfo: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Just-in-time provision a user from OIDC claims.
 
         Args:
@@ -449,7 +448,7 @@ class OIDCService:
         if existing:
             # Update last login
             db(db.portal_users.id == existing.id).update(
-                last_login_at=datetime.datetime.now(datetime.timezone.utc)
+                last_login_at=datetime.datetime.now(datetime.UTC)
             )
             return {
                 "id": existing.id,
@@ -468,7 +467,7 @@ class OIDCService:
             tenant_role=idp_config.get("default_role", "reader"),
             is_active=True,
             email_verified=True,  # OIDC validates email
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
 
@@ -484,9 +483,9 @@ class OIDCService:
     @staticmethod
     def logout(
         idp_id: int,
-        id_token_hint: Optional[str] = None,
-        post_logout_redirect_uri: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        id_token_hint: str | None = None,
+        post_logout_redirect_uri: str | None = None,
+    ) -> dict[str, Any]:
         """Initiate OIDC logout (RP-Initiated Logout).
 
         Args:

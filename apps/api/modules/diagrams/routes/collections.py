@@ -4,7 +4,7 @@
 
 import logging
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -178,7 +178,7 @@ async def create_collection():
     village_id = generate_village_id(tenant_id, redis_client)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         collection_id = db.dg_collections.insert(
             tenant_id=tenant_id,
@@ -347,7 +347,7 @@ async def update_collection(collection_id):
         if coll.owner_identity_id != identity_id:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         if "name" in data:
@@ -523,7 +523,7 @@ async def add_item(collection_id):
         )
         next_order = (max_item.order_index + 1) if max_item else 0
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         item_id = db.dg_collection_items.insert(
             tenant_id=tenant_id,

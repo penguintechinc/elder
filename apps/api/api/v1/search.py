@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 
@@ -350,7 +349,7 @@ async def create_saved_search():
         missing = [f for f in required if f not in data]
         if missing:
             return (
-                jsonify({"error": f'Missing required fields: {", ".join(missing)}'}),
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
                 400,
             )
 

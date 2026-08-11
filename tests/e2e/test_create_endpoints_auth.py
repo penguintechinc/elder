@@ -24,10 +24,15 @@ class TestCreateEndpointAuthentication:
             headers=auth_headers,
             json=org_data,
         )
-        assert response.status_code in [200, 201], f"Failed to create org: {response.text}"
+        assert response.status_code in [
+            200,
+            201,
+        ], f"Failed to create org: {response.text}"
         return response.json().get("id")
 
-    def test_create_software_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_software_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that software creation works with just authentication."""
         software_data = {
             "name": "Test Software",
@@ -49,7 +54,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("name") == "Test Software"
 
-    def test_create_entity_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_entity_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that entity creation works with just authentication."""
         entity_data = {
             "name": "Test Entity",
@@ -70,7 +77,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("name") == "Test Entity"
 
-    def test_create_service_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_service_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that service creation works with just authentication."""
         service_data = {
             "name": "Test Service",
@@ -90,7 +99,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("name") == "Test Service"
 
-    def test_create_project_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_project_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that project creation works with just authentication."""
         project_data = {
             "name": "Test Project",
@@ -110,7 +121,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("name") == "Test Project"
 
-    def test_create_milestone_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_milestone_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that milestone creation works with just authentication."""
         milestone_data = {
             "title": "Test Milestone",
@@ -130,7 +143,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("title") == "Test Milestone"
 
-    def test_create_data_store_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_data_store_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that data store creation works with just authentication."""
         data_store_data = {
             "name": "Test Data Store",
@@ -151,7 +166,9 @@ class TestCreateEndpointAuthentication:
         )
         assert response.json().get("name") == "Test Data Store"
 
-    def test_create_certificate_with_auth_only(self, api_url, auth_headers, organization_id, check_services):
+    def test_create_certificate_with_auth_only(
+        self, api_url, auth_headers, organization_id, check_services
+    ):
         """Test that certificate creation works with just authentication."""
         cert_data = {
             "name": "Test Certificate",
@@ -189,22 +206,26 @@ class TestCreateEndpointAuthentication:
         )
 
         # Should return 401 Unauthorized
-        assert response.status_code == 401, (
-            f"CREATE without auth should return 401, got {response.status_code}"
-        )
+        assert (
+            response.status_code == 401
+        ), f"CREATE without auth should return 401, got {response.status_code}"
 
 
 class TestResourceRoleEnforcement:
     """Test that resource roles are enforced on UPDATE/DELETE but not CREATE."""
 
-    def test_update_requires_maintainer_role(self, api_url, auth_headers, check_services):
+    def test_update_requires_maintainer_role(
+        self, api_url, auth_headers, check_services
+    ):
         """Verify that UPDATE endpoints check for maintainer role (when implemented)."""
         # This is a placeholder test - once resource roles are implemented,
         # this should verify that users without maintainer role cannot update
         # For now, we just verify the endpoint exists
         pass
 
-    def test_delete_requires_maintainer_role(self, api_url, auth_headers, check_services):
+    def test_delete_requires_maintainer_role(
+        self, api_url, auth_headers, check_services
+    ):
         """Verify that DELETE endpoints check for maintainer role (when implemented)."""
         # This is a placeholder test - once resource roles are implemented,
         # this should verify that users without maintainer role cannot delete

@@ -42,7 +42,7 @@ class ResolvableType:
 
 
 # Registry: all resolvable types (mutable, seeded at startup)
-_REGISTRY: Dict[str, ResolvableType] = {}
+_REGISTRY: dict[str, ResolvableType] = {}
 
 
 def register(resolvable_type: ResolvableType) -> None:
@@ -217,7 +217,7 @@ def _init_registry() -> None:
 _init_registry()
 
 
-def get_registry() -> Dict[str, ResolvableType]:
+def get_registry() -> dict[str, ResolvableType]:
     """Get the full registry as a read-only dict.
 
     Returns:
@@ -226,7 +226,7 @@ def get_registry() -> Dict[str, ResolvableType]:
     return dict(_REGISTRY)
 
 
-def get_type(type_name: str) -> Optional[ResolvableType]:
+def get_type(type_name: str) -> ResolvableType | None:
     """Look up a resolvable type by name.
 
     Args:
@@ -239,8 +239,8 @@ def get_type(type_name: str) -> Optional[ResolvableType]:
 
 
 def resolve_by_village_id(
-    db: Any, village_id: str, tenant_id: Optional[int] = None
-) -> Optional[Dict[str, Any]]:
+    db: Any, village_id: str, tenant_id: int | None = None
+) -> dict[str, Any] | None:
     """Resolve a village_id to its resource type and ID.
 
     Searches all registered types for a matching village_id, scoped to tenant if provided.
@@ -313,8 +313,8 @@ def resolve_ref(
     module: str,
     type_name: str,
     resource_id: Any,
-    tenant_id: Optional[int] = None,
-) -> Optional[Dict[str, Any]]:
+    tenant_id: int | None = None,
+) -> dict[str, Any] | None:
     """Resolve a module:type:id reference to its resource row.
 
     Args:

@@ -6,7 +6,6 @@ guarded by admin scope and tenant isolation.
 
 # flake8: noqa: E501
 
-
 from typing import Optional
 
 import redis
@@ -35,7 +34,7 @@ class SetModuleRequest(RequestModel):
 
     module_name: str = Field(..., min_length=1, max_length=64)
     enabled: bool
-    settings: Optional[dict] = Field(default=None)
+    settings: dict | None = Field(default=None)
 
 
 class ModuleToggleResponse(RequestModel):
@@ -43,7 +42,7 @@ class ModuleToggleResponse(RequestModel):
 
     module_name: str
     enabled: bool
-    settings: Optional[dict] = None
+    settings: dict | None = None
 
 
 @bp.route("/tenants/<int:tenant_id>/modules", methods=["GET"])

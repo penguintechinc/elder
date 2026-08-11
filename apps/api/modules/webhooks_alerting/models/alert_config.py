@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import enum
 from typing import Optional
 

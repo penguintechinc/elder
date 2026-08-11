@@ -38,6 +38,7 @@ import sys
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
+
 # Color codes for terminal output
 class Colors:
     GREEN = "\033[92m"
@@ -50,9 +51,9 @@ class Colors:
 
 def print_header(msg: str) -> None:
     """Print a styled header."""
-    print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.BLUE}{msg}{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
 
 
 def print_success(msg: str) -> None:
@@ -75,17 +76,18 @@ def print_info(msg: str) -> None:
     print(f"{Colors.BLUE}ℹ {msg}{Colors.END}")
 
 
-def check_boto3_import() -> Tuple[bool, Optional[str]]:
+def check_boto3_import() -> tuple[bool, str | None]:
     """Check if boto3 is installed and importable."""
     try:
         import boto3
         import botocore
+
         return True, boto3.__version__
     except ImportError as e:
         return False, str(e)
 
 
-def check_credentials_configured() -> Dict[str, bool]:
+def check_credentials_configured() -> dict[str, bool]:
     """Check if AWS credentials are configured via environment variables."""
     return {
         "AWS_ACCESS_KEY_ID": bool(os.environ.get("AWS_ACCESS_KEY_ID")),
@@ -93,7 +95,9 @@ def check_credentials_configured() -> Dict[str, bool]:
         "AWS_DEFAULT_REGION": bool(os.environ.get("AWS_DEFAULT_REGION")),
         "AWS_SESSION_TOKEN": bool(os.environ.get("AWS_SESSION_TOKEN")),
         "AWS_ROLE_ARN": bool(os.environ.get("AWS_ROLE_ARN")),
-        "AWS_WEB_IDENTITY_TOKEN_FILE": bool(os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")),
+        "AWS_WEB_IDENTITY_TOKEN_FILE": bool(
+            os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")
+        ),
     }
 
 
@@ -101,7 +105,9 @@ def detect_auth_method() -> str:
     """Detect which AWS authentication method will be used."""
     if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
         return "static_credentials"
-    elif os.environ.get("AWS_ROLE_ARN") and os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE"):
+    elif os.environ.get("AWS_ROLE_ARN") and os.environ.get(
+        "AWS_WEB_IDENTITY_TOKEN_FILE"
+    ):
         return "web_identity_oidc"
     elif os.environ.get("AWS_PROFILE"):
         return "aws_profile"
@@ -109,7 +115,7 @@ def detect_auth_method() -> str:
         return "environment_or_iam_role"
 
 
-def test_sts_connection(region: str, verbose: bool = False) -> Tuple[bool, Dict]:
+def test_sts_connection(region: str, verbose: bool = False) -> tuple[bool, dict]:
     """
     Test AWS connection using STS get_caller_identity.
 
@@ -139,14 +145,14 @@ def test_sts_connection(region: str, verbose: bool = False) -> Tuple[bool, Dict]
         return False, {
             "error": "NoCredentialsError",
             "message": "No AWS credentials found. Set AWS_ACCESS_KEY_ID and "
-                      "AWS_SECRET_ACCESS_KEY environment variables, or configure "
-                      "AWS credentials file (~/.aws/credentials).",
+            "AWS_SECRET_ACCESS_KEY environment variables, or configure "
+            "AWS credentials file (~/.aws/credentials).",
         }
     except PartialCredentialsError as e:
         return False, {
             "error": "PartialCredentialsError",
             "message": f"Incomplete credentials: {str(e)}. Ensure both "
-                      "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set.",
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set.",
         }
     except ClientError as e:
         error_code = e.response.get("Error", {}).get("Code", "Unknown")
@@ -196,10 +202,8 @@ def get_error_hint(error_code: str) -> str:
 
 
 def test_service_access(
-    region: str,
-    services: List[str],
-    verbose: bool = False
-) -> Dict[str, Dict]:
+    region: str, services: list[str], verbose: bool = False
+) -> dict[str, dict]:
     """
     Test access to specific AWS services.
 
@@ -292,7 +296,9 @@ def test_service_access(
     return results
 
 
-def test_elder_discovery_client(region: str, verbose: bool = False) -> Tuple[bool, str, str]:
+def test_elder_discovery_client(
+    region: str, verbose: bool = False
+) -> tuple[bool, str, str]:
     """
     Test the actual Elder AWSDiscoveryClient.
 
@@ -315,7 +321,9 @@ def test_elder_discovery_client(region: str, verbose: bool = False) -> Tuple[boo
         }
 
         # Add static credentials if available
-        if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get(
+            "AWS_SECRET_ACCESS_KEY"
+        ):
             config["access_key_id"] = os.environ.get("AWS_ACCESS_KEY_ID")
             config["secret_access_key"] = os.environ.get("AWS_SECRET_ACCESS_KEY")
 
@@ -323,7 +331,9 @@ def test_elder_discovery_client(region: str, verbose: bool = False) -> Tuple[boo
         if os.environ.get("AWS_ROLE_ARN"):
             config["role_arn"] = os.environ.get("AWS_ROLE_ARN")
         if os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE"):
-            config["web_identity_token_file"] = os.environ.get("AWS_WEB_IDENTITY_TOKEN_FILE")
+            config["web_identity_token_file"] = os.environ.get(
+                "AWS_WEB_IDENTITY_TOKEN_FILE"
+            )
 
         client = AWSDiscoveryClient(config)
         auth_method = client.get_auth_method()
@@ -331,7 +341,11 @@ def test_elder_discovery_client(region: str, verbose: bool = False) -> Tuple[boo
         if client.test_connection():
             return True, "Elder AWSDiscoveryClient connected successfully", auth_method
         else:
-            return False, "Elder AWSDiscoveryClient.test_connection() returned False", auth_method
+            return (
+                False,
+                "Elder AWSDiscoveryClient.test_connection() returned False",
+                auth_method,
+            )
 
     except ImportError as e:
         return False, f"Failed to import AWSDiscoveryClient: {e}", "unknown"
@@ -346,17 +360,20 @@ def main():
         epilog=__doc__,
     )
     parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="store_true",
         help="Show detailed output",
     )
     parser.add_argument(
-        "-d", "--discover",
+        "-d",
+        "--discover",
         action="store_true",
         help="Run discovery test after connection validation",
     )
     parser.add_argument(
-        "-r", "--region",
+        "-r",
+        "--region",
         default=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
         help="AWS region to test (default: us-east-1 or AWS_DEFAULT_REGION)",
     )
@@ -386,7 +403,9 @@ def main():
         sys.exit(1)
 
     # Step 2: Check credentials configuration
-    print("\n" + Colors.BOLD + "Step 2: Checking credentials configuration" + Colors.END)
+    print(
+        "\n" + Colors.BOLD + "Step 2: Checking credentials configuration" + Colors.END
+    )
     creds = check_credentials_configured()
     auth_method = detect_auth_method()
 
@@ -396,20 +415,28 @@ def main():
         "aws_profile": "AWS Profile",
         "environment_or_iam_role": "Environment / IAM Role",
     }
-    print_info(f"Authentication method: {auth_method_display.get(auth_method, auth_method)}")
+    print_info(
+        f"Authentication method: {auth_method_display.get(auth_method, auth_method)}"
+    )
 
     if creds["AWS_ACCESS_KEY_ID"] and creds["AWS_SECRET_ACCESS_KEY"]:
         print_success("AWS static credentials configured")
         if args.verbose:
             # Show masked key ID
             key_id = os.environ.get("AWS_ACCESS_KEY_ID", "")
-            masked = key_id[:4] + "*" * (len(key_id) - 8) + key_id[-4:] if len(key_id) > 8 else "****"
+            masked = (
+                key_id[:4] + "*" * (len(key_id) - 8) + key_id[-4:]
+                if len(key_id) > 8
+                else "****"
+            )
             print_info(f"Access Key ID: {masked}")
     elif creds["AWS_ROLE_ARN"] and creds["AWS_WEB_IDENTITY_TOKEN_FILE"]:
         print_success("AWS OIDC/Web Identity configured")
         if args.verbose:
             print_info(f"Role ARN: {os.environ.get('AWS_ROLE_ARN', '')}")
-            print_info(f"Token File: {os.environ.get('AWS_WEB_IDENTITY_TOKEN_FILE', '')}")
+            print_info(
+                f"Token File: {os.environ.get('AWS_WEB_IDENTITY_TOKEN_FILE', '')}"
+            )
     else:
         print_info("No explicit credentials found, will use IAM role or AWS config")
 
@@ -435,7 +462,9 @@ def main():
 
     # Step 4: Test Elder's AWSDiscoveryClient
     print("\n" + Colors.BOLD + "Step 4: Testing Elder AWSDiscoveryClient" + Colors.END)
-    elder_ok, elder_msg, elder_auth = test_elder_discovery_client(args.region, args.verbose)
+    elder_ok, elder_msg, elder_auth = test_elder_discovery_client(
+        args.region, args.verbose
+    )
 
     if elder_ok:
         print_success(elder_msg)
@@ -446,13 +475,20 @@ def main():
 
     # Step 5: Optional discovery test
     if args.discover and sts_ok:
-        print("\n" + Colors.BOLD + f"Step 5: Testing service discovery ({', '.join(services)})" + Colors.END)
+        print(
+            "\n"
+            + Colors.BOLD
+            + f"Step 5: Testing service discovery ({', '.join(services)})"
+            + Colors.END
+        )
         service_results = test_service_access(args.region, services, args.verbose)
 
         for service, result in service_results.items():
             if result["success"]:
                 count = result.get("resource_count", 0)
-                print_success(f"{result['display_name']}: Access OK ({count} resources found)")
+                print_success(
+                    f"{result['display_name']}: Access OK ({count} resources found)"
+                )
             else:
                 print_error(f"{result['display_name']}: {result['error']}")
                 if args.verbose and "message" in result:

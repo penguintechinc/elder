@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import fnmatch
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import structlog
 from pydantic import ValidationError
@@ -241,7 +240,7 @@ async def create_policy():
         return ApiResponse.error("action must be 'warn' or 'block'", 400)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         policy_id = db.license_policies.insert(
             name=req.name,
             organization_id=req.organization_id,

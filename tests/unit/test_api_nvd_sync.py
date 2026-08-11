@@ -5,8 +5,9 @@ No external network calls or real database required.
 """
 
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestNVDSyncAPI:
@@ -15,7 +16,9 @@ class TestNVDSyncAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_trigger_nvd_sync_success(self, mock_service_class, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_success(
+        self, mock_service_class, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with successful sync."""
         # Mock current user
         mock_user = MagicMock()
@@ -54,7 +57,9 @@ class TestNVDSyncAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_trigger_nvd_sync_with_defaults(self, mock_service_class, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_with_defaults(
+        self, mock_service_class, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with default parameters."""
         # Mock current user
         mock_user = MagicMock()
@@ -90,7 +95,9 @@ class TestNVDSyncAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_trigger_nvd_sync_force_refresh(self, mock_service_class, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_force_refresh(
+        self, mock_service_class, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with force_refresh."""
         # Mock current user
         mock_user = MagicMock()
@@ -137,7 +144,9 @@ class TestNVDSyncAPI:
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
-    async def test_trigger_nvd_sync_insufficient_permissions(self, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_insufficient_permissions(
+        self, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with insufficient permissions."""
         # Mock a user without admin role (will fail role_required)
         mock_user = MagicMock()
@@ -215,7 +224,9 @@ class TestNVDSyncAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_trigger_nvd_sync_error_handling(self, mock_service_class, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_error_handling(
+        self, mock_service_class, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with service error propagates."""
         # Mock current user with admin role
         mock_user = MagicMock()
@@ -245,7 +256,9 @@ class TestNVDSyncAPI:
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_trigger_nvd_sync_no_vulns(self, mock_service_class, mock_get_user, async_client):
+    async def test_trigger_nvd_sync_no_vulns(
+        self, mock_service_class, mock_get_user, async_client
+    ):
         """Test POST /api/v1/vulnerabilities/nvd-sync with no vulnerabilities to sync."""
         # Mock current user
         mock_user = MagicMock()

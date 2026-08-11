@@ -12,9 +12,10 @@ To run integration tests: pytest -m integration
 Unit tests (pure algorithm) can run without these dependencies.
 """
 
+from datetime import UTC, datetime, timedelta, timezone
+
 import pytest
 import pytest_asyncio
-from datetime import datetime, timezone, timedelta
 
 from apps.api.modules.helpdesk.services.dashboard import get_dashboard_stats
 
@@ -29,8 +30,9 @@ class TestDashboardIntegration:
         if not test_database_url:
             pytest.skip("DATABASE_URL not set")
 
-        from apps.api.utils.async_utils import run_in_threadpool
         import time
+
+        from apps.api.utils.async_utils import run_in_threadpool
 
         async def setup():
             def do_setup():
@@ -60,7 +62,7 @@ class TestDashboardIntegration:
                     portal_role="observer",
                 )
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
                 # Create SLA policy for compliance testing
@@ -142,7 +144,9 @@ class TestDashboardIntegration:
 
                 # Status: resolved (2) - for avg resolution and SLA compliance
                 resolved_1_created = today_start - timedelta(hours=4)
-                resolved_1_resolved = resolved_1_created + timedelta(hours=3)  # 3 hours to resolve
+                resolved_1_resolved = resolved_1_created + timedelta(
+                    hours=3
+                )  # 3 hours to resolve
                 tickets.append(
                     db.hd_tickets.insert(
                         tenant_id=tenant_id,
@@ -160,7 +164,9 @@ class TestDashboardIntegration:
                 )
 
                 resolved_2_created = today_start - timedelta(hours=12)
-                resolved_2_resolved = resolved_2_created + timedelta(hours=10)  # 10 hours to resolve
+                resolved_2_resolved = resolved_2_created + timedelta(
+                    hours=10
+                )  # 10 hours to resolve
                 tickets.append(
                     db.hd_tickets.insert(
                         tenant_id=tenant_id,
@@ -277,7 +283,9 @@ class TestDashboardIntegration:
         assert stats["by_status"]["closed"] == 1
 
     @pytest.mark.asyncio
-    async def test_get_dashboard_stats_by_priority_breakdown(self, app, setup_test_data):
+    async def test_get_dashboard_stats_by_priority_breakdown(
+        self, app, setup_test_data
+    ):
         """Test by_priority dict contains all priorities with correct counts."""
         data = setup_test_data
         stats = await get_dashboard_stats(app.db, data["tenant_id"])
@@ -305,7 +313,9 @@ class TestDashboardIntegration:
         assert stats["avg_resolution_hours"] == 6.5
 
     @pytest.mark.asyncio
-    async def test_get_dashboard_stats_sla_compliance_percent(self, app, setup_test_data):
+    async def test_get_dashboard_stats_sla_compliance_percent(
+        self, app, setup_test_data
+    ):
         """Test SLA compliance percentage.
 
         Only 2 tickets have sla_breach_at set:

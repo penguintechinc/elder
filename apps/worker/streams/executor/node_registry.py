@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional, Type
+from typing import Dict, Optional, Type
 
 logger = logging.getLogger(__name__)
 
-NodeClassType = Type
+NodeClassType = type
 
 
 @dataclass(slots=True, frozen=True)
@@ -48,7 +49,7 @@ class DuplicateNodeError(NodeRegistryError):
 class NodeRegistry:
     """Thread-safe singleton registry for node types."""
 
-    _registry: Dict[str, NodeInfo] = {}
+    _registry: dict[str, NodeInfo] = {}
     _lock = threading.Lock()
     _initialized = False
 
@@ -58,8 +59,8 @@ class NodeRegistry:
         node_type: str,
         node_class: NodeClassType,
         category: str,
-        display_name: Optional[str] = None,
-        description: Optional[str] = None,
+        display_name: str | None = None,
+        description: str | None = None,
         allow_override: bool = False,
     ) -> None:
         """Register a node class with the registry."""
@@ -101,9 +102,7 @@ class NodeRegistry:
             )
 
     @classmethod
-    def get(
-        cls, node_type: str, raise_on_missing: bool = True
-    ) -> Optional[NodeClassType]:
+    def get(cls, node_type: str, raise_on_missing: bool = True) -> NodeClassType | None:
         """Get a node class by its type identifier."""
         with cls._lock:
             node_info = cls._registry.get(node_type)
@@ -118,7 +117,7 @@ class NodeRegistry:
             return node_info.node_class
 
     @classmethod
-    def get_info(cls, node_type: str) -> Optional[NodeInfo]:
+    def get_info(cls, node_type: str) -> NodeInfo | None:
         """Get full node information by type identifier."""
         with cls._lock:
             return cls._registry.get(node_type)
@@ -164,8 +163,8 @@ class NodeRegistry:
 def register_node(
     node_type: str,
     category: str,
-    display_name: Optional[str] = None,
-    description: Optional[str] = None,
+    display_name: str | None = None,
+    description: str | None = None,
 ) -> Callable:
     """Decorator to automatically register a node class."""
 

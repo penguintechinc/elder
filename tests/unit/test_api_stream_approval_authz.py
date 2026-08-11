@@ -9,7 +9,7 @@ regression: security-review-stream-approval-status-broken-access-control
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -26,7 +26,7 @@ class TestApprovalStatusAuthz:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Appr Tenant",
                 slug=f"ap-{uuid.uuid4().hex[:8]}",
@@ -95,7 +95,7 @@ class TestApprovalStatusAuthz:
         self.fx = await run_in_threadpool(_setup)
 
     def _token(self, app, tenant_id, identity_id):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -137,7 +137,7 @@ class TestApprovalStatusAuthz:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _seed():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             def _ident():
                 em = f"appr-{uuid.uuid4().hex[:8]}@test.local"

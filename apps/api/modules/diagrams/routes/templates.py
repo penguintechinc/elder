@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -169,7 +169,7 @@ async def create_template():
     village_id = generate_village_id(tenant_id, current_app.redis_client)
 
     def create_tmpl():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         template_id = db.dg_templates.insert(
             tenant_id=tenant_id,
@@ -312,7 +312,7 @@ async def update_template(template_id: int):
             return None, "forbidden"
 
         # Update fields
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_dict = {"updated_at": now}
 
         if "name" in data:

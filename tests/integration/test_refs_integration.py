@@ -545,9 +545,7 @@ class TestRefsEndpointAuthGate:
     async def test_backlinks_unauthenticated_returns_401(self, app):
         """Unauthenticated GET /refs/backlinks must be 401, never leak."""
         client = app.test_client()
-        resp = await client.get(
-            "/api/v1/refs/backlinks?target=infrastructure:entity:1"
-        )
+        resp = await client.get("/api/v1/refs/backlinks?target=infrastructure:entity:1")
         assert resp.status_code == 401
 
     @pytest.mark.asyncio

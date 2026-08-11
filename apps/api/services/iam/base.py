@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
@@ -10,7 +9,7 @@ from typing import Any, Dict, List, Optional
 class BaseIAMProvider(ABC):
     """Abstract base class for IAM providers (AWS IAM, GCP IAM, Kubernetes RBAC)."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize the IAM provider.
 
@@ -24,8 +23,8 @@ class BaseIAMProvider(ABC):
 
     @abstractmethod
     def list_users(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all users/service accounts/principals.
 
@@ -42,7 +41,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def get_user(self, user_identifier: str) -> Dict[str, Any]:
+    def get_user(self, user_identifier: str) -> dict[str, Any]:
         """
         Get user/service account details.
 
@@ -57,10 +56,10 @@ class BaseIAMProvider(ABC):
     def create_user(
         self,
         username: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a new user/service account.
 
@@ -75,7 +74,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def delete_user(self, user_identifier: str) -> Dict[str, Any]:
+    def delete_user(self, user_identifier: str) -> dict[str, Any]:
         """
         Delete a user/service account.
 
@@ -90,10 +89,10 @@ class BaseIAMProvider(ABC):
     def update_user(
         self,
         user_identifier: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Update user/service account metadata.
 
@@ -111,8 +110,8 @@ class BaseIAMProvider(ABC):
 
     @abstractmethod
     def list_roles(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all roles.
 
@@ -129,7 +128,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def get_role(self, role_identifier: str) -> Dict[str, Any]:
+    def get_role(self, role_identifier: str) -> dict[str, Any]:
         """
         Get role details.
 
@@ -144,11 +143,11 @@ class BaseIAMProvider(ABC):
     def create_role(
         self,
         role_name: str,
-        description: Optional[str] = None,
-        trust_policy: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        trust_policy: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a new role.
 
@@ -164,7 +163,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def delete_role(self, role_identifier: str) -> Dict[str, Any]:
+    def delete_role(self, role_identifier: str) -> dict[str, Any]:
         """
         Delete a role.
 
@@ -179,10 +178,10 @@ class BaseIAMProvider(ABC):
     def update_role(
         self,
         role_identifier: str,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Update role metadata.
 
@@ -201,10 +200,10 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def list_policies(
         self,
-        scope: Optional[str] = None,
-        limit: Optional[int] = None,
-        next_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        scope: str | None = None,
+        limit: int | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
         """
         List policies.
 
@@ -222,7 +221,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def get_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def get_policy(self, policy_identifier: str) -> dict[str, Any]:
         """
         Get policy details.
 
@@ -237,11 +236,11 @@ class BaseIAMProvider(ABC):
     def create_policy(
         self,
         policy_name: str,
-        policy_document: Dict[str, Any],
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        policy_document: dict[str, Any],
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a new policy.
 
@@ -257,7 +256,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def delete_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def delete_policy(self, policy_identifier: str) -> dict[str, Any]:
         """
         Delete a policy.
 
@@ -273,7 +272,7 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def attach_policy_to_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Attach a policy to a user.
 
@@ -288,7 +287,7 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def detach_policy_from_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Detach a policy from a user.
 
@@ -303,7 +302,7 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def attach_policy_to_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Attach a policy to a role.
 
@@ -318,7 +317,7 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def detach_policy_from_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Detach a policy from a role.
 
@@ -331,7 +330,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def list_user_policies(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_user_policies(self, user_identifier: str) -> list[dict[str, Any]]:
         """
         List all policies attached to a user.
 
@@ -343,7 +342,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def list_role_policies(self, role_identifier: str) -> List[Dict[str, Any]]:
+    def list_role_policies(self, role_identifier: str) -> list[dict[str, Any]]:
         """
         List all policies attached to a role.
 
@@ -357,7 +356,7 @@ class BaseIAMProvider(ABC):
     # Access Keys / Credentials
 
     @abstractmethod
-    def create_access_key(self, user_identifier: str) -> Dict[str, Any]:
+    def create_access_key(self, user_identifier: str) -> dict[str, Any]:
         """
         Create access credentials for a user.
 
@@ -369,7 +368,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def list_access_keys(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_access_keys(self, user_identifier: str) -> list[dict[str, Any]]:
         """
         List access keys for a user.
 
@@ -383,7 +382,7 @@ class BaseIAMProvider(ABC):
     @abstractmethod
     def delete_access_key(
         self, user_identifier: str, access_key_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Delete an access key.
 
@@ -398,8 +397,8 @@ class BaseIAMProvider(ABC):
     # Group Management (optional, not all providers support)
 
     def list_groups(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all groups (if supported).
 
@@ -413,24 +412,24 @@ class BaseIAMProvider(ABC):
         return {"groups": [], "next_token": None, "supported": False}
 
     def create_group(
-        self, group_name: str, description: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, group_name: str, description: str | None = None
+    ) -> dict[str, Any]:
         """Create a group (if supported)."""
         raise NotImplementedError("Groups not supported by this provider")
 
-    def delete_group(self, group_identifier: str) -> Dict[str, Any]:
+    def delete_group(self, group_identifier: str) -> dict[str, Any]:
         """Delete a group (if supported)."""
         raise NotImplementedError("Groups not supported by this provider")
 
     def add_user_to_group(
         self, user_identifier: str, group_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add user to group (if supported)."""
         raise NotImplementedError("Groups not supported by this provider")
 
     def remove_user_from_group(
         self, user_identifier: str, group_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove user from group (if supported)."""
         raise NotImplementedError("Groups not supported by this provider")
 
@@ -446,7 +445,7 @@ class BaseIAMProvider(ABC):
         """
 
     @abstractmethod
-    def sync_from_provider(self) -> Dict[str, Any]:
+    def sync_from_provider(self) -> dict[str, Any]:
         """
         Sync IAM resources from provider to Elder database.
 
@@ -460,7 +459,7 @@ class BaseIAMProvider(ABC):
             }
         """
 
-    def _normalize_user(self, raw_user: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_user(self, raw_user: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize provider-specific user data to common format.
 
@@ -481,7 +480,7 @@ class BaseIAMProvider(ABC):
             "arn": raw_user.get("arn") or raw_user.get("Arn"),
         }
 
-    def _normalize_role(self, raw_role: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_role(self, raw_role: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize provider-specific role data to common format.
 
@@ -499,7 +498,7 @@ class BaseIAMProvider(ABC):
             "arn": raw_role.get("arn") or raw_role.get("Arn"),
         }
 
-    def _normalize_policy(self, raw_policy: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_policy(self, raw_policy: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize provider-specific policy data to common format.
 

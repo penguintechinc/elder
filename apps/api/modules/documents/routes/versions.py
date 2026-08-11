@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -213,11 +213,14 @@ async def restore_version(doc_id, version_number):
 
     # Authorization: caller must be able to read the parent document before mutating it.
     pre_doc = await run_in_threadpool(
-        lambda: db(
-            (db.doc_documents.id == doc_id) & (db.doc_documents.tenant_id == tenant_id)
+        lambda: (
+            db(
+                (db.doc_documents.id == doc_id)
+                & (db.doc_documents.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
         )
-        .select()
-        .first()
     )
     if pre_doc is None:
         return ApiResponse.not_found("Document")
@@ -251,7 +254,7 @@ async def restore_version(doc_id, version_number):
         if not source_version:
             return (None, None, None)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create a new version from current state (before overwriting)
         new_version_number = db(db.doc_versions.doc_document_id == doc_id).count() + 1

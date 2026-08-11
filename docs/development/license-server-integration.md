@@ -323,4 +323,3 @@ PRODUCT_NAME=your-product-identifier
 # Optional: Custom License Server (for testing/development)
 LICENSE_SERVER_URL=https://license-dev.penguintech.io
 ```
-

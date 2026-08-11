@@ -7,7 +7,7 @@ anonymous submissions resolve to an arbitrary tenant. Both fixed; these lock it.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -26,7 +26,7 @@ def _foreign_tenant(db) -> int:
 
 def _seed_identity(db, tenant_id: int) -> int:
     """Insert a bare identity in the given tenant, return its id."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     ident = db.identities.insert(
         identity_type="human",
         username=f"u_{uuid4().hex[:8]}",
@@ -62,8 +62,8 @@ class TestHelpdeskCrossTenantIsolation:
                 tenant_id=1,
                 village_id=f"t-{uuid4().hex[:8]}",
                 name="T1 Team",
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
             db.commit()
 

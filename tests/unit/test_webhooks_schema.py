@@ -3,7 +3,7 @@
 things test_schema_smoke.py's table-count floor can't catch.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 from quart import current_app
@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 async def test_webhooks_has_new_columns(app):
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         webhook_id = db.webhooks.insert(
             tenant_id=1,
             village_id="00000001-0000000000000abc",
@@ -43,7 +43,7 @@ async def test_webhooks_has_new_columns(app):
 async def test_webhooks_village_id_unique(app):
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db.webhooks.insert(
             tenant_id=1,
             village_id="00000001-0000000000000def",
@@ -74,7 +74,7 @@ async def test_webhooks_village_id_unique(app):
 async def test_webhook_deliveries_has_reconciled_columns(app):
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         webhook_id = db.webhooks.insert(
             tenant_id=1,
             village_id="00000001-0000000000000fff",

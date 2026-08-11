@@ -4,7 +4,7 @@ must NOT fire when created without one."""
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,7 +17,7 @@ def _insert_webhook(db, tenant_id=1):
     # in conftest.py), so each call must mint its own value rather than reuse
     # a fixed literal — a second insert with the same value would otherwise
     # collide with the first test's row.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     webhook_id = db.webhooks.insert(
         tenant_id=tenant_id,
         village_id=f"{tenant_id:08x}-{uuid.uuid4().hex[:16]}",
@@ -68,7 +68,7 @@ async def test_create_issue_with_assignee_fires_webhook(
 
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         org_id = db.organizations.insert(
             name="Org", tenant_id=1, created_at=now, updated_at=now
         )
@@ -109,7 +109,7 @@ async def test_create_issue_without_assignee_does_not_fire(
 
     async with app.app_context():
         db = current_app.db
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         org_id = db.organizations.insert(
             name="Org2", tenant_id=1, created_at=now, updated_at=now
         )

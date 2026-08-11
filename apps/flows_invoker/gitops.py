@@ -113,7 +113,7 @@ def validate_commit_sha(sha: str) -> str:
     return sha.strip()
 
 
-def scrub(text: str, token: Optional[str]) -> str:
+def scrub(text: str, token: str | None) -> str:
     """Remove the credential token from captured output, defensively."""
     if not text or not token:
         return text or ""
@@ -127,15 +127,15 @@ class GitWorkspace:
     root: str
     repo_dir: str
     askpass_path: str
-    token: Optional[str] = None
-    pre_merge_sha: Optional[str] = None
-    merge_sha: Optional[str] = None
+    token: str | None = None
+    pre_merge_sha: str | None = None
+    merge_sha: str | None = None
 
     def cleanup(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
-def create_workspace(token: Optional[str] = None) -> GitWorkspace:
+def create_workspace(token: str | None = None) -> GitWorkspace:
     """Create an ephemeral workspace under ``FLOWS_WORKSPACE_ROOT``."""
     ws_root = os.environ.get("FLOWS_WORKSPACE_ROOT") or None
     root = tempfile.mkdtemp(prefix="flows-", dir=ws_root)
@@ -153,9 +153,9 @@ def create_workspace(token: Optional[str] = None) -> GitWorkspace:
     )
 
 
-def _git_env(ws: GitWorkspace, *, with_token: bool) -> Dict[str, str]:
+def _git_env(ws: GitWorkspace, *, with_token: bool) -> dict[str, str]:
     """Minimal env for git subprocesses (token only when needed)."""
-    extra: Dict[str, str] = {
+    extra: dict[str, str] = {
         "GIT_ASKPASS": ws.askpass_path,
         "GIT_CONFIG_NOSYSTEM": "1",
         # Deterministic merge-commit identity.
@@ -171,9 +171,9 @@ def _git_env(ws: GitWorkspace, *, with_token: bool) -> Dict[str, str]:
 
 def _run_git(
     ws: GitWorkspace,
-    args: List[str],
+    args: list[str],
     *,
-    cwd: Optional[str] = None,
+    cwd: str | None = None,
     with_token: bool = False,
     timeout: int = DEFAULT_GIT_TIMEOUT,
 ) -> CommandResult:
@@ -199,7 +199,7 @@ def clone_and_merge(
     repo_url: str,
     source_branch: str,
     target_branch: str,
-    source_commit: Optional[str] = None,
+    source_commit: str | None = None,
     *,
     timeout: int = DEFAULT_GIT_TIMEOUT,
 ) -> str:

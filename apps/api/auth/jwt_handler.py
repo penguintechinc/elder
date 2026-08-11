@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, Optional
 
 import jwt
@@ -36,7 +35,7 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
     portal_role = getattr(identity, "portal_role", "observer") or "observer"
     tenant = str(getattr(identity, "tenant_id", "") or "")
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(identity.id),
         "username": identity.username,
@@ -56,7 +55,7 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
     return token
 
 
-def verify_token(token: str) -> Optional[Dict[str, Any]]:
+def verify_token(token: str) -> dict[str, Any] | None:
     """
     Verify and decode JWT token.
 
@@ -89,7 +88,7 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_token_from_header() -> Optional[str]:
+def get_token_from_header() -> str | None:
     """
     Extract JWT token from Authorization header.
 
@@ -113,7 +112,7 @@ def get_token_from_header() -> Optional[str]:
     return token
 
 
-def get_current_user() -> Optional[Row]:
+def get_current_user() -> Row | None:
     """
     Get current authenticated user from request context.
 

@@ -109,16 +109,16 @@ Each dependency is returned as a dictionary with:
 
 ```python
 {
-    "name": str,              # Crate name
-    "version": str,           # Normalized semantic version
-    "purl": str,              # Package URL (pkg:cargo/{name}@{version})
-    "package_type": str,      # Always "cargo"
-    "scope": str,             # "runtime", "dev", or "build"
-    "direct": bool,           # True for Cargo.toml, False for Cargo.lock
-    "source_file": str,       # "Cargo.toml" or "Cargo.lock"
+    "name": str,  # Crate name
+    "version": str,  # Normalized semantic version
+    "purl": str,  # Package URL (pkg:cargo/{name}@{version})
+    "package_type": str,  # Always "cargo"
+    "scope": str,  # "runtime", "dev", or "build"
+    "direct": bool,  # True for Cargo.toml, False for Cargo.lock
+    "source_file": str,  # "Cargo.toml" or "Cargo.lock"
     # Optional fields:
-    "git": str,               # Git URL if git dependency
-    "path": str,              # Local path if path dependency
+    "git": str,  # Git URL if git dependency
+    "path": str,  # Local path if path dependency
 }
 ```
 

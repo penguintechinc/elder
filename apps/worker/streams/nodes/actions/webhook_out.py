@@ -32,15 +32,15 @@ class AuthConfig:
     """Authentication configuration for outbound webhooks."""
 
     auth_type: str = "none"  # none, bearer, basic, apikey
-    bearer_token: Optional[str] = None
-    basic_username: Optional[str] = None
-    basic_password: Optional[str] = None
-    api_key_header: Optional[str] = None
-    api_key_value: Optional[str] = None
+    bearer_token: str | None = None
+    basic_username: str | None = None
+    basic_password: str | None = None
+    api_key_header: str | None = None
+    api_key_value: str | None = None
 
-    def build_headers(self) -> Dict[str, str]:
+    def build_headers(self) -> dict[str, str]:
         """Build authentication headers based on auth type."""
-        headers: Dict[str, str] = {}
+        headers: dict[str, str] = {}
 
         if self.auth_type == "bearer" and self.bearer_token:
             headers["Authorization"] = f"Bearer {self.bearer_token}"
@@ -65,7 +65,7 @@ class WebhookOutAction(BaseNode):
     category = "actions"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the webhook out node."""
         return [
             {
@@ -89,7 +89,7 @@ class WebhookOutAction(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the webhook out node."""
         return [
             {
@@ -124,7 +124,7 @@ class WebhookOutAction(BaseNode):
         self,
         url: str,
         payload: Any,
-        custom_headers: Optional[Dict[str, str]],
+        custom_headers: dict[str, str] | None,
         timeout: float,
         max_retries: int,
     ) -> tuple[bool, int, str]:
@@ -173,7 +173,7 @@ class WebhookOutAction(BaseNode):
                             f"HTTP {response.status_code}",
                         )
 
-                except (asyncio.TimeoutError, httpx.TimeoutException) as e:
+                except (TimeoutError, httpx.TimeoutException) as e:
                     if attempt < max_retries:
                         wait_time = (2**attempt) * 1.0
                         self.log_warning(
@@ -197,7 +197,7 @@ class WebhookOutAction(BaseNode):
 
         return False, 0, "Failed after retries"
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute webhook send."""
         url = inputs.get("url", "")
         if not url:

@@ -69,6 +69,5 @@ def guard_ssrf(url: str) -> None:
         ip_str = info[4][0]
         if is_blocked_ip(ip_str):
             raise ValueError(
-                f"Blocked request to internal/reserved address {ip_str} "
-                f"(host {host!r})"
+                f"Blocked request to internal/reserved address {ip_str} (host {host!r})"
             )

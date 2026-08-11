@@ -9,7 +9,6 @@ Jira-specific features:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -31,7 +30,7 @@ class JiraSyncClient(BaseSyncClient):
     """Jira Cloud sync client implementation."""
 
     def __init__(
-        self, config: Dict[str, Any], db: DAL, sync_config_id: int, logger: Any
+        self, config: dict[str, Any], db: DAL, sync_config_id: int, logger: Any
     ):
         super().__init__("jira", config, db, sync_config_id, logger)
 
@@ -90,7 +89,7 @@ class JiraSyncClient(BaseSyncClient):
         return SyncResult(status=SyncStatus.SUCCESS, operation=operation)
 
     def batch_sync(
-        self, resource_type: ResourceType, since: Optional[datetime] = None
+        self, resource_type: ResourceType, since: datetime | None = None
     ) -> SyncResult:
         """Batch sync Jira resources."""
         self.logger.info(f"Jira batch sync for {resource_type.value}")
@@ -103,7 +102,7 @@ class JiraSyncClient(BaseSyncClient):
             ),
         )
 
-    def handle_webhook(self, webhook_data: Dict[str, Any]) -> SyncResult:
+    def handle_webhook(self, webhook_data: dict[str, Any]) -> SyncResult:
         """Handle Jira webhook."""
         webhook_event = webhook_data.get("webhookEvent")
         self.logger.info(f"Jira webhook: {webhook_event}")

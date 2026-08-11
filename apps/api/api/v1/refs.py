@@ -20,7 +20,7 @@ bp = Blueprint("refs", __name__)
 logger = logging.getLogger(__name__)
 
 
-def _get_tenant_id() -> Optional[int]:
+def _get_tenant_id() -> int | None:
     """Extract and validate tenant ID from authenticated JWT claims.
 
     Reads from g.claims populated by before_request bridge in main.py.
@@ -46,8 +46,8 @@ def _build_resolve_response(
     db,
     resource_type: str,
     resource_id,
-    village_id: Optional[str] = None,
-    tenant_id: Optional[int] = None,
+    village_id: str | None = None,
+    tenant_id: int | None = None,
 ) -> dict:
     """Build a resolve response for a found resource.
 

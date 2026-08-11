@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from penguin_libs.pydantic import Description1000, RequestModel
 from quart import Blueprint, current_app, g, jsonify
@@ -126,7 +125,7 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
             return None, "Issue not found", 404
 
         # Create comment
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         redis_client = current_app.redis_client
         village_id = generate_village_id(issue.tenant_id, redis_client)
         comment_id = db.issue_comments.insert(

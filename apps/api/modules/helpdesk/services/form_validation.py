@@ -96,7 +96,7 @@ def _flatten_errors(exc: ValidationError) -> list[str]:
 
 def validate_submission(
     fields: list[dict[str, Any]], data: dict[str, Any]
-) -> tuple[Optional[dict[str, Any]], list[str]]:
+) -> tuple[dict[str, Any] | None, list[str]]:
     """Validate submitted form data against a form's field spec.
 
     Builds a dynamic model from ``fields`` and validates ``data`` against

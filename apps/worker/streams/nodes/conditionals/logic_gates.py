@@ -22,7 +22,7 @@ class AndConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the AND gate."""
         return [
             {
@@ -52,7 +52,7 @@ class AndConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the AND gate."""
         return [
             {
@@ -67,7 +67,7 @@ class AndConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the AND gate logic."""
         if "in1" not in inputs:
             raise ValueError("Required input 'in1' is missing")
@@ -109,7 +109,7 @@ class OrConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the OR gate."""
         return [
             {
@@ -139,7 +139,7 @@ class OrConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the OR gate."""
         return [
             {
@@ -154,7 +154,7 @@ class OrConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the OR gate logic."""
         if "in1" not in inputs:
             raise ValueError("Required input 'in1' is missing")
@@ -196,7 +196,7 @@ class NotConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the NOT gate."""
         return [
             {
@@ -208,7 +208,7 @@ class NotConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the NOT gate."""
         return [
             {
@@ -223,7 +223,7 @@ class NotConditional(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the NOT gate logic."""
         if "in" not in inputs:
             raise ValueError("Required input 'in' is missing")

@@ -6,7 +6,6 @@ and unknown module handling with defaults.
 
 # flake8: noqa: E501
 
-
 import json
 from unittest.mock import MagicMock, patch
 
@@ -122,7 +121,11 @@ class TestIsModuleEnabled:
         mock_db.return_value = query_obj
 
         result = is_module_enabled(
-            mock_db, mock_redis, tenant_id=1, module_name="infrastructure", default=False
+            mock_db,
+            mock_redis,
+            tenant_id=1,
+            module_name="infrastructure",
+            default=False,
         )
 
         assert result is True

@@ -6,8 +6,7 @@ project management platforms (GitHub, GitLab, Jira, Trello, OpenProject).
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 from quart_cors import route_cors
@@ -47,7 +46,7 @@ async def create_sync_config():
         return jsonify({"error": "Missing required fields"}), 400
 
     def inner():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         config_id = db.sync_configs.insert(
             name=data["name"],
             platform=data["platform"],

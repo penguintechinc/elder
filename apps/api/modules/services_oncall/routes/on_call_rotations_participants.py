@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import datetime
 from dataclasses import asdict
 from datetime import timezone
@@ -163,7 +162,7 @@ async def add_participant(rotation_id: int):
         return ApiResponse.not_found("Identity", data["identity_id"])
 
     def create():
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         insert_data = {
             "rotation_id": rotation_id,
             "identity_id": data["identity_id"],
@@ -547,7 +546,7 @@ async def create_override(rotation_id: int):
         )
 
     def create():
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         insert_data = {
             "rotation_id": rotation_id,
             "original_identity_id": data["original_identity_id"],

@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -156,7 +156,7 @@ async def create_library():
         return ApiResponse.validation_error("name", "is required")
 
     def create_lib():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         library_id = db.dg_shape_libraries.insert(
             tenant_id=tenant_id,
@@ -310,7 +310,7 @@ async def update_library(library_id: int):
             return None, "forbidden"
 
         # Update fields
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_dict = {"updated_at": now}
 
         if "name" in data:
@@ -452,7 +452,7 @@ async def add_shape(library_id: int):
             return None, "forbidden"
 
         # Add shape to library
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         shape_id = db.dg_library_shapes.insert(
             library_id=library_id,
             tenant_id=tenant_id,

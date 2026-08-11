@@ -9,7 +9,7 @@ regression: streams-webhook-security-phase4b
 import hashlib
 import hmac
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -28,7 +28,7 @@ class TestStreamWebhookSecurity:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name=f"Webhook Test Tenant {uuid.uuid4().hex[:8]}",
                 slug=f"webhook-{uuid.uuid4().hex[:8]}",
@@ -313,7 +313,7 @@ class TestStreamWebhookSecurity:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             enabled = db.stream_playbooks.is_enabled == True  # noqa: E712
             playbook = db(enabled).select().first()
             if not playbook:
@@ -358,7 +358,7 @@ class TestStreamWebhookSecurity:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             enabled = db.stream_playbooks.is_enabled == True  # noqa: E712
             playbook = db(enabled).select().first()
             if not playbook:

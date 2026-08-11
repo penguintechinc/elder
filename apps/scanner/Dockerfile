@@ -6,10 +6,12 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
+# Versions pinned to the candidates resolved from the base image digest above;
+# bump alongside a base image digest update.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libldap2-dev \
-    libsasl2-dev \
+    build-essential=12.9 \
+    libldap2-dev=2.5.13+dfsg-5 \
+    libsasl2-dev=2.1.28+dfsg-10 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY apps/scanner/requirements.txt .
@@ -21,10 +23,12 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 ARG SCANNER_POLL_INTERVAL=300
 
+# Versions pinned to the candidates resolved from the base image digest above;
+# bump alongside a base image digest update.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    masscan \
-    libldap-2.5-0 \
-    libsasl2-2 \
+    masscan=2:1.3.2+ds1-1 \
+    libldap-2.5-0=2.5.13+dfsg-5 \
+    libsasl2-2=2.1.28+dfsg-10 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -46,7 +50,7 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
 # ROOT CAPABILITY EXCEPTION (approved): masscan requires CAP_NET_RAW for raw socket
 # access (SYN scanning). Process runs as UID 1000 (non-root) with only NET_RAW
 # capability granted via Kubernetes securityContext. See k8s/helm/elder/values.yaml.
-USER appuser
+USER 1000
 
 ENV SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL}
 ENV ELDER_API_URL=http://api:5000
@@ -56,6 +60,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python healthcheck.py || exit 1
+    CMD ["python", "healthcheck.py"]
 
 CMD ["python", "main.py"]

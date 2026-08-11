@@ -94,7 +94,9 @@ class TestValidationHelpers:
     async def test_validate_pagination_params_exceeds_max(self, app):
         """Test pagination validation with per_page > max."""
         async with app.app_context():
-            response, status_code = validate_pagination_params(1, 2000, max_per_page=1000)
+            response, status_code = validate_pagination_params(
+                1, 2000, max_per_page=1000
+            )
             assert status_code == 400
             assert "1000" in (await response.get_json())["error"]
 
@@ -117,8 +119,12 @@ class TestValidationHelpers:
     async def test_validate_organization_and_get_tenant_success(self, app):
         """Test successful organization and tenant validation."""
         async with app.app_context():
-            with patch("apps.api.utils.validation_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.validation_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.validation_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.validation_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_org = Mock()
                 mock_org.tenant_id = 1
                 mock_threadpool.return_value = mock_org
@@ -133,8 +139,12 @@ class TestValidationHelpers:
     async def test_validate_organization_and_get_tenant_not_found(self, app):
         """Test organization validation when not found."""
         async with app.app_context():
-            with patch("apps.api.utils.validation_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.validation_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.validation_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.validation_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_threadpool.return_value = None
 
                 org, tenant_id, error = await validate_organization_and_get_tenant(999)
@@ -149,8 +159,12 @@ class TestValidationHelpers:
     async def test_validate_organization_and_get_tenant_no_tenant(self, app):
         """Test organization validation when no tenant assigned."""
         async with app.app_context():
-            with patch("apps.api.utils.validation_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.validation_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.validation_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.validation_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_org = Mock()
                 mock_org.tenant_id = None
                 mock_threadpool.return_value = mock_org
@@ -165,8 +179,12 @@ class TestValidationHelpers:
     async def test_validate_tenant_exists_success(self, app):
         """Test successful tenant validation."""
         async with app.app_context():
-            with patch("apps.api.utils.validation_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.validation_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.validation_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.validation_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_tenant = Mock()
                 mock_threadpool.return_value = mock_tenant
 
@@ -179,8 +197,12 @@ class TestValidationHelpers:
     async def test_validate_tenant_exists_not_found(self, app):
         """Test tenant validation when not found."""
         async with app.app_context():
-            with patch("apps.api.utils.validation_helpers.current_app") as mock_app, \
-                 patch("apps.api.utils.validation_helpers.run_in_threadpool") as mock_threadpool:
+            with (
+                patch("apps.api.utils.validation_helpers.current_app") as mock_app,
+                patch(
+                    "apps.api.utils.validation_helpers.run_in_threadpool"
+                ) as mock_threadpool,
+            ):
                 mock_threadpool.return_value = None
 
                 tenant, error = await validate_tenant_exists(999)

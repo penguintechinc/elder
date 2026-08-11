@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -255,7 +255,7 @@ async def create_diagram():
     village_id = generate_village_id(tenant_id, current_app.redis_client)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Insert diagram
         diagram_id = db.dg_diagrams.insert(
@@ -441,7 +441,7 @@ async def update_diagram(diagram_id):
         if not _can_edit_diagram(db, diagram, tenant_id, identity_id):
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now, "updated_by_identity_id": identity_id}
 
         if "title" in data:
@@ -578,11 +578,14 @@ async def save_version(diagram_id):
 
     # Pre-check authorization before threadpool
     pre_diagram = await run_in_threadpool(
-        lambda: db(
-            (db.dg_diagrams.id == diagram_id) & (db.dg_diagrams.tenant_id == tenant_id)
+        lambda: (
+            db(
+                (db.dg_diagrams.id == diagram_id)
+                & (db.dg_diagrams.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
         )
-        .select()
-        .first()
     )
     if pre_diagram is None:
         return ApiResponse.not_found("Diagram")
@@ -603,7 +606,7 @@ async def save_version(diagram_id):
         if not diagram:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Get next version number
         max_version = (
@@ -831,11 +834,14 @@ async def restore_version(diagram_id, version_number):
 
     # Pre-check authorization before threadpool
     pre_diagram = await run_in_threadpool(
-        lambda: db(
-            (db.dg_diagrams.id == diagram_id) & (db.dg_diagrams.tenant_id == tenant_id)
+        lambda: (
+            db(
+                (db.dg_diagrams.id == diagram_id)
+                & (db.dg_diagrams.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
         )
-        .select()
-        .first()
     )
     if pre_diagram is None:
         return ApiResponse.not_found("Diagram")
@@ -867,7 +873,7 @@ async def restore_version(diagram_id, version_number):
         if not source_version:
             return (None, None, None)
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create a new version from source content (restore creates new version)
         max_version = (

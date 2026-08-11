@@ -8,7 +8,7 @@ All operations are tenant-scoped.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -25,9 +25,9 @@ def create_reference(
     target_type: str,
     target_id: str,
     ref_type: str = "link",
-    context: Optional[Dict[str, Any]] = None,
-    created_by: Optional[str] = None,
-) -> Optional[Row]:
+    context: dict[str, Any] | None = None,
+    created_by: str | None = None,
+) -> Row | None:
     """Create a new reference record.
 
     Args:
@@ -60,8 +60,8 @@ def create_reference(
         ref_type=ref_type,
         context=context,
         created_by=created_by,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     # Retrieve the inserted row by ID
     row = db(db.references.id == row_id).select().first()
@@ -107,7 +107,7 @@ def backlinks_for(
     target_type: str,
     target_id: str,
     tenant_id: int,
-) -> List[Row]:
+) -> list[Row]:
     """Get all references pointing to a target resource.
 
     Tenant-scoped: only returns references within the target's tenant.
@@ -138,7 +138,7 @@ def outbound_for(
     source_type: str,
     source_id: str,
     tenant_id: int,
-) -> List[Row]:
+) -> list[Row]:
     """Get all references originating from a source resource.
 
     Tenant-scoped: only returns references within the source's tenant.

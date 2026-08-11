@@ -4,7 +4,7 @@ regression: streams-crud-phase4b2
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ class TestStreams:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Streams Tenant",
                 slug=f"str-{uuid.uuid4().hex[:8]}",
@@ -58,7 +58,7 @@ class TestStreams:
     def _token(self, app, tenant_id, identity_id, scopes=None, roles=None):
         """Create a test JWT token."""
         scopes = scopes or ["streams:read", "streams:write", "streams:execute"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -105,7 +105,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -152,7 +152,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -199,7 +199,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -250,7 +250,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -297,7 +297,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -348,7 +348,7 @@ class TestStreams:
 
         # Create a stream first
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -400,7 +400,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _seed_other_tenant():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             other_tenant = db.tenants.insert(
                 name="Other Tenant",
                 slug=f"oth-{uuid.uuid4().hex[:8]}",
@@ -466,7 +466,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _seed():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             viewer_id = db.identities.insert(
                 tenant_id=t,
                 username=f"viewer-{uuid.uuid4().hex[:8]}@test.local",
@@ -547,7 +547,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stream_id = db.stream_playbooks.insert(
                 tenant_id=t,
                 village_id=f"test-{uuid.uuid4().hex[:24]}",
@@ -603,7 +603,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             # Create 2 streams
             stream_ids = []
             for i in range(2):
@@ -690,7 +690,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create execution in THIS tenant
             stream_id = db.stream_playbooks.insert(
@@ -839,7 +839,7 @@ class TestStreams:
         from apps.api.utils.async_utils import run_in_threadpool
 
         def _create():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create a second identity (owner of private stream)
             private_owner_id = db.identities.insert(

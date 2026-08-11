@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
 
@@ -104,7 +103,7 @@ async def create_software(body: CreateSoftwareRequest):
         return error
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         software_id = db.software.insert(
             name=body.name,
             description=body.description,

@@ -4,7 +4,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -353,7 +353,7 @@ async def create_stream():
     village_id = generate_village_id(tenant_id, current_app.redis_client)
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create stream playbook record
         stream_id = db.stream_playbooks.insert(
@@ -450,7 +450,7 @@ async def get_stream(stream_id):
         lock = db(db.stream_editor_locks.playbook_id == stream.id).select().first()
         if lock:
             # Check if lock is expired
-            if lock.expires_at and lock.expires_at < datetime.now(timezone.utc):
+            if lock.expires_at and lock.expires_at < datetime.now(UTC):
                 # Lock expired, remove it
                 db(db.stream_editor_locks.playbook_id == stream.id).delete()
                 db.commit()
@@ -524,7 +524,7 @@ async def update_stream(stream_id):
         # Check editor lock
         lock = db(db.stream_editor_locks.playbook_id == stream.id).select().first()
         if lock:
-            if lock.expires_at and lock.expires_at < datetime.now(timezone.utc):
+            if lock.expires_at and lock.expires_at < datetime.now(UTC):
                 db(db.stream_editor_locks.playbook_id == stream.id).delete()
                 db.commit()
             elif lock.locked_by_identity_id != identity_id:
@@ -532,7 +532,7 @@ async def update_stream(stream_id):
                 return None, _serialize_lock(lock, user_is_holder=False)
 
         # Update stream metadata
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
         if "name" in data:
             update_data["name"] = data.get("name", "").strip()
         if "description" in data:
@@ -565,7 +565,7 @@ async def update_stream(stream_id):
 
             new_version = max_version + 1
             canvas = data.get("canvas_data", {})
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.stream_versions.insert(
                 tenant_id=tenant_id,
                 playbook_id=stream_id,
@@ -704,7 +704,7 @@ async def duplicate_stream(stream_id):
             .first()
         )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Create duplicate
         new_stream_id = db.stream_playbooks.insert(
@@ -799,7 +799,7 @@ async def get_lock_status(stream_id):
             return stream, None
 
         # Check if lock is expired
-        if lock.expires_at and lock.expires_at < datetime.now(timezone.utc):
+        if lock.expires_at and lock.expires_at < datetime.now(UTC):
             db(db.stream_editor_locks.playbook_id == stream.id).delete()
             db.commit()
             return stream, None
@@ -872,14 +872,14 @@ async def acquire_lock(stream_id):
         if existing_lock:
             # Check if expired
             if existing_lock.expires_at and existing_lock.expires_at < datetime.now(
-                timezone.utc
+                UTC
             ):
                 # Remove expired lock
                 db(db.stream_editor_locks.playbook_id == stream.id).delete()
                 db.commit()
             elif existing_lock.locked_by_identity_id == identity_id:
                 # User already holds the lock, refresh it
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 expires = now + timedelta(minutes=EDITOR_LOCK_TIMEOUT_MINUTES)
                 db(db.stream_editor_locks.id == existing_lock.id).update(
                     locked_at=now,
@@ -896,7 +896,7 @@ async def acquire_lock(stream_id):
                 return None, _serialize_lock(existing_lock, user_is_holder=False), 423
 
         # Create new lock
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = now + timedelta(minutes=EDITOR_LOCK_TIMEOUT_MINUTES)
 
         # Get identity name for display
@@ -1056,7 +1056,7 @@ async def execute_stream(stream_id):
 
         # Create execution record
         execution_uuid = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         exec_id = db.stream_executions.insert(
             tenant_id=tenant_id,

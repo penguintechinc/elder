@@ -6,7 +6,7 @@ No external network calls or real database required.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -30,7 +30,7 @@ class TestOrganizationAPI:
         async with app.app_context():
             # Create test organizations using penguin-dal API
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             db.organizations.insert(name="Org 1", created_at=now, updated_at=now)
             db.organizations.insert(name="Org 2", created_at=now, updated_at=now)
@@ -83,7 +83,7 @@ class TestOrganizationAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Get Me", description="Test org", created_at=now, updated_at=now
@@ -114,7 +114,7 @@ class TestOrganizationAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Original Name", created_at=now, updated_at=now
@@ -148,7 +148,7 @@ class TestOrganizationAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             org_id = db.organizations.insert(
                 name="Delete Me", created_at=now, updated_at=now
@@ -172,7 +172,7 @@ class TestOrganizationAPI:
         """Test GET /api/v1/organizations/:id/children with tenant scoping."""
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Get or create default tenant
             tenant = db(db.tenants.slug == "system").select().first()
@@ -289,7 +289,7 @@ class TestOrganizationAPI:
         async with app.app_context():
             # Create multiple organizations
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             for i in range(15):
                 db.organizations.insert(name=f"Org {i}", created_at=now, updated_at=now)
@@ -335,7 +335,7 @@ class TestOrganizationAPI:
         """
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             tenant_a_id = self._get_or_create_tenant(
                 db, "org-graph-tenant-a", "Org Graph Tenant A"
@@ -381,7 +381,7 @@ class TestOrganizationAPI:
         """
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             tenant_id = self._get_or_create_tenant(
                 db, "org-graph-tenant-own", "Org Graph Tenant Own"

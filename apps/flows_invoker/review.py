@@ -36,9 +36,9 @@ class ReviewOutcome:
 
     available: bool
     passed: bool
-    score: Optional[int] = None
-    issues: List[Dict[str, Any]] = field(default_factory=list)
-    error: Optional[str] = None
+    score: int | None = None
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    error: str | None = None
 
 
 def darwin_configured() -> bool:

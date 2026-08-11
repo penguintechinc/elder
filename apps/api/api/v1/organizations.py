@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from marshmallow import ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -105,7 +104,7 @@ async def create_organization():
 
     def inner():
         try:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             data["created_at"] = now
             data["updated_at"] = now
             org_id = db.organizations.insert(**data)

@@ -10,7 +10,7 @@ from typing import Optional
 
 
 def calculate_certificate_status(
-    expiration_date: Optional[date],
+    expiration_date: date | None,
     renewal_days_before: int,
     is_revoked: bool,
 ) -> str:

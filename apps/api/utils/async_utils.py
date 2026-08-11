@@ -6,12 +6,12 @@ Python 3.12 optimizations with asyncio TaskGroups for structured concurrency.
 
 # flake8: noqa: E501
 
-
 import asyncio
 import contextvars
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import wraps
-from typing import Any, Callable, ParamSpec, TypeVar
+from typing import Any, ParamSpec, TypeVar
 
 # Thread pool for blocking operations (PyDAL database calls)
 _executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="pydal_")

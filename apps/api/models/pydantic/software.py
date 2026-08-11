@@ -9,7 +9,6 @@ Provides validated Pydantic 2 equivalents of Software dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import date, datetime
 from typing import Optional
 
@@ -51,24 +50,24 @@ class SoftwareDTO(ImmutableModel):
     id: int
     tenant_id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     organization_id: int
-    purchasing_poc_id: Optional[int] = None
-    license_url: Optional[str] = None
-    version: Optional[str] = None
-    business_purpose: Optional[str] = None
+    purchasing_poc_id: int | None = None
+    license_url: str | None = None
+    version: str | None = None
+    business_purpose: str | None = None
     software_type: str
-    seats: Optional[int] = None
-    cost_monthly: Optional[float] = None
-    renewal_date: Optional[date] = None
-    vendor: Optional[str] = None
-    support_contact: Optional[str] = None
-    notes: Optional[str] = None
-    tags: Optional[list] = None
+    seats: int | None = None
+    cost_monthly: float | None = None
+    renewal_date: date | None = None
+    vendor: str | None = None
+    support_contact: str | None = None
+    notes: str | None = None
+    tags: list | None = None
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    village_id: Optional[str] = None
+    updated_at: datetime | None = None
+    village_id: str | None = None
 
 
 class CreateSoftwareRequest(RequestModel):
@@ -110,53 +109,53 @@ class CreateSoftwareRequest(RequestModel):
         ...,
         description="Type classification (e.g., 'commercial', 'open-source')",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    purchasing_poc_id: Optional[int] = Field(
+    purchasing_poc_id: int | None = Field(
         default=None,
         description="Optional purchasing point of contact identity ID",
     )
-    license_url: Optional[str] = Field(
+    license_url: str | None = Field(
         default=None,
         description="Optional URL to license documentation",
     )
-    version: Optional[str] = Field(
+    version: str | None = Field(
         default=None,
         description="Optional software version",
     )
-    business_purpose: Optional[str] = Field(
+    business_purpose: str | None = Field(
         default=None,
         description="Optional business purpose/justification",
     )
-    seats: Optional[int] = Field(
+    seats: int | None = Field(
         default=None,
         ge=0,
         description="Optional number of purchased licenses/seats",
     )
-    cost_monthly: Optional[float] = Field(
+    cost_monthly: float | None = Field(
         default=None,
         ge=0,
         description="Optional monthly cost",
     )
-    renewal_date: Optional[date] = Field(
+    renewal_date: date | None = Field(
         default=None,
         description="Optional license renewal date",
     )
-    vendor: Optional[str] = Field(
+    vendor: str | None = Field(
         default=None,
         description="Optional software vendor name",
     )
-    support_contact: Optional[str] = Field(
+    support_contact: str | None = Field(
         default=None,
         description="Optional support contact information",
     )
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         default=None,
         description="Optional additional notes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default_factory=list,
         description="Optional classification tags",
     )
@@ -191,65 +190,65 @@ class UpdateSoftwareRequest(RequestModel):
         is_active: Active status (optional)
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Software product name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Detailed description",
     )
-    software_type: Optional[str] = Field(
+    software_type: str | None = Field(
         default=None,
         description="Type classification",
     )
-    purchasing_poc_id: Optional[int] = Field(
+    purchasing_poc_id: int | None = Field(
         default=None,
         description="Purchasing point of contact identity ID",
     )
-    license_url: Optional[str] = Field(
+    license_url: str | None = Field(
         default=None,
         description="URL to license documentation",
     )
-    version: Optional[str] = Field(
+    version: str | None = Field(
         default=None,
         description="Software version",
     )
-    business_purpose: Optional[str] = Field(
+    business_purpose: str | None = Field(
         default=None,
         description="Business purpose/justification",
     )
-    seats: Optional[int] = Field(
+    seats: int | None = Field(
         default=None,
         ge=0,
         description="Number of purchased licenses/seats",
     )
-    cost_monthly: Optional[float] = Field(
+    cost_monthly: float | None = Field(
         default=None,
         ge=0,
         description="Monthly cost",
     )
-    renewal_date: Optional[date] = Field(
+    renewal_date: date | None = Field(
         default=None,
         description="License renewal date",
     )
-    vendor: Optional[str] = Field(
+    vendor: str | None = Field(
         default=None,
         description="Software vendor name",
     )
-    support_contact: Optional[str] = Field(
+    support_contact: str | None = Field(
         default=None,
         description="Support contact information",
     )
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         default=None,
         description="Additional notes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default=None,
         description="Classification tags",
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         default=None,
         description="Active status",
     )

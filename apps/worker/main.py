@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import os
 import signal
@@ -93,9 +92,9 @@ class WorkerService:
 
     def __init__(self):
         """Initialize worker service."""
-        self.connectors: List[BaseConnector] = []
+        self.connectors: list[BaseConnector] = []
         self.running = False
-        self.sync_tasks: List[asyncio.Task] = []
+        self.sync_tasks: list[asyncio.Task] = []
         self.db_manager = None
         self.discovery_executor = None
         # Job-bus consumer components
@@ -628,8 +627,7 @@ class WorkerService:
                         try:
                             # Fetch all active email accounts
                             rows = db_manager.write(
-                                db_manager.write.hd_email_accounts.is_active
-                                == True  # noqa: E712
+                                db_manager.write.hd_email_accounts.is_active == True  # noqa: E712
                             ).select()
 
                             jobs_to_enqueue = []

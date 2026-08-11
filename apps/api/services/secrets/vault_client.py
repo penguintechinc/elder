@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 from datetime import datetime
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 class HashicorpVaultClient(SecretProviderClient):
     """Hashicorp Vault implementation of SecretProviderClient."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Hashicorp Vault client.
 
@@ -76,7 +75,7 @@ class HashicorpVaultClient(SecretProviderClient):
         self.session = create_vault_session(self.config)
         logger.info(f"Initialized Hashicorp Vault client for {self.base_url}")
 
-    def _make_request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         """Make a request to Vault API."""
         url = f"{self.base_url}{path}"
 
@@ -137,7 +136,7 @@ class HashicorpVaultClient(SecretProviderClient):
 
         return f"/v1/{self.mount_point}/{path}"
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """Retrieve a secret from Vault."""
         try:
             api_path = self._get_kv_path(path, "data")
@@ -198,7 +197,7 @@ class HashicorpVaultClient(SecretProviderClient):
             logger.error(f"Failed to get secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to get secret: {str(e)}")
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in Vault."""
         try:
             path = prefix or ""
@@ -281,7 +280,7 @@ class HashicorpVaultClient(SecretProviderClient):
             raise SecretProviderException(f"Failed to list secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in Vault."""
         try:
@@ -298,9 +297,9 @@ class HashicorpVaultClient(SecretProviderClient):
                 payload = {"data": data, "options": {}}
 
                 # Add Check-And-Set (CAS) to ensure creation only
-                payload["options"][
-                    "cas"
-                ] = 0  # cas=0 means only create if doesn't exist
+                payload["options"]["cas"] = (
+                    0  # cas=0 means only create if doesn't exist
+                )
             else:
                 # KV v1
                 payload = data
@@ -429,7 +428,7 @@ class HashicorpVaultClient(SecretProviderClient):
             logger.error(f"Failed to delete secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to delete secret: {str(e)}")
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """
         Get all versions of a secret.
 

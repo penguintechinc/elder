@@ -40,7 +40,9 @@ fi
 
 # Read current version
 current_version=$(cat "$VERSION_FILE")
-IFS='.' read -r major minor patch build <<< "$current_version"
+# 4th field (build epoch) intentionally discarded here — new_build below
+# always recomputes a fresh epoch timestamp rather than reusing the old one.
+IFS='.' read -r major minor patch _ <<< "$current_version"
 
 print_info "Current version: v$current_version"
 
@@ -188,7 +190,6 @@ fi
 update_version_in_file() {
     local file=$1
     local pattern=$2
-    local replacement=$3
 
     if [ -f "$file" ]; then
         if sed -i.bak "$pattern" "$file" 2>/dev/null; then

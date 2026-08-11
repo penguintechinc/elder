@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
@@ -28,7 +28,7 @@ class DelayTransform(BaseNode):
     category = "transforms"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the delay node."""
         return [
             {
@@ -40,7 +40,7 @@ class DelayTransform(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the delay node."""
         return [
             {
@@ -50,7 +50,7 @@ class DelayTransform(BaseNode):
             },
         ]
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the delay transform."""
         start_time = time.perf_counter()
 
@@ -73,14 +73,14 @@ class DelayTransform(BaseNode):
 
         if delay > 0:
             self.log_info(f"Delaying for {delay:.2f} seconds")
-            started_at = datetime.now(timezone.utc).isoformat()
+            started_at = datetime.now(UTC).isoformat()
 
             await asyncio.sleep(delay)
 
-            finished_at = datetime.now(timezone.utc).isoformat()
+            finished_at = datetime.now(UTC).isoformat()
             self.log_info(f"Delay completed")
         else:
-            started_at = finished_at = datetime.now(timezone.utc).isoformat()
+            started_at = finished_at = datetime.now(UTC).isoformat()
 
         # Pass through input data with timing metadata
         if isinstance(input_data, dict):

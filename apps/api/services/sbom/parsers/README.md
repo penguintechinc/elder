@@ -106,13 +106,13 @@ All parsers return dependencies in a standardized format:
 
 ```python
 {
-    "name": str,              # Package name
-    "version": str,           # Semantic version
-    "purl": str,              # Package URL (pkg:ecosystem/name@version)
-    "package_type": str,      # Type (cargo, go, npm, etc.)
-    "scope": str,             # Scope (runtime, dev, test, build, etc.)
-    "direct": bool,           # Direct vs. transitive dependency
-    "source_file": str,       # Source filename
+    "name": str,  # Package name
+    "version": str,  # Semantic version
+    "purl": str,  # Package URL (pkg:ecosystem/name@version)
+    "package_type": str,  # Type (cargo, go, npm, etc.)
+    "scope": str,  # Scope (runtime, dev, test, build, etc.)
+    "direct": bool,  # Direct vs. transitive dependency
+    "source_file": str,  # Source filename
 }
 ```
 
@@ -184,6 +184,7 @@ To add support for a new package manager:
 1. **Create parser module** in this directory:
    ```python
    from apps.api.services.sbom.base import BaseDependencyParser
+
 
    class NewLanguageParser(BaseDependencyParser):
        def can_parse(self, filename: str) -> bool:

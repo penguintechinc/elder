@@ -4,7 +4,7 @@
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from uuid import uuid4
 
 import httpx
@@ -190,7 +190,7 @@ async def create_form():
         return ApiResponse.validation_error("name and slug", "are required")
 
     def create():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Slug must be GLOBALLY unique (public URL /public/<slug> has no tenant
         # component). Reject collisions across ALL tenants before insert.
@@ -358,7 +358,7 @@ async def update_form(form_id):
         if not form_row:
             return None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         updates = {"updated_at": now}
 
         # Only update provided fields
@@ -596,7 +596,7 @@ async def submit_public_form(slug):
     def create_ticket():
         from shared.utils.village_id import generate_village_id
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Generate village_id
         if redis_client:

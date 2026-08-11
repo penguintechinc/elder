@@ -4,7 +4,7 @@ regression: diagrams-crud-phase4b1
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -24,7 +24,7 @@ class TestDiagrams:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Diagram Tenant",
                 slug=f"dgm-{uuid.uuid4().hex[:8]}",
@@ -59,7 +59,7 @@ class TestDiagrams:
         scopes = scopes or ["diagrams:read", "diagrams:write"]
         # Elder's require_scope reads g.claims["scope"] as a LIST (set()-ified);
         # a space-joined string would be split into characters. Pass the list.
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -86,7 +86,7 @@ class TestDiagrams:
         owner = self.fixtures["identity_id"]
 
         def _mk_attacker():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             email = f"dg-attacker-{uuid.uuid4().hex[:8]}@test.local"
             aid = db.identities.insert(
                 tenant_id=t,
@@ -210,7 +210,7 @@ class TestDiagrams:
 
         # Create multiple diagrams
         def create_diagrams():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             for i in range(3):
                 db.dg_diagrams.insert(
                     tenant_id=tenant_id,
@@ -249,7 +249,7 @@ class TestDiagrams:
         db = app.db
 
         def create_diagrams():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             db.dg_diagrams.insert(
                 tenant_id=tenant_id,
                 village_id=uuid.uuid4().hex[:24],
@@ -302,7 +302,7 @@ class TestDiagrams:
 
         def create_diagram():
             nonlocal diagram_id
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             diagram_id = db.dg_diagrams.insert(
                 tenant_id=tenant_id,
                 village_id=uuid.uuid4().hex[:24],
@@ -358,7 +358,7 @@ class TestDiagrams:
 
         def create_diagram():
             nonlocal diagram_id
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             diagram_id = db.dg_diagrams.insert(
                 tenant_id=tenant_id,
                 village_id=uuid.uuid4().hex[:24],
@@ -404,7 +404,7 @@ class TestDiagrams:
 
         def create_diagram():
             nonlocal diagram_id
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             diagram_id = db.dg_diagrams.insert(
                 tenant_id=tenant_id,
                 village_id=uuid.uuid4().hex[:24],

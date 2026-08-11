@@ -77,7 +77,9 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_create_access_review(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_create_access_review(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test POST /api/v1/access-reviews - Create review."""
         mock_jwt.return_value = {"user_id": 1, "username": "admin"}
 
@@ -85,7 +87,7 @@ class TestAccessReviewAPI:
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         payload = {
             "group_id": setup_test_data["group_id"],
             "period_start": (now - datetime.timedelta(days=90)).isoformat(),
@@ -109,7 +111,9 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_list_access_reviews(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_list_access_reviews(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test GET /api/v1/access-reviews - List reviews."""
         mock_jwt.return_value = {"user_id": 1, "username": "admin"}
         mock_license_instance = mock_license.return_value
@@ -123,7 +127,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -143,9 +147,14 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_get_review_details(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_get_review_details(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test GET /api/v1/access-reviews/:id - Get review details."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -157,7 +166,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             review = service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -179,9 +188,14 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_get_review_items(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_get_review_items(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test GET /api/v1/access-reviews/:id/items - Get review items."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -193,7 +207,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             review = service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -214,9 +228,14 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_submit_review_decision(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_submit_review_decision(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test POST /api/v1/access-reviews/:id/decisions - Submit decision."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -228,7 +247,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             review = service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -261,9 +280,14 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_complete_review_workflow(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_complete_review_workflow(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test complete review workflow: create, review all, complete."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -275,7 +299,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             review = service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -318,7 +342,10 @@ class TestAccessReviewAPI:
     @patch("shared.licensing.get_license_client")
     def test_get_my_reviews(self, mock_license, mock_jwt, client, app, setup_test_data):
         """Test GET /api/v1/access-reviews/my-reviews - Get assigned reviews."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -330,7 +357,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),
@@ -350,9 +377,14 @@ class TestAccessReviewAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.licensing.get_license_client")
-    def test_cannot_complete_unreviewed(self, mock_license, mock_jwt, client, app, setup_test_data):
+    def test_cannot_complete_unreviewed(
+        self, mock_license, mock_jwt, client, app, setup_test_data
+    ):
         """Test that completing review fails if not all members reviewed."""
-        mock_jwt.return_value = {"user_id": setup_test_data["owner_id"], "username": "test_owner"}
+        mock_jwt.return_value = {
+            "user_id": setup_test_data["owner_id"],
+            "username": "test_owner",
+        }
         mock_license_instance = mock_license.return_value
         mock_license_instance.validate.return_value.tier = "enterprise"
 
@@ -364,7 +396,7 @@ class TestAccessReviewAPI:
             db = get_db()
             service = AccessReviewService(db)
 
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             review = service.create_review(
                 group_id=setup_test_data["group_id"],
                 period_start=now - datetime.timedelta(days=90),

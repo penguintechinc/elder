@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 from apps.worker.config.settings import settings
@@ -20,10 +19,10 @@ class VCenterConnector(BaseConnector):
     def __init__(self):
         """Initialize vCenter connector."""
         super().__init__("vcenter")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.si: Optional[Any] = None  # ServiceInstance
-        self.content: Optional[Any] = None
-        self.organization_cache: Dict[str, int] = {}
+        self.elder_client: ElderAPIClient | None = None
+        self.si: Any | None = None  # ServiceInstance
+        self.content: Any | None = None
+        self.organization_cache: dict[str, int] = {}
 
     async def connect(self) -> None:
         """Establish connection to vCenter and Elder API."""
@@ -87,7 +86,7 @@ class VCenterConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """Get or create an organization in Elder."""
         cache_key = f"{parent_id or 'root'}:{name}"
@@ -117,7 +116,7 @@ class VCenterConnector(BaseConnector):
                 f"Organization '{name}' not found and auto-creation disabled"
             )
 
-    def _get_all_objs(self, obj_type: List[str]) -> List[Any]:
+    def _get_all_objs(self, obj_type: list[str]) -> list[Any]:
         """Get all objects of specified types from vCenter.
 
         Args:
@@ -135,7 +134,7 @@ class VCenterConnector(BaseConnector):
 
     async def _sync_datacenters(
         self, vcenter_org_id: int
-    ) -> tuple[int, int, Dict[str, int]]:
+    ) -> tuple[int, int, dict[str, int]]:
         """Sync vCenter datacenters as sub-organizations.
 
         Returns:
@@ -164,8 +163,8 @@ class VCenterConnector(BaseConnector):
         return created, 0, dc_map
 
     async def _sync_clusters(
-        self, vcenter_org_id: int, dc_map: Dict[str, int]
-    ) -> tuple[int, int, Dict[str, int]]:
+        self, vcenter_org_id: int, dc_map: dict[str, int]
+    ) -> tuple[int, int, dict[str, int]]:
         """Sync vCenter clusters as sub-organizations.
 
         Returns:
@@ -202,7 +201,7 @@ class VCenterConnector(BaseConnector):
         return created, 0, cluster_map
 
     async def _sync_hosts(
-        self, vcenter_org_id: int, cluster_map: Dict[str, int]
+        self, vcenter_org_id: int, cluster_map: dict[str, int]
     ) -> tuple[int, int]:
         """Sync ESXi hosts to Elder."""
         from pyVmomi import vim
@@ -286,7 +285,7 @@ class VCenterConnector(BaseConnector):
         return created, updated
 
     async def _sync_vms(
-        self, vcenter_org_id: int, cluster_map: Dict[str, int]
+        self, vcenter_org_id: int, cluster_map: dict[str, int]
     ) -> tuple[int, int]:
         """Sync virtual machines to Elder."""
         from pyVmomi import vim

@@ -303,7 +303,9 @@ class TestExpressEndpointParserChainedRoutes:
     def test_parse_chained_multiple_methods(self) -> None:
         """Test parsing chained route with multiple methods."""
         parser = ExpressEndpointParser()
-        content = "app.route('/items/:id').get(getItem).put(updateItem).delete(deleteItem);"
+        content = (
+            "app.route('/items/:id').get(getItem).put(updateItem).delete(deleteItem);"
+        )
 
         endpoints = parser.parse(content, "api.js")
 

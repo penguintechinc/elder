@@ -7,7 +7,6 @@ with field validation and type safety.
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -26,32 +25,32 @@ class OrganizationDTO(ImmutableModel):
 
     id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     organization_type: str
-    parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
+    parent_id: int | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
     created_at: datetime
     updated_at: datetime
-    slug: Optional[str] = None
-    tenant_id: Optional[int] = None
-    village_id: Optional[str] = None
-    village_segment: Optional[str] = None
+    slug: str | None = None
+    tenant_id: int | None = None
+    village_id: str | None = None
+    village_segment: str | None = None
 
 
 class CreateOrganizationRequest(RequestModel):
     """Request to create a new Organization Unit (OU)."""
 
     name: Name255
-    description: Optional[str] = Field(None, max_length=1000)
+    description: str | None = Field(None, max_length=1000)
     organization_type: str = "organization"
-    parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
+    parent_id: int | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
 
     @field_validator("name")
     @classmethod
@@ -65,18 +64,18 @@ class CreateOrganizationRequest(RequestModel):
 class UpdateOrganizationRequest(RequestModel):
     """Request to update an Organization Unit (OU)."""
 
-    name: Optional[Name255] = None
-    description: Optional[str] = Field(None, max_length=1000)
-    organization_type: Optional[str] = None
-    parent_id: Optional[int] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
+    name: Name255 | None = None
+    description: str | None = Field(None, max_length=1000)
+    organization_type: str | None = None
+    parent_id: int | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
 
     @field_validator("name")
     @classmethod
-    def name_not_whitespace(cls, v: Optional[str]) -> Optional[str]:
+    def name_not_whitespace(cls, v: str | None) -> str | None:
         """Ensure name is not just whitespace if provided."""
         if v is not None and v.strip() == "":
             raise ValueError("name cannot be empty or whitespace-only")

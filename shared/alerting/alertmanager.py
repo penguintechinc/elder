@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Dict, List, Optional
 
 import httpx
@@ -21,7 +20,7 @@ class AlertmanagerClient:
     with email, webhooks, PagerDuty, and other notification channels.
     """
 
-    def __init__(self, alertmanager_url: Optional[str] = None):
+    def __init__(self, alertmanager_url: str | None = None):
         """
         Initialize Alertmanager client.
 
@@ -37,11 +36,11 @@ class AlertmanagerClient:
     async def send_alert(
         self,
         alertname: str,
-        labels: Dict[str, str],
-        annotations: Dict[str, str],
-        starts_at: Optional[datetime] = None,
-        ends_at: Optional[datetime] = None,
-        generator_url: Optional[str] = None,
+        labels: dict[str, str],
+        annotations: dict[str, str],
+        starts_at: datetime | None = None,
+        ends_at: datetime | None = None,
+        generator_url: str | None = None,
     ) -> bool:
         """
         Send an alert to Alertmanager.
@@ -58,7 +57,7 @@ class AlertmanagerClient:
             True if alert was sent successfully, False otherwise
         """
         if starts_at is None:
-            starts_at = datetime.now(timezone.utc)
+            starts_at = datetime.now(UTC)
 
         # Build alert payload
         alert = {
@@ -95,10 +94,10 @@ class AlertmanagerClient:
         priority: str,
         organization_name: str,
         organization_id: int,
-        description: Optional[str] = None,
-        assigned_to: Optional[str] = None,
-        entities: Optional[List[str]] = None,
-        web_url: Optional[str] = None,
+        description: str | None = None,
+        assigned_to: str | None = None,
+        entities: list[str] | None = None,
+        web_url: str | None = None,
     ) -> bool:
         """
         Send an incident alert for an Elder issue.
@@ -196,12 +195,12 @@ class AlertmanagerClient:
             alertname="ElderIncidentIssue",
             labels=labels,
             annotations=annotations,
-            ends_at=datetime.now(timezone.utc),
+            ends_at=datetime.now(UTC),
         )
 
 
 # Singleton instance
-_alertmanager_client: Optional[AlertmanagerClient] = None
+_alertmanager_client: AlertmanagerClient | None = None
 
 
 def get_alertmanager_client() -> AlertmanagerClient:

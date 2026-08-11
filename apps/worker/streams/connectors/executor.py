@@ -36,9 +36,9 @@ class ConnectorActionExecutor:
     def _interpolate_value(
         self,
         value: Any,
-        inputs: Dict[str, Any],
-        variables: Dict[str, Any],
-        config: Dict[str, Any],
+        inputs: dict[str, Any],
+        variables: dict[str, Any],
+        config: dict[str, Any],
     ) -> Any:
         """Interpolate variables in a value.
 
@@ -86,11 +86,11 @@ class ConnectorActionExecutor:
 
     def _interpolate_dict(
         self,
-        data: Dict[str, Any],
-        inputs: Dict[str, Any],
-        variables: Dict[str, Any],
-        config: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        data: dict[str, Any],
+        inputs: dict[str, Any],
+        variables: dict[str, Any],
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
         """Recursively interpolate variables in a dictionary."""
         result = {}
         for key, value in data.items():
@@ -121,10 +121,10 @@ class ConnectorActionExecutor:
         method: str,
         request_body_template: str,
         config_schema: tuple,
-        config: Dict[str, Any],
-        inputs: Dict[str, Any],
-        variables: Dict[str, Any],
-    ) -> Dict[str, Any] | None:
+        config: dict[str, Any],
+        inputs: dict[str, Any],
+        variables: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Build request body from action definition and config."""
         if method.upper() in ("GET", "HEAD", "OPTIONS"):
             return None
@@ -170,11 +170,11 @@ class ConnectorActionExecutor:
         method: str,
         request_body_template: str,
         config_schema: tuple,
-        config: Dict[str, Any],
-        inputs: Dict[str, Any],
-        variables: Dict[str, Any],
+        config: dict[str, Any],
+        inputs: dict[str, Any],
+        variables: dict[str, Any],
         base_url: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a connector action with SSRF guarding.
 
         Args:
@@ -265,11 +265,11 @@ class ConnectorActionExecutor:
         endpoint: str,
         method: str,
         config_schema: tuple,
-        config: Dict[str, Any],
-        inputs: Dict[str, Any],
-        variables: Dict[str, Any],
+        config: dict[str, Any],
+        inputs: dict[str, Any],
+        variables: dict[str, Any],
         base_url: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Execute a connector transform with SSRF guarding.
 
         Args:

@@ -73,8 +73,12 @@ class TestNodeDependencyParser:
         components = parser.parse(content, "package.json")
 
         assert len(components) == 2
-        assert any(c["name"] == "lodash" and c["scope"] == "runtime" for c in components)
-        assert any(c["name"] == "express" and c["scope"] == "runtime" for c in components)
+        assert any(
+            c["name"] == "lodash" and c["scope"] == "runtime" for c in components
+        )
+        assert any(
+            c["name"] == "express" and c["scope"] == "runtime" for c in components
+        )
         assert all(c["direct"] is True for c in components)
         assert all(c["package_type"] == "npm" for c in components)
         assert all(c["source_file"] == "package.json" for c in components)
@@ -210,7 +214,9 @@ class TestNodeDependencyParser:
         components = parser.parse(content, "package-lock.json")
 
         assert len(components) == 3
-        assert any(c["name"] == "lodash" and c["scope"] == "runtime" for c in components)
+        assert any(
+            c["name"] == "lodash" and c["scope"] == "runtime" for c in components
+        )
         assert any(c["name"] == "@angular/core" for c in components)
         assert any(c["scope"] == "dev" for c in components)
         assert all(c["direct"] is False for c in components)
@@ -235,7 +241,9 @@ class TestNodeDependencyParser:
         components = parser.parse(content, "package-lock.json")
 
         assert len(components) == 2
-        assert any(c["name"] == "lodash" and c["scope"] == "runtime" for c in components)
+        assert any(
+            c["name"] == "lodash" and c["scope"] == "runtime" for c in components
+        )
         assert any(c["scope"] == "dev" for c in components)
 
     # parse_yarn_lock tests
@@ -358,7 +366,10 @@ express@4.18.2:
         components = parser.parse(content, "pnpm-lock.yaml")
 
         assert len(components) == 2
-        assert any(c["name"] == "@angular/core" and "16.0.0" in c["version"] for c in components)
+        assert any(
+            c["name"] == "@angular/core" and "16.0.0" in c["version"]
+            for c in components
+        )
 
     # Error handling tests
 
@@ -465,7 +476,9 @@ express@4.18.2:
         # Verify scope distribution
         runtime = [c for c in components if c["scope"] == "runtime"]
         dev = [c for c in components if c["scope"] == "dev"]
-        assert len(runtime) == 5  # dependencies + peerDependencies + optionalDependencies
+        assert (
+            len(runtime) == 5
+        )  # dependencies + peerDependencies + optionalDependencies
         assert len(dev) == 3  # devDependencies
 
 

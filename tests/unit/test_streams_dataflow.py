@@ -26,7 +26,7 @@ class _Producer(BaseNode):
     description = "Emits a fixed wrapped payload"
     category = "test"
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         return {
             "out": {
                 "data": {"hello": "world"},
@@ -37,7 +37,7 @@ class _Producer(BaseNode):
 
 
 # Module-level sink so the test can read what the consumer actually received.
-_RECEIVED: Dict[str, Any] = {}
+_RECEIVED: dict[str, Any] = {}
 
 
 @register_node("_test_consumer", "test", "Test Consumer")
@@ -47,7 +47,7 @@ class _Consumer(BaseNode):
     description = "Records the raw value it received"
     category = "test"
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         _RECEIVED["in"] = inputs.get("in")
         node_id = self.context.get("node_id", "")
         return {

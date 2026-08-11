@@ -7,7 +7,7 @@ No external network calls or real database required.
 
 import datetime
 import json
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -70,9 +70,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.parent_id = 1
         schedule_record.schedule_cron = "0 0 * * *"
         schedule_record.is_active = True
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 
@@ -169,9 +169,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.parent_id = 1
         schedule_record.schedule_cron = "0 0 * * *"
         schedule_record.is_active = True
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 
@@ -223,9 +223,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.parent_id = 1
         schedule_record.schedule_cron = "0 6 * * *"
         schedule_record.is_active = False
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 
@@ -340,7 +340,9 @@ class TestSBOMSchedulesAPI:
 
     @patch("apps.api.auth.decorators.verify_jwt")
     @patch("shared.async_utils.run_in_threadpool")
-    async def test_get_due_schedules_with_results(self, mock_threadpool, mock_jwt, client):
+    async def test_get_due_schedules_with_results(
+        self, mock_threadpool, mock_jwt, client
+    ):
         """Test GET /api/v1/sbom/schedules/due - with results."""
         mock_jwt.return_value = {"user_id": 1, "username": "worker"}
 
@@ -350,9 +352,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.parent_id = 1
         schedule_record.schedule_cron = "0 0 * * *"
         schedule_record.is_active = True
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 
@@ -391,9 +393,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.is_active = True
         schedule_record.credential_type = "vault"
         schedule_record.credential_id = 5
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 
@@ -439,9 +441,9 @@ class TestSBOMSchedulesAPI:
         schedule_record.parent_id = 1
         schedule_record.schedule_cron = "0 6 * * *"
         schedule_record.is_active = True
-        schedule_record.created_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.updated_at = datetime.datetime.now(datetime.timezone.utc)
-        schedule_record.next_run_at = datetime.datetime.now(datetime.timezone.utc)
+        schedule_record.created_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.updated_at = datetime.datetime.now(datetime.UTC)
+        schedule_record.next_run_at = datetime.datetime.now(datetime.UTC)
         schedule_record.tenant_id = 1
         schedule_record.village_id = "a1b2-c3d4-e5f67890"
 

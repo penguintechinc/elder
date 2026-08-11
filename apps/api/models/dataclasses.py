@@ -5,7 +5,6 @@ Using @dataclass(slots=True) provides 30-50% memory reduction and faster attribu
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from typing import Optional, Union
@@ -19,23 +18,23 @@ class OrganizationDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    type: Optional[str]  # organization type
-    parent_id: Optional[int]
-    owner_identity_id: Optional[int]
-    owner_group_id: Optional[int]
+    description: str | None
+    type: str | None  # organization type
+    parent_id: int | None
+    owner_identity_id: int | None
+    owner_group_id: int | None
     created_at: datetime
     updated_at: datetime
-    slug: Optional[str] = None
-    tenant_id: Optional[int] = None
-    display_name: Optional[str] = None
-    cloud_provider: Optional[str] = None
-    cloud_account_id: Optional[str] = None
-    region: Optional[str] = None
+    slug: str | None = None
+    tenant_id: int | None = None
+    display_name: str | None = None
+    cloud_provider: str | None = None
+    cloud_account_id: str | None = None
+    region: str | None = None
     is_active: bool = True
-    settings: Optional[dict] = None
-    tags: Optional[list] = None
-    metadata: Optional[dict] = None
+    settings: dict | None = None
+    tags: list | None = None
+    metadata: dict | None = None
 
 
 @dataclass(slots=True)
@@ -43,33 +42,33 @@ class CreateOrganizationRequest:
     """Request to create a new Organization Unit (OU)."""
 
     name: str
-    description: Optional[str] = None
-    type: Optional[str] = None
-    parent_id: Optional[int] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
-    cloud_provider: Optional[str] = None
-    cloud_account_id: Optional[str] = None
-    region: Optional[str] = None
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
+    description: str | None = None
+    type: str | None = None
+    parent_id: int | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
+    cloud_provider: str | None = None
+    cloud_account_id: str | None = None
+    region: str | None = None
+    slug: str | None = None
+    display_name: str | None = None
 
 
 @dataclass(slots=True)
 class UpdateOrganizationRequest:
     """Request to update an Organization Unit (OU)."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    type: Optional[str] = None
-    parent_id: Optional[int] = None
-    owner_identity_id: Optional[int] = None
-    owner_group_id: Optional[int] = None
-    cloud_provider: Optional[str] = None
-    cloud_account_id: Optional[str] = None
-    region: Optional[str] = None
-    slug: Optional[str] = None
-    display_name: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    type: str | None = None
+    parent_id: int | None = None
+    owner_identity_id: int | None = None
+    owner_group_id: int | None = None
+    cloud_provider: str | None = None
+    cloud_account_id: str | None = None
+    region: str | None = None
+    slug: str | None = None
+    display_name: str | None = None
 
 
 # ==================== Entities ====================
@@ -82,21 +81,21 @@ class EntityDTO:
     id: int
     name: str
     type: str
-    organization_id: Optional[int] = None
-    parent_id: Optional[int] = None
-    sub_type: Optional[str] = None
-    external_id: Optional[str] = None
-    cloud_provider: Optional[str] = None
-    region: Optional[str] = None
-    status: Optional[str] = None
+    organization_id: int | None = None
+    parent_id: int | None = None
+    sub_type: str | None = None
+    external_id: str | None = None
+    cloud_provider: str | None = None
+    region: str | None = None
+    status: str | None = None
     is_managed: bool = False
     # list[str] for user-applied classification tags (via CreateEntityRequest),
     # or dict[str, str] for discovered K8s labels / cloud provider tags
-    tags: Optional[Union[list, dict]] = None
-    metadata: Optional[dict] = None
-    last_seen_at: Optional[datetime] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    tags: list | dict | None = None
+    metadata: dict | None = None
+    last_seen_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -106,12 +105,12 @@ class CreateEntityRequest:
     name: str
     entity_type: str
     organization_id: int
-    description: Optional[str] = None
-    sub_type: Optional[str] = None
-    parent_id: Optional[int] = None
-    attributes: Optional[dict] = None
-    tags: Optional[list[str]] = field(default_factory=list)
-    default_metadata: Optional[dict] = None
+    description: str | None = None
+    sub_type: str | None = None
+    parent_id: int | None = None
+    attributes: dict | None = None
+    tags: list[str] | None = field(default_factory=list)
+    default_metadata: dict | None = None
     is_active: bool = True
 
 
@@ -119,16 +118,16 @@ class CreateEntityRequest:
 class UpdateEntityRequest:
     """Request to update an Entity."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    entity_type: Optional[str] = None
-    sub_type: Optional[str] = None
-    organization_id: Optional[int] = None
-    parent_id: Optional[int] = None
-    attributes: Optional[dict] = None
-    tags: Optional[list[str]] = None
-    default_metadata: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    entity_type: str | None = None
+    sub_type: str | None = None
+    organization_id: int | None = None
+    parent_id: int | None = None
+    attributes: dict | None = None
+    tags: list[str] | None = None
+    default_metadata: dict | None = None
+    is_active: bool | None = None
 
 
 # ==================== Dependencies ====================
@@ -145,10 +144,10 @@ class DependencyDTO:
     target_type: str
     target_id: int
     dependency_type: str
-    metadata: Optional[dict]
+    metadata: dict | None
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -160,7 +159,7 @@ class CreateDependencyRequest:
     target_type: str
     target_id: int
     dependency_type: str
-    metadata: Optional[dict] = None
+    metadata: dict | None = None
 
 
 # ==================== Identities ====================
@@ -172,20 +171,20 @@ class IdentityDTO:
 
     id: int
     username: str
-    email: Optional[str]
+    email: str | None
     created_at: datetime
     updated_at: datetime
-    identity_type: Optional[str] = None
-    tenant_id: Optional[int] = None
-    external_id: Optional[str] = None
-    provider: Optional[str] = None
-    full_name: Optional[str] = None
-    display_name: Optional[str] = None
-    avatar_url: Optional[str] = None
+    identity_type: str | None = None
+    tenant_id: int | None = None
+    external_id: str | None = None
+    provider: str | None = None
+    full_name: str | None = None
+    display_name: str | None = None
+    avatar_url: str | None = None
     is_active: bool = True
     is_service_account: bool = False
-    metadata: Optional[dict] = None
-    last_seen_at: Optional[datetime] = None
+    metadata: dict | None = None
+    last_seen_at: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -195,10 +194,10 @@ class CreateIdentityRequest:
     username: str
     identity_type: str
     auth_provider: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    password: Optional[str] = None  # Will be hashed
-    auth_provider_id: Optional[str] = None
+    email: str | None = None
+    full_name: str | None = None
+    password: str | None = None  # Will be hashed
+    auth_provider_id: str | None = None
     is_active: bool = True
     # NOTE: is_superuser is intentionally NOT accepted here — allowing a client
     # to set it on create is a privilege-escalation / mass-assignment hole. New
@@ -211,11 +210,11 @@ class CreateIdentityRequest:
 class UpdateIdentityRequest:
     """Request to update an Identity."""
 
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    password: Optional[str] = None  # Will be hashed
-    is_active: Optional[bool] = None
-    mfa_enabled: Optional[bool] = None
+    email: str | None = None
+    full_name: str | None = None
+    password: str | None = None  # Will be hashed
+    is_active: bool | None = None
+    mfa_enabled: bool | None = None
 
 
 # ==================== Identity Groups ====================
@@ -227,9 +226,9 @@ class IdentityGroupDTO:
 
     id: int
     name: str
-    description: Optional[str]
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
+    description: str | None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
     is_active: bool = True
     created_at: datetime = None
     updated_at: datetime = None
@@ -240,9 +239,9 @@ class CreateIdentityGroupRequest:
     """Request to create a new Identity Group."""
 
     name: str
-    description: Optional[str] = None
-    ldap_dn: Optional[str] = None
-    saml_group: Optional[str] = None
+    description: str | None = None
+    ldap_dn: str | None = None
+    saml_group: str | None = None
     is_active: bool = True
 
 
@@ -255,7 +254,7 @@ class RoleDTO:
 
     id: int
     name: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -268,7 +267,7 @@ class PermissionDTO:
     name: str
     resource_type: str
     action: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -281,11 +280,11 @@ class ResourceRoleDTO:
     """Immutable Resource Role data transfer object."""
 
     id: int
-    identity_id: Optional[int]
-    group_id: Optional[int]
+    identity_id: int | None
+    group_id: int | None
     role: str  # maintainer, operator, viewer
     resource_type: str
-    resource_id: Optional[int]
+    resource_id: int | None
     created_at: datetime
     updated_at: datetime
 
@@ -296,9 +295,9 @@ class CreateResourceRoleRequest:
 
     role: str
     resource_type: str
-    identity_id: Optional[int] = None
-    group_id: Optional[int] = None
-    resource_id: Optional[int] = None
+    identity_id: int | None = None
+    group_id: int | None = None
+    resource_id: int | None = None
 
 
 # ==================== Issues (Enterprise) ====================
@@ -310,31 +309,31 @@ class IssueDTO:
 
     id: int
     title: str
-    description: Optional[str]
+    description: str | None
     status: str
     priority: str
     issue_type: str
     reporter_id: int
-    assignee_id: Optional[int]
+    assignee_id: int | None
     resource_type: str
     resource_id: int
     is_incident: int
-    closed_at: Optional[datetime]
+    closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    closed_by_id: Optional[int] = None
-    due_date: Optional[datetime] = None
-    assignee_type: Optional[str] = None
-    channel: Optional[str] = None
-    category: Optional[str] = None
-    requester_contact_id: Optional[int] = None
-    hd_sla_policy_id: Optional[int] = None
-    sla_breach_at: Optional[datetime] = None
-    first_response_at: Optional[datetime] = None
-    resolved_at: Optional[datetime] = None
-    metadata: Optional[dict] = None
-    parent_issue_id: Optional[int] = None
-    village_id: Optional[str] = None
+    closed_by_id: int | None = None
+    due_date: datetime | None = None
+    assignee_type: str | None = None
+    channel: str | None = None
+    category: str | None = None
+    requester_contact_id: int | None = None
+    hd_sla_policy_id: int | None = None
+    sla_breach_at: datetime | None = None
+    first_response_at: datetime | None = None
+    resolved_at: datetime | None = None
+    metadata: dict | None = None
+    parent_issue_id: int | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -343,28 +342,28 @@ class CreateIssueRequest:
 
     title: str
     reporter_id: int
-    description: Optional[str] = None
+    description: str | None = None
     status: str = "open"
     priority: str = "medium"
     issue_type: str = "other"
-    assignee_id: Optional[int] = None
-    organization_id: Optional[int] = None
+    assignee_id: int | None = None
+    organization_id: int | None = None
     is_incident: int = 0
-    parent_issue_id: Optional[int] = None
+    parent_issue_id: int | None = None
 
 
 @dataclass(slots=True)
 class UpdateIssueRequest:
     """Request to update an Issue."""
 
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    priority: Optional[str] = None
-    issue_type: Optional[str] = None
-    assignee_id: Optional[int] = None
-    is_incident: Optional[int] = None
-    parent_issue_id: Optional[int] = None
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    priority: str | None = None
+    issue_type: str | None = None
+    assignee_id: int | None = None
+    is_incident: int | None = None
+    parent_issue_id: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -374,7 +373,7 @@ class IssueLabelDTO:
     id: int
     name: str
     color: str
-    description: Optional[str]
+    description: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -405,17 +404,17 @@ class CreateLabelRequest:
     """Request to create a Label."""
 
     name: str
-    description: Optional[str] = None
-    color: Optional[str] = "#cccccc"
+    description: str | None = None
+    color: str | None = "#cccccc"
 
 
 @dataclass(slots=True)
 class UpdateLabelRequest:
     """Request to update a Label."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
+    name: str | None = None
+    description: str | None = None
+    color: str | None = None
 
 
 # ==================== Projects ====================
@@ -430,11 +429,11 @@ class ProjectDTO:
     organization_id: int
     created_at: datetime
     updated_at: datetime
-    description: Optional[str] = None
-    status: Optional[str] = None
+    description: str | None = None
+    status: str | None = None
     is_active: bool = True
-    settings: Optional[dict] = None
-    created_by_id: Optional[int] = None
+    settings: dict | None = None
+    created_by_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -443,21 +442,21 @@ class CreateProjectRequest:
 
     name: str
     organization_id: int
-    description: Optional[str] = None
+    description: str | None = None
     status: str = "active"
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 @dataclass(slots=True)
 class UpdateProjectRequest:
     """Request to update a Project."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 # ==================== Milestones ====================
@@ -469,12 +468,12 @@ class MilestoneDTO:
 
     id: int
     title: str
-    description: Optional[str]
+    description: str | None
     status: str
     organization_id: int
-    project_id: Optional[int]
-    due_date: Optional[datetime]
-    closed_at: Optional[datetime]
+    project_id: int | None
+    due_date: datetime | None
+    closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -485,22 +484,22 @@ class CreateMilestoneRequest:
 
     title: str
     organization_id: int
-    description: Optional[str] = None
+    description: str | None = None
     status: str = "open"
-    project_id: Optional[int] = None
-    due_date: Optional[datetime] = None
+    project_id: int | None = None
+    due_date: datetime | None = None
 
 
 @dataclass(slots=True)
 class UpdateMilestoneRequest:
     """Request to update a Milestone."""
 
-    title: Optional[str] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-    project_id: Optional[int] = None
-    due_date: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+    project_id: int | None = None
+    due_date: datetime | None = None
+    closed_at: datetime | None = None
 
 
 # ==================== Metadata (Enterprise) ====================
@@ -512,7 +511,7 @@ class MetadataFieldDTO:
 
     id: int
     key: str
-    value: Optional[str]
+    value: str | None
     field_type: str  # string, number, date, boolean, json
     is_system: bool
     resource_type: str
@@ -526,7 +525,7 @@ class CreateMetadataFieldRequest:
     """Request to create a Metadata Field."""
 
     key: str
-    value: Optional[str]
+    value: str | None
     field_type: str
     resource_type: str
     resource_id: int
@@ -546,10 +545,10 @@ class APIKeyDTO:
     key_prefix: str  # First few chars for display
     created_at: datetime
     updated_at: datetime
-    key_hash: Optional[str] = None
-    scopes: Optional[str] = None
-    last_used_at: Optional[datetime] = None
-    expires_at: Optional[datetime] = None
+    key_hash: str | None = None
+    scopes: str | None = None
+    last_used_at: datetime | None = None
+    expires_at: datetime | None = None
     is_active: bool = True
 
 
@@ -558,7 +557,7 @@ class CreateAPIKeyRequest:
     """Request to create a new API Key."""
 
     name: str
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -569,7 +568,7 @@ class CreateAPIKeyResponse:
     name: str
     api_key: str  # Full key - shown only once!
     prefix: str
-    expires_at: Optional[datetime]
+    expires_at: datetime | None
     created_at: datetime
 
 
@@ -582,7 +581,7 @@ class LoginRequest:
 
     username: str
     password: str
-    mfa_code: Optional[str] = None
+    mfa_code: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -602,7 +601,7 @@ class RegisterRequest:
     username: str
     email: str
     password: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
 
 
 # ==================== Software (v2.3.0) ====================
@@ -615,24 +614,24 @@ class SoftwareDTO:
     id: int
     tenant_id: int
     name: str
-    description: Optional[str]
+    description: str | None
     organization_id: int
-    purchasing_poc_id: Optional[int]
-    license_url: Optional[str]
-    version: Optional[str]
-    business_purpose: Optional[str]
+    purchasing_poc_id: int | None
+    license_url: str | None
+    version: str | None
+    business_purpose: str | None
     software_type: str
-    seats: Optional[int]
-    cost_monthly: Optional[float]
-    renewal_date: Optional[date]
-    vendor: Optional[str]
-    support_contact: Optional[str]
-    notes: Optional[str]
-    tags: Optional[list]
+    seats: int | None
+    cost_monthly: float | None
+    renewal_date: date | None
+    vendor: str | None
+    support_contact: str | None
+    notes: str | None
+    tags: list | None
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
-    village_id: Optional[str]
+    updated_at: datetime | None
+    village_id: str | None
 
 
 # ==================== Services (v2.3.0) ====================
@@ -645,22 +644,22 @@ class ServiceDTO:
     id: int
     name: str
     created_at: datetime
-    tenant_id: Optional[int] = None
-    organization_id: Optional[int] = None
-    identity_id: Optional[int] = None
-    type: Optional[str] = None
-    sub_type: Optional[str] = None
-    external_id: Optional[str] = None
-    namespace: Optional[str] = None
-    cluster: Optional[str] = None
-    endpoint: Optional[str] = None
-    port: Optional[int] = None
-    protocol: Optional[str] = None
-    status: Optional[str] = None
-    tags: Optional[list] = None
-    metadata: Optional[dict] = None
-    last_seen_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    tenant_id: int | None = None
+    organization_id: int | None = None
+    identity_id: int | None = None
+    type: str | None = None
+    sub_type: str | None = None
+    external_id: str | None = None
+    namespace: str | None = None
+    cluster: str | None = None
+    endpoint: str | None = None
+    port: int | None = None
+    protocol: str | None = None
+    status: str | None = None
+    tags: list | None = None
+    metadata: dict | None = None
+    last_seen_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 # ==================== Audit Logs ====================
@@ -671,14 +670,14 @@ class AuditLogDTO:
     """Immutable Audit Log data transfer object."""
 
     id: int
-    identity_id: Optional[int]
+    identity_id: int | None
     action: str
     resource_type: str
-    resource_id: Optional[int]
-    details: Optional[dict]
+    resource_id: int | None
+    details: dict | None
     success: bool
-    ip_address: Optional[str]
-    user_agent: Optional[str]
+    ip_address: str | None
+    user_agent: str | None
     created_at: datetime
 
 
@@ -695,24 +694,24 @@ class SBOMComponentDTO:
     parent_type: str
     parent_id: int
     name: str
-    version: Optional[str]
-    purl: Optional[str]
+    version: str | None
+    purl: str | None
     package_type: str
-    scope: Optional[str]
+    scope: str | None
     direct: bool
-    license_id: Optional[int]
-    license_name: Optional[str]
-    license_url: Optional[str]
-    source_file: Optional[str]
-    repository_url: Optional[str]
-    homepage_url: Optional[str]
-    description: Optional[str]
-    hash_sha256: Optional[str]
-    hash_sha512: Optional[str]
-    metadata: Optional[dict]
+    license_id: int | None
+    license_name: str | None
+    license_url: str | None
+    source_file: str | None
+    repository_url: str | None
+    homepage_url: str | None
+    description: str | None
+    hash_sha256: str | None
+    hash_sha512: str | None
+    metadata: dict | None
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -723,37 +722,37 @@ class CreateSBOMComponentRequest:
     parent_id: int
     name: str
     package_type: str
-    version: Optional[str] = None
-    purl: Optional[str] = None
-    scope: Optional[str] = None
+    version: str | None = None
+    purl: str | None = None
+    scope: str | None = None
     direct: bool = True
-    license_id: Optional[int] = None
-    license_name: Optional[str] = None
-    source_file: Optional[str] = None
-    metadata: Optional[dict] = None
+    license_id: int | None = None
+    license_name: str | None = None
+    source_file: str | None = None
+    metadata: dict | None = None
 
 
 @dataclass(slots=True)
 class UpdateSBOMComponentRequest:
     """Request to update an SBOM Component."""
 
-    name: Optional[str] = None
-    version: Optional[str] = None
-    purl: Optional[str] = None
-    package_type: Optional[str] = None
-    scope: Optional[str] = None
-    direct: Optional[bool] = None
-    license_id: Optional[int] = None
-    license_name: Optional[str] = None
-    license_url: Optional[str] = None
-    source_file: Optional[str] = None
-    repository_url: Optional[str] = None
-    homepage_url: Optional[str] = None
-    description: Optional[str] = None
-    hash_sha256: Optional[str] = None
-    hash_sha512: Optional[str] = None
-    metadata: Optional[dict] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    version: str | None = None
+    purl: str | None = None
+    package_type: str | None = None
+    scope: str | None = None
+    direct: bool | None = None
+    license_id: int | None = None
+    license_name: str | None = None
+    license_url: str | None = None
+    source_file: str | None = None
+    repository_url: str | None = None
+    homepage_url: str | None = None
+    description: str | None = None
+    hash_sha256: str | None = None
+    hash_sha512: str | None = None
+    metadata: dict | None = None
+    is_active: bool | None = None
 
 
 # ==================== SBOM Scans ====================
@@ -770,21 +769,21 @@ class SBOMScanDTO:
     parent_id: int
     scan_type: str
     status: str
-    repository_url: Optional[str]
-    repository_branch: Optional[str]
-    commit_hash: Optional[str]
-    files_scanned: Optional[dict]
+    repository_url: str | None
+    repository_branch: str | None
+    commit_hash: str | None
+    files_scanned: dict | None
     components_found: int
     components_added: int
     components_updated: int
     components_removed: int
-    error_message: Optional[str]
-    scan_duration_ms: Optional[int]
-    started_at: Optional[datetime]
-    completed_at: Optional[datetime]
+    error_message: str | None
+    scan_duration_ms: int | None
+    started_at: datetime | None
+    completed_at: datetime | None
     created_at: datetime
-    credential_type: Optional[str] = None
-    credential_id: Optional[int] = None
+    credential_type: str | None = None
+    credential_id: int | None = None
     has_credentials: bool = False
 
 
@@ -795,8 +794,8 @@ class CreateSBOMScanRequest:
     parent_type: str
     parent_id: int
     scan_type: str
-    repository_url: Optional[str] = None
-    repository_branch: Optional[str] = None
+    repository_url: str | None = None
+    repository_branch: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -810,12 +809,12 @@ class SBOMScanScheduleDTO:
     parent_id: int
     schedule_cron: str
     is_active: bool
-    last_run_at: Optional[datetime]
-    next_run_at: Optional[datetime]
+    last_run_at: datetime | None
+    next_run_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    credential_type: Optional[str] = None
-    credential_id: Optional[int] = None
+    credential_type: str | None = None
+    credential_id: int | None = None
     has_credentials: bool = False
 
 
@@ -830,21 +829,21 @@ class VulnerabilityDTO:
     tenant_id: int
     village_id: str
     cve_id: str
-    aliases: Optional[list]
+    aliases: list | None
     severity: str
-    cvss_score: Optional[float]
-    cvss_vector: Optional[str]
-    title: Optional[str]
-    description: Optional[str]
-    affected_packages: Optional[list]
-    fixed_versions: Optional[list]
-    references: Optional[list]
-    published_at: Optional[datetime]
-    modified_at: Optional[datetime]
-    source: Optional[str]
+    cvss_score: float | None
+    cvss_vector: str | None
+    title: str | None
+    description: str | None
+    affected_packages: list | None
+    fixed_versions: list | None
+    references: list | None
+    published_at: datetime | None
+    modified_at: datetime | None
+    source: str | None
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
 
 # ==================== Component Vulnerabilities ====================
@@ -859,11 +858,11 @@ class ComponentVulnerabilityDTO:
     component_id: int
     vulnerability_id: int
     status: str
-    remediation_notes: Optional[str]
-    remediated_at: Optional[datetime]
-    remediated_by_id: Optional[int]
+    remediation_notes: str | None
+    remediated_at: datetime | None
+    remediated_by_id: int | None
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
 
 # ==================== License Policies ====================
@@ -875,16 +874,16 @@ class LicensePolicyDTO:
 
     id: int
     tenant_id: int
-    organization_id: Optional[int]
+    organization_id: int | None
     village_id: str
     name: str
-    description: Optional[str]
-    allowed_licenses: Optional[list]
-    denied_licenses: Optional[list]
+    description: str | None
+    allowed_licenses: list | None
+    denied_licenses: list | None
     action: str
     is_active: bool
     created_at: datetime
-    updated_at: Optional[datetime]
+    updated_at: datetime | None
 
 
 @dataclass(slots=True)
@@ -894,9 +893,9 @@ class CreateLicensePolicyRequest:
     name: str
     organization_id: int
     action: str = "warn"
-    description: Optional[str] = None
-    allowed_licenses: Optional[list] = field(default_factory=list)
-    denied_licenses: Optional[list] = field(default_factory=list)
+    description: str | None = None
+    allowed_licenses: list | None = field(default_factory=list)
+    denied_licenses: list | None = field(default_factory=list)
     is_active: bool = True
 
 
@@ -904,12 +903,12 @@ class CreateLicensePolicyRequest:
 class UpdateLicensePolicyRequest:
     """Request to update a License Policy."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    allowed_licenses: Optional[list] = None
-    denied_licenses: Optional[list] = None
-    action: Optional[str] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    description: str | None = None
+    allowed_licenses: list | None = None
+    denied_licenses: list | None = None
+    action: str | None = None
+    is_active: bool | None = None
 
 
 # ==================== On-Call Rotations ====================
@@ -923,18 +922,18 @@ class OnCallRotationDTO:
     tenant_id: int
     village_id: str
     name: str
-    description: Optional[str]
+    description: str | None
     is_active: bool
     scope_type: str  # organization, service
-    organization_id: Optional[int]
-    service_id: Optional[int]
+    organization_id: int | None
+    service_id: int | None
     schedule_type: str  # weekly, cron, manual, follow_the_sun
-    rotation_length_days: Optional[int]
-    rotation_start_date: Optional[date]
-    schedule_cron: Optional[str]
-    handoff_timezone: Optional[str]
+    rotation_length_days: int | None
+    rotation_start_date: date | None
+    schedule_cron: str | None
+    handoff_timezone: str | None
     shift_split: bool
-    shift_config: Optional[dict]
+    shift_config: dict | None
     created_at: datetime
     updated_at: datetime
 
@@ -947,14 +946,14 @@ class OnCallParticipantDTO:
     rotation_id: int
     identity_id: int
     identity_name: str  # From join with identities table
-    identity_email: Optional[str]  # From join with identities table
+    identity_email: str | None  # From join with identities table
     order_index: int
     is_active: bool
-    start_date: Optional[date]
-    end_date: Optional[date]
-    notification_email: Optional[str]
-    notification_phone: Optional[str]
-    notification_slack: Optional[str]
+    start_date: date | None
+    end_date: date | None
+    notification_email: str | None
+    notification_phone: str | None
+    notification_slack: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -967,14 +966,14 @@ class OnCallOverrideDTO:
     rotation_id: int
     original_identity_id: int
     original_identity_name: str  # From join
-    original_identity_email: Optional[str]  # From join
+    original_identity_email: str | None  # From join
     override_identity_id: int
     override_identity_name: str  # From join
-    override_identity_email: Optional[str]  # From join
+    override_identity_email: str | None  # From join
     start_datetime: datetime
     end_datetime: datetime
-    reason: Optional[str]
-    created_by_id: Optional[int]
+    reason: str | None
+    created_by_id: int | None
     created_at: datetime
 
 
@@ -989,7 +988,7 @@ class OnCallShiftDTO:
     shift_start: datetime
     shift_end: datetime
     is_override: bool
-    override_id: Optional[int]
+    override_id: int | None
     alerts_received: int
     incidents_created: int
     created_at: datetime
@@ -1003,12 +1002,12 @@ class EscalationPolicyDTO:
     rotation_id: int
     level: int
     escalation_type: str  # identity, group, rotation_participant
-    identity_id: Optional[int]
-    identity_name: Optional[str]  # From join if escalation_type is identity
-    group_id: Optional[int]
-    group_name: Optional[str]  # From join if escalation_type is group
+    identity_id: int | None
+    identity_name: str | None  # From join if escalation_type is identity
+    group_id: int | None
+    group_name: str | None  # From join if escalation_type is group
     escalation_delay_minutes: int
-    notification_channels: Optional[list[str]]  # ["email", "sms", "slack"]
+    notification_channels: list[str] | None  # ["email", "sms", "slack"]
     created_at: datetime
     updated_at: datetime
 
@@ -1019,11 +1018,11 @@ class CurrentOnCallDTO:
 
     identity_id: int
     identity_name: str
-    identity_email: Optional[str]
+    identity_email: str | None
     shift_start: datetime
     shift_end: datetime
     is_override: bool
-    override_reason: Optional[str]
+    override_reason: str | None
 
 
 @dataclass(slots=True)
@@ -1033,15 +1032,15 @@ class CreateOnCallRotationRequest:
     name: str
     scope_type: str  # organization, service
     schedule_type: str  # weekly, cron, manual, follow_the_sun
-    description: Optional[str] = None
-    organization_id: Optional[int] = None
-    service_id: Optional[int] = None
-    rotation_length_days: Optional[int] = None
-    rotation_start_date: Optional[date] = None
-    schedule_cron: Optional[str] = None
-    handoff_timezone: Optional[str] = None
+    description: str | None = None
+    organization_id: int | None = None
+    service_id: int | None = None
+    rotation_length_days: int | None = None
+    rotation_start_date: date | None = None
+    schedule_cron: str | None = None
+    handoff_timezone: str | None = None
     shift_split: bool = False
-    shift_config: Optional[dict] = None
+    shift_config: dict | None = None
     is_active: bool = True
 
 
@@ -1049,16 +1048,16 @@ class CreateOnCallRotationRequest:
 class UpdateOnCallRotationRequest:
     """Request to update an On-Call Rotation (all fields optional)."""
 
-    name: Optional[str] = None
-    description: Optional[str] = None
-    is_active: Optional[bool] = None
-    schedule_type: Optional[str] = None
-    rotation_length_days: Optional[int] = None
-    rotation_start_date: Optional[date] = None
-    schedule_cron: Optional[str] = None
-    handoff_timezone: Optional[str] = None
-    shift_split: Optional[bool] = None
-    shift_config: Optional[dict] = None
+    name: str | None = None
+    description: str | None = None
+    is_active: bool | None = None
+    schedule_type: str | None = None
+    rotation_length_days: int | None = None
+    rotation_start_date: date | None = None
+    schedule_cron: str | None = None
+    handoff_timezone: str | None = None
+    shift_split: bool | None = None
+    shift_config: dict | None = None
 
 
 # ==================== Pagination ====================

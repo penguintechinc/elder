@@ -126,9 +126,7 @@ class TestRegistryFrozenFields:
         """ResolvableType fields should not be modifiable."""
         entity_type = get_type("entity")
 
-        with pytest.raises(
-            (AttributeError, dataclasses.FrozenInstanceError), match=""
-        ):
+        with pytest.raises((AttributeError, dataclasses.FrozenInstanceError), match=""):
             entity_type.url_pattern = "/modified"
 
 

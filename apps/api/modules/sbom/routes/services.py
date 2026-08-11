@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
 
@@ -153,7 +152,7 @@ async def create_service(body: CreateServiceRequest):
 
     def create():
         # Create service
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         service_id = db.services.insert(
             name=body.name,
             organization_id=body.organization_id,

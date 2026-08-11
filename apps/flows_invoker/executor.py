@@ -29,7 +29,7 @@ output before it reaches the execution log.
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apps.flows_invoker import gitops
@@ -65,7 +65,7 @@ def _load_promotion(db, tenant_id: int, promotion_id: int):
     )
 
 
-def _load_stage(db, tenant_id: int, stage_id: Optional[int]):
+def _load_stage(db, tenant_id: int, stage_id: int | None):
     """Load a stage by primary key, tenant-scoped. Returns the row or None."""
     if stage_id is None:
         return None
@@ -79,7 +79,7 @@ def _load_stage(db, tenant_id: int, stage_id: Optional[int]):
     )
 
 
-def _load_flow(db, tenant_id: int, flow_id: Optional[int]):
+def _load_flow(db, tenant_id: int, flow_id: int | None):
     """Load a flow by primary key, tenant-scoped. Returns the row or None."""
     if flow_id is None:
         return None
@@ -90,9 +90,7 @@ def _load_flow(db, tenant_id: int, flow_id: Optional[int]):
     )
 
 
-def _load_credential_token(
-    db, tenant_id: int, credential_id: Optional[int]
-) -> Optional[str]:
+def _load_credential_token(db, tenant_id: int, credential_id: int | None) -> str | None:
     """Resolve the flow's git credential token (tenant-scoped, active only)."""
     if not credential_id:
         return None
@@ -106,9 +104,7 @@ def _load_credential_token(
     )
     if not cred or not cred.is_active or not cred.access_token:
         return None
-    db(db.iceflows_credentials.id == cred.id).update(
-        last_used_at=datetime.now(timezone.utc)
-    )
+    db(db.iceflows_credentials.id == cred.id).update(last_used_at=datetime.now(UTC))
     db.commit()
     return cred.access_token
 
@@ -138,7 +134,7 @@ def _stage_review(db, tenant_id: int, stage_id: int):
     )
 
 
-def _plan_stage_steps(db, tenant_id: int, stage_id: int) -> Dict[str, Any]:
+def _plan_stage_steps(db, tenant_id: int, stage_id: int) -> dict[str, Any]:
     """Collect the configured tests and calls for a stage (planning step)."""
     tests = _stage_tests(db, tenant_id, stage_id)
     stage_calls = _stage_calls(db, tenant_id, stage_id)
@@ -191,13 +187,13 @@ def _run_stage_tests(
     tenant_id: int,
     stage_id: int,
     repo_dir: str,
-    token: Optional[str],
-    log: List[Dict[str, Any]],
+    token: str | None,
+    log: list[dict[str, Any]],
 ) -> bool:
     """Run each configured test through the sandbox. Returns overall pass."""
     all_required_passed = True
     for test in _stage_tests(db, tenant_id, stage_id):
-        entry: Dict[str, Any] = {
+        entry: dict[str, Any] = {
             "step": "test",
             "test_id": test.test_id,
             "name": test.name,
@@ -254,7 +250,7 @@ def _run_review_gate(
     tenant_id: int,
     stage_id: int,
     ws: gitops.GitWorkspace,
-    log: List[Dict[str, Any]],
+    log: list[dict[str, Any]],
 ) -> None:
     """Apply the stage's Darwin review policy (fail-closed when required)."""
     config = _stage_review(db, tenant_id, stage_id)
@@ -319,8 +315,8 @@ def _run_calls(
     tenant_id: int,
     stage_id: int,
     triggers: frozenset,
-    context: Dict[str, Any],
-    log: List[Dict[str, Any]],
+    context: dict[str, Any],
+    log: list[dict[str, Any]],
 ) -> None:
     """Dispatch the stage calls matching ``triggers`` (order-preserving)."""
     for call in _stage_calls(db, tenant_id, stage_id):
@@ -353,8 +349,8 @@ def _open_execution_row(
     db,
     tenant_id: int,
     promotion,
-    started_by_identity_id: Optional[int],
-    execution_id: Optional[str],
+    started_by_identity_id: int | None,
+    execution_id: str | None,
     now: datetime,
 ):
     """Adopt the API's pre-created execution row, or create one."""
@@ -394,17 +390,17 @@ def execute_promotion_pipeline(
     db,
     tenant_id: int,
     promotion_id: int,
-    started_by_identity_id: Optional[int] = None,
-    execution_id: Optional[str] = None,
-) -> Dict[str, Any]:
+    started_by_identity_id: int | None = None,
+    execution_id: str | None = None,
+) -> dict[str, Any]:
     """Run the full CI/CD pipeline for a promotion (see module docstring).
 
     Returns ``{"execution_id", "status", ...}``. Never raises for expected
     business conditions — those resolve to a failed execution record so the
     job bus can ack and surface the result.
     """
-    now = datetime.now(timezone.utc)
-    log: List[Dict[str, Any]] = []
+    now = datetime.now(UTC)
+    log: list[dict[str, Any]] = []
 
     promotion = _load_promotion(db, tenant_id, promotion_id)
     if not promotion:
@@ -434,10 +430,10 @@ def execute_promotion_pipeline(
     )
 
     status = "success"
-    error_message: Optional[str] = None
+    error_message: str | None = None
     merged = False
-    ws: Optional[gitops.GitWorkspace] = None
-    token: Optional[str] = None
+    ws: gitops.GitWorkspace | None = None
+    token: str | None = None
     try:
         target = _load_stage(db, tenant_id, promotion.target_stage_id)
         if not target:
@@ -504,7 +500,7 @@ def execute_promotion_pipeline(
 
         if merge_allowed and ws is not None:
             gitops.push_target(ws, target.branch_name)
-            completed = datetime.now(timezone.utc)
+            completed = datetime.now(UTC)
             db(db.iceflows_promotions.id == promotion.id).update(
                 status="merged",
                 merged_by_identity_id=started_by_identity_id,
@@ -561,7 +557,7 @@ def execute_promotion_pipeline(
         if ws is not None:
             ws.cleanup()
 
-    completed = datetime.now(timezone.utc)
+    completed = datetime.now(UTC)
     duration = int((completed - now).total_seconds())
     db(db.iceflows_executions.id == exec_db_id).update(
         status=status,

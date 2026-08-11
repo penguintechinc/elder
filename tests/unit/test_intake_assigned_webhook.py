@@ -5,7 +5,7 @@ as actor (there is no authenticated user on this path)."""
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -20,7 +20,7 @@ def _setup_form_and_webhook(db, tenant_id=1, default_assignee_id=None):
     # literal (mirrors test_issues_assigned_webhook_create.py's pattern) —
     # a second call with the same literal would otherwise collide with the
     # first call's row.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     suffix = uuid.uuid4().hex[:16]
     org_id = db.organizations.insert(
         name="Org", tenant_id=tenant_id, created_at=now, updated_at=now

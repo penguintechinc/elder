@@ -60,12 +60,12 @@ def get_users():
 
         assert len(endpoints) == 1
         endpoint = endpoints[0]
-        assert endpoint['path'] == '/users'
-        assert endpoint['methods'] == ['GET']
-        assert endpoint['function_name'] == 'get_users'
-        assert endpoint['framework'] == 'fastapi'
-        assert endpoint['source_file'] == 'app.py'
-        assert endpoint['auth_required'] is False
+        assert endpoint["path"] == "/users"
+        assert endpoint["methods"] == ["GET"]
+        assert endpoint["function_name"] == "get_users"
+        assert endpoint["framework"] == "fastapi"
+        assert endpoint["source_file"] == "app.py"
+        assert endpoint["auth_required"] is False
 
     def test_parse_post_route(self, parser):
         """Test parsing @app.post decorator."""
@@ -77,8 +77,8 @@ def create_item(item: Item):
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['POST']
-        assert endpoints[0]['path'] == '/items'
+        assert endpoints[0]["methods"] == ["POST"]
+        assert endpoints[0]["path"] == "/items"
 
     def test_parse_multiple_decorators(self, parser):
         """Test parsing multiple route decorators."""
@@ -98,9 +98,9 @@ def list_items():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 3
-        paths = [e['path'] for e in endpoints]
-        assert '/users' in paths
-        assert '/items' in paths
+        paths = [e["path"] for e in endpoints]
+        assert "/users" in paths
+        assert "/items" in paths
 
     def test_parse_path_with_parameters(self, parser):
         """Test parsing paths with OpenAPI-style parameters."""
@@ -112,7 +112,7 @@ def get_user(user_id: int):
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/users/{user_id}'
+        assert endpoints[0]["path"] == "/users/{user_id}"
 
     def test_parse_put_patch_delete(self, parser):
         """Test parsing various HTTP methods."""
@@ -132,10 +132,10 @@ def delete_item():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 3
-        methods = [e['methods'][0] for e in endpoints]
-        assert 'PUT' in methods
-        assert 'PATCH' in methods
-        assert 'DELETE' in methods
+        methods = [e["methods"][0] for e in endpoints]
+        assert "PUT" in methods
+        assert "PATCH" in methods
+        assert "DELETE" in methods
 
 
 class TestParseRouterDecorators:
@@ -155,8 +155,8 @@ def list_products():
         endpoints = parser.parse(code, "routes.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/products'
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["path"] == "/products"
+        assert endpoints[0]["methods"] == ["GET"]
 
     def test_parse_router_post(self, parser):
         """Test parsing @router.post decorator."""
@@ -168,7 +168,7 @@ def create_product():
         endpoints = parser.parse(code, "routes.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['POST']
+        assert endpoints[0]["methods"] == ["POST"]
 
     def test_parse_mixed_app_and_router(self, parser):
         """Test parsing both app and router decorators."""
@@ -184,9 +184,9 @@ def get_users():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 2
-        paths = {e['path'] for e in endpoints}
-        assert '/health' in paths
-        assert '/users' in paths
+        paths = {e["path"] for e in endpoints}
+        assert "/health" in paths
+        assert "/users" in paths
 
 
 class TestParseAPIRoute:
@@ -202,8 +202,8 @@ def custom_route():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/custom'
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["path"] == "/custom"
+        assert endpoints[0]["methods"] == ["GET"]
 
     def test_parse_api_route_multiple_methods(self, parser):
         """Test parsing @app.api_route with multiple methods."""
@@ -215,11 +215,11 @@ def handle_resource():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/resource'
-        methods = endpoints[0]['methods']
-        assert 'GET' in methods
-        assert 'POST' in methods
-        assert 'PUT' in methods
+        assert endpoints[0]["path"] == "/resource"
+        methods = endpoints[0]["methods"]
+        assert "GET" in methods
+        assert "POST" in methods
+        assert "PUT" in methods
 
     def test_parse_api_route_router(self, parser):
         """Test parsing @router.api_route."""
@@ -231,8 +231,8 @@ def handle_data():
         endpoints = parser.parse(code, "routes.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/data'
-        assert set(endpoints[0]['methods']) == {'GET', 'POST'}
+        assert endpoints[0]["path"] == "/data"
+        assert set(endpoints[0]["methods"]) == {"GET", "POST"}
 
 
 class TestAuthenticationDetection:
@@ -248,7 +248,7 @@ def protected_route(current_user: User = Depends(get_current_user)):
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is True
+        assert endpoints[0]["auth_required"] is True
 
     def test_no_auth_when_no_depends(self, parser):
         """Test auth_required is False when no Depends()."""
@@ -260,7 +260,7 @@ def public_route():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is False
+        assert endpoints[0]["auth_required"] is False
 
     def test_depends_auth_multiline(self, parser):
         """Test Depends() detection across multiple lines."""
@@ -275,7 +275,7 @@ def get_data(
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is True
+        assert endpoints[0]["auth_required"] is True
 
     def test_depends_in_body_not_detected_as_auth(self, parser):
         """Test that Depends() without authentication context."""
@@ -288,7 +288,7 @@ def get_items(deps: Depends(get_dependencies)):
 
         assert len(endpoints) == 1
         # Depends() is detected as auth indicator regardless of context
-        assert endpoints[0]['auth_required'] is True
+        assert endpoints[0]["auth_required"] is True
 
 
 class TestPathParameterNormalization:
@@ -305,7 +305,7 @@ def get_user_post():
 
         assert len(endpoints) == 1
         # FastAPI already uses OpenAPI format
-        assert endpoints[0]['path'] == '/users/{user_id}/posts/{post_id}'
+        assert endpoints[0]["path"] == "/users/{user_id}/posts/{post_id}"
 
     def test_complex_path_parsing(self, parser):
         """Test parsing complex paths with parameters."""
@@ -317,7 +317,7 @@ def complex_path():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/api/v1/users/{user_id}'
+        assert endpoints[0]["path"] == "/api/v1/users/{user_id}"
 
 
 class TestFunctionNameExtraction:
@@ -333,7 +333,7 @@ def my_handler():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['function_name'] == 'my_handler'
+        assert endpoints[0]["function_name"] == "my_handler"
 
     def test_extract_async_function_name(self, parser):
         """Test extracting async function name."""
@@ -345,7 +345,7 @@ async def async_handler():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['function_name'] == 'async_handler'
+        assert endpoints[0]["function_name"] == "async_handler"
 
     def test_unknown_function_name(self, parser):
         """Test handling when function name cannot be found."""
@@ -357,7 +357,7 @@ async def async_handler():
 
         # Should still parse endpoint but function name may be 'unknown'
         if len(endpoints) > 0:
-            assert endpoints[0]['function_name'] in ['unknown', '']
+            assert endpoints[0]["function_name"] in ["unknown", ""]
 
 
 class TestLineNumbers:
@@ -377,7 +377,7 @@ def test_handler():
 
         assert len(endpoints) == 1
         # Line 5 has the decorator (1-indexed)
-        assert endpoints[0]['line_number'] == 5
+        assert endpoints[0]["line_number"] == 5
 
     def test_line_numbers_multiple(self, parser):
         """Test line numbers for multiple endpoints."""
@@ -392,7 +392,7 @@ def second():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 2
-        line_numbers = sorted([e['line_number'] for e in endpoints])
+        line_numbers = sorted([e["line_number"] for e in endpoints])
         assert line_numbers == [1, 5]
 
 
@@ -419,18 +419,18 @@ def helper_function():
 
     def test_decorator_in_string_not_parsed(self, parser):
         """Test that decorators in strings are not parsed."""
-        code = '''
+        code = """
 text = "@app.get('/fake')"
 
 @app.get('/real')
 def real():
     pass
-'''
+"""
         endpoints = parser.parse(code, "app.py")
 
         # Should only find one endpoint
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/real'
+        assert endpoints[0]["path"] == "/real"
 
     def test_malformed_decorator(self, parser):
         """Test handling of malformed decorators."""
@@ -453,7 +453,7 @@ def test():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['framework'] == 'fastapi'
+        assert endpoints[0]["framework"] == "fastapi"
 
     def test_source_file_field(self, parser):
         """Test that source_file field matches provided filename."""
@@ -465,7 +465,7 @@ def test():
         endpoints = parser.parse(code, "custom_routes.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['source_file'] == 'custom_routes.py'
+        assert endpoints[0]["source_file"] == "custom_routes.py"
 
     def test_methods_is_list(self, parser):
         """Test that methods field is always a list."""
@@ -477,8 +477,8 @@ def test():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert isinstance(endpoints[0]['methods'], list)
-        assert all(isinstance(m, str) for m in endpoints[0]['methods'])
+        assert isinstance(endpoints[0]["methods"], list)
+        assert all(isinstance(m, str) for m in endpoints[0]["methods"])
 
     def test_path_with_single_quotes(self, parser):
         """Test parsing paths with single quotes."""
@@ -490,19 +490,19 @@ def test():
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/single'
+        assert endpoints[0]["path"] == "/single"
 
     def test_path_with_double_quotes(self, parser):
         """Test parsing paths with double quotes."""
-        code = '''
+        code = """
 @app.get("/double")
 def test():
     pass
-'''
+"""
         endpoints = parser.parse(code, "app.py")
 
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/double'
+        assert endpoints[0]["path"] == "/double"
 
 
 class TestGetSupportedFiles:
@@ -516,4 +516,4 @@ class TestGetSupportedFiles:
     def test_supports_python_pattern(self, parser):
         """Test that Python pattern is supported."""
         result = parser.get_supported_files()
-        assert '*.py' in result
+        assert "*.py" in result

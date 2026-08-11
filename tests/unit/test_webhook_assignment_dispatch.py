@@ -14,7 +14,7 @@ functions in this file, so an unscoped query could pick up a row inserted
 by an earlier test instead of the one under test.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -38,7 +38,7 @@ def _make_tenant(db, name: str) -> int:
 
 
 def _insert_webhook(db, tenant_id, **overrides):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     defaults = dict(
         tenant_id=tenant_id,
         village_id=f"00000001-{overrides.pop('_vid_suffix', '0000000000000001')}",

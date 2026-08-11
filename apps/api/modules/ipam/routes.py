@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -161,7 +160,7 @@ async def create_prefix():
 
     def create():
         # Create prefix
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         prefix_id = db.ipam_prefixes.insert(
             prefix=data.prefix,
             description=data.description,
@@ -503,7 +502,7 @@ async def create_address():
 
     def create():
         # Create address
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         address_id = db.ipam_addresses.insert(
             address=data.address,
             description=data.description,
@@ -791,7 +790,7 @@ async def create_vlan():
 
     def create():
         # Create VLAN
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         vlan_id = db.ipam_vlans.insert(
             vid=data.vid,
             name=data.name,

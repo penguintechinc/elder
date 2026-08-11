@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
 from datetime import date, datetime
 

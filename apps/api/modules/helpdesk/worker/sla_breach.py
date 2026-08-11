@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 from typing import Any
 
 import structlog
@@ -34,7 +35,7 @@ async def check_sla_breaches(db: Any, tenant_id: int) -> dict[str, Any]:
         from datetime import datetime
         from datetime import timezone as tz
 
-        now = datetime.now(tz.utc)
+        now = datetime.now(UTC)
 
         # Query tickets where sla_breach_at < now and status not resolved/closed
         breached = db(

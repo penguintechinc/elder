@@ -25,7 +25,7 @@ class BaseNode:
     description: str = ""
     category: str = ""
 
-    def __init__(self, context: Dict[str, Any]) -> None:
+    def __init__(self, context: dict[str, Any]) -> None:
         """Initialize the node with execution context.
 
         Args:
@@ -51,16 +51,16 @@ class BaseNode:
         self.context = context
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports (optional). Each port: {name, description, required, data_type}."""
         return []
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports (optional). Each port: {name, description, data_type}."""
         return []
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the node.
 
         Args:
@@ -72,7 +72,7 @@ class BaseNode:
         """
         raise NotImplementedError("Node must implement execute method")
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate node configuration. Return list of error messages."""
         return []
 

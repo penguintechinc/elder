@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import datetime
 from dataclasses import asdict
 
@@ -28,7 +27,7 @@ bp = Blueprint("on_call_rotations_history", __name__)
 
 def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     """Get the current on-call person for a rotation."""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     shift = (
         db(

@@ -1,6 +1,7 @@
 """Unit tests for Go HTTP endpoint parser."""
 
 import unittest
+
 from apps.scanner.parsers.endpoint_parser_go import GoEndpointParser
 
 
@@ -267,7 +268,7 @@ r.GET('/single-quoted', Handler2)
 
     def test_source_file_field(self):
         """Test source_file field is correctly set."""
-        content = "r.GET(\"/test\", TestHandler)"
+        content = 'r.GET("/test", TestHandler)'
         endpoints = self.parser.parse(content, "handler.go")
 
         self.assertEqual(len(endpoints), 1)

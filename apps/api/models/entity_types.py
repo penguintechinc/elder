@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict, List
 
 
@@ -95,7 +94,7 @@ class SecuritySubType:
 
 
 # Entity type to sub-types mapping
-ENTITY_SUBTYPES: Dict[str, List[str]] = {
+ENTITY_SUBTYPES: dict[str, list[str]] = {
     EntityType.NETWORK: [
         NetworkSubType.SUBNET,
         NetworkSubType.FIREWALL,
@@ -157,7 +156,7 @@ ENTITY_SUBTYPES: Dict[str, List[str]] = {
 
 
 # Default metadata templates for each sub-type
-DEFAULT_METADATA_TEMPLATES: Dict[str, Dict[str, Dict]] = {
+DEFAULT_METADATA_TEMPLATES: dict[str, dict[str, dict]] = {
     EntityType.NETWORK: {
         NetworkSubType.ROUTER: {
             "routing_protocols": {
@@ -368,18 +367,18 @@ DEFAULT_METADATA_TEMPLATES: Dict[str, Dict[str, Dict]] = {
 }
 
 
-def get_subtypes_for_type(entity_type: str) -> List[str]:
+def get_subtypes_for_type(entity_type: str) -> list[str]:
     """Get list of sub-types for a given entity type."""
     return ENTITY_SUBTYPES.get(entity_type, [])
 
 
-def get_default_metadata_for_subtype(entity_type: str, sub_type: str) -> Dict:
+def get_default_metadata_for_subtype(entity_type: str, sub_type: str) -> dict:
     """Get default metadata template for an entity sub-type."""
     type_templates = DEFAULT_METADATA_TEMPLATES.get(entity_type, {})
     return type_templates.get(sub_type, {})
 
 
-def get_all_entity_types() -> List[str]:
+def get_all_entity_types() -> list[str]:
     """Get all entity types."""
     return [
         EntityType.NETWORK,

@@ -11,7 +11,7 @@ regression: scope-retrofit
 
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import jwt
 import pytest
@@ -30,7 +30,7 @@ class TestDocumentsAPI:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name="Doc Tenant",
                 slug=f"doc-tenant-{uuid.uuid4().hex[:8]}",
@@ -61,7 +61,7 @@ class TestDocumentsAPI:
         self.fixtures = await run_in_threadpool(_setup)
 
     def _token(self, app, tenant_id, identity_id, scopes, roles=None):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         payload = {
             "sub": str(identity_id),
             "iat": now,
@@ -222,9 +222,7 @@ class TestDocumentsAPI:
         token = self._token(app, t, a, ["documents:write", "documents:read"])
 
         # Create document with formatted markdown
-        markdown_source = (
-            "# Heading\n\n" "- Item 1\n" "- Item 2\n\n" "**bold** and *italic*"
-        )
+        markdown_source = "# Heading\n\n- Item 1\n- Item 2\n\n**bold** and *italic*"
         resp = await client.post(
             "/api/v1/documents",
             json={

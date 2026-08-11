@@ -7,7 +7,6 @@ authentication requirements.
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List
 
@@ -44,7 +43,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
 
         return filename.lower().endswith(".py")
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported file patterns.
 
         Returns:
@@ -52,7 +51,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
         """
         return ["*.py"]
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Python source code to extract FastAPI endpoints.
 
         Extracts route information from FastAPI decorators,
@@ -78,7 +77,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
         if not self.validate_content(content):
             return []
 
-        endpoints: List[Dict[str, Any]] = []
+        endpoints: list[dict[str, Any]] = []
 
         # Parse decorator-style routes
         endpoints.extend(self._parse_decorator_routes(content, filename))
@@ -87,7 +86,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
 
     def _parse_decorator_routes(
         self, content: str, filename: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse FastAPI decorator-style routes.
 
         Detects patterns like:
@@ -102,7 +101,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
         Returns:
             List of endpoint dictionaries.
         """
-        endpoints: List[Dict[str, Any]] = []
+        endpoints: list[dict[str, Any]] = []
         lines = content.splitlines()
 
         # Pattern for route decorators
@@ -155,7 +154,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
 
         return endpoints
 
-    def _parse_methods(self, methods_str: str, full_line: str) -> List[str]:
+    def _parse_methods(self, methods_str: str, full_line: str) -> list[str]:
         """Parse HTTP methods from decorator or shortcut.
 
         Args:
@@ -184,7 +183,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
         return ["GET"]
 
     def _check_auth_dependencies(
-        self, lines: List[str], route_line_idx: int, depends_pattern: re.Pattern
+        self, lines: list[str], route_line_idx: int, depends_pattern: re.Pattern
     ) -> bool:
         """Check for Depends() authentication in function signature.
 
@@ -213,7 +212,7 @@ class FastAPIEndpointParser(BaseDependencyParser):
                 break
         return False
 
-    def _find_function_name(self, lines: List[str], route_line_idx: int) -> str:
+    def _find_function_name(self, lines: list[str], route_line_idx: int) -> str:
         """Find the function name following the route decorator.
 
         Args:

@@ -10,7 +10,6 @@ Provides validated Pydantic 2 equivalents of Network and IPAM dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -46,16 +45,16 @@ class NetworkDTO(ImmutableModel):
     tenant_id: int
     organization_id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     network_type: str
     cidr: str
-    gateway: Optional[str] = None
-    vlan_id: Optional[int] = None
-    mtu: Optional[int] = None
+    gateway: str | None = None
+    vlan_id: int | None = None
+    mtu: int | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    village_id: str | None = None
 
 
 class IPAMEntryDTO(ImmutableModel):
@@ -89,18 +88,18 @@ class IPAMEntryDTO(ImmutableModel):
     tenant_id: int
     network_id: int
     ip_address: str
-    mac_address: Optional[str] = None
-    hostname: Optional[str] = None
+    mac_address: str | None = None
+    hostname: str | None = None
     allocation_type: str
     status: str
-    assigned_to_id: Optional[int] = None
-    assigned_to_type: Optional[str] = None
-    description: Optional[str] = None
-    dns_reverse: Optional[str] = None
+    assigned_to_id: int | None = None
+    assigned_to_type: str | None = None
+    description: str | None = None
+    dns_reverse: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    village_id: str | None = None
 
 
 class CreateNetworkRequest(RequestModel):
@@ -139,27 +138,27 @@ class CreateNetworkRequest(RequestModel):
         ...,
         description="CIDR notation (e.g., 192.168.1.0/24)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    gateway: Optional[str] = Field(
+    gateway: str | None = Field(
         default=None,
         description="Optional gateway IP address",
     )
-    vlan_id: Optional[int] = Field(
+    vlan_id: int | None = Field(
         default=None,
         description="Optional VLAN ID",
     )
-    mtu: Optional[int] = Field(
+    mtu: int | None = Field(
         default=None,
         description="Optional maximum transmission unit size",
     )
-    region: Optional[str] = Field(
+    region: str | None = Field(
         default=None,
         description="Optional region (e.g., us-east-1, eu-west-1)",
     )
-    location: Optional[str] = Field(
+    location: str | None = Field(
         default=None,
         description="Optional physical location (e.g., AWS Virginia, Data Center 1)",
     )
@@ -185,27 +184,27 @@ class UpdateNetworkRequest(RequestModel):
         is_active: Optional active status update
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Network name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    gateway: Optional[str] = Field(
+    gateway: str | None = Field(
         default=None,
         description="Optional gateway IP address",
     )
-    vlan_id: Optional[int] = Field(
+    vlan_id: int | None = Field(
         default=None,
         description="Optional VLAN ID",
     )
-    mtu: Optional[int] = Field(
+    mtu: int | None = Field(
         default=None,
         description="Optional maximum transmission unit size",
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         default=None,
         description="Active status",
     )
@@ -249,27 +248,27 @@ class CreateIPAMEntryRequest(RequestModel):
         ...,
         description="Current status (available, assigned, reserved)",
     )
-    mac_address: Optional[str] = Field(
+    mac_address: str | None = Field(
         default=None,
         description="Optional MAC address",
     )
-    hostname: Optional[str] = Field(
+    hostname: str | None = Field(
         default=None,
         description="Optional hostname",
     )
-    assigned_to_id: Optional[int] = Field(
+    assigned_to_id: int | None = Field(
         default=None,
         description="Optional resource ID this IP is assigned to",
     )
-    assigned_to_type: Optional[str] = Field(
+    assigned_to_type: str | None = Field(
         default=None,
         description="Optional resource type classification",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    dns_reverse: Optional[str] = Field(
+    dns_reverse: str | None = Field(
         default=None,
         description="Optional reverse DNS record",
     )

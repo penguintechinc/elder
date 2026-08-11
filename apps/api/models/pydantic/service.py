@@ -9,7 +9,6 @@ Provides validated Pydantic 2 equivalents of Service dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -54,27 +53,27 @@ class ServiceDTO(ImmutableModel):
     id: int
     tenant_id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     organization_id: int
-    domains: Optional[list[str]] = None
-    paths: Optional[list[str]] = None
-    poc_identity_id: Optional[int] = None
-    language: Optional[str] = None
-    deployment_method: Optional[str] = None
-    deployment_type: Optional[str] = None
+    domains: list[str] | None = None
+    paths: list[str] | None = None
+    poc_identity_id: int | None = None
+    language: str | None = None
+    deployment_method: str | None = None
+    deployment_type: str | None = None
     is_public: bool
-    port: Optional[int] = None
-    health_endpoint: Optional[str] = None
-    repository_url: Optional[str] = None
-    documentation_url: Optional[str] = None
-    sla_uptime: Optional[float] = None
-    sla_response_time_ms: Optional[int] = None
-    notes: Optional[str] = None
-    tags: Optional[list[str]] = None
+    port: int | None = None
+    health_endpoint: str | None = None
+    repository_url: str | None = None
+    documentation_url: str | None = None
+    sla_uptime: float | None = None
+    sla_response_time_ms: int | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
     status: str
     created_at: datetime
-    updated_at: Optional[datetime] = None
-    village_id: Optional[str] = None
+    updated_at: datetime | None = None
+    village_id: str | None = None
 
 
 class CreateServiceRequest(RequestModel):
@@ -115,31 +114,31 @@ class CreateServiceRequest(RequestModel):
         ge=1,
         description="Associated organization ID (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    domains: Optional[list[str]] = Field(
+    domains: list[str] | None = Field(
         default=None,
         description="Optional list of service domains",
     )
-    paths: Optional[list[str]] = Field(
+    paths: list[str] | None = Field(
         default=None,
         description="Optional list of service paths",
     )
-    poc_identity_id: Optional[int] = Field(
+    poc_identity_id: int | None = Field(
         default=None,
         description="Optional point of contact identity ID",
     )
-    language: Optional[str] = Field(
+    language: str | None = Field(
         default=None,
         description="Optional programming language",
     )
-    deployment_method: Optional[str] = Field(
+    deployment_method: str | None = Field(
         default=None,
         description="Optional deployment method (e.g., 'docker', 'kubernetes')",
     )
-    deployment_type: Optional[str] = Field(
+    deployment_type: str | None = Field(
         default=None,
         description="Optional deployment type (e.g., 'containerized', 'vm')",
     )
@@ -147,40 +146,40 @@ class CreateServiceRequest(RequestModel):
         default=False,
         description="Public availability flag",
     )
-    port: Optional[int] = Field(
+    port: int | None = Field(
         default=None,
         ge=1,
         le=65535,
         description="Optional service port number (1-65535)",
     )
-    health_endpoint: Optional[str] = Field(
+    health_endpoint: str | None = Field(
         default=None,
         description="Optional health check endpoint",
     )
-    repository_url: Optional[str] = Field(
+    repository_url: str | None = Field(
         default=None,
         description="Optional repository URL",
     )
-    documentation_url: Optional[str] = Field(
+    documentation_url: str | None = Field(
         default=None,
         description="Optional documentation URL",
     )
-    sla_uptime: Optional[float] = Field(
+    sla_uptime: float | None = Field(
         default=None,
         ge=0.0,
         le=100.0,
         description="Optional SLA uptime percentage (0-100)",
     )
-    sla_response_time_ms: Optional[int] = Field(
+    sla_response_time_ms: int | None = Field(
         default=None,
         ge=0,
         description="Optional SLA response time in milliseconds (must be non-negative)",
     )
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         default=None,
         description="Optional additional notes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default_factory=list,
         description="Optional classification tags",
     )
@@ -218,80 +217,80 @@ class UpdateServiceRequest(RequestModel):
         status: Service status (optional)
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Service name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Detailed description",
     )
-    domains: Optional[list[str]] = Field(
+    domains: list[str] | None = Field(
         default=None,
         description="List of service domains",
     )
-    paths: Optional[list[str]] = Field(
+    paths: list[str] | None = Field(
         default=None,
         description="List of service paths",
     )
-    poc_identity_id: Optional[int] = Field(
+    poc_identity_id: int | None = Field(
         default=None,
         description="Point of contact identity ID",
     )
-    language: Optional[str] = Field(
+    language: str | None = Field(
         default=None,
         description="Programming language",
     )
-    deployment_method: Optional[str] = Field(
+    deployment_method: str | None = Field(
         default=None,
         description="Deployment method (e.g., 'docker', 'kubernetes')",
     )
-    deployment_type: Optional[str] = Field(
+    deployment_type: str | None = Field(
         default=None,
         description="Deployment type (e.g., 'containerized', 'vm')",
     )
-    is_public: Optional[bool] = Field(
+    is_public: bool | None = Field(
         default=None,
         description="Public availability flag",
     )
-    port: Optional[int] = Field(
+    port: int | None = Field(
         default=None,
         ge=1,
         le=65535,
         description="Service port number (1-65535)",
     )
-    health_endpoint: Optional[str] = Field(
+    health_endpoint: str | None = Field(
         default=None,
         description="Health check endpoint",
     )
-    repository_url: Optional[str] = Field(
+    repository_url: str | None = Field(
         default=None,
         description="Repository URL",
     )
-    documentation_url: Optional[str] = Field(
+    documentation_url: str | None = Field(
         default=None,
         description="Documentation URL",
     )
-    sla_uptime: Optional[float] = Field(
+    sla_uptime: float | None = Field(
         default=None,
         ge=0.0,
         le=100.0,
         description="SLA uptime percentage (0-100)",
     )
-    sla_response_time_ms: Optional[int] = Field(
+    sla_response_time_ms: int | None = Field(
         default=None,
         ge=0,
         description="SLA response time in milliseconds (must be non-negative)",
     )
-    notes: Optional[str] = Field(
+    notes: str | None = Field(
         default=None,
         description="Additional notes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default=None,
         description="Classification tags",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="Service status",
     )

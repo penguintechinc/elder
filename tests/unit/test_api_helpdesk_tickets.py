@@ -6,10 +6,11 @@ Module enablement via ELDER_MODULE_HELPDESK=true in conftest.
 """
 
 import json
-import pytest
-from datetime import datetime, timezone
-from unittest.mock import patch, MagicMock
+from datetime import UTC, datetime, timezone
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
+
+import pytest
 from quart import current_app
 
 
@@ -63,7 +64,7 @@ class TestHelpDeskTicketsAPI:
         async with app.app_context():
             # Create identity record for requester
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = db.identities.insert(
                 identity_type="human",
                 username=f"test_user_{uuid4().hex[:8]}",
@@ -151,7 +152,7 @@ class TestHelpDeskTicketsAPI:
             db.commit()
 
             # Create test ticket
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             ticket_id = db.hd_tickets.insert(
                 tenant_id=1,
                 village_id="test-v1",
@@ -210,7 +211,7 @@ class TestHelpDeskTicketsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             ticket_id = db.hd_tickets.insert(
                 tenant_id=1,
@@ -251,7 +252,7 @@ class TestHelpDeskTicketsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             ticket_id = db.hd_tickets.insert(
                 tenant_id=1,
@@ -288,7 +289,7 @@ class TestHelpDeskTicketsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create identity records
             identity1_id = db.identities.insert(
@@ -358,7 +359,7 @@ class TestHelpDeskTicketsAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             primary_id = db.hd_tickets.insert(
                 tenant_id=1,
@@ -419,7 +420,7 @@ class TestHelpDeskMessagesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             ticket_id = db.hd_tickets.insert(
                 tenant_id=1,
@@ -456,7 +457,7 @@ class TestHelpDeskMessagesAPI:
 
         async with app.app_context():
             db = current_app.db
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             ticket_id = db.hd_tickets.insert(
                 tenant_id=1,
@@ -538,7 +539,7 @@ class TestHelpDeskDashboardAPI:
             db(db.hd_tickets.tenant_id == 1).delete()
             db.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             db.hd_tickets.insert(
                 tenant_id=1,

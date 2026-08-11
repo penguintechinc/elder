@@ -2,10 +2,9 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -143,7 +142,7 @@ async def create_entity(body: CreateEntityRequest):
 
     # Create entity in database
     def create_in_db():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entity_id = db.entities.insert(
             name=body.name,
             type=body.entity_type,
@@ -249,7 +248,7 @@ async def update_entity(id: int, body: UpdateEntityRequest):
         if body.tags is not None:
             update_fields["tags"] = body.tags
 
-        update_fields["updated_at"] = datetime.now(timezone.utc)
+        update_fields["updated_at"] = datetime.now(UTC)
 
         db(db.entities.id == id).update(**update_fields)
         db.commit()

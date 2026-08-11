@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import ssl
 from typing import Dict, List, Optional
 
@@ -30,10 +29,10 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
     def __init__(self):
         """Initialize LDAP connector."""
         super().__init__("ldap")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.ldap_conn: Optional[Connection] = None
-        self.organization_cache: Dict[str, int] = {}
-        self.ou_cache: Dict[str, int] = {}  # Map DN to Elder org ID
+        self.elder_client: ElderAPIClient | None = None
+        self.ldap_conn: Connection | None = None
+        self.organization_cache: dict[str, int] = {}
+        self.ou_cache: dict[str, int] = {}  # Map DN to Elder org ID
 
     async def connect(self) -> None:
         """Establish connection to LDAP server and Elder API."""
@@ -105,8 +104,8 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
-        ldap_dn: Optional[str] = None,
+        parent_id: int | None = None,
+        ldap_dn: str | None = None,
     ) -> int:
         """
         Get or create an organization in Elder.
@@ -150,7 +149,7 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
                 f"Organization '{name}' not found and auto-creation disabled"
             )
 
-    def _parse_dn_components(self, dn: str) -> List[tuple]:
+    def _parse_dn_components(self, dn: str) -> list[tuple]:
         """
         Parse DN into components.
 
@@ -637,7 +636,7 @@ class LDAPConnector(BaseConnector, GroupOperationsMixin):
                 error=str(e),
             )
 
-    async def get_group_members(self, group_id: str) -> List[str]:
+    async def get_group_members(self, group_id: str) -> list[str]:
         """
         Get current members of an LDAP group.
 

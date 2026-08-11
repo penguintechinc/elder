@@ -21,9 +21,9 @@ from quart import current_app
 
 @dataclass
 class _FakeWebhook:
-    filter_issue_type: Optional[str] = None
-    filter_assignee_type: Optional[str] = None
-    filter_assignee_id: Optional[int] = None
+    filter_issue_type: str | None = None
+    filter_assignee_type: str | None = None
+    filter_assignee_id: int | None = None
 
 
 def _event(**overrides):

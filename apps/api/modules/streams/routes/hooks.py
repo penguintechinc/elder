@@ -8,7 +8,7 @@ import hashlib
 import hmac
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -107,10 +107,7 @@ async def trigger_webhook(token: str):
                 None,
                 None,
                 405,
-                (
-                    f"Method {method} not allowed. "
-                    f"Allowed: {', '.join(allowed_methods)}"
-                ),
+                (f"Method {method} not allowed. Allowed: {', '.join(allowed_methods)}"),
             )
 
         # Validate signature if required — FAIL CLOSED. If validation is enabled
@@ -126,12 +123,12 @@ async def trigger_webhook(token: str):
         input_data["__webhook__"] = {
             "method": method,
             "remote_addr": remote_addr,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }
 
         # Create execution record
         execution_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         db.stream_executions.insert(
             tenant_id=tenant_id,
@@ -199,7 +196,7 @@ async def trigger_webhook(token: str):
                 tenant_id = playbook_row.tenant_id if playbook_row else None
 
                 if tenant_id:
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
 
                     await jobbus.enqueue(
                         "streams",

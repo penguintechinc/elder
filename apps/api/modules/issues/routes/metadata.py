@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional, Union
 
 from penguin_libs.pydantic import RequestModel
@@ -31,14 +30,14 @@ class CreateMetadataRequest(RequestModel):
 
     key: str
     field_type: str
-    value: Union[str, int, float, bool, dict, list]
+    value: str | int | float | bool | dict | list
 
 
 class UpdateMetadataRequest(RequestModel):
     """Request model for updating metadata fields."""
 
-    value: Union[str, int, float, bool, dict, list]
-    field_type: Optional[str] = None
+    value: str | int | float | bool | dict | list
+    field_type: str | None = None
 
 
 # Helper functions for type conversion
@@ -230,7 +229,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
             field = db.metadata_fields[existing.id]
         else:
             # Create new
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             field_id = db.metadata_fields.insert(
                 field_key=body.key,
                 field_value=value_str,

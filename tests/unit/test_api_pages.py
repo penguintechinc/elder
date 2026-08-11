@@ -10,7 +10,7 @@ Uses real database (integration test), real tokens, no mocks.
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -30,15 +30,15 @@ class TestPagesAPI:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Create tenant 1
             tenant1_id = db.tenants.insert(
                 name="Test Tenant 1",
                 slug=f"test-tenant-1-{uuid.uuid4().hex[:8]}",
                 is_active=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
 
             # Create tenant 2 (for cross-tenant tests)
@@ -46,8 +46,8 @@ class TestPagesAPI:
                 name="Test Tenant 2",
                 slug=f"test-tenant-2-{uuid.uuid4().hex[:8]}",
                 is_active=True,
-                created_at=datetime.now(timezone.utc),
-                updated_at=datetime.now(timezone.utc),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
             )
 
             # Create identity for tenant 1 (author)
@@ -101,7 +101,7 @@ class TestPagesAPI:
         self, app, tenant_id: int, user_id: int, scopes=None, roles=None
     ):
         """Generate a test JWT token."""
-        from datetime import datetime, timedelta, timezone
+        from datetime import datetime, timedelta
 
         import jwt
 
@@ -110,8 +110,8 @@ class TestPagesAPI:
 
         payload = {
             "sub": str(user_id),
-            "iat": datetime.now(timezone.utc),
-            "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+            "iat": datetime.now(UTC),
+            "exp": datetime.now(UTC) + timedelta(hours=1),
             "scope": scopes,
             "tenant": str(tenant_id),
             "user_identity_id": user_id,

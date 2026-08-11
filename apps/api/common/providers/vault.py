@@ -8,7 +8,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def create_vault_session(config: Dict[str, Any]) -> requests.Session:
+def create_vault_session(config: dict[str, Any]) -> requests.Session:
     """
     Create and configure a Vault HTTP session.
 

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -10,7 +9,7 @@ from apps.api.grpc.generated import auth_pb2, common_pb2, entity_pb2, organizati
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 
 
-def datetime_to_timestamp(dt: Optional[Union[datetime, str]]) -> common_pb2.Timestamp:
+def datetime_to_timestamp(dt: datetime | str | None) -> common_pb2.Timestamp:
     """Convert datetime or ISO string to protobuf Timestamp.
 
     Args:
@@ -31,7 +30,7 @@ def datetime_to_timestamp(dt: Optional[Union[datetime, str]]) -> common_pb2.Time
     return common_pb2.Timestamp(seconds=timestamp, nanos=nanos)
 
 
-def dict_to_metadata_fields(data: dict) -> List[common_pb2.MetadataField]:
+def dict_to_metadata_fields(data: dict) -> list[common_pb2.MetadataField]:
     """Convert dict to list of MetadataField."""
     if not data:
         return []

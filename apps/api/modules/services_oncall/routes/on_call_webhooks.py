@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import datetime
 from datetime import timezone
 
@@ -17,7 +16,7 @@ bp = Blueprint("on_call_webhooks", __name__)
 
 def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     """Get the current on-call person for a rotation."""
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     shift = (
         db(
@@ -146,7 +145,7 @@ async def handle_alertmanager_webhook():
                 message = annotations.get("summary", "No summary")
 
                 def record_notification():
-                    now = datetime.datetime.now(timezone.utc)
+                    now = datetime.datetime.now(datetime.UTC)
                     notification_data = {
                         "rotation_id": rotation.id,
                         "identity_id": current["identity_id"],

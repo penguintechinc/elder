@@ -11,7 +11,8 @@ import logging
 import operator
 import re
 import time
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
@@ -19,7 +20,7 @@ from ..base import BaseNode
 logger = logging.getLogger(__name__)
 
 # Operator mapping for conditional evaluation
-OPERATORS: Dict[str, Callable] = {
+OPERATORS: dict[str, Callable] = {
     "eq": operator.eq,
     "ne": operator.ne,
     "gt": operator.gt,
@@ -48,7 +49,7 @@ class IfThenConditional(BaseNode):
     category = "conditionals"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the conditional node."""
         return [
             {
@@ -60,7 +61,7 @@ class IfThenConditional(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the conditional node."""
         return [
             {
@@ -92,7 +93,7 @@ class IfThenConditional(BaseNode):
                 return None
         return value
 
-    def _evaluate_condition(self, data: Any, condition: Dict) -> bool:
+    def _evaluate_condition(self, data: Any, condition: dict) -> bool:
         """Evaluate a single condition against data."""
         field = condition.get("field", "")
         op_name = condition.get("operator", "eq")
@@ -106,7 +107,7 @@ class IfThenConditional(BaseNode):
         except Exception:
             return False
 
-    def _matches(self, data: Any, conditions: List[Dict], logic: str) -> bool:
+    def _matches(self, data: Any, conditions: list[dict], logic: str) -> bool:
         """Check if data matches all or any conditions based on logic."""
         if not conditions:
             return True
@@ -118,7 +119,7 @@ class IfThenConditional(BaseNode):
         else:  # or
             return any(results)
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the if-then conditional."""
         start_time = time.perf_counter()
 

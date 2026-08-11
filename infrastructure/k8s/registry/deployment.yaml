@@ -15,9 +15,23 @@ spec:
       labels:
         app: registry
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
       containers:
       - name: registry
         image: registry:2.8.3
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - ALL
+          seccompProfile:
+            type: RuntimeDefault
         ports:
         - containerPort: 5000
           name: http
@@ -32,6 +46,8 @@ spec:
         volumeMounts:
         - name: registry-data
           mountPath: /var/lib/registry
+        - name: tmp
+          mountPath: /tmp
         livenessProbe:
           httpGet:
             path: /
@@ -56,3 +72,5 @@ spec:
         hostPath:
           path: /var/lib/registry
           type: DirectoryOrCreate
+      - name: tmp
+        emptyDir: {}

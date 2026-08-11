@@ -9,7 +9,7 @@ policy-field gate in stages.py).
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -224,7 +224,7 @@ async def add_approver(flow_id: str, stage_id: str):
             if dup:
                 return None, 409
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db_id = db.iceflows_stage_approvers.insert(
             tenant_id=tenant_id,
             approver_id=str(uuid.uuid4()),
@@ -351,7 +351,7 @@ async def add_test(flow_id: str, stage_id: str):
         stage = _load_stage(db, flow_id, stage_id, tenant_id)
         if not stage:
             return None, 404
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db_id = db.iceflows_stage_tests.insert(
             tenant_id=tenant_id,
             test_id=str(uuid.uuid4()),
@@ -441,7 +441,7 @@ async def update_test(flow_id: str, stage_id: str, test_id: str):
         )
         if not row:
             return None, 404
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
         for key in _TEST_FIELDS:
             if key in data:
                 update_data[key] = data[key]
@@ -556,7 +556,7 @@ async def add_call(flow_id: str, stage_id: str):
         stage = _load_stage(db, flow_id, stage_id, tenant_id)
         if not stage:
             return None, 404
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db_id = db.iceflows_stage_calls.insert(
             tenant_id=tenant_id,
             call_id=str(uuid.uuid4()),
@@ -644,7 +644,7 @@ async def update_call(flow_id: str, stage_id: str, call_id: str):
         )
         if not row:
             return None, 404
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
         for key in _CALL_FIELDS:
             if key in data:
                 update_data[key] = str(data[key]) if key == "target_id" else data[key]
@@ -758,7 +758,7 @@ async def update_review(flow_id: str, stage_id: str):
         stage = _load_stage(db, flow_id, stage_id, tenant_id)
         if not stage:
             return None, 404
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         row = (
             db(
                 (db.iceflows_stage_reviews.stage_id == stage.id)

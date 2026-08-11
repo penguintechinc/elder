@@ -10,7 +10,7 @@ Hybrid Approach:
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from penguin_dal import DAL
 
@@ -229,7 +229,7 @@ def _create_default_admin(app, db):
 
         if not default_tenant:
             logger.warning("No system tenant found, creating one with slug 'default'")
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             default_tenant_id = db.tenants.insert(
                 name="Default",
                 slug="default",
@@ -246,7 +246,7 @@ def _create_default_admin(app, db):
 
     from werkzeug.security import generate_password_hash
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     pwd_hash = generate_password_hash(admin_password)
 
     # Check if admin user exists in portal_users

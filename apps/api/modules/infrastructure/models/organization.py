@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import List, Optional
 
 from sqlalchemy import JSON, Boolean, Column, ForeignKey, Integer, String, Text, text
@@ -70,7 +69,7 @@ class Organization(Base, IDMixin, VillageIDMixin, TimestampMixin):
         backref="owned_organizations",
     )
 
-    entities: Mapped[List["Entity"]] = relationship(
+    entities: Mapped[list["Entity"]] = relationship(
         "Entity",
         back_populates="organization",
         cascade="all, delete-orphan",
@@ -78,7 +77,7 @@ class Organization(Base, IDMixin, VillageIDMixin, TimestampMixin):
 
     # Reverse of AlertConfiguration.organization (back_populates).
     # No cascade: alert configs are not owned-lifecycle children of an org.
-    alert_configurations: Mapped[List["AlertConfiguration"]] = relationship(
+    alert_configurations: Mapped[list["AlertConfiguration"]] = relationship(
         "AlertConfiguration",
         back_populates="organization",
     )

@@ -158,9 +158,15 @@ spec:
         {{- if eq $component "postgres" }}
         - name: data
           mountPath: /var/lib/postgresql/data
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "redis" }}
         - name: data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "scanner" }}
         - name: screenshots
           mountPath: /app/screenshots
@@ -215,6 +221,20 @@ spec:
       {{- else if eq $component "flows-invoker" }}
       - name: workspace
         emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "postgres" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
+      - name: run
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "redis" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
       - name: tmp
         emptyDir: {}
       {{- else }}

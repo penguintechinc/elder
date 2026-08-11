@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import hashlib
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 from .base import BaseScanner
@@ -21,7 +20,7 @@ class HTTPScreenshotScanner(BaseScanner):
         self.screenshot_dir = screenshot_dir
         os.makedirs(screenshot_dir, exist_ok=True)
 
-    async def scan(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def scan(self, config: dict[str, Any]) -> dict[str, Any]:
         """Capture screenshots of web services.
 
         Config schema:
@@ -71,7 +70,7 @@ class HTTPScreenshotScanner(BaseScanner):
                 "Playwright not installed. Run: pip install playwright && playwright install chromium"
             )
 
-        screenshots: List[Dict[str, Any]] = []
+        screenshots: list[dict[str, Any]] = []
         successful = 0
         failed = 0
 
@@ -124,11 +123,11 @@ class HTTPScreenshotScanner(BaseScanner):
         timeout: int,
         full_page: bool,
         wait_for: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Capture a screenshot of a single URL."""
         # Generate filename from URL hash
         url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()[:12]
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"{url_hash}_{timestamp}.png"
         filepath = os.path.join(self.screenshot_dir, filename)
 

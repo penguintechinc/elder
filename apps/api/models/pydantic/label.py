@@ -9,7 +9,6 @@ Provides validated Pydantic 2 equivalents of Label dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -35,7 +34,7 @@ class LabelDTO(ImmutableModel):
     id: int
     name: str
     color: str
-    description: Optional[str] = None
+    description: str | None = None
     created_at: datetime
 
 
@@ -56,11 +55,11 @@ class CreateLabelRequest(RequestModel):
         ...,
         description="Label name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    color: Optional[str] = Field(
+    color: str | None = Field(
         default="#cccccc",
         description="Hex color code (default: #cccccc)",
     )
@@ -79,15 +78,15 @@ class UpdateLabelRequest(RequestModel):
         color: Hex color code (optional)
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Label name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Detailed description",
     )
-    color: Optional[str] = Field(
+    color: str | None = Field(
         default=None,
         description="Hex color code",
     )

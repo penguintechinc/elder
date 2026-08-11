@@ -7,7 +7,7 @@ regression: streams-phase4b-executor
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 import pytest
 import pytest_asyncio
@@ -413,7 +413,7 @@ class TestHandleStreamsIntegration:
         db = app.db
 
         def _setup():
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             tenant_id = db.tenants.insert(
                 name=f"Streams Test Tenant {uuid.uuid4().hex[:8]}",
                 slug=f"str-test-{uuid.uuid4().hex[:8]}",
@@ -554,7 +554,7 @@ class TestHandleStreamsIntegration:
                 "playbook_id": playbook_id,
                 "tenant_id": tenant_id,
             },
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
             tenant_id=tenant_id,
         )
 
@@ -605,7 +605,7 @@ class TestHandleStreamsIntegration:
                 "playbook_id": playbook_id,
                 "tenant_id": tenant_id,
             },
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
             tenant_id=tenant_id,
         )
 
@@ -639,7 +639,7 @@ class TestHandleStreamsIntegration:
                 "playbook_id": "nonexistent",
                 "tenant_id": 999999,
             },
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
             tenant_id=999999,
         )
 
@@ -665,7 +665,7 @@ class TestHandleStreamsIntegration:
                 "playbook_id": playbook_id,
                 "tenant_id": tenant_id,
             },
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
             tenant_id=tenant_id,
         )
 
@@ -681,7 +681,7 @@ class TestHandleStreamsIntegration:
                 "playbook_id": playbook_id,
                 "tenant_id": tenant_id,
             },
-            enqueued_at=datetime.now(timezone.utc).isoformat(),
+            enqueued_at=datetime.now(UTC).isoformat(),
             tenant_id=tenant_id,
         )
         result2 = await handle_streams(envelope2)

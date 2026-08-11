@@ -7,7 +7,6 @@ penguin-dal handles runtime queries via reflection.
 
 # flake8: noqa: E501
 
-
 from sqlalchemy import JSON, Boolean, Column, Integer, String, UniqueConstraint
 
 from apps.api.models.base import Base, IDMixin, TenantScopedMixin, TimestampMixin

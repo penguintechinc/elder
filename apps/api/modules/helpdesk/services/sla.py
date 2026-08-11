@@ -6,7 +6,7 @@ Handles:
 - Finding tickets with breached or approaching SLA deadlines
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import structlog
@@ -77,7 +77,7 @@ def calculate_breach_time(
     return breach_time
 
 
-async def apply_sla_policy(db: Any, tenant_id: int, ticket_id: int) -> Optional[dict]:
+async def apply_sla_policy(db: Any, tenant_id: int, ticket_id: int) -> dict | None:
     """Apply SLA policy to a ticket based on priority matching.
 
     Queries the ticket, finds matching active SLA policy by priority and tenant,
@@ -168,7 +168,7 @@ async def check_sla_breaches(db: Any, tenant_id: int) -> list:
     """
 
     def do_check():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         # Query tickets where sla_breach_at < now and status not resolved/closed
         breached = db(

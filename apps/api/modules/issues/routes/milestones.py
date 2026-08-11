@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -170,7 +169,7 @@ async def create_milestone():
 
     def create():
         # Create milestone
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         milestone_id = db.milestones.insert(
             title=data["title"],
             description=data.get("description"),
@@ -217,9 +216,11 @@ async def get_milestone(id: int):
         return jsonify({"error": "Tenant not found"}), 403
 
     milestone = await run_in_threadpool(
-        lambda: db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
-        .select()
-        .first()
+        lambda: (
+            db((db.milestones.id == id) & (db.milestones.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
     )
 
     if not milestone:
@@ -302,7 +303,7 @@ async def update_milestone(id: int):
             update_dict["status"] = data["status"]
             # Set closed_at when closing
             if data["status"] == "closed":
-                update_dict["closed_at"] = datetime.now(timezone.utc)
+                update_dict["closed_at"] = datetime.now(UTC)
         if "project_id" in data:
             update_dict["project_id"] = data["project_id"]
         if "due_date" in data:

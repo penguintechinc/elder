@@ -9,7 +9,7 @@ from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
 
-def redact_url(url: Optional[str]) -> str:
+def redact_url(url: str | None) -> str:
     """Return a connection URL with any embedded password replaced by ``***``.
 
     Falls back to a bare placeholder if the URL cannot be parsed, so a

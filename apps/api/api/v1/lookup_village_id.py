@@ -6,7 +6,6 @@ Maintains backward compatibility with existing clients.
 
 # flake8: noqa: E501
 
-
 from quart import Blueprint, current_app, jsonify
 
 from apps.api.common.refs.registry import get_type, resolve_by_village_id

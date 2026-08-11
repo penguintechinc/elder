@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 import os
 
@@ -584,6 +583,6 @@ if __name__ == "__main__":
 
     uvicorn.run(
         create_asgi_app(),
-        host=os.getenv("HOST", "0.0.0.0"),
+        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104
         port=int(os.getenv("PORT", 5000)),
     )

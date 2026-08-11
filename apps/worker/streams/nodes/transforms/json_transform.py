@@ -27,7 +27,7 @@ class JsonTransform(BaseNode):
     category = "transforms"
 
     @classmethod
-    def inputs(cls) -> List[Dict[str, Any]]:
+    def inputs(cls) -> list[dict[str, Any]]:
         """Define input ports for the JSON transform node."""
         return [
             {
@@ -39,7 +39,7 @@ class JsonTransform(BaseNode):
         ]
 
     @classmethod
-    def outputs(cls) -> List[Dict[str, Any]]:
+    def outputs(cls) -> list[dict[str, Any]]:
         """Define output ports for the JSON transform node."""
         return [
             {
@@ -49,7 +49,7 @@ class JsonTransform(BaseNode):
             },
         ]
 
-    def validate_config(self, config: Dict[str, Any]) -> List[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         """Validate JSON transform configuration."""
         errors = []
 
@@ -134,7 +134,7 @@ class JsonTransform(BaseNode):
         current[parts[-1]] = value
         return data
 
-    def _delete_path(self, data: Dict, path: str) -> Dict:
+    def _delete_path(self, data: dict, path: str) -> dict:
         """Delete value at specified path."""
         parts = path.split(".")
         current = data
@@ -153,14 +153,14 @@ class JsonTransform(BaseNode):
 
         return data
 
-    def _rename_path(self, data: Dict, from_path: str, to_path: str) -> Dict:
+    def _rename_path(self, data: dict, from_path: str, to_path: str) -> dict:
         """Rename a field by extracting from one path and setting at another."""
         value = self._extract_dot_path(data, from_path)
         data = self._delete_path(data, from_path)
         data = self._set_path(data, to_path, value)
         return data
 
-    def _flatten(self, data: Dict, prefix: str = "", sep: str = ".") -> Dict:
+    def _flatten(self, data: dict, prefix: str = "", sep: str = ".") -> dict:
         """Flatten nested dictionary to single level with concatenated keys."""
         result = {}
         for key, value in data.items():
@@ -182,7 +182,7 @@ class JsonTransform(BaseNode):
 
         return result
 
-    def _unflatten(self, data: Dict, sep: str = ".") -> Dict:
+    def _unflatten(self, data: dict, sep: str = ".") -> dict:
         """Unflatten single-level dictionary back to nested structure."""
         result = {}
 
@@ -201,7 +201,7 @@ class JsonTransform(BaseNode):
         return result
 
     def _perform_operation(
-        self, operation: str, input_data: Any, config: Dict[str, Any]
+        self, operation: str, input_data: Any, config: dict[str, Any]
     ) -> Any:
         """Perform the specified JSON transformation operation."""
         if operation == "extract":
@@ -266,7 +266,7 @@ class JsonTransform(BaseNode):
         else:
             raise ValueError(f"Unknown operation: {operation}")
 
-    async def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute the JSON transform operation."""
         if "in" not in inputs:
             raise ValueError("Required input 'in' is missing")

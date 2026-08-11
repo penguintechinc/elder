@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -92,10 +92,10 @@ class DiscoveryService:
 
     def list_jobs(
         self,
-        provider: Optional[str] = None,
-        enabled: Optional[bool] = None,
-        organization_id: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        provider: str | None = None,
+        enabled: bool | None = None,
+        organization_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         """List all discovery jobs with optional filters."""
         query = self.db.discovery_jobs.id > 0
 
@@ -112,7 +112,7 @@ class DiscoveryService:
 
         return [self._sanitize_job(j.as_dict()) for j in jobs]
 
-    def get_job(self, job_id: int) -> Dict[str, Any]:
+    def get_job(self, job_id: int) -> dict[str, Any]:
         """Get discovery job details."""
         job = self.db.discovery_jobs[job_id]
 
@@ -125,11 +125,11 @@ class DiscoveryService:
         self,
         name: str,
         provider: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         organization_id: int = None,  # Optional - stored in config for now
-        schedule_interval: Optional[int] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        schedule_interval: int | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """Create a new discovery job."""
         # Validate provider type
         valid_providers = [
@@ -155,7 +155,7 @@ class DiscoveryService:
             job_config["_description"] = description
 
         # Create job
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         job_id = self.db.discovery_jobs.insert(
             name=name,
             provider=provider.lower(),
@@ -173,12 +173,12 @@ class DiscoveryService:
     def update_job(
         self,
         job_id: int,
-        name: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        schedule_interval: Optional[int] = None,
-        description: Optional[str] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        config: dict[str, Any] | None = None,
+        schedule_interval: int | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """Update discovery job configuration."""
         job = self.db.discovery_jobs[job_id]
 
@@ -203,7 +203,7 @@ class DiscoveryService:
 
         return self.get_job(job_id)
 
-    def delete_job(self, job_id: int) -> Dict[str, Any]:
+    def delete_job(self, job_id: int) -> dict[str, Any]:
         """Delete a discovery job."""
         job = self.db.discovery_jobs[job_id]
 
@@ -219,7 +219,7 @@ class DiscoveryService:
 
         return {"message": "Discovery job deleted successfully"}
 
-    def test_job(self, job_id: int) -> Dict[str, Any]:
+    def test_job(self, job_id: int) -> dict[str, Any]:
         """Test discovery job connectivity."""
         try:
             client = self._get_discovery_client(job_id)
@@ -228,7 +228,7 @@ class DiscoveryService:
             result = {
                 "job_id": job_id,
                 "success": success,
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
             # Add auth method if available (AWS client)
@@ -248,12 +248,12 @@ class DiscoveryService:
                 "job_id": job_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     # Discovery Execution
 
-    def run_discovery(self, job_id: int) -> Dict[str, Any]:
+    def run_discovery(self, job_id: int) -> dict[str, Any]:
         """Execute discovery for a job."""
         job = self.db.discovery_jobs[job_id]
 
@@ -285,7 +285,7 @@ class DiscoveryService:
             results_for_storage.update(edge_counts)
 
             # Record discovery history
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             history_id = self.db.discovery_history.insert(
                 job_id=job_id,
                 started_at=now,
@@ -299,7 +299,7 @@ class DiscoveryService:
 
             # Update job's last_run timestamp
             self.db(self.db.discovery_jobs.id == job_id).update(
-                last_run_at=datetime.now(timezone.utc)
+                last_run_at=datetime.now(UTC)
             )
 
             self.db.commit()
@@ -315,7 +315,7 @@ class DiscoveryService:
 
         except Exception as e:
             # Record failed discovery
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self.db.discovery_history.insert(
                 job_id=job_id,
                 started_at=now,
@@ -335,7 +335,7 @@ class DiscoveryService:
                 "error": str(e),
             }
 
-    def queue_job_for_worker(self, job_id: int) -> Dict[str, Any]:
+    def queue_job_for_worker(self, job_id: int) -> dict[str, Any]:
         """Queue a discovery job for the worker service by setting next_run_at = now.
 
         The worker polls discovery_jobs and will pick this up on its next cycle.
@@ -351,7 +351,7 @@ class DiscoveryService:
             raise Exception(f"Discovery job not found: {job_id}")
 
         self.db(self.db.discovery_jobs.id == job_id).update(
-            next_run_at=datetime.now(timezone.utc),
+            next_run_at=datetime.now(UTC),
         )
         self.db.commit()
 
@@ -360,12 +360,12 @@ class DiscoveryService:
             "job_id": job_id,
             "success": True,
             "message": "Job queued for worker execution",
-            "queued_at": datetime.now(timezone.utc).isoformat(),
+            "queued_at": datetime.now(UTC).isoformat(),
         }
 
     def get_discovery_history(
-        self, job_id: Optional[int] = None, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+        self, job_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """Get discovery execution history."""
         query = self.db.discovery_history.id > 0
 
@@ -382,7 +382,7 @@ class DiscoveryService:
 
     # Provider detection
 
-    def _detect_provider_type(self, discovery_results: Dict[str, Any]) -> str:
+    def _detect_provider_type(self, discovery_results: dict[str, Any]) -> str:
         """Detect cloud provider from discovery results."""
         for category in ["compute", "storage", "network", "iam"]:
             resources = discovery_results.get(category, [])
@@ -403,8 +403,8 @@ class DiscoveryService:
     # Provider root entity
 
     def _ensure_provider_root_entity(
-        self, organization_id: int, provider: str, config: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, provider: str, config: dict[str, Any]
+    ) -> int | None:
         """Create or update a provider root entity (cluster/account/project)."""
         sub_type_map = {
             "kubernetes": "kubernetes_cluster",
@@ -435,11 +435,11 @@ class DiscoveryService:
 
         if existing:
             self.db(self.db.entities.id == existing.id).update(
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
             return existing.id
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entity_id = self.db.entities.insert(
             name=name,
             type="compute",
@@ -460,9 +460,9 @@ class DiscoveryService:
         self,
         organization_id: int,
         provider: str,
-        root_entity_id: Optional[int],
-        discovery_results: Dict[str, Any],
-    ) -> Dict[str, int]:
+        root_entity_id: int | None,
+        discovery_results: dict[str, Any],
+    ) -> dict[str, int]:
         """Create intermediate networking resources (VPCs, Namespaces) and return lookup maps."""
         networking_lookup = {}
 
@@ -573,12 +573,12 @@ class DiscoveryService:
         organization_id: int,
         name: str,
         network_type: str,
-        region: Optional[str] = None,
-        parent_id: Optional[int] = None,
-        attributes: Optional[Dict] = None,
-        tags: Optional[List[str]] = None,
-        external_id: Optional[str] = None,
-    ) -> Optional[int]:
+        region: str | None = None,
+        parent_id: int | None = None,
+        attributes: dict | None = None,
+        tags: list[str] | None = None,
+        external_id: str | None = None,
+    ) -> int | None:
         """Create or update a networking_resources record."""
         try:
             existing = (
@@ -594,7 +594,7 @@ class DiscoveryService:
             if existing:
                 update_dict = {
                     "attributes": attributes or {},
-                    "updated_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(UTC),
                 }
                 if external_id is not None:
                     update_dict["external_id"] = external_id
@@ -603,7 +603,7 @@ class DiscoveryService:
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             net_id = self.db.networking_resources.insert(
                 name=name,
                 network_type=network_type,
@@ -635,7 +635,7 @@ class DiscoveryService:
                 .first()
             )
             if not existing:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 self.db.network_entity_mappings.insert(
                     network_id=network_id,
                     entity_id=entity_id,
@@ -649,8 +649,8 @@ class DiscoveryService:
     # Domain table helpers
 
     def _store_as_service(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any], provider: str
+    ) -> int | None:
         """Store a K8s Service, Lambda function, or messaging service in the services table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -704,11 +704,11 @@ class DiscoveryService:
             if existing:
                 self.db(self.db.services.id == existing.id).update(
                     external_id=native_id,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             svc_id = self.db.services.insert(
                 name=name,
                 tenant_id=self._tenant_for_org(organization_id),
@@ -729,8 +729,8 @@ class DiscoveryService:
             return None
 
     def _store_as_data_store(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any], provider: str
+    ) -> int | None:
         """Store S3/EBS/GCS/RDS/DynamoDB/ECR/Logs/EFS/ElastiCache/PV in the data_stores table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -771,11 +771,11 @@ class DiscoveryService:
             if existing:
                 self.db(self.db.data_stores.id == existing.id).update(
                     external_id=native_id,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             ds_id = self.db.data_stores.insert(
                 name=name,
                 tenant_id=self._tenant_for_org(organization_id),
@@ -796,9 +796,9 @@ class DiscoveryService:
     def _store_as_networking_resource(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
-    ) -> Optional[int]:
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
+    ) -> int | None:
         """Store load balancers in the networking_resources table."""
         resource_type = resource.get("resource_type", "")
         if resource_type != "load_balancer":
@@ -825,8 +825,8 @@ class DiscoveryService:
         )
 
     def _store_k8s_service_account_as_identity(
-        self, organization_id: int, resource: Dict[str, Any], cluster_name: str
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any], cluster_name: str
+    ) -> int | None:
         """Store a K8s ServiceAccount in the identities table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -846,11 +846,11 @@ class DiscoveryService:
 
             if existing:
                 self.db(self.db.identities.id == existing.id).update(
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = self.db.identities.insert(
                 tenant_id=self._tenant_for_org(organization_id),
                 identity_type="serviceAccount",
@@ -873,7 +873,7 @@ class DiscoveryService:
 
     def _store_container_image_as_software(
         self, organization_id: int, image: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """Store a container image in the software table."""
         # Parse image:tag
         if ":" in image and not image.startswith("sha256:"):
@@ -901,7 +901,7 @@ class DiscoveryService:
             if existing:
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             sw_id = self.db.software.insert(
                 name=image_name,
                 version=version,
@@ -928,7 +928,7 @@ class DiscoveryService:
         target_id: int,
         tenant_id: int,
         dep_type: str = "discovered_from",
-        meta: Optional[Dict] = None,
+        meta: dict | None = None,
     ) -> bool:
         """Create a dependencies record linking domain table entries.
 
@@ -972,7 +972,7 @@ class DiscoveryService:
                 .first()
             )
             if not existing:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 self.db.dependencies.insert(
                     source_type=source_type,
                     source_id=source_id,
@@ -1001,12 +1001,12 @@ class DiscoveryService:
 
     def _resolve_target(
         self,
-        scan_index: Dict[Any, Any],
+        scan_index: dict[Any, Any],
         provider: str,
-        target_external_id: Optional[str],
-        target_kind: Optional[str],
+        target_external_id: str | None,
+        target_kind: str | None,
         organization_id: int,
-    ) -> Optional[Tuple[str, int]]:
+    ) -> tuple[str, int] | None:
         """Resolve a native cloud id to (type_string, row_id).
 
         Scan-local index first (same job), then a DB lookup on external_id so
@@ -1021,10 +1021,10 @@ class DiscoveryService:
 
     def _resolve_target_in_db(
         self,
-        external_id: Optional[str],
-        target_kind: Optional[str],
+        external_id: str | None,
+        target_kind: str | None,
         organization_id: int,
-    ) -> Optional[Tuple[str, int]]:
+    ) -> tuple[str, int] | None:
         """Look up a persisted row by external_id, hinted table first."""
         order = []
         if target_kind in self._RESOLVE_TABLES:
@@ -1046,9 +1046,9 @@ class DiscoveryService:
 
     def _link_resources(
         self,
-        source: Tuple[str, int],
-        target: Tuple[str, int],
-        edge_type: Optional[str],
+        source: tuple[str, int],
+        target: tuple[str, int],
+        edge_type: str | None,
         tenant_id: int,
     ) -> bool:
         """Write a dependencies edge; dual-write network membership.
@@ -1085,11 +1085,11 @@ class DiscoveryService:
 
     def _register(
         self,
-        scan_index: Dict[Any, Any],
+        scan_index: dict[Any, Any],
         provider: str,
-        resource: Dict[str, Any],
+        resource: dict[str, Any],
         type_string: str,
-        row_id: Optional[int],
+        row_id: int | None,
     ) -> None:
         """Index a just-persisted resource by its native id for edge resolution."""
         if not row_id:
@@ -1101,10 +1101,10 @@ class DiscoveryService:
     def _store_k8s_ingress(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
         tenant_id: int,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Store a K8s Ingress in the networking_resources table.
 
         Args:
@@ -1164,7 +1164,7 @@ class DiscoveryService:
                                     existing_paths.append(endpoint)
                                     self.db(self.db.services.id == svc.id).update(
                                         paths=existing_paths,
-                                        updated_at=datetime.now(timezone.utc),
+                                        updated_at=datetime.now(UTC),
                                     )
                 except Exception as e:
                     logger.warning(
@@ -1176,10 +1176,10 @@ class DiscoveryService:
     def _store_k8s_pvc_as_data_store(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
+        resource: dict[str, Any],
         provider: str,
         tenant_id: int,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Store a K8s PVC in data_stores and link to PV via dependencies.
 
         Args:
@@ -1222,8 +1222,8 @@ class DiscoveryService:
         return pvc_id
 
     def _store_k8s_secret(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """Store a K8s Secret in builtin_secrets (metadata only, NEVER values)."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -1250,11 +1250,11 @@ class DiscoveryService:
                         "cluster": "kubernetes",
                         "annotations": metadata.get("annotations", {}),
                     },
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             secret_id = self.db.builtin_secrets.insert(
                 name=full_name,
                 organization_id=organization_id,
@@ -1278,8 +1278,8 @@ class DiscoveryService:
             return None
 
     def _store_cert_manager_certificate(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """Store a cert-manager Certificate in the certificates table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -1301,7 +1301,7 @@ class DiscoveryService:
         # issue_date is NOT NULL. Prefer the certificate's own notBefore; fall
         # back to the discovery date, which is the earliest point we can attest
         # the certificate existed.
-        issue_date = datetime.now(timezone.utc).date()
+        issue_date = datetime.now(UTC).date()
         if not_before:
             try:
                 issue_date = datetime.fromisoformat(
@@ -1326,11 +1326,11 @@ class DiscoveryService:
                     common_name=common_name,
                     subject_alternative_names=dns_names,
                     expiration_date=expiration,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             cert_id = self.db.certificates.insert(
                 tenant_id=self._tenant_for_org(organization_id),
                 name=name,
@@ -1361,9 +1361,9 @@ class DiscoveryService:
     def _store_cni_as_networking(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
-    ) -> Optional[int]:
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
+    ) -> int | None:
         """Store CNI plugin info in networking_resources."""
         metadata = resource.get("metadata", {})
 
@@ -1440,8 +1440,8 @@ class DiscoveryService:
         return org.tenant_id
 
     def _store_discovered_resources(
-        self, organization_id: int, discovery_results: Dict[str, Any]
-    ) -> Dict[str, int]:
+        self, organization_id: int, discovery_results: dict[str, Any]
+    ) -> dict[str, int]:
         """
         Store discovered resources with hierarchy and domain table mapping.
 
@@ -1473,7 +1473,7 @@ class DiscoveryService:
         # (provider, external_id) -> (type_string, row_id); seeded from the
         # networking resources so pass 2 can resolve edges into VPCs/subnets/
         # namespaces without a DB round-trip.
-        scan_index: Dict[Any, Any] = {}
+        scan_index: dict[Any, Any] = {}
         for key, net_id in networking_lookup.items():
             _, _, ext = key.partition(":")
             if ext and net_id:
@@ -1760,8 +1760,8 @@ class DiscoveryService:
         return {"edges_created": edges_created, "unresolved_edges": unresolved_edges}
 
     def _store_iam_as_identity(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """
         Store IAM user or role as an Identity resource.
 
@@ -1826,12 +1826,12 @@ class DiscoveryService:
                 external_id=arn,
                 organization_id=organization_id,
                 tenant_id=self._tenant_for_org(organization_id),
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
             return existing.id
         else:
             # Create new identity
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = self.db.identities.insert(
                 tenant_id=self._tenant_for_org(organization_id),
                 identity_type=identity_type,
@@ -1854,11 +1854,11 @@ class DiscoveryService:
     def _store_as_entity(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
+        resource: dict[str, Any],
         entity_type: str,
-        parent_id: Optional[int] = None,
-        networking_lookup: Optional[Dict[str, int]] = None,
-    ) -> Optional[int]:
+        parent_id: int | None = None,
+        networking_lookup: dict[str, int] | None = None,
+    ) -> int | None:
         """
         Store a discovered resource in the generic entities table.
 
@@ -1903,7 +1903,7 @@ class DiscoveryService:
         resource_metadata["resource_id"] = resource.get("resource_id")
         resource_metadata["resource_type"] = resource_type
         resource_metadata["region"] = resource.get("region")
-        resource_metadata["discovered_at"] = datetime.now(timezone.utc).isoformat()
+        resource_metadata["discovered_at"] = datetime.now(UTC).isoformat()
 
         # K8s labels / cloud provider tags -- dedicated column, never merged
         # into metadata
@@ -1920,7 +1920,7 @@ class DiscoveryService:
                 "metadata": merged_metadata,
                 "tags": resource_tags,
                 "external_id": native_id,
-                "updated_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(UTC),
             }
             if parent_id is not None:
                 update_data["parent_id"] = parent_id
@@ -1928,7 +1928,7 @@ class DiscoveryService:
             return existing.id
         else:
             # Create new entity
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             insert_data = {
                 "name": name,
                 "type": entity_type,
@@ -1944,7 +1944,7 @@ class DiscoveryService:
                 insert_data["parent_id"] = parent_id
             return self.db.entities.insert(**insert_data)
 
-    def _sanitize_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Remove sensitive fields from job data."""
         sanitized = dict(job)
 
@@ -1971,7 +1971,7 @@ class DiscoveryService:
 
     # Scanner service methods
 
-    def get_pending_jobs(self) -> List[Dict[str, Any]]:
+    def get_pending_jobs(self) -> list[dict[str, Any]]:
         """
         Get jobs that are ready to be picked up by the scanner.
 
@@ -1995,7 +1995,7 @@ class DiscoveryService:
         ).select()
 
         # Also get scheduled jobs that are due
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         scheduled_jobs = self.db(
             (self.db.discovery_jobs.enabled == True)  # noqa: E712
             & (self.db.discovery_jobs.provider.belongs(local_providers))
@@ -2010,7 +2010,7 @@ class DiscoveryService:
 
         return [self._sanitize_job(job.as_dict()) for job in all_jobs]
 
-    def mark_job_running(self, job_id: int) -> Dict[str, Any]:
+    def mark_job_running(self, job_id: int) -> dict[str, Any]:
         """
         Mark a job as currently running.
 
@@ -2029,11 +2029,11 @@ class DiscoveryService:
 
         # Update job status
         self.db(self.db.discovery_jobs.id == job_id).update(
-            last_run_at=datetime.now(timezone.utc),
+            last_run_at=datetime.now(UTC),
         )
 
         # Create history entry
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.db.discovery_history.insert(
             job_id=job_id,
             started_at=now,
@@ -2051,9 +2051,9 @@ class DiscoveryService:
         self,
         job_id: int,
         success: bool,
-        results: Dict[str, Any],
-        error_message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        results: dict[str, Any],
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
         """
         Complete a job and record results.
 
@@ -2087,7 +2087,7 @@ class DiscoveryService:
             # Update history entry
             status = "completed" if success else "failed"
             self.db(self.db.discovery_history.id == history_entry.id).update(
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 status=status,
                 error_message=error_message,
                 results_json=results,
@@ -2097,9 +2097,7 @@ class DiscoveryService:
         if job.schedule_interval and job.schedule_interval > 0:
             from datetime import timedelta
 
-            next_run = datetime.now(timezone.utc) + timedelta(
-                seconds=job.schedule_interval
-            )
+            next_run = datetime.now(UTC) + timedelta(seconds=job.schedule_interval)
             self.db(self.db.discovery_jobs.id == job_id).update(next_run_at=next_run)
 
         self.db.commit()

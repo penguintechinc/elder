@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_gcp_credentials(
-    config: Dict[str, Any],
-) -> Optional[service_account.Credentials]:
+    config: dict[str, Any],
+) -> service_account.Credentials | None:
     """
     Resolve GCP credentials from config.
 
@@ -50,8 +50,8 @@ def resolve_gcp_credentials(
 
 
 def create_gcp_client(
-    config: Dict[str, Any], client_factory_func: Any
-) -> Tuple[Any, Optional[service_account.Credentials]]:
+    config: dict[str, Any], client_factory_func: Any
+) -> tuple[Any, service_account.Credentials | None]:
     """
     Create a GCP client using the provided factory function.
 

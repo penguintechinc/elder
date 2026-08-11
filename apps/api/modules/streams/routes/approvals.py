@@ -9,7 +9,7 @@ Provides approval workflow for paused stream executions:
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, request
 
@@ -263,7 +263,7 @@ async def approve_execution(execution_id: str):
 
         # Record approval
         approval_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db.stream_execution_approvals.insert(
             tenant_id=tenant_id,
             approval_id=approval_id,
@@ -420,7 +420,7 @@ async def reject_execution(execution_id: str):
 
         # Record rejection
         approval_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db.stream_execution_approvals.insert(
             tenant_id=tenant_id,
             approval_id=approval_id,
@@ -700,7 +700,7 @@ async def create_approval_gate(stream_id):
 
         # Create gate
         gate_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         db_id = db.stream_approval_gates.insert(
             tenant_id=tenant_id,
             gate_id=gate_id,

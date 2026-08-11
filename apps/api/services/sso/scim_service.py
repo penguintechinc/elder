@@ -6,7 +6,6 @@ from identity providers like Okta, Azure AD, etc.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Optional
@@ -24,7 +23,7 @@ class SCIMService:
     @staticmethod
     def create_scim_config(
         tenant_id: int,
-        endpoint_url: Optional[str] = None,
+        endpoint_url: str | None = None,
     ) -> dict:
         """Create SCIM configuration for a tenant.
 
@@ -56,7 +55,7 @@ class SCIMService:
         }
 
     @staticmethod
-    def get_scim_config(tenant_id: int) -> Optional[dict]:
+    def get_scim_config(tenant_id: int) -> dict | None:
         """Get SCIM configuration for a tenant.
 
         Args:
@@ -167,7 +166,7 @@ class SCIMService:
 
         # Update SCIM sync timestamp
         db(db.scim_configurations.tenant_id == tenant_id).update(
-            last_sync_at=datetime.datetime.now(datetime.timezone.utc)
+            last_sync_at=datetime.datetime.now(datetime.UTC)
         )
         db.commit()
 
@@ -291,7 +290,7 @@ class SCIMService:
         tenant_id: int,
         start_index: int = 1,
         count: int = 100,
-        filter_str: Optional[str] = None,
+        filter_str: str | None = None,
     ) -> dict:
         """List users in SCIM format.
 
@@ -332,7 +331,7 @@ class SCIMService:
 
     @staticmethod
     def _user_to_scim(
-        user_id: int, email: str, full_name: Optional[str], is_active: bool
+        user_id: int, email: str, full_name: str | None, is_active: bool
     ) -> dict:
         """Convert portal user to SCIM format.
 

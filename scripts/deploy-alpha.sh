@@ -28,8 +28,10 @@ set -euo pipefail
 # Configuration
 # =============================================================================
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
+readonly PROJECT_ROOT
 
 readonly APP_NAME="${APP_NAME:-elder}"
 readonly KUBE_CONTEXT="${KUBE_CONTEXT:-local-alpha}"
@@ -55,13 +57,15 @@ declare -A SERVICE_CONTEXT=(
     ["web"]="."
 )
 
-readonly APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
+APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
+readonly APP_VERSION
 
 # Defaults
 # Fresh epoch tag per deploy: a UNIQUE tag guarantees the node re-pulls the new
 # image. A static tag (e.g. alpha-latest) with pullPolicy IfNotPresent silently
 # keeps the cached old image, so the deploy "succeeds" but ships stale code.
-declare TAG="alpha-$(date +%s)"
+declare TAG
+TAG="alpha-$(date +%s)"
 declare SERVICE_FILTER=""
 declare SKIP_BUILD=false
 declare DRY_RUN=false

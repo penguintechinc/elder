@@ -7,7 +7,7 @@ Storage providers manage external storage connections (S3, MinIO, GCS, OneDrive,
 
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -231,7 +231,7 @@ async def create_provider():
         is_system_default = False
 
     def create_prov():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         provider_id = db.dg_storage_providers.insert(
             tenant_id=tenant_id,
             name=name,
@@ -357,7 +357,7 @@ async def update_provider(provider_id: int):
             return None, "forbidden"
 
         # Update fields
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update_dict = {"updated_at": now}
 
         if "name" in data:

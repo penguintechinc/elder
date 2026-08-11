@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import time
+
 import requests
 
 # Configuration
@@ -46,9 +47,9 @@ class Colors:
 
 
 def print_header(msg):
-    print(f"\n{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"\n{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.BLUE}{msg}{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.BLUE}{'='*60}{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.BLUE}{'=' * 60}{Colors.END}")
 
 
 def print_success(msg):
@@ -151,7 +152,9 @@ def run_discovery(token, job_id):
     result = response.json()
 
     if response.status_code in [200, 202] and result.get("success"):
-        print_success(f"Discovery completed: {result.get('resources_discovered', 0)} resources")
+        print_success(
+            f"Discovery completed: {result.get('resources_discovered', 0)} resources"
+        )
         if result.get("discovery_time"):
             print_info(f"Discovery time: {result.get('discovery_time')}")
         return result
@@ -359,7 +362,9 @@ def test_environment_credentials(token):
         if connectivity_result:
             print_success("Environment credentials detected and working")
         else:
-            print_info("No environment credentials available (expected in isolated containers)")
+            print_info(
+                "No environment credentials available (expected in isolated containers)"
+            )
 
         return True  # This test is informational
 

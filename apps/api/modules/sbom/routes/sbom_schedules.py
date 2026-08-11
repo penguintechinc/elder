@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import datetime
 from dataclasses import asdict
 from datetime import timezone
@@ -168,14 +167,14 @@ async def create_schedule():
 
     # Validate cron expression
     try:
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         cron = croniter(schedule_cron, now)
         next_run_at = cron.get_next(datetime.datetime)
     except Exception as e:
         return ApiResponse.error(f"Invalid cron expression: {str(e)}", 400)
 
     def create():
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         # Create schedule record
         insert_data = {
             "parent_type": parent_type,
@@ -287,7 +286,7 @@ async def update_schedule(id: int):
     # Validate cron expression if being updated
     if "schedule_cron" in data:
         try:
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             cron = croniter(data["schedule_cron"], now)
             # Calculate new next_run_at if cron is changed
             data["next_run_at"] = cron.get_next(datetime.datetime)
@@ -397,7 +396,7 @@ async def get_due_schedules():
     db = current_app.db
 
     def get_schedules():
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         query = (db.sbom_scan_schedules.is_active is True) & (
             db.sbom_scan_schedules.next_run_at <= now
         )
