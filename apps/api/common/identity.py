@@ -1,4 +1,4 @@
-"""Shared helpers for helpdesk routes."""
+"""Shared identity validation helpers."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ def identity_in_tenant(db: Any, identity_id: int | None, tenant_id: int) -> bool
     """Return True if identity_id is unset or belongs to tenant_id.
 
     Guards against cross-tenant IDOR whenever an identity_id is accepted from a
-    request body (ticket requester/assignee, team member, contact link, ...).
+    request body — assignee, requester, team member, contact, document visibility, etc.
     A None id is treated as valid (the reference is simply absent).
     """
     if identity_id is None:
