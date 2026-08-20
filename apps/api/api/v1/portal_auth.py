@@ -163,7 +163,7 @@ async def register():
             400,
         )
 
-    result = PortalAuthService.create_portal_user(
+    result = await PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
         email=validated_data.email,
         password=validated_data.password,
@@ -172,15 +172,17 @@ async def register():
     )
 
     if "error" in result:
+        status_code = result.get("status_code", 400)
+        error_code = "LIMIT_REACHED" if status_code == 402 else "REGISTRATION_FAILED"
         return (
             jsonify(
                 {
                     "success": False,
                     "error": result["error"],
-                    "errorCode": "REGISTRATION_FAILED",
+                    "errorCode": error_code,
                 }
             ),
-            400,
+            status_code,
         )
 
     # Generate tokens

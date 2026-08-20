@@ -10,6 +10,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.models.dataclasses import (
     IdentityDTO,
     PaginatedResponse,
@@ -29,6 +30,33 @@ from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 
 bp = Blueprint("identities", __name__)
+
+
+def _identity_admin_kind(is_superuser: bool, portal_role: str | None) -> str | None:
+    """Determine the license-enforcement kind for an Identity row about to be created.
+
+    Mirrors apps/api/common/licensing/counters.py's Identity branches (see
+    its module docstring for the full admin heuristic): `is_superuser` is a
+    global admin; `portal_role == "admin"` is a tenant admin; anything else
+    is an unlimited member.
+
+    Note: `create_identity` below force-sets `is_superuser=False` and
+    `portal_role="observer"` on every insert (mass-assignment guard -- see
+    the comment on `insert_data`), so this can only ever resolve to
+    "member" through this endpoint today. It's kept as a real check (not
+    hardcoded) so enforcement activates automatically the moment that guard
+    is ever relaxed behind a proper admin-only elevation path, rather than
+    silently staying a no-op forever.
+
+    Returns:
+        "global_admin", "tenant_admin", or None (unlimited member -- skip
+        enforcement).
+    """
+    if is_superuser:
+        return "global_admin"
+    if portal_role == "admin":
+        return "tenant_admin"
+    return None
 
 
 def _identity_row_to_dto(row) -> IdentityDTO:
@@ -173,12 +201,15 @@ async def create_identity(body: CreateIdentityRequest):
         f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}"
     )
 
-    # Create identity
-    def create():
+    # Check username uniqueness + derive tenant_id + build insert data.
+    # Split from the actual insert (below) so the license-enforcement check
+    # -- which is async and needs a Quart app context -- can run in between,
+    # since run_in_threadpool closures execute off the event loop.
+    def prepare():
         # Check if username exists
         existing = db(db.identities.username == body.username).select().first()
         if existing:
-            return None, "Username already exists", 400
+            return None, None, "Username already exists", 400
 
         # Derive tenant_id: from request body, then from current user, then from DB default
         tenant_id = body.tenant_id
@@ -212,19 +243,33 @@ async def create_identity(body: CreateIdentityRequest):
             "portal_role": "observer",
         }
 
-        # Create identity
+        return tenant_id, insert_data, None, None
+
+    tenant_id, insert_data, error, status = await run_in_threadpool(prepare)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    # License enforcement: block creating a new global/tenant admin identity
+    # once the tier's admin limit is reached (observe-only unless the
+    # elder.license-enforcement flag is ON -- see
+    # apps/api/common/licensing/enforce.py). See _identity_admin_kind's
+    # docstring for why this is always a no-op through this endpoint today.
+    kind = _identity_admin_kind(insert_data["is_superuser"], insert_data["portal_role"])
+    if kind:
+        blocked = await check_limit(kind, tenant_id)
+        if blocked is not None:
+            return blocked
+
+    def insert():
         now = datetime.now(UTC)
         identity_id = db.identities.insert(
             created_at=now, updated_at=now, **insert_data
         )
         db.commit()
+        return db.identities[identity_id]
 
-        return db.identities[identity_id], None, None
-
-    identity, error, status = await run_in_threadpool(create)
-
-    if error:
-        return jsonify({"error": error}), status
+    identity = await run_in_threadpool(insert)
 
     identity_dto = _identity_row_to_dto(identity)
     return jsonify(asdict(identity_dto)), 201
