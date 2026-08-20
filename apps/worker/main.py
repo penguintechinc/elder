@@ -582,9 +582,45 @@ class WorkerService:
                 )
                 # Continue to next group; fail-soft
 
+    async def _service_node_heartbeat(self) -> None:
+        """Best-effort service_nodes heartbeat (node-count license enforcement).
+
+        Runs every minute via aiocron (see _setup_scheduled_syncs), plus once
+        immediately on startup. Registers this pod on first heartbeat if no
+        row exists yet (handles worker start racing DB migrations/table
+        creation), then refreshes heartbeat_ts on every subsequent call.
+        Never raises -- a missed heartbeat just lets this pod's row go stale,
+        which self-corrects the node count rather than crashing the worker.
+        """
+        if not self.db_manager:
+            return
+
+        try:
+            from apps.api.models.service_node import heartbeat_node, register_node
+
+            service_type = os.environ.get("ELDER_SERVICE_TYPE", "worker")
+            pod_id = os.environ.get("HOSTNAME") or self.consumer_name
+            db = self.db_manager.write
+
+            def _do_heartbeat():
+                if not heartbeat_node(db, pod_id):
+                    register_node(db, service_type, pod_id)
+
+            await asyncio.get_event_loop().run_in_executor(None, _do_heartbeat)
+        except Exception as e:
+            logger.warning(f"service_node_heartbeat_failed: {e}")
+
     def _setup_scheduled_syncs(self):
         """Setup scheduled sync tasks using aiocron."""
         logger.info("Setting up scheduled syncs")
+
+        # Schedule service_nodes heartbeat (every minute) for node-count
+        # license enforcement (Phase 2, Task 2)
+        @aiocron.crontab("* * * * *")
+        async def service_node_heartbeat():
+            await self._service_node_heartbeat()
+
+        logger.info("Scheduled service_nodes heartbeat (every minute)")
 
         # Schedule XAUTOCLAIM sweeper (every minute) for job-bus consumer
         if self.jobbus and self.worker_groups:
@@ -797,6 +833,11 @@ class WorkerService:
 
         # Initialize job-bus consumer
         await self._init_jobbus()
+
+        # Register/heartbeat this pod immediately (node-count license
+        # enforcement, Phase 2 Task 2) rather than waiting up to 60s for the
+        # first aiocron tick
+        await self._service_node_heartbeat()
 
         # Run initial sync if configured
         if settings.sync_on_startup:

@@ -99,6 +99,9 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize license client
     _init_license_client(app)
 
+    # Register this pod for node-count license enforcement (Phase 2, Task 2)
+    _init_service_node_registration(app)
+
     # Initialize module-enforcement Redis client (cached for all requests)
     _init_redis_client(app)
 
@@ -368,6 +371,30 @@ def _init_license_client(app: Quart) -> None:
         )
         # Stash None to signal licensing unavailable (graceful degradation)
         app.extensions["license_client"] = None
+
+
+def _init_service_node_registration(app: Quart) -> None:
+    """Best-effort service_nodes self-registration on API startup.
+
+    Node counting (license-enforcement framework, Phase 2 Task 2) needs every
+    running pod to have a row; a failure here must never block API startup,
+    so this is deliberately try/except-wrapped and only logs a warning.
+
+    Args:
+        app: Quart application (must already have app.db initialized).
+    """
+    try:
+        from apps.api.models.service_node import register_node
+
+        service_type = os.getenv("ELDER_SERVICE_TYPE", "main")
+        pod_id = os.getenv("HOSTNAME", "unknown")
+        register_node(app.db, service_type, pod_id)
+        logger.info("service_node_registered", service_type=service_type, pod_id=pod_id)
+    except Exception as e:
+        logger.warning(
+            "service_node_registration_failed",
+            error=str(e),
+        )
 
 
 def _init_redis_client(app: Quart) -> None:
