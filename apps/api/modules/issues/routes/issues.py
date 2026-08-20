@@ -15,6 +15,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.identity import identity_in_tenant
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.models.dataclasses import (
     IssueCommentDTO,
     IssueDTO,
@@ -327,6 +328,10 @@ async def create_issue(body: CreateIssueRequest):
     tenant_id = _tenant_id()
     if not tenant_id:
         return jsonify({"error": "Tenant not found"}), 403
+
+    blocked = await check_limit("object", tenant_id)
+    if blocked is not None:
+        return blocked
 
     # Get organization to derive tenant_id
     def get_org():

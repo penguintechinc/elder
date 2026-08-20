@@ -6,13 +6,14 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
-# Install build dependencies (versions pinned to the candidates resolved from
-# the base image digest above; bump alongside a base image digest update)
+# Install build dependencies
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc=4:12.2.0-3 \
-    g++=4:12.2.0-3 \
-    libldap2-dev=2.5.13+dfsg-5 \
-    libsasl2-dev=2.1.28+dfsg-10 \
+    gcc \
+    g++ \
+    libldap2-dev \
+    libsasl2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -26,13 +27,13 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
-# Install runtime dependencies and create user (versions pinned to the
-# candidates resolved from the base image digest above; bump alongside a
-# base image digest update)
+# Install runtime dependencies and create user
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libldap-2.5-0=2.5.13+dfsg-5 \
-    libsasl2-2=2.1.28+dfsg-10 \
-    ca-certificates=20250419~deb12u1 \
+    libldap-2.5-0 \
+    libsasl2-2 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/* && \
     useradd -m -u 1000 worker
 

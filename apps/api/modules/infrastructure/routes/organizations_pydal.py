@@ -8,6 +8,7 @@ from dataclasses import asdict
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.dataclasses import (
     OrganizationDTO,
@@ -142,6 +143,22 @@ async def create_organization(body: CreateOrganizationRequest):
         # Map Pydantic field 'organization_type' to DB column 'type'
         if "organization_type" in org_data:
             org_data["type"] = org_data.pop("organization_type")
+
+        # License-gate type='team' organizations only -- see Task 7 of
+        # docs/superpowers/plans/2026-08-20-license-enforcement-phase2.md.
+        # Non-team organization types (department, collection, etc.) are
+        # never counted against max_teams and are not gated here.
+        if org_data.get("type") == "team":
+            blocked = await check_limit("team", org_data["tenant_id"])
+            if blocked is not None:
+                return blocked
+
+        # Organizations are village_id objects -- count against the Free object
+        # quota. (Placed on the LIVE create path; T8 had wired the dead
+        # api/v1/organizations.py by mistake.)
+        obj_blocked = await check_limit("object", org_data["tenant_id"])
+        if obj_blocked is not None:
+            return obj_blocked
 
         org_id = await insert_record(db.organizations, **org_data)
         if not org_id:

@@ -8,6 +8,7 @@ MFA management, and password operations with tenant context.
 
 from datetime import UTC, datetime, timezone
 from functools import wraps
+from inspect import iscoroutinefunction
 
 import jwt
 from pydantic import ValidationError
@@ -21,10 +22,22 @@ bp = Blueprint("portal_auth", __name__)
 
 
 def portal_token_required(f):
-    """Decorator to require portal user JWT authentication."""
+    """Decorator to require portal user JWT authentication.
 
-    @wraps(f)
-    def decorated(*args, **kwargs):
+    Sync/async-aware: wraps `f` with a same-flavor `decorated` function so an
+    `async def` view actually gets awaited. A plain `def decorated` wrapping
+    an async view would return the un-awaited coroutine object itself as the
+    "response", which Quart rejects with `TypeError: The response value type
+    (coroutine) is not valid` -- this bit every async view using this
+    decorator (e.g. tenants.py::create_tenant) until fixed here.
+    """
+
+    def _authenticate() -> tuple | None:
+        """Validate the Bearer token, stashing the payload on request.portal_user.
+
+        Returns:
+            An `ApiResponse.unauthorized(...)` tuple if auth failed, else None.
+        """
         token = None
         auth_header = request.headers.get("Authorization")
 
@@ -49,7 +62,25 @@ def portal_token_required(f):
         except jwt.InvalidTokenError:
             return ApiResponse.unauthorized("Invalid token")
 
-        return f(*args, **kwargs)
+        return None
+
+    if iscoroutinefunction(f):
+
+        @wraps(f)
+        async def decorated(*args, **kwargs):
+            error = _authenticate()
+            if error is not None:
+                return error
+            return await f(*args, **kwargs)
+
+    else:
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            error = _authenticate()
+            if error is not None:
+                return error
+            return f(*args, **kwargs)
 
     return decorated
 
@@ -163,7 +194,7 @@ async def register():
             400,
         )
 
-    result = PortalAuthService.create_portal_user(
+    result = await PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
         email=validated_data.email,
         password=validated_data.password,
@@ -172,15 +203,17 @@ async def register():
     )
 
     if "error" in result:
+        status_code = result.get("status_code", 400)
+        error_code = "LIMIT_REACHED" if status_code == 402 else "REGISTRATION_FAILED"
         return (
             jsonify(
                 {
                     "success": False,
                     "error": result["error"],
-                    "errorCode": "REGISTRATION_FAILED",
+                    "errorCode": error_code,
                 }
             ),
-            400,
+            status_code,
         )
 
     # Generate tokens

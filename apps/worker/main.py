@@ -582,9 +582,65 @@ class WorkerService:
                 )
                 # Continue to next group; fail-soft
 
+    async def _service_node_heartbeat(self) -> None:
+        """Best-effort service_nodes heartbeat (node-count license enforcement).
+
+        Runs every minute via aiocron (see _setup_scheduled_syncs), plus once
+        immediately on startup. Registers this pod on first heartbeat if no
+        row exists yet (handles worker start racing DB migrations/table
+        creation), then refreshes heartbeat_ts on every subsequent call.
+        Never raises -- a missed heartbeat just lets this pod's row go stale,
+        which self-corrects the node count rather than crashing the worker.
+        """
+        if not self.db_manager:
+            return
+
+        try:
+            from apps.api.common.licensing.enforce import check_limit
+            from apps.api.models.service_node import heartbeat_node, register_node
+
+            service_type = os.environ.get("ELDER_SERVICE_TYPE", "worker")
+            pod_id = os.environ.get("HOSTNAME") or self.consumer_name
+            db = self.db_manager.write
+
+            already_registered = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: heartbeat_node(db, pod_id)
+            )
+            if already_registered:
+                return
+
+            # Node limits are a soft scale gate: check_limit's WARN log
+            # (`license_limit_would_block`) is the entire point of this call
+            # -- its 402 return is intentionally discarded so this worker
+            # pod is never refused registration, even when the
+            # elder.license-enforcement flag is ON (see Phase 2 plan Task 5).
+            # self.health_app has no request/DB extensions of its own (it
+            # only serves /healthz + /status) -- populate the minimum
+            # check_limit needs (db, and a license_client defaulting to None
+            # -> community-tier fallback, same graceful degradation as the
+            # API app) for the duration of this app_context.
+            self.health_app.db = db
+            self.health_app.extensions.setdefault("license_client", None)
+            async with self.health_app.app_context():
+                await check_limit("node", None)
+
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: register_node(db, service_type, pod_id)
+            )
+        except Exception as e:
+            logger.warning(f"service_node_heartbeat_failed: {e}")
+
     def _setup_scheduled_syncs(self):
         """Setup scheduled sync tasks using aiocron."""
         logger.info("Setting up scheduled syncs")
+
+        # Schedule service_nodes heartbeat (every minute) for node-count
+        # license enforcement (Phase 2, Task 2)
+        @aiocron.crontab("* * * * *")
+        async def service_node_heartbeat():
+            await self._service_node_heartbeat()
+
+        logger.info("Scheduled service_nodes heartbeat (every minute)")
 
         # Schedule XAUTOCLAIM sweeper (every minute) for job-bus consumer
         if self.jobbus and self.worker_groups:
@@ -797,6 +853,11 @@ class WorkerService:
 
         # Initialize job-bus consumer
         await self._init_jobbus()
+
+        # Register/heartbeat this pod immediately (node-count license
+        # enforcement, Phase 2 Task 2) rather than waiting up to 60s for the
+        # first aiocron tick
+        await self._service_node_heartbeat()
 
         # Run initial sync if configured
         if settings.sync_on_startup:

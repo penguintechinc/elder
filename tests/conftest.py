@@ -317,3 +317,45 @@ def enable_helpdesk_module(app):
             pass
 
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_licensing_state(app):
+    """Reset process-global + app-level licensing state between tests.
+
+    The enforce framework resolves the deployment tier from
+    ``app.extensions["license_client"]`` (session-scoped app → persists) and
+    caches resolved tier/limits (limits._cache), PostHog flag results
+    (_flag_cache), and per-tenant object counts (Redis elder:objcount:*).
+    Without a reset these leak across tests — e.g. a test that installs an
+    Enterprise mock client makes a later Free-tier team/object gate test see
+    no limit. Reset on teardown so each subsequent test starts at the
+    community default; a test that needs a specific tier sets it in its body.
+    """
+    yield
+    try:
+        app.extensions.pop("license_client", None)
+    except Exception:
+        pass
+    try:
+        from apps.api.common.licensing import limits as _lim
+
+        _lim._cache.clear()
+    except Exception:
+        pass
+    try:
+        from apps.api.common.flags import posthog_client as _ph
+
+        _ph.get_posthog_client()._flag_cache.clear()
+    except Exception:
+        pass
+    try:
+        import os
+
+        import redis as _redis
+
+        rc = _redis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+        for key in rc.scan_iter("elder:objcount:*"):
+            rc.delete(key)
+    except Exception:
+        pass

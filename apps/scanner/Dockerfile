@@ -6,12 +6,12 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
-# Versions pinned to the candidates resolved from the base image digest above;
-# bump alongside a base image digest update.
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential=12.9 \
-    libldap2-dev=2.5.13+dfsg-5 \
-    libsasl2-dev=2.1.28+dfsg-10 \
+    build-essential \
+    libldap2-dev \
+    libsasl2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY apps/scanner/requirements.txt .
@@ -23,12 +23,12 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 ARG SCANNER_POLL_INTERVAL=300
 
-# Versions pinned to the candidates resolved from the base image digest above;
-# bump alongside a base image digest update.
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    masscan=2:1.3.2+ds1-1 \
-    libldap-2.5-0=2.5.13+dfsg-5 \
-    libsasl2-2=2.1.28+dfsg-10 \
+    masscan \
+    libldap-2.5-0 \
+    libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

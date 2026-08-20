@@ -10,6 +10,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.html_sanitize import sanitize_html
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.common.refs.service import backlinks_for
 from apps.api.common.refs.wikilinks import rebuild_references_from_text
 from apps.api.logging_config import log_error_and_respond
@@ -208,6 +209,10 @@ async def create_page():
 
     if not tenant_id or not user_id:
         return ApiResponse.error("Tenant or user not found", 403)
+
+    blocked = await check_limit("object", tenant_id)
+    if blocked is not None:
+        return blocked
 
     try:
         data = await request.get_json()

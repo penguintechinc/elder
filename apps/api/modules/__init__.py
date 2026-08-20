@@ -21,6 +21,7 @@ CORE_MODELS = (
     "apps.api.models.rbac",
     "apps.api.models.references",
     "apps.api.models.security",
+    "apps.api.models.service_node",
     "apps.api.models.tenant",
     "apps.api.models.tenant_modules",
 )

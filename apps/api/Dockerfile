@@ -8,19 +8,20 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 # Set working directory
 WORKDIR /build
 
-# Install build dependencies (versions pinned to the candidates resolved from
-# the base image digest above; bump alongside a base image digest update)
+# Install build dependencies
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc=4:12.2.0-3 \
-    g++=4:12.2.0-3 \
-    libpq-dev=15.18-0+deb12u1 \
-    libsasl2-dev=2.1.28+dfsg-10 \
-    libldap2-dev=2.5.13+dfsg-5 \
-    libssl-dev=3.0.20-1~deb12u2 \
-    pkg-config=1.8.1-1 \
-    libxml2-dev=2.9.14+dfsg-1.3~deb12u6 \
-    libxmlsec1-dev=1.2.37-2 \
-    libxmlsec1-openssl=1.2.37-2 \
+    gcc \
+    g++ \
+    libpq-dev \
+    libsasl2-dev \
+    libldap2-dev \
+    libssl-dev \
+    pkg-config \
+    libxml2-dev \
+    libxmlsec1-dev \
+    libxmlsec1-openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -48,14 +49,15 @@ ARG APP_VERSION=0.0.0
 # Set working directory
 WORKDIR /app
 
-# Install runtime dependencies only (versions pinned to the candidates
-# resolved from the base image digest above; bump alongside a digest update)
+# Install runtime dependencies only
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5=15.18-0+deb12u1 \
-    libsasl2-2=2.1.28+dfsg-10 \
-    libldap-2.5-0=2.5.13+dfsg-5 \
-    libxml2=2.9.14+dfsg-1.3~deb12u6 \
-    libxmlsec1-openssl=1.2.37-2 \
+    libpq5 \
+    libsasl2-2 \
+    libldap-2.5-0 \
+    libxml2 \
+    libxmlsec1-openssl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security

@@ -9,6 +9,7 @@ from markdown_it import MarkdownIt
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
 from apps.api.modules.documents.common import (
     identity_in_tenant,
@@ -252,6 +253,10 @@ async def create_document():
 
     if not tenant_id:
         return ApiResponse.error("Tenant not found", 403)
+
+    blocked = await check_limit("object", tenant_id)
+    if blocked is not None:
+        return blocked
 
     data = await request.get_json() or {}
 

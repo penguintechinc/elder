@@ -14,6 +14,32 @@ import pyotp
 from quart import current_app
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from apps.api.common.licensing.enforce import check_limit
+
+
+def _admin_kind(tenant_role: str | None, global_role: str | None) -> str | None:
+    """Determine the license-enforcement kind for a portal user's role.
+
+    Mirrors apps/api/common/licensing/counters.py's PortalUser branches (see
+    its module docstring for the full admin heuristic): `global_role` in
+    {"admin", "superadmin"} is a global admin; `tenant_role == "admin"` is a
+    tenant admin; anything else (including "reader"/"maintainer") is an
+    unlimited member.
+
+    Args:
+        tenant_role: Role within the tenant (admin/maintainer/reader).
+        global_role: Optional global role (admin/superadmin/support).
+
+    Returns:
+        "global_admin", "tenant_admin", or None (unlimited member -- skip
+        enforcement).
+    """
+    if global_role in ("admin", "superadmin"):
+        return "global_admin"
+    if tenant_role == "admin":
+        return "tenant_admin"
+    return None
+
 
 class PortalAuthService:
     """Service for portal user authentication and management."""
@@ -24,7 +50,7 @@ class PortalAuthService:
     LOCKOUT_DURATION_MINUTES = 30
 
     @staticmethod
-    def create_portal_user(
+    async def create_portal_user(
         tenant_id: int,
         email: str,
         password: str,
@@ -43,7 +69,10 @@ class PortalAuthService:
             global_role: Optional global role (admin/support)
 
         Returns:
-            Created user dict or error dict
+            Created user dict or error dict. A license-limit block sets
+            `status_code: 402` on the error dict (see `_admin_kind`);
+            callers that previously assumed 400 on any `"error"` key must
+            read `status_code` (defaults to 400) rather than hardcoding it.
         """
         # Validate password
         if len(password) < PortalAuthService.MIN_PASSWORD_LENGTH:
@@ -63,6 +92,18 @@ class PortalAuthService:
 
         if existing:
             return {"error": "Email already registered in this tenant"}
+
+        # License enforcement: block minting a new global/tenant admin once
+        # the tier's admin limit is reached (observe-only unless the
+        # elder.license-enforcement flag is ON -- see
+        # apps/api/common/licensing/enforce.py). Non-admin members are
+        # unlimited on every tier, so this is a no-op for the common
+        # self-registration path (tenant_role="reader", global_role=None).
+        kind = _admin_kind(tenant_role, global_role)
+        if kind:
+            blocked = await check_limit(kind, tenant_id)
+            if blocked is not None:
+                return {"error": "limit_reached", "status_code": 402, "limit": kind}
 
         # Hash password
         password_hash = generate_password_hash(password)
