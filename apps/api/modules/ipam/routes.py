@@ -13,6 +13,7 @@ from apps.api.auth.decorators import (
     require_scope,
     resource_role_required,
 )
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.models.pydantic import (
     CreateIPAMAddressRequest,
@@ -157,6 +158,10 @@ async def create_prefix():
         return ApiResponse.error("Organization not found", 404)
     if not org.tenant_id:
         return ApiResponse.bad_request("Organization must have a tenant")
+
+    blocked = await check_limit("object", org.tenant_id)
+    if blocked is not None:
+        return blocked
 
     def create():
         # Create prefix
@@ -500,6 +505,10 @@ async def create_address():
     if not prefix:
         return ApiResponse.error("Prefix not found", 404)
 
+    blocked = await check_limit("object", prefix.tenant_id)
+    if blocked is not None:
+        return blocked
+
     def create():
         # Create address
         now = datetime.now(UTC)
@@ -787,6 +796,10 @@ async def create_vlan():
         return ApiResponse.error("Organization not found", 404)
     if not org.tenant_id:
         return ApiResponse.bad_request("Organization must have a tenant")
+
+    blocked = await check_limit("object", org.tenant_id)
+    if blocked is not None:
+        return blocked
 
     def create():
         # Create VLAN

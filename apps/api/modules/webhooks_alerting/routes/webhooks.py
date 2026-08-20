@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.common.identity import identity_in_tenant
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.webhooks import WebhookService
 from apps.api.services.webhooks.service import _UNSET
@@ -186,6 +187,10 @@ async def create_webhook():
         tenant_id = _tenant_id()
         if not tenant_id:
             return jsonify({"error": "Tenant not found"}), 403
+
+        blocked = await check_limit("object", tenant_id)
+        if blocked is not None:
+            return blocked
 
         data = await request.get_json()
 
