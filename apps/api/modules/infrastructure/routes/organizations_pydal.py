@@ -153,6 +153,13 @@ async def create_organization(body: CreateOrganizationRequest):
             if blocked is not None:
                 return blocked
 
+        # Organizations are village_id objects -- count against the Free object
+        # quota. (Placed on the LIVE create path; T8 had wired the dead
+        # api/v1/organizations.py by mistake.)
+        obj_blocked = await check_limit("object", org_data["tenant_id"])
+        if obj_blocked is not None:
+            return obj_blocked
+
         org_id = await insert_record(db.organizations, **org_data)
         if not org_id:
             return log_error_and_respond(
