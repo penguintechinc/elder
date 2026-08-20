@@ -25,11 +25,11 @@ WORKDIR /app
 # Install runtime dependencies and create user.
 # git: required to clone/merge/push user repos ahead of sandboxed stage execution.
 # ca-certificates: required for TLS-verified git-over-https and outbound calls.
-# Versions pinned to the candidates resolved from the base image digest above;
-# bump alongside a base image digest update.
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git=1:2.39.5-0+deb12u3 \
-    ca-certificates=20250419~deb12u1 \
+    git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/* && \
     useradd -m -u 1000 appuser
 
