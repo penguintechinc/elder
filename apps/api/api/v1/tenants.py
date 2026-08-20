@@ -15,6 +15,7 @@ from pydantic import Field, ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from shared.utils.village_id import generate_village_id
@@ -53,14 +54,31 @@ class UpdateTenantRequest(RequestModel):
 
 
 def global_admin_required(f):
-    """Decorator to require global admin permission."""
-    from functools import wraps
+    """Decorator to require global admin permission.
 
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if request.portal_user.get("global_role") != "admin":
-            return ApiResponse.forbidden("Global admin permission required")
-        return f(*args, **kwargs)
+    Sync/async-aware -- see portal_token_required's docstring
+    (apps/api/api/v1/portal_auth.py) for why this matters: a plain `def
+    decorated` wrapping an `async def` view (e.g. create_tenant) returns an
+    un-awaited coroutine as the "response", which Quart rejects.
+    """
+    from functools import wraps
+    from inspect import iscoroutinefunction
+
+    if iscoroutinefunction(f):
+
+        @wraps(f)
+        async def decorated(*args, **kwargs):
+            if request.portal_user.get("global_role") != "admin":
+                return ApiResponse.forbidden("Global admin permission required")
+            return await f(*args, **kwargs)
+
+    else:
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if request.portal_user.get("global_role") != "admin":
+                return ApiResponse.forbidden("Global admin permission required")
+            return f(*args, **kwargs)
 
     return decorated
 
@@ -210,6 +228,12 @@ async def create_tenant():
             for err in e.errors()
         ]
         return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    # Tenants are counted globally (max_tenants), not per-tenant -- see
+    # docs/superpowers/plans/2026-08-20-license-enforcement-phase2.md Task 5.
+    blocked = await check_limit("tenant", None)
+    if blocked is not None:
+        return blocked
 
     db = current_app.db
 
