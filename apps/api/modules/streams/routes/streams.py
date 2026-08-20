@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -340,6 +341,10 @@ async def create_stream():
 
     if not tenant_id or not identity_id:
         return ApiResponse.error("Tenant or identity not found", 403)
+
+    blocked = await check_limit("object", tenant_id)
+    if blocked is not None:
+        return blocked
 
     data = await request.get_json() or {}
 

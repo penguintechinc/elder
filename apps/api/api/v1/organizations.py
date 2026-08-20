@@ -8,6 +8,7 @@ from marshmallow import ValidationError
 from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.schemas.organization import (
     OrganizationCreateSchema,
     OrganizationUpdateSchema,
@@ -101,6 +102,10 @@ async def create_organization():
         data = validate_request(OrganizationCreateSchema)
     except ValidationError as e:
         return handle_validation_error(e)
+
+    blocked = await check_limit("object", data.get("tenant_id"))
+    if blocked is not None:
+        return blocked
 
     def inner():
         try:
