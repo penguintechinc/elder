@@ -42,7 +42,7 @@ Before you begin, ensure you have:
 - Node.js 18+
 - Docker & Docker Compose
 - Git
-- Basic knowledge of Flask and React
+- Basic knowledge of Quart (async Flask) and React
 
 ### Setup Development Environment
 
