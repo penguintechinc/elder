@@ -69,6 +69,8 @@ Elder is an **internal** platform — it manages your own organization's estate,
 
 All 15 modules are installed in every build and toggled at deploy time. Grouping is presentation and deployment only — **no group is license-tier-locked**.
 
+> ⚠️ `flows` and `helpdesk` are **API-only today** — both expose REST surfaces and worker tasks, but neither has a page in the React app yet, so enabling them adds no sidebar entry.
+
 | Module | Title | Group | License-gated |
 |--------|-------|-------|---------------|
 | `streams` | Streams (Workflows) | workstreams | — |
@@ -155,7 +157,7 @@ Entities use a flexible schema for infrastructure components:
 
 ## Screenshots
 
-> Captured against seeded mock data (`make seed-mock-data`). The full set lives in [`docs/screenshots/`](docs/screenshots/). The Workstreams pages (Streams, Flows) and the Relationship Graph do not have captures yet.
+> Captured against seeded mock data (`make seed-mock-data`). The full set lives in [`docs/screenshots/`](docs/screenshots/). Streams and the Relationship Graph do not have captures yet; Flows and the internal Helpdesk have no web UI at all (see Modules above).
 
 ### Login & Dashboard
 
@@ -295,10 +297,10 @@ Entities use a flexible schema for infrastructure components:
 <p align="center"><em>Milestones</em></p>
 </td>
 <td width="50%">
-<a href="docs/screenshots/helpdesk.png" target="_blank">
-  <img src="docs/screenshots/helpdesk.png" alt="Internal Helpdesk" style="max-width: 100%;">
+<a href="docs/screenshots/labels.png" target="_blank">
+  <img src="docs/screenshots/labels.png" alt="Labels" style="max-width: 100%;">
 </a>
-<p align="center"><em>Internal Helpdesk</em></p>
+<p align="center"><em>Labels</em></p>
 </td>
 </tr>
 </table>

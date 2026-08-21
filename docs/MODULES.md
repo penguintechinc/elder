@@ -32,6 +32,8 @@ Modules are grouped into the five **WIRED** pillars. The pillars are the same fi
 | `pages` | Pages & Documentation | `documents` | `documents` | — | `pg_` |
 | `diagrams` | Diagrams & Drawing | `documents` | — | — | `dg_` |
 
+> ⚠️ **`flows` and `helpdesk` are API-only today.** Both register blueprints and worker task groups, but neither has an entry in `web/src/modules/` — the React app ships 13 module manifests against the backend's 15, so enabling either adds REST endpoints and background work but no sidebar entry or page.
+
 Manifests live in [`apps/api/modules/__init__.py`](../apps/api/modules/__init__.py); the `ModuleManifest` dataclass and resolution logic are in [`apps/api/modules/registry.py`](../apps/api/modules/registry.py). The frontend mirror is [`web/src/modules/registry.ts`](../web/src/modules/registry.ts).
 
 ## Why each module sits where it does
