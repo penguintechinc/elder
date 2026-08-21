@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Seed a demo support/CRM experience using the unified native Issue model.
+"""Seed a demo internal-helpdesk experience using the native Issue model.
 
-Seeds real demo data (support issues, intake forms, webhooks, customer contacts)
-into the unified native model without requiring any legacy hd_tickets migration.
-Shares the same demo tenant/org/admin as seed_cloud_discovery.py so one login
-works for both the graph/map and the support/CRM experience.
+Seeds real demo data (support issues, comments, webhooks, streams) into the
+native model. Shares the same demo tenant/org/admin as seed_cloud_discovery.py
+so one login works for both the graph/map and the support experience.
 
 Usage:
     python3 scripts/seed_demo_unified.py
@@ -318,7 +317,6 @@ def seed_support_issues(
             "channel": "email",
             "category": "billing",
             "requester_id": admin_id,
-            "requester_contact_id": customer_contacts["alice@acme.local"],
             "resource_type": "organization",
             "resource_id": org_units["Acme Corp"],
             "assignee_type": "identity",
@@ -333,7 +331,6 @@ def seed_support_issues(
             "channel": "web",
             "category": "technical",
             "requester_id": admin_id,
-            "requester_contact_id": customer_contacts["bob@acme.local"],
             "resource_type": "organization",
             "resource_id": org_units["Acme Corp"],
             "assignee_type": "org_unit",
@@ -348,7 +345,6 @@ def seed_support_issues(
             "channel": "email",
             "category": "technical",
             "requester_id": admin_id,
-            "requester_contact_id": customer_contacts["charlie@globex.local"],
             "resource_type": "organization",
             "resource_id": org_units["Globex Industries"],
             "assignee_type": "identity",
@@ -363,7 +359,6 @@ def seed_support_issues(
             "channel": "web",
             "category": "feature",
             "requester_id": admin_id,
-            "requester_contact_id": customer_contacts["diana@globex.local"],
             "resource_type": "organization",
             "resource_id": org_units["Globex Industries"],
             "assignee_type": None,
@@ -378,7 +373,6 @@ def seed_support_issues(
             "channel": "email",
             "category": "security",
             "requester_id": admin_id,
-            "requester_contact_id": customer_contacts["alice@acme.local"],
             "resource_type": "organization",
             "resource_id": org_units["Acme Corp"],
             "assignee_type": "identity",
@@ -394,7 +388,6 @@ def seed_support_issues(
             "channel": None,
             "category": None,
             "requester_id": admin_id,
-            "requester_contact_id": None,
             "resource_type": "organization",
             "resource_id": org_units["Demo Cloud Discovery Org"],
             "assignee_type": None,
@@ -409,7 +402,6 @@ def seed_support_issues(
             "channel": None,
             "category": None,
             "requester_id": admin_id,
-            "requester_contact_id": None,
             "resource_type": "organization",
             "resource_id": org_units["Demo Cloud Discovery Org"],
             "assignee_type": "identity",
@@ -444,7 +436,6 @@ def seed_support_issues(
             channel=issue_data.get("channel"),
             category=issue_data.get("category"),
             reporter_id=issue_data.get("requester_id"),
-            requester_contact_id=issue_data.get("requester_contact_id"),
             resource_type=issue_data["resource_type"],
             resource_id=issue_data["resource_id"],
             assignee_type=issue_data.get("assignee_type"),
@@ -530,76 +521,6 @@ def seed_issue_comments(
         )
         db.commit()
         print(f"  Comment on issue {first_issue_id}: {comment_id} (created)")
-
-
-def seed_intake_forms(db: Any, tenant_id: int) -> None:
-    """Seed public and private intake forms."""
-    now = datetime.now(UTC)
-
-    forms = [
-        {
-            "name": "Public Support Form",
-            "slug": "demo-support-public",
-            "description": "Public form for general support inquiries (captcha protected)",
-            "is_public": True,
-            "captcha_required": True,
-            "issue_type": "support",
-        },
-        {
-            "name": "Internal Feedback Form",
-            "slug": "demo-support-private",
-            "description": "Internal form for staff to create issues (no captcha)",
-            "is_public": False,
-            "captcha_required": False,
-            "issue_type": "support",
-        },
-    ]
-
-    fields = json.dumps(
-        [
-            {"id": "email", "label": "Email", "type": "email", "required": True},
-            {"id": "subject", "label": "Subject", "type": "text", "required": True},
-            {
-                "id": "details",
-                "label": "Details",
-                "type": "textarea",
-                "required": False,
-            },
-            {
-                "id": "priority",
-                "label": "Priority",
-                "type": "select",
-                "required": False,
-                "options": [
-                    {"value": "low", "label": "Low"},
-                    {"value": "medium", "label": "Medium"},
-                    {"value": "high", "label": "High"},
-                ],
-            },
-        ]
-    )
-
-    for form_data in forms:
-        existing = db(db.hd_intake_forms.slug == form_data["slug"]).select().first()
-        if existing:
-            print(f"  {form_data['name']}: {existing.id} (existing)")
-            continue
-
-        form_id = db.hd_intake_forms.insert(
-            tenant_id=tenant_id,
-            name=form_data["name"],
-            slug=form_data["slug"],
-            description=form_data["description"],
-            fields=fields,
-            issue_type=form_data["issue_type"],
-            is_public=form_data["is_public"],
-            captcha_required=form_data["captcha_required"],
-            is_active=True,
-            created_at=now,
-            updated_at=now,
-        )
-        db.commit()
-        print(f"  {form_data['name']}: {form_id} (created)")
 
 
 def seed_streams(
@@ -813,11 +734,6 @@ def seed_demo_unified() -> None:
             db, tenant_id, redis_client, admin_id, customer_contacts, issue_ids[0]
         )
         print()
-
-    # Seed intake forms
-    print("Seeding intake forms (public + private):")
-    seed_intake_forms(db, tenant_id)
-    print()
 
     # Seed webhooks
     print("Seeding webhook configurations:")

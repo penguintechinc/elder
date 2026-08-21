@@ -2,7 +2,7 @@
 
 from apps.api.modules import MODULES
 
-VALID_GROUPS = {"core", "crm", "workflow", "kb"}
+VALID_GROUPS = {"core", "workflow", "kb"}
 EXPECTED = {
     "infrastructure": "core",
     "ipam": "core",
@@ -12,7 +12,7 @@ EXPECTED = {
     "services_oncall": "core",
     "access_reviews": "core",
     "webhooks_alerting": "core",
-    "helpdesk": "crm",
+    "helpdesk": "workflow",
     "issues": "workflow",
     "streams": "workflow",
     "flows": "workflow",

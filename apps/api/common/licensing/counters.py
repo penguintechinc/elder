@@ -41,7 +41,7 @@ logger = structlog.get_logger()
 
 # Tenant-scoped tables that carry a village_id (cross-object reference) AND a
 # `tenant_id` column, i.e. every table Free tier's 1000-object quota counts
-# against. Of the 32 village_id-carrying models, 3 have no tenant_id column
+# against. Of the 29 village_id-carrying models, 3 have no tenant_id column
 # and are excluded here: `entities` (apps/api/modules/infrastructure/models/
 # entity.py), `resource_roles` (apps/api/modules/access_reviews/models/
 # resource_role.py), `metadata_fields` (apps/api/modules/issues/models/
@@ -57,9 +57,6 @@ OBJECT_TABLES: tuple[str, ...] = (
     "access_reviews",
     "group_access_requests",
     "organizations",
-    "hd_intake_forms",
-    "hd_companies",
-    "hd_contacts",
     "hd_teams",
     "hd_tickets",
     "dependencies",

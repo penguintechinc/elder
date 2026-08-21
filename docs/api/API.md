@@ -103,19 +103,6 @@ polymorphic — `assignee_type` (`identity` or `org_unit`) plus
 `assignee_id` — surfaced in the UI as one combined identity+org-unit
 search picker.*
 
-### Intake Forms (7 endpoints)
-- `GET /api/v1/intake-forms` - List intake forms (admin)
-- `POST /api/v1/intake-forms` - Create intake form (admin)
-- `GET /api/v1/intake-forms/{id}` - Get intake form details (admin)
-- `PATCH /api/v1/intake-forms/{id}` - Update intake form (admin)
-- `DELETE /api/v1/intake-forms/{id}` - Delete intake form (admin)
-- `GET /api/v1/intake/{slug}` - Get public form definition (unauthenticated)
-- `POST /api/v1/intake/{slug}/submit` - Submit public form, optionally protected by an Altcha captcha (unauthenticated)
-
-*The submit endpoint is gated by Altcha only when the form has
-`captcha_required=true` (off by default). A successful public submission
-upserts a `customer_contact` identity and creates a native Issue of the
-form's configured `issue_type` (default `support`).*
 
 ### Projects & Milestones (11 endpoints)
 - `GET /api/v1/projects` - List projects
@@ -309,7 +296,7 @@ form's configured `issue_type` (default `support`).*
 - `GET /api/v1/webhooks/{id}/deliveries` - Get webhook deliveries
 
 *Supports an `issue.assigned` event, fired on any assignee change
-(create, update, or an intake-form's default-assign). Each webhook can
+(create or update). Each webhook can
 filter `issue.assigned` deliveries by `issue_type` and by assignee
 (`assignee_type` + `assignee_id`); an unset filter matches every
 assignment. Deliveries are HMAC-signed (`X-Elder-Signature`) and

@@ -27,10 +27,6 @@ import { useModules } from './hooks/useModules'
 // the main bundle since it's a large dependency.
 const Map = lazy(() => import('./pages/Map'))
 
-// Public intake form submission — lazy-loaded, unauthenticated, kept out
-// of the main bundle since it is rarely visited relative to the app shell.
-const IntakePublicForm = lazy(() => import('./pages/IntakePublicForm'))
-
 // Protected route wrapper component
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const hasToken = localStorage.getItem('elder_token')
@@ -99,7 +95,6 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/intake/:slug" element={<Suspense fallback={<div />}><IntakePublicForm /></Suspense>} />
         <Route path="/id/:villageId" element={<ProtectedRoute><VillageIdRedirect /></ProtectedRoute>} />
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           {/* Core pages (always available) */}

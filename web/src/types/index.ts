@@ -120,8 +120,7 @@ export type IssueType =
 
 // Disambiguates the polymorphic Issue.assignee_id: 'identity' resolves
 // against identities.id, 'org_unit' against organizations.id. Matches
-// apps/api/modules/issues/routes/issues.py::_resolve_assignee_type and
-// apps/api/modules/helpdesk/routes/intake_forms.py::_VALID_ASSIGNEE_TYPES.
+// apps/api/modules/issues/routes/issues.py::_resolve_assignee_type.
 export type IssueAssigneeType = 'identity' | 'org_unit'
 
 // Matches apps/api/models/identity.py IdentityType enum (the DB column).

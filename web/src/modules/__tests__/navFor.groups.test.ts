@@ -2,7 +2,7 @@ import { MODULES, navFor } from '../registry'
 import type { MenuCategory } from '@penguintechinc/react-libs/components'
 
 describe('navFor grouped output', () => {
-  it('buckets nav by group in fixed order: Core→CRM→Workflow→KB', () => {
+  it('buckets nav by group in fixed order: Core→Workflow→KB', () => {
     // Enable modules from at least 2 groups (e.g., core and kb)
     const enabled = new Set(['infrastructure', 'sbom', 'nav_documents', 'nav_diagrams'])
     const nav = navFor(enabled)

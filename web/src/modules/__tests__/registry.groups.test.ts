@@ -1,6 +1,6 @@
 import { MODULES } from '../registry'
 
-const VALID_GROUPS = ['core', 'crm', 'workflow', 'kb']
+const VALID_GROUPS = ['core', 'workflow', 'kb']
 const EXPECTED: Record<string, string> = {
   infrastructure: 'core',
   ipam: 'core',

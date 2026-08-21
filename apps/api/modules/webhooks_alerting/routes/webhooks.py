@@ -87,9 +87,7 @@ def _validate_filter_assignee_ref(
       - or a recognized type (identity/org_unit) is set but the id doesn't
         resolve to a row within tenant_id — the same cross-tenant IDOR guard
         applied to issues.assignee_id
-        (issues/routes/issues.py::_resolve_assignee_type) and
-        hd_intake_forms.default_assignee_id
-        (helpdesk/routes/intake_forms.py::_validate_assignee_ref).
+        (issues/routes/issues.py::_resolve_assignee_type).
 
     An unrecognized filter_assignee_type with both fields set is left to
     WebhookService's own allow-list check (enforced on both create and

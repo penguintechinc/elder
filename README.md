@@ -61,7 +61,7 @@ Entities use a flexible schema for infrastructure components:
 | **Security** | Vulnerability, Architectural, Config, Compliance, Code, Regulatory |
 
 ### Elements (Supporting Items)
-- **Issues**: Unified problem/task tracking attached to any resource or entity — also the native home for customer support tickets (`issue_type=support`), with a polymorphic assignee (identity or organizational unit)
+- **Issues**: Unified problem/task tracking attached to any resource or entity — also the native home for internal support tickets (`issue_type=support`), with a polymorphic assignee (identity or organizational unit)
 - **Labels**: Categorization and tagging system
 - **Metadata Fields**: Custom properties for extensibility
 - **Dependencies**: Relationship mapping between items
@@ -238,7 +238,7 @@ Entities use a flexible schema for infrastructure components:
 - ✅ **RESTful & gRPC APIs**: Complete API coverage
 - ✅ **Audit Logging**: Comprehensive audit trail for compliance
 - ✅ **MariaDB Galera**: Full support for multi-master MySQL clustering
-- ✅ **Unified Support & CRM**: Support tickets are native Issues (`issue_type=support`) with a combined identity+org-unit assignee picker, admin-configurable intake forms (public submission optionally protected by an Altcha captcha — `captcha_required` per form, off by default), `customer_company`/`customer_contact` CRM entities, and `issue.assigned` assignment webhooks
+- ✅ **Internal Helpdesk & Ticketing**: Employee/contractor support — tickets with SLA policies, canned responses, and teams, plus `issue_type=support` Issues with a combined identity+org-unit assignee picker and `issue.assigned` assignment webhooks. (Customer CRM, public intake forms, and customer email intake moved to Waddles.)
 
 ### v3.2.3 Highlights (Latest)
 - **AWS IAM Identity Sync Fix** (Issue #112): `AuthProvider` enum was missing `AWS = "aws"` and both `auth_provider` and `identity_type` SQLAlchemy columns were storing uppercase enum member names (`LOCAL`, `HUMAN`) instead of lowercase values (`local`, `human`) due to missing `values_callable`. Fix adds `AWS` provider, normalises all stored values via Alembic migration 014, and adds regression tests to prevent recurrence.

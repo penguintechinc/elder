@@ -188,8 +188,8 @@ async def test_create_webhook_rejects_cross_tenant_filter_assignee_id(
 ):
     """Regression (security review): `filter_assignee_id` (type `identity`)
     must belong to the caller's own tenant — an identity in a DIFFERENT
-    tenant is rejected with 400, mirroring
-    test_intake_forms.py::test_create_form_rejects_cross_tenant_assignee_identity."""
+    tenant is rejected with 400, mirroring the same cross-tenant assignee
+    guard on issues (issues/routes/issues.py::_resolve_assignee_type)."""
     mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
 
     async with app.app_context():
@@ -440,9 +440,7 @@ async def test_create_webhook_rejects_cross_tenant_organization_id(
 ):
     """Regression (security review, LOW): create_webhook did not validate
     that `organization_id` belongs to the caller's own tenant — an org
-    owned by a DIFFERENT tenant was silently accepted and persisted.
-    Mirrors
-    test_intake_forms.py::test_create_form_rejects_cross_tenant_organization_id."""
+    owned by a DIFFERENT tenant was silently accepted and persisted."""
     mock_get_user.return_value = MagicMock(id=1, is_superuser=True)
 
     async with app.app_context():

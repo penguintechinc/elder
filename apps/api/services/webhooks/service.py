@@ -79,11 +79,7 @@ def generate_signature(secret: str, payload: str) -> str:
 
 
 def _is_village_id_conflict(exc: IntegrityError) -> bool:
-    """Return True only if `exc` is the webhooks village_id unique-constraint violation.
-
-    Mirrors apps/api/modules/helpdesk/routes/intake_forms.py's identical
-    helper for hd_intake_forms.
-    """
+    """Return True only if `exc` is the webhooks village_id unique-constraint violation."""
     orig = getattr(exc, "orig", None)
     constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
     if constraint_name is not None:
@@ -113,10 +109,8 @@ def _raise_village_id_counter_to_table_max(
     """Raise the tenant's Redis village_id counter to >= the highest
     object-seq already persisted in `webhooks` for this tenant.
 
-    Mirrors apps/api/modules/helpdesk/routes/intake_forms.py's identical
-    helper for hd_intake_forms — see that docstring for the full O(1)
-    recovery rationale. The counter key is shared across every table that
-    mints village_ids for this tenant, so this only ever raises it.
+    O(1) recovery: the counter key is shared across every table that mints
+    village_ids for this tenant, so this only ever raises it.
     """
     counter_key = f"elder:vid:{tenant_id:08x}"
 
@@ -136,9 +130,7 @@ def _insert_webhook_with_unique_village_id(
 ) -> int:
     """Insert `insert_data` into webhooks with a collision-safe village_id.
 
-    Mirrors apps/api/modules/helpdesk/routes/intake_forms.py's
-    _insert_form_with_unique_village_id for hd_intake_forms — same
-    mint-retry strategy against the same shared per-tenant Redis counter.
+    Mint-retry strategy against the shared per-tenant Redis village_id counter.
     """
     from shared.utils.village_id import generate_village_id
 
@@ -253,7 +245,7 @@ class WebhookService:
             url: Target URL for webhook deliveries
             events: List of event types to subscribe to (e.g. ["issue.assigned"])
             redis_client: Redis client for village_id minting (falls back to a
-                test-safe random id when None, matching hd_intake_forms)
+                test-safe random id when None)
             organization_id: Optional owning organization
             secret: Optional shared secret for HMAC signatures
             headers: Optional custom headers sent with every delivery

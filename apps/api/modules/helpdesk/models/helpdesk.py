@@ -1,4 +1,10 @@
-"""Helpdesk module models - tickets, SLA, email, teams, forms, CRM."""
+"""Helpdesk module models — internal ticketing: tickets, SLA, canned responses, teams.
+
+Scope: INTERNAL helpdesk only (employees/contractors). The customer-relations
+half (CRM companies/contacts, public intake forms + CAPTCHA, customer email
+intake) was removed and handed off to Waddles — see
+docs/superpowers/specs/2026-08-21-helpdesk-internal-reframe-phase3.md.
+"""
 
 from sqlalchemy import (
     JSON,
@@ -9,7 +15,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    UniqueConstraint,
 )
 
 from apps.api.models.base import (
@@ -22,7 +27,7 @@ from apps.api.models.base import (
 
 
 class HdTicket(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
-    """Support ticket model."""
+    """Internal support ticket model."""
 
     __tablename__ = "hd_tickets"
 
@@ -45,17 +50,11 @@ class HdTicket(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin)
         nullable=False,
         comment="web, email, api",
     )
-    # Requester is either an internal identity (portal/agent-created) OR an
-    # external CRM contact (e.g. anonymous public-form submission). Both nullable;
-    # app-level create paths set exactly one.
+    # Requester is an internal identity (portal/agent-created). Nullable so a
+    # system-created ticket without an explicit requester is still valid.
     requester_identity_id = Column(
         Integer,
         ForeignKey("identities.id", ondelete="RESTRICT"),
-        nullable=True,
-    )
-    requester_contact_id = Column(
-        Integer,
-        ForeignKey("hd_contacts.id", ondelete="SET NULL"),
         nullable=True,
     )
     assignee_identity_id = Column(
@@ -157,173 +156,6 @@ class HdCannedResponse(Base, IDMixin, TenantScopedMixin, TimestampMixin):
         nullable=True,
     )
     is_shared = Column(Boolean, default=True, nullable=False)
-
-
-class HdEmailAccount(Base, IDMixin, TenantScopedMixin, TimestampMixin):
-    """SMTP/IMAP/Gmail integrations."""
-
-    __tablename__ = "hd_email_accounts"
-
-    display_name = Column(String(255), nullable=True)
-    email_address = Column(String(255), nullable=False)
-    provider = Column(
-        String(20),
-        nullable=False,
-        comment="smtp_imap or gmail_api",
-    )
-    smtp_host = Column(String(255), nullable=True)
-    smtp_port = Column(Integer, nullable=True)
-    smtp_mode = Column(String(20), nullable=True, comment="ssl or starttls")
-    smtp_username = Column(String(255), nullable=True)
-    smtp_password_ref = Column(
-        String(255), nullable=True, comment="penguin-sal reference"
-    )
-    imap_host = Column(String(255), nullable=True)
-    imap_port = Column(Integer, default=993, nullable=True)
-    imap_username = Column(String(255), nullable=True)
-    imap_password_ref = Column(
-        String(255), nullable=True, comment="penguin-sal reference"
-    )
-    gmail_credentials_ref = Column(
-        String(255), nullable=True, comment="penguin-sal reference"
-    )
-    gmail_token_ref = Column(
-        String(255), nullable=True, comment="penguin-sal reference"
-    )
-    gmail_watch_expiry = Column(DateTime(timezone=True), nullable=True)
-    is_default = Column(Boolean, default=False, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    last_polled_at = Column(DateTime(timezone=True), nullable=True)
-
-
-class HdEmailLog(Base, IDMixin, TimestampMixin):
-    """Email send/receive history."""
-
-    __tablename__ = "hd_email_logs"
-
-    hd_email_account_id = Column(
-        Integer,
-        ForeignKey("hd_email_accounts.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-    direction = Column(
-        String(10),
-        nullable=False,
-        comment="inbound or outbound",
-    )
-    message_id = Column(String(255), nullable=False, unique=True)
-    in_reply_to = Column(String(255), nullable=True)
-    from_addr = Column(String(255), nullable=True)
-    to_addr = Column(Text, nullable=True)
-    subject = Column(String(500), nullable=True)
-    hd_ticket_id = Column(
-        Integer,
-        ForeignKey("hd_tickets.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
-
-class HdTicketForm(Base, IDMixin, TenantScopedMixin, TimestampMixin):
-    """Custom ticket submission forms with optional CAPTCHA."""
-
-    __tablename__ = "hd_ticket_forms"
-
-    name = Column(String(255), nullable=False)
-    slug = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    is_default = Column(Boolean, default=False, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    captcha_provider = Column(
-        String(20),
-        default="none",
-        nullable=False,
-        comment="none, turnstile, recaptcha",
-    )
-    captcha_site_key = Column(String(255), nullable=True)
-    captcha_secret_ref = Column(
-        String(255), nullable=True, comment="penguin-sal reference"
-    )
-    fields = Column(JSON, nullable=False, server_default="{}")
-
-    # Slug is GLOBALLY unique: the public form URL is /public/<slug> with no
-    # tenant component, so a per-tenant slug would let two tenants collide and
-    # make anonymous submissions resolve to an arbitrary tenant (cross-tenant
-    # hijacking). Global uniqueness makes public resolution unambiguous.
-    __table_args__ = (UniqueConstraint("slug", name="uq_form_slug"),)
-
-
-class IntakeForm(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
-    """Configurable public/internal intake form that creates a native Issue on submit.
-
-    Distinct from HdTicketForm (which creates an hd_tickets row): submissions
-    from an IntakeForm create an Issue (issue_type=support by default), so
-    intake forms are the CRM-facing entry point into the unified Issues model.
-    """
-
-    __tablename__ = "hd_intake_forms"
-
-    name = Column(String(255), nullable=False)
-    slug = Column(String(255), nullable=False)
-    description = Column(Text, nullable=True)
-    fields = Column(JSON, nullable=False, comment="Field spec array")
-    issue_type = Column(String(30), default="support", nullable=False)
-    default_assignee_type = Column(String(16), nullable=True)
-    default_assignee_id = Column(Integer, nullable=True)
-    organization_id = Column(
-        Integer,
-        ForeignKey("organizations.id", ondelete="SET NULL"),
-        nullable=True,
-        comment="Owning org for issues created from this form; falls back to "
-        "the tenant's root org when null",
-    )
-    is_public = Column(Boolean, default=False, nullable=False)
-    captcha_required = Column(Boolean, default=False, nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    intake_metadata = Column("metadata", JSON, nullable=True)
-
-    # Slug is GLOBALLY unique for the same reason as HdTicketForm.slug: the
-    # public form URL (/api/v1/intake/<slug>) carries no tenant component.
-    __table_args__ = (UniqueConstraint("slug", name="uq_intake_form_slug"),)
-
-
-class HdCompany(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
-    """CRM company / account record."""
-
-    __tablename__ = "hd_companies"
-
-    name = Column(String(255), nullable=False)
-    domain = Column(String(255), nullable=True)
-    industry = Column(String(100), nullable=True)
-    size = Column(
-        String(50), nullable=True, comment="startup, smb, mid-market, enterprise"
-    )
-    website = Column(String(500), nullable=True)
-    notes = Column(Text, nullable=True)
-
-
-class HdContact(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
-    """Individual CRM contact, optionally linked to a Company and Identity."""
-
-    __tablename__ = "hd_contacts"
-
-    hd_company_id = Column(
-        Integer,
-        ForeignKey("hd_companies.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-    identity_id = Column(
-        Integer,
-        ForeignKey("identities.id", ondelete="SET NULL"),
-        nullable=True,
-        comment="Optional link to identities table",
-    )
-    first_name = Column(String(100), nullable=True)
-    last_name = Column(String(100), nullable=True)
-    email = Column(String(255), nullable=False, index=True)
-    phone = Column(String(50), nullable=True)
-    job_title = Column(String(200), nullable=True)
-    notes = Column(Text, nullable=True)
 
 
 class HdTeam(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):

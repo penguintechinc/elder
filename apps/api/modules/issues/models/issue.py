@@ -277,14 +277,6 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         comment="Support category/topic (e.g. billing, technical)",
     )
 
-    requester_contact_id = Column(
-        Integer,
-        ForeignKey("identities.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-        comment="CRM contact who requested support (Plan 03 CRM)",
-    )
-
     hd_sla_policy_id = Column(
         Integer,
         nullable=True,
