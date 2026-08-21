@@ -55,16 +55,19 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
 }
 
 /**
- * Get navigation categories for enabled modules, grouped by Core/Workflow/KB.
- * Each group is preceded by a header category before its navigation items.
+ * Get navigation categories for enabled modules, bucketed by WIRED pillar.
+ * Groups render in acronym order (Workstreams, Issues, Relationships, Entities,
+ * Documents), each preceded by a header category before its navigation items.
  * @param enabledModuleIds Set of module IDs that are enabled
  * @returns MenuCategory[] with headers for each group followed by that group's nav items
  */
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
   const GROUP_ORDER: [string, string][] = [
-    ['core', 'Core'],
-    ['workflow', 'Workflow'],
-    ['kb', 'Knowledge Base'],
+    ['workstreams', 'Workstreams'],
+    ['issues', 'Issues'],
+    ['relationships', 'Relationships'],
+    ['entities', 'Entities'],
+    ['documents', 'Documents'],
   ]
 
   const out: MenuCategory[] = []

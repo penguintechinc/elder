@@ -72,7 +72,7 @@ const routes: RouteObject[] = [
 const infrastructureModule: FrontendModule = {
   id: 'infrastructure',
   name: 'Infrastructure',
-  group: 'core',
+  group: 'entities',
   nav: navigation,
   routes,
 }

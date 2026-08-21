@@ -11,7 +11,7 @@ const routes: RouteObject[] = []
 const accessReviewsModule: FrontendModule = {
   id: 'access_reviews',
   name: 'Access Reviews',
-  group: 'core',
+  group: 'relationships',
   nav: navigation,
   routes,
 }

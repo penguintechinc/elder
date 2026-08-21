@@ -41,7 +41,7 @@ const routes: RouteObject[] = [
 const streamsModule: FrontendModule = {
   id: 'nav_streams',
   name: 'Streams',
-  group: 'workflow',
+  group: 'workstreams',
   nav: navigation,
   routes,
 }

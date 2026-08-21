@@ -2,17 +2,15 @@
 
 from apps.api.modules import MODULES
 
+WIRED_GROUPS = {"workstreams", "issues", "relationships", "entities", "documents"}
+
 
 def test_modules_api_response_has_group_field():
     """Verify that module manifests have group field and API response will include it."""
     # Test that all manifests have a valid group
     for m in MODULES:
         assert hasattr(m, "group"), f"Module {m.name} missing group attribute"
-        assert m.group in {
-            "core",
-            "workflow",
-            "kb",
-        }, f"Invalid group {m.group!r} for module {m.name}"
+        assert m.group in WIRED_GROUPS, f"Invalid group {m.group!r} for module {m.name}"
 
     # Test that a mock response dict would have the group field
     # (simulating what the API endpoint does)
@@ -35,4 +33,4 @@ def test_modules_api_response_has_group_field():
     # Check specific module
     helpdesk = [m for m in MODULES if m.name == "helpdesk"]
     assert len(helpdesk) == 1
-    assert helpdesk[0].group == "workflow"
+    assert helpdesk[0].group == "issues"
