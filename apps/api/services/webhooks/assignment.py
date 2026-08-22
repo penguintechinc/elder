@@ -2,13 +2,11 @@
 against every active, filter-matching webhook in its tenant and delivers
 `issue.assigned`, HMAC-signed and non-blocking.
 
-Three call sites can change an issue's assignee and each builds an
+Two call sites can change an issue's assignee and each builds an
 AssignmentEvent and fires send_issue_assigned_webhooks (Task 5) after its DB
-write commits: apps/api/modules/issues/routes/issues.py::create_issue,
+write commits: apps/api/modules/issues/routes/issues.py::create_issue and
 apps/api/modules/issues/routes/issues.py::update_issue (only when the
-assignee actually changes), and
-apps/api/modules/helpdesk/routes/intake_forms.py::submit_public_intake_form
-(when the form has a default assignee configured).
+assignee actually changes).
 """
 
 import asyncio

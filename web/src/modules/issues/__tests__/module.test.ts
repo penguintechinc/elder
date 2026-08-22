@@ -14,17 +14,10 @@ describe('Issues Module', () => {
     expect(itemNames).toContain('Issues')
   })
 
-  it('should have an Intake Forms admin nav entry', () => {
-    expect(issuesModule.adminNav).toBeDefined()
-    const adminNames = issuesModule.adminNav?.map((item) => item.name)
-    expect(adminNames).toContain('Intake Forms')
-  })
-
-  it('should have required routes including the intake-forms admin route', () => {
+  it('should have required routes including issue detail', () => {
     const routePaths = issuesModule.routes.map((route) => route.path)
     expect(routePaths).toContain('issues')
     expect(routePaths).toContain('issues/:id')
-    expect(routePaths).toContain('issues/intake-forms')
   })
 
   it('should conform to FrontendModule interface', () => {

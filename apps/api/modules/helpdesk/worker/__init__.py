@@ -1,1 +1,1 @@
-"""Helpdesk worker modules: email send/poll, SLA breach checker."""
+"""Helpdesk worker modules: SLA breach checker."""

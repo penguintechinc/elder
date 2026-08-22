@@ -98,7 +98,6 @@ class IssueDTO(ImmutableModel):
     parent_issue_id: int | None = None
     channel: str | None = None
     category: str | None = None
-    requester_contact_id: int | None = None
     hd_sla_policy_id: int | None = None
     sla_breach_at: datetime | None = None
     first_response_at: datetime | None = None

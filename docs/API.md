@@ -102,26 +102,6 @@ Issues are unified — a customer support ticket is simply an Issue with
 polymorphic: `assignee_type` is `identity` or `org_unit`, paired with
 `assignee_id` referencing the matching table.
 
-#### Intake Forms
-```
-GET    /api/v1/intake-forms               # List intake forms (admin)
-POST   /api/v1/intake-forms               # Create intake form (admin)
-GET    /api/v1/intake-forms/{id}          # Get intake form (admin)
-PATCH  /api/v1/intake-forms/{id}          # Update intake form (admin)
-DELETE /api/v1/intake-forms/{id}          # Delete intake form (admin)
-
-GET    /api/v1/intake/{slug}              # Get public form definition (unauthenticated)
-POST   /api/v1/intake/{slug}/submit       # Submit a public form (unauthenticated)
-```
-
-`/api/v1/intake-forms` is admin-authenticated and defines dynamic,
-Pydantic-validated fields (text, email, textarea, select, etc.). The
-public `/api/v1/intake/{slug}` routes require no auth; the submit
-endpoint is optionally protected by an Altcha proof-of-work captcha
-(`captcha_required` per form, off by default). A successful submission
-upserts a `customer_contact` identity and creates a native Issue of the
-form's configured `issue_type` (default `support`).
-
 #### Entity Types
 ```
 GET    /api/v1/entity-types/              # List all entity types
@@ -322,8 +302,8 @@ Supported events:
 - `entity.created`, `entity.updated`, `entity.deleted`
 - `organization.created`, `organization.updated`, `organization.deleted`
 - `issue.created`, `issue.updated`, `issue.closed`
-- `issue.assigned` — fired on any assignee change (create, update, or an
-  intake-form's default-assign). Filterable per-webhook by `issue_type`
+- `issue.assigned` — fired on any assignee change (create or update).
+  Filterable per-webhook by `issue_type`
   and by assignee (`assignee_type` + `assignee_id`, i.e. a specific
   identity or org unit); an empty filter matches every assignment.
   Deliveries are HMAC-signed (`X-Elder-Signature` header) and

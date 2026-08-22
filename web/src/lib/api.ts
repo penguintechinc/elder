@@ -732,68 +732,6 @@ class ApiClient {
     return response.data
   }
 
-  // Intake Forms (admin) — /api/v1/intake-forms
-  async getIntakeForms(params?: { page?: number; per_page?: number; is_active?: boolean }) {
-    const response = await this.client.get('/intake-forms', { params })
-    return response.data
-  }
-
-  async getIntakeForm(id: number) {
-    const response = await this.client.get(`/intake-forms/${id}`)
-    return response.data
-  }
-
-  async createIntakeForm(data: {
-    name: string
-    slug: string
-    description?: string
-    fields: Array<{ id: string; label: string; type: string; required: boolean; options?: string[] }>
-    issue_type?: string
-    default_assignee_type?: 'identity' | 'org_unit'
-    default_assignee_id?: number
-    organization_id?: number
-    is_public?: boolean
-    captcha_required?: boolean
-    is_active?: boolean
-    metadata?: Record<string, unknown>
-  }) {
-    const response = await this.client.post('/intake-forms', data)
-    return response.data
-  }
-
-  async updateIntakeForm(id: number, data: Partial<{
-    name: string
-    description: string
-    fields: Array<{ id: string; label: string; type: string; required: boolean; options?: string[] }>
-    issue_type: string
-    default_assignee_type: 'identity' | 'org_unit'
-    default_assignee_id: number
-    organization_id: number
-    is_public: boolean
-    captcha_required: boolean
-    is_active: boolean
-    metadata: Record<string, unknown>
-  }>) {
-    const response = await this.client.patch(`/intake-forms/${id}`, data)
-    return response.data
-  }
-
-  async deleteIntakeForm(id: number) {
-    const response = await this.client.delete(`/intake-forms/${id}`)
-    return response.data
-  }
-
-  // Intake Forms (public, unauthenticated) — /api/v1/intake
-  async getPublicIntakeForm(slug: string) {
-    const response = await this.client.get(`/intake/${slug}`)
-    return response.data
-  }
-
-  async submitPublicIntakeForm(slug: string, data: { fields: Record<string, unknown>; altcha?: unknown }) {
-    const response = await this.client.post(`/intake/${slug}/submit`, data)
-    return response.data
-  }
-
   // Labels
   async getLabels(params?: { page?: number; per_page?: number; search?: string }) {
     const response = await this.client.get('/labels', { params })

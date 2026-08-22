@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`flows`**: CI/CD pipeline module, merged in from IceFlows
 
 #### Ruffled Merge — Helpdesk & Knowledge Base (#166, #173)
-- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled — subsequently unified into native Issues, see below
+- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled — the customer-relations half (CRM, public intake, customer email) was later split out to Waddles; Elder keeps internal ticketing, see below
 - **`documents`**: Knowledge base module, merged in from Ruffled
 - **`pages`**: Documentation pages module, merged in from Ruffled
 - Rookery was intentionally excluded from this merge
@@ -67,6 +67,31 @@ resource — a support request is now just an Issue.
 - **Demo data**: `make seed-demo-unified` (`scripts/seed_demo_unified.py`)
   seeds native support issues, `customer_company`/`customer_contact` CRM
   entities, intake forms (public and private), and assignment webhooks
+
+### 🗑️ Customer-Relations Split-Out — Helpdesk is now Internal-Only
+
+Superseding the unification above: the customer/public/community half of the
+helpdesk was **removed from Elder and handed off to Waddles**, which owns
+public community + customer relationships. Elder's helpdesk is now strictly
+internal (employees/contractors).
+
+- **Removed** (moved to Waddles): CRM tables `hd_companies`/`hd_contacts`;
+  public intake forms (`hd_ticket_forms`, `hd_intake_forms`) with their
+  **Altcha** captcha; customer email intake (`hd_email_accounts`,
+  `hd_email_logs`) and the `helpdesk_email_poll`/`helpdesk_email_send`
+  workers; and the `requester_contact_id` FK on both `hd_tickets` and
+  `issues`. The backend routes (`/api/v1/helpdesk/{companies,contacts,email-accounts,ticket-forms}`,
+  `/api/v1/intake-forms`, `/api/v1/intake`) and the Intake-Forms web UI were deleted.
+- **Kept** (internal ticketing): `hd_tickets`, messages, attachments,
+  `hd_sla_policies`, `hd_canned_responses`, `hd_teams`/`hd_team_members`,
+  and the SLA-breach worker.
+- **Regrouped**: the `helpdesk` module moved from the `crm` group to
+  `workflow`; the `crm` group is retired. Migration `040` drops the removed
+  tables and columns.
+- `customer_contact` (identity type) and `customer_company` (organization
+  type) remain as harmless enum values, no longer written by any Elder path.
+- Specs: `docs/superpowers/specs/2026-08-21-helpdesk-internal-reframe-phase3.md`
+  (Elder) and the Waddles handoff spec.
 
 ### 🏗️ Architecture — Modular Monolith Restructure (#164)
 - Feature-domain code moved from the flat `apps/api/models/*.py` + `apps/api/api/v1/*` layout into per-module packages `apps/api/modules/<name>/{models,routes}/` — 15 modules total: `infrastructure`, `ipam`, `sbom`, `services_oncall`, `issues`, `discovery`, `secrets`, `webhooks_alerting`, `access_reviews`, `documents`, `pages`, `diagrams`, `streams`, `flows`, `helpdesk`

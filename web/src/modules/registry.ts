@@ -55,7 +55,7 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
 }
 
 /**
- * Get navigation categories for enabled modules, grouped by Core/CRM/Workflow/KB.
+ * Get navigation categories for enabled modules, grouped by Core/Workflow/KB.
  * Each group is preceded by a header category before its navigation items.
  * @param enabledModuleIds Set of module IDs that are enabled
  * @returns MenuCategory[] with headers for each group followed by that group's nav items
@@ -63,7 +63,6 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
   const GROUP_ORDER: [string, string][] = [
     ['core', 'Core'],
-    ['crm', 'CRM'],
     ['workflow', 'Workflow'],
     ['kb', 'Knowledge Base'],
   ]

@@ -10,7 +10,6 @@ def test_modules_api_response_has_group_field():
         assert hasattr(m, "group"), f"Module {m.name} missing group attribute"
         assert m.group in {
             "core",
-            "crm",
             "workflow",
             "kb",
         }, f"Invalid group {m.group!r} for module {m.name}"
@@ -36,4 +35,4 @@ def test_modules_api_response_has_group_field():
     # Check specific module
     helpdesk = [m for m in MODULES if m.name == "helpdesk"]
     assert len(helpdesk) == 1
-    assert helpdesk[0].group == "crm"
+    assert helpdesk[0].group == "workflow"

@@ -56,38 +56,6 @@ describe('ApiClient - Issues', () => {
   })
 })
 
-describe('ApiClient - Intake Forms', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('createIntakeForm posts to /intake-forms', async () => {
-    mockAxiosInstance.post.mockResolvedValue({ data: { id: 1, slug: 'support-request' } })
-    await api.createIntakeForm({
-      name: 'Support Request',
-      slug: 'support-request',
-      fields: [{ id: 'email', label: 'Email', type: 'email', required: true }],
-    })
-    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/intake-forms', {
-      name: 'Support Request',
-      slug: 'support-request',
-      fields: [{ id: 'email', label: 'Email', type: 'email', required: true }],
-    })
-  })
-
-  it('updateIntakeForm sends PATCH to /intake-forms/:id', async () => {
-    mockAxiosInstance.patch.mockResolvedValue({ data: { id: 1 } })
-    await api.updateIntakeForm(1, { is_active: false })
-    expect(mockAxiosInstance.patch).toHaveBeenCalledWith('/intake-forms/1', { is_active: false })
-  })
-
-  it('submitPublicIntakeForm posts to /intake/:slug/submit', async () => {
-    mockAxiosInstance.post.mockResolvedValue({ data: { status: 'created', reference: 'abc-123' } })
-    await api.submitPublicIntakeForm('support-request', { fields: { email: 'a@b.com' } })
-    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/intake/support-request/submit', {
-      fields: { email: 'a@b.com' },
-    })
-  })
-})
-
 describe('ApiClient - Webhook filters', () => {
   beforeEach(() => vi.clearAllMocks())
 

@@ -266,48 +266,29 @@ def _flows_blueprints() -> list[tuple[Blueprint, str]]:
 
 
 def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
-    """Load helpdesk module blueprints (tickets, messages, dashboard, settings, CRM, email, forms)."""
+    """Load helpdesk module blueprints (internal ticketing: tickets, messages, dashboard, SLA, canned responses, teams)."""
     from apps.api.modules.helpdesk.routes import (
         canned_responses,
-        companies,
-        contacts,
         dashboard,
-        email_accounts,
-        intake_forms,
         messages,
         sla_policies,
         teams,
-        ticket_forms,
         tickets,
     )
 
     # Namespace all helpdesk resources under /api/v1/helpdesk. This (a) matches
     # the frontend api client (web/src/lib/api.ts calls /api/v1/helpdesk/*) and
-    # (b) keeps helpdesk's generic resource names (dashboard, teams, companies,
-    # contacts) from colliding with core routes. The missing /helpdesk segment
-    # 404'd the entire module — ticket list AND the dashboard-stats endpoint.
-    # Module access control keys on blueprint name (main.py), not the URL path,
-    # so re-prefixing is safe.
+    # (b) keeps helpdesk's generic resource names (dashboard, teams) from
+    # colliding with core routes. Module access control keys on blueprint name
+    # (main.py), not the URL path, so re-prefixing is safe.
     api_prefix = "/api/v1/helpdesk"
     return [
         (tickets.bp, f"{api_prefix}/tickets"),
         (messages.bp, f"{api_prefix}/tickets"),
-        (email_accounts.bp, f"{api_prefix}/email-accounts"),
-        (ticket_forms.bp, f"{api_prefix}/ticket-forms"),
         (dashboard.bp, f"{api_prefix}/dashboard"),
         (sla_policies.bp, f"{api_prefix}/sla-policies"),
         (canned_responses.bp, f"{api_prefix}/canned-responses"),
         (teams.bp, f"{api_prefix}/teams"),
-        (companies.bp, f"{api_prefix}/companies"),
-        (contacts.bp, f"{api_prefix}/contacts"),
-        # Intake forms are the CRM-facing entry point into the unified Issues
-        # model (create native Issues, not hd_tickets) — mounted at the
-        # top-level /api/v1/intake-forms, not under /api/v1/helpdesk, per plan.
-        (intake_forms.bp, "/api/v1/intake-forms"),
-        # Public (unauthenticated) GET/submit routes for the same forms, on
-        # their own top-level prefix so they never share a URL space or an
-        # auth posture with the admin CRUD blueprint above.
-        (intake_forms.bp_public, "/api/v1/intake"),
     ]
 
 
@@ -563,7 +544,7 @@ MODULES = (
     ),
     ModuleManifest(
         name="helpdesk",  # default_enabled=True like all modules; prod rollout gated OFF via base ConfigMap ELDER_MODULE_HELPDESK=false
-        title="Helpdesk & Support",
+        title="Helpdesk (Internal Ticketing)",
         license_feature=None,
         depends_on=(),
         blueprints=_helpdesk_blueprints,
@@ -571,13 +552,12 @@ MODULES = (
         table_prefix="hd_",
         nav_id="nav_helpdesk",
         scopes=("helpdesk:read", "helpdesk:write", "helpdesk:admin"),
-        worker_task_groups=(
-            "helpdesk_email_send",
-            "helpdesk_email_poll",
-            "helpdesk_sla_breach",
-        ),
+        # Internal ticketing only. Customer email intake (send/poll) moved to
+        # Waddles with the rest of the customer-relations half; SLA breach
+        # checking remains for internal tickets.
+        worker_task_groups=("helpdesk_sla_breach",),
         optional_services=(),
-        group="crm",
+        group="workflow",
         default_enabled=True,
     ),
 )

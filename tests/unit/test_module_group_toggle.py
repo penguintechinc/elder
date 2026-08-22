@@ -8,7 +8,7 @@ def _names(env):
 
 
 def test_group_false_disables_all_modules_in_group():
-    env = {"ELDER_MODULES_ENABLED": "all", "ELDER_GROUP_CRM": "false"}
+    env = {"ELDER_MODULES_ENABLED": "all", "ELDER_GROUP_WORKFLOW": "false"}
     assert "helpdesk" not in _names(env)
 
 
@@ -22,7 +22,7 @@ def test_per_module_override_beats_group():
     # group off, but the module is explicitly on -> module wins
     env = {
         "ELDER_MODULES_ENABLED": "all",
-        "ELDER_GROUP_CRM": "false",
+        "ELDER_GROUP_WORKFLOW": "false",
         "ELDER_MODULE_HELPDESK": "true",
     }
     assert "helpdesk" in _names(env)

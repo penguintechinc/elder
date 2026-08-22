@@ -39,7 +39,7 @@ class ModuleManifest:
         worker_task_groups: Tuple of worker task group names for this module
                            (e.g., ('discovery', 'sbom_scan'))
         optional_services: Tuple of optional service names (e.g., ('neo4j', 'minio'))
-        group: Group bucket for module organization (e.g., 'core', 'crm', 'workflow', 'kb')
+        group: Group bucket for module organization (e.g., 'core', 'workflow', 'kb')
         default_enabled: Whether module is on by default; False → opt-in via config
     """
 

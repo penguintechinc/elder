@@ -119,13 +119,16 @@ def init_test_database(test_database_url):
         engine.dispose()
 
         # Sanity-check that all core + module models loaded. This is a floor,
-        # not an exact count, so it survives additive schema growth per phase
-        # (helpdesk +12 = 96, documents +4 = 100, pages +2 = 102, references/issue-links reconciliation +2 = 104, ...);
-        # it still catches catastrophic under-loading (models failing to import).
+        # not an exact count, so it survives additive schema growth per phase.
+        # Helpdesk now contributes 7 tables (internal ticketing only — the 6
+        # customer-relations tables hd_companies/hd_contacts/hd_ticket_forms/
+        # hd_intake_forms/hd_email_accounts/hd_email_logs were removed/moved to
+        # Waddles). The floor still catches catastrophic under-loading (a model
+        # module failing to import drops many tables at once).
         table_count = len(Base.metadata.tables)
         logger.info(f"Test database initialized: {table_count} tables")
-        assert table_count >= 102, (
-            f"Expected >= 102 tables (core + modules); got {table_count} "
+        assert table_count >= 96, (
+            f"Expected >= 96 tables (core + modules); got {table_count} "
             "— a model module likely failed to load"
         )
 

@@ -11,7 +11,7 @@ namespace: elder
 # values.yaml) so the demo surfaces the full merged product — diagrams &
 # workflow engine (IceCharts) and helpdesk + knowledge base (Ruffled).
 modules:
-  helpdesk: true      # Ruffled — tickets/companies/contacts
+  helpdesk: true      # Ruffled — internal ticketing (tickets/SLA/teams)
   documents: true     # Ruffled — knowledge base
   pages: true         # Ruffled — WYSIWYG pages
   diagrams: true      # IceCharts — create diagrams/charts

@@ -19,8 +19,6 @@ const Milestones = lazy(() => import('@/pages/Milestones'))
 const Labels = lazy(() => import('@/pages/Labels'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const DataStores = lazy(() => import('@/pages/DataStores'))
-// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
-const IntakeForms = lazy(() => import('@/pages/IntakeForms'))
 // eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
@@ -37,13 +35,10 @@ const navigation: MenuCategory[] = [
   },
 ]
 
-const adminNav: MenuItem[] = [
-  { name: 'Intake Forms', href: '/issues/intake-forms' },
-]
+const adminNav: MenuItem[] = []
 
 const routes: RouteObject[] = [
   { path: 'issues', element: <Issues /> },
-  { path: 'issues/intake-forms', element: <IntakeForms /> },
   { path: 'issues/:id', element: <IssueDetail /> },
   { path: 'projects', element: <Projects /> },
   { path: 'projects/:id', element: <ProjectDetail /> },
