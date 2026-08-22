@@ -442,6 +442,11 @@ Fix findings, then run `--update` and commit `.lint-baseline` so the debt can
 never creep back. Nothing in `make lint` is wrapped in `|| true` — a gate that
 cannot fail is not a gate.
 
+The baseline also records `shellcheck_total`, the number of scripts examined.
+The ratchet only counts **git-tracked** files, and fails if that denominator
+shrinks — a narrower scan produces fewer findings, which would otherwise read as
+an improvement.
+
 ### Adding a New Python Dependency
 
 Dependencies are hash-pinned; never hand-edit a `requirements.txt`.

@@ -34,12 +34,17 @@ count_mypy() {
     grep -c 'error:' <<<"$out" || true
 }
 
+# Count only git-tracked scripts. A bare `find` also walks .worktrees/ and other
+# untracked checkouts, so the denominator differed between a dev box (79) and CI
+# (40) — and a shrinking denominator reads as "IMPROVED" when nothing improved.
+shell_files() { git ls-files '*.sh'; }
+
 count_shellcheck() {
     local fails=0
     while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
         shellcheck "$f" >/dev/null 2>&1 || fails=$((fails + 1))
-    done < <(find . -name '*.sh' \
-        -not -path './.git/*' -not -path '*/node_modules/*' -not -path './.venv/*')
+    done < <(shell_files)
     echo "$fails"
 }
 
@@ -74,7 +79,7 @@ count_eslint() {
 }
 
 # Denominators, so "0 findings" can never mean "nothing was examined".
-total_shell="$(find . -name '*.sh' -not -path './.git/*' -not -path '*/node_modules/*' -not -path './.venv/*' | wc -l | tr -d ' ')"
+total_shell="$(shell_files | wc -l | tr -d ' ')"
 if [[ "$total_shell" -eq 0 ]]; then
     echo "${RED}No shell scripts found — the scan is pointed at nothing. Failing.${RESET}" >&2
     exit 1
@@ -104,6 +109,7 @@ if [[ "$UPDATE" -eq 1 ]]; then
         for k in mypy shellcheck prettier eslint; do
             echo "${k}=${CURRENT[$k]}"
         done
+        echo "shellcheck_total=${total_shell}"
     } > "$BASELINE_FILE"
     echo "${GREEN}Wrote $BASELINE_FILE${RESET}"
     cat "$BASELINE_FILE"
@@ -121,6 +127,14 @@ while IFS='=' read -r key value; do
     [[ -z "$key" ]] && continue
     BASE[$key]="$value"
 done < "$BASELINE_FILE"
+
+# A denominator that shrank means the scan narrowed, not that the code improved.
+base_total="${BASE[shellcheck_total]:-}"
+if [[ -n "$base_total" ]] && (( total_shell < base_total )); then
+    echo "${RED}Only ${total_shell} shell scripts examined, baseline expected ${base_total}.${RESET}" >&2
+    echo "${RED}The scan narrowed — a lower finding count here is not an improvement.${RESET}" >&2
+    exit 1
+fi
 
 regressed=0
 improved=0
