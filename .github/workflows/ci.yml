@@ -56,7 +56,7 @@ jobs:
     - name: Install linting tools
       run: |
         python -m pip install --upgrade pip
-        pip install ruff==0.8.4 mypy
+        pip install --require-hashes -r requirements-dev.txt
 
     - name: Ruff format check
       run: ruff format --check apps/ shared/ scripts/ tests/
@@ -191,13 +191,6 @@ jobs:
         cache: 'npm'
         cache-dependency-path: web/package-lock.json
 
-    - name: Configure npm for GitHub Packages
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        echo "@penguintechinc:registry=https://npm.pkg.github.com" >> ~/.npmrc
-        echo "//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}" >> ~/.npmrc
-
     - name: Install web dependencies
       run: cd web && npm ci --prefer-offline
 
@@ -213,6 +206,40 @@ jobs:
         name: web-build
         path: web/dist/
         retention-days: 7
+
+  lint-debt:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.web == 'true' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: web/package-lock.json
+
+    - name: Install lint toolchain
+      run: |
+        python -m pip install --upgrade pip
+        pip install --require-hashes -r requirements-dev.txt
+
+    - name: Install web dependencies
+      run: cd web && npm ci --prefer-offline
+
+    - name: Lint debt ratchet
+      # Fails if mypy/shellcheck/prettier/eslint findings rise above .lint-baseline.
+      # shellcheck is preinstalled on ubuntu-latest runners.
+      env:
+        VENV_PY: python
+      run: bash scripts/lint-debt.sh
 
   docker-smoke:
     runs-on: ubuntu-latest
@@ -306,7 +333,7 @@ jobs:
 
   ci-summary:
     runs-on: ubuntu-latest
-    needs: [python-lint, python-unit, python-integration, web-build, docker-smoke, security, license-check]
+    needs: [python-lint, lint-debt, python-unit, python-integration, web-build, docker-smoke, security, license-check]
     if: always()
     permissions:
       contents: read
@@ -322,6 +349,7 @@ jobs:
     - name: Generate summary
       env:
         R_LINT: ${{ needs.python-lint.result }}
+        R_LINT_DEBT: ${{ needs.lint-debt.result }}
         R_UNIT: ${{ needs.python-unit.result }}
         R_INTEGRATION: ${{ needs.python-integration.result }}
         R_WEB: ${{ needs.web-build.result }}
@@ -337,6 +365,7 @@ jobs:
 
         ## Job Results
         - Python Lint: ${R_LINT}
+        - Lint Debt Ratchet: ${R_LINT_DEBT}
         - Python Unit: ${R_UNIT}
         - Python Integration: ${R_INTEGRATION}
         - Web Build: ${R_WEB}
@@ -371,6 +400,7 @@ jobs:
     - name: Fail if required jobs failed
       if: |
         needs.python-lint.result == 'failure' ||
+        needs.lint-debt.result == 'failure' ||
         needs.web-build.result == 'failure' ||
         needs.docker-smoke.result == 'failure'
       run: |

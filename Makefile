@@ -1,7 +1,7 @@
 # Elder - Entity Relationship Tracking Application Makefile
 
 .PHONY: help \
-        setup setup-env setup-python install-hooks verify-hooks \
+        setup setup-env setup-python setup-lint verify-venv install-hooks verify-hooks \
         dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
         smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
@@ -11,7 +11,7 @@
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
         helm-lint helm-template \
-        lock lock-api lock-worker lock-scanner lock-mcp \
+        lock lock-api lock-dev lock-worker lock-scanner lock-mcp \
         license-validate license-check-features \
         clean clean-docker \
         version version-bump-patch version-bump-minor version-bump-major \
@@ -29,6 +29,7 @@ K8S_NAMESPACE   := $(PROJECT_NAME)
 VENV            := .venv
 PYTHON          := $(VENV)/bin/python3
 PIP             := $(VENV)/bin/pip
+PYTHON_VERSION  := 3.13
 
 # Colors
 RED    := \033[31m
@@ -80,46 +81,93 @@ setup-env: ## Create .env from template (no-op if already exists)
 		echo "$(YELLOW).env already exists$(RESET)"; \
 	fi
 
-setup-python: ## Create .venv and install Python dependencies
+setup-python: ## Create .venv (Python $(PYTHON_VERSION)) and install Python dependencies
 	@echo "$(BLUE)Setting up Python virtualenv...$(RESET)"
-	@python3 --version
-	@python3 -m venv $(VENV)
-	@$(PIP) install --upgrade pip --quiet
-	@$(PIP) install -r requirements.txt --quiet
+	@if command -v uv >/dev/null 2>&1; then \
+		uv venv --seed -p $(PYTHON_VERSION) $(VENV); \
+	elif command -v python$(PYTHON_VERSION) >/dev/null 2>&1; then \
+		python$(PYTHON_VERSION) -m venv $(VENV); \
+	else \
+		echo "$(RED)Python $(PYTHON_VERSION) not found. Install it (or uv) and re-run.$(RESET)"; \
+		echo "$(RED)Elder requires $(PYTHON_VERSION)+ — 3.12 is end-of-support for this project.$(RESET)"; \
+		exit 1; \
+	fi
+	@$(PYTHON) --version
+	@$(PYTHON) -c 'import sys; v=sys.version_info; sys.exit(0) if (v.major,v.minor)>=(3,13) else sys.exit("venv is %d.%d, need >=3.13" % (v.major,v.minor))'
+	@# Install with pip, not `uv pip`: requirements.txt excludes `pip` itself
+	@# (lock-api passes --no-emit-package pip), and pip-audit depends on pip.
+	@# pip treats its own already-installed self as satisfied; uv does not, and
+	@# fails --require-hashes. This is the same command the Dockerfiles run.
+	@$(PIP) install --require-hashes -r requirements.txt --quiet
+	@$(PIP) install --require-hashes -r requirements-dev.txt --quiet
 	@echo "$(GREEN)Python dependencies installed into $(VENV)/$(RESET)"
+
+setup-lint: ## Create .venv if absent and install ONLY the lint/type-check toolchain
+	@if [ ! -x $(PYTHON) ]; then \
+		echo "$(BLUE)No .venv — creating one for the lint toolchain...$(RESET)"; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv venv --seed -p $(PYTHON_VERSION) $(VENV); \
+		elif command -v python$(PYTHON_VERSION) >/dev/null 2>&1; then \
+			python$(PYTHON_VERSION) -m venv $(VENV); \
+		else \
+			echo "$(RED)Python $(PYTHON_VERSION) not found. Install it (or uv) and re-run.$(RESET)"; \
+			exit 1; \
+		fi; \
+	fi
+	@$(PIP) install --require-hashes -r requirements-dev.txt --quiet
+	@echo "$(GREEN)Lint toolchain ready in $(VENV)/$(RESET)"
+
+verify-venv: ## Fail if .venv is missing, wrong Python version, or missing dev tooling
+	@test -x $(PYTHON) || { echo "$(RED).venv missing — run 'make setup-python'$(RESET)"; exit 1; }
+	@$(PYTHON) -c 'import sys; v=sys.version_info; sys.exit(0) if (v.major,v.minor)>=(3,13) else sys.exit("venv is %d.%d, need >=3.13 — run: rm -rf .venv && make setup-python" % (v.major,v.minor))'
+	@$(PYTHON) -m ruff --version >/dev/null 2>&1 || { echo "$(RED)ruff missing from .venv — run 'make setup-python'$(RESET)"; exit 1; }
+	@$(PYTHON) -m mypy --version >/dev/null 2>&1 || { echo "$(RED)mypy missing from .venv — run 'make setup-python'$(RESET)"; exit 1; }
+	@echo "$(GREEN).venv OK ($$($(PYTHON) --version), ruff + mypy present)$(RESET)"
 
 # ── Dependency Compilation ─────────────────────────────────────────────
 # uv (https://github.com/astral-sh/uv) is a fast, modern Python package installer
 # Replaces pip-compile with faster resolution and native hash pinning
-lock: lock-api lock-worker lock-scanner lock-mcp ## Compile all lockfiles (uv pip compile with hashes)
+lock: lock-api lock-dev lock-worker lock-scanner lock-mcp ## Compile all lockfiles (uv pip compile with hashes)
 	@echo "$(GREEN)All lockfiles compiled with uv$(RESET)"
 
 lock-api: ## Compile root requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling requirements.txt (api)...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip requirements.in -o requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip requirements.in -o requirements.txt && \
+		chown $$(id -u):$$(id -g) requirements.txt"
 	@echo "$(GREEN)requirements.txt compiled$(RESET)"
+
+lock-dev: ## Compile requirements-dev.txt (lint/type-check toolchain)
+	@echo "$(BLUE)Compiling requirements-dev.txt...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip requirements-dev.in -o requirements-dev.txt && \
+		chown $$(id -u):$$(id -g) requirements-dev.txt"
+	@echo "$(GREEN)requirements-dev.txt compiled$(RESET)"
 
 lock-worker: ## Compile apps/worker/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/worker/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip apps/worker/requirements.in -o apps/worker/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/worker/requirements.in -o apps/worker/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/worker/requirements.txt"
 	@echo "$(GREEN)apps/worker/requirements.txt compiled$(RESET)"
 
 lock-scanner: ## Compile apps/scanner/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/scanner/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip apps/scanner/requirements.in -o apps/scanner/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/scanner/requirements.in -o apps/scanner/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/scanner/requirements.txt"
 	@echo "$(GREEN)apps/scanner/requirements.txt compiled$(RESET)"
 
 lock-mcp: ## Compile apps/mcp/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/mcp/requirements.txt...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
 		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip apps/mcp/requirements.in -o apps/mcp/requirements.txt"
+		uv pip compile --generate-hashes --no-emit-package pip apps/mcp/requirements.in -o apps/mcp/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/mcp/requirements.txt"
 	@echo "$(GREEN)apps/mcp/requirements.txt compiled$(RESET)"
 
 # ── Development ────────────────────────────────────────────────────────────
@@ -296,22 +344,26 @@ pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-tes
 	@echo "$(GREEN)All pre-commit checks passed$(RESET)"
 
 # ── Code Quality ───────────────────────────────────────────────────────────
-lint: ## Run all linters (ruff, ruff-format, mypy, hadolint, shellcheck, eslint, prettier)
-	@echo "$(BLUE)[1/7] ruff — Python linting...$(RESET)"
+# Steps 1-3 are hard gates: they pass today and must keep passing.
+# Step 4 ratchets the linters that still carry debt (mypy, shellcheck, prettier,
+# eslint) — it fails when a count rises above .lint-baseline. Nothing here is
+# wrapped in `|| true`; a gate that cannot fail is not a gate.
+lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier ratcheted)
+	@echo "$(BLUE)[1/4] ruff — Python linting...$(RESET)"
 	@$(PYTHON) -m ruff check apps/ shared/ scripts/ tests/
-	@echo "$(BLUE)[2/7] ruff-format — Python formatting check...$(RESET)"
+	@echo "$(BLUE)[2/4] ruff-format — Python formatting check...$(RESET)"
 	@$(PYTHON) -m ruff format --check apps/ shared/ scripts/ tests/
-	@echo "$(BLUE)[3/7] mypy — Python type checking...$(RESET)"
-	@$(PYTHON) -m mypy apps/ shared/ --ignore-missing-imports || true
-	@echo "$(BLUE)[4/7] hadolint — Dockerfile linting...$(RESET)"
-	@find . -name "Dockerfile*" -not -path "*/.git/*" | xargs -I {} sh -c 'echo "  Checking {}..."; docker run --rm -i hadolint/hadolint:2.12.0 < {} || true'
-	@echo "$(BLUE)[5/7] shellcheck — Shell script linting...$(RESET)"
-	@find . -name "*.sh" -not -path "*/.git/*" -not -path "*/node_modules/*" | xargs -I {} sh -c 'echo "  Checking {}..."; shellcheck {} || true'
-	@echo "$(BLUE)[6/7] eslint — Web linting...$(RESET)"
-	@cd web && npm run lint || true
-	@echo "$(BLUE)[7/7] prettier — Web formatting check...$(RESET)"
-	@cd web && npm run format:check || true
-	@echo "$(GREEN)All linters passed$(RESET)"
+	@echo "$(BLUE)[3/4] hadolint — Dockerfile linting...$(RESET)"
+	@set -e; n=0; \
+	for f in $$(find . -name "Dockerfile*" -not -path "*/.git/*" -not -path "*/node_modules/*"); do \
+		n=$$((n+1)); \
+		docker run --rm -i hadolint/hadolint:2.12.0 < $$f || { echo "$(RED)hadolint failed: $$f$(RESET)"; exit 1; }; \
+	done; \
+	test $$n -gt 0 || { echo "$(RED)No Dockerfiles examined — the scan found nothing.$(RESET)"; exit 1; }; \
+	echo "  $$n Dockerfiles clean"
+	@echo "$(BLUE)[4/4] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
+	@bash scripts/lint-debt.sh
+	@echo "$(GREEN)Lint gates passed (hard gates clean, no debt regressions)$(RESET)"
 
 format: ## Auto-format Python and web code (ruff + prettier)
 	@$(PYTHON) -m ruff format apps/ shared/ scripts/ tests/

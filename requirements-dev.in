@@ -1,0 +1,19 @@
+# Elder — development tooling (lint, format, type-check).
+#
+# Deliberately separate from requirements.in: this file installs with no system
+# build dependencies, so `make lint` works on a bare checkout. requirements.in
+# pulls python-ldap, which needs libldap2-dev/libsasl2-dev headers to build.
+#
+# Pins here are the single source of truth for the toolchain — .pre-commit-config.yaml
+# and the CI python-lint job must match, or local and CI results diverge.
+
+# Linting & formatting — ruff is the only Python linter/formatter for this repo
+ruff==0.8.4
+
+# Type checking
+mypy==1.14.0
+
+# Type stubs (type-check time only, never needed at runtime)
+types-requests==2.32.0.20241016
+types-redis==4.6.0.20241004
+types-pytz==2024.2.0.20241003

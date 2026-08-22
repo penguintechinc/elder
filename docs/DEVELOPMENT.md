@@ -84,12 +84,31 @@ cd elder
 make setup
 
 # This runs:
-# - Python virtual environment setup (venv, requirements)
-# - Node.js dependency installation (npm install)
-# - Go module setup (if applicable)
-# - Pre-commit hooks installation
-# - Database initialization
+# - setup-env      .env from template (no-op if it already exists)
+# - setup-python   .venv on Python 3.13 + hash-pinned runtime and dev deps
+# - install-hooks  pre-commit git hooks
 ```
+
+`make setup-python` needs the LDAP headers (`libldap2-dev`, `libsasl2-dev` on
+Debian/Ubuntu) because `python-ldap` builds from source. If you only need to
+lint or type-check, skip it:
+
+```bash
+make setup-lint    # ruff + mypy only, no system build dependencies
+make verify-venv   # confirm .venv is 3.13 and has the toolchain
+```
+
+Python dependencies live in two lockfiles, both hash-pinned and compiled with
+`uv pip compile --generate-hashes`:
+
+| File | Contents | Recompile with |
+|------|----------|----------------|
+| `requirements.in` / `.txt` | Runtime + test dependencies | `make lock-api` |
+| `requirements-dev.in` / `.txt` | Lint and type-check toolchain (ruff, mypy, stubs) | `make lock-dev` |
+
+The `ruff` pin in `requirements-dev.in` is the single source of truth — it must
+match `.pre-commit-config.yaml` and the CI `python-lint` job, or local and CI
+results diverge.
 
 ### Environment Configuration
 
@@ -397,17 +416,53 @@ gh pr create --title "Brief feature description" \
 
 ## Common Tasks
 
-### Adding a New Python Dependency
+### Linting
+
+`make lint` runs four steps. The first three are **hard gates** — they pass today
+and must keep passing:
+
+| Step | Tool | Scope |
+|------|------|-------|
+| 1 | `ruff check` | `apps/ shared/ scripts/ tests/` |
+| 2 | `ruff format --check` | same |
+| 3 | `hadolint` | every `Dockerfile*` |
+
+Step 4 is the **debt ratchet** (`scripts/lint-debt.sh`). Elder still carries known
+findings in mypy, shellcheck, prettier, and eslint — too many to gate on outright.
+Rather than hiding them behind `|| true`, the ratchet counts them and fails if any
+count rises above `.lint-baseline`:
 
 ```bash
-# Add to apps/api/requirements.txt
-echo "new-package==1.0.0" >> apps/api/requirements.txt
+make lint                        # gates + ratchet
+scripts/lint-debt.sh             # ratchet only
+scripts/lint-debt.sh --update    # after fixing findings, lock in the lower count
+```
 
-# Rebuild API container
-docker compose up -d --build api
+Fix findings, then run `--update` and commit `.lint-baseline` so the debt can
+never creep back. Nothing in `make lint` is wrapped in `|| true` — a gate that
+cannot fail is not a gate.
 
-# Verify import works
-docker compose exec api python -c "import new_package"
+The baseline also records `shellcheck_total`, the number of scripts examined.
+The ratchet only counts **git-tracked** files, and fails if that denominator
+shrinks — a narrower scan produces fewer findings, which would otherwise read as
+an improvement.
+
+### Adding a New Python Dependency
+
+Dependencies are hash-pinned; never hand-edit a `requirements.txt`.
+
+```bash
+# 1. Add the exact pin to the .in file
+#    runtime/test dep  -> requirements.in
+#    lint/type-check   -> requirements-dev.in
+echo "new-package==1.0.0" >> requirements.in
+
+# 2. Recompile the lockfile with hashes (runs in a pinned container)
+make lock-api        # or: make lock-dev
+
+# 3. Reinstall and verify
+make setup-python
+.venv/bin/python3 -c "import new_package"
 ```
 
 ### Adding a New Node.js Dependency
