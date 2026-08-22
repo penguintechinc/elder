@@ -41,7 +41,7 @@ As of **v4.0.0**, Elder is a **modular monolith**: one deployable platform made 
 
 ## The WIRED Model
 
-Elder is an **internal** platform — it manages your own organization's estate, not your customers'. Everything it tracks falls into one of five pillars, and those five pillars are also how the product is grouped: they name the sidebar sections, the module groups, and the `ELDER_GROUP_*` deployment toggles.
+Elder is an **internal** platform — it manages your own organization's estate, not your customers'. Everything it tracks falls into one of five pillars, and those five pillars are also how the product is grouped: they order the sidebar, name the module groups, and name the `ELDER_GROUP_*` deployment toggles.
 
 ```
   W  Workstreams    things that run on a trigger      streams · flows · webhooks & alerting
@@ -97,7 +97,7 @@ ELDER_GROUP_WORKSTREAMS=false      # 2. whole WIRED group
 ELDER_MODULES_ENABLED=all          # 3. base set ("all" or a comma-separated list)
 ```
 
-`GET /api/v1/modules` returns each module's `group`, `licensed`, and `effective` state; the web UI renders only the modules that resolve to `effective: true`, bucketed by pillar in acronym order.
+`GET /api/v1/modules` returns each module's `group`, `licensed`, and `effective` state; the web UI renders only the modules that resolve to `effective: true`, ordered by pillar. (The pillar *names* are not yet drawn in the sidebar — see [docs/MODULES.md](docs/MODULES.md#reading-module-state-at-runtime).)
 
 ---
 

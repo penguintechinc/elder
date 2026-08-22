@@ -94,7 +94,15 @@ camelCase keys become `ELDER_MODULE_<UPPER_SNAKE>` env vars.
 | `tenant_enabled` | Enabled for the calling tenant |
 | `effective` | The resolved answer — the UI renders only these |
 
-The web UI buckets `effective: true` modules by `group` and renders headers in acronym order: Workstreams, Issues, Relationships, Entities, Documents. A group with no enabled modules emits no header.
+The web UI buckets `effective: true` modules by `group` and emits them in acronym
+order: Workstreams, Issues, Relationships, Entities, Documents.
+
+> ⚠️ **The pillar labels are not visible in the sidebar today.** `navFor` emits each
+> group header as a `MenuCategory` with `items: []`, and `SidebarMenu` in
+> `@penguintechinc/react-libs` returns `null` for any category whose visible items are
+> empty — dropping the header with it. The *ordering* is correct and observable; the
+> five pillar names are not rendered. This predates the WIRED rename (the old
+> Core/Workflow/KB headers were invisible for the same reason).
 
 ## Licensing
 
