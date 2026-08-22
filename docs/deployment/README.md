@@ -185,9 +185,13 @@ helm uninstall elder --namespace elder
 
 ### Using Kubectl
 
+Elder deploys via Helm only — the raw manifests under `infrastructure/k8s/base/`
+were removed in v4.0.0 because the chart at `k8s/helm/elder` supersedes them.
+Use `kubectl` to inspect, not to apply:
+
 ```bash
-# Apply Kubernetes manifests
-kubectl apply -f infrastructure/k8s/
+# Render what Helm would apply, without installing
+helm template elder ./k8s/helm/elder -f k8s/helm/elder/alpha.yml
 
 # Check deployment
 kubectl get pods -n elder

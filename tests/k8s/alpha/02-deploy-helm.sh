@@ -8,7 +8,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../" && pwd)"
 PROJECT_NAME="$(basename "$PROJECT_DIR")"
-HELM_DIR="infrastructure/helm/$PROJECT_NAME"
+HELM_DIR="k8s/helm/$PROJECT_NAME"
 NAMESPACE="${PROJECT_NAME}-alpha"
 
 echo "Deploying $PROJECT_NAME to Kubernetes (alpha namespace)..."
