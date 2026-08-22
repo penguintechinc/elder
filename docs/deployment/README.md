@@ -86,7 +86,7 @@ Docker Compose starts the following services:
 
 - `postgres` - PostgreSQL database
 - `redis` - Redis cache
-- `api` - Flask REST API
+- `api` - Quart REST API
 - `web` - React web UI
 - `worker` - Data sync service (optional)
 - `prometheus` - Metrics collection
