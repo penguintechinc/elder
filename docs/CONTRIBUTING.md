@@ -467,12 +467,22 @@ debugpy.wait_for_client()
 
 **Import errors:**
 ```bash
-# Ensure virtual environment is activated
-source venv/bin/activate
+# Ensure the virtual environment is activated (it lives at .venv/, not venv/)
+source .venv/bin/activate
 
-# Reinstall dependencies
-pip install -r requirements.txt
+# Rebuild it from the hash-pinned lockfiles
+rm -rf .venv && make setup-python
 ```
+
+**`make lint` says ruff or mypy is missing:**
+```bash
+# Installs only the lint/type-check toolchain — no system build deps needed
+make setup-lint
+```
+
+**`make setup-python` fails building python-ldap:**
+Install the LDAP headers (`libldap2-dev libsasl2-dev` on Debian/Ubuntu), or use
+`make setup-lint` if you only need to lint.
 
 **Port conflicts:**
 ```bash
