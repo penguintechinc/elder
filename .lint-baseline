@@ -1,7 +1,7 @@
 # Known lint debt. Lower these as findings are fixed; scripts/lint-debt.sh
 # fails if any count rises. Regenerate with: scripts/lint-debt.sh --update
-mypy=606
+mypy=591
 shellcheck=13
-prettier=147
-eslint=2
-shellcheck_total=40
+prettier=143
+eslint=0
+shellcheck_total=39
