@@ -167,11 +167,12 @@ elder/
 │   ├── integration/          # Integration tests
 │   └── e2e/                  # End-to-end tests
 ├── docs/                      # Documentation
-├── infrastructure/            # Infrastructure configs
-│   ├── docker/               # Docker configs
-│   ├── k8s/                  # Kubernetes manifests
-│   └── monitoring/           # Prometheus/Grafana
-├── docker-compose.yml         # Development environment
+├── k8s/helm/elder/            # Helm chart (the deployment path)
+├── infrastructure/            # Configs not yet folded into the chart
+│   ├── docker/               # Postgres init SQL (docker-compose only)
+│   ├── k8s/github-ci/        # CI ServiceAccount + RBAC reference manifests
+│   └── monitoring/           # Prometheus/Alertmanager/Grafana configs
+├── docker-compose.yml         # DEPRECATED — retained for reference only
 ├── Makefile                   # Build automation
 └── .env.example               # Example configuration
 ```

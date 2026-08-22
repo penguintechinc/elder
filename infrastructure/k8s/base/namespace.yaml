@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: elder
-  labels:
-    app.kubernetes.io/name: elder
-    app.kubernetes.io/instance: elder
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: kubectl
