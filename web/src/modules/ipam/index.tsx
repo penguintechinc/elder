@@ -24,7 +24,7 @@ const routes: RouteObject[] = [
 const ipamModule: FrontendModule = {
   id: 'ipam',
   name: 'IPAM',
-  group: 'core',
+  group: 'entities',
   nav: navigation,
   routes,
 }

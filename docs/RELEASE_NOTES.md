@@ -85,9 +85,10 @@ internal (employees/contractors).
 - **Kept** (internal ticketing): `hd_tickets`, messages, attachments,
   `hd_sla_policies`, `hd_canned_responses`, `hd_teams`/`hd_team_members`,
   and the SLA-breach worker.
-- **Regrouped**: the `helpdesk` module moved from the `crm` group to
-  `workflow`; the `crm` group is retired. Migration `040` drops the removed
-  tables and columns.
+- **Regrouped**: the `helpdesk` module moved out of the `crm` group, which is
+  retired; it now sits in the `issues` WIRED group alongside `issues` (see
+  *WIRED Module Groups* below). Migration `040` drops the removed tables and
+  columns.
 - `customer_contact` (identity type) and `customer_company` (organization
   type) remain as harmless enum values, no longer written by any Elder path.
 - Specs: `docs/superpowers/specs/2026-08-21-helpdesk-internal-reframe-phase3.md`
@@ -98,6 +99,31 @@ internal (employees/contractors).
 - Always-on **core** models (base, identity, rbac, tenant, audit, security, etc.) remain in `apps/api/models/`
 - Split the `apps/api/models/infrastructure.py` "god-file": `NetworkingResource`/`DataStore` moved to `apps/api/modules/infrastructure/models/infrastructure.py`; `Service`/`Software` moved to `apps/api/modules/sbom/models/assets.py`; cost models moved to `webhooks_alerting`
 - **Breaking for consumers**: import paths for these models changed — `apps.api.models.infrastructure` no longer exists
+
+### 🧭 WIRED Module Groups
+
+The four ad-hoc module buckets (`core`, `crm`, `workflow`, `kb`) are replaced by
+Elder's five WIRED pillars. Grouping stays presentation/deployment only — no
+group is tier-locked, and no module directories moved.
+
+| Group | Modules |
+|-------|---------|
+| `workstreams` | `streams`, `flows`, `webhooks_alerting` |
+| `issues` | `issues`, `helpdesk` |
+| `relationships` | `discovery`, `access_reviews` |
+| `entities` | `infrastructure`, `ipam`, `sbom`, `services_oncall`, `secrets` |
+| `documents` | `documents`, `pages`, `diagrams` |
+
+- **Breaking for deployments**: the group env toggles are renamed —
+  `ELDER_GROUP_CORE`/`ELDER_GROUP_CRM`/`ELDER_GROUP_WORKFLOW`/`ELDER_GROUP_KB`
+  are replaced by `ELDER_GROUP_WORKSTREAMS`, `ELDER_GROUP_ISSUES`,
+  `ELDER_GROUP_RELATIONSHIPS`, `ELDER_GROUP_ENTITIES`, `ELDER_GROUP_DOCUMENTS`.
+  Toggle precedence is unchanged: `ELDER_MODULE_<NAME>` > `ELDER_GROUP_<GROUP>` >
+  `ELDER_MODULES_ENABLED`. Per-module `ELDER_MODULE_*` vars are untouched.
+- **Sidebar**: nav headers render in acronym order — Workstreams, Issues,
+  Relationships, Entities, Documents.
+- `group` is still returned by `GET /api/v1/modules`; consumers reading it see
+  the new values.
 
 ---
 

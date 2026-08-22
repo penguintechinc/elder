@@ -30,7 +30,7 @@ const routes: RouteObject[] = [
 const webhooksAlertingModule: FrontendModule = {
   id: 'webhooks_alerting',
   name: 'Webhooks & Alerting',
-  group: 'core',
+  group: 'workstreams',
   nav: navigation,
   routes,
 }

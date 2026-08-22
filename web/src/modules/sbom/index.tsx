@@ -34,7 +34,7 @@ const routes: RouteObject[] = [
 const sbomModule: FrontendModule = {
   id: 'sbom',
   name: 'SBOM',
-  group: 'core',
+  group: 'entities',
   nav: navigation,
   routes,
 }
