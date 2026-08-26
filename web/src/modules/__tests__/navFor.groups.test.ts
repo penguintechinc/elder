@@ -1,66 +1,79 @@
 import { navFor } from '../registry'
 
-describe('navFor grouped output', () => {
-  it('buckets nav by group in WIRED order: Workstreams→Issues→Relationships→Entities→Documents', () => {
-    // Enable modules from two non-adjacent groups (entities and documents)
-    const enabled = new Set(['infrastructure', 'sbom', 'nav_documents', 'nav_diagrams'])
-    const nav = navFor(enabled)
-
-    // Find group headers (those with key like 'group-*' and empty items)
-    const groupHeaders = nav.filter(c => c.key?.startsWith('group-') && c.items?.length === 0)
-    expect(groupHeaders.map(h => h.header)).toEqual(['Entities', 'Documents'])
-  })
-
-  it('emits header category with header, key=group-*, items=[] before each non-empty group', () => {
-    const enabled = new Set(['issues', 'nav_streams'])
-    const nav = navFor(enabled)
-
-    // Should have a header for the workstreams group before its items
-    const workstreamsHeader = nav.find(c => c.key === 'group-workstreams')
-    expect(workstreamsHeader).toBeDefined()
-    expect(workstreamsHeader?.header).toBe('Workstreams')
-    expect(workstreamsHeader?.items).toEqual([])
-
-    // Next items should be the actual workstreams categories
-    const idx = nav.indexOf(workstreamsHeader!)
-    const workstreamsCategories = nav.slice(idx + 1)
-      .filter(c => !c.key?.startsWith('group-'))
-    expect(workstreamsCategories.length).toBeGreaterThan(0)
-  })
-
-  it('preserves registry order within each group', () => {
-    const enabled = new Set([
-      'infrastructure', // entities, 1st in registry
-      'sbom', // entities, 3rd in registry
-      'secrets', // entities, 7th in registry
+describe('navFor — one section per WIRED pillar', () => {
+  it('emits exactly one category per populated pillar, in WIRED order', () => {
+    const all = new Set([
+      'infrastructure', 'ipam', 'sbom', 'services_oncall', 'secrets',
+      'issues', 'discovery', 'access_reviews', 'webhooks_alerting',
+      'nav_streams', 'nav_documents', 'nav_pages', 'nav_diagrams',
     ])
-    const nav = navFor(enabled)
+    const nav = navFor(all)
 
-    const entitiesHeader = nav.find(c => c.key === 'group-entities')
-    expect(entitiesHeader).toBeDefined()
-
-    // Get entities categories and verify they follow the header
-    const idx = nav.indexOf(entitiesHeader!)
-    const entitiesCategories = nav.slice(idx + 1)
-      .filter(c => !c.key?.startsWith('group-'))
-    expect(entitiesCategories.length).toBeGreaterThan(0)
+    expect(nav.map(c => c.header)).toEqual([
+      'Workstreams',
+      'Issues',
+      'Relationships',
+      'Entities',
+      'Documents',
+    ])
   })
 
-  it('omits group headers when group has no enabled modules', () => {
-    // Enable only entities modules
-    const enabled = new Set(['infrastructure', 'sbom'])
-    const nav = navFor(enabled)
-
-    const groupHeaders = nav.filter(c => c.key?.startsWith('group-'))
-    const headerNames = groupHeaders.map(h => h.header)
-
-    // Should only have the Entities header, no other WIRED headers
-    expect(headerNames).toEqual(['Entities'])
+  it('every emitted category has items — a header-only category renders as nothing', () => {
+    const all = new Set(['infrastructure', 'issues', 'nav_documents'])
+    for (const category of navFor(all)) {
+      expect(category.items.length).toBeGreaterThan(0)
+    }
   })
 
-  it('returns empty array when no modules enabled', () => {
-    const enabled = new Set<string>()
-    const nav = navFor(enabled)
-    expect(nav).toEqual([])
+  it('merges items from every module in a pillar into that one section', () => {
+    // sbom and services_oncall both live in `entities` and both authored a
+    // "Software & Services" category — the duplicate header is what this fixes.
+    const nav = navFor(new Set(['sbom', 'services_oncall']))
+    expect(nav).toHaveLength(1)
+    expect(nav[0].header).toBe('Entities')
+
+    const names = nav[0].items.map(i => i.name)
+    expect(names).toEqual(expect.arrayContaining(['SBOM Dashboard', 'Services']))
+  })
+
+  it('never emits the same header twice', () => {
+    const all = new Set([
+      'infrastructure', 'ipam', 'sbom', 'services_oncall', 'secrets',
+      'issues', 'discovery', 'access_reviews', 'webhooks_alerting',
+      'nav_streams', 'nav_documents', 'nav_pages', 'nav_diagrams',
+    ])
+    const headers = navFor(all).map(c => c.header)
+    expect(new Set(headers).size).toBe(headers.length)
+  })
+
+  it('dedupes items that share an href across modules', () => {
+    const all = new Set([
+      'infrastructure', 'ipam', 'sbom', 'services_oncall', 'secrets',
+      'issues', 'discovery', 'access_reviews', 'webhooks_alerting',
+      'nav_streams', 'nav_documents', 'nav_pages', 'nav_diagrams',
+    ])
+    for (const category of navFor(all)) {
+      const hrefs = category.items.map(i => i.href)
+      expect(new Set(hrefs).size).toBe(hrefs.length)
+    }
+  })
+
+  it('omits a pillar entirely when none of its modules are enabled', () => {
+    const nav = navFor(new Set(['nav_documents']))
+    expect(nav.map(c => c.header)).toEqual(['Documents'])
+  })
+
+  it('sections are collapsible so a large pillar can be folded away', () => {
+    const nav = navFor(new Set(['infrastructure', 'ipam', 'sbom']))
+    expect(nav[0].collapsible).toBe(true)
+  })
+
+  it('keys stay group-scoped so collapse state persists per pillar', () => {
+    const nav = navFor(new Set(['issues', 'nav_streams']))
+    expect(nav.map(c => c.key)).toEqual(['group-workstreams', 'group-issues'])
+  })
+
+  it('returns an empty array when no modules are enabled', () => {
+    expect(navFor(new Set<string>())).toEqual([])
   })
 })

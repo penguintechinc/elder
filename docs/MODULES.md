@@ -94,7 +94,16 @@ camelCase keys become `ELDER_MODULE_<UPPER_SNAKE>` env vars.
 | `tenant_enabled` | Enabled for the calling tenant |
 | `effective` | The resolved answer — the UI renders only these |
 
-The web UI buckets `effective: true` modules by `group` and renders headers in acronym order: Workstreams, Issues, Relationships, Entities, Documents. A group with no enabled modules emits no header.
+The web UI buckets `effective: true` modules by `group` and renders **one collapsible
+sidebar section per pillar**, in acronym order: Workstreams, Issues, Relationships,
+Entities, Documents. A pillar with no enabled modules is omitted entirely.
+
+Module-authored sub-headers are intentionally not shown. Modules each declare their own
+nav categories and those headers collide — `sbom` and `services_oncall` both ship a
+"Software & Services", and a single-item module renders its name twice (header, then the
+identical item). One section per pillar removes both classes of duplicate by
+construction. The items are still contributed by module manifests and gated per tenant,
+so toggling a module still adds or removes exactly its own entries.
 
 ## Licensing
 
