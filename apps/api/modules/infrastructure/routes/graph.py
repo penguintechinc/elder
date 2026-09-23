@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("graph", __name__)
 
@@ -49,6 +50,9 @@ async def get_graph():
         }
     """
     db = current_app.db_read
+    # Resolve the caller's tenant here (in the request coroutine) — g does
+    # not propagate into the threadpool callable below.
+    tenant_id = get_current_tenant_id()
 
     # Get filter parameters
     org_id = request.args.get("organization_id", type=int)
@@ -69,7 +73,13 @@ async def get_graph():
 
         # If entity_id specified, get subgraph centered on that entity
         if entity_id:
-            entity = db.entities[entity_id]
+            # gh-237: entities have no tenant_id column of their own — scope
+            # via the owning organization's tenant_id so a caller can't pull
+            # another tenant's entity (and its dependency subgraph) by
+            # guessing its numeric id. 404 (not 403) on mismatch.
+            entity = get_tenant_scoped(
+                db, db.entities, entity_id, tenant_id, org_fk="organization_id"
+            )
             if not entity:
                 return None, "Entity not found", 404
 

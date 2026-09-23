@@ -346,9 +346,10 @@ pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-tes
 # ── Code Quality ───────────────────────────────────────────────────────────
 # Steps 1-3 are hard gates: they pass today and must keep passing.
 # Step 4 ratchets the linters that still carry debt (mypy, shellcheck, prettier,
-# eslint) — it fails when a count rises above .lint-baseline. Nothing here is
-# wrapped in `|| true`; a gate that cannot fail is not a gate.
-lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier ratcheted)
+# eslint) — it fails when a count rises above .lint-baseline. Step 5 ratchets
+# gh-237 cross-tenant IDOR debt (unscoped `db.<table>[<id>]` lookups) the same
+# way. Nothing here is wrapped in `|| true`; a gate that cannot fail is not a gate.
+lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier + tenant-scoping ratcheted)
 	@echo "$(BLUE)[1/4] ruff — Python linting...$(RESET)"
 	@$(PYTHON) -m ruff check apps/ shared/ scripts/ tests/
 	@echo "$(BLUE)[2/4] ruff-format — Python formatting check...$(RESET)"
@@ -361,8 +362,10 @@ lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; myp
 	done; \
 	test $$n -gt 0 || { echo "$(RED)No Dockerfiles examined — the scan found nothing.$(RESET)"; exit 1; }; \
 	echo "  $$n Dockerfiles clean"
-	@echo "$(BLUE)[4/4] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
+	@echo "$(BLUE)[4/5] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
 	@bash scripts/lint-debt.sh
+	@echo "$(BLUE)[5/5] tenant-scoping gate — gh-237 cross-tenant IDOR ratchet...$(RESET)"
+	@$(PYTHON) scripts/check_tenant_scoping.py
 	@echo "$(GREEN)Lint gates passed (hard gates clean, no debt regressions)$(RESET)"
 
 format: ## Auto-format Python and web code (ruff + prettier)

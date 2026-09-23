@@ -1758,6 +1758,10 @@ penguin-licensing==0.1.0 \
     --hash=sha256:58dba3c178f609e511e88db69963a26eeaf15de506f713ffa66772463829e686 \
     --hash=sha256:8cc33381eb9450081a15607439a9506f27867c97eabaa8820b006607de35950f
     # via -r requirements.in
+penguin-limiter==0.1.0 \
+    --hash=sha256:0bcb0efb90d1b33f8b16fa76cb961a0bb432b1a2ce36a7d01e18b0234cb6f85c \
+    --hash=sha256:5b594a76cd41b71fc8d853d627e568cb46a9545f385741ab2ceeb213da31ba17
+    # via -r requirements.in
 penguin-utils==0.1.0 \
     --hash=sha256:885da3f3ffb50bb9130def5b871e52420b7ad4b285e3b1c1bd85c4d259a08b1e \
     --hash=sha256:e66b54b1fbb0a87d91bdff5465d2e616ffb6c26be925f321f99215eb74e5d4aa
