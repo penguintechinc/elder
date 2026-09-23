@@ -1427,10 +1427,11 @@ export default function IAM() {
                       placeholder="my-project-123456"
                     />
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                      <label htmlFor="iam-gcp-service-account-key" className="block text-sm font-medium text-slate-300 mb-1.5">
                         Service Account Key (JSON)
                       </label>
                       <textarea
+                        id="iam-gcp-service-account-key"
                         required
                         value={gcpServiceAccountKey}
                         onChange={(e) => setGcpServiceAccountKey(e.target.value)}
@@ -1492,10 +1493,11 @@ export default function IAM() {
                       placeholder="C012xxxxx"
                     />
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                      <label htmlFor="iam-google-service-account-key" className="block text-sm font-medium text-slate-300 mb-1.5">
                         Service Account Key (JSON)
                       </label>
                       <textarea
+                        id="iam-google-service-account-key"
                         required
                         value={googleServiceAccountKey}
                         onChange={(e) => setGoogleServiceAccountKey(e.target.value)}
@@ -1527,10 +1529,11 @@ export default function IAM() {
                       placeholder="eyJhbGci..."
                     />
                     <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                      <label htmlFor="iam-k8s-ca-cert" className="block text-sm font-medium text-slate-300 mb-1.5">
                         CA Certificate (optional)
                       </label>
                       <textarea
+                        id="iam-k8s-ca-cert"
                         value={k8sCaCert}
                         onChange={(e) => setK8sCaCert(e.target.value)}
                         placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"

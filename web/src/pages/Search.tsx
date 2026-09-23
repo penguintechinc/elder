@@ -117,7 +117,7 @@ export default function Search() {
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             className="pl-12 text-lg py-3"
-            autoFocus
+            aria-label="Search by keyword"
           />
         </div>
       </form>
@@ -126,9 +126,9 @@ export default function Search() {
       <div className="mb-6 space-y-4">
         {/* Resource Type Filter */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <span className="block text-sm font-medium text-slate-300 mb-2">
             Filter by Type
-          </label>
+          </span>
           <div className="flex flex-wrap gap-2">
             {(['all', 'organization', 'entity', 'issue', 'identity'] as ResourceType[]).map((type) => (
               <button
@@ -150,9 +150,9 @@ export default function Search() {
         {/* Label Filter */}
         {labels?.items && labels.items.length > 0 && (
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
+            <span className="block text-sm font-medium text-slate-300 mb-2">
               Filter by Labels
-            </label>
+            </span>
             <div className="flex flex-wrap gap-2">
               {labels.items.map((label: IssueLabel) => (
                 <button

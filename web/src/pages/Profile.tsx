@@ -161,9 +161,9 @@ export default function Profile() {
             <form onSubmit={handleSubmit} className="space-y-6">
               {/* Username (read-only) */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <span className="block text-sm font-medium text-slate-300 mb-2">
                   Username
-                </label>
+                </span>
                 <div className="flex items-center gap-2 px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-slate-400">
                   <User className="w-4 h-4" />
                   <span>{profile?.username}</span>
@@ -188,10 +188,14 @@ export default function Profile() {
               />
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
+                <label
+                  htmlFor="profile-organization"
+                  className="block text-sm font-medium text-slate-300 mb-2"
+                >
                   Organization
                 </label>
                 <select
+                  id="profile-organization"
                   className="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
                   value={formData.organization_id}
                   onChange={(e) => setFormData({ ...formData, organization_id: e.target.value })}
@@ -226,9 +230,9 @@ export default function Profile() {
             <div className="space-y-6">
               {/* Username */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <span className="block text-sm font-medium text-slate-400 mb-2">
                   Username
-                </label>
+                </span>
                 <div className="flex items-center gap-2 text-white">
                   <User className="w-4 h-4 text-slate-400" />
                   <span>{profile?.username}</span>
@@ -237,9 +241,9 @@ export default function Profile() {
 
               {/* Email */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <span className="block text-sm font-medium text-slate-400 mb-2">
                   Email
-                </label>
+                </span>
                 <div className="flex items-center gap-2 text-white">
                   <Mail className="w-4 h-4 text-slate-400" />
                   <span>{profile?.email || 'Not set'}</span>
@@ -248,9 +252,9 @@ export default function Profile() {
 
               {/* Full Name */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <span className="block text-sm font-medium text-slate-400 mb-2">
                   Full Name
-                </label>
+                </span>
                 <div className="flex items-center gap-2 text-white">
                   <User className="w-4 h-4 text-slate-400" />
                   <span>{profile?.full_name || 'Not set'}</span>
@@ -259,9 +263,9 @@ export default function Profile() {
 
               {/* Organization */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-2">
+                <span className="block text-sm font-medium text-slate-400 mb-2">
                   Organization
-                </label>
+                </span>
                 <div className="flex items-center gap-2 text-white">
                   <Building2 className="w-4 h-4 text-slate-400" />
                   <span>{profile?.organization_name || 'No organization assigned'}</span>
@@ -271,25 +275,25 @@ export default function Profile() {
               {/* Additional Info */}
               <div className="grid grid-cols-2 gap-6 pt-6 border-t border-slate-700">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">
                     Identity Type
-                  </label>
+                  </span>
                   <div className="inline-flex px-3 py-1 rounded-full text-sm font-medium bg-blue-500/20 text-blue-400">
                     {profile?.identity_type}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">
                     Authentication Provider
-                  </label>
+                  </span>
                   <div className="text-white">
                     {profile?.auth_provider}
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">
                     Account Status
-                  </label>
+                  </span>
                   <div className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                     profile?.is_active
                       ? 'bg-green-500/20 text-green-400'
@@ -299,9 +303,9 @@ export default function Profile() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-2">
+                  <span className="block text-sm font-medium text-slate-400 mb-2">
                     MFA Status
-                  </label>
+                  </span>
                   <div className={`inline-flex px-3 py-1 rounded-full text-sm font-medium ${
                     profile?.mfa_enabled
                       ? 'bg-green-500/20 text-green-400'
