@@ -1,0 +1,197 @@
+{{/*
+Namespace-wide default-deny + explicit allows (Cilium) — release audit
+finding #2. devops-kubernetes.md NetworkPolicy: every cluster targets
+Cilium as CNI, so this is CiliumNetworkPolicy, never plain
+networking.k8s.io/v1 NetworkPolicy. Gated behind networkPolicy.enabled so
+alpha (local MicroK8s, no Cilium CRDs installed today) can opt out — see
+alpha.yml.
+
+flows-invoker is EXCLUDED from every "allow" policy below (but still
+covered by the deny-all baseline). It already ships its own tighter,
+dedicated policy (networkpolicy-flows-invoker.yaml: deny all ingress,
+egress restricted to DNS/Postgres/Redis/HTTPS-minus-private-ranges) because
+it executes arbitrary user-sandboxed CI commands. Cilium unions all
+policies selecting a pod, so folding it into the broader same-namespace/
+DNS/datastore allows here would silently widen that deliberate lockdown.
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $notFlowsInvoker := list (dict "key" "app.kubernetes.io/component" "operator" "NotIn" "values" (list "flows-invoker")) }}
+---
+# Baseline: deny all ingress + egress for every pod in the namespace unless
+# a more specific allow policy below (or flows-invoker's own policy) grants it.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-default-deny
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector: {}
+  ingress: []
+  egress: []
+---
+# Same-namespace pods are free to talk to each other in both directions
+# (devops-kubernetes.md: "Same-namespace pods communicate freely").
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-same-namespace
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      {{- toYaml $notFlowsInvoker | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels: {}
+  egress:
+    - toEndpoints:
+        - matchLabels: {}
+---
+# DNS egress to CoreDNS/kube-dns in kube-system.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-dns-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      {{- toYaml $notFlowsInvoker | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+---
+# Egress to this chart's own in-cluster Postgres + Redis Deployments.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-datastore-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      {{- toYaml $notFlowsInvoker | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            {{- include "elder.componentSelectorLabels" (list "postgres" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            {{- include "elder.componentSelectorLabels" (list "redis" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+---
+# Egress to the OTLP collector (values.otel.endpoint, e.g.
+# signoz-otel-collector). Referenced by bare Service name, which only
+# resolves within this same namespace, so allow-same-namespace above
+# already covers it — this rule keeps the allow explicit/auditable and
+# scoped to the collector's actual port regardless.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-otel-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      {{- toYaml $notFlowsInvoker | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels: {}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.otelCollectorPort | default 4318 | quote }}
+              protocol: TCP
+---
+# Egress to PenguinTech license validation + PostHog feature-flag/analytics
+# endpoints (critical-rules.md Feature Flags & License Tiers).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-license-posthog-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchExpressions:
+      {{- toYaml $notFlowsInvoker | nindent 6 }}
+  egress:
+    - toFQDNs:
+        - matchName: {{ .Values.networkPolicy.licenseServerHost | default "license.penguintech.io" | quote }}
+        - matchName: {{ .Values.networkPolicy.posthogHost | default "posthog.penguintech.cloud" | quote }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+# Cross-namespace ingress: only the Cilium Gateway (httproute.yaml) reaches
+# web/api from outside this namespace, scoped to each component's own
+# declared serving port(s) only (security.md: "External ingress scoped to
+# the pod's actual serving port(s) only").
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-web
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "web" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "web" .) | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.gatewayNamespace | default "gateway" }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.web.service.targetPort | quote }}
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-api
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.gatewayNamespace | default "gateway" }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.api.service.targetPort | quote }}
+              protocol: TCP
+            - port: {{ .Values.api.service.grpcPort | quote }}
+              protocol: TCP
+{{- end }}

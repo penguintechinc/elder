@@ -148,10 +148,15 @@ web:
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
+  # Container is nginx-unprivileged (web/Dockerfile), which listens on 8080,
+  # not 3000 — port/targetPort must match or the Service silently sends
+  # traffic nowhere. See web/nginx.conf `listen 8080` and alpha.yml, which
+  # already had this right; values.yaml/values-beta.yaml did not (release
+  # audit finding).
   service:
     type: ClusterIP
-    port: 3000
-    targetPort: 3000
+    port: 8080
+    targetPort: 8080
   buildArgs:
     VITE_API_URL: "http://localhost:4000"
   resources:
@@ -163,16 +168,32 @@ web:
       cpu: "500m"
   healthcheck:
     enabled: true
-    path: /
-    initialDelaySeconds: 5
+    # readiness path: proxied through nginx to elder-api's /healthz (see
+    # web/nginx.conf `location /healthz`), so readiness correctly reflects
+    # the API dependency's availability and pulls this pod out of the
+    # Service when the API is down.
+    path: /healthz
+    initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness path: the SPA's own static root — self-contained, no
+    # upstream proxy_pass, so a transient API outage never triggers a
+    # container restart. Lighter self-check per release audit finding #6.
+    livenessPath: /
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 5
   autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -267,16 +288,31 @@ api:
       cpu: "2000m"
   healthcheck:
     enabled: true
+    # readiness: /healthz — same endpoint used for liveness today (single
+    # endpoint app exposes, apps/api/main.py); kept as the readiness check
+    # since it's what gates Service traffic.
     path: /healthz
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness: same endpoint (no separate deep/self-only endpoint exists
+    # yet — app-code change, out of scope for this chart-only pass) but
+    # timed more leniently so a slow dependency never triggers a container
+    # restart storm. Release audit finding #6.
+    liveness:
+      initialDelaySeconds: 45
+      periodSeconds: 20
+      timeoutSeconds: 10
+      failureThreshold: 5
   autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -311,6 +347,24 @@ scanner:
       cpu: "1000m"
   screenshotStorage:
     sizeLimit: "1Gi"
+  # Scanner has no HTTP server (poll-loop service) so probes are exec-based,
+  # reusing the exact script its own Docker HEALTHCHECK already runs
+  # (apps/scanner/healthcheck.py — verifies imports, ELDER_API_URL is set,
+  # and the screenshot dir is writable). Same command for both: it's a
+  # config/self-check only, not a live network call to elder-api, so there
+  # is no separate "dependency-gated" variant to split it into yet.
+  # Release audit finding #6 — scanner previously had no probes at all.
+  healthcheck:
+    enabled: true
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+    liveness:
+      initialDelaySeconds: 45
+      periodSeconds: 30
+      timeoutSeconds: 10
+      failureThreshold: 5
   # ROOT CAPABILITY EXCEPTION (approved): masscan (apps/scanner/scanners/network.py)
   # requires CAP_NET_RAW for raw-socket SYN scanning. Process still runs as
   # non-root UID 1000 with every other capability dropped and a read-only
@@ -413,11 +467,20 @@ worker:
     name: ""  # K8s Secret name containing credential files (GCP JSON, etc.)
   healthcheck:
     enabled: true
+    # readiness: /healthz (apps/worker/main.py) reports self.running plus
+    # per-connector state — the closest thing this app has to a
+    # dependency-gated check today.
     path: /healthz
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness: same endpoint, timed more leniently. Release audit finding #6.
+    liveness:
+      initialDelaySeconds: 45
+      periodSeconds: 20
+      timeoutSeconds: 10
+      failureThreshold: 5
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -492,7 +555,7 @@ ingress:
         - path: /
           pathType: Prefix
           service: web
-          port: 3000
+          port: 8080
         - path: /api
           pathType: Prefix
           service: api
@@ -541,3 +604,45 @@ tolerations: []
 
 # Affinity
 affinity: {}
+
+# Namespace-wide default-deny CiliumNetworkPolicy — release audit finding #2.
+# Cilium is the only supported CNI target (devops-kubernetes.md NetworkPolicy)
+# so this is CiliumNetworkPolicy, never plain networking.k8s.io/v1. Default
+# ON here/beta/gamma; alpha.yml turns it off (local MicroK8s does not run
+# Cilium as CNI today, so the CRD isn't installed).
+networkPolicy:
+  enabled: true
+  # Namespace hosting the Cilium Gateway (httproute.yaml parentRefs) that
+  # needs cross-namespace ingress to web/api on their declared ports.
+  gatewayNamespace: "gateway"
+  # OTLP collector port (values.otel.endpoint) — same-namespace already
+  # covers this; kept as an explicit, auditable allow per the release audit.
+  otelCollectorPort: 4318
+  # PenguinTech license validation + PostHog feature-flag/analytics egress
+  # (critical-rules.md Feature Flags & License Tiers).
+  licenseServerHost: "license.penguintech.io"
+  posthogHost: "posthog.penguintech.cloud"
+
+# Tetragon runtime-execution allowlist (enforced, not observe-only) —
+# release audit finding #3. Default ON here/beta/gamma; alpha.yml turns it
+# off (local MicroK8s does not run Tetragon today).
+# flows-invoker is deliberately NOT covered: sandboxed execution of
+# arbitrary user-defined CI commands is its actual product feature (see
+# apps/flows_invoker/sandbox.py), not a compromise indicator — its
+# isolation comes from the process sandbox + networkpolicy-flows-invoker.yaml.
+tetragon:
+  enabled: true
+
+# Namespace resource + Pod Security Admission labels — release audit finding
+# #4. This chart has never created its own Namespace object (it is assumed
+# pre-existing, created out-of-band by CI/ops); `create: false` here so a
+# bare local `helm template`/install against this default file never fights
+# an unmanaged namespace. values-beta.yaml turns this on per the audit —
+# see its comment for the one-time adoption step k8s-ops needs before the
+# first upgrade against an already-existing, Helm-unmanaged namespace.
+namespaceManagement:
+  create: false
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

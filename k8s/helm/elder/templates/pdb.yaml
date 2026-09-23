@@ -1,0 +1,28 @@
+{{/*
+PodDisruptionBudget for web + api — release audit finding #5. Gated per
+component on <component>.podDisruptionBudget.enabled so alpha (single
+replica, disruption budgets add no value there) can opt out per-component
+without a chart-wide flag.
+*/}}
+{{- range $component := list "web" "api" }}
+{{- $componentConfig := index $.Values $component }}
+{{- if and $componentConfig.enabled ($componentConfig.podDisruptionBudget).enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
+spec:
+  {{- if $componentConfig.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ $componentConfig.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
+  minAvailable: {{ $componentConfig.podDisruptionBudget.minAvailable | default 1 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list $component $) | nindent 6 }}
+{{- end }}
+{{- end }}
