@@ -38,12 +38,25 @@ try:
 except ImportError:
     RedisInstrumentor = None  # type: ignore[assignment,misc]
 from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import SimpleLogRecordProcessor
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Batch processor tuning shared by traces and logs. A dead/slow collector
+# must never block or fail a request -- Simple*Processor exports
+# synchronously on the caller's thread (this caused a real alpha hang: one
+# slow OTLP endpoint stalled every request). Batch*Processor exports on a
+# background worker thread with a bounded queue: once the queue is full,
+# the SDK drops the new record and increments a dropped-count instead of
+# blocking the caller, and a slow/dead exporter can only ever cost up to
+# _OTEL_EXPORT_TIMEOUT_MS before that background export attempt gives up.
+_OTEL_MAX_QUEUE_SIZE = 2048
+_OTEL_SCHEDULE_DELAY_MS = 5000
+_OTEL_MAX_EXPORT_BATCH_SIZE = 512
+_OTEL_EXPORT_TIMEOUT_MS = 30000
 
 if TYPE_CHECKING:
     # Quart is only ever used as a type annotation below (auto_instrument_app),
@@ -99,7 +112,15 @@ def init_telemetry(service_name: str) -> dict[str, Any]:
     if endpoint and protocol in ("http/protobuf", "http"):
         try:
             span_exporter = OTLPSpanExporter(endpoint=endpoint)
-            trace_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+            trace_provider.add_span_processor(
+                BatchSpanProcessor(
+                    span_exporter,
+                    max_queue_size=_OTEL_MAX_QUEUE_SIZE,
+                    schedule_delay_millis=_OTEL_SCHEDULE_DELAY_MS,
+                    max_export_batch_size=_OTEL_MAX_EXPORT_BATCH_SIZE,
+                    export_timeout_millis=_OTEL_EXPORT_TIMEOUT_MS,
+                )
+            )
             logger.info(
                 "OTel traces enabled", endpoint=endpoint, service_name=service_name
             )
@@ -149,7 +170,13 @@ def init_telemetry(service_name: str) -> dict[str, Any]:
         try:
             log_exporter = OTLPLogExporter(endpoint=endpoint)
             logger_provider.add_log_record_processor(
-                SimpleLogRecordProcessor(log_exporter)
+                BatchLogRecordProcessor(
+                    log_exporter,
+                    max_queue_size=_OTEL_MAX_QUEUE_SIZE,
+                    schedule_delay_millis=_OTEL_SCHEDULE_DELAY_MS,
+                    max_export_batch_size=_OTEL_MAX_EXPORT_BATCH_SIZE,
+                    export_timeout_millis=_OTEL_EXPORT_TIMEOUT_MS,
+                )
             )
             logger.info(
                 "OTel logs enabled", endpoint=endpoint, service_name=service_name

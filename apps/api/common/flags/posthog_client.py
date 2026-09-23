@@ -9,6 +9,7 @@ Provides a lightweight wrapper around PostHog for feature-flag evaluation with:
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 
 import structlog
@@ -21,6 +22,14 @@ except ImportError:
     POSTHOG_AVAILABLE = False
 
 log = structlog.get_logger(__name__)
+
+# Cache TTL for evaluated flags. Without a TTL, a single evaluation freezes
+# that (flag, tenant) result forever -- killing both the kill-switch (an
+# operator flips a flag off in PostHog but every already-cached process
+# keeps serving "on") and per-tenant targeting (once any tenant hits a flag,
+# every other tenant used to inherit that first tenant's cached result,
+# since the cache used to be keyed on flag key alone).
+_FLAG_CACHE_TTL_S = 300
 
 
 class PostHogClient:
@@ -38,7 +47,10 @@ class PostHogClient:
         self.api_key = api_key
         self.host = host
         self.enabled = False
-        self._flag_cache: dict[str, bool] = {}
+        # Keyed by (flag_key, distinct_id) -- never by flag_key alone, so one
+        # tenant's evaluation can't leak onto another's. Value is
+        # (expires_at_monotonic, result).
+        self._flag_cache: dict[tuple[str, str], tuple[float, bool]] = {}
         self._posthog_client: Any = None
 
         # Initialize PostHog only if available and configured
@@ -79,18 +91,21 @@ class PostHogClient:
         Returns:
             bool: Flag evaluation result (True/False)
         """
-        # Check cache first
-        if key in self._flag_cache:
-            cached = self._flag_cache[key]
+        cache_key = (key, distinct_id)
+        now = time.monotonic()
+        cached = self._flag_cache.get(cache_key)
+
+        # Fresh cache hit -- serve without contacting PostHog.
+        if cached is not None and now < cached[0]:
             log.debug(
                 "flag_evaluated_from_cache",
                 key=key,
                 distinct_id=distinct_id,
-                value=cached,
+                value=cached[1],
             )
-            return cached
+            return cached[1]
 
-        # Try to evaluate from PostHog
+        # Try to evaluate from PostHog (cache expired or never populated)
         if self.enabled and self._posthog_client:
             try:
                 result = self._posthog_client.feature_enabled(
@@ -100,8 +115,7 @@ class PostHogClient:
                     person_properties={},
                     group_properties={},
                 )
-                # Cache the result
-                self._flag_cache[key] = result
+                self._flag_cache[cache_key] = (now + _FLAG_CACHE_TTL_S, result)
                 log.debug(
                     "flag_evaluated_from_posthog",
                     key=key,
@@ -110,6 +124,21 @@ class PostHogClient:
                 )
                 return result
             except Exception as e:
+                # PostHog outage: serve the last-known value for this exact
+                # (flag, tenant) pair rather than snapping to `default` --
+                # never crash, never flip a targeted/kill-switched flag just
+                # because the network blipped. Only fall to `default` if
+                # we've genuinely never evaluated this pair before.
+                if cached is not None:
+                    self._flag_cache[cache_key] = (now + _FLAG_CACHE_TTL_S, cached[1])
+                    log.warning(
+                        "posthog_flag_evaluation_failed_using_stale_cache",
+                        key=key,
+                        distinct_id=distinct_id,
+                        error=str(e),
+                        value=cached[1],
+                    )
+                    return cached[1]
                 log.warning(
                     "posthog_flag_evaluation_failed",
                     key=key,
@@ -117,12 +146,14 @@ class PostHogClient:
                     error=str(e),
                     fallback="default",
                 )
-                # Cache the default for this evaluation
-                self._flag_cache[key] = default
+                self._flag_cache[cache_key] = (now + _FLAG_CACHE_TTL_S, default)
                 return default
 
-        # PostHog unavailable: return default (or cached if available)
-        self._flag_cache[key] = default
+        # PostHog unavailable/unconfigured: serve stale cache if we've ever
+        # evaluated this pair, else the caller-supplied default.
+        if cached is not None:
+            return cached[1]
+        self._flag_cache[cache_key] = (now + _FLAG_CACHE_TTL_S, default)
         log.debug(
             "flag_evaluated_from_default",
             key=key,

@@ -136,6 +136,42 @@ def get_database_url(app, **kwargs) -> str:
     return database_url
 
 
+_DEFAULT_DB_POOL_SIZE = 10
+_MIN_DB_POOL_SIZE = 1
+_MAX_DB_POOL_SIZE = 100
+
+
+def _get_pool_size(app) -> int:
+    """Resolve the connection-pool size from config/env, with sane bounds.
+
+    `DB_POOL_SIZE` was previously read into app config but never consulted
+    here -- every DAL instance was hardcoded to pool_size=10 regardless of
+    what was configured. Falls back to the default on missing/invalid
+    values, and clamps to [_MIN_DB_POOL_SIZE, _MAX_DB_POOL_SIZE] so a typo'd
+    env var can't starve the pool (0) or exhaust the DB's max_connections.
+    """
+    raw = app.config.get("DB_POOL_SIZE") or os.getenv("DB_POOL_SIZE")
+    if raw is None:
+        return _DEFAULT_DB_POOL_SIZE
+
+    try:
+        pool_size = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Invalid DB_POOL_SIZE={raw!r}; using default {_DEFAULT_DB_POOL_SIZE}"
+        )
+        return _DEFAULT_DB_POOL_SIZE
+
+    if pool_size < _MIN_DB_POOL_SIZE or pool_size > _MAX_DB_POOL_SIZE:
+        logger.warning(
+            f"DB_POOL_SIZE={pool_size} out of bounds "
+            f"[{_MIN_DB_POOL_SIZE}, {_MAX_DB_POOL_SIZE}]; clamping"
+        )
+        pool_size = max(_MIN_DB_POOL_SIZE, min(pool_size, _MAX_DB_POOL_SIZE))
+
+    return pool_size
+
+
 def init_db(app):
     """
     Initialize database for penguin-dal runtime queries.
@@ -147,14 +183,15 @@ def init_db(app):
     database_url = get_database_url(app)
 
     db_type = app.config.get("DB_TYPE") or os.getenv("DB_TYPE")
+    pool_size = _get_pool_size(app)
     logger.info(
         f"Initializing penguin-dal: {database_url.split('@')[0].split('://')[0]}://*** "
-        f"(DB_TYPE: {db_type or 'auto'})"
+        f"(DB_TYPE: {db_type or 'auto'}, pool_size: {pool_size})"
     )
 
     # Create penguin-dal DAL instance for queries only.
     # Schema creation is handled by Alembic migrations (run_migrations).
-    db = DAL(database_url, pool_size=10, migrate=False)
+    db = DAL(database_url, pool_size=pool_size, migrate=False)
 
     # Attach to Flask app for use in endpoints
     app.db = db
@@ -200,7 +237,7 @@ def init_db(app):
         ):
             read_url = read_url.replace("postgres://", "postgresql://", 1)
         logger.info("Initializing read replica connection")
-        app.db_read = DAL(read_url, pool_size=10, migrate=False)
+        app.db_read = DAL(read_url, pool_size=pool_size, migrate=False)
     else:
         # No replica configured — reads go to primary
         app.db_read = db

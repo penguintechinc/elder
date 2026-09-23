@@ -148,6 +148,111 @@ class TestGracefulDegradation:
         )  # Not called again (cache hit)
 
 
+class TestPerTenantCacheKeying:
+    """Regression coverage: cache used to be keyed by flag key alone, so the
+    first tenant to evaluate a flag froze that result for every other
+    tenant forever -- killing per-tenant targeting and the kill-switch.
+    """
+
+    def test_different_distinct_ids_do_not_share_cached_result(self) -> None:
+        """Two tenants hitting the same flag key get independent evaluations."""
+        client = PostHogClient(api_key=None)
+        client.enabled = True
+
+        mock_posthog = MagicMock()
+        mock_posthog.feature_enabled.side_effect = lambda key, distinct_id, **kw: (
+            distinct_id == "tenant-a"
+        )
+        client._posthog_client = mock_posthog
+
+        result_a = client.flag_enabled("shared.flag", "tenant-a")
+        result_b = client.flag_enabled("shared.flag", "tenant-b")
+
+        assert result_a is True
+        assert result_b is False
+        assert mock_posthog.feature_enabled.call_count == 2
+
+    def test_cache_key_includes_distinct_id(self) -> None:
+        """Internal cache dict is keyed by (flag, distinct_id), not flag alone."""
+        client = PostHogClient(api_key=None)
+        client.enabled = True
+
+        mock_posthog = MagicMock()
+        mock_posthog.feature_enabled.return_value = True
+        client._posthog_client = mock_posthog
+
+        client.flag_enabled("flag.x", "tenant-1")
+        client.flag_enabled("flag.x", "tenant-2")
+
+        assert ("flag.x", "tenant-1") in client._flag_cache
+        assert ("flag.x", "tenant-2") in client._flag_cache
+
+
+class TestCacheTTL:
+    """Cache entries expire so a kill-switch flip in PostHog eventually
+    reaches every process, instead of freezing the first result forever.
+    """
+
+    def test_expired_entry_triggers_reevaluation(self, monkeypatch) -> None:
+        """After the TTL elapses, the next call re-queries PostHog."""
+        import apps.api.common.flags.posthog_client as posthog_module
+
+        client = PostHogClient(api_key=None)
+        client.enabled = True
+
+        mock_posthog = MagicMock()
+        mock_posthog.feature_enabled.return_value = True
+        client._posthog_client = mock_posthog
+
+        fake_now = [1000.0]
+        monkeypatch.setattr(posthog_module.time, "monotonic", lambda: fake_now[0])
+
+        result1 = client.flag_enabled("ttl.flag", "tenant-1")
+        assert result1 is True
+        assert mock_posthog.feature_enabled.call_count == 1
+
+        # Still within TTL -- cache hit, no re-query.
+        fake_now[0] += 10
+        client.flag_enabled("ttl.flag", "tenant-1")
+        assert mock_posthog.feature_enabled.call_count == 1
+
+        # PostHog flips the flag off; TTL has now elapsed.
+        mock_posthog.feature_enabled.return_value = False
+        fake_now[0] += posthog_module._FLAG_CACHE_TTL_S + 1
+
+        result2 = client.flag_enabled("ttl.flag", "tenant-1")
+        assert result2 is False
+        assert mock_posthog.feature_enabled.call_count == 2
+
+    def test_outage_after_ttl_expiry_serves_stale_value_not_default(
+        self, monkeypatch
+    ) -> None:
+        """PostHog outage after TTL expiry -> last-known value, never crash,
+        and never silently reset to `default`.
+        """
+        import apps.api.common.flags.posthog_client as posthog_module
+
+        client = PostHogClient(api_key=None)
+        client.enabled = True
+
+        mock_posthog = MagicMock()
+        mock_posthog.feature_enabled.return_value = True
+        client._posthog_client = mock_posthog
+
+        fake_now = [2000.0]
+        monkeypatch.setattr(posthog_module.time, "monotonic", lambda: fake_now[0])
+
+        result1 = client.flag_enabled("outage.flag", "tenant-9", default=False)
+        assert result1 is True
+
+        # TTL expires, then PostHog starts erroring (outage).
+        fake_now[0] += posthog_module._FLAG_CACHE_TTL_S + 1
+        mock_posthog.feature_enabled.side_effect = Exception("PostHog unreachable")
+
+        result2 = client.flag_enabled("outage.flag", "tenant-9", default=False)
+        assert result2 is True  # stale last-known value, NOT the `default`
+
+
 class TestModuleLevelApi:
     """Test module-level convenience functions."""
 

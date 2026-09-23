@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
+from ..regex_guard import UnsafeRegexError, safe_regex_search
 
 logger = logging.getLogger(__name__)
 
@@ -434,7 +435,13 @@ class RegexConditional(BaseNode):
         pattern = inputs.get("pattern")
 
         try:
-            matches = bool(re.search(pattern, text))
+            matches = await safe_regex_search(pattern, text)
+        except UnsafeRegexError as e:
+            raise ValueError(str(e))
+        except TimeoutError:
+            raise ValueError(
+                f"Regex match timed out (possible catastrophic backtracking): {pattern!r}"
+            )
         except re.error as e:
             raise ValueError(f"Invalid regex pattern: {e}")
         except Exception as e:

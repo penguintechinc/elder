@@ -12,6 +12,7 @@ from apps.worker.streams.nodes.conditionals.comparisons import (
     RegexConditional,
 )
 from apps.worker.streams.nodes.conditionals.for_each import ForEachConditional
+from apps.worker.streams.nodes.conditionals.if_then import IfThenConditional
 from apps.worker.streams.nodes.conditionals.logic_gates import (
     AndConditional,
     NotConditional,
@@ -135,6 +136,76 @@ class TestRegexConditional:
         node = RegexConditional(base_context)
         with pytest.raises(ValueError, match="Invalid regex"):
             await node.execute({"text": "test", "pattern": "(?P<invalid"})
+
+    @pytest.mark.asyncio
+    async def test_regex_unsafe_pattern_rejected_not_hung(self, base_context):
+        """A catastrophic-backtracking-shaped pattern is rejected up front
+        (ValueError), never executed -- the node fails safely instead of
+        blocking the worker's event loop.
+        """
+        node = RegexConditional(base_context)
+        with pytest.raises(ValueError, match="nested quantifier"):
+            await node.execute({"text": "aaaa", "pattern": r"(a+)+$"})
+
+
+class TestIfThenConditional:
+    """Coverage for the "regex" operator's ReDoS guard in if_then.py.
+
+    "regex" is special-cased ahead of the OPERATORS dict so it can be
+    awaited through safe_regex_search (thread offload + timeout) -- these
+    tests prove that wiring both matches correctly and fails safely.
+    """
+
+    @pytest.mark.asyncio
+    async def test_regex_condition_true_routes_to_true_output(self, base_context):
+        ctx = {
+            **base_context,
+            "config": {
+                "conditions": [
+                    {"field": "code", "operator": "regex", "value": r"^\d{3}$"}
+                ],
+                "logic": "and",
+            },
+        }
+        node = IfThenConditional(ctx)
+        result = await node.execute({"in": {"code": "404"}})
+        assert result["true"]["data"] == {"code": "404"}
+        assert result["false"]["data"] is None
+
+    @pytest.mark.asyncio
+    async def test_regex_condition_false_routes_to_false_output(self, base_context):
+        ctx = {
+            **base_context,
+            "config": {
+                "conditions": [
+                    {"field": "code", "operator": "regex", "value": r"^\d{3}$"}
+                ],
+                "logic": "and",
+            },
+        }
+        node = IfThenConditional(ctx)
+        result = await node.execute({"in": {"code": "not-a-code"}})
+        assert result["true"]["data"] is None
+        assert result["false"]["data"] == {"code": "not-a-code"}
+
+    @pytest.mark.asyncio
+    async def test_unsafe_regex_condition_fails_safely_to_false(self, base_context):
+        """Nested-quantifier pattern -> condition evaluates False, execute()
+        never raises and never hangs.
+        """
+        ctx = {
+            **base_context,
+            "config": {
+                "conditions": [
+                    {"field": "code", "operator": "regex", "value": r"(a+)+$"}
+                ],
+                "logic": "and",
+            },
+        }
+        node = IfThenConditional(ctx)
+        result = await node.execute({"in": {"code": "aaaa"}})
+        assert result["true"]["data"] is None
+        assert result["false"]["data"] == {"code": "aaaa"}
 
 
 class TestAndConditional:
