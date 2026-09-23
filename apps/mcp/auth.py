@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTError
+import jwt
+from jwt import PyJWTError
 
 
 @dataclass(slots=True)
@@ -94,8 +94,8 @@ class ElderSession:
         """
         try:
             # Decode without verification (we only need exp claim)
-            payload = jwt.get_unverified_claims(token)
-        except (JWTError, ExpiredSignatureError) as e:
+            payload = jwt.decode(token, options={"verify_signature": False})
+        except PyJWTError as e:
             raise ValueError(f"Invalid JWT token: {e}")
 
         if "exp" not in payload:
