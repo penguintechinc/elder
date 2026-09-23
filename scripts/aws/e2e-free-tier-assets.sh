@@ -17,7 +17,12 @@
 # failures so a partial `create` can always be cleaned up. Always run it.
 #
 # Bash 3.2 compatible (macOS ships 3.2) — no associative arrays, no mapfile.
-
+#
+# Deliberately no `-e`: do_destroy() is documented above as best-effort and
+# must never abort early (a partial teardown would strand billable resources)
+# — every AWS call it makes is already individually `|| warn "..."`-guarded,
+# but a stray unguarded one (e.g. `ec2 wait instance-terminated`) would still
+# abort the whole teardown under `-e`. `-u` and `pipefail` are safe and kept.
 set -uo pipefail
 
 ACTION="${1:-}"

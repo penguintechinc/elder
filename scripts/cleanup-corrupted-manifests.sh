@@ -10,13 +10,13 @@
 #   gh auth login --scopes "read:packages,write:packages,delete:packages"
 #   ./cleanup-corrupted-manifests.sh [--dry-run]
 
-set -e
+set -euo pipefail
 
 ORG="penguintechinc"
 DRY_RUN=false
 
 # Parse arguments
-if [[ "$1" == "--dry-run" ]]; then
+if [[ "${1:-}" == "--dry-run" ]]; then
   DRY_RUN=true
   echo "🔍 DRY RUN MODE - No changes will be made"
   echo ""
