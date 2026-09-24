@@ -667,6 +667,7 @@ Discover API endpoints from source code for service mapping:
 | [Usage Guide](docs/USAGE.md) | User guide and workflows |
 | [Development](docs/DEVELOPMENT.md) | Local development setup |
 | [Testing](docs/TESTING.md) | Test tiers and how to run them |
+| [Compliance & Privacy](docs/compliance/) | Privacy policy, data processing records (RoPA), retention policy — **templates, review by legal/DPO before publishing** |
 | [Roadmap](docs/ROADMAP.md) | Planned work |
 | [Contributing](docs/CONTRIBUTING.md) | Contribution guidelines |
 | [Release Notes](docs/RELEASE_NOTES.md) | Version history |
