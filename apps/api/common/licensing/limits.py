@@ -114,6 +114,19 @@ def resolve_limits(license_client: Any | None) -> tuple[str, LimitSet]:
             raw_limits = getattr(validation, "limits", None) or {}
             overrides = {k: v for k, v in raw_limits.items() if k in _LIMIT_SET_FIELDS}
         except Exception as exc:
+            # License-server outage: serve the last-known-good entitlement
+            # (even if its TTL already expired above) rather than dropping
+            # to the community floor -- that would 402 an Enterprise tenant
+            # on a transient network blip. Only fall to the floor if this
+            # client has never successfully validated before.
+            if cached is not None:
+                logger.warning(
+                    "license_limits_resolve_failed_using_stale_cache",
+                    error=str(exc),
+                    tier=cached[1],
+                )
+                _cache[license_client] = (now + _CACHE_TTL_S, cached[1], cached[2])
+                return cached[1], cached[2]
             logger.warning(
                 "license_limits_resolve_failed", error=str(exc), fallback="community"
             )

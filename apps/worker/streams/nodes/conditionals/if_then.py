@@ -16,10 +16,15 @@ from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
+from ..regex_guard import UnsafeRegexError, safe_regex_search
 
 logger = logging.getLogger(__name__)
 
-# Operator mapping for conditional evaluation
+# Operator mapping for conditional evaluation. "regex" is special-cased in
+# _evaluate_condition below -- it must be awaited through the safe_regex_search
+# ReDoS guard (thread offload + timeout), so it is never invoked through this
+# dict directly; the entry is kept only so "regex" still shows up as a known
+# operator name wherever OPERATORS.keys() is inspected.
 OPERATORS: dict[str, Callable] = {
     "eq": operator.eq,
     "ne": operator.ne,
@@ -93,13 +98,34 @@ class IfThenConditional(BaseNode):
                 return None
         return value
 
-    def _evaluate_condition(self, data: Any, condition: dict) -> bool:
-        """Evaluate a single condition against data."""
+    async def _evaluate_condition(self, data: Any, condition: dict) -> bool:
+        """Evaluate a single condition against data.
+
+        "regex" is routed through safe_regex_search (thread offload + ReDoS
+        guard) rather than OPERATORS -- the worker runs a single event loop
+        and a pathological pattern must never be allowed to hang it.
+        """
         field = condition.get("field", "")
         op_name = condition.get("operator", "eq")
         expected = condition.get("value")
 
         actual = self._get_field_value(data, field) if isinstance(data, dict) else None
+
+        if op_name == "regex":
+            try:
+                return await safe_regex_search(str(expected), str(actual))
+            except UnsafeRegexError as e:
+                self.log_warning(f"Regex condition rejected: {e}")
+                return False
+            except TimeoutError:
+                self.log_warning(
+                    f"Regex condition timed out (possible catastrophic backtracking): "
+                    f"{expected!r}"
+                )
+                return False
+            except Exception:
+                return False
+
         op_func = OPERATORS.get(op_name, operator.eq)
 
         try:
@@ -107,12 +133,12 @@ class IfThenConditional(BaseNode):
         except Exception:
             return False
 
-    def _matches(self, data: Any, conditions: list[dict], logic: str) -> bool:
+    async def _matches(self, data: Any, conditions: list[dict], logic: str) -> bool:
         """Check if data matches all or any conditions based on logic."""
         if not conditions:
             return True
 
-        results = [self._evaluate_condition(data, c) for c in conditions]
+        results = [await self._evaluate_condition(data, c) for c in conditions]
 
         if logic == "and":
             return all(results)
@@ -128,7 +154,7 @@ class IfThenConditional(BaseNode):
         logic = self.get_config_value("logic", "and")
 
         # Evaluate conditions
-        result = self._matches(input_data, conditions, logic)
+        result = await self._matches(input_data, conditions, logic)
 
         # Route to appropriate output
         if result:

@@ -69,6 +69,11 @@ def _init_otel_metrics():
         unit="s",
         description="Sync operation duration",
     )
+    job_duration_histogram = meter.create_histogram(
+        "worker.jobbus.job.duration",
+        unit="s",
+        description="Job-bus job processing duration (dequeue to ack/dead-letter)",
+    )
 
     return {
         "job_counter": job_counter,
@@ -76,6 +81,7 @@ def _init_otel_metrics():
         "error_counter": error_counter,
         "poll_duration_histogram": poll_duration_histogram,
         "sync_duration_histogram": sync_duration_histogram,
+        "job_duration_histogram": job_duration_histogram,
     }
 
 
@@ -465,6 +471,47 @@ class WorkerService:
         On error:
         - Log exception
         - Do NOT ack (message stays pending for XAUTOCLAIM reclaim)
+
+        Wrapped in a span extracted from envelope.trace_context so this job
+        continues the distributed trace started by whatever enqueued it
+        (API request, another job, etc.) rather than showing up parentless.
+        """
+        from shared.observability import get_tracer
+
+        job_id = envelope.job_id
+        start_time = time.monotonic()
+        status = "error"
+
+        tracer = get_tracer("elder-worker")
+        parent_context = envelope.extract_trace_context()
+        with tracer.start_as_current_span(
+            "worker.process_job",
+            context=parent_context,
+            attributes={
+                "job.id": job_id,
+                "job.type": envelope.job_type,
+                "job.group": group,
+            },
+        ):
+            try:
+                status = await self._process_job_body(group, msg_id, envelope)
+            finally:
+                if _otel_metrics is not None:
+                    _otel_metrics["job_duration_histogram"].record(
+                        time.monotonic() - start_time,
+                        attributes={
+                            "job.type": envelope.job_type,
+                            "job.group": group,
+                            "status": status,
+                        },
+                    )
+
+    async def _process_job_body(self, group: str, msg_id: str, envelope) -> str:
+        """Execute the actual job handler dispatch (see _process_job for the span/metric wrapper).
+
+        Returns:
+            "success", "duplicate", "no_handler", or "error" -- used as the
+            job_duration_histogram's status attribute.
         """
         job_id = envelope.job_id
 
@@ -478,7 +525,7 @@ class WorkerService:
                     msg_id=msg_id,
                 )
                 await self.jobbus.ack(group, msg_id)
-                return
+                return "duplicate"
 
             # Get handler for this group
             handler = get_handler(group)
@@ -490,7 +537,7 @@ class WorkerService:
                 )
                 # ACK anyway to avoid replay loop
                 await self.jobbus.ack(group, msg_id)
-                return
+                return "no_handler"
 
             # Execute handler
             logger.info(
@@ -521,6 +568,7 @@ class WorkerService:
                 job_id=job_id,
                 group=group,
             )
+            return "success"
 
         except Exception as e:
             logger.error(
@@ -532,6 +580,7 @@ class WorkerService:
                 exc_info=True,
             )
             # Do NOT ack; message stays pending for XAUTOCLAIM
+            return "error"
 
     async def _sweeper_task(self) -> None:
         """XAUTOCLAIM sweeper: reclaim stale messages every minute.

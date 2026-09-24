@@ -11,11 +11,14 @@ Design:
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import redis.asyncio as aioredis
 import structlog
+from opentelemetry import context as otel_context
+from opentelemetry.propagate import extract as otel_extract
+from opentelemetry.propagate import inject as otel_inject
 from redis.asyncio import Redis as AsyncRedis
 
 logger = structlog.get_logger(__name__)
@@ -32,7 +35,14 @@ DEFAULT_IDEMPOTENCY_TTL = 86400
 
 @dataclass(slots=True)
 class JobEnvelope:
-    """Job message envelope (JSON-serializable)."""
+    """Job message envelope (JSON-serializable).
+
+    `trace_context` carries the OTel propagation carrier (e.g. W3C
+    `traceparent`/`tracestate`) captured at enqueue time, so a worker/scanner
+    consuming this job can extract it and continue the same distributed
+    trace that started in the API request that enqueued it -- rather than
+    every job showing up as a disconnected, parentless span.
+    """
 
     job_id: str
     job_type: str
@@ -40,6 +50,7 @@ class JobEnvelope:
     enqueued_at: str
     tenant_id: int | None = None
     idempotency_key: str | None = None
+    trace_context: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         """Serialize envelope to JSON."""
@@ -51,6 +62,7 @@ class JobEnvelope:
                 "payload": self.payload,
                 "enqueued_at": self.enqueued_at,
                 "idempotency_key": self.idempotency_key,
+                "trace_context": self.trace_context,
             }
         )
 
@@ -65,7 +77,18 @@ class JobEnvelope:
             enqueued_at=parsed.get("enqueued_at", ""),
             tenant_id=parsed.get("tenant_id"),
             idempotency_key=parsed.get("idempotency_key"),
+            trace_context=parsed.get("trace_context") or {},
         )
+
+    def extract_trace_context(self) -> otel_context.Context:
+        """Extract the propagated OTel context carried by this envelope.
+
+        Returns the current context unchanged if `trace_context` is empty
+        (e.g. jobs enqueued before this field existed, or enqueued with no
+        active span) -- callers can pass the result straight to
+        `tracer.start_as_current_span(..., context=...)` either way.
+        """
+        return otel_extract(self.trace_context)
 
 
 @dataclass(slots=True)
@@ -184,6 +207,13 @@ class JobBus:
                 )
                 return job_id
 
+        # Capture the caller's current OTel context (e.g. the in-flight
+        # HTTP request span) so the consumer can continue the same
+        # distributed trace across the API -> job-bus -> worker boundary.
+        # No-ops to an empty dict if there's no active span.
+        trace_carrier: dict[str, str] = {}
+        otel_inject(trace_carrier)
+
         # Build envelope
         envelope = JobEnvelope(
             job_id=job_id,
@@ -192,6 +222,7 @@ class JobBus:
             payload=payload,
             enqueued_at=enqueued_at,
             idempotency_key=idempotency_key,
+            trace_context=trace_carrier,
         )
 
         # Add to stream (single "data" field)

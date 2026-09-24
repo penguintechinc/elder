@@ -100,6 +100,53 @@ class TestFilterTransform:
         errors = node.validate_config(ctx["config"])
         assert len(errors) > 0
 
+    @pytest.mark.asyncio
+    async def test_filter_regex_operator_matches_through_safe_guard(self, base_context):
+        """The "regex" operator is routed through safe_regex_search, not
+        called inline -- this proves that wiring still produces a correct
+        match rather than just avoiding a crash.
+        """
+        ctx = {
+            **base_context,
+            "config": {
+                "conditions": [
+                    {
+                        "field": "email",
+                        "operator": "regex",
+                        "value": r"^\w+@example\.com$",
+                    }
+                ],
+                "logic": "and",
+            },
+        }
+        node = FilterTransform(ctx)
+        data = [{"email": "a@example.com"}, {"email": "b@other.com"}]
+        result = await node.execute({"in": data})
+        assert result["out"]["data"] == [{"email": "a@example.com"}]
+        assert result["rejected"]["data"] == [{"email": "b@other.com"}]
+
+    @pytest.mark.asyncio
+    async def test_filter_unsafe_regex_pattern_rejects_item_not_crash(
+        self, base_context
+    ):
+        """A nested-quantifier ("catastrophic backtracking") pattern must be
+        rejected safely -- the item fails the condition, execute() never
+        raises and the event loop never blocks.
+        """
+        ctx = {
+            **base_context,
+            "config": {
+                "conditions": [
+                    {"field": "value", "operator": "regex", "value": r"(a+)+$"}
+                ],
+                "logic": "and",
+            },
+        }
+        node = FilterTransform(ctx)
+        result = await node.execute({"in": {"value": "aaaa"}})
+        assert result["out"]["data"] is None
+        assert result["rejected"]["data"] == {"value": "aaaa"}
+
 
 class TestJsonTransform:
     @pytest.mark.asyncio
