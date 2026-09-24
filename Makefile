@@ -2,7 +2,7 @@
 
 .PHONY: help \
         setup setup-env setup-python setup-lint verify-venv install-hooks verify-hooks \
-        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
+        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc openapi-spec \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
         smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
         lint format format-check \
@@ -230,6 +230,15 @@ generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
 		done"
 	@touch apps/api/grpc/generated/__init__.py
 	@echo "$(GREEN)gRPC stubs generated$(RESET)"
+
+openapi-spec: test-db-up build-test-image ## Regenerate openapi/v4.yaml from quart-schema route definitions
+	@echo "$(BLUE)Generating openapi/v4.yaml...$(RESET)"
+	@docker run --rm --network host \
+		-e DATABASE_URL="postgresql://elder_test:elder_test_password@localhost:55432/elder_test" \
+		-e REDIS_URL="redis://localhost:56379/0" \
+		-v $(PWD):/app -w /app --entrypoint python3 elder-test:3.13 \
+		scripts/generate_openapi_spec.py
+	@echo "$(GREEN)openapi/v4.yaml regenerated$(RESET)"
 
 # ── Testing ────────────────────────────────────────────────────────────────
 test: lint test-unit test-integration test-functional test-security ## Run all tests (lint + unit + integration + functional + security)

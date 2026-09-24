@@ -100,6 +100,12 @@ async def register():
             is_superuser=False,
             mfa_enabled=False,
             tenant_id=default_tenant_id,
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly
+            # (see apps/api/api/v1/identities.py's identical comment).
+            must_change_password=False,
+            portal_role="observer",
             created_at=now,
             updated_at=now,
         )

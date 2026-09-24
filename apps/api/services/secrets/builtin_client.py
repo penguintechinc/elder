@@ -98,6 +98,12 @@ class BuiltinSecretsClient(SecretProviderClient):
                     logger.error(f"Failed to parse JSON for secret '{path}'")
                     kv_pairs = {}
 
+                # Security: is_masked=True means the caller must never see real
+                # values — .mask() replaces each kv_pairs value with a
+                # placeholder while preserving the keys. Returning kv_pairs
+                # unmasked here was a credential leak (flagged by the DTO
+                # audit): callers relying on is_masked to gate display got
+                # the real secret values anyway.
                 return SecretValue(
                     name=row.name,
                     value=None,
@@ -115,7 +121,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                             row.expires_at.isoformat() if row.expires_at else None
                         ),
                     },
-                )
+                ).mask()
             else:
                 # Simple string secret (password field is encrypted by PyDAL)
                 # Note: We can't retrieve the actual password value, it's hashed
