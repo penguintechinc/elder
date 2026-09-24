@@ -7,6 +7,7 @@ Polls the Elder API for pending scan jobs and executes them.
 
 import asyncio
 import datetime
+import functools
 import logging
 import os
 import signal
@@ -435,7 +436,9 @@ class ScannerService:
 
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: self.request_shutdown(s.name))
+            loop.add_signal_handler(
+                sig, functools.partial(self.request_shutdown, sig.name)
+            )
 
         while not self._shutdown_event.is_set():
             try:
