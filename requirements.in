@@ -144,6 +144,7 @@ penguin-aaa==0.1.0
 penguin-libs~=0.1.0
 penguin-licensing~=0.1.0
 penguin-utils~=0.1.0
+penguin-limiter==0.1.0
 
 # License Server Integration
 # Using requests/httpx for HTTP client (already included above)

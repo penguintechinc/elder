@@ -14,6 +14,7 @@ from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sso", __name__)
 
@@ -460,7 +461,12 @@ async def oidc_logout(idp_id):
     id_token_hint = data.get("id_token_hint")
     post_logout_redirect_uri = data.get("post_logout_redirect_uri")
 
-    result = OIDCService.logout(idp_id, id_token_hint, post_logout_redirect_uri)
+    # OIDCService.logout() makes a blocking `requests` call (OIDC discovery
+    # document fetch) -- run off the event loop so one slow/unresponsive IdP
+    # can't stall every other concurrent request (finding #7).
+    result = await run_in_threadpool(
+        OIDCService.logout, idp_id, id_token_hint, post_logout_redirect_uri
+    )
 
     if "error" in result:
         return jsonify(result), 400
@@ -517,7 +523,11 @@ async def oidc_refresh(idp_id):
     if not refresh_token:
         return ApiResponse.bad_request("refresh_token is required")
 
-    result = OIDCService.refresh_tokens(idp_id, refresh_token)
+    # OIDCService.refresh_tokens() makes blocking `requests`/authlib
+    # OAuth2Session HTTP calls (discovery + token endpoint) -- run off the
+    # event loop so a slow IdP can't stall every other concurrent request
+    # (finding #7).
+    result = await run_in_threadpool(OIDCService.refresh_tokens, idp_id, refresh_token)
 
     if "error" in result:
         return jsonify(result), 400

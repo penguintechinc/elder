@@ -16,6 +16,7 @@ from quart_cors import cors
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
+from apps.api.utils.rate_limiter import init_rate_limiter
 from shared.database import (
     ensure_database_ready,
     init_db,
@@ -150,6 +151,11 @@ def create_app(config_name: str = None) -> Quart:
     )
 
     _register_before_request(app)
+
+    # Rate limiting (finding #5) -- registered AFTER _register_before_request
+    # so the tenant claim it populates on g.claims is available for the
+    # per-tenant + per-IP compound key. Degrades open if Redis is down.
+    init_rate_limiter(app)
 
     # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
     auto_instrument_app(app)
