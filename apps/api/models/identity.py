@@ -157,6 +157,16 @@ class Identity(Base, IDMixin, TimestampMixin):
         comment="Last login timestamp (ISO format)",
     )
 
+    # Self-service DSAR (GDPR Art. 17 / CCPA-CPRA) -- see
+    # apps/api/services/privacy/service.py and
+    # docs/compliance/data-retention-policy.md. `do_not_sell_share` and
+    # `consent_withdrawn_at` implement the CCPA/CPRA opt-out; `anonymized_at`
+    # marks a completed right-to-erasure (row survives, PII fields blanked,
+    # so audit_logs/RBAC history referencing this id by FK stay intact).
+    do_not_sell_share = Column(Boolean, default=False, nullable=False)
+    consent_withdrawn_at = Column(DateTime(timezone=True), nullable=True)
+    anonymized_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     group_memberships: Mapped[list["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",

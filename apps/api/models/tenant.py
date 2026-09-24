@@ -32,6 +32,12 @@ class Tenant(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False)
     village_id = Column(String(32), unique=True, nullable=True)
 
+    # DSAR right-to-erasure guard (GDPR Art. 17 exception; see
+    # docs/compliance/data-retention-policy.md Legal Holds & Data
+    # Preservation). While True, PrivacyService.erase_identity /
+    # bulk_erase refuse to anonymize any identity owned by this tenant.
+    legal_hold = Column(Boolean, default=False, nullable=False)
+
 
 class PortalUser(Base, IDMixin, TimestampMixin):
     """Enterprise portal user management.

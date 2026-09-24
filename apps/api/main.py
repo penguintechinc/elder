@@ -524,6 +524,8 @@ def _register_blueprints(app: Quart) -> None:
         lookup_village_id,
         modules,
         portal_auth,
+        privacy,
+        privacy_admin,
         profile,
         refs,
         search,
@@ -548,6 +550,11 @@ def _register_blueprints(app: Quart) -> None:
     app.register_blueprint(tenant_modules.bp, url_prefix=f"{api_prefix}")
     app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
     app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
+
+    # Self-service DSAR (Free+) and its Enterprise-gated admin convenience
+    # layer -- see docs/compliance and apps/api/services/privacy.
+    app.register_blueprint(privacy.bp, url_prefix=f"{api_prefix}/privacy")
+    app.register_blueprint(privacy_admin.bp, url_prefix=f"{api_prefix}/privacy-admin")
 
     # Audit and logging
     app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")
@@ -576,7 +583,7 @@ def _register_blueprints(app: Quart) -> None:
     logger.info(
         "core_blueprints_registered",
         api_prefix=api_prefix,
-        count=14,
+        count=16,
     )
 
 
