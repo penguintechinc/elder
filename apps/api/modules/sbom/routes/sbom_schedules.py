@@ -23,10 +23,10 @@ from apps.api.models.dataclasses import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
-    validate_resource_exists,
 )
 
 bp = Blueprint("sbom_schedules", __name__)
@@ -137,6 +137,7 @@ async def create_schedule():
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate JSON body
     data = await request.get_json()
@@ -153,12 +154,12 @@ async def create_schedule():
     parent_id = data["parent_id"]
     schedule_cron = data["schedule_cron"]
 
-    # Validate parent exists (service or software)
+    # Validate parent exists and belongs to caller's tenant (gh-237)
     def validate_parent():
         if parent_type == "service":
-            return db.services[parent_id]
+            return get_tenant_scoped(db, db.services, parent_id, tenant_id)
         elif parent_type == "software":
-            return db.software[parent_id]
+            return get_tenant_scoped(db, db.software, parent_id, tenant_id)
         return None
 
     parent = await run_in_threadpool(validate_parent)
@@ -177,6 +178,7 @@ async def create_schedule():
         now = datetime.datetime.now(datetime.UTC)
         # Create schedule record
         insert_data = {
+            "tenant_id": tenant_id,
             "parent_type": parent_type,
             "parent_id": parent_id,
             "schedule_cron": schedule_cron,
@@ -197,7 +199,7 @@ async def create_schedule():
         schedule_id = db.sbom_scan_schedules.insert(**insert_data)
         db.commit()
 
-        return db.sbom_scan_schedules[schedule_id]
+        return get_tenant_scoped(db, db.sbom_scan_schedules, schedule_id, tenant_id)
 
     schedule = await run_in_threadpool(create)
 
@@ -223,13 +225,14 @@ async def get_schedule(id: int):
         GET /api/v1/sbom/schedules/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    schedule, error = await validate_resource_exists(
-        db.sbom_scan_schedules, id, "SBOM Scan Schedule"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    schedule = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scan_schedules, id, tenant_id)
     )
-    if error:
-        return error
+    if not schedule:
+        return ApiResponse.not_found("SBOM Scan Schedule", id)
 
     schedule_dto = from_pydal_row(schedule, SBOMScanScheduleDTO)
     return ApiResponse.success(asdict(schedule_dto))
@@ -270,18 +273,19 @@ async def update_schedule(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate JSON body
     data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
-    # Validate schedule exists
-    schedule, error = await validate_resource_exists(
-        db.sbom_scan_schedules, id, "SBOM Scan Schedule"
+    # Validate schedule exists and belongs to caller's tenant (gh-237)
+    schedule = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scan_schedules, id, tenant_id)
     )
-    if error:
-        return error
+    if not schedule:
+        return ApiResponse.not_found("SBOM Scan Schedule", id)
 
     # Validate cron expression if being updated
     if "schedule_cron" in data:
@@ -329,7 +333,7 @@ async def update_schedule(id: int):
             db(db.sbom_scan_schedules.id == id).update(**update_dict)
             db.commit()
 
-        return db.sbom_scan_schedules[id]
+        return db.sbom_scan_schedules[id]  # tenant-scope-exempt: verified above
 
     updated_schedule = await run_in_threadpool(update)
 
@@ -359,16 +363,17 @@ async def delete_schedule(id: int):
         DELETE /api/v1/sbom/schedules/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    schedule, error = await validate_resource_exists(
-        db.sbom_scan_schedules, id, "SBOM Scan Schedule"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    schedule = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scan_schedules, id, tenant_id)
     )
-    if error:
-        return error
+    if not schedule:
+        return ApiResponse.not_found("SBOM Scan Schedule", id)
 
     def delete():
-        del db.sbom_scan_schedules[id]
+        del db.sbom_scan_schedules[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -394,11 +399,23 @@ async def get_due_schedules():
         GET /api/v1/sbom/schedules/due
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_schedules():
+        # gh-237: scope to caller's tenant -- this endpoint previously
+        # returned every tenant's due schedules (including credential_id/
+        # credential_mapping fields) to any caller with sbom:read.
+        #
+        # Pre-existing bug fixed in passing: `is True` is a Python identity
+        # check (always False for a PyDAL Field), not a query condition --
+        # `False & Query(...)` then raises TypeError ("unsupported operand
+        # type(s) for &: 'bool' and 'Query'"), meaning this endpoint 500'd
+        # unconditionally before this fix.
         now = datetime.datetime.now(datetime.UTC)
-        query = (db.sbom_scan_schedules.is_active is True) & (
-            db.sbom_scan_schedules.next_run_at <= now
+        query = (
+            (db.sbom_scan_schedules.is_active == True)  # noqa: E712
+            & (db.sbom_scan_schedules.next_run_at <= now)
+            & (db.sbom_scan_schedules.tenant_id == tenant_id)
         )
         rows = db(query).select(orderby=db.sbom_scan_schedules.next_run_at)
         return rows

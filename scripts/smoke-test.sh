@@ -19,7 +19,7 @@
 #   ./scripts/smoke-test.sh --beta             # Run beta tests against K8s
 #   ./scripts/smoke-test.sh --alpha --skip-build  # Alpha without rebuild
 
-set -e
+set -euo pipefail
 
 # macOS compatibility: GNU timeout is 'gtimeout' via coreutils; fall back to plain exec
 _timeout() {

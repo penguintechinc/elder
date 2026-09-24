@@ -161,7 +161,7 @@ async def create_label(body: CreateLabelRequest):
         )
         db.commit()
 
-        return db.issue_labels[label_id]
+        return db.issue_labels[label_id]  # tenant-scope-exempt: global
 
     label = await run_in_threadpool(create)
 
@@ -191,7 +191,7 @@ async def get_label(id: int):
     """
     db = current_app.db
 
-    label = await run_in_threadpool(lambda: db.issue_labels[id])
+    label = await run_in_threadpool(lambda: db.issue_labels[id])  # tenant-scope-exempt
 
     if not label:
         return jsonify({"error": "Label not found"}), 404
@@ -229,7 +229,7 @@ async def update_label(id: int, body: UpdateLabelRequest):
     db = current_app.db
 
     def update():
-        label = db.issue_labels[id]
+        label = db.issue_labels[id]  # tenant-scope-exempt: global table
         if not label:
             return None, False
 
@@ -252,7 +252,7 @@ async def update_label(id: int, body: UpdateLabelRequest):
             db(db.issue_labels.id == id).update(**update_dict)
             db.commit()
 
-        return db.issue_labels[id], False
+        return db.issue_labels[id], False  # tenant-scope-exempt: global table
 
     label, name_exists = await run_in_threadpool(update)
 
@@ -285,11 +285,11 @@ async def delete_label(id: int):
     db = current_app.db
 
     def delete():
-        label = db.issue_labels[id]
+        label = db.issue_labels[id]  # tenant-scope-exempt: global table
         if not label:
             return False
 
-        del db.issue_labels[id]
+        del db.issue_labels[id]  # tenant-scope-exempt: global table
         db.commit()
         return True
 

@@ -196,37 +196,20 @@ services:
     tmpfs:
       - /app/screenshots:size=1G
 
-  # Prometheus Monitoring
-  prometheus:
-    image: prom/prometheus:v2.48.1@sha256:5d6b1b3c6a3dc6c8f6b2e4c6e4b0c0e0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0
-    container_name: elder-prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
-    volumes:
-      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./infrastructure/monitoring/alerts.yml:/etc/prometheus/alerts.yml
-      - prometheus_data:/prometheus
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9090/-/healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - elder-network
-    restart: unless-stopped
-    depends_on:
-      - alertmanager
-
-  # Alertmanager for incident alerts
+  # Prometheus + Grafana were removed here -- they scraped a `/metrics`
+  # endpoint this app has never exposed and shipped dashboards/alert rules
+  # referencing metric names the app never emitted (http_requests_total,
+  # flask_http_request_total, elder_entities_total, ...). Elder's real
+  # telemetry is OTLP push (see shared/observability.py + OTEL_EXPORTER_OTLP_*
+  # env vars); dashboards/alerts/SLOs built against the metrics actually
+  # emitted now live in version control under observability/.
+  #
+  # Alertmanager stays: it's a genuine push-based receiver for
+  # shared/alerting/alertmanager.py (on-call/incident webhook routing via
+  # apps/api/modules/services_oncall), not a metrics-scrape consumer -- unlike
+  # Prometheus/Grafana it was never part of this finding.
   alertmanager:
-    image: prom/alertmanager:v0.26.0@sha256:8g8h8i8j8k8l8m8n8o8p8q8r8s8t8u8v8w8x8y8z8a8b8c8d8e8f8g8h8i8
+    image: prom/alertmanager:v0.26.0@sha256:361db356b33041437517f1cd298462055580585f26555c317df1a3caf2868552
     container_name: elder-alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -239,31 +222,6 @@ services:
       - alertmanager_data:/alertmanager
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9093/-/healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - elder-network
-    restart: unless-stopped
-
-  # Grafana Dashboard
-  grafana:
-    image: grafana/grafana:10.2.3@sha256:7e6e2f4c4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2f4e2
-    container_name: elder-grafana
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    ports:
-      - "${GRAFANA_PORT:-4001}:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./infrastructure/monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
-      - ./infrastructure/monitoring/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-    depends_on:
-      - prometheus
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:3000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -375,11 +333,7 @@ volumes:
     driver: local
   redis_data:
     driver: local
-  prometheus_data:
-    driver: local
   alertmanager_data:
-    driver: local
-  grafana_data:
     driver: local
   pydal_migrations:
     driver: local

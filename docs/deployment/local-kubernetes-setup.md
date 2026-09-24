@@ -271,13 +271,6 @@ kubectl port-forward svc/elder-web 3000:80
 kubectl port-forward svc/elder-grpc 50051:50051
 ```
 
-**Access Grafana (if monitoring enabled):**
-
-```bash
-kubectl port-forward svc/elder-grafana 3001:80
-# Visit http://localhost:3001
-```
-
 ### Using Ingress (Optional)
 
 If you enabled Ingress on MicroK8s:
@@ -499,5 +492,5 @@ kubectl cp <pod-name>:/path/to/file ./local-file
 ## Next Steps
 
 - [Setup GitHub Actions for CI/CD](./github-actions-k8s.md)
-- [Configure monitoring and observability](../../infrastructure/monitoring/) — Prometheus, Alertmanager, and Grafana dashboard configs
+- [Configure monitoring and observability](../../observability/) — dashboards, alert rules, and SLOs built against the OTel metrics Elder actually emits (api/worker/scanner export via OTLP; no Elder-deployed Grafana/Prometheus service exists in the Helm chart)
 - [GitHub Actions Kubernetes deployment](./github-actions-k8s.md)

@@ -21,6 +21,7 @@ from apps.api.models.dataclasses import (
 from apps.api.modules.issues.routes.common import _tenant_id
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_tenant_scoped
 
 bp = Blueprint("projects", __name__)
 
@@ -146,18 +147,15 @@ async def create_project():
     if not data.get("organization_id"):
         return jsonify({"error": "organization_id is required"}), 400
 
-    # Get organization to derive tenant_id
+    # Get organization, scoped to the caller's own tenant (gh-237; matches
+    # issues.py:create_issue's cross-tenant IDOR guard)
     def get_org():
-        return db.organizations[data["organization_id"]]
+        return get_tenant_scoped(
+            db, db.organizations, data["organization_id"], tenant_id
+        )
 
     org = await run_in_threadpool(get_org)
     if not org:
-        return jsonify({"error": "Organization not found"}), 404
-    if not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
-    # Cross-tenant IDOR guard: the org must belong to the caller's own
-    # tenant, not merely exist (matches issues.py:create_issue).
-    if org.tenant_id != tenant_id:
         return jsonify({"error": "Organization not found"}), 404
 
     def create():
@@ -262,14 +260,12 @@ async def update_project(id: int):
     if "organization_id" in data:
 
         def get_org():
-            return db.organizations[data["organization_id"]]
+            return get_tenant_scoped(
+                db, db.organizations, data["organization_id"], tenant_id
+            )
 
         org = await run_in_threadpool(get_org)
         if not org:
-            return jsonify({"error": "Organization not found"}), 404
-        # Cross-tenant IDOR guard: re-pointing a project at another
-        # tenant's org must not silently re-link it cross-tenant.
-        if org.tenant_id != tenant_id:
             return jsonify({"error": "Organization not found"}), 404
 
     def update():

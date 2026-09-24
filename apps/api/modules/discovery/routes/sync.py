@@ -10,8 +10,16 @@ from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 from quart_cors import route_cors
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import admin_required, login_required, require_scope
+from apps.api.models.pydantic.sync import (
+    SyncConfigEnvelopeResponse,
+    SyncConfigListResponse,
+    SyncConfigResponse,
+    SyncConflictEnvelopeResponse,
+    SyncConflictResponse,
+)
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
@@ -21,13 +29,16 @@ bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
 @route_cors()
 @login_required
 @require_scope("discovery:read")
+@validate_response(SyncConfigListResponse)
 def list_sync_configs():
     """List all sync configurations."""
     db = current_app.db
 
-    configs = db(db.sync_configs.id > 0).select().as_list()
+    rows = db(db.sync_configs.id > 0).select()
 
-    return jsonify({"configs": configs}), 200
+    return SyncConfigListResponse(
+        configs=[SyncConfigResponse.from_row(row) for row in rows]
+    ), 200
 
 
 @bp.route("/configs", methods=["POST"])
@@ -35,6 +46,7 @@ def list_sync_configs():
 @login_required
 @require_scope("discovery:admin")
 @admin_required
+@validate_response(SyncConfigEnvelopeResponse, status_code=201)
 async def create_sync_config():
     """Create a new sync configuration."""
     db = current_app.db
@@ -62,42 +74,49 @@ async def create_sync_config():
             updated_at=now,
         )
         db.commit()
-        config = db.sync_configs[config_id].as_dict()
+        # sync_configs is a global, admin-only platform-integration config
+        # table (no tenant_id/organization_id column) — gated by
+        # @admin_required, not per-tenant data.
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: see above
         return config, None, None
 
-    config, error, status = await run_in_threadpool(inner)
+    config_row, error, status = await run_in_threadpool(inner)
     if error:
         return jsonify({"error": error}), status
-    return jsonify({"config": config}), 201
+    return SyncConfigEnvelopeResponse(
+        config=SyncConfigResponse.from_row(config_row)
+    ), 201
 
 
 @bp.route("/configs/<int:config_id>", methods=["GET"])
 @route_cors()
 @login_required
 @require_scope("discovery:read")
+@validate_response(SyncConfigEnvelopeResponse)
 def get_sync_config(config_id):
     """Get sync configuration details."""
     db = current_app.db
 
-    config = db.sync_configs[config_id]
+    config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
 
     if not config:
         return jsonify({"error": "Config not found"}), 404
 
-    return jsonify({"config": config.as_dict()}), 200
+    return SyncConfigEnvelopeResponse(config=SyncConfigResponse.from_row(config)), 200
 
 
 @bp.route("/configs/<int:config_id>", methods=["PATCH"])
 @route_cors()
 @admin_required
 @require_scope("discovery:admin")
+@validate_response(SyncConfigEnvelopeResponse)
 async def update_sync_config(config_id):
     """Update sync configuration."""
     db = current_app.db
     data = request.json
 
     def inner():
-        config = db.sync_configs[config_id]
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
         if not config:
             return None, "Config not found", 404
 
@@ -116,13 +135,15 @@ async def update_sync_config(config_id):
         db(db.sync_configs.id == config_id).update(**update_data)
         db.commit()
 
-        updated_config = db.sync_configs[config_id].as_dict()
+        updated_config = db.sync_configs[config_id]  # tenant-scope-exempt
         return updated_config, None, None
 
-    config, error, status = await run_in_threadpool(inner)
+    config_row, error, status = await run_in_threadpool(inner)
     if error:
         return jsonify({"error": error}), status
-    return jsonify({"config": config}), 200
+    return SyncConfigEnvelopeResponse(
+        config=SyncConfigResponse.from_row(config_row)
+    ), 200
 
 
 @bp.route("/configs/<int:config_id>", methods=["DELETE"])
@@ -134,7 +155,7 @@ async def delete_sync_config(config_id):
     db = current_app.db
 
     def inner():
-        config = db.sync_configs[config_id]
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
         if not config:
             return None, "Config not found", 404
 
@@ -221,6 +242,7 @@ def list_sync_conflicts():
 @route_cors()
 @admin_required
 @require_scope("discovery:admin")
+@validate_response(SyncConflictEnvelopeResponse)
 async def resolve_conflict(conflict_id):
     """Resolve a sync conflict manually."""
     db = current_app.db
@@ -228,7 +250,10 @@ async def resolve_conflict(conflict_id):
     user_id = g.current_user.id
 
     def inner():
-        conflict = db.sync_conflicts[conflict_id]
+        # sync_conflicts has no tenant_id/organization_id column -- it's
+        # tied to sync_mappings/sync_configs, both global admin-only
+        # platform-integration config (see create_sync_config)
+        conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt: see above
         if not conflict:
             return None, "Conflict not found", 404
 
@@ -241,13 +266,15 @@ async def resolve_conflict(conflict_id):
         )
         db.commit()
 
-        updated_conflict = db.sync_conflicts[conflict_id].as_dict()
+        updated_conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt
         return updated_conflict, None, None
 
-    conflict, error, status = await run_in_threadpool(inner)
+    conflict_row, error, status = await run_in_threadpool(inner)
     if error:
         return jsonify({"error": error}), status
-    return jsonify({"conflict": conflict}), 200
+    return SyncConflictEnvelopeResponse(
+        conflict=SyncConflictResponse.model_validate(conflict_row)
+    ), 200
 
 
 @bp.route("/mappings", methods=["GET"])

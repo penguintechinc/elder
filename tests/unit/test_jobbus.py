@@ -14,6 +14,12 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 import redis.asyncio as aioredis
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
 
 from shared.jobbus import JobBus, JobEnvelope, ReclamedMessage
 
@@ -580,3 +586,86 @@ async def test_full_workflow_idempotent_retry(jobbus: JobBus) -> None:
     # Verify it's now marked as duplicate
     is_dup = await jobbus.is_duplicate(job_id)
     assert is_dup is True
+
+
+class TestTraceContextPropagation:
+    """Trace context is injected on enqueue and extractable on consume.
+
+    Regression coverage for the API -> job-bus -> worker/scanner boundary:
+    without this, every job showed up as a disconnected, parentless span
+    instead of continuing the trace that started the enqueueing request.
+    """
+
+    @pytest.mark.asyncio
+    async def test_enqueue_injects_trace_context_from_active_span(
+        self, jobbus: JobBus
+    ) -> None:
+        """enqueue() called inside an active span captures that span's context."""
+        provider = TracerProvider()
+        exporter = InMemorySpanExporter()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        tracer = provider.get_tracer("test")
+
+        stream_group = "test_trace_module"
+        with tracer.start_as_current_span("enqueuing_request") as span:
+            expected_trace_id = span.get_span_context().trace_id
+            job_id = await jobbus.enqueue(
+                stream_group=stream_group,
+                job_type="export_diagram",
+                payload={"diagram_id": 1},
+                enqueued_at=datetime.now(UTC).isoformat(),
+            )
+
+        # Inspect the raw stream entry directly -- no consumer group needed.
+        stream_key = jobbus.stream_key(stream_group)
+        msg = await jobbus.redis.xrange(stream_key, count=1)
+        envelope = JobEnvelope.from_json(msg[0][1]["data"])
+
+        assert envelope.job_id == job_id
+        assert envelope.trace_context  # non-empty carrier was captured
+
+        extracted_context = envelope.extract_trace_context()
+        extracted_span_context = trace.get_current_span(
+            extracted_context
+        ).get_span_context()
+        assert extracted_span_context.trace_id == expected_trace_id
+
+    @pytest.mark.asyncio
+    async def test_enqueue_without_active_span_yields_empty_trace_context(
+        self, jobbus: JobBus
+    ) -> None:
+        """No active span at enqueue time -> trace_context is empty, never crashes."""
+        stream_group = "test_trace_module_no_span"
+        job_id = await jobbus.enqueue(
+            stream_group=stream_group,
+            job_type="export_diagram",
+            payload={"diagram_id": 2},
+            enqueued_at=datetime.now(UTC).isoformat(),
+        )
+
+        stream_key = jobbus.stream_key(stream_group)
+        msg = await jobbus.redis.xrange(stream_key, count=1)
+        envelope = JobEnvelope.from_json(msg[0][1]["data"])
+
+        assert envelope.job_id == job_id
+        assert envelope.trace_context == {}
+        # extract_trace_context() on an empty carrier must not raise, and
+        # simply yields a context with no recorded span.
+        extracted_context = envelope.extract_trace_context()
+        assert not trace.get_current_span(extracted_context).get_span_context().is_valid
+
+    def test_envelope_from_json_defaults_missing_trace_context(self) -> None:
+        """Jobs enqueued before this field existed still deserialize cleanly."""
+        legacy_json = json.dumps(
+            {
+                "job_id": str(uuid4()),
+                "job_type": "legacy_job",
+                "tenant_id": None,
+                "payload": {},
+                "enqueued_at": "2026-01-01T00:00:00Z",
+                "idempotency_key": None,
+                # no "trace_context" key at all
+            }
+        )
+        envelope = JobEnvelope.from_json(legacy_json)
+        assert envelope.trace_context == {}

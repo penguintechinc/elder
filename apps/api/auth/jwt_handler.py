@@ -46,6 +46,10 @@ def generate_token(identity: Row, token_type: str = "access") -> str:
         "tenant": tenant,
         "roles": [portal_role],
         "scope": role_scopes(portal_role) if token_type == "access" else [],
+        # iss/aud -- verify_token() rejects a token whose issuer/audience is
+        # present but doesn't match (forged/wrong-service token).
+        "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
+        "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
     }
 
     secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
@@ -59,6 +63,21 @@ def verify_token(token: str) -> dict[str, Any] | None:
     """
     Verify and decode JWT token.
 
+    Rejects a token whose `iss`/`aud` claim is PRESENT but does not match
+    this service's configured `JWT_ISSUER`/`JWT_AUDIENCE` -- a mismatch
+    means the token was not issued by this service (or was tampered with)
+    and must never be trusted, regardless of a valid signature.
+
+    Claims are not hard-required yet: several other token-issuing paths in
+    this codebase (portal_auth's `generate_jwt_claims`, the gRPC servicer,
+    and multiple test fixtures owned by other in-flight work) do not yet
+    stamp `iss`/`aud`, and this function is the single shared verifier used
+    by both API-key/identity tokens and portal-user tokens. Hard-rejecting
+    "missing" here today would break portal login and every one of those
+    call sites in one step; PyJWT's `issuer=`/`audience=` decode params are
+    deliberately NOT used for that reason. Follow-up: add matching `iss`/
+    `aud` to those other issuers, then tighten this to reject missing too.
+
     Args:
         token: JWT token string
 
@@ -71,45 +90,74 @@ def verify_token(token: str) -> dict[str, Any] | None:
         )
         algorithm = current_app.config["JWT_ALGORITHM"]
 
-        logger.debug(f"Verifying token with algorithm {algorithm}")
-        logger.debug(f"Token (first 20 chars): {token[:20]}...")
-        logger.debug(
-            f"Using secret key: {secret[:10]}..." if secret else "No secret key!"
+        # Never log the signing secret or token contents, at any level --
+        # both are credential material (gh security review finding #4).
+        #
+        # verify_aud disabled: PyJWT auto-rejects ANY token carrying an
+        # `aud` claim unless the caller also passes `audience=` -- which
+        # would force strict enforcement for every token, undoing the
+        # graceful "validate only if present" behavior documented above.
+        # The manual checks below do the real validation instead.
+        payload = jwt.decode(
+            token, secret, algorithms=[algorithm], options={"verify_aud": False}
         )
 
-        payload = jwt.decode(token, secret, algorithms=[algorithm])
-        logger.debug(f"Token verified successfully. Payload: {payload}")
+        expected_issuer = current_app.config.get("JWT_ISSUER", "elder-api")
+        token_issuer = payload.get("iss")
+        if token_issuer is not None and token_issuer != expected_issuer:
+            logger.warning("Rejected token: issuer mismatch")
+            return None
+
+        expected_audience = current_app.config.get("JWT_AUDIENCE", "elder-api")
+        token_audience = payload.get("aud")
+        if token_audience is not None and token_audience != expected_audience:
+            logger.warning("Rejected token: audience mismatch")
+            return None
+
         return payload
-    except jwt.ExpiredSignatureError as e:
-        logger.warning(f"Token expired: {e}")
+    except jwt.ExpiredSignatureError:
+        logger.warning("Token expired")
         return None
-    except jwt.InvalidTokenError as e:
-        logger.warning(f"Invalid token: {e}")
+    except jwt.InvalidTokenError:
+        logger.warning("Invalid token")
         return None
 
 
 def get_token_from_header() -> str | None:
     """
-    Extract JWT token from Authorization header.
+    Extract the JWT, preferring the Authorization header but falling back to
+    the SPA's HttpOnly access-token cookie when no header is present.
+
+    The browser client no longer keeps the access token in localStorage (gh
+    security audit, High: XSS-exfiltratable tokens) -- it relies on the
+    HttpOnly cookie set by /portal-auth/login|refresh instead, so every
+    caller of this function (login_required, populate_claims, etc.) needs to
+    accept either credential form transparently. A malformed header still
+    hard-fails rather than falling back -- that's very likely a genuine
+    caller error, not a cookie-only browser request.
 
     Returns:
         Token string or None
     """
     auth_header = request.headers.get("Authorization")
 
-    if not auth_header:
-        logger.debug("No Authorization header found")
-        return None
+    if auth_header:
+        parts = auth_header.split()
 
-    parts = auth_header.split()
+        # Never log the header value itself -- a malformed header may still
+        # be (or contain a fragment of) a real bearer token/credential.
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            logger.debug("Invalid Authorization header format")
+            return None
 
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        logger.debug(f"Invalid Authorization header format: {auth_header}")
-        return None
+        return parts[1]
 
-    token = parts[1]
-    logger.debug(f"Extracted token from header (first 20 chars): {token[:20]}...")
-    return token
+    from apps.api.auth.portal_cookies import get_access_token_from_cookie
+
+    cookie_token = get_access_token_from_cookie()
+    if not cookie_token:
+        logger.debug("No Authorization header or access-token cookie found")
+    return cookie_token
 
 
 def get_current_user() -> Row | None:
@@ -156,7 +204,7 @@ def get_current_user() -> Row | None:
 
             # Check is_active - use truthy check like the portal_auth service
             if not portal_user.is_active:
-                logger.warning(f"Portal user {portal_user.email} is not active")
+                logger.warning(f"Portal user {portal_user.id} is not active")
                 return None
 
             # Create a synthetic identity-like object from portal_user for API compatibility
@@ -180,7 +228,7 @@ def get_current_user() -> Row | None:
 
             synthetic_identity = PortalUserIdentity(portal_user)
             logger.debug(
-                f"Created synthetic identity for portal user: {synthetic_identity.email}"
+                f"Created synthetic identity for portal user id: {synthetic_identity.id}"
             )
             g.current_user = synthetic_identity
             return synthetic_identity

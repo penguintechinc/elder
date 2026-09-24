@@ -13,9 +13,11 @@ from penguin_aaa.middleware.asgi import AuditMiddleware
 from penguin_aaa.middleware.tenant import TenantMiddleware
 from quart import Quart, g, jsonify, make_response
 from quart_cors import cors
+from quart_schema import QuartSchema
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
+from apps.api.utils.rate_limiter import init_rate_limiter
 from shared.database import (
     ensure_database_ready,
     init_db,
@@ -109,6 +111,10 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize access review scheduler (v3.1.0)
     _init_access_review_scheduler(app)
 
+    # Initialize audit log retention scheduler (auto-enforces GDPR Art. 5
+    # storage-limitation window; see apps/api/services/audit/scheduler.py)
+    _init_audit_retention_scheduler(app)
+
     # Register core blueprints and load feature modules
     _register_blueprints(app)
     _load_modules(app)
@@ -146,6 +152,11 @@ def create_app(config_name: str = None) -> Quart:
     )
 
     _register_before_request(app)
+
+    # Rate limiting (finding #5) -- registered AFTER _register_before_request
+    # so the tenant claim it populates on g.claims is available for the
+    # per-tenant + per-IP compound key. Degrades open if Redis is down.
+    init_rate_limiter(app)
 
     # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
     auto_instrument_app(app)
@@ -206,6 +217,41 @@ def _register_before_request(app: Quart) -> None:
             "identity_id": identity_id,
             "user_identity_id": identity_id,
         }
+
+    @app.before_request
+    async def enforce_csrf_protection():
+        """Reject cookie-authenticated state-changing requests missing a
+        matching CSRF header (double-submit pattern).
+
+        The SPA's access/refresh tokens moved from localStorage into
+        HttpOnly cookies (gh security audit, High), which the browser now
+        attaches automatically -- exactly the property CSRF exploits. A
+        Bearer `Authorization` header is never auto-attached cross-site by
+        the browser, so header-authenticated (non-browser) callers are
+        exempt; only requests relying on the auth cookies need the extra
+        `X-CSRF-Token` header the SPA echoes back from its (non-HttpOnly)
+        `elder_csrf_token` cookie. Runs after populate_claims so header vs.
+        cookie auth is already distinguishable via the raw header itself.
+        """
+        from quart import request
+
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+
+        if request.headers.get("Authorization"):
+            return  # Bearer-token caller: browsers don't auto-send this cross-site
+
+        from apps.api.auth.portal_cookies import (
+            get_access_token_from_cookie,
+            get_refresh_token_from_cookie,
+            is_csrf_valid,
+        )
+
+        if not get_access_token_from_cookie() and not get_refresh_token_from_cookie():
+            return  # No cookie session to protect; downstream auth will 401
+
+        if not is_csrf_valid():
+            return jsonify({"error": "CSRF token missing or invalid"}), 403
 
     @app.before_request
     async def enforce_module_access():
@@ -342,6 +388,19 @@ def _init_extensions(app: Quart) -> None:
         expose_headers=app.config.get("CORS_EXPOSE_HEADERS", []),
     )
 
+    # quart-schema powers @validate_request/@validate_response (security-audit
+    # fix: explicit response DTOs instead of raw ORM/dataclass serialization).
+    # Public OpenAPI/Swagger/Redoc/Scalar doc routes are intentionally disabled
+    # here — gating them behind penguin-aaa auth is a separate tracked decision
+    # (security.md: "public doc exposes only the login endpoint, nothing else").
+    QuartSchema(
+        app,
+        openapi_path=None,
+        swagger_ui_path=None,
+        redoc_ui_path=None,
+        scalar_ui_path=None,
+    )
+
     logger.info("extensions_initialized")
 
 
@@ -472,6 +531,29 @@ def _init_access_review_scheduler(app: Quart) -> None:
         )
 
 
+def _init_audit_retention_scheduler(app: Quart) -> None:
+    """
+    Initialize the audit log retention scheduler.
+
+    Automatically purges audit log records past each tenant's configured
+    (and compliance-floored) retention window on a periodic sweep, rather
+    than relying solely on the manual admin-triggered cleanup endpoint.
+
+    Args:
+        app: Quart application
+    """
+    from apps.api.services.audit.scheduler import init_scheduler
+
+    try:
+        init_scheduler(app.db)
+        logger.info("audit_retention_scheduler_initialized")
+    except Exception as e:
+        logger.warning(
+            "audit_retention_scheduler_init_failed",
+            error=str(e),
+        )
+
+
 def _register_blueprints(app: Quart) -> None:
     """Register CORE (always-on) blueprints.
 
@@ -491,6 +573,8 @@ def _register_blueprints(app: Quart) -> None:
         lookup_village_id,
         modules,
         portal_auth,
+        privacy,
+        privacy_admin,
         profile,
         refs,
         search,
@@ -515,6 +599,11 @@ def _register_blueprints(app: Quart) -> None:
     app.register_blueprint(tenant_modules.bp, url_prefix=f"{api_prefix}")
     app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
     app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
+
+    # Self-service DSAR (Free+) and its Enterprise-gated admin convenience
+    # layer -- see docs/compliance and apps/api/services/privacy.
+    app.register_blueprint(privacy.bp, url_prefix=f"{api_prefix}/privacy")
+    app.register_blueprint(privacy_admin.bp, url_prefix=f"{api_prefix}/privacy-admin")
 
     # Audit and logging
     app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")
@@ -543,7 +632,7 @@ def _register_blueprints(app: Quart) -> None:
     logger.info(
         "core_blueprints_registered",
         api_prefix=api_prefix,
-        count=14,
+        count=16,
     )
 
 

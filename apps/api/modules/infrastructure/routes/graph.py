@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("graph", __name__)
 
@@ -49,6 +50,9 @@ async def get_graph():
         }
     """
     db = current_app.db_read
+    # Resolve the caller's tenant here (in the request coroutine) — g does
+    # not propagate into the threadpool callable below.
+    tenant_id = get_current_tenant_id()
 
     # Get filter parameters
     org_id = request.args.get("organization_id", type=int)
@@ -69,11 +73,17 @@ async def get_graph():
 
         # If entity_id specified, get subgraph centered on that entity
         if entity_id:
-            entity = db.entities[entity_id]
+            # gh-237: entities have no tenant_id column of their own — scope
+            # via the owning organization's tenant_id so a caller can't pull
+            # another tenant's entity (and its dependency subgraph) by
+            # guessing its numeric id. 404 (not 403) on mismatch.
+            entity = get_tenant_scoped(
+                db, db.entities, entity_id, tenant_id, org_fk="organization_id"
+            )
             if not entity:
                 return None, "Entity not found", 404
 
-            entities = _get_entity_subgraph(db, entity, depth)
+            entities = _get_entity_subgraph(db, entity, depth, tenant_id)
         else:
             # Get all entities matching filters
             entities = db(query).select()
@@ -304,6 +314,7 @@ async def find_path():
         404: No path found
     """
     db = current_app.db_read
+    tenant_id = get_current_tenant_id()
 
     from_id = request.args.get("from", type=int)
     to_id = request.args.get("to", type=int)
@@ -312,9 +323,13 @@ async def find_path():
         return jsonify({"error": "Both 'from' and 'to' parameters required"}), 400
 
     def find_path_impl():
-        # Verify entities exist
-        from_entity = db.entities[from_id]
-        to_entity = db.entities[to_id]
+        # Verify entities exist and belong to caller's tenant (gh-237)
+        from_entity = get_tenant_scoped(
+            db, db.entities, from_id, tenant_id, org_fk="organization_id"
+        )
+        to_entity = get_tenant_scoped(
+            db, db.entities, to_id, tenant_id, org_fk="organization_id"
+        )
 
         if not from_entity:
             return None, "Source entity not found", 404
@@ -976,14 +991,19 @@ def _get_node_style_by_resource(resource_type: str, subtype: str = None) -> tupl
     return resource_styles.get(resource_type, ("dot", "#95a5a6"))
 
 
-def _get_entity_subgraph(db, entity, depth: int):
+def _get_entity_subgraph(db, entity, depth: int, tenant_id: int | None):
     """
     Get entities within depth distance from given entity.
 
     Args:
         db: PyDAL database instance
-        entity: Center entity (PyDAL row)
+        entity: Center entity (PyDAL row), already tenant-verified by the caller
         depth: Maximum depth (-1 for unlimited)
+        tenant_id: Caller's tenant id (gh-237) — dependency edges aren't
+            themselves tenant-filtered, so each traversed entity is
+            re-verified against the caller's tenant before being added;
+            an edge into another tenant's entity is silently dropped
+            rather than surfaced, since it should never legitimately exist.
 
     Returns:
         List of entities in subgraph
@@ -1010,7 +1030,13 @@ def _get_entity_subgraph(db, entity, depth: int):
             for dep in outgoing:
                 if dep.target_id not in visited:
                     visited.add(dep.target_id)
-                    target = db.entities[dep.target_id]
+                    target = get_tenant_scoped(
+                        db,
+                        db.entities,
+                        dep.target_id,
+                        tenant_id,
+                        org_fk="organization_id",
+                    )
                     if target:
                         next_level.append(target)
                         all_entities.append(target)
@@ -1023,7 +1049,13 @@ def _get_entity_subgraph(db, entity, depth: int):
             for dep in incoming:
                 if dep.source_id not in visited:
                     visited.add(dep.source_id)
-                    source = db.entities[dep.source_id]
+                    source = get_tenant_scoped(
+                        db,
+                        db.entities,
+                        dep.source_id,
+                        tenant_id,
+                        org_fk="organization_id",
+                    )
                     if source:
                         next_level.append(source)
                         all_entities.append(source)

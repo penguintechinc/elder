@@ -16,6 +16,7 @@ from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
@@ -25,7 +26,9 @@ from apps.api.utils.validation_helpers import (
 bp = Blueprint("on_call_rotations_history", __name__)
 
 
-def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
+def _get_current_oncall_for_rotation(
+    db, rotation_id: int, tenant_id: int | None
+) -> dict:
     """Get the current on-call person for a rotation."""
     now = datetime.datetime.now(datetime.UTC)
 
@@ -42,7 +45,8 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     if not shift:
         return None
 
-    identity = db.identities[shift.identity_id]
+    # gh-237: scope the identity lookup to the caller's tenant.
+    identity = get_tenant_scoped(db, db.identities, shift.identity_id, tenant_id)
     if not identity:
         return None
 
@@ -72,6 +76,7 @@ async def get_current_oncall_for_org(org_id: int):
         404: Organization not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     org, error = await validate_resource_exists(
         db.organizations, org_id, "Organization"
@@ -87,7 +92,7 @@ async def get_current_oncall_for_org(org_id: int):
 
         result = []
         for rotation in rotations:
-            current = _get_current_oncall_for_rotation(db, rotation.id)
+            current = _get_current_oncall_for_rotation(db, rotation.id, tenant_id)
             if current:
                 result.append(
                     {
@@ -119,6 +124,7 @@ async def get_current_oncall_for_service(service_id: int):
         404: Service not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     org, error = await validate_resource_exists(db.services, service_id, "Service")
     if error:
@@ -132,7 +138,7 @@ async def get_current_oncall_for_service(service_id: int):
 
         result = []
         for rotation in rotations:
-            current = _get_current_oncall_for_rotation(db, rotation.id)
+            current = _get_current_oncall_for_rotation(db, rotation.id, tenant_id)
             if current:
                 result.append(
                     {
@@ -269,6 +275,7 @@ async def list_escalations(rotation_id: int):
         404: Rotation not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -310,12 +317,15 @@ async def list_escalations(rotation_id: int):
 
         # Add joined info if available
         if row.escalation_type == "identity" and row.identity_id:
-            identity = db.identities[row.identity_id]
+            # gh-237: scope to caller's tenant.
+            identity = get_tenant_scoped(db, db.identities, row.identity_id, tenant_id)
             if identity:
                 item["identity_name"] = identity.username
 
         elif row.escalation_type == "group" and row.group_id:
-            group = db.identity_groups[row.group_id]
+            # identity_groups has no tenant_id of its own -- global table
+            # (LDAP/SAML-synced), not tenant-owned.
+            group = db.identity_groups[row.group_id]  # tenant-scope-exempt
             if group:
                 item["group_name"] = group.name
 
@@ -360,6 +370,7 @@ async def create_escalation(rotation_id: int):
         404: Rotation or target not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -382,11 +393,15 @@ async def create_escalation(rotation_id: int):
         if escalation_type == "identity":
             if "identity_id" not in data:
                 return None, "identity_id required for identity escalation"
-            return db.identities[data["identity_id"]], None
+            # gh-237: identity_id is caller-supplied -- scope to tenant.
+            return get_tenant_scoped(
+                db, db.identities, data["identity_id"], tenant_id
+            ), None
         elif escalation_type == "group":
             if "group_id" not in data:
                 return None, "group_id required for group escalation"
-            return db.identity_groups[data["group_id"]], None
+            # identity_groups has no tenant_id -- global table.
+            return db.identity_groups[data["group_id"]], None  # tenant-scope-exempt
         elif escalation_type == "rotation_participant":
             return "rotation_participant", None
         return None, "escalation_type must be identity, group, or rotation_participant"
@@ -417,7 +432,10 @@ async def create_escalation(rotation_id: int):
         policy_id = db.on_call_escalation_policies.insert(**insert_data)
         db.commit()
 
-        policy = db.on_call_escalation_policies[policy_id]
+        # Post-insert fetch of the row we just created -- policy_id is
+        # server-generated, and rotation_id/identity_id were already
+        # tenant-verified above.
+        policy = db.on_call_escalation_policies[policy_id]  # tenant-scope-exempt
 
         result = {
             "id": policy.id,
@@ -433,12 +451,16 @@ async def create_escalation(rotation_id: int):
         }
 
         if policy.escalation_type == "identity" and policy.identity_id:
-            identity = db.identities[policy.identity_id]
+            # gh-237: scope to caller's tenant.
+            identity = get_tenant_scoped(
+                db, db.identities, policy.identity_id, tenant_id
+            )
             if identity:
                 result["identity_name"] = identity.username
 
         elif policy.escalation_type == "group" and policy.group_id:
-            group = db.identity_groups[policy.group_id]
+            # identity_groups has no tenant_id -- global table.
+            group = db.identity_groups[policy.group_id]  # tenant-scope-exempt
             if group:
                 result["group_name"] = group.name
 
@@ -473,12 +495,24 @@ async def update_escalation(policy_id: int):
         404: Policy not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    policy, error = await validate_resource_exists(
-        db.on_call_escalation_policies, policy_id, "Escalation Policy"
-    )
-    if error:
-        return error
+    # gh-237: on_call_escalation_policies has no tenant_id of its own --
+    # scope via the owning rotation's tenant_id. Supersedes the previous
+    # bare validate_resource_exists() existence check.
+    def get_policy_for_update():
+        return get_tenant_scoped(
+            db,
+            db.on_call_escalation_policies,
+            policy_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+
+    policy = await run_in_threadpool(get_policy_for_update)
+    if not policy:
+        return ApiResponse.not_found("Escalation Policy", policy_id)
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -500,7 +534,10 @@ async def update_escalation(policy_id: int):
             db(db.on_call_escalation_policies.id == policy_id).update(**update_dict)
             db.commit()
 
-        policy = db.on_call_escalation_policies[policy_id]
+        # Re-fetch by the same id already tenant-verified in
+        # get_policy_for_update() above (rotation_id isn't updateable, so
+        # ownership can't have changed between the two calls).
+        policy = db.on_call_escalation_policies[policy_id]  # tenant-scope-exempt
 
         result = {
             "id": policy.id,
@@ -516,12 +553,14 @@ async def update_escalation(policy_id: int):
         }
 
         if policy.escalation_type == "identity" and policy.identity_id:
-            identity = db.identities[policy.identity_id]
+            identity = get_tenant_scoped(
+                db, db.identities, policy.identity_id, tenant_id
+            )
             if identity:
                 result["identity_name"] = identity.username
 
         elif policy.escalation_type == "group" and policy.group_id:
-            group = db.identity_groups[policy.group_id]
+            group = db.identity_groups[policy.group_id]  # tenant-scope-exempt
             if group:
                 result["group_name"] = group.name
 
@@ -551,17 +590,27 @@ async def delete_escalation(policy_id: int):
         404: Policy not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    policy, error = await validate_resource_exists(
-        db.on_call_escalation_policies, policy_id, "Escalation Policy"
-    )
-    if error:
-        return error
-
+    # gh-237: verify tenant ownership (via the owning rotation) before
+    # deleting -- supersedes the previous bare existence check.
     def delete():
-        del db.on_call_escalation_policies[policy_id]
+        policy = get_tenant_scoped(
+            db,
+            db.on_call_escalation_policies,
+            policy_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+        if not policy:
+            return False
+        db(db.on_call_escalation_policies.id == policy_id).delete()
         db.commit()
+        return True
 
-    await run_in_threadpool(delete)
+    deleted = await run_in_threadpool(delete)
+    if not deleted:
+        return ApiResponse.not_found("Escalation Policy", policy_id)
 
     return ApiResponse.no_content()

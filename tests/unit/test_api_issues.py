@@ -62,19 +62,19 @@ class TestIssuesAPI:
             )
             db.commit()
 
-            response = await async_client.patch(
-                f"/api/v1/issues/{issue_id}",
-                json={"status": "in_progress", "priority": "high"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.patch(
+            f"/api/v1/issues/{issue_id}",
+            json={"status": "in_progress", "priority": "high"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200, (
-                f"Expected 200, got {response.status_code}: "
-                f"{(await response.get_data()).decode()[:200]}"
-            )
-            data = json.loads(await response.get_data())
-            assert data["status"] == "in_progress"
-            assert data["priority"] == "high"
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: "
+            f"{(await response.get_data()).decode()[:200]}"
+        )
+        data = json.loads(await response.get_data())
+        assert data["status"] == "in_progress"
+        assert data["priority"] == "high"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -124,21 +124,21 @@ class TestIssuesAPI:
             )
             db.commit()
 
-            response = await async_client.patch(
-                f"/api/v1/issues/{issue_id}",
-                json={},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.patch(
+            f"/api/v1/issues/{issue_id}",
+            json={},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200, (
-                f"Expected 200 no-op, got {response.status_code}: "
-                f"{(await response.get_data()).decode()[:200]}"
-            )
-            data = json.loads(await response.get_data())
-            # Row is unchanged by an empty PATCH
-            assert data["status"] == "open"
-            assert data["priority"] == "medium"
-            assert data["title"] == "Untouched Issue"
+        assert response.status_code == 200, (
+            f"Expected 200 no-op, got {response.status_code}: "
+            f"{(await response.get_data()).decode()[:200]}"
+        )
+        data = json.loads(await response.get_data())
+        # Row is unchanged by an empty PATCH
+        assert data["status"] == "open"
+        assert data["priority"] == "medium"
+        assert data["title"] == "Untouched Issue"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -181,19 +181,19 @@ class TestIssuesAPI:
             )
             db.commit()
 
-            response = await async_client.patch(
-                f"/api/v1/issues/{issue_id}",
-                json={"status": "closed"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.patch(
+            f"/api/v1/issues/{issue_id}",
+            json={"status": "closed"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200, (
-                f"Expected 200, got {response.status_code}: "
-                f"{(await response.get_data()).decode()[:200]}"
-            )
-            data = json.loads(await response.get_data())
-            assert data["status"] == "closed"
-            assert data.get("closed_at") is not None
+        assert response.status_code == 200, (
+            f"Expected 200, got {response.status_code}: "
+            f"{(await response.get_data()).decode()[:200]}"
+        )
+        data = json.loads(await response.get_data())
+        assert data["status"] == "closed"
+        assert data.get("closed_at") is not None
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")

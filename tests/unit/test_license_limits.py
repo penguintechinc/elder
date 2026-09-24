@@ -113,6 +113,39 @@ class TestResolveLimits:
         """TIER_DEFAULTS covers exactly the three supported tiers."""
         assert set(TIER_DEFAULTS) == {"community", "professional", "enterprise"}
 
+    def test_outage_after_successful_validation_serves_last_known_tier(self):
+        """A license-server outage after a prior success degrades to the
+        last-known-good tier, never the community floor -- dropping an
+        Enterprise tenant to community would incorrectly 402 them on a
+        transient network blip.
+        """
+        import apps.api.common.licensing.limits as limits_module
+
+        class FlakyClient:
+            def __init__(self):
+                self.calls = 0
+
+            def validate(self):
+                self.calls += 1
+                if self.calls == 1:
+                    return SimpleNamespace(tier="enterprise", limits={})
+                raise RuntimeError("license server unreachable")
+
+        client = FlakyClient()
+
+        # First call succeeds and caches "enterprise".
+        tier1, limits1 = resolve_limits(client)
+        assert tier1 == "enterprise"
+
+        # Force the cache to look expired so the next call re-validates.
+        limits_module._cache[client] = (0.0, tier1, limits1)
+
+        # Second call: validate() raises -> must serve stale "enterprise",
+        # not degrade to "community".
+        tier2, limits2 = resolve_limits(client)
+        assert tier2 == "enterprise"
+        assert limits2 == limits1
+
     def test_distinct_clients_do_not_share_cached_result(self):
         """Per-process caching must not leak one client's resolved limits onto another."""
         community = FakeLicenseClient(tier="community")

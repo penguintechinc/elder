@@ -32,6 +32,7 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import ValidationErrorResponse
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import validate_resource_exists
 
 bp = Blueprint("vulnerabilities", __name__)
@@ -60,6 +61,7 @@ async def list_vulnerabilities():
         GET /api/v1/vulnerabilities?severity=critical
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Get pagination params using helper
     pagination = PaginationParams.from_request()
@@ -111,9 +113,13 @@ async def list_vulnerabilities():
         if not vuln_ids:
             return {}
 
-        # Query component_vulnerabilities for these vulnerability IDs
+        # Query component_vulnerabilities for these vulnerability IDs,
+        # scoped to the caller's tenant (gh-237) -- without this filter,
+        # every tenant's linked sbom_components (and the service/software
+        # names they belong to) leaked through this enrichment step.
         cv_rows = db(
             db.component_vulnerabilities.vulnerability_id.belongs(vuln_ids)
+            & (db.component_vulnerabilities.tenant_id == tenant_id)
         ).select()
 
         # Build map of vulnerability_id -> list of affected entities
@@ -122,8 +128,9 @@ async def list_vulnerabilities():
             vid = cv.vulnerability_id
             comp_id = cv.component_id
 
-            # Look up the sbom_component to get parent info
-            comp = db.sbom_components[comp_id]
+            # Look up the sbom_component to get parent info, scoped to
+            # caller's tenant (gh-237)
+            comp = get_tenant_scoped(db, db.sbom_components, comp_id, tenant_id)
             if not comp:
                 continue
 
@@ -133,10 +140,10 @@ async def list_vulnerabilities():
             parent_name = None
 
             if parent_type == "service" and parent_id:
-                svc = db.services[parent_id]
+                svc = get_tenant_scoped(db, db.services, parent_id, tenant_id)
                 parent_name = svc.name if svc else None
             elif parent_type == "software" and parent_id:
-                sw = db.software[parent_id]
+                sw = get_tenant_scoped(db, db.software, parent_id, tenant_id)
                 parent_name = sw.name if sw else None
 
             if parent_name:
@@ -192,7 +199,11 @@ async def get_vulnerability(id: int):
     """
     db = current_app.db
 
-    # Validate resource exists using helper
+    # tenant-scope-exempt: vulnerabilities is a shared CVE reference
+    # dataset (OSV/NVD/GitHub Advisory sourced) -- not tenant-partitioned
+    # data, consistent with list_vulnerabilities/get_dashboard/nvd-sync
+    # treating it as global. Tenant-owned linkage lives in
+    # component_vulnerabilities (see update_component_vulnerability).
     vulnerability, error = await validate_resource_exists(
         db.vulnerabilities, id, "Vulnerability"
     )
@@ -448,6 +459,7 @@ async def update_component_vulnerability(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request using pydantic
     try:
@@ -458,12 +470,12 @@ async def update_component_vulnerability(id: int):
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Validate resource exists
-    comp_vuln, error = await validate_resource_exists(
-        db.component_vulnerabilities, id, "Component Vulnerability"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    comp_vuln = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.component_vulnerabilities, id, tenant_id)
     )
-    if error:
-        return error
+    if not comp_vuln:
+        return ApiResponse.not_found("Component Vulnerability", id)
 
     def update():
         update_dict = {}
@@ -487,7 +499,7 @@ async def update_component_vulnerability(id: int):
             db(db.component_vulnerabilities.id == id).update(**update_dict)
             db.commit()
 
-        return db.component_vulnerabilities[id], None
+        return db.component_vulnerabilities[id], None  # tenant-scope-exempt
 
     updated, error_msg = await run_in_threadpool(update)
 
@@ -635,6 +647,7 @@ async def assign_vulnerability(id: int):
         404: Vulnerability or parent not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request
     try:
@@ -645,7 +658,8 @@ async def assign_vulnerability(id: int):
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Validate vulnerability exists
+    # Validate vulnerability exists (tenant-scope-exempt: vulnerabilities is
+    # a shared CVE reference dataset, see get_vulnerability)
     vulnerability, error = await validate_resource_exists(
         db.vulnerabilities, id, "Vulnerability"
     )
@@ -655,21 +669,21 @@ async def assign_vulnerability(id: int):
     parent_type = validated_req.parent_type
     parent_id = validated_req.parent_id
 
-    # Validate parent resource exists
+    # Validate parent resource exists and belongs to caller's tenant
+    # (gh-237) -- previously any authenticated caller could assign a
+    # vulnerability onto another tenant's service/software by id.
     if parent_type == "service":
-        parent, error = await validate_resource_exists(
-            db.services, parent_id, "Service"
+        parent = await run_in_threadpool(
+            lambda: get_tenant_scoped(db, db.services, parent_id, tenant_id)
         )
     else:
-        parent, error = await validate_resource_exists(
-            db.software, parent_id, "Software"
+        parent = await run_in_threadpool(
+            lambda: get_tenant_scoped(db, db.software, parent_id, tenant_id)
         )
-    if error:
-        return error
+    if not parent:
+        return ApiResponse.not_found(parent_type.title(), parent_id)
 
     def create_assignment():
-        tenant_id = current_app.config.get("DEFAULT_TENANT_ID", 1)
-
         # Find or create sbom_component for this parent
         existing_comp = (
             db(
@@ -715,7 +729,7 @@ async def assign_vulnerability(id: int):
         )
         db.commit()
 
-        return db.component_vulnerabilities[cv_id], None
+        return db.component_vulnerabilities[cv_id], None  # tenant-scope-exempt
 
     result, error_msg = await run_in_threadpool(create_assignment)
 

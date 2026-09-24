@@ -9,21 +9,23 @@ from datetime import UTC, datetime, timezone
 import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
-from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.models.pydantic import (
     CreateLicensePolicyRequest,
     LicensePolicyDTO,
     UpdateLicensePolicyRequest,
 )
+from apps.api.models.pydantic.license_policy import LicensePolicyListResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
@@ -116,6 +118,7 @@ def _check_component_against_policy(component: dict, policy: dict) -> dict:
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(LicensePolicyListResponse)
 async def list_policies():
     """
     List license policies with optional filtering.
@@ -168,21 +171,19 @@ async def list_policies():
     # Convert to DTOs
     items = [LicensePolicyDTO.from_pydal_row(row) for row in rows]
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[item.to_dict() for item in items],
+    return LicensePolicyListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("sbom:write")
+@validate_response(LicensePolicyDTO, status_code=201)
 async def create_policy():
     """
     Create a new license policy.
@@ -239,6 +240,8 @@ async def create_policy():
     if req.action not in ["warn", "block"]:
         return ApiResponse.error("action must be 'warn' or 'block'", 400)
 
+    tenant_id = get_current_tenant_id()
+
     def create():
         now = datetime.now(UTC)
         policy_id = db.license_policies.insert(
@@ -253,7 +256,10 @@ async def create_policy():
             updated_at=now,
         )
         db.commit()
-        return db.license_policies[policy_id]
+        # tenant_id resolved via the validated organization above (gh-237)
+        return get_tenant_scoped(
+            db, db.license_policies, policy_id, tenant_id, org_fk="organization_id"
+        )
 
     policy = await run_in_threadpool(create)
 
@@ -264,12 +270,13 @@ async def create_policy():
         name=policy.name,
         organization_id=req.organization_id,
     )
-    return ApiResponse.created(policy_dto.to_dict())
+    return policy_dto, 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(LicensePolicyDTO)
 async def get_policy(id: int):
     """
     Get a single license policy by ID.
@@ -285,22 +292,26 @@ async def get_policy(id: int):
         GET /api/v1/license-policies/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists
-    policy, error = await validate_resource_exists(
-        db.license_policies, id, "License Policy"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    policy = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.license_policies, id, tenant_id, org_fk="organization_id"
+        )
     )
-    if error:
-        return error
+    if not policy:
+        return ApiResponse.not_found("License Policy", id)
 
     policy_dto = LicensePolicyDTO.from_pydal_row(policy)
-    return ApiResponse.success(policy_dto.to_dict())
+    return policy_dto, 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("sbom:write")
 @resource_role_required("maintainer")
+@validate_response(LicensePolicyDTO)
 async def update_policy(id: int):
     """
     Update a license policy.
@@ -332,18 +343,21 @@ async def update_policy(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate JSON body
     data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
-    # Validate resource exists
-    policy, error = await validate_resource_exists(
-        db.license_policies, id, "License Policy"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    policy = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.license_policies, id, tenant_id, org_fk="organization_id"
+        )
     )
-    if error:
-        return error
+    if not policy:
+        return ApiResponse.not_found("License Policy", id)
 
     # Validate request with Pydantic
     try:
@@ -372,16 +386,16 @@ async def update_policy(id: int):
             update_data["is_active"] = req.is_active
 
         if update_data:
-            db.license_policies[id] = update_data
+            db.license_policies[id] = update_data  # tenant-scope-exempt: verified above
             db.commit()
 
-        return db.license_policies[id]
+        return db.license_policies[id]  # tenant-scope-exempt: verified above
 
     updated_policy = await run_in_threadpool(update)
 
     policy_dto = LicensePolicyDTO.from_pydal_row(updated_policy)
     logger.info("license_policy_updated", policy_id=id)
-    return ApiResponse.success(policy_dto.to_dict())
+    return policy_dto, 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -406,16 +420,19 @@ async def delete_policy(id: int):
         DELETE /api/v1/license-policies/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists
-    policy, error = await validate_resource_exists(
-        db.license_policies, id, "License Policy"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    policy = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.license_policies, id, tenant_id, org_fk="organization_id"
+        )
     )
-    if error:
-        return error
+    if not policy:
+        return ApiResponse.not_found("License Policy", id)
 
     def delete():
-        del db.license_policies[id]
+        del db.license_policies[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -498,8 +515,12 @@ async def check_components():
         return ApiResponse.error("components must be a list", 400)
 
     def check():
-        # Get active policies
-        query = db.license_policies.is_active is True
+        # Get active policies. Pre-existing bug fixed in passing: `is True`
+        # is a Python identity check (always False for a PyDAL Field), not
+        # a query condition -- `False & Query(...)` then raises TypeError
+        # ("unsupported operand type(s) for &: 'bool' and 'Query'"),
+        # meaning this endpoint 500'd unconditionally before this fix.
+        query = db.license_policies.is_active == True  # noqa: E712
 
         if organization_id:
             query &= db.license_policies.organization_id == organization_id

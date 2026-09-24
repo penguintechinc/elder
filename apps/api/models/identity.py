@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    false,
 )
 from sqlalchemy.orm import Mapped, relationship
 
@@ -156,6 +157,22 @@ class Identity(Base, IDMixin, TimestampMixin):
         nullable=True,
         comment="Last login timestamp (ISO format)",
     )
+
+    # Self-service DSAR (GDPR Art. 17 / CCPA-CPRA) -- see
+    # apps/api/services/privacy/service.py and
+    # docs/compliance/data-retention-policy.md. `do_not_sell_share` and
+    # `consent_withdrawn_at` implement the CCPA/CPRA opt-out; `anonymized_at`
+    # marks a completed right-to-erasure (row survives, PII fields blanked,
+    # so audit_logs/RBAC history referencing this id by FK stay intact).
+    # server_default (not just default=) is required: runtime inserts go
+    # through penguin-dal, not the SQLAlchemy ORM session, so the
+    # Python-side Column default is never applied to the many existing
+    # `db.identities.insert(...)` call sites that predate this column.
+    # Matches the server_default in alembic/versions/041_dsar_privacy_
+    # fields.py, which this model must stay in sync with.
+    do_not_sell_share = Column(Boolean, nullable=False, server_default=false())
+    consent_withdrawn_at = Column(DateTime(timezone=True), nullable=True)
+    anonymized_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     group_memberships: Mapped[list["IdentityGroupMembership"]] = relationship(

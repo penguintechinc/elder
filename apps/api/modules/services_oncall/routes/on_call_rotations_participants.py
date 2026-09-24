@@ -17,6 +17,7 @@ from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
@@ -139,6 +140,7 @@ async def add_participant(rotation_id: int):
         404: Rotation or identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -153,9 +155,9 @@ async def add_participant(rotation_id: int):
     if error := validate_required_fields(data, ["identity_id", "order_index"]):
         return error
 
-    # Validate identity exists
+    # gh-237: identity_id is caller-supplied -- scope to the caller's tenant.
     def validate_identity():
-        return db.identities[data["identity_id"]]
+        return get_tenant_scoped(db, db.identities, data["identity_id"], tenant_id)
 
     identity = await run_in_threadpool(validate_identity)
     if not identity:
@@ -194,10 +196,16 @@ async def add_participant(rotation_id: int):
         participant_id = db.on_call_rotation_participants.insert(**insert_data)
         db.commit()
 
-        participant = db.on_call_rotation_participants[participant_id]
+        # Post-insert fetch of the row we just created -- participant_id is
+        # server-generated, and rotation_id/identity_id were already
+        # tenant-verified above.
+        rp_table = db.on_call_rotation_participants
+        participant = rp_table[participant_id]
 
-        # Get identity info for response
-        identity = db.identities[participant.identity_id]
+        # Get identity info for response (already tenant-verified above).
+        identity = get_tenant_scoped(
+            db, db.identities, participant.identity_id, tenant_id
+        )
 
         return {
             "id": participant.id,
@@ -250,6 +258,7 @@ async def update_participant(rotation_id: int, participant_id: int):
         404: Rotation or participant not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -257,11 +266,22 @@ async def update_participant(rotation_id: int, participant_id: int):
     if error:
         return error
 
-    participant, error = await validate_resource_exists(
-        db.on_call_rotation_participants, participant_id, "Participant"
-    )
-    if error:
-        return error
+    # gh-237: on_call_rotation_participants has no tenant_id of its own --
+    # scope via the owning rotation's tenant_id. Supersedes the previous
+    # bare validate_resource_exists() existence check.
+    def get_participant_for_update():
+        return get_tenant_scoped(
+            db,
+            db.on_call_rotation_participants,
+            participant_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+
+    participant = await run_in_threadpool(get_participant_for_update)
+    if not participant:
+        return ApiResponse.not_found("Participant", participant_id)
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -302,8 +322,13 @@ async def update_participant(rotation_id: int, participant_id: int):
             )
             db.commit()
 
-        participant = db.on_call_rotation_participants[participant_id]
-        identity = db.identities[participant.identity_id]
+        # Re-fetch by the same id already tenant-verified above
+        # (rotation_id isn't updateable, so ownership can't have changed).
+        rp_table = db.on_call_rotation_participants
+        participant = rp_table[participant_id]
+        identity = get_tenant_scoped(
+            db, db.identities, participant.identity_id, tenant_id
+        )
 
         return {
             "id": participant.id,
@@ -347,6 +372,7 @@ async def remove_participant(rotation_id: int, participant_id: int):
         404: Rotation or participant not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -354,17 +380,26 @@ async def remove_participant(rotation_id: int, participant_id: int):
     if error:
         return error
 
-    participant, error = await validate_resource_exists(
-        db.on_call_rotation_participants, participant_id, "Participant"
-    )
-    if error:
-        return error
-
+    # gh-237: verify tenant ownership (via the owning rotation) before
+    # deleting -- supersedes the previous bare existence check.
     def delete():
-        del db.on_call_rotation_participants[participant_id]
+        participant = get_tenant_scoped(
+            db,
+            db.on_call_rotation_participants,
+            participant_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+        if not participant:
+            return False
+        db(db.on_call_rotation_participants.id == participant_id).delete()
         db.commit()
+        return True
 
-    await run_in_threadpool(delete)
+    deleted = await run_in_threadpool(delete)
+    if not deleted:
+        return ApiResponse.not_found("Participant", participant_id)
 
     return ApiResponse.no_content()
 
@@ -388,6 +423,7 @@ async def list_overrides(rotation_id: int):
         404: Rotation not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -414,8 +450,13 @@ async def list_overrides(rotation_id: int):
     items = []
 
     for row in rows:
-        original_identity = db.identities[row.original_identity_id]
-        override_identity = db.identities[row.override_identity_id]
+        # gh-237: scope to caller's tenant.
+        original_identity = get_tenant_scoped(
+            db, db.identities, row.original_identity_id, tenant_id
+        )
+        override_identity = get_tenant_scoped(
+            db, db.identities, row.override_identity_id, tenant_id
+        )
         items.append(
             {
                 "id": row.id,
@@ -473,6 +514,7 @@ async def create_override(rotation_id: int):
         404: Rotation or identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -493,10 +535,14 @@ async def create_override(rotation_id: int):
     if error := validate_required_fields(data, required_fields):
         return error
 
-    # Validate identities exist
+    # gh-237: both ids are caller-supplied -- scope to caller's tenant.
     def validate_identities():
-        original = db.identities[data["original_identity_id"]]
-        override = db.identities[data["override_identity_id"]]
+        original = get_tenant_scoped(
+            db, db.identities, data["original_identity_id"], tenant_id
+        )
+        override = get_tenant_scoped(
+            db, db.identities, data["override_identity_id"], tenant_id
+        )
         return original, override
 
     original_id, override_id = await run_in_threadpool(validate_identities)
@@ -565,9 +611,16 @@ async def create_override(rotation_id: int):
         override_id = db.on_call_overrides.insert(**insert_data)
         db.commit()
 
-        override = db.on_call_overrides[override_id]
-        original = db.identities[override.original_identity_id]
-        override_identity = db.identities[override.override_identity_id]
+        # Post-insert fetch of the row we just created -- override_id is
+        # server-generated, and rotation_id/both identity ids were already
+        # tenant-verified above.
+        override = db.on_call_overrides[override_id]  # tenant-scope-exempt
+        original = get_tenant_scoped(
+            db, db.identities, override.original_identity_id, tenant_id
+        )
+        override_identity = get_tenant_scoped(
+            db, db.identities, override.override_identity_id, tenant_id
+        )
 
         return {
             "id": override.id,
@@ -614,12 +667,24 @@ async def update_override(override_id: int):
         404: Override not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    override, error = await validate_resource_exists(
-        db.on_call_overrides, override_id, "Override"
-    )
-    if error:
-        return error
+    # gh-237: on_call_overrides has no tenant_id of its own -- scope via the
+    # owning rotation's tenant_id. Supersedes the previous bare
+    # validate_resource_exists() existence check.
+    def get_override_for_update():
+        return get_tenant_scoped(
+            db,
+            db.on_call_overrides,
+            override_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+
+    override = await run_in_threadpool(get_override_for_update)
+    if not override:
+        return ApiResponse.not_found("Override", override_id)
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -652,9 +717,15 @@ async def update_override(override_id: int):
             db(db.on_call_overrides.id == override_id).update(**update_dict)
             db.commit()
 
-        override = db.on_call_overrides[override_id]
-        original = db.identities[override.original_identity_id]
-        override_identity = db.identities[override.override_identity_id]
+        # Re-fetch by the same id already tenant-verified above
+        # (rotation_id isn't updateable, so ownership can't have changed).
+        override = db.on_call_overrides[override_id]  # tenant-scope-exempt
+        original = get_tenant_scoped(
+            db, db.identities, override.original_identity_id, tenant_id
+        )
+        override_identity = get_tenant_scoped(
+            db, db.identities, override.override_identity_id, tenant_id
+        )
 
         return {
             "id": override.id,
@@ -696,17 +767,27 @@ async def delete_override(override_id: int):
         404: Override not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    override, error = await validate_resource_exists(
-        db.on_call_overrides, override_id, "Override"
-    )
-    if error:
-        return error
-
+    # gh-237: verify tenant ownership (via the owning rotation) before
+    # deleting -- supersedes the previous bare existence check.
     def delete():
-        del db.on_call_overrides[override_id]
+        override = get_tenant_scoped(
+            db,
+            db.on_call_overrides,
+            override_id,
+            tenant_id,
+            org_fk="rotation_id",
+            parent_table=db.on_call_rotations,
+        )
+        if not override:
+            return False
+        db(db.on_call_overrides.id == override_id).delete()
         db.commit()
+        return True
 
-    await run_in_threadpool(delete)
+    deleted = await run_in_threadpool(delete)
+    if not deleted:
+        return ApiResponse.not_found("Override", override_id)
 
     return ApiResponse.no_content()

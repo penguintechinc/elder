@@ -70,6 +70,12 @@ web:
     repository: ghcr.io/penguintechinc/elder-web
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
+  # Explicit here (matches the corrected base values.yaml default) — container
+  # is nginx-unprivileged listening on 8080, not 3000. Release audit finding #7.
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
   buildArgs:
     VITE_API_URL: ""
   resources:
@@ -210,7 +216,7 @@ ingress:
         - path: /
           pathType: Prefix
           service: web
-          port: 3000
+          port: 8080
         - path: /api
           pathType: Prefix
           service: api
@@ -261,3 +267,26 @@ affinity:
               operator: In
               values:
                 - "true"
+
+# Cluster security baseline — Cilium CNI is live on dal2-beta, so all three
+# are ON per the release audit (findings #2/#3/#4).
+networkPolicy:
+  enabled: true
+  gatewayNamespace: "gateway"
+
+tetragon:
+  enabled: true
+
+# NOTE (k8s-ops): the "elder" namespace on dal2-beta already exists,
+# created out-of-band and not currently Helm-managed. Before the first
+# upgrade with this flag on, either pre-adopt it:
+#   kubectl label ns elder app.kubernetes.io/managed-by=Helm --overwrite
+#   kubectl annotate ns elder meta.helm.sh/release-name=elder \
+#     meta.helm.sh/release-namespace=elder --overwrite
+# or apply the three pod-security labels directly and leave this false.
+namespaceManagement:
+  create: true
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

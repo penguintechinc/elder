@@ -100,13 +100,19 @@ async def register():
             is_superuser=False,
             mfa_enabled=False,
             tenant_id=default_tenant_id,
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly
+            # (see apps/api/api/v1/identities.py's identical comment).
+            must_change_password=False,
+            portal_role="observer",
             created_at=now,
             updated_at=now,
         )
         db.commit()
 
         # Get created identity
-        identity = db.identities[identity_id]
+        identity = db.identities[identity_id]  # tenant-scope-exempt
 
         # Create audit log
         _create_audit_log_sync(
@@ -239,7 +245,7 @@ async def login():
         db.commit()
 
         # Refresh identity data after update
-        identity = db.identities[identity.id]
+        identity = db.identities[identity.id]  # tenant-scope-exempt
 
         # Create successful login audit log
         _create_audit_log_sync(
@@ -329,7 +335,9 @@ async def get_current_user_info():
     db = current_app.db
 
     # Fetch fresh user data from database
-    identity = await run_in_threadpool(lambda: db.identities[g.current_user.id])
+    identity = await run_in_threadpool(
+        lambda: db.identities[g.current_user.id]  # tenant-scope-exempt
+    )
 
     if not identity:
         return ApiResponse.error("User not found", 404)
@@ -376,7 +384,7 @@ async def change_password():
 
     # Verify current password and update
     def update_password():
-        identity = db.identities[g.current_user.id]
+        identity = db.identities[g.current_user.id]  # tenant-scope-exempt
 
         if not identity:
             return None, "User not found", 404
@@ -441,8 +449,11 @@ async def refresh_token_endpoint():
     if not payload or payload.get("type") != "refresh":
         return ApiResponse.unauthorized("Invalid refresh token")
 
-    # Get identity
-    identity = await run_in_threadpool(lambda: db.identities[payload["sub"]])
+    # Get identity: self-lookup via the verified refresh token's own sub
+    # claim, never a client param
+    identity = await run_in_threadpool(
+        lambda: db.identities[payload["sub"]]  # tenant-scope-exempt
+    )
 
     if not identity or not identity.is_active:
         return ApiResponse.unauthorized("User not found or inactive")

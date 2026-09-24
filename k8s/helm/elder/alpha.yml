@@ -127,6 +127,10 @@ web:
       cpu: "250m"
   autoscaling:
     enabled: false
+  # Single replica — a PDB here would just block every voluntary eviction
+  # (e.g. `kubectl drain` on this shared node) for zero HA benefit.
+  podDisruptionBudget:
+    enabled: false
 
 # Elder Flask API - Single replica for alpha, exposed via fixed NodePort so
 # the browser (loaded from the web NodePort) can reach the API directly.
@@ -173,6 +177,8 @@ api:
       memory: "1Gi"
       cpu: "1000m"
   autoscaling:
+    enabled: false
+  podDisruptionBudget:
     enabled: false
 
 # Scanner Service - Single replica for alpha
@@ -286,3 +292,15 @@ securityContext:
   capabilities:
     drop:
       - ALL
+
+# Cluster security baseline — OFF for local-alpha MicroK8s: this cluster
+# does not run Cilium as CNI (nor the Tetragon DaemonSet), so the
+# CiliumNetworkPolicy/TracingPolicy CRDs aren't installed and creating
+# these resources would just fail/no-op. namespaceManagement.create stays
+# false (base default) — the "elder" namespace is created directly by
+# deploy-alpha.sh, not by this chart.
+networkPolicy:
+  enabled: false
+
+tetragon:
+  enabled: false

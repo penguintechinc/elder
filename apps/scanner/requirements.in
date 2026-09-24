@@ -4,6 +4,8 @@ playwright>=1.40.0
 croniter>=2.0.0
 idna>=3.15
 structlog>=24.1.0
+# Transitive floor — no direct .in entry otherwise, pinned here to clear advisories
+anyio>=4.14.2   # via httpx/playwright — GHSA-5p39, GHSA-82r6
 
 # OpenTelemetry observability (logs + metrics + traces via OTLP HTTP -> SigNoz)
 # Pinned to 1.43.0/0.64b0 for protobuf 5.29.6 compatibility (drop grpc exporter, use http only)

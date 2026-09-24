@@ -96,8 +96,8 @@ jobs:
         # Scope cache per service+platform to prevent eviction
         cache-from: type=gha,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
         cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
-        provenance: false
-        sbom: false
+        provenance: true
+        sbom: true
         build-args: |
           VCS_REF=${{ github.sha }}
           VERSION=${{ steps.version.outputs.version }}

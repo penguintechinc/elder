@@ -6,6 +6,7 @@ from quart import Blueprint, current_app, jsonify
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("organization_tree", __name__)
 
@@ -46,10 +47,17 @@ async def get_organization_tree_stats(org_id: int):
         404: Organization not found
     """
     db = current_app.db
+    # Resolve the caller's tenant here (in the request coroutine) — g does
+    # not propagate into the threadpool callable below.
+    tenant_id = get_current_tenant_id()
 
     def get_recursive_stats():
-        # Verify root organization exists
-        root_org = db.organizations[org_id]
+        # Verify root organization exists AND belongs to the caller's
+        # tenant (gh-237) — a bare unscoped bracket lookup by primary key let
+        # any authenticated caller pull another tenant's full tree stats by
+        # guessing its numeric org_id. 404 (not 403) on mismatch so callers
+        # can't distinguish "wrong tenant" from "doesn't exist".
+        root_org = get_tenant_scoped(db, db.organizations, org_id, tenant_id)
         if not root_org:
             return None, "Organization not found", 404
 

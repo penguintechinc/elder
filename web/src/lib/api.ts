@@ -10,6 +10,45 @@ interface RetryableAxiosRequestConfig extends AxiosRequestConfig {
 // Only use VITE_API_URL for local development outside Docker
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
 
+// gh security audit, High: the access + refresh JWT used to live in
+// localStorage (XSS-exfiltratable). Both tokens are now HttpOnly cookies set
+// by the backend (apps.api.auth.portal_cookies) -- this client never reads
+// or writes them directly. AUTH_FLAG_KEY is a non-sensitive "was a login
+// completed" boolean only, used to decide whether to attempt a cookie-based
+// refresh on 401 and for route-guard checks (App.tsx) -- it carries no
+// credential material, so it's safe to keep in localStorage.
+const AUTH_FLAG_KEY = 'elder_authenticated'
+const CSRF_COOKIE_NAME = 'elder_csrf_token'
+const CSRF_HEADER_NAME = 'X-CSRF-Token'
+const STATE_CHANGING_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+
+/** Read a single cookie value by name (the CSRF cookie is intentionally not
+ * HttpOnly so the SPA can echo it back -- see portal_cookies.is_csrf_valid). */
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${name}=([^;]*)`)
+  )
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+/** True once a login/refresh has completed this session. Non-sensitive --
+ * never carries token material, safe for route guards (App.tsx, Layout.tsx). */
+export function isAuthenticated(): boolean {
+  return localStorage.getItem(AUTH_FLAG_KEY) === '1'
+}
+
+/** Set after a login/MFA-verify response whose cookies (not this call) are
+ * the actual credential. Exported for the LoginPageBuilder onSuccess
+ * handlers (Login.tsx, LoginPageWrapper.tsx), which bypass this client and
+ * call fetch() directly against the same-origin login endpoint. */
+export function markAuthenticated(): void {
+  localStorage.setItem(AUTH_FLAG_KEY, '1')
+}
+
+function clearAuthenticated(): void {
+  localStorage.removeItem(AUTH_FLAG_KEY)
+}
+
 class ApiClient {
   private client: AxiosInstance
   private isRefreshing = false
@@ -26,14 +65,25 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
       timeout: 30000,
+      // The access/refresh JWT now live in HttpOnly cookies (gh security
+      // audit) -- withCredentials makes axios send/accept them even if
+      // VITE_API_URL points at a cross-origin dev API instead of the
+      // same-origin nginx/Express proxy.
+      withCredentials: true,
     })
 
-    // Request interceptor for auth token
+    // Request interceptor: echo the CSRF cookie on state-changing requests
+    // (double-submit pattern -- see apps.api.main.enforce_csrf_protection).
+    // No Authorization header injection here anymore: the browser attaches
+    // the HttpOnly auth cookies automatically.
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('elder_token')
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`
+        const method = (config.method ?? 'get').toLowerCase()
+        if (STATE_CHANGING_METHODS.has(method)) {
+          const csrfToken = readCookie(CSRF_COOKIE_NAME)
+          if (csrfToken) {
+            config.headers[CSRF_HEADER_NAME] = csrfToken
+          }
         }
         return config
       },
@@ -48,12 +98,12 @@ class ApiClient {
 
         // Redirect to login on 401 Unauthorized, but try refresh first
         if (error.response?.status === 401 && !originalRequest._retry) {
-          const hadToken = !!localStorage.getItem('elder_token')
-          const refreshToken = localStorage.getItem('elder_refresh_token')
+          const wasAuthenticated = isAuthenticated()
           const isLoginPage = window.location.pathname === '/login'
 
-          // Only attempt refresh if we had tokens and not on login page
-          if (hadToken && refreshToken && !isLoginPage) {
+          // Only attempt refresh if a session was ever established and
+          // we're not already on the login page
+          if (wasAuthenticated && !isLoginPage) {
             if (this.isRefreshing) {
               // Queue this request to be retried after refresh completes
               return new Promise((resolve, reject) => {
@@ -70,18 +120,11 @@ class ApiClient {
             this.isRefreshing = true
 
             try {
-              // Attempt to refresh the token
-              const response = await this.client.post('/portal-auth/refresh', {
-                refresh_token: refreshToken,
-              })
+              // Refresh token comes from the HttpOnly cookie -- no body needed.
+              const response = await this.client.post('/portal-auth/refresh')
 
               if (response.data.access_token) {
-                localStorage.setItem('elder_token', response.data.access_token)
-
-                // Store new refresh token if provided (token rotation)
-                if (response.data.refresh_token) {
-                  localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-                }
+                markAuthenticated()
 
                 // Schedule next proactive refresh
                 this.scheduleTokenRefresh(response.data.expires_in)
@@ -93,22 +136,19 @@ class ApiClient {
                 return this.client(originalRequest)
               }
             } catch (refreshError) {
-              // Refresh failed - clear tokens and redirect to login
+              // Refresh failed - clear the auth flag and redirect to login
               this.processQueue(refreshError)
-              localStorage.removeItem('elder_token')
-              localStorage.removeItem('elder_refresh_token')
+              clearAuthenticated()
               this.clearRefreshTimer()
               window.location.href = '/login'
               return Promise.reject(refreshError)
             } finally {
               this.isRefreshing = false
             }
-          }
 
-          // No tokens or on login page - just clear and redirect
-          if (hadToken && !isLoginPage) {
-            localStorage.removeItem('elder_token')
-            localStorage.removeItem('elder_refresh_token')
+            // Refresh responded 200 but with no access_token (unexpected
+            // shape) -- treat the same as a failed refresh.
+            clearAuthenticated()
             this.clearRefreshTimer()
             window.location.href = '/login'
           }
@@ -159,25 +199,17 @@ class ApiClient {
   }
 
   /**
-   * Proactively refresh token before expiration
+   * Proactively refresh token before expiration. The refresh token itself
+   * is an HttpOnly cookie the browser attaches automatically -- nothing to
+   * read from localStorage here.
    */
   private async proactiveRefreshToken() {
-    const refreshToken = localStorage.getItem('elder_refresh_token')
-    if (!refreshToken) return
+    if (!isAuthenticated()) return
 
     try {
-      const response = await this.client.post('/portal-auth/refresh', {
-        refresh_token: refreshToken,
-      })
+      const response = await this.client.post('/portal-auth/refresh')
 
       if (response.data.access_token) {
-        localStorage.setItem('elder_token', response.data.access_token)
-
-        // Store new refresh token if provided (token rotation)
-        if (response.data.refresh_token) {
-          localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-        }
-
         // Schedule next refresh
         this.scheduleTokenRefresh(response.data.expires_in)
       }
@@ -199,11 +231,13 @@ class ApiClient {
     return response.data
   }
 
-  // Auth endpoints
+  // Auth endpoints. The access/refresh JWT are HttpOnly cookies set directly
+  // by the backend response -- nothing for this client to persist beyond the
+  // non-sensitive "logged in" flag used by route guards.
   async login(username: string, password: string) {
     const response = await this.client.post('/auth/login', { username, password })
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
+      markAuthenticated()
     }
     return response.data
   }
@@ -219,9 +253,17 @@ class ApiClient {
   }
 
   async logout() {
-    localStorage.removeItem('elder_token')
-    localStorage.removeItem('elder_refresh_token')
-    this.clearRefreshTimer()
+    try {
+      await this.client.post('/portal-auth/logout')
+    } catch (error) {
+      // Cookie clearing is best-effort from the client's perspective -- the
+      // server-side cookies may already be expired/gone. Never block the
+      // local logout on a network error.
+      console.error('[Elder] Logout request failed:', error)
+    } finally {
+      clearAuthenticated()
+      this.clearRefreshTimer()
+    }
   }
 
   // Profile (Portal Users)
@@ -1469,7 +1511,9 @@ class ApiClient {
     return response.data
   }
 
-  // v2.2.0 Enterprise Edition - Portal Authentication
+  // v2.2.0 Enterprise Edition - Portal Authentication. Tokens are HttpOnly
+  // cookies set by the backend response -- only the "logged in" flag and the
+  // proactive-refresh timer are managed client-side.
   async portalLogin(email: string, password: string, tenant?: string) {
     const response = await this.client.post('/portal-auth/login', {
       email,
@@ -1477,10 +1521,7 @@ class ApiClient {
       tenant: tenant || 'system'
     })
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
-      if (response.data.refresh_token) {
-        localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-      }
+      markAuthenticated()
       // Schedule proactive token refresh
       if (response.data.expires_in) {
         this.scheduleTokenRefresh(response.data.expires_in)
@@ -1518,14 +1559,10 @@ class ApiClient {
   }
 
   async portalRefreshToken() {
-    const refreshToken = localStorage.getItem('elder_refresh_token')
-    const response = await this.client.post('/portal-auth/refresh', { refresh_token: refreshToken })
+    // Refresh token is the HttpOnly cookie -- no body needed.
+    const response = await this.client.post('/portal-auth/refresh')
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
-      // Store new refresh token if provided (token rotation)
-      if (response.data.refresh_token) {
-        localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-      }
+      markAuthenticated()
       // Schedule next proactive refresh
       if (response.data.expires_in) {
         this.scheduleTokenRefresh(response.data.expires_in)

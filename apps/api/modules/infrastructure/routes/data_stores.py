@@ -2,20 +2,27 @@
 
 # flake8: noqa: E501
 
-from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
-from apps.api.models.dataclasses import PaginatedResponse
+from apps.api.models.pydantic.data_store import (
+    DataStoreLabelAssignmentResponse,
+    DataStoreLabelListResponse,
+    DataStoreLabelResponse,
+    DataStoreListResponse,
+    DataStoreResponse,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_enum_value,
     validate_json_body,
@@ -55,6 +62,7 @@ VALID_DATA_CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreListResponse)
 async def list_data_stores():
     """List data stores with optional filtering."""
     db = current_app.db
@@ -106,20 +114,19 @@ async def list_data_stores():
     total, rows = await run_in_threadpool(get_data_stores)
     pages = pagination.calculate_pages(total)
 
-    response = PaginatedResponse(
-        items=[row.as_dict() for row in rows],
+    return DataStoreListResponse(
+        items=[DataStoreResponse.model_validate(row) for row in rows],
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("infrastructure:write")
+@validate_response(DataStoreResponse, status_code=201)
 async def create_data_store():
     """Create a new data store entry."""
     db = current_app.db
@@ -145,18 +152,20 @@ async def create_data_store():
         ):
             return error
 
-    if data.get("poc_identity_id"):
-        identity, error = await validate_resource_exists(
-            db.identities, data["poc_identity_id"], "POC identity"
-        )
-        if error:
-            return error
-
     org, tenant_id, error = await validate_organization_and_get_tenant(
         data["organization_id"]
     )
     if error:
         return error
+
+    if data.get("poc_identity_id"):
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, data["poc_identity_id"], tenant_id
+            )
+        )
+        if not identity:
+            return ApiResponse.not_found("POC identity", data["poc_identity_id"])
 
     def create():
         now = datetime.now(UTC)
@@ -189,33 +198,42 @@ async def create_data_store():
             updated_at=now,
         )
         db.commit()
-        return db.data_stores[data_store_id]
+        # tenant_id resolved from the validated organization above (gh-237)
+        return get_tenant_scoped(db, db.data_stores, data_store_id, tenant_id)
 
     data_store = await run_in_threadpool(create)
-    return ApiResponse.created(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreResponse)
 async def get_data_store(id: int):
     """Get a single data store entry by ID."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    data_store, error = await validate_resource_exists(db.data_stores, id, "Data store")
-    if error:
-        return error
+    # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+    data_store = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.data_stores, id, tenant_id)
+    )
+    if not data_store:
+        return ApiResponse.not_found("Data store", id)
 
-    return ApiResponse.success(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("infrastructure:write")
 @resource_role_required("maintainer")
+@validate_response(DataStoreResponse)
 async def update_data_store(id: int):
     """Update a data store entry."""
     db = current_app.db
+    # Resolve tenant here — g does not propagate into run_in_threadpool (gh-237)
+    tenant_id = get_current_tenant_id()
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -236,11 +254,13 @@ async def update_data_store(id: int):
             return error
 
     if data.get("poc_identity_id"):
-        identity, error = await validate_resource_exists(
-            db.identities, data["poc_identity_id"], "POC identity"
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, data["poc_identity_id"], tenant_id
+            )
         )
-        if error:
-            return error
+        if not identity:
+            return ApiResponse.not_found("POC identity", data["poc_identity_id"])
 
     org_tenant_id = None
     if "organization_id" in data:
@@ -251,7 +271,8 @@ async def update_data_store(id: int):
             return error
 
     def update():
-        data_store = db.data_stores[id]
+        # gh-237: 404s on cross-tenant id guesses instead of leaking existence
+        data_store = get_tenant_scoped(db, db.data_stores, id, tenant_id)
         if not data_store:
             return None
 
@@ -293,14 +314,14 @@ async def update_data_store(id: int):
             db(db.data_stores.id == id).update(**update_dict)
             db.commit()
 
-        return db.data_stores[id]
+        return get_tenant_scoped(db, db.data_stores, id, tenant_id)
 
     data_store = await run_in_threadpool(update)
 
     if not data_store:
         return ApiResponse.not_found("Data store", id)
 
-    return ApiResponse.success(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -310,16 +331,20 @@ async def update_data_store(id: int):
 async def delete_data_store(id: int):
     """Delete a data store entry."""
     db = current_app.db
-
-    data_store, error = await validate_resource_exists(db.data_stores, id, "Data store")
-    if error:
-        return error
+    tenant_id = get_current_tenant_id()
 
     def delete():
-        del db.data_stores[id]
+        # gh-237: verify tenant ownership before delete, not just existence
+        data_store = get_tenant_scoped(db, db.data_stores, id, tenant_id)
+        if not data_store:
+            return False
+        del db.data_stores[id]  # tenant-scope-exempt: verified above
         db.commit()
+        return True
 
-    await run_in_threadpool(delete)
+    deleted = await run_in_threadpool(delete)
+    if not deleted:
+        return ApiResponse.not_found("Data store", id)
 
     return ApiResponse.no_content()
 
@@ -327,38 +352,46 @@ async def delete_data_store(id: int):
 @bp.route("/<int:id>/labels", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreLabelListResponse)
 async def get_data_store_labels(id: int):
     """Get labels for a data store."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    data_store, error = await validate_resource_exists(db.data_stores, id, "Data store")
-    if error:
-        return error
+    data_store = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.data_stores, id, tenant_id)
+    )
+    if not data_store:
+        return ApiResponse.not_found("Data store", id)
 
     def get_labels():
         rows = db(db.data_store_labels.data_store_id == id).select()
         labels = []
         for row in rows:
-            label = db.issue_labels[row.label_id]
+            label = db.issue_labels[row.label_id]  # tenant-scope-exempt: global
             if label:
-                labels.append(label.as_dict())
+                labels.append(DataStoreLabelResponse.model_validate(label))
         return labels
 
     labels = await run_in_threadpool(get_labels)
-    return ApiResponse.success({"labels": labels})
+    return DataStoreLabelListResponse(labels=labels), 200
 
 
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
 @require_scope("infrastructure:write")
 @resource_role_required("viewer")
+@validate_response(DataStoreLabelAssignmentResponse, status_code=201)
 async def add_data_store_label(id: int):
     """Add a label to a data store."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    data_store, error = await validate_resource_exists(db.data_stores, id, "Data store")
-    if error:
-        return error
+    data_store = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.data_stores, id, tenant_id)
+    )
+    if not data_store:
+        return ApiResponse.not_found("Data store", id)
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -387,14 +420,14 @@ async def add_data_store_label(id: int):
             data_store_id=id, label_id=data["label_id"]
         )
         db.commit()
-        return db.data_store_labels[label_assignment_id]
+        return db.data_store_labels[label_assignment_id]  # tenant-scope-exempt
 
     assignment = await run_in_threadpool(add_label)
 
     if assignment is None:
         return ApiResponse.conflict("Label already assigned to this data store")
 
-    return ApiResponse.created(assignment.as_dict())
+    return DataStoreLabelAssignmentResponse.model_validate(assignment), 201
 
 
 @bp.route("/<int:id>/labels/<int:label_id>", methods=["DELETE"])
@@ -404,10 +437,13 @@ async def add_data_store_label(id: int):
 async def remove_data_store_label(id: int, label_id: int):
     """Remove a label from a data store."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    data_store, error = await validate_resource_exists(db.data_stores, id, "Data store")
-    if error:
-        return error
+    data_store = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.data_stores, id, tenant_id)
+    )
+    if not data_store:
+        return ApiResponse.not_found("Data store", id)
 
     label, error = await validate_resource_exists(db.issue_labels, label_id, "Label")
     if error:
@@ -426,7 +462,7 @@ async def remove_data_store_label(id: int, label_id: int):
         if not assignment:
             return None
 
-        del db.data_store_labels[assignment.id]
+        del db.data_store_labels[assignment.id]  # tenant-scope-exempt: see above
         db.commit()
         return True
 

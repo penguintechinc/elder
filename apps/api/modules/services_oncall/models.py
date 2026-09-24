@@ -53,7 +53,22 @@ class OnCallRotationParticipant(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False)
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
-    notification_email = Column(String(255), nullable=True)
+    # PII tokenization exception (GRC finding, see fix/pii-tokenization):
+    # the participant's canonical identity/email is already the
+    # `identity_id` FK above -- this trio is a deliberate, optional
+    # per-rotation notification-target OVERRIDE (see
+    # routes/on_call_rotations_participants.py), e.g. a pager alias or
+    # shared on-call distro that may not correspond to any Elder identity
+    # at all. Not a duplicate of identity PII, so it is not tokenized.
+    # Rely on the database's at-rest encryption baseline (see security.md)
+    # and never pass it to a logger (verified not logged as of this change).
+    notification_email = Column(
+        String(255),
+        nullable=True,
+        comment="Optional per-rotation notification email override "
+        "(may differ from identity_id's email; not always an Elder "
+        "identity) -- never log",
+    )
     notification_phone = Column(String(50), nullable=True)
     notification_slack = Column(String(255), nullable=True)
 

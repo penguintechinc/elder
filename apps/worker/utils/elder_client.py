@@ -14,6 +14,21 @@ from apps.worker.utils.logger import get_logger
 logger = get_logger(__name__)
 
 
+def _is_transient_client_error(exc: Exception) -> bool:
+    """Decide whether an aiohttp.ClientError is worth retrying.
+
+    `response.raise_for_status()` raises `ClientResponseError` for *any*
+    non-2xx status, and the old `@backoff.on_exception(..., aiohttp.ClientError, ...)`
+    retried all of them -- including 401/403/429, which are terminal
+    (retrying a bad/expired credential or a rate limit just re-triggers the
+    same rejection, burning the retry budget). Only 5xx responses and
+    non-HTTP failures (connection errors, timeouts) are transient.
+    """
+    if isinstance(exc, aiohttp.ClientResponseError):
+        return exc.status >= 500
+    return True
+
+
 @dataclass
 class Organization:
     """Organization data model."""
@@ -122,6 +137,8 @@ class ElderAPIClient:
         backoff.expo,
         aiohttp.ClientError,
         max_tries=settings.sync_max_retries,
+        giveup=lambda exc: not _is_transient_client_error(exc),
+        jitter=backoff.full_jitter,
     )
     async def _request(
         self,

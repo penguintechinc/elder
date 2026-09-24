@@ -188,6 +188,36 @@ class IdentityDTO:
 
 
 @dataclass(slots=True)
+class IdentityAdminDTO:
+    """Identity data transfer object for admin-only user management.
+
+    Distinct from ``IdentityDTO`` (used by non-admin/listing endpoints,
+    which intentionally omits privilege fields): this shape includes
+    ``is_superuser``/``portal_role`` because the ``users.py`` admin
+    create/update endpoints are the one place a caller is meant to see and
+    manage a user's full admin/portal state. Never widen ``IdentityDTO``
+    itself to add these fields -- that would leak them into every other
+    endpoint reusing it.
+    """
+
+    id: int
+    username: str
+    email: str | None
+    created_at: datetime
+    updated_at: datetime
+    identity_type: str | None = None
+    full_name: str | None = None
+    organization_id: int | None = None
+    portal_role: str | None = None
+    auth_provider: str | None = None
+    auth_provider_id: str | None = None
+    is_active: bool = True
+    is_superuser: bool = False
+    mfa_enabled: bool = False
+    last_login_at: datetime | None = None
+
+
+@dataclass(slots=True)
 class CreateIdentityRequest:
     """Request to create a new Identity."""
 

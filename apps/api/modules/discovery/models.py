@@ -136,7 +136,21 @@ class GoogleWorkspaceProvider(Base, IDMixin, TimestampMixin):
 
     name = Column(String(255), nullable=False)
     domain = Column(String(255), nullable=False)
-    admin_email = Column(String(255), nullable=False)
+    # PII tokenization exception (GRC finding, see fix/pii-tokenization):
+    # this is the CUSTOMER's external Google Workspace super-admin address
+    # used for domain-wide-delegation subject impersonation
+    # (credentials.with_subject(...) in services/google_workspace/service.py).
+    # It never identifies an Elder user/identity, so it does NOT reference
+    # `identities` -- there is nothing in that table to point to. Treat as
+    # an integration credential: rely on the database's at-rest encryption
+    # baseline (see security.md) and never pass it to a logger (verified
+    # not logged as of this change).
+    admin_email = Column(
+        String(255),
+        nullable=False,
+        comment="External Google Workspace admin email for delegated API "
+        "access (integration credential, not an Elder identity) -- never log",
+    )
     credentials_json = Column(JSON, nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
     enabled = Column(Boolean, nullable=False)

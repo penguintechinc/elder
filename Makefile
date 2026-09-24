@@ -2,7 +2,7 @@
 
 .PHONY: help \
         setup setup-env setup-python setup-lint verify-venv install-hooks verify-hooks \
-        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc \
+        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc openapi-spec \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
         smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
         lint format format-check \
@@ -12,7 +12,7 @@
         deploy-alpha deploy-beta \
         helm-lint helm-template \
         lock lock-api lock-dev lock-worker lock-scanner lock-mcp \
-        license-validate license-check-features \
+        license-validate license-check-features license-check-deps \
         clean clean-docker \
         version version-bump-patch version-bump-minor version-bump-major \
         health pre-commit
@@ -231,6 +231,15 @@ generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
 	@touch apps/api/grpc/generated/__init__.py
 	@echo "$(GREEN)gRPC stubs generated$(RESET)"
 
+openapi-spec: test-db-up build-test-image ## Regenerate openapi/v4.yaml from quart-schema route definitions
+	@echo "$(BLUE)Generating openapi/v4.yaml...$(RESET)"
+	@docker run --rm --network host \
+		-e DATABASE_URL="postgresql://elder_test:elder_test_password@localhost:55432/elder_test" \
+		-e REDIS_URL="redis://localhost:56379/0" \
+		-v $(PWD):/app -w /app --entrypoint python3 elder-test:3.13 \
+		scripts/generate_openapi_spec.py
+	@echo "$(GREEN)openapi/v4.yaml regenerated$(RESET)"
+
 # ── Testing ────────────────────────────────────────────────────────────────
 test: lint test-unit test-integration test-functional test-security ## Run all tests (lint + unit + integration + functional + security)
 	@echo "$(GREEN)All tests passed$(RESET)"
@@ -346,9 +355,10 @@ pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-tes
 # ── Code Quality ───────────────────────────────────────────────────────────
 # Steps 1-3 are hard gates: they pass today and must keep passing.
 # Step 4 ratchets the linters that still carry debt (mypy, shellcheck, prettier,
-# eslint) — it fails when a count rises above .lint-baseline. Nothing here is
-# wrapped in `|| true`; a gate that cannot fail is not a gate.
-lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier ratcheted)
+# eslint) — it fails when a count rises above .lint-baseline. Step 5 ratchets
+# gh-237 cross-tenant IDOR debt (unscoped `db.<table>[<id>]` lookups) the same
+# way. Nothing here is wrapped in `|| true`; a gate that cannot fail is not a gate.
+lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier + tenant-scoping ratcheted)
 	@echo "$(BLUE)[1/4] ruff — Python linting...$(RESET)"
 	@$(PYTHON) -m ruff check apps/ shared/ scripts/ tests/
 	@echo "$(BLUE)[2/4] ruff-format — Python formatting check...$(RESET)"
@@ -361,8 +371,10 @@ lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; myp
 	done; \
 	test $$n -gt 0 || { echo "$(RED)No Dockerfiles examined — the scan found nothing.$(RESET)"; exit 1; }; \
 	echo "  $$n Dockerfiles clean"
-	@echo "$(BLUE)[4/4] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
+	@echo "$(BLUE)[4/5] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
 	@bash scripts/lint-debt.sh
+	@echo "$(BLUE)[5/5] tenant-scoping gate — gh-237 cross-tenant IDOR ratchet...$(RESET)"
+	@$(PYTHON) scripts/check_tenant_scoping.py
 	@echo "$(GREEN)Lint gates passed (hard gates clean, no debt regressions)$(RESET)"
 
 format: ## Auto-format Python and web code (ruff + prettier)
@@ -504,6 +516,19 @@ license-validate: ## Validate license configuration
 
 license-check-features: ## List available licensed features
 	@$(PYTHON) scripts/license/check_features.py
+
+# ── OSS License Compliance ─────────────────────────────────────────────────
+# Elder is AGPL-3.0 (LICENSE.md). Allowlist, not denylist: anything NOT on
+# the list fails — safer than enumerating "bad" licenses, which can never be
+# complete. First CI run may need the allowlist tuned to real classifier
+# strings across the full apps/ + shared/ dependency tree (verified working
+# against a small package set here, not yet against the full tree).
+license-check-deps: ## Flag AGPL/GPL-incompatible OSS dependency licenses (Python + npm)
+	@echo "$(BLUE)[1/2] pip-licenses — Python dependency licenses...$(RESET)"
+	@$(VENV)/bin/pip-licenses --allow-only="MIT;MIT License;BSD License;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;Apache Software License;Apache License 2.0;ISC License (ISCL);ISC;PSF-2.0;Python Software Foundation License;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;GNU Lesser General Public License v2 (LGPLv2);GNU Lesser General Public License v2 or later (LGPLv2+);GNU Lesser General Public License v3 (LGPLv3);GNU Lesser General Public License v3 or later (LGPLv3+);GNU Library or Lesser General Public License (LGPL);GNU General Public License v3 (GPLv3);GNU General Public License v3 or later (GPLv3+);GNU Affero General Public License v3;GNU Affero General Public License v3 or later (AGPLv3+);The Unlicense (Unlicense);Unlicense;Public Domain;zlib/libpng License;HPND;CC0-1.0;0BSD"
+	@echo "$(BLUE)[2/2] license-checker — npm dependency licenses...$(RESET)"
+	@cd web && npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0" --excludePackages "project-template-web@4.0.0"
+	@echo "$(GREEN)No AGPL/GPL-incompatible dependency licenses found$(RESET)"
 
 # ── Housekeeping ───────────────────────────────────────────────────────────
 clean: ## Remove Python caches, pytest artifacts, and coverage reports

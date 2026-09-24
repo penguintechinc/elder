@@ -155,7 +155,11 @@ def get_tenant(tenant_id):
             return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin/support
+    # callers to tenant_id == their own portal_user.tenant_id -- tenants is
+    # the top-level tenant table, so there is no "outer" tenant to
+    # additionally scope this by.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
         return ApiResponse.error("Tenant not found", 404)
 
@@ -300,7 +304,9 @@ async def update_tenant(tenant_id):
         return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin callers
+    # to tenant_id == their own tenant.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
         return ApiResponse.error("Tenant not found", 404)
 
@@ -359,7 +365,9 @@ def delete_tenant(tenant_id):
         return ApiResponse.bad_request("Cannot delete system tenant")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # @global_admin_required above already restricts this whole route to
+    # global admins.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
         return ApiResponse.error("Tenant not found", 404)
 
@@ -524,7 +532,9 @@ def get_tenant_stats(tenant_id):
             return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin/support
+    # callers to tenant_id == their own portal_user.tenant_id.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
         return ApiResponse.error("Tenant not found", 404)
 

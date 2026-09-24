@@ -1,7 +1,7 @@
 #!/bin/bash
 # Replace docker-compose v1 with a wrapper for docker compose v2
 
-set -e
+set -euo pipefail
 
 echo "Removing old docker-compose v1..."
 sudo rm -f /usr/bin/docker-compose

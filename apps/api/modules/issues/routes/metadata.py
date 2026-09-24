@@ -8,14 +8,17 @@ from typing import Optional, Union
 
 from penguin_libs.pydantic import RequestModel
 from quart import Blueprint, current_app, jsonify
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
+from apps.api.models.pydantic.metadata import MetadataFieldResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("metadata", __name__)
 
@@ -129,10 +132,13 @@ async def get_entity_metadata(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_metadata():
-        # Verify entity exists
-        entity = db.entities[id]
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -164,6 +170,7 @@ async def get_entity_metadata(id: int):
 @require_scope("issues:write")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=CreateMetadataRequest)
+@validate_response(MetadataFieldResponse, status_code=201)
 async def create_entity_metadata(id: int, body: CreateMetadataRequest):
     """
     Create or update a metadata field for an entity.
@@ -190,10 +197,13 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
         POST /api/v1/metadata/entities/42/metadata
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def create_or_update():
-        # Verify entity exists
-        entity = db.entities[id]
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -226,7 +236,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
                 field_value=value_str,
             )
             db.commit()
-            field = db.metadata_fields[existing.id]
+            field = db.metadata_fields[existing.id]  # tenant-scope-exempt
         else:
             # Create new
             now = datetime.now(UTC)
@@ -241,7 +251,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
                 updated_at=now,
             )
             db.commit()
-            field = db.metadata_fields[field_id]
+            field = db.metadata_fields[field_id]  # tenant-scope-exempt
 
         # Build response with parsed value
         field_dict = field.as_dict()
@@ -254,7 +264,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
     if error:
         return jsonify({"error": error}), status
 
-    return jsonify(result), 201
+    return MetadataFieldResponse.model_validate(result), 201
 
 
 @bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
@@ -262,6 +272,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
 @require_scope("issues:write")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=UpdateMetadataRequest)
+@validate_response(MetadataFieldResponse)
 async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRequest):
     """
     Update a metadata field for an entity.
@@ -288,10 +299,13 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
         PATCH /api/v1/metadata/entities/42/metadata/hostname
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def update():
-        # Verify entity exists
-        entity = db.entities[id]
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -332,7 +346,7 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
         db.commit()
 
         # Fetch updated field
-        updated_field = db.metadata_fields[field.id]
+        updated_field = db.metadata_fields[field.id]  # tenant-scope-exempt
 
         # Build response with parsed value
         field_dict = updated_field.as_dict()
@@ -347,7 +361,7 @@ async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRe
     if error:
         return jsonify({"error": error}), status
 
-    return jsonify(result), 200
+    return MetadataFieldResponse.model_validate(result), 200
 
 
 @bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
@@ -373,10 +387,13 @@ async def delete_entity_metadata(id: int, field_key: str):
         DELETE /api/v1/metadata/entities/42/metadata/hostname
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def delete():
-        # Verify entity exists
-        entity = db.entities[id]
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -446,10 +463,11 @@ async def get_organization_metadata(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_metadata():
-        # Verify organization exists
-        org = db.organizations[id]
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
         if not org:
             return None, "Organization not found", 404
 
@@ -481,6 +499,7 @@ async def get_organization_metadata(id: int):
 @require_scope("issues:write")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=CreateMetadataRequest)
+@validate_response(MetadataFieldResponse, status_code=201)
 async def create_organization_metadata(id: int, body: CreateMetadataRequest):
     """
     Create or update a metadata field for an organization.
@@ -507,10 +526,11 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
         POST /api/v1/metadata/organizations/1/metadata
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def create_or_update():
-        # Verify organization exists
-        org = db.organizations[id]
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
         if not org:
             return None, "Organization not found", 404
 
@@ -543,7 +563,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
                 field_value=value_str,
             )
             db.commit()
-            field = db.metadata_fields[existing.id]
+            field = db.metadata_fields[existing.id]  # tenant-scope-exempt
         else:
             # Create new
             field_id = db.metadata_fields.insert(
@@ -555,7 +575,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
                 is_system=False,
             )
             db.commit()
-            field = db.metadata_fields[field_id]
+            field = db.metadata_fields[field_id]  # tenant-scope-exempt
 
         # Build response with parsed value
         field_dict = field.as_dict()
@@ -568,7 +588,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
     if error:
         return jsonify({"error": error}), status
 
-    return jsonify(result), 201
+    return MetadataFieldResponse.model_validate(result), 201
 
 
 @bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
@@ -576,6 +596,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
 @require_scope("issues:write")
 @resource_role_required("maintainer", resource_param="id")
 @validated_request(body_model=UpdateMetadataRequest)
+@validate_response(MetadataFieldResponse)
 async def update_organization_metadata(
     id: int, field_key: str, body: UpdateMetadataRequest
 ):
@@ -604,10 +625,11 @@ async def update_organization_metadata(
         PATCH /api/v1/metadata/organizations/1/metadata/budget
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def update():
-        # Verify organization exists
-        org = db.organizations[id]
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
         if not org:
             return None, "Organization not found", 404
 
@@ -648,7 +670,7 @@ async def update_organization_metadata(
         db.commit()
 
         # Fetch updated field
-        updated_field = db.metadata_fields[field.id]
+        updated_field = db.metadata_fields[field.id]  # tenant-scope-exempt
 
         # Build response with parsed value
         field_dict = updated_field.as_dict()
@@ -663,7 +685,7 @@ async def update_organization_metadata(
     if error:
         return jsonify({"error": error}), status
 
-    return jsonify(result), 200
+    return MetadataFieldResponse.model_validate(result), 200
 
 
 @bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
@@ -689,10 +711,11 @@ async def delete_organization_metadata(id: int, field_key: str):
         DELETE /api/v1/metadata/organizations/1/metadata/budget
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def delete():
-        # Verify organization exists
-        org = db.organizations[id]
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
         if not org:
             return None, "Organization not found", 404
 

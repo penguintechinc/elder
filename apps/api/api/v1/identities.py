@@ -3,10 +3,11 @@
 # flake8: noqa: E501
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
+from quart_schema import validate_response
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
@@ -28,8 +29,31 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("identities", __name__)
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityListResponse:
+    """Paginated list of identities."""
+
+    items: list[IdentityDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityGroupListResponse:
+    """Paginated list of identity groups."""
+
+    items: list[IdentityGroupDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
 
 
 def _identity_admin_kind(is_superuser: bool, portal_role: str | None) -> str | None:
@@ -81,6 +105,7 @@ def _identity_row_to_dto(row) -> IdentityDTO:
 
 @bp.route("", methods=["GET"])
 @login_required
+@validate_response(IdentityListResponse)
 async def list_identities():
     """
     List all identities with pagination.
@@ -160,22 +185,20 @@ async def list_identities():
 
     items = [_identity_row_to_dto(row) for row in rows]
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityRequest)
+@validate_response(IdentityDTO, status_code=201)
 async def create_identity(body: CreateIdentityRequest):
     """
     Create a new identity/user.
@@ -267,17 +290,18 @@ async def create_identity(body: CreateIdentityRequest):
             created_at=now, updated_at=now, **insert_data
         )
         db.commit()
-        return db.identities[identity_id]
+        return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
 
     identity = await run_in_threadpool(insert)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 201
+    return identity_dto, 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityDTO)
 async def get_identity(id: int):
     """
     Get identity by ID.
@@ -290,20 +314,28 @@ async def get_identity(id: int):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    identity = await run_in_threadpool(lambda: db.identities[id])
+    # gh-237: without this, any caller granted the global "view_users" role
+    # scope (not just superusers) could read another tenant's identities by
+    # guessing their numeric id -- check_permission()/check_org_permission()
+    # are role-scope checks only, not tenant-aware.
+    identity = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
 
     if not identity:
         return ApiResponse.error("Identity not found", 404)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityRequest)
+@validate_response(IdentityDTO)
 async def update_identity(id: int, body: UpdateIdentityRequest):
     """
     Update identity.
@@ -328,9 +360,12 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
-    existing = await run_in_threadpool(lambda: db.identities[id])
+    # Check if identity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
     if not existing:
         return ApiResponse.error("Identity not found", 404)
 
@@ -350,12 +385,12 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
 
         db(db.identities.id == id).update(**update_fields)
         db.commit()
-        return db.identities[id]
+        return db.identities[id]  # tenant-scope-exempt: verified above
 
     identity = await run_in_threadpool(update)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -374,10 +409,11 @@ async def delete_identity(id: int):
         400: Cannot delete own account or superuser
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
+    # Check if identity exists and belongs to caller's tenant (gh-237)
     def check_and_delete():
-        identity = db.identities[id]
+        identity = get_tenant_scoped(db, db.identities, id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 
@@ -404,6 +440,7 @@ async def delete_identity(id: int):
 @bp.route("/groups", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupListResponse)
 async def list_groups():
     """
     List all identity groups.
@@ -447,22 +484,20 @@ async def list_groups():
     # Convert PyDAL rows to DTOs
     items = from_pydal_rows(rows, IdentityGroupDTO)
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityGroupListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("/groups", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO, status_code=201)
 async def create_group(body: CreateIdentityGroupRequest):
     """
     Create a new identity group.
@@ -496,7 +531,8 @@ async def create_group(body: CreateIdentityGroupRequest):
         )
         db.commit()
 
-        return db.identity_groups[group_id], None, None
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: schema gap
+        return (group, None, None)
 
     group, error, status = await run_in_threadpool(create)
 
@@ -504,29 +540,33 @@ async def create_group(body: CreateIdentityGroupRequest):
         return jsonify({"error": error}), status
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 201
+    return group_dto, 201
 
 
 @bp.route("/groups/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupDTO)
 async def get_group(id: int):
     """Get identity group by ID."""
     db = current_app.db
 
-    group = await run_in_threadpool(lambda: db.identity_groups[id])
+    group = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
 
     if not group:
         return ApiResponse.error("Group not found", 404)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO)
 async def update_group(id: int, body: UpdateIdentityGroupRequest):
     """
     Update identity group.
@@ -550,7 +590,9 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
         return ApiResponse.error("Group not found", 404)
 
@@ -571,12 +613,12 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
 
         db(db.identity_groups.id == id).update(**update_fields)
         db.commit()
-        return db.identity_groups[id]
+        return db.identity_groups[id]  # tenant-scope-exempt: schema gap
 
     group = await run_in_threadpool(update)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["DELETE"])
@@ -587,7 +629,9 @@ async def delete_group(id: int):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
         return ApiResponse.error("Group not found", 404)
 
@@ -615,16 +659,19 @@ async def add_group_member(group_id: int, identity_id: int):
         400: Already a member
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Check and add membership
     def add_member():
-        # Verify group exists
-        group = db.identity_groups[group_id]
+        # Verify group exists. identity_groups has no tenant_id/
+        # organization_id column (schema gap -- groups are currently
+        # global; flagged for follow-up, not fixed here).
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: see above
         if not group:
             return None, "Group not found", 404
 
-        # Verify identity exists
-        identity = db.identities[identity_id]
+        # Verify identity exists and belongs to caller's tenant (gh-237)
+        identity = get_tenant_scoped(db, db.identities, identity_id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 
