@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
 )
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -36,7 +37,16 @@ class Tenant(Base, IDMixin, TimestampMixin):
     # docs/compliance/data-retention-policy.md Legal Holds & Data
     # Preservation). While True, PrivacyService.erase_identity /
     # bulk_erase refuse to anonymize any identity owned by this tenant.
-    legal_hold = Column(Boolean, default=False, nullable=False)
+    #
+    # server_default (not just default=) is required: runtime inserts go
+    # through penguin-dal, not the SQLAlchemy ORM session, so the
+    # Python-side Column default is never applied -- only a real
+    # database-level default covers the dozens of existing `db.tenants.
+    # insert(...)` call sites (app bootstrap, scripts, test fixtures) that
+    # predate this column and don't pass it explicitly. Matches the
+    # server_default already used by alembic/versions/041_dsar_privacy_
+    # fields.py, which this model must stay in sync with.
+    legal_hold = Column(Boolean, nullable=False, server_default=false())
 
 
 class PortalUser(Base, IDMixin, TimestampMixin):

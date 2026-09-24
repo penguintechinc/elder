@@ -28,7 +28,11 @@ class DsarRequest(Base, IDMixin, TenantScopedMixin, TimestampMixin):
         nullable=False,
         comment="One of: access, erasure, consent_opt_out, consent_opt_in, bulk_erasure",
     )
-    status = Column(String(20), nullable=False, default="completed")
+    # server_default (not just default=) matches alembic/versions/041_dsar_
+    # privacy_fields.py -- runtime inserts go through penguin-dal, not the
+    # SQLAlchemy ORM session, so a Python-side Column default is never
+    # applied.
+    status = Column(String(20), nullable=False, server_default="completed")
     requested_by_identity_id = Column(
         Integer,
         nullable=True,
