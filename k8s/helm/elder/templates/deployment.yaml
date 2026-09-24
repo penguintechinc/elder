@@ -95,10 +95,22 @@ spec:
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
+        {{- $isHttpProbe := or (eq $component "web") (eq $component "api") (eq $component "worker") }}
+        {{/* Release audit finding #6: liveness must be a lighter,
+             dependency-free self-check while readiness gates traffic on
+             dependency availability — previously identical for
+             web/api/worker, and scanner had no probes at all.
+             livenessPath falls back to the readiness path when a
+             component has no separate self-only endpoint (api/worker);
+             web overrides it to "/" (see values.yaml). `dig` safely
+             returns the readiness-equivalent default when no
+             `healthcheck.liveness` override block is set, so
+             postgres/redis/flows-invoker render identically to before. */}}
+        {{- $livenessPath := $componentConfig.healthcheck.livenessPath | default $componentConfig.healthcheck.path }}
         livenessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") }}
+          {{- if $isHttpProbe }}
           httpGet:
-            path: {{ $componentConfig.healthcheck.path }}
+            path: {{ $livenessPath }}
             port: http
           {{- else if eq $component "postgres" }}
           exec:
@@ -111,6 +123,14 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "scanner" }}
+          # No HTTP server (poll-loop service) — reuses the exact script its
+          # own Docker HEALTHCHECK already runs (apps/scanner/healthcheck.py:
+          # verifies imports, ELDER_API_URL is set, screenshot dir writable).
+          exec:
+            command:
+            - python3
+            - healthcheck.py
           {{- else if eq $component "flows-invoker" }}
           # No HTTP server in this service (pure Redis Streams consumer) —
           # health is verified via a native Python exec probe.
@@ -119,12 +139,12 @@ spec:
             - python3
             - apps/flows_invoker/healthcheck.py
           {{- end }}
-          initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
-          periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
-          timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
-          failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
+          initialDelaySeconds: {{ dig "liveness" "initialDelaySeconds" ($componentConfig.healthcheck.initialDelaySeconds | default 30) $componentConfig.healthcheck }}
+          periodSeconds: {{ dig "liveness" "periodSeconds" ($componentConfig.healthcheck.periodSeconds | default 10) $componentConfig.healthcheck }}
+          timeoutSeconds: {{ dig "liveness" "timeoutSeconds" ($componentConfig.healthcheck.timeoutSeconds | default 5) $componentConfig.healthcheck }}
+          failureThreshold: {{ dig "liveness" "failureThreshold" ($componentConfig.healthcheck.failureThreshold | default 3) $componentConfig.healthcheck }}
         readinessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") }}
+          {{- if $isHttpProbe }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -139,6 +159,11 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "scanner" }}
+          exec:
+            command:
+            - python3
+            - healthcheck.py
           {{- else if eq $component "flows-invoker" }}
           exec:
             command:
