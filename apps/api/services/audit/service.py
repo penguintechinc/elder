@@ -11,6 +11,7 @@ import logging
 import os
 from typing import Optional
 
+from penguin_dal import FieldProxy, Query
 from quart import current_app
 
 logger = logging.getLogger(__name__)
@@ -530,6 +531,40 @@ class AuditService:
         return [row.id for row in rows]
 
     @staticmethod
+    def _tenant_details_query(db, tenant_id: int):
+        """Build the "audit log belongs to this tenant" predicate.
+
+        `audit_logs.details` is a plain SQLAlchemy ``JSON`` column (not
+        ``JSONB``); penguin-dal's generic ``FieldProxy.contains()`` degrades
+        to ``ILIKE`` for every field type it accepts, which Postgres rejects
+        on a native ``json`` column (``operator does not exist: json ~~*
+        unknown``). That silently broke every tenant-scoped audit query,
+        including this retention purge -- the scheduler caught and logged
+        the exception each sweep, so purges against Postgres simply never
+        ran (SQLite's dynamic typing tolerated the invalid comparison,
+        which is how this slipped past the previously all-mocked suite).
+
+        Extracting the JSON key directly is valid on both ``json`` and
+        ``jsonb`` columns, so no column-type migration is required. Falls
+        back to plain ``.contains()`` dict-equality for lightweight test
+        doubles that don't model a real SQLAlchemy column.
+
+        Args:
+            db: PyDAL/penguin-dal database instance
+            tenant_id: Tenant ID to scope the predicate to
+
+        Returns:
+            A composable query predicate for `db.audit_logs.details`
+        """
+        details = db.audit_logs.details
+        if isinstance(details, FieldProxy):
+            column = details.column
+            return Query(
+                column["tenant_id"].as_integer() == tenant_id, table=column.table
+            )
+        return details.contains({"tenant_id": tenant_id})
+
+    @staticmethod
     def cleanup_old_logs(
         tenant_id: int,
         db=None,
@@ -576,7 +611,7 @@ class AuditService:
         batch_size = batch_size or AuditService.retention_batch_size()
         max_batches = max_batches or AuditService.retention_max_batches()
 
-        query = db.audit_logs.details.contains({"tenant_id": tenant_id}) & (
+        query = AuditService._tenant_details_query(db, tenant_id) & (
             db.audit_logs.created_at < cutoff_date
         )
 
