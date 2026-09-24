@@ -125,26 +125,39 @@ def verify_token(token: str) -> dict[str, Any] | None:
 
 def get_token_from_header() -> str | None:
     """
-    Extract JWT token from Authorization header.
+    Extract the JWT, preferring the Authorization header but falling back to
+    the SPA's HttpOnly access-token cookie when no header is present.
+
+    The browser client no longer keeps the access token in localStorage (gh
+    security audit, High: XSS-exfiltratable tokens) -- it relies on the
+    HttpOnly cookie set by /portal-auth/login|refresh instead, so every
+    caller of this function (login_required, populate_claims, etc.) needs to
+    accept either credential form transparently. A malformed header still
+    hard-fails rather than falling back -- that's very likely a genuine
+    caller error, not a cookie-only browser request.
 
     Returns:
         Token string or None
     """
     auth_header = request.headers.get("Authorization")
 
-    if not auth_header:
-        logger.debug("No Authorization header found")
-        return None
+    if auth_header:
+        parts = auth_header.split()
 
-    parts = auth_header.split()
+        # Never log the header value itself -- a malformed header may still
+        # be (or contain a fragment of) a real bearer token/credential.
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            logger.debug("Invalid Authorization header format")
+            return None
 
-    # Never log the header value itself -- a malformed header may still be
-    # (or contain a fragment of) a real bearer token/credential.
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        logger.debug("Invalid Authorization header format")
-        return None
+        return parts[1]
 
-    return parts[1]
+    from apps.api.auth.portal_cookies import get_access_token_from_cookie
+
+    cookie_token = get_access_token_from_cookie()
+    if not cookie_token:
+        logger.debug("No Authorization header or access-token cookie found")
+    return cookie_token
 
 
 def get_current_user() -> Row | None:

@@ -98,9 +98,12 @@ export default function Layout() {
   }, [enabledModules, visibleAdminNav])
 
   const handleLogout = () => {
-    localStorage.removeItem('elder_token')
-    localStorage.removeItem('elder_refresh_token')
-    window.location.href = '/login'
+    // Tokens are HttpOnly cookies (gh security audit) -- only the backend
+    // can clear them, so this must round-trip through the API before
+    // navigating away. Best-effort: api.logout() never throws.
+    void api.logout().finally(() => {
+      window.location.href = '/login'
+    })
   }
 
   const handleNavigate = (href: string) => {

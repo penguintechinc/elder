@@ -18,6 +18,7 @@ import ModuleToggles from './pages/ModuleToggles'
 // Village ID Redirect
 import VillageIdRedirect from './components/VillageIdRedirect'
 import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
+import { isAuthenticated } from './lib/api'
 
 // Module framework
 import { routesFor } from './modules/registry'
@@ -27,11 +28,12 @@ import { useModules } from './hooks/useModules'
 // the main bundle since it's a large dependency.
 const Map = lazy(() => import('./pages/Map'))
 
-// Protected route wrapper component
+// Protected route wrapper component. The actual JWTs are HttpOnly cookies
+// (gh security audit) -- this checks only the non-sensitive "logged in"
+// flag set by api.ts; the cookie itself is what the backend actually
+// enforces on every request, this is a UX-only redirect.
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const hasToken = localStorage.getItem('elder_token')
-
-  if (!hasToken) {
+  if (!isAuthenticated()) {
     return <Navigate to="/login" replace />
   }
 
@@ -42,7 +44,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function RouteNotFound() {
   const location = useLocation()
   const { isLoading: modulesLoading } = useModules()
-  const hasToken = localStorage.getItem('elder_token')
+  const hasToken = isAuthenticated()
 
   useEffect(() => {
     if (!modulesLoading) {
