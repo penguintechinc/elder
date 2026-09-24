@@ -81,36 +81,49 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            payload = {
-                "subject": "Test ticket",
-                "priority": "high",
-                "channel": "web",
-                "requester_id": identity_id,
-            }
+        # Client request must run outside any manually-pushed app_context —
+        # Quart's test client pushes its own request-scoped AppContext, and
+        # nesting it inside an already-active manual one causes a context
+        # double-pop on exit (see tests/conftest.py note). But mock.patch's
+        # own __enter__ needs an active context just to resolve `current_app`
+        # (a werkzeug LocalProxy) enough to decide sync/async mock shape — so
+        # start()/stop() the patchers manually, bracketing only start() with
+        # a short-lived context, and run the actual request unpatched-context.
+        payload = {
+            "subject": "Test ticket",
+            "priority": "high",
+            "channel": "web",
+            "requester_id": identity_id,
+        }
 
-            with patch(
-                "apps.api.modules.helpdesk.routes.tickets.current_app"
-            ) as mock_app:
-                with patch(
-                    "shared.utils.village_id.generate_village_id"
-                ) as mock_village_id:
-                    mock_app.db = current_app.db
-                    mock_app.redis_client = MagicMock()
-                    mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
+        current_app_patcher = patch(
+            "apps.api.modules.helpdesk.routes.tickets.current_app"
+        )
+        village_id_patcher = patch("shared.utils.village_id.generate_village_id")
+        async with app.app_context():
+            mock_app = current_app_patcher.start()
+            mock_village_id = village_id_patcher.start()
+            mock_app.db = db
+            mock_app.redis_client = MagicMock()
+            mock_village_id.return_value = f"test-vid-{uuid4().hex[:8]}"
 
-                    response = await async_client.post(
-                        "/api/v1/helpdesk/tickets",
-                        json=payload,
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
+        try:
+            response = await async_client.post(
+                "/api/v1/helpdesk/tickets",
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            current_app_patcher.stop()
+            village_id_patcher.stop()
 
-                    assert response.status_code == 201
-                    data = json.loads(await response.get_data())
-                    assert data["subject"] == "Test ticket"
-                    assert data["priority"] == "high"
-                    assert data["status"] == "new"
-                    assert data["village_id"] is not None
-                    assert "id" in data
+        assert response.status_code == 201
+        data = json.loads(await response.get_data())
+        assert data["subject"] == "Test ticket"
+        assert data["priority"] == "high"
+        assert data["status"] == "new"
+        assert data["village_id"] is not None
+        assert "id" in data
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -166,15 +179,15 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            response = await async_client.get(
-                f"/api/v1/helpdesk/tickets/{ticket_id}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.get(
+            f"/api/v1/helpdesk/tickets/{ticket_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["subject"] == "Get Me"
-            assert data["id"] == ticket_id
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["subject"] == "Get Me"
+        assert data["id"] == ticket_id
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -226,16 +239,16 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            response = await async_client.patch(
-                f"/api/v1/helpdesk/tickets/{ticket_id}",
-                json={"subject": "Updated", "priority": "critical"},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.patch(
+            f"/api/v1/helpdesk/tickets/{ticket_id}",
+            json={"subject": "Updated", "priority": "critical"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["subject"] == "Updated"
-            assert data["priority"] == "critical"
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["subject"] == "Updated"
+        assert data["priority"] == "critical"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -267,12 +280,12 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            response = await async_client.delete(
-                f"/api/v1/helpdesk/tickets/{ticket_id}",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.delete(
+            f"/api/v1/helpdesk/tickets/{ticket_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 204
+        assert response.status_code == 204
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -334,15 +347,15 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            response = await async_client.post(
-                f"/api/v1/helpdesk/tickets/{ticket_id}/assign",
-                json={"assignee_id": identity2_id},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.post(
+            f"/api/v1/helpdesk/tickets/{ticket_id}/assign",
+            json={"assignee_id": identity2_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["assignee_id"] == identity2_id
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["assignee_id"] == identity2_id
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -386,18 +399,20 @@ class TestHelpDeskTicketsAPI:
             )
             db.commit()
 
-            response = await async_client.post(
-                f"/api/v1/helpdesk/tickets/{primary_id}/merge",
-                json={"merge_from_id": secondary_id},
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.post(
+            f"/api/v1/helpdesk/tickets/{primary_id}/merge",
+            json={"merge_from_id": secondary_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["primary_id"] == primary_id
-            assert data["merged_id"] == secondary_id
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["primary_id"] == primary_id
+        assert data["merged_id"] == secondary_id
 
+        async with app.app_context():
             # Verify secondary is marked closed
+            db = current_app.db
             secondary = db(db.hd_tickets.id == secondary_id).select().first()
             assert secondary.status == "closed"
 
@@ -435,14 +450,14 @@ class TestHelpDeskMessagesAPI:
             )
             db.commit()
 
-            response = await async_client.get(
-                f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.get(
+            f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["items"] == []
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["items"] == []
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -472,20 +487,20 @@ class TestHelpDeskMessagesAPI:
             )
             db.commit()
 
-            response = await async_client.post(
-                f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
-                json={
-                    "sender_id": 1,
-                    "message_type": "reply",
-                    "body_text": "Test message",
-                },
-                headers={"Authorization": f"Bearer {token}"},
-            )
+        response = await async_client.post(
+            f"/api/v1/helpdesk/tickets/{ticket_id}/messages",
+            json={
+                "sender_id": 1,
+                "message_type": "reply",
+                "body_text": "Test message",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
-            assert response.status_code == 201
-            data = json.loads(await response.get_data())
-            assert data["body_text"] == "Test message"
-            assert data["is_internal"] is False
+        assert response.status_code == 201
+        data = json.loads(await response.get_data())
+        assert data["body_text"] == "Test message"
+        assert data["is_internal"] is False
 
 
 class TestHelpDeskDashboardAPI:

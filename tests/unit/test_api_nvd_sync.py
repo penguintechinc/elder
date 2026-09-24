@@ -244,14 +244,21 @@ class TestNVDSyncAPI:
         )
         mock_service_class.return_value = mock_service
 
-        # Unhandled exceptions should propagate and be converted to 500 by Quart
-        # (Quart's error handler catches unhandled exceptions in async handlers)
-        with pytest.raises(Exception, match="NVD API error"):
-            await async_client.post(
-                "/api/v1/vulnerabilities/nvd-sync",
-                json={},
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        # Unhandled exceptions become a 500. In non-debug/production config
+        # apps.api.main's registered @app.errorhandler(500) renders it as
+        # JSON; the test app runs with TestingConfig.DEBUG=True, so Quart
+        # instead renders its interactive HTML debugger for the exception —
+        # assert on the status code and that our injected error surfaced,
+        # not on a JSON body shape that only applies outside debug mode.
+        response = await async_client.post(
+            "/api/v1/vulnerabilities/nvd-sync",
+            json={},
+            headers={"Authorization": "Bearer fake-token"},
+        )
+
+        assert response.status_code == 500
+        body = (await response.get_data()).decode()
+        assert "NVD API error" in body
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")

@@ -74,18 +74,20 @@ class TestTeamCreationLicenseGate:
 
             before = db(db.organizations.tenant_id == tenant_id).count()
 
-            with _patch_flag(True):
-                resp = await async_client.post(
-                    "/api/v1/organizations",
-                    json={"name": "Second Team", "organization_type": "team"},
-                    headers={"Authorization": "Bearer fake-token"},
-                )
+        with _patch_flag(True):
+            resp = await async_client.post(
+                "/api/v1/organizations",
+                json={"name": "Second Team", "organization_type": "team"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
 
-            assert resp.status_code == 402, (await resp.get_data()).decode()[:200]
-            body = json.loads(await resp.get_data())
-            assert body["error"] == "limit_reached"
-            assert body["limit"] == "team"
+        assert resp.status_code == 402, (await resp.get_data()).decode()[:200]
+        body = json.loads(await resp.get_data())
+        assert body["error"] == "limit_reached"
+        assert body["limit"] == "team"
 
+        async with app.app_context():
+            db = current_app.db
             after = db(db.organizations.tenant_id == tenant_id).count()
             assert after == before, "blocked request must not insert a row"
 
@@ -104,16 +106,16 @@ class TestTeamCreationLicenseGate:
             mock_user.is_superuser = True
             mock_get_user.return_value = mock_user
 
-            with _patch_flag(True):
-                resp = await async_client.post(
-                    "/api/v1/organizations",
-                    json={"name": "First Team", "organization_type": "team"},
-                    headers={"Authorization": "Bearer fake-token"},
-                )
+        with _patch_flag(True):
+            resp = await async_client.post(
+                "/api/v1/organizations",
+                json={"name": "First Team", "organization_type": "team"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
 
-            assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
-            data = json.loads(await resp.get_data())
-            assert data["type"] == "team"
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["type"] == "team"
 
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_non_team_org_not_gated_even_at_team_limit(
@@ -131,20 +133,20 @@ class TestTeamCreationLicenseGate:
             mock_user.is_superuser = True
             mock_get_user.return_value = mock_user
 
-            with _patch_flag(True) as mock_flag:
-                resp = await async_client.post(
-                    "/api/v1/organizations",
-                    json={"name": "Regular Org", "organization_type": "organization"},
-                    headers={"Authorization": "Bearer fake-token"},
-                )
+        with _patch_flag(True) as mock_flag:
+            resp = await async_client.post(
+                "/api/v1/organizations",
+                json={"name": "Regular Org", "organization_type": "organization"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
 
-            assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
-            data = json.loads(await resp.get_data())
-            assert data["type"] == "organization"
-            # check_limit is never invoked for a non-team create -- the flag
-            # lookup (which only happens inside check_limit, at/over the
-            # limit) must not have been reached.
-            mock_flag.assert_not_called()
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["type"] == "organization"
+        # check_limit is never invoked for a non-team create -- the flag
+        # lookup (which only happens inside check_limit, at/over the
+        # limit) must not have been reached.
+        mock_flag.assert_not_called()
 
     @patch("apps.api.auth.decorators.get_current_user")
     async def test_second_team_allowed_and_logs_when_flag_off(
@@ -162,18 +164,18 @@ class TestTeamCreationLicenseGate:
             mock_user.is_superuser = True
             mock_get_user.return_value = mock_user
 
-            with _patch_flag(False), caplog.at_level("WARNING"):
-                resp = await async_client.post(
-                    "/api/v1/organizations",
-                    json={"name": "Second Team", "organization_type": "team"},
-                    headers={"Authorization": "Bearer fake-token"},
-                )
-
-            assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
-            data = json.loads(await resp.get_data())
-            assert data["type"] == "team"
-            assert any(
-                "license_limit_would_block" in record.message
-                or "license_limit_would_block" in str(record.msg)
-                for record in caplog.records
+        with _patch_flag(False), caplog.at_level("WARNING"):
+            resp = await async_client.post(
+                "/api/v1/organizations",
+                json={"name": "Second Team", "organization_type": "team"},
+                headers={"Authorization": "Bearer fake-token"},
             )
+
+        assert resp.status_code == 201, (await resp.get_data()).decode()[:200]
+        data = json.loads(await resp.get_data())
+        assert data["type"] == "team"
+        assert any(
+            "license_limit_would_block" in record.message
+            or "license_limit_would_block" in str(record.msg)
+            for record in caplog.records
+        )
