@@ -1,0 +1,124 @@
+{
+  "title": "Elder Worker & Scanner - Jobs",
+  "description": "Job/sync/scan duration and failure rate for apps/worker and apps/scanner, built against the OTel instruments those services actually create (shared/observability.py get_meter + apps/worker/main.py _init_otel_metrics + apps/scanner/main.py meter.create_histogram). No queue-depth panel: neither service emits a queue-depth/backlog metric today (no create_observable_gauge over the Redis Streams length in shared/jobbus) -- see ../README.md Known Gaps.",
+  "tags": ["elder", "worker", "scanner", "jobs"],
+  "schemaVersion": 39,
+  "version": 1,
+  "timezone": "utc",
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "worker.jobbus.job.duration p95 by job type",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(worker_jobbus_job_duration_bucket[5m])) by (le, job_type))",
+          "legendFormat": "{{job_type}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Job-bus failure rate (status=error / total)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(worker_jobbus_job_duration_count{status=\"error\"}[5m])) / sum(rate(worker_jobbus_job_duration_count[5m]))",
+          "legendFormat": "error ratio"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "worker.sync.duration p95 by connector",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(worker_sync_duration_bucket[5m])) by (le, connector))",
+          "legendFormat": "{{connector}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "worker.sync.errors rate by connector",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(worker_sync_errors_total[5m])) by (connector)",
+          "legendFormat": "{{connector}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "worker.discovery.poll.duration p95",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(worker_discovery_poll_duration_bucket[5m])) by (le))",
+          "legendFormat": "p95 poll duration"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "worker.discovery.jobs.executed rate by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(worker_discovery_jobs_executed_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "scanner.scan.duration p95 by provider",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(scanner_scan_duration_bucket[5m])) by (le, job_provider))",
+          "legendFormat": "{{job_provider}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Scanner failure rate (status != success / total)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(scanner_scan_duration_count{status!=\"success\"}[5m])) / sum(rate(scanner_scan_duration_count[5m]))",
+          "legendFormat": "failure ratio"
+        }
+      ]
+    }
+  ]
+}
