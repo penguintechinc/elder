@@ -109,6 +109,10 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize access review scheduler (v3.1.0)
     _init_access_review_scheduler(app)
 
+    # Initialize audit log retention scheduler (auto-enforces GDPR Art. 5
+    # storage-limitation window; see apps/api/services/audit/scheduler.py)
+    _init_audit_retention_scheduler(app)
+
     # Register core blueprints and load feature modules
     _register_blueprints(app)
     _load_modules(app)
@@ -468,6 +472,29 @@ def _init_access_review_scheduler(app: Quart) -> None:
     except Exception as e:
         logger.warning(
             "access_review_scheduler_init_failed",
+            error=str(e),
+        )
+
+
+def _init_audit_retention_scheduler(app: Quart) -> None:
+    """
+    Initialize the audit log retention scheduler.
+
+    Automatically purges audit log records past each tenant's configured
+    (and compliance-floored) retention window on a periodic sweep, rather
+    than relying solely on the manual admin-triggered cleanup endpoint.
+
+    Args:
+        app: Quart application
+    """
+    from apps.api.services.audit.scheduler import init_scheduler
+
+    try:
+        init_scheduler(app.db)
+        logger.info("audit_retention_scheduler_initialized")
+    except Exception as e:
+        logger.warning(
+            "audit_retention_scheduler_init_failed",
             error=str(e),
         )
 

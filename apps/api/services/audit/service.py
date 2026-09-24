@@ -7,13 +7,24 @@ HIPAA, and GDPR compliance requirements.
 # flake8: noqa: E501
 
 import datetime
+import logging
+import os
 from typing import Optional
 
 from quart import current_app
 
+logger = logging.getLogger(__name__)
+
 
 class AuditService:
     """Enhanced audit logging service."""
+
+    # Retention enforcement defaults (GDPR Art. 5 storage-limitation).
+    # Overridable per-deployment via env vars; a per-tenant
+    # data_retention_days setting is always respected but is floored at
+    # AUDIT_RETENTION_MIN_DAYS so a misconfigured tenant can never cause
+    # records to be purged before a compliance-mandated minimum.
+    DEFAULT_RETENTION_DAYS = 90
 
     # Event categories
     CATEGORY_AUTH = "authentication"
@@ -477,39 +488,135 @@ class AuditService:
         }
 
     @staticmethod
-    def cleanup_old_logs(tenant_id: int) -> dict:
-        """Clean up audit logs older than retention period.
+    def min_retention_days() -> int:
+        """Hard floor (days) below which no tenant's logs may ever be purged.
+
+        Read from AUDIT_RETENTION_MIN_DAYS (default 30). Protects against a
+        misconfigured tenant `data_retention_days` value causing premature
+        deletion of records still needed for compliance/investigation.
+        """
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_MIN_DAYS", "30")))
+        except (TypeError, ValueError):
+            return 30
+
+    @staticmethod
+    def retention_batch_size() -> int:
+        """Max rows deleted per batch during a retention purge (bounded delete)."""
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_BATCH_SIZE", "500")))
+        except (TypeError, ValueError):
+            return 500
+
+    @staticmethod
+    def retention_max_batches() -> int:
+        """Max batches processed per tenant per purge call (runaway guard)."""
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_MAX_BATCHES", "200")))
+        except (TypeError, ValueError):
+            return 200
+
+    @staticmethod
+    def get_active_tenant_ids(db) -> list[int]:
+        """List active tenant IDs, for retention sweeps and similar jobs.
+
+        Args:
+            db: PyDAL database instance
+
+        Returns:
+            IDs of tenants with is_active == True
+        """
+        rows = db(db.tenants.is_active == True).select(db.tenants.id)  # noqa: E712
+        return [row.id for row in rows]
+
+    @staticmethod
+    def cleanup_old_logs(
+        tenant_id: int,
+        db=None,
+        batch_size: int | None = None,
+        max_batches: int | None = None,
+    ) -> dict:
+        """Clean up audit logs older than the tenant's retention period.
+
+        Called both by the manual admin-triggered endpoint and by the
+        automatic retention scheduler (`apps.api.services.audit.scheduler`).
+        Deletes are batched and bounded so a single call can never run away,
+        and the configured retention window is floored at
+        `min_retention_days()` so it can never purge below the compliance
+        minimum, regardless of tenant configuration.
 
         Args:
             tenant_id: Tenant ID
+            db: PyDAL database instance; defaults to `current_app.db` for
+                request-context callers. The scheduler passes it explicitly
+                since it runs outside a Quart request/app context.
+            batch_size: Rows per delete batch (default: retention_batch_size())
+            max_batches: Max batches this call will process (default:
+                retention_max_batches())
 
         Returns:
-            Cleanup result
+            Cleanup result with deleted_count and the effective window used
         """
-        db = current_app.db
+        db = db if db is not None else current_app.db
 
         tenant = db.tenants[tenant_id]
         if not tenant:
             return {"error": "Tenant not found"}
 
-        retention_days = tenant.data_retention_days or 90
+        min_days = AuditService.min_retention_days()
+        configured_days = (
+            tenant.data_retention_days or AuditService.DEFAULT_RETENTION_DAYS
+        )
+        retention_days = max(configured_days, min_days)
+
         cutoff_date = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             days=retention_days
         )
 
-        # Count logs to delete
+        batch_size = batch_size or AuditService.retention_batch_size()
+        max_batches = max_batches or AuditService.retention_max_batches()
+
         query = db.audit_logs.details.contains({"tenant_id": tenant_id}) & (
             db.audit_logs.created_at < cutoff_date
         )
-        count = db(query).count()
 
-        # Delete old logs
-        db(query).delete()
-        db.commit()
+        deleted_count = 0
+        batches_run = 0
+
+        # Bounded batch delete: select a page of matching IDs, delete just
+        # those, commit, repeat. Idempotent — re-running (e.g. after a crash
+        # mid-sweep) simply re-selects whatever still matches the cutoff.
+        while batches_run < max_batches:
+            page = db(query).select(db.audit_logs.id, limitby=(0, batch_size))
+            ids = [row.id for row in page]
+            if not ids:
+                break
+
+            db(db.audit_logs.id.belongs(ids)).delete()
+            db.commit()
+
+            deleted_count += len(ids)
+            batches_run += 1
+
+            if len(ids) < batch_size:
+                break
+
+        truncated = batches_run >= max_batches and deleted_count > 0
+
+        if truncated:
+            logger.warning(
+                "audit_retention_purge_truncated "
+                f"tenant_id={tenant_id} batches_run={batches_run} "
+                f"deleted_count={deleted_count}"
+            )
 
         return {
             "tenant_id": tenant_id,
-            "deleted_count": count,
+            "deleted_count": deleted_count,
             "retention_days": retention_days,
+            "configured_retention_days": configured_days,
+            "min_retention_days": min_days,
             "cutoff_date": cutoff_date.isoformat(),
+            "batches_run": batches_run,
+            "truncated": truncated,
         }
