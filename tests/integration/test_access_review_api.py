@@ -11,6 +11,19 @@ from unittest.mock import patch
 
 import pytest
 
+# tracked: gh-276 -- this file predates the Quart + PyDAL migration: its
+# setup_test_data fixture calls `with app.app_context():` (sync), but
+# Quart's AppContext only implements the async context manager protocol;
+# tests call the (async) `client` fixture's methods without `await`; and it
+# patches decorators/modules that no longer exist
+# (apps.api.auth.decorators.verify_jwt, apps.api.database.get_db). Needs a
+# full rewrite following the async_client + generate_token + real-DB pattern
+# in tests/unit/test_api_helpdesk_tickets.py.
+pytestmark = pytest.mark.xfail(
+    reason="gh-276: stale pre-PyDAL-migration test file, needs full rewrite",
+    strict=False,
+)
+
 
 class TestAccessReviewAPI:
     """Test Access Review API endpoints."""

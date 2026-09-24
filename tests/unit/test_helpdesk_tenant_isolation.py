@@ -87,21 +87,33 @@ class TestHelpdeskCrossTenantIsolation:
             requester = _seed_identity(db, tenant_id=1)
             foreign_assignee = _seed_identity(db, _foreign_tenant(db))
 
-            payload = {
-                "subject": "x",
-                "requester_id": requester,
-                "assignee_id": foreign_assignee,
-            }
-            with patch(
-                "apps.api.modules.helpdesk.routes.tickets.current_app"
-            ) as mock_app:
-                with patch("shared.utils.village_id.generate_village_id") as mv:
-                    mock_app.db = current_app.db
-                    mock_app.redis_client = MagicMock()
-                    mv.return_value = f"vid-{uuid4().hex[:8]}"
-                    resp = await async_client.post(
-                        "/api/v1/helpdesk/tickets",
-                        json=payload,
-                        headers={"Authorization": f"Bearer {token}"},
-                    )
+        payload = {
+            "subject": "x",
+            "requester_id": requester,
+            "assignee_id": foreign_assignee,
+        }
+        # mock.patch's __enter__ needs an active context just to resolve
+        # `current_app` (a werkzeug LocalProxy) — start() it inside a
+        # short-lived context, run the request unpatched-context (avoids the
+        # test-client double-pop), then stop() it.
+        current_app_patcher = patch(
+            "apps.api.modules.helpdesk.routes.tickets.current_app"
+        )
+        village_id_patcher = patch("shared.utils.village_id.generate_village_id")
+        async with app.app_context():
+            mock_app = current_app_patcher.start()
+            mv = village_id_patcher.start()
+            mock_app.db = db
+            mock_app.redis_client = MagicMock()
+            mv.return_value = f"vid-{uuid4().hex[:8]}"
+
+        try:
+            resp = await async_client.post(
+                "/api/v1/helpdesk/tickets",
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        finally:
+            current_app_patcher.stop()
+            village_id_patcher.stop()
         assert resp.status_code == 400

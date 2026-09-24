@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { MODULES, navFor } from '../registry'
 
 const VALID_GROUPS = ['workstreams', 'issues', 'relationships', 'entities', 'documents']

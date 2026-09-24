@@ -36,14 +36,14 @@ class TestOrganizationAPI:
             db.organizations.insert(name="Org 2", created_at=now, updated_at=now)
             db.commit()
 
-            response = await async_client.get(
-                "/api/v1/organizations", headers={"Authorization": "Bearer fake-token"}
-            )
+        response = await async_client.get(
+            "/api/v1/organizations", headers={"Authorization": "Bearer fake-token"}
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert "items" in data or "organizations" in data
-            assert len(data.get("items", data.get("organizations", []))) >= 2
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert "items" in data or "organizations" in data
+        assert len(data.get("items", data.get("organizations", []))) >= 2
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -90,15 +90,15 @@ class TestOrganizationAPI:
             )
             db.commit()
 
-            response = await async_client.get(
-                f"/api/v1/organizations/{org_id}",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.get(
+            f"/api/v1/organizations/{org_id}",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["name"] == "Get Me"
-            assert data["description"] == "Test org"
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["name"] == "Get Me"
+        assert data["description"] == "Test org"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -121,18 +121,18 @@ class TestOrganizationAPI:
             )
             db.commit()
 
-            payload = {"name": "Updated Name", "description": "Updated description"}
+        payload = {"name": "Updated Name", "description": "Updated description"}
 
-            response = await async_client.patch(
-                f"/api/v1/organizations/{org_id}",
-                json=payload,
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.patch(
+            f"/api/v1/organizations/{org_id}",
+            json=payload,
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["name"] == "Updated Name"
-            assert data["description"] == "Updated description"
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["name"] == "Updated Name"
+        assert data["description"] == "Updated description"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -155,14 +155,16 @@ class TestOrganizationAPI:
             )
             db.commit()
 
-            response = await async_client.delete(
-                f"/api/v1/organizations/{org_id}",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.delete(
+            f"/api/v1/organizations/{org_id}",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code in [200, 204]
+        assert response.status_code in [200, 204]
 
+        async with app.app_context():
             # Verify deletion using penguin-dal
+            db = current_app.db
             deleted = db(db.organizations.id == org_id).select().first()
             assert deleted is None
 
@@ -215,18 +217,18 @@ class TestOrganizationAPI:
             )
             db.commit()
 
-            response = await async_client.get(
-                f"/api/v1/organizations/{parent_id}/children",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.get(
+            f"/api/v1/organizations/{parent_id}/children",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert (
-                response.status_code == 200
-            ), f"Expected 200, got {response.status_code}: {await response.get_data()}"
-            data = json.loads(await response.get_data())
-            # The endpoint returns a list directly, not wrapped in a dict
-            assert isinstance(data, list)
-            assert len(data) == 2
+        assert (
+            response.status_code == 200
+        ), f"Expected 200, got {response.status_code}: {await response.get_data()}"
+        data = json.loads(await response.get_data())
+        # The endpoint returns a list directly, not wrapped in a dict
+        assert isinstance(data, list)
+        assert len(data) == 2
 
     @pytest.mark.asyncio
     async def test_list_organizations_unauthorized(self, async_client):
@@ -295,15 +297,15 @@ class TestOrganizationAPI:
                 db.organizations.insert(name=f"Org {i}", created_at=now, updated_at=now)
             db.commit()
 
-            response = await async_client.get(
-                "/api/v1/organizations?page=1&per_page=10",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.get(
+            "/api/v1/organizations?page=1&per_page=10",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            items = data.get("items", data.get("organizations", []))
-            assert len(items) <= 10
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        items = data.get("items", data.get("organizations", []))
+        assert len(items) <= 10
 
     @staticmethod
     def _get_or_create_tenant(db, slug: str, name: str) -> int:
@@ -360,15 +362,15 @@ class TestOrganizationAPI:
             mock_user.tenant_id = tenant_a_id
             mock_get_user.return_value = mock_user
 
-            response = await async_client.get(
-                f"/api/v1/organizations/{other_org_id}/graph",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.get(
+            f"/api/v1/organizations/{other_org_id}/graph",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code in (403, 404)
-            data = json.loads(await response.get_data())
-            # Must not leak the other tenant's org data in the response body.
-            assert "Other Tenant Org" not in json.dumps(data)
+        assert response.status_code in (403, 404)
+        data = json.loads(await response.get_data())
+        # Must not leak the other tenant's org data in the response body.
+        assert "Other Tenant Org" not in json.dumps(data)
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
@@ -402,13 +404,13 @@ class TestOrganizationAPI:
             mock_user.tenant_id = tenant_id
             mock_get_user.return_value = mock_user
 
-            response = await async_client.get(
-                f"/api/v1/organizations/{org_id}/graph",
-                headers={"Authorization": "Bearer fake-token"},
-            )
+        response = await async_client.get(
+            f"/api/v1/organizations/{org_id}/graph",
+            headers={"Authorization": "Bearer fake-token"},
+        )
 
-            assert response.status_code == 200
-            data = json.loads(await response.get_data())
-            assert data["center_node"] == f"org-{org_id}"
-            node_ids = {node["id"] for node in data["nodes"]}
-            assert f"org-{org_id}" in node_ids
+        assert response.status_code == 200
+        data = json.loads(await response.get_data())
+        assert data["center_node"] == f"org-{org_id}"
+        node_ids = {node["id"] for node in data["nodes"]}
+        assert f"org-{org_id}" in node_ids

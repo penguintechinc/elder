@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest'
 import { navFor } from '../registry'
 
 describe('navFor grouped output', () => {
