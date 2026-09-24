@@ -37,3 +37,15 @@ quote-style = "double"
 
 [tool.bandit]
 exclude_dirs = ["tests", "scripts", ".venv", "node_modules"]
+
+[tool.pytest.ini_options]
+# --cov-fail-under=90: org-wide 90% coverage gate (critical-rules.md Coverage).
+# NOTE: CI's python-unit/python-integration jobs currently `echo ... ; exit 0`
+# instead of invoking pytest (mid-PyDAL-migration stub — see ci.yml), and a
+# bare `pytest tests/unit --collect-only` on this branch already errors on 14
+# of the unit test modules (missing runtime deps, e.g. `pytz`, outside a
+# properly provisioned venv). Both are pre-existing and out of scope here
+# (apps/**-adjacent test fixes, not repo hygiene). The true floor is unmeasured
+# — this threshold has no CI teeth until the skip is lifted, at which point CI
+# will fail here and reveal the real number to ratchet from.
+addopts = "--cov=apps --cov=shared --cov-report=term-missing --cov-fail-under=90"

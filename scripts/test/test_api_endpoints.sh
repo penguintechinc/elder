@@ -1,6 +1,13 @@
 #!/bin/bash
 # Comprehensive Elder API Test Script
 # Tests all API endpoints against local dev cluster
+#
+# Deliberately no `set -euo pipefail`: check_response() returns 1 on a failed
+# endpoint check and is called unguarded (not inside `if`) at the top level
+# dozens of times below, by design — the harness aggregates every endpoint's
+# pass/fail and only exits nonzero in the final summary if any failed. Adding
+# `-e` would abort the whole run at the first failing endpoint instead of
+# exercising the rest.
 
 BASE_URL="http://localhost:4000/api/v1"
 TENANT_ID=1

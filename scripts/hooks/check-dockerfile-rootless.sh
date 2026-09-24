@@ -6,6 +6,12 @@
 # is visible in review rather than implied by silence.
 #
 # Usage: check-dockerfile-rootless.sh <Dockerfile>...   (invoked by pre-commit)
+#
+# Deliberately no `-e`: the `exception="$(grep ... | head -1)"` assignment
+# below exits nonzero (via pipefail) whenever a Dockerfile has no ROOT
+# EXCEPTION annotation — the common case. Under `-e` that would abort the
+# script before it ever reaches the real USER-instruction check. `-u` and
+# `pipefail` are safe and kept.
 set -uo pipefail
 
 status=0

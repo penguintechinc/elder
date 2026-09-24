@@ -3,7 +3,7 @@
 # Build mode: builds amd64-only images, pushes to ghcr.io, then helm upgrade
 # Rollout-only mode: helm upgrade with existing values-beta.yaml (no build)
 
-set -e
+set -euo pipefail
 
 # Color codes
 RED='\033[0;31m'
