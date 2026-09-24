@@ -437,11 +437,18 @@ class TestSelfServiceRoutesCarryNoTierGate:
         db.tables = []
 
         async with app.app_context():
-            app.db = db
-            # No tier/license mocking at all -- if the route consulted the
-            # license tier it would need `license_client` in app.extensions;
-            # it doesn't, so this succeeds regardless of deployment tier.
-            with patch("apps.api.api.v1.privacy.flag_enabled", return_value=True):
+            # patch.object (not a bare `app.db = db` assignment) so the
+            # session-scoped `app` fixture's real db is restored on exit --
+            # `app` is shared across the whole tests/unit/ run, so leaving
+            # this MagicMock in place would corrupt every test collected
+            # after this one.
+            with (
+                patch.object(app, "db", db),
+                # No tier/license mocking at all -- if the route consulted the
+                # license tier it would need `license_client` in app.extensions;
+                # it doesn't, so this succeeds regardless of deployment tier.
+                patch("apps.api.api.v1.privacy.flag_enabled", return_value=True),
+            ):
                 async with app.test_request_context("/api/v1/privacy/me/export"):
                     from quart import g
 
@@ -499,8 +506,15 @@ class TestAdminBulkLayerRequiresEnterprise:
         from apps.api.api.v1 import privacy_admin
 
         gated = await self._tier_gated(privacy_admin.bulk_erase)
+        db = MagicMock()
         async with app.app_context():
+            # patch.object (not a bare `app.db = db` assignment) so the
+            # session-scoped `app` fixture's real db is restored on exit --
+            # `app` is shared across the whole tests/unit/ run, so leaving
+            # this MagicMock in place would corrupt every test collected
+            # after this one.
             with (
+                patch.object(app, "db", db),
                 patch(
                     "apps.api.common.licensing.tier_gate.resolve_limits",
                     return_value=("enterprise", None),
@@ -520,8 +534,6 @@ class TestAdminBulkLayerRequiresEnterprise:
                     method="POST",
                     json={"identity_ids": [1]},
                 ):
-                    db = MagicMock()
-                    app.db = db
                     from quart import g
 
                     g.current_user = _fake_identity()
