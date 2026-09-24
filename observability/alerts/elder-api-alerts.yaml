@@ -1,0 +1,57 @@
+# Prometheus-compatible alerting rules for elder-api.
+#
+# Built against metrics apps/api actually emits (OTel ASGI auto-instrumentation
+# in shared/observability.py:auto_instrument_app, called from apps/api/main.py).
+# Replaces the stale rules in the removed infrastructure/monitoring/alerts.yml,
+# which referenced http_requests_total / http_request_duration_seconds_bucket --
+# names from a Flask/prometheus_client exporter this app has never had.
+#
+# Loadable by any Prometheus-remote-write-compatible ruler pointed at the
+# same OTLP backend Elder already exports to (Grafana Mimir/Cortex ruler,
+# Prometheus + Alertmanager, or SigNoz's Prometheus-compatible rule import).
+# See ../README.md for the OTel-name -> PromQL-name translation assumed here.
+
+groups:
+  - name: elder-api.red
+    interval: 30s
+    rules:
+      - alert: ElderAPIHighErrorRate
+        expr: |
+          sum(rate(http_server_duration_count{http_status_code=~"5.."}[5m]))
+          /
+          sum(rate(http_server_duration_count[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: high
+          component: api
+        annotations:
+          summary: "Elder API 5xx error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of elder-api requests returned 5xx over the last 5m."
+
+      - alert: ElderAPIHighLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum(rate(http_server_duration_bucket[5m])) by (le)) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Elder API p95 latency above 1s"
+          description: "p95 request duration is {{ $value }}ms over the last 5m (http.server.duration is recorded in ms)."
+
+      - alert: ElderAPINoRequestsObserved
+        expr: |
+          sum(rate(http_server_duration_count[5m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "elder-api has emitted zero request metrics for 10m"
+          description: >
+            Either genuinely no traffic, or the OTLP export path is degraded
+            (see shared/observability.py fail-open behavior). A dead exporter
+            never fails a request, so this metric-absence alert is the only
+            signal that catches it -- cross-check trace/log volume before
+            treating as a false positive.
