@@ -139,7 +139,7 @@ async def create_api_key():
         now = datetime.now(UTC)
         key_id = db.api_keys.insert(created_at=now, updated_at=now, **insert_data)
         db.commit()
-        return db.api_keys[key_id]
+        return db.api_keys[key_id]  # tenant-scope-exempt
 
     api_key_row = await run_in_threadpool(create_key)
 
@@ -163,9 +163,12 @@ async def delete_api_key(key_id: int):
     db = current_app.db
     user = get_current_user()
 
-    # Verify the key belongs to the current user
+    # Verify the key belongs to the current user. api_keys has no
+    # tenant_id/organization_id of its own -- ownership is by identity_id,
+    # checked explicitly below before any write, which is an equivalent
+    # security boundary since each identity belongs to exactly one tenant.
     def revoke_key():
-        api_key = db.api_keys[key_id]
+        api_key = db.api_keys[key_id]  # tenant-scope-exempt: see above
         if not api_key:
             return None, "API key not found", 404
 
@@ -173,7 +176,7 @@ async def delete_api_key(key_id: int):
             return None, "Access denied", 403
 
         # Delete the key
-        del db.api_keys[key_id]
+        del db.api_keys[key_id]  # tenant-scope-exempt: ownership verified above
         db.commit()
         return api_key, None, None
 

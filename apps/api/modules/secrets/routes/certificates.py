@@ -16,12 +16,12 @@ from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_enum_value,
     validate_json_body,
     validate_organization_and_get_tenant,
     validate_required_fields,
-    validate_resource_exists,
 )
 from shared.certificates import calculate_certificate_status
 
@@ -218,13 +218,22 @@ async def create_certificate():
     if error:
         return error
 
-    # Validate private_key_secret_id if provided
+    # Validate private_key_secret_id if provided, scoped to caller's
+    # tenant via the owning organization (gh-237)
     if data.get("private_key_secret_id"):
-        secret, error = await validate_resource_exists(
-            db.builtin_secrets, data["private_key_secret_id"], "Built-in Secret"
+        secret = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db,
+                db.builtin_secrets,
+                data["private_key_secret_id"],
+                tenant_id,
+                org_fk="organization_id",
+            )
         )
-        if error:
-            return error
+        if not secret:
+            return ApiResponse.not_found(
+                "Built-in Secret", data["private_key_secret_id"]
+            )
 
     def create():
         # Parse dates
@@ -298,7 +307,7 @@ async def create_certificate():
             created_by_id=data.get("created_by_id"),
         )
         db.commit()
-        return db.certificates[cert_id]
+        return get_tenant_scoped(db, db.certificates, cert_id, tenant_id)
 
     certificate = await run_in_threadpool(create)
     return ApiResponse.created(certificate.as_dict())
@@ -310,12 +319,13 @@ async def create_certificate():
 async def get_certificate(id: int):
     """Get a single certificate entry by ID."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    certificate, error = await validate_resource_exists(
-        db.certificates, id, "Certificate"
+    certificate = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.certificates, id, tenant_id)
     )
-    if error:
-        return error
+    if not certificate:
+        return ApiResponse.not_found("Certificate", id)
 
     cert_dict = certificate.as_dict()
     # Recalculate status based on current date
@@ -336,6 +346,7 @@ async def get_certificate(id: int):
 async def update_certificate(id: int):
     """Update a certificate entry."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -384,14 +395,23 @@ async def update_certificate(id: int):
             return error
 
     if data.get("private_key_secret_id"):
-        secret, error = await validate_resource_exists(
-            db.builtin_secrets, data["private_key_secret_id"], "Built-in Secret"
+        secret = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db,
+                db.builtin_secrets,
+                data["private_key_secret_id"],
+                tenant_id,
+                org_fk="organization_id",
+            )
         )
-        if error:
-            return error
+        if not secret:
+            return ApiResponse.not_found(
+                "Built-in Secret", data["private_key_secret_id"]
+            )
 
     def update():
-        certificate = db.certificates[id]
+        # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+        certificate = get_tenant_scoped(db, db.certificates, id, tenant_id)
         if not certificate:
             return None
 
@@ -496,7 +516,7 @@ async def update_certificate(id: int):
             db(db.certificates.id == id).update(**update_dict)
             db.commit()
 
-        return db.certificates[id]
+        return db.certificates[id]  # tenant-scope-exempt: verified above
 
     certificate = await run_in_threadpool(update)
 
@@ -522,15 +542,16 @@ async def update_certificate(id: int):
 async def delete_certificate(id: int):
     """Delete a certificate entry."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    certificate, error = await validate_resource_exists(
-        db.certificates, id, "Certificate"
+    certificate = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.certificates, id, tenant_id)
     )
-    if error:
-        return error
+    if not certificate:
+        return ApiResponse.not_found("Certificate", id)
 
     def delete():
-        del db.certificates[id]
+        del db.certificates[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)

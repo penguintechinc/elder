@@ -139,7 +139,8 @@ async def create_issue_comment(id: int, body: CreateCommentRequest):
         )
         db.commit()
 
-        return db.issue_comments[comment_id], None, None
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt
+        return (comment, None, None)
 
     result, error, status = await run_in_threadpool(create)
 
@@ -181,8 +182,9 @@ async def delete_issue_comment(id: int, comment_id: int):
         if not issue:
             return None, "Issue not found", 404
 
-        # Get comment
-        comment = db.issue_comments[comment_id]
+        # Get comment: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt: see above
         if not comment or comment.issue_id != id:
             return None, "Comment not found", 404
 
@@ -242,8 +244,9 @@ async def update_issue_comment(id: int, comment_id: int, body: UpdateCommentRequ
         if not issue:
             return None, "Issue not found", 404
 
-        # Get comment
-        comment = db.issue_comments[comment_id]
+        # Get comment: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt: see above
         if not comment or comment.issue_id != id:
             return None, "Comment not found", 404
 
@@ -252,10 +255,12 @@ async def update_issue_comment(id: int, comment_id: int, body: UpdateCommentRequ
             return None, "Only comment author can update comments", 403
 
         # Update comment
-        db.issue_comments[comment_id] = dict(content=body.content)
+        update_data = dict(content=body.content)
+        db.issue_comments[comment_id] = update_data  # tenant-scope-exempt
         db.commit()
 
-        return db.issue_comments[comment_id], None, None
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt
+        return (comment, None, None)
 
     result, error, status = await run_in_threadpool(update)
 

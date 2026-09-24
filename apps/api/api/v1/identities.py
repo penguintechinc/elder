@@ -28,6 +28,7 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("identities", __name__)
 
@@ -267,7 +268,7 @@ async def create_identity(body: CreateIdentityRequest):
             created_at=now, updated_at=now, **insert_data
         )
         db.commit()
-        return db.identities[identity_id]
+        return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
 
     identity = await run_in_threadpool(insert)
 
@@ -290,8 +291,15 @@ async def get_identity(id: int):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    identity = await run_in_threadpool(lambda: db.identities[id])
+    # gh-237: without this, any caller granted the global "view_users" role
+    # scope (not just superusers) could read another tenant's identities by
+    # guessing their numeric id -- check_permission()/check_org_permission()
+    # are role-scope checks only, not tenant-aware.
+    identity = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
 
     if not identity:
         return ApiResponse.error("Identity not found", 404)
@@ -328,9 +336,12 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
-    existing = await run_in_threadpool(lambda: db.identities[id])
+    # Check if identity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
     if not existing:
         return ApiResponse.error("Identity not found", 404)
 
@@ -350,7 +361,7 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
 
         db(db.identities.id == id).update(**update_fields)
         db.commit()
-        return db.identities[id]
+        return db.identities[id]  # tenant-scope-exempt: verified above
 
     identity = await run_in_threadpool(update)
 
@@ -374,10 +385,11 @@ async def delete_identity(id: int):
         400: Cannot delete own account or superuser
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
+    # Check if identity exists and belongs to caller's tenant (gh-237)
     def check_and_delete():
-        identity = db.identities[id]
+        identity = get_tenant_scoped(db, db.identities, id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 
@@ -496,7 +508,8 @@ async def create_group(body: CreateIdentityGroupRequest):
         )
         db.commit()
 
-        return db.identity_groups[group_id], None, None
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: schema gap
+        return (group, None, None)
 
     group, error, status = await run_in_threadpool(create)
 
@@ -514,7 +527,9 @@ async def get_group(id: int):
     """Get identity group by ID."""
     db = current_app.db
 
-    group = await run_in_threadpool(lambda: db.identity_groups[id])
+    group = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
 
     if not group:
         return ApiResponse.error("Group not found", 404)
@@ -550,7 +565,9 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
         return ApiResponse.error("Group not found", 404)
 
@@ -571,7 +588,7 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
 
         db(db.identity_groups.id == id).update(**update_fields)
         db.commit()
-        return db.identity_groups[id]
+        return db.identity_groups[id]  # tenant-scope-exempt: schema gap
 
     group = await run_in_threadpool(update)
 
@@ -587,7 +604,9 @@ async def delete_group(id: int):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
         return ApiResponse.error("Group not found", 404)
 
@@ -615,16 +634,19 @@ async def add_group_member(group_id: int, identity_id: int):
         400: Already a member
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Check and add membership
     def add_member():
-        # Verify group exists
-        group = db.identity_groups[group_id]
+        # Verify group exists. identity_groups has no tenant_id/
+        # organization_id column (schema gap -- groups are currently
+        # global; flagged for follow-up, not fixed here).
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: see above
         if not group:
             return None, "Group not found", 404
 
-        # Verify identity exists
-        identity = db.identities[identity_id]
+        # Verify identity exists and belongs to caller's tenant (gh-237)
+        identity = get_tenant_scoped(db, db.identities, identity_id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 

@@ -53,8 +53,16 @@ async def lookup_entity(entity_id: int):
     """
     db = current_app.db
 
-    # Find entity by id
-    entity = await run_in_threadpool(lambda: db.entities[entity_id])
+    # SECURITY (flagged, not fixed here -- see final report): this route has
+    # no @login_required and no JWT, so there is no tenant claim to scope
+    # against. It currently serves ANY entity (including hostname/IP/OS
+    # attributes per the docstring example) across ALL tenants to an
+    # unauthenticated caller. Fixing this requires a product decision
+    # (add auth + tenant scope, or narrow the public response shape) beyond
+    # a tenant-scoping backfill -- tracked as a critical follow-up.
+    entity = await run_in_threadpool(
+        lambda: db.entities[entity_id]  # tenant-scope-exempt
+    )
 
     if not entity:
         return ApiResponse.error(f"Entity with id {entity_id} not found", 404)

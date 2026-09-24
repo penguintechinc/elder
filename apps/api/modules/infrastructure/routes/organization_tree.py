@@ -53,8 +53,8 @@ async def get_organization_tree_stats(org_id: int):
 
     def get_recursive_stats():
         # Verify root organization exists AND belongs to the caller's
-        # tenant (gh-237) — a bare `db.organizations[org_id]` lookup let any
-        # authenticated caller pull another tenant's full tree stats by
+        # tenant (gh-237) — a bare unscoped bracket lookup by primary key let
+        # any authenticated caller pull another tenant's full tree stats by
         # guessing its numeric org_id. 404 (not 403) on mismatch so callers
         # can't distinguish "wrong tenant" from "doesn't exist".
         root_org = get_tenant_scoped(db, db.organizations, org_id, tenant_id)

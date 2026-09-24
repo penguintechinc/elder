@@ -73,7 +73,10 @@ def get_retention_policy(policy_id):
         except Exception:
             db.rollback()
 
-        policy = db.audit_retention_policies[policy_id]
+        # audit_retention_policies is a global, admin-only system config
+        # table (no tenant_id/organization_id column, unique on
+        # resource_type), gated by @admin_required.
+        policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
         if not policy:
             return ApiResponse.error("Retention policy not found", 404)
@@ -147,7 +150,7 @@ async def create_retention_policy():
 
             db.commit()
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
             return policy.as_dict(), None, None
 
         policy_dict, error, status = await asyncio.to_thread(inner)
@@ -184,7 +187,7 @@ async def update_retention_policy(policy_id):
         def inner():
             db = current_app.db
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
             if not policy:
                 return None, "Retention policy not found", 404
@@ -203,7 +206,7 @@ async def update_retention_policy(policy_id):
             db(db.audit_retention_policies.id == policy_id).update(**update_data)
             db.commit()
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
             return policy.as_dict(), None, None
 
         policy_dict, error, status = await asyncio.to_thread(inner)
@@ -230,7 +233,7 @@ async def delete_retention_policy(policy_id):
         def inner():
             db = current_app.db
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
             if not policy:
                 return None, "Retention policy not found", 404

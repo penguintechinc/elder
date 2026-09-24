@@ -21,10 +21,10 @@ from apps.api.models.dataclasses import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
-    validate_resource_exists,
 )
 
 bp = Blueprint("sbom", __name__)
@@ -139,6 +139,7 @@ async def create_component():
         POST /api/v1/sbom/components
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate JSON body
     data = await request.get_json()
@@ -151,17 +152,18 @@ async def create_component():
     ):
         return error
 
-    # Validate parent exists (service or software)
+    # Validate parent exists AND belongs to caller's tenant (gh-237) --
+    # services/software/sbom_components all carry tenant_id directly.
     def validate_parent():
         parent_type = data["parent_type"]
         parent_id = data["parent_id"]
 
         if parent_type == "service":
-            return db.services[parent_id]
+            return get_tenant_scoped(db, db.services, parent_id, tenant_id)
         elif parent_type == "software":
-            return db.software[parent_id]
+            return get_tenant_scoped(db, db.software, parent_id, tenant_id)
         elif parent_type == "sbom_component":
-            return db.sbom_components[parent_id]
+            return get_tenant_scoped(db, db.sbom_components, parent_id, tenant_id)
         return None
 
     parent = await run_in_threadpool(validate_parent)
@@ -172,6 +174,7 @@ async def create_component():
         now = datetime.now(UTC)
         # Create component
         component_id = db.sbom_components.insert(
+            tenant_id=tenant_id,
             parent_type=data["parent_type"],
             parent_id=data["parent_id"],
             name=data["name"],
@@ -195,7 +198,7 @@ async def create_component():
         )
         db.commit()
 
-        return db.sbom_components[component_id]
+        return get_tenant_scoped(db, db.sbom_components, component_id, tenant_id)
 
     component = await run_in_threadpool(create)
 
@@ -221,13 +224,14 @@ async def get_component(id: int):
         GET /api/v1/sbom/components/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    component, error = await validate_resource_exists(
-        db.sbom_components, id, "SBOM Component"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    component = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_components, id, tenant_id)
     )
-    if error:
-        return error
+    if not component:
+        return ApiResponse.not_found("SBOM Component", id)
 
     component_dto = from_pydal_row(component, SBOMComponentDTO)
     return ApiResponse.success(asdict(component_dto))
@@ -259,6 +263,7 @@ async def update_component(id: int):
         PUT /api/v1/sbom/components/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate JSON body
     data = await request.get_json()
@@ -266,7 +271,8 @@ async def update_component(id: int):
         return error
 
     def update():
-        component = db.sbom_components[id]
+        # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+        component = get_tenant_scoped(db, db.sbom_components, id, tenant_id)
         if not component:
             return None
 
@@ -300,7 +306,7 @@ async def update_component(id: int):
             db(db.sbom_components.id == id).update(**update_dict)
             db.commit()
 
-        return db.sbom_components[id]
+        return db.sbom_components[id]  # tenant-scope-exempt: verified above
 
     component = await run_in_threadpool(update)
 
@@ -333,16 +339,17 @@ async def delete_component(id: int):
         DELETE /api/v1/sbom/components/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    component, error = await validate_resource_exists(
-        db.sbom_components, id, "SBOM Component"
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    component = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_components, id, tenant_id)
     )
-    if error:
-        return error
+    if not component:
+        return ApiResponse.not_found("SBOM Component", id)
 
     def delete():
-        del db.sbom_components[id]
+        del db.sbom_components[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -372,13 +379,14 @@ async def get_component_vulnerabilities(id: int):
         GET /api/v1/sbom/components/1/vulnerabilities?status=open&severity=critical
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate component exists
-    component, error = await validate_resource_exists(
-        db.sbom_components, id, "SBOM Component"
+    # Validate component exists and belongs to caller's tenant (gh-237)
+    component = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_components, id, tenant_id)
     )
-    if error:
-        return error
+    if not component:
+        return ApiResponse.not_found("SBOM Component", id)
 
     def get_vulnerabilities():
         # Build query for component vulnerabilities

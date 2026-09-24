@@ -62,7 +62,10 @@ async def create_sync_config():
             updated_at=now,
         )
         db.commit()
-        config = db.sync_configs[config_id].as_dict()
+        # sync_configs is a global, admin-only platform-integration config
+        # table (no tenant_id/organization_id column) — gated by
+        # @admin_required, not per-tenant data.
+        config = db.sync_configs[config_id].as_dict()  # tenant-scope-exempt: see above
         return config, None, None
 
     config, error, status = await run_in_threadpool(inner)
@@ -79,7 +82,7 @@ def get_sync_config(config_id):
     """Get sync configuration details."""
     db = current_app.db
 
-    config = db.sync_configs[config_id]
+    config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
 
     if not config:
         return jsonify({"error": "Config not found"}), 404
@@ -97,7 +100,7 @@ async def update_sync_config(config_id):
     data = request.json
 
     def inner():
-        config = db.sync_configs[config_id]
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
         if not config:
             return None, "Config not found", 404
 
@@ -116,7 +119,7 @@ async def update_sync_config(config_id):
         db(db.sync_configs.id == config_id).update(**update_data)
         db.commit()
 
-        updated_config = db.sync_configs[config_id].as_dict()
+        updated_config = db.sync_configs[config_id].as_dict()  # tenant-scope-exempt
         return updated_config, None, None
 
     config, error, status = await run_in_threadpool(inner)
@@ -134,7 +137,7 @@ async def delete_sync_config(config_id):
     db = current_app.db
 
     def inner():
-        config = db.sync_configs[config_id]
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
         if not config:
             return None, "Config not found", 404
 
@@ -228,7 +231,10 @@ async def resolve_conflict(conflict_id):
     user_id = g.current_user.id
 
     def inner():
-        conflict = db.sync_conflicts[conflict_id]
+        # sync_conflicts has no tenant_id/organization_id column -- it's
+        # tied to sync_mappings/sync_configs, both global admin-only
+        # platform-integration config (see create_sync_config)
+        conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt: see above
         if not conflict:
             return None, "Conflict not found", 404
 
@@ -241,7 +247,8 @@ async def resolve_conflict(conflict_id):
         )
         db.commit()
 
-        updated_conflict = db.sync_conflicts[conflict_id].as_dict()
+        updated_conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt
+        updated_conflict = updated_conflict.as_dict()
         return updated_conflict, None, None
 
     conflict, error, status = await run_in_threadpool(inner)

@@ -26,9 +26,9 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
-    validate_resource_exists,
 )
 
 bp = Blueprint("software", __name__)
@@ -89,18 +89,22 @@ async def create_software(body: CreateSoftwareRequest):
     """Create a new software entry."""
     db = current_app.db
 
-    if body.purchasing_poc_id:
-        identity, error = await validate_resource_exists(
-            db.identities, body.purchasing_poc_id, "Purchasing POC identity"
-        )
-        if error:
-            return error
-
     org, tenant_id, error = await validate_organization_and_get_tenant(
         body.organization_id
     )
     if error:
         return error
+
+    if body.purchasing_poc_id:
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, body.purchasing_poc_id, tenant_id
+            )
+        )
+        if not identity:
+            return ApiResponse.not_found(
+                "Purchasing POC identity", body.purchasing_poc_id
+            )
 
     def create():
         now = datetime.now(UTC)
@@ -126,7 +130,7 @@ async def create_software(body: CreateSoftwareRequest):
             updated_at=now,
         )
         db.commit()
-        return db.software[software_id]
+        return get_tenant_scoped(db, db.software, software_id, tenant_id)
 
     software = await run_in_threadpool(create)
     return ApiResponse.created(software.as_dict())
@@ -138,10 +142,13 @@ async def create_software(body: CreateSoftwareRequest):
 async def get_software(id: int):
     """Get a single software entry by ID."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    software, error = await validate_resource_exists(db.software, id, "Software")
-    if error:
-        return error
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
 
     return ApiResponse.success(software.as_dict())
 
@@ -154,13 +161,18 @@ async def get_software(id: int):
 async def update_software(id: int, body: UpdateSoftwareRequest):
     """Update a software entry."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     if body.purchasing_poc_id:
-        identity, error = await validate_resource_exists(
-            db.identities, body.purchasing_poc_id, "Purchasing POC identity"
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, body.purchasing_poc_id, tenant_id
+            )
         )
-        if error:
-            return error
+        if not identity:
+            return ApiResponse.not_found(
+                "Purchasing POC identity", body.purchasing_poc_id
+            )
 
     org_tenant_id = None
     if body.organization_id is not None:
@@ -171,7 +183,8 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
             return error
 
     def update():
-        software = db.software[id]
+        # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+        software = get_tenant_scoped(db, db.software, id, tenant_id)
         if not software:
             return None
 
@@ -207,7 +220,7 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
             db(db.software.id == id).update(**update_dict)
             db.commit()
 
-        return db.software[id]
+        return db.software[id]  # tenant-scope-exempt: verified above
 
     software = await run_in_threadpool(update)
 
@@ -224,13 +237,16 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
 async def delete_software(id: int):
     """Delete a software entry."""
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    software, error = await validate_resource_exists(db.software, id, "Software")
-    if error:
-        return error
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
 
     def delete():
-        del db.software[id]
+        del db.software[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -256,11 +272,14 @@ async def get_software_sbom(id: int):
         GET /api/v1/software/1/sbom
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate software exists
-    software, error = await validate_resource_exists(db.software, id, "Software")
-    if error:
-        return error
+    # Validate software exists and belongs to caller's tenant (gh-237)
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
 
     def get_components():
         query = (db.sbom_components.parent_type == "software") & (
@@ -301,11 +320,14 @@ async def export_software_sbom(id: int):
         GET /api/v1/software/1/sbom/export?format=spdx
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate software exists
-    software, error = await validate_resource_exists(db.software, id, "Software")
-    if error:
-        return error
+    # Validate software exists and belongs to caller's tenant (gh-237)
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
 
     # Get format parameter
     export_format = request.args.get("format", "cyclonedx_json")

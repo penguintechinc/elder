@@ -20,9 +20,9 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
-    validate_resource_exists,
 )
 
 bp = Blueprint("entities", __name__)
@@ -158,7 +158,10 @@ async def create_entity(body: CreateEntityRequest):
             updated_at=now,
         )
         db.commit()
-        return db.entities[entity_id]
+        # tenant_id resolved from the validated organization above (gh-237)
+        return get_tenant_scoped(
+            db, db.entities, entity_id, tenant_id, org_fk="organization_id"
+        )
 
     row = await run_in_threadpool(create_in_db)
 
@@ -183,11 +186,17 @@ async def get_entity(id: int):
         404: Entity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    row, error = await validate_resource_exists(db.entities, id, "Entity")
-    if error:
-        return error
+    # gh-237: scope by tenant (via organizations.tenant_id) — entities have
+    # no tenant_id column of their own, only organization_id
+    row = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+    )
+    if not row:
+        return ApiResponse.not_found("Entity", id)
 
     entity_dto = from_pydal_row(row, EntityDTO)
     return ApiResponse.success(asdict(entity_dto))
@@ -213,11 +222,16 @@ async def update_entity(id: int, body: UpdateEntityRequest):
         404: Entity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if entity exists
-    existing, error = await validate_resource_exists(db.entities, id, "Entity")
-    if error:
-        return error
+    # Check if entity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+    )
+    if not existing:
+        return ApiResponse.not_found("Entity", id)
 
     # If organization is being changed, validate and get tenant
     org_tenant_id = None
@@ -252,7 +266,7 @@ async def update_entity(id: int, body: UpdateEntityRequest):
 
         db(db.entities.id == id).update(**update_fields)
         db.commit()
-        return db.entities[id]
+        return db.entities[id]  # tenant-scope-exempt: tenant verified above
 
     row = await run_in_threadpool(update_in_db)
 
@@ -276,11 +290,16 @@ async def delete_entity(id: int):
         400: Cannot delete entity with dependencies
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if entity exists
-    existing, error = await validate_resource_exists(db.entities, id, "Entity")
-    if error:
-        return error
+    # Check if entity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+    )
+    if not existing:
+        return ApiResponse.not_found("Entity", id)
 
     # Check for dependencies
     def check_and_delete():
@@ -305,7 +324,7 @@ async def delete_entity(id: int):
             )
 
         # Delete entity
-        del db.entities[id]
+        del db.entities[id]  # tenant-scope-exempt: tenant verified above
         db.commit()
         return None, True
 
@@ -335,11 +354,16 @@ async def get_entity_dependencies(id: int):
         404: Entity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if entity exists
-    entity, error = await validate_resource_exists(db.entities, id, "Entity")
-    if error:
-        return error
+    # Check if entity exists and belongs to caller's tenant (gh-237)
+    entity = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+    )
+    if not entity:
+        return ApiResponse.not_found("Entity", id)
 
     direction = request.args.get("direction", "all")
 
@@ -407,11 +431,16 @@ async def update_entity_attributes(id: int):
         404: Entity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if entity exists
-    existing, error = await validate_resource_exists(db.entities, id, "Entity")
-    if error:
-        return error
+    # Check if entity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+    )
+    if not existing:
+        return ApiResponse.not_found("Entity", id)
 
     data = await request.get_json()
     if not isinstance(data, dict):
@@ -425,7 +454,7 @@ async def update_entity_attributes(id: int):
 
         db(db.entities.id == id).update(metadata=current_attrs)
         db.commit()
-        return db.entities[id]
+        return db.entities[id]  # tenant-scope-exempt: tenant verified above
 
     row = await run_in_threadpool(update_attributes)
 

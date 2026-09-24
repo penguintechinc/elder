@@ -1,4 +1,19 @@
-"""Organization API endpoints."""
+"""Organization API endpoints.
+
+DEAD CODE (verified 2026-09; see gh-237 tenant-scoping backfill): this
+blueprint is never imported or registered in apps/api/main.py's
+_register_blueprints() -- the live `/api/v1/organizations` route is served
+by apps/api/modules/infrastructure/routes/organizations_pydal.py (mounted
+via apps/api/modules/__init__.py). None of this file's routes carry
+@login_required, and several have zero tenant scoping (including
+update_organization's tenant_id cascade to child entities/identities) --
+if this module were ever wired up as-is it would be a severe,
+unauthenticated cross-tenant read/write/delete hole. Left unscoped here
+(marked exempt at each call site) rather than backfilled, since fixing an
+unreachable file provides no security benefit and risks masking the real
+issue (it should be deleted or, if actually needed, rebuilt against the
+current auth/tenant model from scratch). Flagged for follow-up.
+"""
 
 # flake8: noqa: E501
 
@@ -116,7 +131,7 @@ async def create_organization():
             db.commit()
 
             # Fetch the created organization
-            org = db.organizations[org_id]
+            org = db.organizations[org_id]  # tenant-scope-exempt: dead code
 
             # Return as dict
             return org.as_dict(), None, None
@@ -143,7 +158,7 @@ def get_organization(id: int):
         404: Organization not found
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -167,7 +182,7 @@ def update_organization(id: int):
         404: Organization not found
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -214,7 +229,7 @@ def update_organization(id: int):
         db.commit()
 
         # Fetch updated organization
-        org = db.organizations[id]
+        org = db.organizations[id]  # tenant-scope-exempt: dead code
         return jsonify(org.as_dict()), 200
     except Exception as e:
         db.rollback()
@@ -235,7 +250,7 @@ def delete_organization(id: int):
         400: Cannot delete organization with children
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -248,7 +263,7 @@ def delete_organization(id: int):
         )
 
     try:
-        del db.organizations[id]
+        del db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
         db.commit()
     except Exception as e:
         db.rollback()
@@ -273,7 +288,7 @@ def get_organization_children(id: int):
         404: Organization not found
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -313,7 +328,7 @@ def get_organization_hierarchy(id: int):
         404: Organization not found
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -323,7 +338,7 @@ def get_organization_hierarchy(id: int):
     depth = 0
 
     while current.parent_id:
-        parent = db.organizations[current.parent_id]
+        parent = db.organizations[current.parent_id]  # tenant-scope-exempt: dead code
         if not parent:
             break
         path.insert(0, parent.as_dict())
@@ -361,7 +376,7 @@ def get_organization_graph(id: int):
         404: Organization not found
     """
     db = current_app.db
-    org = db.organizations[id]
+    org = db.organizations[id]  # tenant-scope-exempt: dead code, see module docstring
     if not org:
         return make_error_response("Organization not found", 404)
 
@@ -441,7 +456,7 @@ def get_organization_graph(id: int):
     current = org
     for _ in range(depth):
         if current.parent_id:
-            parent = db.organizations[current.parent_id]
+            parent = db.organizations[current.parent_id]  # tenant-scope-exempt
             if not parent:
                 break
             add_org_node(parent)
