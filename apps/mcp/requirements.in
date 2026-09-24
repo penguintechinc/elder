@@ -1,5 +1,16 @@
-mcp==1.27.1
+# mcp 1.28.1: fixes GHSA-hvrp/jpw9 (task-handler cross-client access, unauthenticated
+# session requests) and GHSA-vj7q (WebSocket transport missing Host/Origin validation)
+mcp==1.28.1
 httpx==0.28.1
-python-jose==3.4.0
+# python-jose removed: pulled in ecdsa (GHSA-wj6h/CVE-2024-23342 Minerva timing attack,
+# no upstream fix available) and pyasn1/rsa. Replaced with PyJWT — see apps/mcp/auth.py.
+# PyJWT 2.13.0: fixes GHSA-993g/fhv5/jq35/w7vc/xgmm (see root requirements.in)
+PyJWT==2.13.0
 idna>=3.15
 python-decouple==3.8
+# Transitive floors — no direct .in entry otherwise, pinned here to clear advisories
+cryptography>=50.0.0    # via pyjwt[crypto]/mcp — GHSA-537c/g6cj/jwv3/m2h6
+anyio>=4.14.2             # via httpx/mcp/starlette — GHSA-5p39, GHSA-82r6
+starlette>=1.3.1          # via mcp/sse-starlette — GHSA-82w8/86qp/jp82/wqp7/x746
+python-multipart>=0.0.31  # via mcp — GHSA-5rvq/6jv3/v9pg/vffw
+pydantic-settings>=2.14.2 # via mcp — GHSA-4xgf
