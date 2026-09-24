@@ -23,6 +23,7 @@ from apps.api.models.dataclasses import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
@@ -32,13 +33,17 @@ from apps.api.utils.validation_helpers import (
 bp = Blueprint("on_call_rotations_crud", __name__)
 
 
-def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
+def _get_current_oncall_for_rotation(
+    db, rotation_id: int, tenant_id: int | None
+) -> dict:
     """
     Get the current on-call person for a rotation.
 
     Args:
         db: PyDAL database instance
         rotation_id: ID of the rotation
+        tenant_id: Caller's tenant id (resolved via get_current_tenant_id() in
+            the request coroutine, never re-derived here -- see tenant_scoping.py)
 
     Returns:
         Dictionary with current on-call info or None
@@ -59,8 +64,10 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     if not shift:
         return None
 
-    # Get identity details
-    identity = db.identities[shift.identity_id]
+    # gh-237: identities carry their own tenant_id -- scope the lookup so a
+    # rotation belonging to the caller's tenant can never surface an
+    # identity row from another tenant.
+    identity = get_tenant_scoped(db, db.identities, shift.identity_id, tenant_id)
     if not identity:
         return None
 
@@ -184,6 +191,7 @@ async def create_rotation():
         403: Insufficient permissions
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     data = await request.get_json()
     if error := validate_json_body(data):
@@ -201,12 +209,21 @@ async def create_rotation():
         if scope_type == "organization":
             if "organization_id" not in data:
                 return None, "organization_id is required for organization scope"
-            org = db.organizations[data["organization_id"]]
+            # gh-237: organization_id is caller-supplied -- scope to the
+            # caller's tenant so a rotation can't be attached to another
+            # tenant's organization by guessing its numeric id.
+            org = get_tenant_scoped(
+                db, db.organizations, data["organization_id"], tenant_id
+            )
             return org, None
         elif scope_type == "service":
             if "service_id" not in data:
                 return None, "service_id is required for service scope"
-            service = db.services[data["service_id"]]
+            # gh-237: services has no tenant_id of its own -- scope via the
+            # owning organization's tenant_id.
+            service = get_tenant_scoped(
+                db, db.services, data["service_id"], tenant_id, org_fk="organization_id"
+            )
             return service, None
         return None, "scope_type must be organization or service"
 
@@ -276,7 +293,12 @@ async def create_rotation():
         rotation_id = db.on_call_rotations.insert(**insert_data)
         db.commit()
 
-        return db.on_call_rotations[rotation_id]
+        # Post-insert fetch of the row we just created. rotation_id is
+        # server-generated (return value of .insert(), never caller-supplied),
+        # and its organization_id/service_id parent was already
+        # tenant-verified via validate_parent() above -- no cross-tenant read
+        # risk from re-reading our own new row by id.
+        return db.on_call_rotations[rotation_id]  # tenant-scope-exempt
 
     rotation = await run_in_threadpool(create)
 
@@ -299,6 +321,7 @@ async def get_rotation(rotation_id: int):
         404: Rotation not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     rotation, error = await validate_resource_exists(
         db.on_call_rotations, rotation_id, "On-Call Rotation"
@@ -347,7 +370,7 @@ async def get_rotation(rotation_id: int):
             )
 
         # Get current on-call
-        current_oncall = _get_current_oncall_for_rotation(db, rotation_id)
+        current_oncall = _get_current_oncall_for_rotation(db, rotation_id, tenant_id)
 
         return {
             "rotation": asdict(rotation_dto),
@@ -391,16 +414,22 @@ async def update_rotation(rotation_id: int):
         404: Rotation not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     data = await request.get_json()
     if error := validate_json_body(data):
         return error
 
-    rotation, error = await validate_resource_exists(
-        db.on_call_rotations, rotation_id, "On-Call Rotation"
-    )
-    if error:
-        return error
+    # gh-237: on_call_rotations carries its own tenant_id -- scope the
+    # existence check so a caller can't update another tenant's rotation by
+    # guessing its numeric id (the previous validate_resource_exists() call
+    # here checked existence only, never tenant ownership).
+    def get_rotation_for_update():
+        return get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
+
+    rotation = await run_in_threadpool(get_rotation_for_update)
+    if not rotation:
+        return ApiResponse.not_found("On-Call Rotation", rotation_id)
 
     # Validate cron if being updated
     if "schedule_cron" in data:
@@ -439,7 +468,7 @@ async def update_rotation(rotation_id: int):
             db(db.on_call_rotations.id == rotation_id).update(**update_dict)
             db.commit()
 
-        return db.on_call_rotations[rotation_id]
+        return get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
 
     updated_rotation = await run_in_threadpool(update)
 
@@ -466,17 +495,21 @@ async def delete_rotation(rotation_id: int):
         404: Rotation not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    rotation, error = await validate_resource_exists(
-        db.on_call_rotations, rotation_id, "On-Call Rotation"
-    )
-    if error:
-        return error
-
+    # gh-237: verify tenant ownership before deleting -- a bare existence
+    # check would let a caller delete another tenant's rotation by
+    # guessing its numeric id.
     def delete():
-        del db.on_call_rotations[rotation_id]
+        rotation = get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
+        if not rotation:
+            return False
+        db(db.on_call_rotations.id == rotation_id).delete()
         db.commit()
+        return True
 
-    await run_in_threadpool(delete)
+    deleted = await run_in_threadpool(delete)
+    if not deleted:
+        return ApiResponse.not_found("On-Call Rotation", rotation_id)
 
     return ApiResponse.no_content()
