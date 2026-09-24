@@ -21,6 +21,7 @@ from apps.api.models.dataclasses import (
 )
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -336,7 +337,7 @@ async def create_dependency(body: CreateDependencyRequest):
             metadata=body.metadata,
         )
         db.commit()
-        return None, None, db.dependencies[dep_id]
+        return None, None, get_tenant_scoped(db, db.dependencies, dep_id, tenant_id)
 
     error, status, row = await run_in_threadpool(validate_and_create)
 
@@ -362,8 +363,11 @@ async def get_dependency(id: int):
         404: Dependency not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    row = await run_in_threadpool(lambda: db.dependencies[id])
+    row = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
 
     if not row:
         return jsonify({"error": "Dependency not found"}), 404
@@ -392,9 +396,12 @@ async def update_dependency(id: int, body: UpdateDependencyRequest):
         404: Dependency not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if dependency exists
-    existing = await run_in_threadpool(lambda: db.dependencies[id])
+    # Check if dependency exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
     if not existing:
         return jsonify({"error": "Dependency not found"}), 404
 
@@ -436,7 +443,7 @@ async def update_dependency(id: int, body: UpdateDependencyRequest):
 
         db(db.dependencies.id == id).update(**update_fields)
         db.commit()
-        return db.dependencies[id]
+        return db.dependencies[id]  # tenant-scope-exempt: verified above
 
     row = await run_in_threadpool(update_in_db)
 
@@ -459,9 +466,12 @@ async def delete_dependency(id: int):
         404: Dependency not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if dependency exists
-    existing = await run_in_threadpool(lambda: db.dependencies[id])
+    # Check if dependency exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.dependencies, id, tenant_id)
+    )
     if not existing:
         return jsonify({"error": "Dependency not found"}), 404
 

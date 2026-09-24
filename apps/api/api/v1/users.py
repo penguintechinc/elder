@@ -12,6 +12,7 @@ from apps.api.auth.decorators import get_current_user, login_required, role_requ
 from apps.api.models.dataclasses import IdentityDTO, PaginatedResponse, from_pydal_rows
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_tenant_scoped
 
 bp = Blueprint("users", __name__)
 
@@ -22,6 +23,7 @@ bp = Blueprint("users", __name__)
 async def list_users():
     """List all users (admin only)."""
     db = current_app.db
+    user = get_current_user()
 
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)
@@ -36,8 +38,15 @@ async def list_users():
     # Calculate pagination
     offset = (page - 1) * per_page
 
-    # Build query outside the threadpool function (db is thread-local)
+    # Build query outside the threadpool function (db is thread-local).
+    # gh-237: role_required("admin") allows a per-tenant portal_role=="admin"
+    # user, not just global superusers -- without this filter, any tenant
+    # admin could list every tenant's users. Superusers (who bypass the
+    # decorator's role check) see everything, matching their existing
+    # global-admin bypass elsewhere.
     query = db.identities.id > 0
+    if not user.is_superuser:
+        query &= db.identities.tenant_id == user.tenant_id
 
     # Execute database queries
     def get_users():
@@ -148,7 +157,8 @@ async def create_user():
             created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
         )
         db.commit()
-        return db.identities[user_id], None, None
+        user_row = db.identities[user_id]  # tenant-scope-exempt
+        return (user_row, None, None)
 
     user_row, error, status = await run_in_threadpool(create)
 
@@ -183,6 +193,8 @@ async def create_user():
 async def update_user(user_id: int):
     """Update a user (admin only)."""
     db = current_app.db
+    caller = get_current_user()
+    caller_tenant_id = None if caller.is_superuser else caller.tenant_id
 
     data = await request.get_json()
     if not data:
@@ -212,14 +224,20 @@ async def update_user(user_id: int):
     if not update_data:
         return ApiResponse.bad_request("No valid fields to update")
 
-    # Update user
+    # Update user. gh-237: role_required("admin") allows a per-tenant
+    # portal_role=="admin" user, not just global superusers -- without this
+    # check, any tenant admin could update (including granting is_active/
+    # portal_role/mfa_enabled on) another tenant's user by guessing its id.
     def update():
-        user = db.identities[user_id]
+        if caller_tenant_id is not None:
+            user = get_tenant_scoped(db, db.identities, user_id, caller_tenant_id)
+        else:
+            user = db.identities[user_id]  # tenant-scope-exempt
         if not user:
             return None, "User not found", 404
 
         db(db.identities.id == user_id).update(**update_data)
-        return db.identities[user_id], None, None
+        return db.identities[user_id], None, None  # tenant-scope-exempt: verified above
 
     user_row, error, status = await run_in_threadpool(update)
 
@@ -255,17 +273,24 @@ async def delete_user(user_id: int):
     """Delete a user (admin only)."""
     db = current_app.db
     current_user = get_current_user()
+    caller_tenant_id = None if current_user.is_superuser else current_user.tenant_id
 
     # Prevent self-deletion
     if current_user.id == user_id:
         return ApiResponse.bad_request("Cannot delete your own user account")
 
+    # gh-237: role_required("admin") allows a per-tenant portal_role=="admin"
+    # user, not just global superusers -- without this check, any tenant
+    # admin could delete another tenant's user by guessing its id.
     def delete():
-        user = db.identities[user_id]
+        if caller_tenant_id is not None:
+            user = get_tenant_scoped(db, db.identities, user_id, caller_tenant_id)
+        else:
+            user = db.identities[user_id]  # tenant-scope-exempt
         if not user:
             return None, "User not found", 404
 
-        del db.identities[user_id]
+        del db.identities[user_id]  # tenant-scope-exempt: verified above
         db.commit()
         return user, None, None
 

@@ -180,8 +180,10 @@ async def register():
             400,
         )
 
-    # Verify tenant exists
-    tenant = current_app.db.tenants[tenant_id]
+    # Verify tenant exists. tenants is the top-level tenant table itself
+    # (nothing to scope it by), and this is a pre-auth public registration
+    # flow -- there is no caller tenant context yet.
+    tenant = current_app.db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant or not tenant.is_active:
         return (
             jsonify(
@@ -540,9 +542,10 @@ async def refresh_token():
         if payload.get("type") != "portal_refresh":
             return ApiResponse.unauthorized("Invalid token type")
 
-        # Get user
+        # Get user: self-lookup via the verified refresh token's own sub
+        # claim, never a client param
         user_id = int(payload["sub"])
-        user = current_app.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
         if not user or not user.is_active:
             return ApiResponse.unauthorized("User not found or inactive")
@@ -573,8 +576,10 @@ def get_current_user():
     Returns:
         User info and permissions
     """
+    # Self-lookup via the validated portal token's own sub claim, never a
+    # client param
     user_id = int(request.portal_user["sub"])
-    user = current_app.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
     if not user:
         return ApiResponse.error("User not found", 404)
@@ -610,14 +615,21 @@ def update_current_user():
     Returns:
         Updated user info
     """
+    # Self-lookup via the validated portal token's own sub claim, never a
+    # client param
     user_id = int(request.portal_user["sub"])
-    user = current_app.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
     if not user:
         return ApiResponse.error("User not found", 404)
 
     data = request.get_json(silent=True) or {}
 
+    # NOTE (flagged, not fixed here -- out of tenant-scoping-backfill
+    # scope): organization_id below is accepted from the request body with
+    # no check that the target organization belongs to this user's own
+    # tenant, unlike the equivalent fix in api/v1/profile.py. See final
+    # report for follow-up.
     updates = {}
     if "full_name" in data:
         updates["full_name"] = data["full_name"]
@@ -627,7 +639,7 @@ def update_current_user():
     if updates:
         current_app.db(current_app.db.portal_users.id == user_id).update(**updates)
         current_app.db.commit()
-        user = current_app.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]  # tenant-scope-exempt
 
     return (
         jsonify(

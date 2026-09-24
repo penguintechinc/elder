@@ -2,4 +2,4 @@
 # scripts/check_tenant_scoping.py fails if this count rises.
 # Fix a lookup with apps.api.utils.tenant_scoping.get_tenant_scoped()
 # and regenerate with: scripts/check_tenant_scoping.py --update
-count=224
+count=41

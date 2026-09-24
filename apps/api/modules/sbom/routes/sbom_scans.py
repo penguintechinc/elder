@@ -30,7 +30,7 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import ValidationErrorResponse, validate_body
-from apps.api.utils.validation_helpers import validate_resource_exists
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("sbom_scans", __name__)
 logger = structlog.get_logger()
@@ -57,7 +57,11 @@ def _match_license_pattern(license_id: str, pattern: str) -> bool:
 
 
 def _resolve_credential(
-    db, credential_type: str, credential_id: int, credential_mapping: dict
+    db,
+    credential_type: str,
+    credential_id: int,
+    credential_mapping: dict,
+    tenant_id: int | None,
 ) -> str:
     """
     Resolve a credential to extract the authentication token.
@@ -67,6 +71,9 @@ def _resolve_credential(
         credential_type: Type of credential (only "builtin_secret" is supported)
         credential_id: ID of the credential record
         credential_mapping: Mapping dict to extract token from secret_json (default field: "token")
+        tenant_id: Caller's tenant id (gh-237) -- builtin_secrets has no
+            tenant_id column of its own, only organization_id, so scoping
+            goes through the owning organization's tenant_id
 
     Returns:
         Token string if found and active, None otherwise
@@ -75,8 +82,10 @@ def _resolve_credential(
     if credential_type != "builtin_secret" or not credential_id:
         return None
 
-    # Look up the builtin secret
-    secret = db.builtin_secrets[credential_id]
+    # Look up the builtin secret, scoped to caller's tenant (gh-237)
+    secret = get_tenant_scoped(
+        db, db.builtin_secrets, credential_id, tenant_id, org_fk="organization_id"
+    )
     if not secret or not secret.is_active:
         return None
 
@@ -241,6 +250,7 @@ async def create_scan():
         POST /api/v1/sbom/scans
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request body using Pydantic
     try:
@@ -251,12 +261,12 @@ async def create_scan():
     parent_type = body.parent_type
     parent_id = body.parent_id
 
-    # Validate parent exists (service or software)
+    # Validate parent exists and belongs to caller's tenant (gh-237)
     def validate_parent():
         if parent_type == "service":
-            return db.services[parent_id]
+            return get_tenant_scoped(db, db.services, parent_id, tenant_id)
         elif parent_type == "software":
-            return db.software[parent_id]
+            return get_tenant_scoped(db, db.software, parent_id, tenant_id)
         return None
 
     parent = await run_in_threadpool(validate_parent)
@@ -278,6 +288,7 @@ async def create_scan():
     def create():
         # Create scan record with status=pending
         scan_id = db.sbom_scans.insert(
+            tenant_id=tenant_id,
             parent_type=parent_type,
             parent_id=parent_id,
             scan_type=body.scan_type,
@@ -291,7 +302,7 @@ async def create_scan():
         )
         db.commit()
 
-        return db.sbom_scans[scan_id]
+        return get_tenant_scoped(db, db.sbom_scans, scan_id, tenant_id)
 
     scan = await run_in_threadpool(create)
 
@@ -317,11 +328,14 @@ async def get_scan(id: int):
         GET /api/v1/sbom/scans/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    scan, error = await validate_resource_exists(db.sbom_scans, id, "SBOM Scan")
-    if error:
-        return error
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    scan = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+    )
+    if not scan:
+        return ApiResponse.not_found("SBOM Scan", id)
 
     scan_dto = from_pydal_row(scan, SBOMScanDTO)
     return ApiResponse.success(asdict(scan_dto))
@@ -349,14 +363,17 @@ async def delete_scan(id: int):
         DELETE /api/v1/sbom/scans/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    scan, error = await validate_resource_exists(db.sbom_scans, id, "SBOM Scan")
-    if error:
-        return error
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    scan = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+    )
+    if not scan:
+        return ApiResponse.not_found("SBOM Scan", id)
 
     def delete():
-        del db.sbom_scans[id]
+        del db.sbom_scans[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -382,9 +399,15 @@ async def get_pending_scans():
         GET /api/v1/sbom/scans/pending
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_scans():
-        query = db.sbom_scans.status == "pending"
+        # gh-237: scope to caller's tenant -- this endpoint previously
+        # returned every tenant's pending scans (including resolved
+        # scanner credential tokens below) to any caller with sbom:read.
+        query = (db.sbom_scans.status == "pending") & (
+            db.sbom_scans.tenant_id == tenant_id
+        )
         rows = db(query).select(orderby=db.sbom_scans.created_at)
         return rows
 
@@ -405,6 +428,7 @@ async def get_pending_scans():
                 item.credential_type,
                 item.credential_id,
                 item.credential_mapping or {},
+                tenant_id,
             )
             if token:
                 scan_dict["_resolved_token"] = token
@@ -441,23 +465,26 @@ async def start_scan(id: int):
         POST /api/v1/sbom/scans/1/start
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate scan exists
-    scan, error = await validate_resource_exists(db.sbom_scans, id, "SBOM Scan")
-    if error:
-        return error
+    # Validate scan exists and belongs to caller's tenant (gh-237)
+    scan = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+    )
+    if not scan:
+        return ApiResponse.not_found("SBOM Scan", id)
 
     # Verify scan is pending
     if scan.status != "pending":
         return ApiResponse.error(f"Scan is not pending (status: {scan.status})", 400)
 
     def mark_running():
-        db.sbom_scans[id] = dict(
+        db.sbom_scans[id] = dict(  # tenant-scope-exempt: verified above
             status="running",
             started_at=request.utcnow,
         )
         db.commit()
-        return db.sbom_scans[id]
+        return db.sbom_scans[id]  # tenant-scope-exempt: verified above
 
     updated_scan = await run_in_threadpool(mark_running)
 
@@ -502,6 +529,7 @@ async def submit_results(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request body using Pydantic
     try:
@@ -509,10 +537,12 @@ async def submit_results(id: int):
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Validate scan exists
-    scan, error = await validate_resource_exists(db.sbom_scans, id, "SBOM Scan")
-    if error:
-        return error
+    # Validate scan exists and belongs to caller's tenant (gh-237)
+    scan = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+    )
+    if not scan:
+        return ApiResponse.not_found("SBOM Scan", id)
 
     success = body.success
     components = body.components or []
@@ -538,9 +568,10 @@ async def submit_results(id: int):
             key = (comp.get("name"), comp.get("version"))
 
             if key in existing_map:
-                # Update existing component
+                # Update existing component: resolved via existing_query,
+                # itself scoped to the already-verified scan's parent
                 existing = existing_map[key]
-                db.sbom_components[existing.id] = {
+                db.sbom_components[existing.id] = {  # tenant-scope-exempt: see above
                     "package_type": comp.get("package_type"),
                     "purl": comp.get("purl"),
                     "scope": comp.get("scope", "runtime"),
@@ -558,6 +589,7 @@ async def submit_results(id: int):
             else:
                 # Insert new component
                 comp_id = db.sbom_components.insert(
+                    tenant_id=tenant_id,
                     parent_type=scan.parent_type,
                     parent_id=scan.parent_id,
                     name=comp["name"],
@@ -578,23 +610,29 @@ async def submit_results(id: int):
                 component_ids.append(comp_id)
 
         # Check components against active license policies
-        # Get the organization_id from the parent (service or software)
+        # Get the organization_id from the parent (service or software).
+        # tenant-scope-exempt: scan.parent_id is from the already
+        # tenant-verified scan row, not client input.
         parent_org_id = None
         if scan.parent_type == "service":
-            parent_row = db.services[scan.parent_id]
+            parent_row = db.services[scan.parent_id]  # tenant-scope-exempt: see above
             if parent_row:
                 parent_org_id = parent_row.organization_id
         elif scan.parent_type == "software":
-            parent_row = db.software[scan.parent_id]
+            parent_row = db.software[scan.parent_id]  # tenant-scope-exempt: see above
             if parent_row:
                 parent_org_id = parent_row.organization_id
 
         # Check policies if we have an organization
         violations = []
         if parent_org_id:
-            # Get active policies for this organization
+            # Get active policies for this organization. Pre-existing bug
+            # fixed in passing: `is True` is a Python identity check
+            # (always False for a PyDAL Field), not a query condition --
+            # silently matched/excluded rows incorrectly rather than
+            # actually filtering on is_active.
             policy_query = (db.license_policies.organization_id == parent_org_id) & (
-                db.license_policies.is_active is True
+                db.license_policies.is_active == True  # noqa: E712
             )
             policies = db(policy_query).select()
 
@@ -619,7 +657,7 @@ async def submit_results(id: int):
 
         # Update scan record
         status = "completed" if success else "failed"
-        db.sbom_scans[id] = dict(
+        db.sbom_scans[id] = dict(  # tenant-scope-exempt: verified above
             status=status,
             files_scanned=files_scanned,
             commit_hash=commit_hash,
@@ -632,7 +670,7 @@ async def submit_results(id: int):
         )
 
         db.commit()
-        return db.sbom_scans[id], component_ids
+        return db.sbom_scans[id], component_ids  # tenant-scope-exempt: verified above
 
     updated_scan, component_ids = await run_in_threadpool(process_results)
 
@@ -789,6 +827,7 @@ async def upload_sbom():
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request body using Pydantic
     try:
@@ -801,12 +840,12 @@ async def upload_sbom():
     file_content = body.file_content
     filename = body.filename
 
-    # Validate parent exists
+    # Validate parent exists and belongs to caller's tenant (gh-237)
     def validate_parent():
         if parent_type == "service":
-            return db.services[parent_id]
+            return get_tenant_scoped(db, db.services, parent_id, tenant_id)
         elif parent_type == "software":
-            return db.software[parent_id]
+            return get_tenant_scoped(db, db.software, parent_id, tenant_id)
         return None
 
     parent = await run_in_threadpool(validate_parent)
@@ -844,6 +883,7 @@ async def upload_sbom():
     def import_components():
         # Create scan record
         scan_id = db.sbom_scans.insert(
+            tenant_id=tenant_id,
             parent_type=parent_type,
             parent_id=parent_id,
             scan_type="sbom_import",
@@ -871,9 +911,10 @@ async def upload_sbom():
             key = (comp.get("name"), comp.get("version"))
 
             if key in existing_map:
-                # Update existing component
+                # Update existing component: resolved via existing_query,
+                # itself scoped to the already-verified parent
                 existing = existing_map[key]
-                db.sbom_components[existing.id] = {
+                db.sbom_components[existing.id] = {  # tenant-scope-exempt: see above
                     "package_type": comp.get("package_type"),
                     "purl": comp.get("purl"),
                     "scope": comp.get("scope", "runtime"),
@@ -893,6 +934,7 @@ async def upload_sbom():
             else:
                 # Insert new component
                 db.sbom_components.insert(
+                    tenant_id=tenant_id,
                     parent_type=parent_type,
                     parent_id=parent_id,
                     name=comp["name"],
@@ -914,8 +956,8 @@ async def upload_sbom():
                 )
                 components_added += 1
 
-        # Update scan record
-        db.sbom_scans[scan_id] = dict(
+        # Update scan record (tenant-scope-exempt: scan_id from insert above)
+        db.sbom_scans[scan_id] = dict(  # tenant-scope-exempt: see above
             status="completed",
             components_added=components_added,
             components_updated=components_updated,
@@ -923,7 +965,7 @@ async def upload_sbom():
         )
 
         db.commit()
-        return db.sbom_scans[scan_id]
+        return db.sbom_scans[scan_id]  # tenant-scope-exempt: see above
 
     scan = await run_in_threadpool(import_components)
 

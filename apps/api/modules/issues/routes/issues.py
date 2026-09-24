@@ -32,6 +32,7 @@ from apps.api.services.webhooks.assignment import (
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_tenant_scoped
 from shared.utils.village_id import generate_village_id
 from shared.webhooks import send_issue_created_webhooks
 
@@ -333,20 +334,15 @@ async def create_issue(body: CreateIssueRequest):
     if blocked is not None:
         return blocked
 
-    # Get organization to derive tenant_id
+    # Get organization, scoped to the caller's own tenant (gh-237) --
+    # treats a foreign-tenant org as not-found (matches documents.py:91,
+    # streams.py:62,108) rather than leaking its existence via a distinct
+    # error.
     def get_org():
-        return db.organizations[body.organization_id]
+        return get_tenant_scoped(db, db.organizations, body.organization_id, tenant_id)
 
     org = await run_in_threadpool(get_org)
     if not org:
-        return jsonify({"error": "Organization not found"}), 404
-    if not org.tenant_id:
-        return jsonify({"error": "Organization must have a tenant"}), 400
-    # Cross-tenant IDOR guard: the org must belong to the caller's own
-    # tenant, not merely exist. Treat a foreign-tenant org as not-found
-    # (matches documents.py:91, streams.py:62,108) rather than leaking its
-    # existence via a distinct error.
-    if org.tenant_id != tenant_id:
         return jsonify({"error": "Organization not found"}), 404
 
     # Resolve + validate the polymorphic assignee (IDOR guard: target must be
@@ -545,18 +541,15 @@ async def update_issue(id: int, body: UpdateIssueRequest):
     # If organization is being changed, validate it exists and belongs to
     # the caller's own tenant before persisting.
     if body.organization_id:
-
+        # gh-237: treat a foreign-tenant org as not-found (matches
+        # documents.py:91, streams.py:62,108).
         def get_org():
-            return db.organizations[body.organization_id]
+            return get_tenant_scoped(
+                db, db.organizations, body.organization_id, tenant_id
+            )
 
         org = await run_in_threadpool(get_org)
         if not org:
-            return jsonify({"error": "Organization not found"}), 404
-        if not org.tenant_id:
-            return jsonify({"error": "Organization must have a tenant"}), 400
-        # Cross-tenant IDOR guard: treat a foreign-tenant org as not-found
-        # (matches documents.py:91, streams.py:62,108).
-        if org.tenant_id != tenant_id:
             return jsonify({"error": "Organization not found"}), 404
 
     # Resolve + validate the polymorphic assignee (IDOR guard: target must be
@@ -856,7 +849,8 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
         )
         db.commit()
 
-        return db.issue_comments[comment_id], None, None
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt
+        return (comment, None, None)
 
     result, error, status = await run_in_threadpool(create)
 
@@ -898,8 +892,9 @@ async def delete_issue_comment(id: int, comment_id: int):
         if not issue:
             return None, "Issue not found", 404
 
-        # Get comment
-        comment = db.issue_comments[comment_id]
+        # Get comment: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt: see above
         if not comment or comment.issue_id != id:
             return None, "Comment not found", 404
 
@@ -997,7 +992,8 @@ async def create_issue_label(body: CreateIssueLabelRequest):
         )
         db.commit()
 
-        return db.issue_labels[label_id], None, None
+        label = db.issue_labels[label_id]  # tenant-scope-exempt: global
+        return (label, None, None)
 
     result, error, status = await run_in_threadpool(create)
 
@@ -1098,7 +1094,7 @@ async def add_issue_label(id: int, body: AddIssueLabelRequest):
             return None, "Issue not found", 404
 
         # Verify label exists
-        label = db.issue_labels[label_id]
+        label = db.issue_labels[label_id]  # tenant-scope-exempt: issue_labels is global
         if not label:
             return None, "Label not found", 404
 
@@ -1222,10 +1218,12 @@ async def list_issue_entity_links(id: int):
         # Get links
         links = db(db.issue_entity_links.issue_id == id).select()
 
-        # Convert to list of dicts with entity info
+        # Convert to list of dicts with entity info. link.entity_id is only
+        # ever set by create_issue_entity_link, which tenant-verifies the
+        # entity before linking.
         link_list = []
         for link in links:
-            entity = db.entities[link.entity_id]
+            entity = db.entities[link.entity_id]  # tenant-scope-exempt: see above
             link_list.append(
                 {
                     "id": link.id,
@@ -1285,8 +1283,12 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
         if not issue:
             return None, "Issue not found", 404
 
-        # Verify entity exists
-        entity = db.entities[entity_id]
+        # Verify entity exists and belongs to caller's tenant (gh-237) --
+        # otherwise an issue could be linked to another tenant's entity,
+        # leaking its name via list_issue_entity_links.
+        entity = get_tenant_scoped(
+            db, db.entities, entity_id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -1310,7 +1312,7 @@ async def create_issue_entity_link(id: int, body: CreateIssueEntityLinkRequest):
         )
         db.commit()
 
-        link = db.issue_entity_links[link_id]
+        link = db.issue_entity_links[link_id]  # tenant-scope-exempt
 
         return (
             {
@@ -1362,8 +1364,9 @@ async def delete_issue_entity_link(id: int, link_id: int):
         if not issue:
             return None, "Issue not found", 404
 
-        # Get link
-        link = db.issue_entity_links[link_id]
+        # Get link: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        link = db.issue_entity_links[link_id]  # tenant-scope-exempt: see above
         if not link or link.issue_id != id:
             return None, "Link not found", 404
 
@@ -1506,7 +1509,7 @@ async def link_issue_to_project(id: int, body: LinkIssueToProjectRequest):
         link_id = db.issue_project_links.insert(issue_id=id, project_id=body.project_id)
         db.commit()
 
-        link = db.issue_project_links[link_id]
+        link = db.issue_project_links[link_id]  # tenant-scope-exempt
         return link, None, None
 
     link, error, status = await run_in_threadpool(create_link)
@@ -1643,7 +1646,7 @@ async def link_issue_to_milestone(id: int, body: LinkIssueToMilestoneRequest):
         )
         db.commit()
 
-        link = db.issue_milestone_links[link_id]
+        link = db.issue_milestone_links[link_id]  # tenant-scope-exempt
         return link, None, None
 
     link, error, status = await run_in_threadpool(create_link)

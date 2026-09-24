@@ -25,9 +25,9 @@ from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
-    validate_resource_exists,
 )
 
 bp = Blueprint("services", __name__)
@@ -140,11 +140,11 @@ async def create_service(body: CreateServiceRequest):
     if error:
         return error
 
-    # Validate poc_identity_id if provided
+    # Validate poc_identity_id if provided, scoped to caller's tenant (gh-237)
     if body.poc_identity_id:
 
         def get_identity():
-            return db.identities[body.poc_identity_id]
+            return get_tenant_scoped(db, db.identities, body.poc_identity_id, tenant_id)
 
         identity = await run_in_threadpool(get_identity)
         if not identity:
@@ -184,7 +184,7 @@ async def create_service(body: CreateServiceRequest):
             )
             db.commit()
 
-        return db.services[service_id]
+        return get_tenant_scoped(db, db.services, service_id, tenant_id)
 
     service = await run_in_threadpool(create)
 
@@ -210,11 +210,14 @@ async def get_service(id: int):
         GET /api/v1/services/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    service, error = await validate_resource_exists(db.services, id, "Service")
-    if error:
-        return error
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    service = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.services, id, tenant_id)
+    )
+    if not service:
+        return ApiResponse.not_found("Service", id)
 
     service_dto = from_pydal_row(service, ServiceDTO)
     return ApiResponse.success(asdict(service_dto))
@@ -247,6 +250,7 @@ async def update_service(id: int, body: UpdateServiceRequest):
         PUT /api/v1/services/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # If organization is being changed, validate and get tenant
     org_tenant_id = None
@@ -257,18 +261,19 @@ async def update_service(id: int, body: UpdateServiceRequest):
         if error:
             return error
 
-    # Validate poc_identity_id if provided
+    # Validate poc_identity_id if provided, scoped to caller's tenant (gh-237)
     if body.poc_identity_id is not None and body.poc_identity_id:
 
         def get_identity():
-            return db.identities[body.poc_identity_id]
+            return get_tenant_scoped(db, db.identities, body.poc_identity_id, tenant_id)
 
         identity = await run_in_threadpool(get_identity)
         if not identity:
             return ApiResponse.not_found("POC identity", body.poc_identity_id)
 
     def update():
-        service = db.services[id]
+        # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+        service = get_tenant_scoped(db, db.services, id, tenant_id)
         if not service:
             return None
 
@@ -284,7 +289,7 @@ async def update_service(id: int, body: UpdateServiceRequest):
             db(db.services.id == id).update(**update_dict)
             db.commit()
 
-        return db.services[id]
+        return db.services[id]  # tenant-scope-exempt: verified above
 
     service = await run_in_threadpool(update)
 
@@ -317,14 +322,17 @@ async def delete_service(id: int):
         DELETE /api/v1/services/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate resource exists using helper
-    service, error = await validate_resource_exists(db.services, id, "Service")
-    if error:
-        return error
+    # Validate resource exists and belongs to caller's tenant (gh-237)
+    service = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.services, id, tenant_id)
+    )
+    if not service:
+        return ApiResponse.not_found("Service", id)
 
     def delete():
-        del db.services[id]
+        del db.services[id]  # tenant-scope-exempt: verified above
         db.commit()
 
     await run_in_threadpool(delete)
@@ -350,11 +358,14 @@ async def get_service_sbom(id: int):
         GET /api/v1/services/1/sbom
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate service exists
-    service, error = await validate_resource_exists(db.services, id, "Service")
-    if error:
-        return error
+    # Validate service exists and belongs to caller's tenant (gh-237)
+    service = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.services, id, tenant_id)
+    )
+    if not service:
+        return ApiResponse.not_found("Service", id)
 
     def get_components():
         query = (db.sbom_components.parent_type == "service") & (
@@ -398,11 +409,14 @@ async def trigger_service_sbom_scan(id: int):
         POST /api/v1/services/1/sbom/scan
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate service exists
-    service, error = await validate_resource_exists(db.services, id, "Service")
-    if error:
-        return error
+    # Validate service exists and belongs to caller's tenant (gh-237)
+    service = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.services, id, tenant_id)
+    )
+    if not service:
+        return ApiResponse.not_found("Service", id)
 
     # Verify service has repository URL (not a DB column, so skip this check)
     # Services table does not have repository_url column
@@ -414,6 +428,7 @@ async def trigger_service_sbom_scan(id: int):
 
     def create_scan():
         scan_id = db.sbom_scans.insert(
+            tenant_id=tenant_id,
             parent_type="service",
             parent_id=id,
             scan_type=scan_type,
@@ -425,7 +440,7 @@ async def trigger_service_sbom_scan(id: int):
             components_removed=0,
         )
         db.commit()
-        return db.sbom_scans[scan_id]
+        return get_tenant_scoped(db, db.sbom_scans, scan_id, tenant_id)
 
     scan = await run_in_threadpool(create_scan)
 
@@ -560,11 +575,14 @@ async def export_service_sbom(id: int):
         GET /api/v1/services/1/sbom/export?format=spdx
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Validate service exists
-    service, error = await validate_resource_exists(db.services, id, "Service")
-    if error:
-        return error
+    # Validate service exists and belongs to caller's tenant (gh-237)
+    service = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.services, id, tenant_id)
+    )
+    if not service:
+        return ApiResponse.not_found("Service", id)
 
     # Get format parameter
     export_format = request.args.get("format", "cyclonedx_json")

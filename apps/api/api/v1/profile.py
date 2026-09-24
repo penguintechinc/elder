@@ -7,6 +7,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("profile", __name__)
 
@@ -34,17 +35,22 @@ async def get_profile():
     """
     db = current_app.db
     user_id = g.current_user.id  # Get user ID before entering thread pool
+    tenant_id = get_current_tenant_id()
 
     def get_user_profile(uid):
-        # Get user from database
-        user = db.identities[uid]
+        # Get user from database: self-lookup via g.current_user.id, never
+        # a client param
+        user = db.identities[uid]  # tenant-scope-exempt: see above
         if not user:
             return None, "User not found", 404
 
-        # Get organization name if user has organization_id
+        # Get organization name if user has organization_id, scoped to
+        # caller's tenant (gh-237)
         org_name = None
         if hasattr(user, "organization_id") and user.organization_id:
-            org = db.organizations[user.organization_id]
+            org = get_tenant_scoped(
+                db, db.organizations, user.organization_id, tenant_id
+            )
             if org:
                 org_name = org.name
 
@@ -99,14 +105,16 @@ async def update_profile():
     """
     db = current_app.db
     user_id = g.current_user.id  # Get user ID before entering thread pool
+    tenant_id = get_current_tenant_id()
 
     data = await request.get_json()
     if not data:
         return ApiResponse.bad_request("Request body must be JSON")
 
     def update_user_profile(uid):
-        # Get user from database
-        user = db.identities[uid]
+        # Get user from database: self-lookup via g.current_user.id, never
+        # a client param
+        user = db.identities[uid]  # tenant-scope-exempt: see above
         if not user:
             return None, "User not found", 404
 
@@ -141,8 +149,12 @@ async def update_profile():
         # Update organization_id if provided
         if "organization_id" in data:
             if data["organization_id"] is not None:
-                # Verify organization exists
-                org = db.organizations[data["organization_id"]]
+                # Verify organization exists and belongs to caller's tenant
+                # (gh-237) -- otherwise a user could re-point their own
+                # profile at another tenant's organization.
+                org = get_tenant_scoped(
+                    db, db.organizations, data["organization_id"], tenant_id
+                )
                 if not org:
                     return None, "Organization not found", 404
             # Only update organization_id if the field exists in the table
@@ -153,7 +165,9 @@ async def update_profile():
         if not update_data:
             org_name = None
             if hasattr(user, "organization_id") and user.organization_id:
-                org = db.organizations[user.organization_id]
+                org = get_tenant_scoped(
+                    db, db.organizations, user.organization_id, tenant_id
+                )
                 if org:
                     org_name = org.name
 
@@ -181,13 +195,17 @@ async def update_profile():
         # Update user
         db(db.identities.id == user.id).update(**update_data)
 
-        # Get updated user data
-        updated_user = db.identities[uid]
+        # Get updated user data: self-lookup, `uid` is g.current_user.id
+        # from the outer scope, never a client param
+        updated_user = db.identities[uid]  # tenant-scope-exempt: see above
 
-        # Get organization name if user has organization_id
+        # Get organization name if user has organization_id, scoped to
+        # caller's tenant (gh-237)
         org_name = None
         if hasattr(updated_user, "organization_id") and updated_user.organization_id:
-            org = db.organizations[updated_user.organization_id]
+            org = get_tenant_scoped(
+                db, db.organizations, updated_user.organization_id, tenant_id
+            )
             if org:
                 org_name = org.name
 
