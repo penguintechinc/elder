@@ -12,8 +12,59 @@ from apps.api.licensing_fallback import license_required
 from apps.api.models.dataclasses import ResourceRoleDTO, from_pydal_rows
 from apps.api.models.pydantic import CreateResourceRoleRequest, ResourceRoleResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("resource_roles", __name__)
+
+
+def _resource_owner(db, resource_type: str, resource_id: int, tenant_id: int | None):
+    """Verify a polymorphic resource_roles target belongs to the caller's tenant.
+
+    resource_roles grants access to either an "entity" or an "organization"
+    (``resource_type`` + ``resource_id``), never carrying a ``tenant_id`` of
+    its own. Delegates to ``get_tenant_scoped()`` for each shape so there is
+    never a fallback to an unscoped bracket read (gh-237). Returns ``None``
+    for an unrecognized ``resource_type`` or a tenant mismatch.
+
+    Normalizes case before comparing: the API contract is lowercase
+    (``CreateResourceRoleRequest.resource_type: Literal["entity", "organization"]``),
+    but the underlying Postgres enum (``alembic/versions/001_add_enterprise_features.py``)
+    stores the member names uppercase (``"ENTITY"``/``"ORGANIZATION"``) --
+    a caller-supplied value and a value read back off an existing row may
+    legitimately differ in case.
+    """
+    normalized = str(resource_type).upper()
+    if normalized == "ORGANIZATION":
+        return get_tenant_scoped(db, db.organizations, resource_id, tenant_id)
+    if normalized == "ENTITY":
+        return get_tenant_scoped(
+            db, db.entities, resource_id, tenant_id, org_fk="organization_id"
+        )
+    return None
+
+
+def _get_tenant_scoped_role(db, table, role_id: int, tenant_id: int | None):
+    """Resolve a resource_roles row, verifying its target belongs to the caller's tenant.
+
+    Mirrors ``get_tenant_scoped()``'s org_fk pattern for a table whose
+    tenant-owning parent is polymorphic: resolve the row by primary key,
+    then verify tenant ownership of whichever resource it references via
+    ``_resource_owner()`` before returning it. Returns ``None`` (never
+    raises) when ``tenant_id``/``role_id`` is falsy, the row doesn't exist,
+    or its target resource belongs to a different tenant -- callers MUST
+    map ``None`` to a 404, never a 403 (see get_tenant_scoped() docstring).
+    """
+    if not tenant_id or not role_id:
+        return None
+
+    row = table[role_id]
+    if not row:
+        return None
+
+    if not _resource_owner(db, row.resource_type, row.resource_id, tenant_id):
+        return None
+
+    return row
 
 
 @bp.route("", methods=["GET"])
@@ -162,6 +213,7 @@ async def create_resource_role():
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Validate request body
     try:
@@ -180,6 +232,16 @@ async def create_resource_role():
 
     # Check if current user has maintainer role on this resource
     def check_and_create():
+        # gh-237: resource_type/resource_id are caller-supplied -- verify the
+        # target resource belongs to the caller's tenant before granting any
+        # role on it (applies even to superusers, whose token still carries
+        # a tenant claim; cross-tenant super-admin is a separately issued,
+        # short-lived credential -- see security.md Service-to-Service Auth).
+        if not _resource_owner(
+            db, req_data.resource_type, req_data.resource_id, tenant_id
+        ):
+            return None, "Resource not found", 404
+
         # Superusers can grant any role
         if not g.current_user.is_superuser:
             # Check if current user has maintainer role
@@ -240,7 +302,10 @@ async def create_resource_role():
         )
         db.commit()
 
-        return db.resource_roles[role_id], None, None
+        # Post-insert fetch of the row we just created -- role_id is
+        # server-generated, and the target resource was already
+        # tenant-verified above.
+        return db.resource_roles[role_id], None, None  # tenant-scope-exempt
 
     result, error, status = await run_in_threadpool(check_and_create)
 
@@ -273,10 +338,13 @@ async def revoke_resource_role(id: int):
         DELETE /api/v1/resource-roles/1
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Check and delete role
     def check_and_delete():
-        role = db.resource_roles[id]
+        # gh-237: id is caller-supplied -- verify the role's target resource
+        # belongs to the caller's tenant before revealing/revoking it.
+        role = _get_tenant_scoped_role(db, db.resource_roles, id, tenant_id)
         if not role:
             return None, "Resource role not found", 404
 
@@ -345,10 +413,14 @@ async def list_entity_roles(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_entity_roles():
-        # Verify entity exists
-        entity = db.entities[id]
+        # gh-237: entities has no tenant_id of its own -- scope via the
+        # owning organization's tenant_id.
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
         if not entity:
             return None, "Entity not found", 404
 
@@ -404,10 +476,11 @@ async def list_organization_roles(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_org_roles():
-        # Verify organization exists
-        org = db.organizations[id]
+        # gh-237: organizations carries its own tenant_id -- scope directly.
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
         if not org:
             return None, "Organization not found", 404
 
@@ -470,10 +543,11 @@ async def list_identity_resource_roles(id: int):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def get_identity_roles():
-        # Verify identity exists
-        identity = db.identities[id]
+        # gh-237: identities carries its own tenant_id -- scope directly.
+        identity = get_tenant_scoped(db, db.identities, id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 

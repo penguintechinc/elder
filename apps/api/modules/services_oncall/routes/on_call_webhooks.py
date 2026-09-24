@@ -31,7 +31,12 @@ def _get_current_oncall_for_rotation(db, rotation_id: int) -> dict:
     if not shift:
         return None
 
-    identity = db.identities[shift.identity_id]
+    # tenant-scope-exempt: this webhook has no JWT/tenant context (internal
+    # AlertManager caller, no login_required) -- shift.identity_id is
+    # derived from an already-resolved shift tied to a service-name match,
+    # not a caller-supplied numeric id, so there is no cross-tenant IDOR
+    # surface to close here.
+    identity = db.identities[shift.identity_id]  # tenant-scope-exempt
     if not identity:
         return None
 

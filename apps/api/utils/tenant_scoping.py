@@ -46,6 +46,7 @@ def get_tenant_scoped(
     tenant_id: int | None,
     *,
     org_fk: str | None = None,
+    parent_table: Any | None = None,
 ) -> Any | None:
     """Resolve a row by primary key, scoped to the caller's tenant.
 
@@ -54,10 +55,14 @@ def get_tenant_scoped(
     - **Direct** (default): ``table`` carries its own ``tenant_id`` column —
       filters ``table.id == record_id AND table.tenant_id == tenant_id``.
     - **Joined**: pass ``org_fk`` (e.g. ``"organization_id"``) for tables
-      that scope tenancy indirectly through ``organizations.tenant_id``
-      (e.g. ``entities``, which has no ``tenant_id`` column of its own) —
-      resolves the row, then verifies its referenced organization belongs
-      to ``tenant_id`` before returning it.
+      that scope tenancy indirectly through a parent table's
+      ``tenant_id`` (e.g. ``entities``, which has no ``tenant_id`` column
+      of its own) — resolves the row, then verifies its referenced parent
+      belongs to ``tenant_id`` before returning it. ``parent_table``
+      defaults to ``db.organizations`` (the original gh-237 shape); pass an
+      explicit table (e.g. ``db.on_call_rotations``) for tables scoped
+      through a different tenant-owned parent (e.g.
+      ``on_call_rotation_participants.rotation_id`` -> ``on_call_rotations.tenant_id``).
 
     Returns ``None`` (never raises) when ``tenant_id`` or ``record_id`` is
     falsy, the row doesn't exist, or it belongs to a different tenant.
@@ -82,16 +87,15 @@ def get_tenant_scoped(
     if not row:
         return None
 
-    org_id = getattr(row, org_fk, None)
-    if not org_id:
+    parent_id = getattr(row, org_fk, None)
+    if not parent_id:
         return None
 
-    owning_org = (
-        db((db.organizations.id == org_id) & (db.organizations.tenant_id == tenant_id))
-        .select()
-        .first()
+    parent = parent_table if parent_table is not None else db.organizations
+    owning_parent = (
+        db((parent.id == parent_id) & (parent.tenant_id == tenant_id)).select().first()
     )
-    if not owning_org:
+    if not owning_parent:
         return None
 
     return row
