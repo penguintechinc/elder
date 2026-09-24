@@ -3,10 +3,11 @@
 # flake8: noqa: E501
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
+from quart_schema import validate_response
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
@@ -31,6 +32,28 @@ from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("identities", __name__)
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityListResponse:
+    """Paginated list of identities."""
+
+    items: list[IdentityDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityGroupListResponse:
+    """Paginated list of identity groups."""
+
+    items: list[IdentityGroupDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
 
 
 def _identity_admin_kind(is_superuser: bool, portal_role: str | None) -> str | None:
@@ -82,6 +105,7 @@ def _identity_row_to_dto(row) -> IdentityDTO:
 
 @bp.route("", methods=["GET"])
 @login_required
+@validate_response(IdentityListResponse)
 async def list_identities():
     """
     List all identities with pagination.
@@ -161,22 +185,20 @@ async def list_identities():
 
     items = [_identity_row_to_dto(row) for row in rows]
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityRequest)
+@validate_response(IdentityDTO, status_code=201)
 async def create_identity(body: CreateIdentityRequest):
     """
     Create a new identity/user.
@@ -273,12 +295,13 @@ async def create_identity(body: CreateIdentityRequest):
     identity = await run_in_threadpool(insert)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 201
+    return identity_dto, 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityDTO)
 async def get_identity(id: int):
     """
     Get identity by ID.
@@ -305,13 +328,14 @@ async def get_identity(id: int):
         return ApiResponse.error("Identity not found", 404)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityRequest)
+@validate_response(IdentityDTO)
 async def update_identity(id: int, body: UpdateIdentityRequest):
     """
     Update identity.
@@ -366,7 +390,7 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
     identity = await run_in_threadpool(update)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -416,6 +440,7 @@ async def delete_identity(id: int):
 @bp.route("/groups", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupListResponse)
 async def list_groups():
     """
     List all identity groups.
@@ -459,22 +484,20 @@ async def list_groups():
     # Convert PyDAL rows to DTOs
     items = from_pydal_rows(rows, IdentityGroupDTO)
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityGroupListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("/groups", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO, status_code=201)
 async def create_group(body: CreateIdentityGroupRequest):
     """
     Create a new identity group.
@@ -517,12 +540,13 @@ async def create_group(body: CreateIdentityGroupRequest):
         return jsonify({"error": error}), status
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 201
+    return group_dto, 201
 
 
 @bp.route("/groups/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupDTO)
 async def get_group(id: int):
     """Get identity group by ID."""
     db = current_app.db
@@ -535,13 +559,14 @@ async def get_group(id: int):
         return ApiResponse.error("Group not found", 404)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO)
 async def update_group(id: int, body: UpdateIdentityGroupRequest):
     """
     Update identity group.
@@ -593,7 +618,7 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
     group = await run_in_threadpool(update)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["DELETE"])

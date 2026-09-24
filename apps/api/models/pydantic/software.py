@@ -70,6 +70,16 @@ class SoftwareDTO(ImmutableModel):
     village_id: str | None = None
 
 
+class SoftwareListResponse(ImmutableModel):
+    """Paginated list of software entries."""
+
+    items: list[SoftwareDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
 class CreateSoftwareRequest(RequestModel):
     """
     Request to create a new Software record.

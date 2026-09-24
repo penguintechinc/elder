@@ -10,10 +10,35 @@ Provides validated Pydantic 2 equivalents of Metadata Field dataclasses:
 # flake8: noqa: E501
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
+
+
+class MetadataFieldResponse(ImmutableModel):
+    """
+    Immutable Metadata Field response DTO matching the actual
+    `metadata_fields` table columns (`field_key`/`field_value`, not the
+    stale `key`/`value` names in `MetadataFieldDTO` above, which is unused
+    by apps/api/modules/issues/routes/metadata.py).
+
+    `field_value` holds the *parsed* value (str/int/float/bool/dict/list
+    depending on `field_type`), not the raw stored string — matching what
+    the route handlers already return.
+    """
+
+    id: int
+    resource_type: str
+    resource_id: int
+    field_key: str
+    field_type: str
+    field_value: Any = None
+    is_system: bool
+    created_by_id: int | None = None
+    village_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class MetadataFieldDTO(ImmutableModel):

@@ -2,17 +2,20 @@
 
 # flake8: noqa: E501
 
-from dataclasses import asdict
 from datetime import date, datetime
 
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
-from apps.api.models.dataclasses import PaginatedResponse
+from apps.api.models.pydantic.certificate import (
+    CertificateListResponse,
+    CertificateResponse,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -87,6 +90,7 @@ VALID_CT_LOG_STATUSES = ["logged", "pending", "not_required"]
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@validate_response(CertificateListResponse)
 async def list_certificates():
     """List certificates with optional filtering."""
     db = current_app.db
@@ -145,20 +149,19 @@ async def list_certificates():
         total = len(items)
         pages = pagination.calculate_pages(total)
 
-    response = PaginatedResponse(
-        items=items,
+    return CertificateListResponse(
+        items=[CertificateResponse.model_validate(item) for item in items],
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@validate_response(CertificateResponse, status_code=201)
 async def create_certificate():
     """Create a new certificate entry."""
     db = current_app.db
@@ -310,12 +313,13 @@ async def create_certificate():
         return get_tenant_scoped(db, db.certificates, cert_id, tenant_id)
 
     certificate = await run_in_threadpool(create)
-    return ApiResponse.created(certificate.as_dict())
+    return CertificateResponse.model_validate(certificate), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@validate_response(CertificateResponse)
 async def get_certificate(id: int):
     """Get a single certificate entry by ID."""
     db = current_app.db
@@ -336,13 +340,14 @@ async def get_certificate(id: int):
             certificate.is_revoked or False,
         )
 
-    return ApiResponse.success(cert_dict)
+    return CertificateResponse.model_validate(cert_dict), 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("secrets:write")
 @resource_role_required("maintainer")
+@validate_response(CertificateResponse)
 async def update_certificate(id: int):
     """Update a certificate entry."""
     db = current_app.db
@@ -532,7 +537,7 @@ async def update_certificate(id: int):
             certificate.is_revoked or False,
         )
 
-    return ApiResponse.success(cert_dict)
+    return CertificateResponse.model_validate(cert_dict), 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])

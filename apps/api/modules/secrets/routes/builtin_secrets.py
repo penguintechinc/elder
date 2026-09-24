@@ -5,9 +5,17 @@
 import logging
 
 from quart import Blueprint, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
+from apps.api.models.pydantic.secrets import (
+    DeleteSecretResponse,
+    SecretConnectionTestResponse,
+    SecretMetadataListResponse,
+    SecretMetadataResponse,
+    SecretValueResponse,
+)
 from apps.api.services.secrets import BuiltinSecretsClient
 
 logger = logging.getLogger(__name__)
@@ -18,6 +26,7 @@ bp = Blueprint("builtin_secrets", __name__, url_prefix="/api/v1/builtin-secrets"
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@validate_response(SecretMetadataListResponse)
 def list_secrets():
     """List built-in secrets for an organization."""
     try:
@@ -32,7 +41,9 @@ def list_secrets():
 
         secrets = client.list_secrets(prefix=prefix)
 
-        return jsonify({"secrets": [s.__dict__ for s in secrets]}), 200
+        return SecretMetadataListResponse(
+            secrets=[SecretMetadataResponse.model_validate(s) for s in secrets]
+        ), 200
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
@@ -41,6 +52,7 @@ def list_secrets():
 @bp.route("/<path:secret_path>", methods=["GET"])
 @login_required
 @require_scope("secrets:read")
+@validate_response(SecretValueResponse)
 def get_secret(secret_path):
     """Get a built-in secret by path."""
     try:
@@ -55,7 +67,7 @@ def get_secret(secret_path):
         secret = client.get_secret(secret_path)
 
         # Return masked by default
-        return jsonify(secret.__dict__), 200
+        return SecretValueResponse.model_validate(secret), 200
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -66,6 +78,7 @@ def get_secret(secret_path):
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("secrets:write")
+@validate_response(SecretMetadataResponse, status_code=201)
 async def create_secret():
     """Create a new built-in secret."""
     try:
@@ -98,7 +111,7 @@ async def create_secret():
             metadata=metadata,
         )
 
-        return jsonify(secret_metadata.__dict__), 201
+        return SecretMetadataResponse.model_validate(secret_metadata), 201
 
     except Exception as e:
         logger.error(f"Create built-in secret error: {str(e)}")
@@ -110,6 +123,7 @@ async def create_secret():
 @bp.route("/<path:secret_path>", methods=["PUT", "PATCH"])
 @login_required
 @require_scope("secrets:write")
+@validate_response(SecretMetadataResponse)
 async def update_secret(secret_path):
     """Update a built-in secret."""
     try:
@@ -134,7 +148,7 @@ async def update_secret(secret_path):
             value=data["value"],
         )
 
-        return jsonify(secret_metadata.__dict__), 200
+        return SecretMetadataResponse.model_validate(secret_metadata), 200
 
     except Exception as e:
         logger.error(f"Update built-in secret error: {str(e)}")
@@ -146,6 +160,7 @@ async def update_secret(secret_path):
 @bp.route("/<path:secret_path>", methods=["DELETE"])
 @login_required
 @require_scope("secrets:write")
+@validate_response(DeleteSecretResponse)
 def delete_secret(secret_path):
     """Delete a built-in secret."""
     try:
@@ -159,7 +174,7 @@ def delete_secret(secret_path):
 
         result = client.delete_secret(path=secret_path, force=False)
 
-        return jsonify({"success": result, "path": secret_path}), 200
+        return DeleteSecretResponse(success=result, path=secret_path), 200
 
     except Exception as e:
         logger.error(f"Delete built-in secret error: {str(e)}")
@@ -171,6 +186,7 @@ def delete_secret(secret_path):
 @bp.route("/test-connection", methods=["POST"])
 @login_required
 @require_scope("secrets:admin")
+@validate_response(SecretConnectionTestResponse)
 async def test_connection():
     """Test built-in secrets database connection."""
     try:
@@ -182,7 +198,7 @@ async def test_connection():
 
         success = client.test_connection()
 
-        return jsonify({"success": success, "provider": "builtin"}), 200
+        return SecretConnectionTestResponse(success=success, provider="builtin"), 200
 
     except Exception as e:
         logger.error(f"Test built-in secrets connection error: {str(e)}")

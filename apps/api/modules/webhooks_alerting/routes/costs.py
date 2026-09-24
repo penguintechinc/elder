@@ -5,8 +5,10 @@
 from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, g, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import login_required, require_scope
+from apps.api.models.pydantic.cost import CostSyncJobListResponse, CostSyncJobResponse
 
 bp = Blueprint("costs", __name__)
 
@@ -79,11 +81,14 @@ async def update_resource_costs(resource_type, resource_id):
 @bp.route("/sync-jobs", methods=["GET"])
 @login_required
 @require_scope("webhooks_alerting:read")
+@validate_response(CostSyncJobListResponse)
 def list_sync_jobs():
     """List cost sync jobs."""
     db = g.db
     jobs = db(db.cost_sync_jobs.id > 0).select(orderby=db.cost_sync_jobs.name)
-    return jsonify({"data": [j.as_dict() for j in jobs]}), 200
+    return CostSyncJobListResponse(
+        data=[CostSyncJobResponse.from_row(j) for j in jobs]
+    ), 200
 
 
 @bp.route("/sync-jobs", methods=["POST"])

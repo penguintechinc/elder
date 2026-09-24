@@ -13,6 +13,7 @@ from penguin_aaa.middleware.asgi import AuditMiddleware
 from penguin_aaa.middleware.tenant import TenantMiddleware
 from quart import Quart, g, jsonify, make_response
 from quart_cors import cors
+from quart_schema import QuartSchema
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
@@ -385,6 +386,19 @@ def _init_extensions(app: Quart) -> None:
         allow_headers=app.config["CORS_ALLOW_HEADERS"],
         allow_credentials=app.config.get("CORS_SUPPORTS_CREDENTIALS", True),
         expose_headers=app.config.get("CORS_EXPOSE_HEADERS", []),
+    )
+
+    # quart-schema powers @validate_request/@validate_response (security-audit
+    # fix: explicit response DTOs instead of raw ORM/dataclass serialization).
+    # Public OpenAPI/Swagger/Redoc/Scalar doc routes are intentionally disabled
+    # here — gating them behind penguin-aaa auth is a separate tracked decision
+    # (security.md: "public doc exposes only the login endpoint, nothing else").
+    QuartSchema(
+        app,
+        openapi_path=None,
+        swagger_ui_path=None,
+        redoc_ui_path=None,
+        scalar_ui_path=None,
     )
 
     logger.info("extensions_initialized")
