@@ -218,6 +218,41 @@ def _register_before_request(app: Quart) -> None:
         }
 
     @app.before_request
+    async def enforce_csrf_protection():
+        """Reject cookie-authenticated state-changing requests missing a
+        matching CSRF header (double-submit pattern).
+
+        The SPA's access/refresh tokens moved from localStorage into
+        HttpOnly cookies (gh security audit, High), which the browser now
+        attaches automatically -- exactly the property CSRF exploits. A
+        Bearer `Authorization` header is never auto-attached cross-site by
+        the browser, so header-authenticated (non-browser) callers are
+        exempt; only requests relying on the auth cookies need the extra
+        `X-CSRF-Token` header the SPA echoes back from its (non-HttpOnly)
+        `elder_csrf_token` cookie. Runs after populate_claims so header vs.
+        cookie auth is already distinguishable via the raw header itself.
+        """
+        from quart import request
+
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+
+        if request.headers.get("Authorization"):
+            return  # Bearer-token caller: browsers don't auto-send this cross-site
+
+        from apps.api.auth.portal_cookies import (
+            get_access_token_from_cookie,
+            get_refresh_token_from_cookie,
+            is_csrf_valid,
+        )
+
+        if not get_access_token_from_cookie() and not get_refresh_token_from_cookie():
+            return  # No cookie session to protect; downstream auth will 401
+
+        if not is_csrf_valid():
+            return jsonify({"error": "CSRF token missing or invalid"}), 403
+
+    @app.before_request
     async def enforce_module_access():
         """Enforce module licensing and tenant enablement (layers 2-3).
 

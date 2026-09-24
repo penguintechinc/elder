@@ -106,6 +106,9 @@ class Config:
         "X-Requested-With",
         "Access-Control-Request-Method",
         "Access-Control-Request-Headers",
+        # Double-submit CSRF header the SPA echoes back from the
+        # elder_csrf_token cookie -- see apps.api.auth.portal_cookies.
+        "X-CSRF-Token",
     ]
     CORS_SUPPORTS_CREDENTIALS = True
     CORS_EXPOSE_HEADERS = ["Content-Type", "Authorization"]

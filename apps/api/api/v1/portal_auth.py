@@ -12,8 +12,14 @@ from inspect import iscoroutinefunction
 
 import jwt
 from pydantic import ValidationError
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, jsonify, make_response, request
 
+from apps.api.auth.portal_cookies import (
+    clear_portal_auth_cookies,
+    get_access_token_from_cookie,
+    get_refresh_token_from_cookie,
+    set_portal_auth_cookies,
+)
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService
 from apps.api.utils.api_responses import ApiResponse
@@ -43,6 +49,12 @@ def portal_token_required(f):
 
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
+
+        # Browser client: no Authorization header, fall back to the SPA's
+        # HttpOnly access-token cookie (gh security audit -- tokens no
+        # longer live in localStorage for this decorator to read via header).
+        if not token:
+            token = get_access_token_from_cookie()
 
         if not token:
             return ApiResponse.unauthorized("Token is missing")
@@ -119,6 +131,50 @@ def generate_tokens(user: dict) -> dict:
         "token_type": "Bearer",
         "expires_in": int(access_token_expires.total_seconds()),
     }
+
+
+async def _issue_token_response(
+    result: dict, tokens: dict, *, roles: list, status_code: int = 200
+):
+    """Build the register/login/MFA-verify success response with HttpOnly auth cookies.
+
+    The JSON body still carries the tokens (react-libs LoginPageBuilder's
+    `LoginResponse.token`/`refreshToken` fields, and any non-browser caller
+    that predates this change) -- but the browser client must not persist
+    them; it relies on the cookies set here instead (gh security audit,
+    High: XSS-exfiltratable localStorage tokens).
+    """
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": roles,
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
+    response = await make_response(jsonify(response_data), status_code)
+    secure = not current_app.config.get("DEBUG", False)
+    set_portal_auth_cookies(
+        response,
+        tokens["access_token"],
+        tokens["refresh_token"],
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
+    return response
 
 
 @bp.route("/register", methods=["POST"])
@@ -219,25 +275,8 @@ async def register():
     # Generate tokens
     tokens = generate_tokens(result)
 
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": ["reader"],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        201,
+    return await _issue_token_response(
+        result, tokens, roles=["reader"], status_code=201
     )
 
 
@@ -340,26 +379,8 @@ async def login():
     tokens = generate_tokens(result)
 
     # Format response for react-libs LoginPageBuilder compatibility
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        200,
-    )
+    roles = [result.get("tenant_role")] if result.get("tenant_role") else []
+    return await _issue_token_response(result, tokens, roles=roles)
 
 
 @bp.route("/mfa/verify", methods=["POST"])
@@ -400,26 +421,8 @@ async def verify_mfa():
     # Generate tokens
     tokens = generate_tokens(result)
 
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        200,
-    )
+    roles = [result.get("tenant_role")] if result.get("tenant_role") else []
+    return await _issue_token_response(result, tokens, roles=roles)
 
 
 @bp.route("/mfa/enable", methods=["POST"])
@@ -518,24 +521,25 @@ async def refresh_token():
     """Refresh access token using refresh token.
 
     Request body:
-        refresh_token: str - Refresh token
+        refresh_token: str - Refresh token (non-browser callers). Browser
+            callers omit this -- the refresh token is read from the HttpOnly
+            `elder_refresh_token` cookie instead (gh security audit, High:
+            tokens no longer live in localStorage for the SPA to resend).
 
     Returns:
-        New access token
+        New access token (also re-set as HttpOnly cookies for the browser)
     """
-    data = await request.get_json()
-    if not data:
-        return ApiResponse.bad_request("No data provided")
+    data = await request.get_json(force=True, silent=True) or {}
 
-    refresh_token = data.get("refresh_token")
-    if not refresh_token:
+    refresh_token_value = data.get("refresh_token") or get_refresh_token_from_cookie()
+    if not refresh_token_value:
         return ApiResponse.bad_request("refresh_token is required")
 
     try:
         secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
             "SECRET_KEY"
         )
-        payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
+        payload = jwt.decode(refresh_token_value, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":
             return ApiResponse.unauthorized("Invalid token type")
@@ -557,12 +561,49 @@ async def refresh_token():
         }
         tokens = generate_tokens(user_dict)
 
-        return jsonify(tokens), 200
+        response = await make_response(jsonify(tokens), 200)
+        secure = not current_app.config.get("DEBUG", False)
+        set_portal_auth_cookies(
+            response,
+            tokens["access_token"],
+            tokens["refresh_token"],
+            access_max_age=int(
+                current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+            ),
+            refresh_max_age=int(
+                current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+            ),
+            secure=secure,
+        )
+        return response
 
     except jwt.ExpiredSignatureError:
-        return ApiResponse.unauthorized("Refresh token has expired")
+        response = await make_response(
+            *ApiResponse.unauthorized("Refresh token has expired")
+        )
+        clear_portal_auth_cookies(response)
+        return response
     except jwt.InvalidTokenError:
-        return ApiResponse.unauthorized("Invalid refresh token")
+        response = await make_response(
+            *ApiResponse.unauthorized("Invalid refresh token")
+        )
+        clear_portal_auth_cookies(response)
+        return response
+
+
+@bp.route("/logout", methods=["POST"])
+async def logout():
+    """Clear the SPA's HttpOnly auth cookies.
+
+    Portal-auth JWTs are stateless -- there's no server-side session to
+    invalidate -- so this is a cookie-clear operation only, mirroring
+    apps/api/web's SSR logout (apps.api.auth.web_auth.clear_session_cookie).
+    Deliberately unauthenticated: it must still succeed (and clear a stale
+    refresh cookie) even if the caller's access token already expired.
+    """
+    response = await make_response(jsonify({"message": "Logged out successfully"}), 200)
+    clear_portal_auth_cookies(response)
+    return response
 
 
 @bp.route("/me", methods=["GET"])
