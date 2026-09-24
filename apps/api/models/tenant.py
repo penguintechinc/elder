@@ -34,7 +34,24 @@ class Tenant(Base, IDMixin, TimestampMixin):
 
 
 class PortalUser(Base, IDMixin, TimestampMixin):
-    """Enterprise portal user management."""
+    """Enterprise portal user management.
+
+    OPEN GRC QUESTION (PII tokenization finding, see fix/pii-tokenization,
+    deferred for a human decision -- NOT resolved by that change): this
+    table is itself a second, parallel human-identity/auth table
+    (email + password_hash + mfa_secret + mfa_backup_codes +
+    failed_login_attempts, exactly like `apps.api.models.identity.Identity`)
+    with no shared key to `identities` -- see
+    `apps.api.common.licensing.counters` module docstring, which already
+    documents that a person holding both an `identities` row and a
+    `portal_users` row is counted once per table today. The PII
+    Tokenization rule calls for one identity table per product; whether
+    `portal_users` should be merged into `identities` (touches
+    apps/api/services/portal_auth, licensing counters, and login flows --
+    auth-owned surfaces) or is an intentionally separate authentication
+    realm for the enterprise portal is an architecture call outside this
+    fix's model/migration-only scope.
+    """
 
     __tablename__ = "portal_users"
 
