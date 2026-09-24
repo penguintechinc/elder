@@ -9,7 +9,12 @@ from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth.decorators import get_current_user, login_required, role_required
-from apps.api.models.dataclasses import IdentityDTO, PaginatedResponse, from_pydal_rows
+from apps.api.models.dataclasses import (
+    IdentityAdminDTO,
+    IdentityDTO,
+    PaginatedResponse,
+    from_pydal_rows,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_tenant_scoped
@@ -165,8 +170,9 @@ async def create_user():
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTO
-    user_dto = IdentityDTO(
+    # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
+    # admin-only response includes is_superuser/portal_role.
+    user_dto = IdentityAdminDTO(
         id=user_row.id,
         identity_type=user_row.identity_type,
         username=user_row.username,
@@ -203,15 +209,23 @@ async def update_user(user_id: int):
     # Prepare update data
     update_data = {}
 
+    # Allowlist of client-updatable fields. `is_superuser` is intentionally
+    # NOT in this base list -- regression: privilege escalation. A
+    # tenant-scoped "admin" (role_required("admin") allows portal_role ==
+    # "admin", not just global superusers -- see the gh-237 comment above)
+    # could otherwise set is_superuser=true on themselves or another user in
+    # their own tenant and escalate to a global superuser. Only append it
+    # when the caller is already a verified superuser.
     allowed_fields = [
         "email",
         "full_name",
         "organization_id",
         "portal_role",
         "is_active",
-        "is_superuser",
         "mfa_enabled",
     ]
+    if caller.is_superuser:
+        allowed_fields.append("is_superuser")
 
     for field in allowed_fields:
         if field in data:
@@ -244,8 +258,9 @@ async def update_user(user_id: int):
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTO
-    user_dto = IdentityDTO(
+    # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
+    # admin-only response includes is_superuser/portal_role.
+    user_dto = IdentityAdminDTO(
         id=user_row.id,
         identity_type=user_row.identity_type,
         username=user_row.username,

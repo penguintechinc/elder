@@ -333,3 +333,68 @@ class TestUsersListTenantIsolation:
             db = current_app.db
             still_there = db.identities[foreign_identity_id]
             assert still_there is not None, "cross-tenant delete must be a no-op"
+
+
+class TestUsersUpdateIsSuperuserMassAssignment:
+    """PATCH /api/v1/users/<id> -- is_superuser mass-assignment, regression: gh-237.
+
+    role_required("admin") allows a per-tenant portal_role=="admin" caller,
+    not just global superusers (see TestUsersListTenantIsolation above).
+    `is_superuser` was previously in the endpoint's update allowlist
+    unconditionally, so a tenant admin could PATCH is_superuser=true on
+    themselves (or any user in their own tenant) and escalate to a global
+    superuser. Fixed by only honoring the field when the caller itself is
+    already a verified superuser.
+    """
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_tenant_admin_cannot_set_is_superuser(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        caller = _mock_user(id=1, is_superuser=False, tenant_id=1, portal_role="admin")
+        mock_get_user.return_value = caller
+        token = generate_token(tenant_id=1, scopes=[])
+        async with app.app_context():
+            db = current_app.db
+            target_id = _identity(db, 1, f"escalate-{uuid4().hex[:8]}")
+
+        resp = await async_client.patch(
+            f"/api/v1/users/{target_id}",
+            json={"is_superuser": True, "full_name": "Escalated"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()
+        body = await resp.get_json()
+        assert body["is_superuser"] is False
+        # Other allowlisted fields in the same request still apply -- this
+        # is a targeted field rejection, not a blanket-deny of the update.
+        assert body["full_name"] == "Escalated"
+
+        async with app.app_context():
+            db = current_app.db
+            row = db.identities[target_id]
+            assert row.is_superuser is False, "is_superuser must not change"
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_superuser_caller_can_still_set_is_superuser(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Sanity check the allowlist fix isn't a blanket deny -- a verified
+        global superuser caller can still grant is_superuser."""
+        caller = _mock_user(id=1, is_superuser=True, tenant_id=1, portal_role="admin")
+        mock_get_user.return_value = caller
+        token = generate_token(tenant_id=1, scopes=[])
+        async with app.app_context():
+            db = current_app.db
+            target_id = _identity(db, 1, f"promote-{uuid4().hex[:8]}")
+
+        resp = await async_client.patch(
+            f"/api/v1/users/{target_id}",
+            json={"is_superuser": True},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()
+        body = await resp.get_json()
+        assert body["is_superuser"] is True
