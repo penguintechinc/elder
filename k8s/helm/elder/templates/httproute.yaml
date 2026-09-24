@@ -7,8 +7,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
+  - name: {{ ((.Values.gateway).parentRef).name | default "shared" }}
+    namespace: {{ ((.Values.gateway).parentRef).namespace | default "gateway" }}
     sectionName: https
   hostnames:
   - {{ .Values.gateway.host | quote }}
@@ -42,8 +42,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
+  - name: {{ ((.Values.gateway).parentRef).name | default "shared" }}
+    namespace: {{ ((.Values.gateway).parentRef).namespace | default "gateway" }}
     sectionName: http
   hostnames:
   - {{ .Values.gateway.host | quote }}
