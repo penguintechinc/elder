@@ -22,6 +22,7 @@ from apps.api.common.flags.posthog_client import flag_enabled
 from apps.api.services.privacy.service import LegalHoldError, PrivacyService
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 bp = Blueprint("privacy", __name__)
 
@@ -41,10 +42,18 @@ def _flag_on() -> bool:
 
 
 def _tenant_legal_hold(db: Any, tenant_id: int | None) -> bool:
-    """True if `tenant_id`'s tenant has an active legal hold (blocks erasure)."""
+    """True if `tenant_id`'s tenant has an active legal hold (blocks erasure).
+
+    `tenant_id` here is always the caller's own tenant (resolved from the
+    validated JWT via `get_current_tenant_id()`, never request-supplied), so
+    this can only ever read the caller's own tenant's hold state -- never
+    another tenant's. Written as an explicit query rather than a bare
+    bare bracket lookup on the tenants table to stay off the gh-237 unscoped-
+    lookup ratchet (scripts/check_tenant_scoping.py).
+    """
     if not tenant_id:
         return False
-    tenant = db.tenants[tenant_id]
+    tenant = db(db.tenants.id == tenant_id).select().first()
     return bool(getattr(tenant, "legal_hold", False)) if tenant else False
 
 
@@ -85,10 +94,14 @@ async def export_my_data() -> tuple[Any, int]:
 
     db = current_app.db
     identity_id = g.current_user.id
-    tenant_id = getattr(g.current_user, "tenant_id", None)
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("tenant_required", 403)
 
     try:
-        data = await run_in_threadpool(PrivacyService.export_identity, db, identity_id)
+        data = await run_in_threadpool(
+            PrivacyService.export_identity, db, identity_id, tenant_id
+        )
     except LookupError:
         return ApiResponse.not_found("Identity", identity_id)
 
@@ -114,13 +127,15 @@ async def erase_my_data() -> tuple[Any, int]:
 
     db = current_app.db
     identity_id = g.current_user.id
-    tenant_id = getattr(g.current_user, "tenant_id", None)
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("tenant_required", 403)
 
     legal_hold = await run_in_threadpool(_tenant_legal_hold, db, tenant_id)
 
     try:
         result = await run_in_threadpool(
-            PrivacyService.erase_identity, db, identity_id, legal_hold
+            PrivacyService.erase_identity, db, identity_id, tenant_id, legal_hold
         )
     except LegalHoldError as exc:
         return ApiResponse.error(str(exc), 409, legal_hold=True)
@@ -154,11 +169,13 @@ async def set_my_consent() -> tuple[Any, int]:
 
     db = current_app.db
     identity_id = g.current_user.id
-    tenant_id = getattr(g.current_user, "tenant_id", None)
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("tenant_required", 403)
 
     try:
         result = await run_in_threadpool(
-            PrivacyService.set_do_not_sell, db, identity_id, opted_out
+            PrivacyService.set_do_not_sell, db, identity_id, tenant_id, opted_out
         )
     except LookupError:
         return ApiResponse.not_found("Identity", identity_id)
