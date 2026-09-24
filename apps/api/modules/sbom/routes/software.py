@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
@@ -19,6 +20,8 @@ from apps.api.models.dataclasses import (
 )
 from apps.api.models.pydantic.software import (
     CreateSoftwareRequest,
+    SoftwareDTO,
+    SoftwareListResponse,
     UpdateSoftwareRequest,
 )
 from apps.api.services.sbom.exporters import CycloneDXExporter, SPDXExporter
@@ -37,6 +40,7 @@ bp = Blueprint("software", __name__)
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(SoftwareListResponse)
 async def list_software():
     """List software with optional filtering."""
     db = current_app.db
@@ -70,21 +74,20 @@ async def list_software():
     total, rows = await run_in_threadpool(get_software)
     pages = pagination.calculate_pages(total)
 
-    response = PaginatedResponse(
-        items=[row.as_dict() for row in rows],
+    return SoftwareListResponse(
+        items=[SoftwareDTO.model_validate(row) for row in rows],
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("sbom:write")
 @validated_request(body_model=CreateSoftwareRequest)
+@validate_response(SoftwareDTO, status_code=201)
 async def create_software(body: CreateSoftwareRequest):
     """Create a new software entry."""
     db = current_app.db
@@ -133,12 +136,13 @@ async def create_software(body: CreateSoftwareRequest):
         return get_tenant_scoped(db, db.software, software_id, tenant_id)
 
     software = await run_in_threadpool(create)
-    return ApiResponse.created(software.as_dict())
+    return SoftwareDTO.model_validate(software), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(SoftwareDTO)
 async def get_software(id: int):
     """Get a single software entry by ID."""
     db = current_app.db
@@ -150,7 +154,7 @@ async def get_software(id: int):
     if not software:
         return ApiResponse.not_found("Software", id)
 
-    return ApiResponse.success(software.as_dict())
+    return SoftwareDTO.model_validate(software), 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
@@ -158,6 +162,7 @@ async def get_software(id: int):
 @require_scope("sbom:write")
 @resource_role_required("maintainer")
 @validated_request(body_model=UpdateSoftwareRequest)
+@validate_response(SoftwareDTO)
 async def update_software(id: int, body: UpdateSoftwareRequest):
     """Update a software entry."""
     db = current_app.db
@@ -227,7 +232,7 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
     if not software:
         return ApiResponse.not_found("Software", id)
 
-    return ApiResponse.success(software.as_dict())
+    return SoftwareDTO.model_validate(software), 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])

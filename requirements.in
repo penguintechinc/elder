@@ -4,6 +4,7 @@
 # Core ASGI Framework
 quart==0.20.0
 quart-cors==0.8.0
+quart-schema==0.25.0  # @validate_response / @validate_request + OpenAPI (security-audit fix: response DTOs)
 Werkzeug==3.1.6
 
 # gRPC - pinned to 5.x protobuf: google-cloud-iam and google-cloud-resource-manager

@@ -2,17 +2,23 @@
 
 # flake8: noqa: E501
 
-from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
-from quart import Blueprint, current_app, jsonify, request
+from quart import Blueprint, current_app, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
-from apps.api.models.dataclasses import PaginatedResponse
+from apps.api.models.pydantic.data_store import (
+    DataStoreLabelAssignmentResponse,
+    DataStoreLabelListResponse,
+    DataStoreLabelResponse,
+    DataStoreListResponse,
+    DataStoreResponse,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -56,6 +62,7 @@ VALID_DATA_CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreListResponse)
 async def list_data_stores():
     """List data stores with optional filtering."""
     db = current_app.db
@@ -107,20 +114,19 @@ async def list_data_stores():
     total, rows = await run_in_threadpool(get_data_stores)
     pages = pagination.calculate_pages(total)
 
-    response = PaginatedResponse(
-        items=[row.as_dict() for row in rows],
+    return DataStoreListResponse(
+        items=[DataStoreResponse.model_validate(row) for row in rows],
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("infrastructure:write")
+@validate_response(DataStoreResponse, status_code=201)
 async def create_data_store():
     """Create a new data store entry."""
     db = current_app.db
@@ -196,12 +202,13 @@ async def create_data_store():
         return get_tenant_scoped(db, db.data_stores, data_store_id, tenant_id)
 
     data_store = await run_in_threadpool(create)
-    return ApiResponse.created(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreResponse)
 async def get_data_store(id: int):
     """Get a single data store entry by ID."""
     db = current_app.db
@@ -214,13 +221,14 @@ async def get_data_store(id: int):
     if not data_store:
         return ApiResponse.not_found("Data store", id)
 
-    return ApiResponse.success(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("infrastructure:write")
 @resource_role_required("maintainer")
+@validate_response(DataStoreResponse)
 async def update_data_store(id: int):
     """Update a data store entry."""
     db = current_app.db
@@ -313,7 +321,7 @@ async def update_data_store(id: int):
     if not data_store:
         return ApiResponse.not_found("Data store", id)
 
-    return ApiResponse.success(data_store.as_dict())
+    return DataStoreResponse.model_validate(data_store), 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -344,6 +352,7 @@ async def delete_data_store(id: int):
 @bp.route("/<int:id>/labels", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(DataStoreLabelListResponse)
 async def get_data_store_labels(id: int):
     """Get labels for a data store."""
     db = current_app.db
@@ -361,17 +370,18 @@ async def get_data_store_labels(id: int):
         for row in rows:
             label = db.issue_labels[row.label_id]  # tenant-scope-exempt: global
             if label:
-                labels.append(label.as_dict())
+                labels.append(DataStoreLabelResponse.model_validate(label))
         return labels
 
     labels = await run_in_threadpool(get_labels)
-    return ApiResponse.success({"labels": labels})
+    return DataStoreLabelListResponse(labels=labels), 200
 
 
 @bp.route("/<int:id>/labels", methods=["POST"])
 @login_required
 @require_scope("infrastructure:write")
 @resource_role_required("viewer")
+@validate_response(DataStoreLabelAssignmentResponse, status_code=201)
 async def add_data_store_label(id: int):
     """Add a label to a data store."""
     db = current_app.db
@@ -417,7 +427,7 @@ async def add_data_store_label(id: int):
     if assignment is None:
         return ApiResponse.conflict("Label already assigned to this data store")
 
-    return ApiResponse.created(assignment.as_dict())
+    return DataStoreLabelAssignmentResponse.model_validate(assignment), 201
 
 
 @bp.route("/<int:id>/labels/<int:label_id>", methods=["DELETE"])

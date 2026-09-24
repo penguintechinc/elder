@@ -9,18 +9,19 @@ from datetime import UTC, datetime, timezone
 import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import (
     login_required,
     require_scope,
     resource_role_required,
 )
-from apps.api.models.dataclasses import PaginatedResponse
 from apps.api.models.pydantic import (
     CreateLicensePolicyRequest,
     LicensePolicyDTO,
     UpdateLicensePolicyRequest,
 )
+from apps.api.models.pydantic.license_policy import LicensePolicyListResponse
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -117,6 +118,7 @@ def _check_component_against_policy(component: dict, policy: dict) -> dict:
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(LicensePolicyListResponse)
 async def list_policies():
     """
     List license policies with optional filtering.
@@ -169,21 +171,19 @@ async def list_policies():
     # Convert to DTOs
     items = [LicensePolicyDTO.from_pydal_row(row) for row in rows]
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[item.to_dict() for item in items],
+    return LicensePolicyListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("sbom:write")
+@validate_response(LicensePolicyDTO, status_code=201)
 async def create_policy():
     """
     Create a new license policy.
@@ -270,12 +270,13 @@ async def create_policy():
         name=policy.name,
         organization_id=req.organization_id,
     )
-    return ApiResponse.created(policy_dto.to_dict())
+    return policy_dto, 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("sbom:read")
+@validate_response(LicensePolicyDTO)
 async def get_policy(id: int):
     """
     Get a single license policy by ID.
@@ -303,13 +304,14 @@ async def get_policy(id: int):
         return ApiResponse.not_found("License Policy", id)
 
     policy_dto = LicensePolicyDTO.from_pydal_row(policy)
-    return ApiResponse.success(policy_dto.to_dict())
+    return policy_dto, 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])
 @login_required
 @require_scope("sbom:write")
 @resource_role_required("maintainer")
+@validate_response(LicensePolicyDTO)
 async def update_policy(id: int):
     """
     Update a license policy.
@@ -393,7 +395,7 @@ async def update_policy(id: int):
 
     policy_dto = LicensePolicyDTO.from_pydal_row(updated_policy)
     logger.info("license_policy_updated", policy_id=id)
-    return ApiResponse.success(policy_dto.to_dict())
+    return policy_dto, 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])

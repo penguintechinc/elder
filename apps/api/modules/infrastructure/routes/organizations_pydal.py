@@ -3,10 +3,12 @@
 # flake8: noqa: E501
 
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from quart import Blueprint, current_app, g, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.licensing.enforce import check_limit
@@ -35,6 +37,17 @@ from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scop
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("organizations", __name__)
+
+
+@dataclass(slots=True, frozen=True)
+class OrganizationListResponse:
+    """Paginated list of Organization Units (OUs)."""
+
+    items: list[OrganizationDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
 
 
 def _resolve_caller_scope() -> tuple[bool, int | None]:
@@ -69,6 +82,7 @@ def _get_org_scoped_for_caller(
 @bp.route("", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(OrganizationListResponse)
 async def list_organizations():
     """
     List all Organization Units (OUs) with pagination and filtering.
@@ -130,22 +144,20 @@ async def list_organizations():
     # Convert PyDAL rows to DTOs
     items = from_pydal_rows(rows, OrganizationDTO)
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return OrganizationListResponse(
+        items=items,
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @require_scope("infrastructure:write")
 @validated_request(body_model=CreateOrganizationRequest)
+@validate_response(OrganizationDTO, status_code=201)
 async def create_organization(body: CreateOrganizationRequest):
     """
     Create a new Organization Unit (OU).
@@ -208,13 +220,41 @@ async def create_organization(body: CreateOrganizationRequest):
             logger.error(
                 f"Organization {org_id} was inserted but not found after commit"
             )
-            # Still return success with the data we have
-            result = {"id": org_id, **org_data}
-            return ApiResponse.created(result)
+            # Still return success with the data we have -- fill in the
+            # OrganizationDTO's required-but-unfilled fields rather than
+            # returning a partial/mismatched shape (security-audit fix).
+            now = datetime.now(UTC)
+            return OrganizationDTO(
+                id=org_id,
+                name=org_data.get("name"),
+                description=org_data.get("description"),
+                type=org_data.get("type"),
+                parent_id=org_data.get("parent_id"),
+                owner_identity_id=org_data.get("owner_identity_id"),
+                owner_group_id=org_data.get("owner_group_id"),
+                created_at=now,
+                updated_at=now,
+                slug=org_data.get("slug"),
+                tenant_id=org_data.get("tenant_id"),
+                display_name=org_data.get("display_name"),
+                cloud_provider=org_data.get("cloud_provider"),
+                cloud_account_id=org_data.get("cloud_account_id"),
+                region=org_data.get("region"),
+                is_active=org_data.get("is_active", True),
+                settings=org_data.get("settings"),
+                tags=org_data.get("tags"),
+                metadata=org_data.get("metadata"),
+            ), 201
 
-        # Convert to dict and return
+        # Convert to DTO and return
         org_dict = await run_in_threadpool(lambda: org_row.as_dict())
-        return ApiResponse.created(org_dict)
+        return OrganizationDTO(
+            **{
+                k: v
+                for k, v in org_dict.items()
+                if k in OrganizationDTO.__dataclass_fields__
+            }
+        ), 201
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
@@ -223,6 +263,7 @@ async def create_organization(body: CreateOrganizationRequest):
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(OrganizationDTO)
 async def get_organization(id: int):
     """
     Get a single Organization Unit (OU) by ID.
@@ -246,7 +287,7 @@ async def get_organization(id: int):
             return ApiResponse.not_found("Organization Unit")
 
         org_dto = from_pydal_row(org_row, OrganizationDTO)
-        return ApiResponse.success(asdict(org_dto))
+        return org_dto, 200
     except Exception as e:
         logger.error(f"Error fetching organization {id}: {e}")
         return ApiResponse.not_found("Organization Unit")
@@ -256,6 +297,7 @@ async def get_organization(id: int):
 @login_required
 @require_scope("infrastructure:write")
 @validated_request(body_model=UpdateOrganizationRequest)
+@validate_response(OrganizationDTO)
 async def update_organization(id: int, body: UpdateOrganizationRequest):
     """
     Update an Organization Unit (OU).
@@ -300,7 +342,7 @@ async def update_organization(id: int, body: UpdateOrganizationRequest):
         # Fetch updated org (tenant-scope-exempt: verified above)
         org_row = await get_by_id(db.organizations, id)
         org_dto = from_pydal_row(org_row, OrganizationDTO)
-        return ApiResponse.success(asdict(org_dto))
+        return org_dto, 200
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 500)
@@ -553,6 +595,7 @@ async def get_organization_graph(id: int):
 @bp.route("/<int:id>/children", methods=["GET"])
 @login_required
 @require_scope("infrastructure:read")
+@validate_response(list[OrganizationDTO])
 async def get_organization_children(id: int):
     """
     Get all child organizations scoped to the caller's tenant.
@@ -599,7 +642,7 @@ async def get_organization_children(id: int):
             children = db(query).select()
             result = []
             for child in children:
-                result.append(asdict(from_pydal_row(child, OrganizationDTO)))
+                result.append(from_pydal_row(child, OrganizationDTO))
                 result.extend(get_descendants(child.id))
             return result
 
@@ -611,8 +654,8 @@ async def get_organization_children(id: int):
             if tenant_id is not None:
                 query &= db.organizations.tenant_id == tenant_id
             rows = db(query).select()
-            return [asdict(from_pydal_row(row, OrganizationDTO)) for row in rows]
+            return [from_pydal_row(row, OrganizationDTO) for row in rows]
 
         children = await run_in_threadpool(get_direct_children)
 
-    return jsonify(children), 200
+    return children, 200

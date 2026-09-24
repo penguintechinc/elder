@@ -43,6 +43,16 @@ class CreateLicensePolicyRequest(RequestModel):
     is_active: bool = True
 
 
+class LicensePolicyListResponse(ImmutableModel):
+    """Paginated list of License Policies."""
+
+    items: list[LicensePolicyDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
 class UpdateLicensePolicyRequest(RequestModel):
     """Request to update a License Policy."""
 
@@ -56,6 +66,7 @@ class UpdateLicensePolicyRequest(RequestModel):
 
 __all__ = [
     "LicensePolicyDTO",
+    "LicensePolicyListResponse",
     "CreateLicensePolicyRequest",
     "UpdateLicensePolicyRequest",
 ]
