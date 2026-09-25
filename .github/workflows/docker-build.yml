@@ -141,7 +141,7 @@ jobs:
         VERSION: ${{ steps.version.outputs.version }}
         IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
-        IS_RELEASE_BRANCH: ${{ startsWith(github.ref, 'refs/heads/v') }}
+        IS_RELEASE_BRANCH: ${{ startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/v') }}
         REF_NAME: ${{ github.ref_name }}
         REGISTRY: ${{ env.REGISTRY }}
         ORG: ${{ github.repository_owner }}

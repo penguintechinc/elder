@@ -86,7 +86,7 @@ jobs:
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: elder_test
         ports:
-          - 5432:5432
+          - 55432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -95,7 +95,7 @@ jobs:
       redis:
         image: redis:7-bookworm
         ports:
-          - 6379:6379
+          - 56379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -133,8 +133,8 @@ jobs:
       run: |
         pytest tests/unit -p no:warnings -q --no-header --cov-fail-under=40
       env:
-        DATABASE_URL: postgresql://elder_test:test_password@localhost:5432/elder_test
-        REDIS_URL: redis://localhost:6379/1
+        DATABASE_URL: postgresql://elder_test:test_password@localhost:55432/elder_test
+        REDIS_URL: redis://localhost:56379/1
         LICENSE_KEY: PENG-TEST-TEST-TEST-TEST-ABCD
         PRODUCT_NAME: test-product
 
@@ -151,7 +151,7 @@ jobs:
           POSTGRES_PASSWORD: test_password
           POSTGRES_DB: elder_test
         ports:
-          - 5432:5432
+          - 55432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -160,7 +160,7 @@ jobs:
       redis:
         image: redis:7-bookworm
         ports:
-          - 6379:6379
+          - 56379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -198,8 +198,8 @@ jobs:
       run: |
         pytest tests/integration -p no:warnings -q --no-header --cov-fail-under=20
       env:
-        DATABASE_URL: postgresql://elder_test:test_password@localhost:5432/elder_test
-        REDIS_URL: redis://localhost:6379/0
+        DATABASE_URL: postgresql://elder_test:test_password@localhost:55432/elder_test
+        REDIS_URL: redis://localhost:56379/0
         SECRET_KEY: test-secret-key
         LICENSE_KEY: PENG-TEST-TEST-TEST-TEST-ABCD
         PRODUCT_NAME: test-product
@@ -405,11 +405,24 @@ jobs:
         cache: 'npm'
         cache-dependency-path: web/package-lock.json
 
+    - name: Cache APT packages
+      # python-ldap (requirements.txt) has no prebuilt wheel and compiles
+      # against lber.h — same packages python-unit/python-integration install
+      # before their pip install, needed here too now that setup-python below
+      # builds the full requirements.txt tree.
+      uses: awalsh128/cache-apt-pkgs-action@acb598e5ddbc6f68a970c5da0688d2f3a9f04d05  # v1.6.0
+      with:
+        packages: gcc libpq-dev libsasl2-dev libldap2-dev libssl-dev
+        version: 1.0
+
     - name: Install Python dependency tree + pip-licenses
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install --require-hashes -r requirements-dev.txt
+      # license-check-deps (Makefile) shells out to $(VENV)/bin/pip-licenses —
+      # it needs packages installed into .venv, not the bare system/action
+      # python env `pip install` above used to populate. `make setup-python`
+      # creates .venv and installs both requirements.txt (the shipped
+      # dependency tree being license-checked) and requirements-dev.txt
+      # (which pins pip-licenses==5.5.5) with --require-hashes.
+      run: make setup-python
 
     - name: Install web dependencies
       run: cd web && npm ci --prefer-offline
