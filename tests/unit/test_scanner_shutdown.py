@@ -27,8 +27,17 @@ import main as scanner_main  # noqa: E402
 
 
 @pytest.fixture
-def service():
-    """A ScannerService with all outbound HTTP-touching methods mocked out."""
+def service(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """A ScannerService with all outbound HTTP-touching methods mocked out.
+
+    ScannerService.__init__ calls os.makedirs(SCREENSHOT_DIR) unconditionally
+    (see apps/scanner/main.py). SCREENSHOT_DIR defaults to "/app/screenshots"
+    for the real container deployment, but that path doesn't exist -- and
+    isn't creatable -- on a CI runner or a dev machine, raising
+    PermissionError. SCREENSHOT_DIR is already env-configurable; point it at
+    a pytest tmp_path here instead of the container-only default.
+    """
+    monkeypatch.setattr(scanner_main, "SCREENSHOT_DIR", str(tmp_path / "screenshots"))
     svc = scanner_main.ScannerService()
     return svc
 
