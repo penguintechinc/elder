@@ -19,7 +19,6 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "skipLibCheck": true,
     "typeRoots": ["./node_modules/@types"],
 
     /* Path aliases */
