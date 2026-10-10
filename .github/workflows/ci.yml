@@ -131,7 +131,7 @@ jobs:
 
     - name: Run unit tests
       run: |
-        pytest tests/unit -p no:warnings -q --no-header --cov-fail-under=40
+        pytest tests/unit -p no:warnings -q --no-header --cov-fail-under=45
       env:
         DATABASE_URL: postgresql://elder_test:test_password@localhost:55432/elder_test
         REDIS_URL: redis://localhost:56379/1
