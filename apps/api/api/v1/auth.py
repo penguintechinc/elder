@@ -12,6 +12,7 @@ from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
@@ -289,6 +290,21 @@ async def login():
     # Also set an HttpOnly cookie so the SSR web UI can authenticate
     secure = not current_app.config.get("DEBUG", False)
     set_session_cookie(response, access_token, secure=secure)
+    # And set the SPA portal-auth HttpOnly/Secure/SameSite + CSRF cookies so
+    # the browser client never has to keep the raw JWTs (gh #285) -- the JSON
+    # body keeps them only for non-browser callers, mirroring portal-auth.
+    set_portal_auth_cookies(
+        response,
+        access_token,
+        refresh_token,
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
     return response
 
 
