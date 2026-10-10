@@ -126,8 +126,8 @@ class HTTPScreenshotScanner(BaseScanner):
         wait_for: str,
     ) -> Dict[str, Any]:
         """Capture a screenshot of a single URL."""
-        # Generate filename from URL hash
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:12]
+        # Generate filename from URL hash (non-security: filename uniqueness only)
+        url_hash = hashlib.md5(url.encode(), usedforsecurity=False).hexdigest()[:12]
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"{url_hash}_{timestamp}.png"
         filepath = os.path.join(self.screenshot_dir, filename)

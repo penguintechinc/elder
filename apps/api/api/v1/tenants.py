@@ -10,9 +10,9 @@ and usage statistics for the Super Admin Console.
 from datetime import datetime, timezone
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.utils.async_utils import run_in_threadpool
@@ -179,7 +179,6 @@ def get_tenant(tenant_id):
 
 
 @bp.route("", methods=["POST"])
-@login_required
 @portal_token_required
 @global_admin_required
 async def create_tenant():
