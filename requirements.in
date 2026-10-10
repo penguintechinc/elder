@@ -45,7 +45,8 @@ Authlib==1.7.1
 # Security & Cryptography
 # PyJWT 2.13.0: fixes GHSA-993g/fhv5/jq35/w7vc/xgmm (PyJWKClient SSRF, algorithm
 # allow-list bypass, unbounded base64 DoS, HMAC/public-key confusion)
-PyJWT==2.13.0
+# PyJWT 2.15.0: fixes CVE-2026-102268 (CRITICAL) and additional HIGH advisories
+PyJWT==2.15.0
 bcrypt==4.2.1
 # cryptography 50.0.0: fixes GHSA-537c (vulnerable vendored OpenSSL), GHSA-g6cj
 # (PKCS#7 Bleichenbacher oracle), GHSA-jwv3/m2h6 (cert path-building / wildcard
