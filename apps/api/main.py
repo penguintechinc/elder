@@ -5,10 +5,18 @@
 
 import logging
 import os
+import time
 
 import structlog
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
-from quart import Quart, jsonify, make_response
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
+from quart import Quart, g, jsonify, make_response, request
 from quart_cors import cors
 
 from apps.api.config import get_config
@@ -135,6 +143,29 @@ def create_app(config_name: str = None) -> Quart:
 
 _metrics_registry = CollectorRegistry(auto_describe=True)
 
+# Prometheus metrics (registered on the dedicated registry, not the global default)
+http_requests_total = Counter(
+    "http_requests_total",
+    "Total number of HTTP requests",
+    ["method", "endpoint", "status"],
+    registry=_metrics_registry,
+)
+http_request_duration_seconds = Histogram(
+    "http_request_duration_seconds",
+    "HTTP request latency in seconds",
+    ["method", "endpoint"],
+    registry=_metrics_registry,
+)
+elder_info = Gauge(
+    "elder_info",
+    "Elder build/version information (value is always 1)",
+    ["version", "environment"],
+    registry=_metrics_registry,
+)
+
+# Endpoints excluded from request metrics to limit label cardinality / noise.
+_METRICS_EXCLUDED_PATHS = {"/metrics", "/healthz"}
+
 
 def _init_extensions(app: Quart) -> None:
     """Initialize Quart extensions."""
@@ -154,6 +185,35 @@ def _init_extensions(app: Quart) -> None:
 
 
 def _register_metrics_endpoint(app: Quart) -> None:
+    """Instrument requests with Prometheus metrics and expose /metrics."""
+    elder_info.labels(
+        version=app.config.get("APP_VERSION", "0.0.0"),
+        environment=app.config.get("ENV", "production"),
+    ).set(1)
+
+    @app.before_request
+    async def _metrics_start_timer():
+        g._metrics_start = time.perf_counter()
+
+    @app.after_request
+    async def _metrics_record(response):
+        # Skip /metrics and /healthz; use the matched rule's endpoint name
+        # (not the raw path) as the label to avoid cardinality blowups.
+        if request.path not in _METRICS_EXCLUDED_PATHS:
+            endpoint = request.endpoint or "unknown"
+            method = request.method
+            http_requests_total.labels(
+                method=method,
+                endpoint=endpoint,
+                status=response.status_code,
+            ).inc()
+            start = getattr(g, "_metrics_start", None)
+            if start is not None:
+                http_request_duration_seconds.labels(
+                    method=method, endpoint=endpoint
+                ).observe(time.perf_counter() - start)
+        return response
+
     @app.route("/metrics")
     async def metrics_endpoint():
         data = generate_latest(_metrics_registry)
