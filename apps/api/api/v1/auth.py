@@ -7,14 +7,13 @@ import os
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, g, jsonify, make_response, request
-
-from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from pydantic import ValidationError
+from quart import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
 from apps.api.utils.async_utils import run_in_threadpool

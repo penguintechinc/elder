@@ -7,7 +7,11 @@ import os
 
 from quart import Blueprint, flash, redirect, render_template, url_for
 
-from apps.api.auth.web_auth import clear_session_cookie, get_web_user, web_login_required
+from apps.api.auth.web_auth import (
+    clear_session_cookie,
+    get_web_user,
+    web_login_required,
+)
 from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
@@ -160,7 +164,9 @@ async def create_entity():
 @web_login_required
 async def view_entity(id):
     """View entity details."""
-    return await render_template("entities/view.html", entity_id=id, **get_template_context())
+    return await render_template(
+        "entities/view.html", entity_id=id, **get_template_context()
+    )
 
 
 @bp.route("/entities/<int:id>/edit")

@@ -5,9 +5,9 @@
 
 from dataclasses import asdict
 
-from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required, resource_role_required
 from apps.api.models.dataclasses import (

@@ -7,8 +7,8 @@ import inspect
 from functools import wraps
 from typing import Callable, List
 
-from quart import current_app, g, jsonify, request
 from penguin_dal import Row
+from quart import current_app, g, jsonify, request
 
 from apps.api.auth.jwt_handler import get_current_user
 
