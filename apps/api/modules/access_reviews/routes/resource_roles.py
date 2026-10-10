@@ -17,6 +17,53 @@ from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scop
 bp = Blueprint("resource_roles", __name__)
 
 
+# The resource_roles Postgres enums store UPPERCASE member names
+# (``resourcetype`` -> ENTITY/ORGANIZATION, ``resourceroletype`` ->
+# MAINTAINER/OPERATOR/VIEWER; see alembic/versions/001_add_enterprise_features.py),
+# while the API contract (CreateResourceRoleRequest/ResourceRoleResponse) is
+# lowercase. Every insert/filter against ``resource_type``/``role_type`` MUST
+# therefore upshift, and every value read back MUST be lowered for responses.
+
+
+def _role_response(row) -> ResourceRoleResponse:
+    """Build a lowercase-contract API response from a resource_roles row.
+
+    The row carries the DB's uppercase enum member names plus columns
+    (``role_type``, ``granted_by_id``, ``updated_at``, ``village_id``) that
+    ``ResourceRoleResponse`` (extra='forbid') rejects, so the fields are
+    selected and case-normalized explicitly rather than via from_pydal_row().
+    ``role_type`` is the NOT-NULL source of truth; the nullable ``role``
+    string column is preferred when present for an exact contract echo.
+    """
+    return ResourceRoleResponse(
+        id=row.id,
+        identity_id=row.identity_id,
+        group_id=row.group_id,
+        resource_type=str(row.resource_type).lower(),
+        resource_id=row.resource_id,
+        role=str(row.role or row.role_type).lower(),
+        created_at=row.created_at,
+    )
+
+
+def _role_dto_dicts(rows) -> list[dict]:
+    """Serialize resource_roles rows to lowercase-contract response dicts.
+
+    Mirrors ``_role_response()``'s case normalization for the DTO-based list
+    endpoints: the DB returns ``resource_type``/``role`` uppercase, the API
+    contract is lowercase.
+    """
+    out = []
+    for item in from_pydal_rows(rows, ResourceRoleDTO):
+        d = asdict(item)
+        if d.get("resource_type"):
+            d["resource_type"] = str(d["resource_type"]).lower()
+        if d.get("role"):
+            d["role"] = str(d["role"]).lower()
+        out.append(d)
+    return out
+
+
 def _resource_owner(db, resource_type: str, resource_id: int, tenant_id: int | None):
     """Verify a polymorphic resource_roles target belongs to the caller's tenant.
 
@@ -127,7 +174,8 @@ async def list_resource_roles():
             resource_type = request.args.get("resource_type")
             if resource_type not in ("entity", "organization"):
                 return None, "Invalid resource_type", 400
-            query &= db.resource_roles.resource_type == resource_type
+            # Upshift to the uppercase enum member stored in Postgres.
+            query &= db.resource_roles.resource_type == resource_type.upper()
 
         if request.args.get("resource_id"):
             try:
@@ -140,7 +188,9 @@ async def list_resource_roles():
             role = request.args.get("role")
             if role not in ("maintainer", "operator", "viewer"):
                 return None, "Invalid role", 400
-            query &= db.resource_roles.role == role
+            # Filter on the NOT-NULL role_type enum (uppercase member names)
+            # rather than the nullable ``role`` string column.
+            query &= db.resource_roles.role_type == role.upper()
 
         roles = db(query).select()
         return roles, None, None
@@ -154,8 +204,8 @@ async def list_resource_roles():
 
     rows = result[0] if isinstance(result, tuple) else result
 
-    # Convert to DTOs
-    items = [ResourceRoleResponse.from_pydal_row(row) for row in rows]
+    # Convert to DTOs (case-normalized to the lowercase API contract).
+    items = [_role_response(row) for row in rows]
 
     return (
         jsonify(
@@ -245,12 +295,16 @@ async def create_resource_role():
         # Superusers can grant any role
         if not g.current_user.is_superuser:
             # Check if current user has maintainer role
+            # resource_type/role_type are stored uppercase (see module note).
             has_maintainer = (
                 db(
                     (db.resource_roles.identity_id == g.current_user.id)
-                    & (db.resource_roles.resource_type == req_data.resource_type)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
                     & (db.resource_roles.resource_id == req_data.resource_id)
-                    & (db.resource_roles.role == "maintainer")
+                    & (db.resource_roles.role_type == "MAINTAINER")
                 )
                 .select()
                 .first()
@@ -268,7 +322,10 @@ async def create_resource_role():
             existing_role = (
                 db(
                     (db.resource_roles.identity_id == req_data.identity_id)
-                    & (db.resource_roles.resource_type == req_data.resource_type)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
                     & (db.resource_roles.resource_id == req_data.resource_id)
                 )
                 .select()
@@ -278,7 +335,10 @@ async def create_resource_role():
             existing_role = (
                 db(
                     (db.resource_roles.group_id == req_data.group_id)
-                    & (db.resource_roles.resource_type == req_data.resource_type)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
                     & (db.resource_roles.resource_id == req_data.resource_id)
                 )
                 .select()
@@ -292,13 +352,17 @@ async def create_resource_role():
                 409,
             )
 
-        # Create resource role
+        # Create resource role. resource_type/role_type persist as the
+        # uppercase Postgres enum member names; role_type is NOT NULL and was
+        # previously never set (the insert 500'd on this constraint). The
+        # nullable ``role`` string column keeps the lowercase contract value.
         role_id = db.resource_roles.insert(
             identity_id=req_data.identity_id,
             group_id=req_data.group_id,
-            resource_type=req_data.resource_type,
+            resource_type=req_data.resource_type.upper(),
             resource_id=req_data.resource_id,
             role=req_data.role,
+            role_type=req_data.role.upper(),
         )
         db.commit()
 
@@ -312,7 +376,7 @@ async def create_resource_role():
     if error:
         return jsonify({"error": error}), status
 
-    role_dto = ResourceRoleResponse.from_pydal_row(result)
+    role_dto = _role_response(result)
     return jsonify(role_dto.model_dump(exclude_none=True)), 201
 
 
@@ -351,12 +415,14 @@ async def revoke_resource_role(id: int):
         # Check if current user has maintainer role on this resource
         # Superusers can revoke any role
         if not g.current_user.is_superuser:
+            # role.resource_type is read back uppercase; compare like-for-like
+            # and gate on the NOT-NULL role_type enum.
             has_maintainer = (
                 db(
                     (db.resource_roles.identity_id == g.current_user.id)
                     & (db.resource_roles.resource_type == role.resource_type)
                     & (db.resource_roles.resource_id == role.resource_id)
-                    & (db.resource_roles.role == "maintainer")
+                    & (db.resource_roles.role_type == "MAINTAINER")
                 )
                 .select()
                 .first()
@@ -424,9 +490,9 @@ async def list_entity_roles(id: int):
         if not entity:
             return None, "Entity not found", 404
 
-        # Get all roles for this entity
+        # Get all roles for this entity (resource_type stored uppercase).
         roles = db(
-            (db.resource_roles.resource_type == "entity")
+            (db.resource_roles.resource_type == "ENTITY")
             & (db.resource_roles.resource_id == id)
         ).select()
 
@@ -437,11 +503,10 @@ async def list_entity_roles(id: int):
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTOs
-    items = from_pydal_rows(result, ResourceRoleDTO)
+    items = _role_dto_dicts(result)
 
     return (
-        jsonify({"items": [asdict(item) for item in items], "total": len(items)}),
+        jsonify({"items": items, "total": len(items)}),
         200,
     )
 
@@ -484,9 +549,9 @@ async def list_organization_roles(id: int):
         if not org:
             return None, "Organization not found", 404
 
-        # Get all roles for this organization
+        # Get all roles for this organization (resource_type stored uppercase).
         roles = db(
-            (db.resource_roles.resource_type == "organization")
+            (db.resource_roles.resource_type == "ORGANIZATION")
             & (db.resource_roles.resource_id == id)
         ).select()
 
@@ -497,11 +562,10 @@ async def list_organization_roles(id: int):
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTOs
-    items = from_pydal_rows(result, ResourceRoleDTO)
+    items = _role_dto_dicts(result)
 
     return (
-        jsonify({"items": [asdict(item) for item in items], "total": len(items)}),
+        jsonify({"items": items, "total": len(items)}),
         200,
     )
 
@@ -561,10 +625,9 @@ async def list_identity_resource_roles(id: int):
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTOs
-    items = from_pydal_rows(result, ResourceRoleDTO)
+    items = _role_dto_dicts(result)
 
     return (
-        jsonify({"items": [asdict(item) for item in items], "total": len(items)}),
+        jsonify({"items": items, "total": len(items)}),
         200,
     )
