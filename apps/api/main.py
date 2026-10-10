@@ -13,6 +13,7 @@ from quart_cors import cors
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
+from apps.api.rate_limit import init_rate_limiting
 from shared.database import (
     ensure_database_ready,
     init_db,
@@ -100,6 +101,9 @@ def create_app(config_name: str = None) -> Quart:
 
     # Register error handlers
     _register_error_handlers(app)
+
+    # Wire rate-limiting middleware (Redis-backed fixed window)
+    init_rate_limiting(app)
 
     # Health check endpoint
     @app.route("/healthz")
