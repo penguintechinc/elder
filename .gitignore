@@ -467,3 +467,6 @@ modal-*.png
 web/playwright-report/
 web/test-results/
 .npmrc
+
+# Claude Code agent worktrees (transient, per-session)
+.claude/worktrees/

@@ -5,9 +5,9 @@
 
 import logging
 
-from quart import Blueprint, jsonify, request
 from penguin_libs.pydantic.flask_integration import ValidationErrorResponse
 from pydantic import ValidationError
+from quart import Blueprint, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond

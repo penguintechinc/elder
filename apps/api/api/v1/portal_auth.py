@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import jwt
-from quart import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService

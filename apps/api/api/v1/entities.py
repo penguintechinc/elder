@@ -7,8 +7,8 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timezone
 
-from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.models.dataclasses import (

@@ -9,8 +9,8 @@ import sys
 from typing import List
 
 import aiocron
-from quart import Quart, jsonify
 from prometheus_client import Counter, Gauge, Histogram, generate_latest
+from quart import Quart, jsonify
 
 from apps.worker.config.settings import settings
 from apps.worker.connectors.authentik_connector import AuthentikConnector

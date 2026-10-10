@@ -9,17 +9,20 @@ import json
 from unittest.mock import Mock, patch
 
 import pytest
-from flask import Flask
 
 from apps.api.utils.crud_helpers import CrudHelper
 
 
-@pytest.fixture
-def app():
-    """Create Flask app for testing."""
-    app = Flask(__name__)
-    app.config["TESTING"] = True
-    return app
+@pytest.fixture(autouse=True)
+def _app_context(app):
+    """Run each test inside a Quart app context.
+
+    CrudHelper and the ``@patch(...current_app)`` decorators resolve the
+    ``current_app`` proxy, which requires a bound app context. The shared
+    ``app`` fixture (conftest) provides a real Quart app.
+    """
+    with app.app_context():
+        yield
 
 
 @pytest.fixture

@@ -6,8 +6,8 @@
 import logging
 from dataclasses import asdict
 
-from quart import Blueprint, current_app, g, jsonify, request
 from penguin_libs.pydantic.flask_integration import validated_request
+from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond

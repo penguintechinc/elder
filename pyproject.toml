@@ -5,3 +5,17 @@ target-version = ['py312']
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[tool.pytest.ini_options]
+# Quart is async; auto mode lets `async def` tests run without per-test markers.
+asyncio_mode = "auto"
+# pytest-flask assumes a Flask app and breaks on Quart's test_request_context;
+# disable it (Elder provides its own Quart-aware client/app fixtures).
+addopts = "-p no:flask"
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (requires database)",
+    "e2e: End-to-end tests (requires full Docker environment)",
+    "slow: Tests that take a long time to run",
+]

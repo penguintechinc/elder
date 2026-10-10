@@ -8,9 +8,9 @@ import logging
 from dataclasses import asdict
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify, request
 from penguin_libs.pydantic import RequestModel, validated_request
 from pydantic import Field
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond

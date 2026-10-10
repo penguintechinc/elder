@@ -8,8 +8,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import jwt
-from quart import current_app, g, request
 from penguin_dal import Row
+from quart import current_app, g, request
 from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)

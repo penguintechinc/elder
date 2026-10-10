@@ -8,7 +8,6 @@ No network calls or real database required.
 from unittest.mock import Mock, patch
 
 import pytest
-from flask import Flask
 
 from apps.api.utils.validation_helpers import (
     validate_enum_value,
@@ -21,11 +20,16 @@ from apps.api.utils.validation_helpers import (
 )
 
 
-@pytest.fixture
-def app():
-    """Create Flask app for testing."""
-    app = Flask(__name__)
-    return app
+@pytest.fixture(autouse=True)
+def _app_context(app):
+    """Run each test inside a Quart app context.
+
+    The validation helpers build responses via ``jsonify``, which requires a
+    bound ``current_app``. The shared ``app`` fixture (see conftest) provides a
+    real Quart app; this autouse fixture activates its context for every test.
+    """
+    with app.app_context():
+        yield
 
 
 class TestValidationHelpers:
