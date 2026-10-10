@@ -44,13 +44,19 @@ exclude_dirs = ["tests", "scripts", ".venv", "node_modules"]
 # fix/ci-reenable-tests re-enabled real pytest runs (2026-09-24). Measured
 # floors on a clean elder_test DB, tests/unit and tests/integration run as
 # CI actually runs them (separate jobs, separate coverage of apps/+shared/):
-#   tests/unit only:        44.15% (1548 passed, 17 xfailed)
+#   tests/unit only:        47.56% (1880 passed, 6 failed [pre-existing
+#                           gh-275/gh-276 debt], 17 xfailed) after gh-283
+#                           added ~204 real unit tests (sbom parsers,
+#                           Vault/Infisical secret+key clients, AWS IAM &
+#                           K8s RBAC clients, Alertmanager client, shared
+#                           events). Was 44.15% before gh-283.
 #   tests/integration only: 23.67% (47 passed, 1 skipped, 8 xfailed)
-#   combined:               44.28%
 # 20 is a safe default floor below both measured numbers (with margin for
 # incidental variance) so neither CI job breaks on day one. ci.yml passes a
-# tighter --cov-fail-under override per job (40 for python-unit, matching its
-# higher measured floor) which takes precedence over this default. Raise
-# toward 90 as coverage improves — see gh-276/gh-275 for the stale-test debt
-# suppressing coverage in tests/integration and tests/unit's sbom_schedules.
+# tighter --cov-fail-under override per job (45 for python-unit, raised from
+# 40 by gh-283 and rounded down from the 47.56% measured floor for headroom;
+# 20 for python-integration) which takes precedence over this default. Keep
+# ratcheting toward 90 as coverage improves — see gh-276/gh-275 for the
+# stale-test debt suppressing coverage in tests/integration and tests/unit's
+# sbom_schedules.
 addopts = "--cov=apps --cov=shared --cov-report=term-missing --cov-fail-under=20"
