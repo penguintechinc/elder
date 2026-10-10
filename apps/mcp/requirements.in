@@ -5,7 +5,8 @@ httpx==0.28.1
 # python-jose removed: pulled in ecdsa (GHSA-wj6h/CVE-2024-23342 Minerva timing attack,
 # no upstream fix available) and pyasn1/rsa. Replaced with PyJWT — see apps/mcp/auth.py.
 # PyJWT 2.13.0: fixes GHSA-993g/fhv5/jq35/w7vc/xgmm (see root requirements.in)
-PyJWT==2.13.0
+# PyJWT 2.15.0: fixes CVE-2026-102268 (CRITICAL) and additional HIGH advisories
+PyJWT==2.15.0
 idna>=3.15
 python-decouple==3.8
 # Transitive floors — no direct .in entry otherwise, pinned here to clear advisories
