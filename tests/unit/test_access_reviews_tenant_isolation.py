@@ -248,9 +248,9 @@ class TestRevokeResourceRoleTenantIsolation:
 
         async with app.app_context():
             db = current_app.db
-            assert db.resource_roles[role_id] is not None, (
-                "cross-tenant revoke must not apply"
-            )
+            assert (
+                db.resource_roles[role_id] is not None
+            ), "cross-tenant revoke must not apply"
 
     @pytest.mark.asyncio
     @patch("apps.api.auth.decorators.get_current_user")
