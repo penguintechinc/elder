@@ -71,16 +71,16 @@ def _identity(db, tenant_id: int, username: str) -> int:
 def _resource_role(
     db, identity_id: int, resource_type: str, resource_id: int, role: str = "viewer"
 ) -> int:
-    """Insert a resource_roles row directly (bypassing the route's broken insert).
+    """Insert a resource_roles row directly for test setup.
 
     The underlying Postgres enum (``alembic/versions/001_add_enterprise_features.py``)
     stores ``resource_type``/``role_type`` member names uppercase
     (``sa.Enum("ENTITY", "ORGANIZATION", ...)`` /
-    ``sa.Enum("MAINTAINER", "OPERATOR", "VIEWER", ...)``) -- pre-existing,
-    unrelated to gh-237: ``create_resource_role``'s own insert passes the
-    lowercase API-contract value straight through and never sets
-    ``role_type`` at all, so it 500s on this same constraint today. Not
-    fixed here; this helper works around it purely for test setup.
+    ``sa.Enum("MAINTAINER", "OPERATOR", "VIEWER", ...)``), so this helper
+    upshifts and sets ``role_type`` directly. ``create_resource_role``'s own
+    insert previously passed the lowercase value through and never set
+    ``role_type`` -- that is now fixed (gh-284, see test_api_resource_roles.py);
+    this helper still inserts directly so setup does not depend on the route.
     """
     role_id = db.resource_roles.insert(
         identity_id=identity_id,
@@ -131,12 +131,10 @@ class TestEntityRolesTenantIsolation:
             f"/api/v1/resource-roles/entities/{entity_id}/roles",
             headers={"Authorization": f"Bearer {token}"},
         )
-        # Not asserting 200: the route's subsequent listing query filters
-        # `resource_type == "entity"` (lowercase) against a Postgres enum
-        # that only accepts "ENTITY" (see _resource_role() docstring) --
-        # a separate, pre-existing bug unrelated to gh-237. The only thing
-        # under test here is that the tenant check let an own-tenant entity
-        # through instead of 404ing it.
+        # The listing query's enum-casing bug is fixed (gh-284); this gh-237
+        # test only asserts the tenant check let an own-tenant entity through
+        # instead of 404ing it (end-to-end listing is covered by
+        # test_api_resource_roles.py).
         assert resp.status_code != 404, (await resp.get_data()).decode()[:200]
 
 
@@ -176,9 +174,8 @@ class TestOrganizationRolesTenantIsolation:
             f"/api/v1/resource-roles/organizations/{org_id}/roles",
             headers={"Authorization": f"Bearer {token}"},
         )
-        # Not asserting 200: same pre-existing enum-casing bug as
-        # test_allows_own_tenant_entity above -- only the tenant check
-        # (not 404ing an own-tenant org) is under test here.
+        # Enum-casing bug fixed in gh-284; this gh-237 test only asserts the
+        # tenant check does not 404 an own-tenant org.
         assert resp.status_code != 404, (await resp.get_data()).decode()[:200]
 
 
@@ -313,12 +310,10 @@ class TestCreateResourceRoleTenantIsolation:
     async def test_resource_owner_allows_own_tenant_organization(self, app):
         """Unit-level check of `_resource_owner()` for the same-tenant case.
 
-        Not exercised through the full POST endpoint: `check_and_create()`'s
-        insert never sets the NOT-NULL `role_type` column and passes
-        `resource_type` through lowercase against an uppercase-only Postgres
-        enum (see `_resource_role()` docstring) -- both pre-existing,
-        unrelated to gh-237, and would 500 regardless of tenant. This test
-        isolates the tenant-ownership check this task added.
+        Isolates the tenant-ownership check this task (gh-237) added. The full
+        POST path (`check_and_create()` setting `role_type` and upshifting the
+        enum casing) is a separate concern fixed under gh-284 and covered
+        end-to-end by test_api_resource_roles.py.
         """
         from apps.api.modules.access_reviews.routes.resource_roles import (
             _resource_owner,

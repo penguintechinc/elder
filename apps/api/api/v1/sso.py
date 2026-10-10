@@ -8,15 +8,40 @@ and SCIM 2.0 user provisioning.
 
 from functools import wraps
 
-from quart import Blueprint, Response, jsonify, request
+from quart import Blueprint, Response, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
+from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sso", __name__)
+
+
+def _attach_auth_cookies(response, tokens: dict) -> None:
+    """Attach the portal-auth HttpOnly/Secure/SameSite auth cookies to an SSO response.
+
+    Mirrors apps.api.api.v1.portal_auth._issue_token_response: the JSON body
+    still carries the tokens for non-browser callers, but the browser must
+    rely on these cookies instead (gh #285 -- the SSO callbacks previously
+    returned the raw access/refresh JWTs in the body with no cookie-setting,
+    the same XSS-exfiltratable exposure portal-auth already closed).
+    """
+    secure = not current_app.config.get("DEBUG", False)
+    set_portal_auth_cookies(
+        response,
+        tokens["access_token"],
+        tokens["refresh_token"],
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
 
 
 # SCIM authentication decorator
@@ -281,7 +306,7 @@ def saml_login(tenant_id):
 
 
 @bp.route("/saml/acs/<int:tenant_id>", methods=["POST"])
-def saml_acs(tenant_id):
+async def saml_acs(tenant_id):
     """SAML Assertion Consumer Service endpoint.
 
     Receives and processes SAML responses from IdP.
@@ -292,8 +317,12 @@ def saml_acs(tenant_id):
     Returns:
         JWT tokens on success
     """
-    saml_response = request.form.get("SAMLResponse")
-    relay_state = request.form.get("RelayState")
+    # Quart's `request.form` is a coroutine -- it must be awaited (the route
+    # was previously a sync `def` and called `.get` on the coroutine, raising
+    # AttributeError on every real POST).
+    form = await request.form
+    saml_response = form.get("SAMLResponse")
+    relay_state = form.get("RelayState")
 
     if not saml_response:
         return ApiResponse.bad_request("SAMLResponse is required")
@@ -306,15 +335,16 @@ def saml_acs(tenant_id):
     # Generate tokens
     tokens = generate_tokens(result)
 
-    return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
-        200,
+    # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the body
+    # keeps them only for non-browser callers, mirroring portal-auth.
+    response = jsonify(
+        {
+            "user": result,
+            **tokens,
+        }
     )
+    _attach_auth_cookies(response, tokens)
+    return response, 200
 
 
 @bp.route("/saml/slo/<int:tenant_id>", methods=["GET", "POST"])
@@ -429,15 +459,16 @@ def oidc_callback():
         # Generate Elder JWT tokens
         elder_tokens = generate_tokens(user)
 
-        return (
-            jsonify(
-                {
-                    "user": user,
-                    **elder_tokens,
-                }
-            ),
-            200,
+        # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the
+        # body keeps them only for non-browser callers, mirroring portal-auth.
+        response = jsonify(
+            {
+                "user": user,
+                **elder_tokens,
+            }
         )
+        _attach_auth_cookies(response, elder_tokens)
+        return response, 200
 
     return ApiResponse.forbidden("JIT provisioning is disabled for this IdP")
 
