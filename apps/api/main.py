@@ -89,6 +89,12 @@ def create_app(config_name: str = None) -> Quart:
     init_sqlalchemy_tables(app)
     init_db(app)
 
+    # Wire per-request PostgreSQL tenant context for Row-Level Security.
+    # No-op on SQLite (tests/dev); see apps/api/tenant_rls.py.
+    from apps.api.tenant_rls import register_tenant_rls
+
+    register_tenant_rls(app)
+
     # Initialize license client
     _init_license_client(app)
 
