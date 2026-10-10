@@ -8,16 +8,8 @@ No external dependencies required - pure unit tests.
 import json
 
 import pytest
-from flask import Flask
 
 from apps.api.utils.api_responses import ApiResponse
-
-
-@pytest.fixture
-def app():
-    """Create Flask app for testing."""
-    app = Flask(__name__)
-    return app
 
 
 class TestApiResponse:
