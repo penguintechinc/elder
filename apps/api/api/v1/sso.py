@@ -280,7 +280,7 @@ def saml_login(tenant_id):
 
 
 @bp.route("/saml/acs/<int:tenant_id>", methods=["POST"])
-def saml_acs(tenant_id):
+async def saml_acs(tenant_id):
     """SAML Assertion Consumer Service endpoint.
 
     Receives and processes SAML responses from IdP.
@@ -291,24 +291,39 @@ def saml_acs(tenant_id):
     Returns:
         JWT tokens on success
     """
-    saml_response = request.form.get("SAMLResponse")
-    relay_state = request.form.get("RelayState")
+    # Quart's ``request.form`` is an async property and must be awaited.
+    form = await request.form
+    saml_response = form.get("SAMLResponse")
+    relay_state = form.get("RelayState")
 
     if not saml_response:
         return jsonify({"error": "SAMLResponse is required"}), 400
 
-    result = SAMLService.process_saml_response(tenant_id, saml_response, relay_state)
+    base_url = request.host_url
+    result = SAMLService.process_saml_response(
+        tenant_id, saml_response, relay_state, base_url=base_url
+    )
 
     if "error" in result:
         return jsonify(result), 400
 
-    # Generate tokens
-    tokens = generate_tokens(result)
+    # Build the identity payload for token issuance (reuse OIDC/portal helper).
+    user = {
+        "id": result["id"],
+        "email": result["email"],
+        "tenant_id": result["tenant_id"],
+        "tenant_role": result.get("tenant_role"),
+        "global_role": result.get("global_role"),
+    }
+
+    # Issue the app's JWT exactly as OIDC/password login does.
+    tokens = generate_tokens(user)
 
     return (
         jsonify(
             {
-                "user": result,
+                "user": user,
+                "relay_state": relay_state,
                 **tokens,
             }
         ),

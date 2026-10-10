@@ -10,7 +10,9 @@ at both global and tenant levels.
 import datetime
 from typing import Optional
 
-from quart import current_app
+from onelogin.saml2.auth import OneLogin_Saml2_Auth
+from onelogin.saml2.constants import OneLogin_Saml2_Constants
+from quart import current_app, request
 
 
 class SAMLService:
@@ -230,37 +232,245 @@ class SAMLService:
         return {"deleted": True}
 
     @staticmethod
-    def process_saml_response(
-        tenant_id: int, saml_response: str, relay_state: Optional[str] = None
-    ) -> dict:
-        """Process SAML response and authenticate user.
+    def _build_saml_settings(tenant_id: int, idp_config: dict, base_url: str) -> dict:
+        """Build OneLogin SAML settings from a stored IdP configuration.
 
         Args:
-            tenant_id: Tenant context
-            saml_response: Base64-encoded SAML response
-            relay_state: Optional relay state
+            tenant_id: Tenant ID used to derive the SP ACS/SLO/metadata URLs
+            idp_config: IdP configuration dict (from ``get_idp_config``)
+            base_url: Scheme + host of this Elder instance (no trailing slash)
 
         Returns:
-            Authenticated user dict or error
+            OneLogin settings dict suitable for ``OneLogin_Saml2_Auth``
         """
-        # Get IdP config
+        base_url = (base_url or "").rstrip("/")
+        sp_entity_id = f"{base_url}/saml/metadata/{tenant_id}"
+        acs_url = f"{base_url}/api/v1/sso/saml/acs/{tenant_id}"
+        slo_url = f"{base_url}/api/v1/sso/saml/slo/{tenant_id}"
+
+        return {
+            # strict=True enforces NotBefore/NotOnOrAfter, audience, destination
+            # and signature validation — never relax this for production IdPs.
+            "strict": True,
+            "debug": False,
+            "sp": {
+                "entityId": sp_entity_id,
+                "assertionConsumerService": {
+                    "url": acs_url,
+                    "binding": OneLogin_Saml2_Constants.BINDING_HTTP_POST,
+                },
+                "singleLogoutService": {
+                    "url": slo_url,
+                    "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
+                },
+                "NameIDFormat": OneLogin_Saml2_Constants.NAMEID_EMAIL_ADDRESS,
+                "x509cert": "",
+                "privateKey": "",
+            },
+            "idp": {
+                "entityId": idp_config.get("entity_id") or "",
+                "singleSignOnService": {
+                    "url": idp_config.get("sso_url") or "",
+                    "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
+                },
+                "singleLogoutService": {
+                    "url": idp_config.get("slo_url") or "",
+                    "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
+                },
+                "x509cert": idp_config.get("certificate") or "",
+            },
+            "security": {
+                # Require the IdP to sign assertions and validate that signature
+                # against the configured x509 certificate.
+                "wantAssertionsSigned": True,
+                "wantMessagesSigned": False,
+                "wantNameId": True,
+                "requestedAuthnContext": False,
+                "rejectUnsolicitedResponsesWithInResponseTo": False,
+            },
+        }
+
+    @staticmethod
+    def _prepare_request_data(saml_response: str, relay_state: Optional[str]) -> dict:
+        """Build the OneLogin request-data dict from the active HTTP request.
+
+        OneLogin uses this to validate the ``Destination`` of the assertion
+        against the actual ACS URL. Falls back to minimal data when no request
+        context is available.
+        """
+        post_data = {"SAMLResponse": saml_response}
+        if relay_state is not None:
+            post_data["RelayState"] = relay_state
+
+        try:
+            https = "on" if request.scheme == "https" else "off"
+            host = request.host
+            # request.path already includes the mounted blueprint prefix.
+            script_name = request.path
+            port = request.server[1] if request.server else None
+        except RuntimeError:
+            # No request context (e.g. unit tests mocking OneLogin).
+            https, host, script_name, port = "off", "", "", None
+
+        req = {
+            "https": https,
+            "http_host": host,
+            "script_name": script_name,
+            "get_data": {},
+            "post_data": post_data,
+        }
+        if port:
+            req["server_port"] = str(port)
+        return req
+
+    @staticmethod
+    def process_saml_response(
+        tenant_id: int,
+        saml_response: str,
+        relay_state: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> dict:
+        """Validate and process a SAML response, then authenticate the user.
+
+        Performs full SAML assertion validation via python3-saml (OneLogin) in
+        strict mode: the IdP signature is verified against the configured x509
+        certificate, and the assertion's audience, conditions (NotBefore /
+        NotOnOrAfter) and destination are enforced. Unverified assertions are
+        never trusted.
+
+        Args:
+            tenant_id: Tenant context (also used to derive SP ACS/SLO URLs)
+            saml_response: Base64-encoded SAMLResponse from the IdP POST
+            relay_state: Optional relay state echoed by the IdP
+            base_url: Scheme + host of this instance (defaults to request host)
+
+        Returns:
+            On success, the authenticated/provisioned user dict (ready for
+            ``generate_tokens``) augmented with ``name_id``, ``session_index``
+            and ``attributes``. On failure, a dict with an ``error`` key.
+        """
         idp_config = SAMLService.get_idp_config(tenant_id)
         if not idp_config:
             return {"error": "No IdP configured for this tenant"}
 
-        # In production, use python3-saml to validate and parse response
-        # For now, simulate SAML response parsing
-        # This would be replaced with actual SAML validation
+        if idp_config.get("idp_type") != "saml":
+            return {"error": "Configured IdP is not a SAML provider"}
 
-        # Simulated parsed attributes (would come from SAML response)
-        # parsed_attrs = saml_auth.get_attributes()
-        # email = parsed_attrs.get('email', [None])[0]
-        # name = parsed_attrs.get('name', [None])[0]
+        if not idp_config.get("certificate"):
+            return {"error": "IdP signing certificate not configured"}
 
-        return {
-            "error": "SAML response processing not yet implemented",
-            "note": "Requires python3-saml library configuration",
-        }
+        if base_url is None:
+            try:
+                base_url = request.host_url
+            except RuntimeError:
+                base_url = ""
+
+        settings = SAMLService._build_saml_settings(tenant_id, idp_config, base_url)
+        request_data = SAMLService._prepare_request_data(saml_response, relay_state)
+
+        try:
+            auth = OneLogin_Saml2_Auth(request_data, old_settings=settings)
+            auth.process_response()
+        except Exception as exc:  # malformed XML, settings errors, etc.
+            try:
+                current_app.logger.warning(f"SAML response processing failed: {exc}")
+            except Exception:
+                pass
+            return {"error": "Failed to process SAML response", "detail": str(exc)}
+
+        errors = auth.get_errors()
+        if errors:
+            reason = None
+            try:
+                reason = auth.get_last_error_reason()
+            except Exception:
+                pass
+            return {
+                "error": "SAML validation failed",
+                "details": errors,
+                "reason": reason,
+            }
+
+        if not auth.is_authenticated():
+            return {"error": "SAML assertion did not authenticate the user"}
+
+        name_id = auth.get_nameid()
+        attributes = auth.get_attributes() or {}
+        session_index = auth.get_session_index()
+
+        email = SAMLService._extract_email(name_id, attributes, idp_config)
+        if not email:
+            return {"error": "No email found in SAML assertion"}
+
+        # Match an existing identity, or JIT-provision when enabled.
+        db = current_app.db
+        existing = (
+            db(
+                (db.portal_users.email == email.lower())
+                & (db.portal_users.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+
+        if not existing and not idp_config.get("jit_provisioning_enabled"):
+            return {"error": "No matching user and JIT provisioning is disabled"}
+
+        user = SAMLService.jit_provision_user(tenant_id, email, idp_config, attributes)
+        if "error" in user:
+            return user
+
+        # Attach SAML session context for downstream SLO / auditing.
+        user["name_id"] = name_id
+        user["session_index"] = session_index
+        user["attributes"] = attributes
+        return user
+
+    @staticmethod
+    def _extract_email(
+        name_id: Optional[str], attributes: dict, idp_config: dict
+    ) -> Optional[str]:
+        """Resolve the user's email from a mapped attribute or the NameID."""
+        mappings = idp_config.get("attribute_mappings") or {}
+        email_attr = mappings.get("email", "email")
+
+        value = attributes.get(email_attr)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if value:
+            return str(value)
+
+        # Fall back to NameID when it looks like an email address.
+        if name_id and "@" in name_id:
+            return name_id
+        return None
+
+    @staticmethod
+    def _map_role(attributes: dict, idp_config: dict) -> str:
+        """Map a SAML attribute value to an Elder tenant role.
+
+        Uses ``attribute_mappings.role`` to name the SAML attribute carrying
+        the role/group, and an optional ``attribute_mappings.role_map`` to
+        translate IdP values to Elder roles. Falls back to ``default_role``.
+        """
+        mappings = idp_config.get("attribute_mappings") or {}
+        default = idp_config.get("default_role") or "reader"
+
+        role_attr = mappings.get("role")
+        if not role_attr:
+            return default
+
+        value = attributes.get(role_attr)
+        if isinstance(value, list):
+            value = value[0] if value else None
+        if not value:
+            return default
+
+        role_map = mappings.get("role_map") or {}
+        mapped = role_map.get(value, value)
+
+        valid_roles = {"admin", "maintainer", "reader"}
+        return mapped if mapped in valid_roles else default
 
     @staticmethod
     def jit_provision_user(
@@ -304,6 +514,10 @@ class SAMLService:
         # Map attributes to user fields
         mappings = idp_config.get("attribute_mappings", {})
         full_name = attributes.get(mappings.get("full_name", "name"))
+        if isinstance(full_name, list):
+            full_name = full_name[0] if full_name else None
+
+        tenant_role = SAMLService._map_role(attributes, idp_config)
 
         # Create new user (no password for SSO users)
         user_id = db.portal_users.insert(
@@ -311,7 +525,7 @@ class SAMLService:
             email=email.lower(),
             password_hash=None,  # SSO users don't have passwords
             full_name=full_name,
-            tenant_role=idp_config.get("default_role", "reader"),
+            tenant_role=tenant_role,
             is_active=True,
             email_verified=True,  # SSO validates email
             last_login_at=datetime.datetime.now(datetime.timezone.utc),
@@ -322,7 +536,7 @@ class SAMLService:
             "id": user_id,
             "email": email.lower(),
             "tenant_id": tenant_id,
-            "tenant_role": idp_config.get("default_role", "reader"),
+            "tenant_role": tenant_role,
             "global_role": None,
             "jit_provisioned": True,
         }
