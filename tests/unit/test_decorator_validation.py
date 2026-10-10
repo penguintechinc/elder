@@ -198,9 +198,11 @@ def test_validator_finds_test_files():
     # Should find multiple endpoint files
     assert len(files) > 0, "Should find API endpoint files"
 
-    # Check that some expected files exist
+    # Check that some expected files exist. Use stable core v1 route modules —
+    # entities/software/organizations were migrated to apps/api/modules/, so
+    # they no longer live under api/v1/ and must not be asserted here.
     file_names = [f.name for f in files]
-    expected_files = ["entities.py", "software.py", "organizations.py"]
+    expected_files = ["auth.py", "tenants.py", "users.py"]
     found_expected = [f for f in expected_files if f in file_names]
     assert (
         len(found_expected) > 0
