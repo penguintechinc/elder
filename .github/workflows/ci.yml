@@ -421,7 +421,11 @@ jobs:
       # python env `pip install` above used to populate. `make setup-python`
       # creates .venv and installs both requirements.txt (the shipped
       # dependency tree being license-checked) and requirements-dev.txt
-      # (which pins pip-licenses==5.5.5) with --require-hashes.
+      # (which pins pip-licenses==5.5.5) with --require-hashes. The target
+      # additionally scans the apps/{worker,scanner,mcp} lock files, each in a
+      # throwaway venv it creates at run time (those trees pin conflicting
+      # versions and cannot share .venv) — the apt build deps cached above
+      # cover their compiled dependencies too.
       run: make setup-python
 
     - name: Install web dependencies

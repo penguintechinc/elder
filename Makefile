@@ -520,13 +520,41 @@ license-check-features: ## List available licensed features
 # ── OSS License Compliance ─────────────────────────────────────────────────
 # Elder is AGPL-3.0 (LICENSE.md). Allowlist, not denylist: anything NOT on
 # the list fails — safer than enumerating "bad" licenses, which can never be
-# complete. First CI run may need the allowlist tuned to real classifier
-# strings across the full apps/ + shared/ dependency tree (verified working
-# against a small package set here, not yet against the full tree).
+# complete. The root venv ($(VENV)) holds requirements.txt + requirements-dev.txt;
+# the apps/ lock files are each compiled independently and pin conflicting
+# versions (e.g. protobuf 5.x vs 7.x), so they cannot share one venv and are
+# each scanned in a throwaway venv via pip-licenses --python.
+#
+# LICENSE_ALLOW is the single source of truth for the pip-licenses policy,
+# shared across every Python tree scanned below.
+LICENSE_ALLOW := MIT;MIT License;MIT-0;MIT No Attribution;BSD License;BSD;BSD-2-Clause;BSD-3-Clause;3-Clause BSD License;Apache-2.0;Apache Software License;Apache License 2.0;Apache Software License; BSD License;Apache Software License; MIT License;Apache-2.0 AND MIT;Apache-2.0 OR BSD-2-Clause;Apache-2.0 OR BSD-3-Clause;BSD 3-Clause OR Apache-2.0;MIT AND PSF-2.0;MIT OR Apache-2.0;ISC License (ISCL);ISC;PSF-2.0;Python Software Foundation License;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;GNU Lesser General Public License v2 (LGPLv2);GNU Lesser General Public License v2 or later (LGPLv2+);GNU Lesser General Public License v3 (LGPLv3);GNU Lesser General Public License v3 or later (LGPLv3+);GNU Library or Lesser General Public License (LGPL);GNU General Public License v3 (GPLv3);GNU General Public License v3 or later (GPLv3+);GNU Affero General Public License v3;GNU Affero General Public License v3 or later (AGPLv3+);The Unlicense (Unlicense);Unlicense;Public Domain;zlib/libpng License;HPND;CC0-1.0;0BSD
+# Targeted exceptions: packages whose wheel ships no parseable license metadata
+# but whose bundled LICENSE is a known allowlisted license. NOT a blanket
+# UNKNOWN allowance — each entry is justified here, one package at a time.
+#   google-crc32c (apps/worker): real license is Apache-2.0 (LICENSE bundled in
+#   the wheel), but 1.8.0 exposes no License field, License-Expression, or
+#   License classifier, so pip-licenses reports UNKNOWN. Ignore it specifically.
+LICENSE_IGNORE_PKGS := google-crc32c
+# App dependency trees scanned in addition to the root venv.
+LICENSE_APP_REQS := apps/worker/requirements.txt apps/scanner/requirements.txt apps/mcp/requirements.txt
 license-check-deps: ## Flag AGPL/GPL-incompatible OSS dependency licenses (Python + npm)
-	@echo "$(BLUE)[1/2] pip-licenses — Python dependency licenses...$(RESET)"
-	@$(VENV)/bin/pip-licenses --allow-only="MIT;MIT License;MIT-0;MIT No Attribution;BSD License;BSD;BSD-2-Clause;BSD-3-Clause;3-Clause BSD License;Apache-2.0;Apache Software License;Apache License 2.0;Apache Software License; BSD License;Apache Software License; MIT License;Apache-2.0 AND MIT;Apache-2.0 OR BSD-2-Clause;Apache-2.0 OR BSD-3-Clause;BSD 3-Clause OR Apache-2.0;MIT AND PSF-2.0;MIT OR Apache-2.0;ISC License (ISCL);ISC;PSF-2.0;Python Software Foundation License;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;GNU Lesser General Public License v2 (LGPLv2);GNU Lesser General Public License v2 or later (LGPLv2+);GNU Lesser General Public License v3 (LGPLv3);GNU Lesser General Public License v3 or later (LGPLv3+);GNU Library or Lesser General Public License (LGPL);GNU General Public License v3 (GPLv3);GNU General Public License v3 or later (GPLv3+);GNU Affero General Public License v3;GNU Affero General Public License v3 or later (AGPLv3+);The Unlicense (Unlicense);Unlicense;Public Domain;zlib/libpng License;HPND;CC0-1.0;0BSD"
-	@echo "$(BLUE)[2/2] license-checker — npm dependency licenses...$(RESET)"
+	@echo "$(BLUE)[1/3] pip-licenses — root Python dependency licenses ($(VENV))...$(RESET)"
+	@$(VENV)/bin/pip-licenses --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS)
+	@echo "$(BLUE)[2/3] pip-licenses — app dependency trees (worker/scanner/mcp)...$(RESET)"
+	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	for req in $(LICENSE_APP_REQS); do \
+		if [ ! -f "$$req" ]; then echo "$(YELLOW)  skip (missing): $$req$(RESET)"; continue; fi; \
+		echo "$(BLUE)  → $$req$(RESET)"; \
+		vdir="$$tmp/$$(echo "$$req" | tr '/.' '__')"; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv venv --seed -p $(PYTHON_VERSION) "$$vdir" >/dev/null; \
+		else \
+			python$(PYTHON_VERSION) -m venv "$$vdir"; \
+		fi; \
+		"$$vdir/bin/pip" install --require-hashes -r "$$req" --quiet; \
+		$(VENV)/bin/pip-licenses --python "$$vdir/bin/python" --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS); \
+	done
+	@echo "$(BLUE)[3/3] license-checker — npm dependency licenses...$(RESET)"
 	@cd web && npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;MIT-0;(MIT OR Apache-2.0);ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0" --excludePackages "project-template-web@4.0.0"
 	@echo "$(GREEN)No AGPL/GPL-incompatible dependency licenses found$(RESET)"
 
