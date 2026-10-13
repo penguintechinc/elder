@@ -153,7 +153,9 @@ class TestTenantScopingGateCatchesRegressions:
         as it stands today (proves a non-zero denominator was examined)."""
         result = _run_scanner(REPO_ROOT)
         assert result.returncode == 0, result.stdout + result.stderr
-        assert "unscoped bracket lookups" in result.stdout
+        assert "unscoped lookups" in result.stdout
+        assert "bracket lookups" in result.stdout
+        assert "resolver calls missing tenant_id" in result.stdout
         assert "0 files examined" not in result.stdout, "scan found no files"
 
     def test_scanner_fails_on_new_unscoped_lookup(self, tmp_path):
@@ -185,6 +187,53 @@ class TestTenantScopingGateCatchesRegressions:
         result = _run_scanner(tmp_path)
         assert result.returncode == 1
         assert "pointed at nothing" in result.stdout + result.stderr
+
+    def test_scanner_fails_on_resolver_call_missing_tenant_id(self, tmp_path):
+        """regression: gh-237 follow-up -- the bracket-lookup regex alone
+        cannot see an unscoped call that goes through a helper instead of
+        `db.<table>[`. This is exactly how lookup_village_id.py called
+        resolve_by_village_id() without a tenant_id and slipped past the
+        original gate undetected.
+        """
+        baseline = tmp_path / ".tenant-scoping-baseline"
+        baseline.write_text("count=0\n")
+        route_file = tmp_path / "apps/api/api/v1/fake_lookup.py"
+        self._write(
+            route_file,
+            "from apps.api.common.refs.registry import resolve_by_village_id\n\n\n"
+            "def lookup(village_id):\n"
+            "    result = resolve_by_village_id(db, village_id)\n"
+            "    return result\n",
+        )
+
+        failing = _run_scanner(tmp_path)
+        assert failing.returncode == 1, failing.stdout + failing.stderr
+        assert "REGRESSION" in failing.stderr
+        assert "resolver calls missing tenant_id" in failing.stdout
+
+        # Fix it: pass tenant_id= explicitly.
+        self._write(
+            route_file,
+            "from apps.api.common.refs.registry import resolve_by_village_id\n\n\n"
+            "def lookup(village_id, tenant_id):\n"
+            "    result = resolve_by_village_id(db, village_id, tenant_id=tenant_id)\n"
+            "    return result\n",
+        )
+        passing = _run_scanner(tmp_path)
+        assert passing.returncode == 0, passing.stdout + passing.stderr
+
+    def test_scanner_ignores_exempt_marked_resolver_call(self, tmp_path):
+        baseline = tmp_path / ".tenant-scoping-baseline"
+        baseline.write_text("count=0\n")
+        route_file = tmp_path / "apps/api/api/v1/fake_exempt.py"
+        self._write(
+            route_file,
+            "def lookup(village_id):\n"
+            "    result = resolve_by_village_id(db, village_id)  # tenant-scope-exempt: reviewed, global lookup by design\n"
+            "    return result\n",
+        )
+        result = _run_scanner(tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
 
 
 class TestGh237ReportedSitesFixed:

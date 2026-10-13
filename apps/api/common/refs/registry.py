@@ -291,12 +291,14 @@ def resolve_by_village_id(
                 # Cannot safely scope — skip this table
                 continue
         else:
-            # No tenant_id provided — cannot safely scope unscopable tables
-            if hasattr(table, "tenant_id") or type_name == "tenant":
-                row = db(village_id_field == village_id).select().first()
-            else:
-                # Cannot scope without tenant_id and no column available
-                continue
+            # Fail-closed (regression: gh-237): no tenant_id means ownership of
+            # ANY row cannot be verified, so never resolve one -- skip every
+            # table rather than falling through to an unscoped query. The
+            # previous version of this branch queried tables that DO have a
+            # tenant_id column (or the tenant table) WITHOUT filtering on it,
+            # which let a caller that omitted tenant_id (e.g. an unauthenticated
+            # endpoint) enumerate any tenant's resources by village_id.
+            continue
 
         if row:
             return {

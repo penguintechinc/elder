@@ -11,6 +11,10 @@ Regression test tracking: commit security review — refs fail-open IDOR
 
 # flake8: noqa: E501
 
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
 import pytest
 
 from apps.api.common.refs.registry import (
@@ -560,3 +564,123 @@ class TestRefsEndpointAuthGate:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert resp.status_code == 403
+
+
+def _foreign_tenant_for_lookup(db, name: str = "Village Lookup Other Tenant") -> int:
+    """Create and return a tenant distinct from tenant 1."""
+    tid = db.tenants.insert(
+        name=name, slug=f"vid-other-{uuid4().hex[:8]}", is_active=True
+    )
+    db.commit()
+    return tid
+
+
+def _identity_with_village_id(db, tenant_id: int, village_id: str) -> int:
+    """Insert an identity row carrying the given village_id for tenant_id."""
+    identity_id = db.identities.insert(
+        username=f"vid-test-{uuid4().hex[:8]}",
+        identity_type="human",
+        auth_provider="local",
+        is_active=True,
+        is_superuser=False,
+        mfa_enabled=False,
+        must_change_password=False,
+        portal_role="observer",
+        tenant_id=tenant_id,
+        village_id=village_id,
+    )
+    db.commit()
+    return identity_id
+
+
+class TestResolveByVillageIdFailClosedNoneTenant:
+    """Registry-layer regression test for gh-237.
+
+    ``resolve_by_village_id()``'s previous None-tenant branch queried ANY
+    table carrying a ``tenant_id`` column (e.g. ``identities``) completely
+    UNSCOPED when ``tenant_id`` was omitted -- exactly the shape of bug that
+    let the (then-unauthenticated) ``/id/<village_id>`` endpoint
+    (``lookup_village_id.py``) enumerate any tenant's resources. The fix
+    makes the None-tenant branch skip every table instead of falling
+    through to an unscoped query.
+
+    regression: gh-237
+    """
+
+    def test_tenant_scoped_table_returns_none_without_tenant_id(self, app):
+        """Omitting tenant_id must never resolve a tenant_id-scoped row."""
+        db = app.db
+        village_id = f"{1:08x}-{uuid4().hex[:16]}"
+        identity_id = _identity_with_village_id(db, tenant_id=1, village_id=village_id)
+
+        # Fail closed: no tenant_id means no table can be safely scoped.
+        assert resolve_by_village_id(db, village_id, tenant_id=None) is None
+
+        # Sanity: the row DOES exist and resolves once correctly scoped.
+        result = resolve_by_village_id(db, village_id, tenant_id=1)
+        assert result == {
+            "type": "identity",
+            "id": identity_id,
+            "table_name": "identities",
+        }
+
+
+class TestLookupVillageIdEndpointAuthGate:
+    """HTTP-level regression tests for ``GET /id/<village_id>``.
+
+    ``lookup_village_id.py`` previously had no auth decorator at all AND
+    called ``resolve_by_village_id()`` without a ``tenant_id``, which (prior
+    to the registry fail-closed fix above) fell through to an unscoped query
+    and let any unauthenticated caller enumerate another tenant's resources
+    by village_id.
+
+    regression: gh-237
+    """
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_returns_401(self, async_client):
+        """Unauthenticated GET /id/<village_id> must be 401, never resolve."""
+        resp = await async_client.get("/id/00000001-0000000000000001")
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_cross_tenant_village_id_returns_404(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """A tenant-1 token must not resolve another tenant's village_id."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["infrastructure:read"])
+
+        db = app.db
+        other_tenant_id = _foreign_tenant_for_lookup(db)
+        village_id = f"{other_tenant_id:08x}-{uuid4().hex[:16]}"
+        _identity_with_village_id(db, tenant_id=other_tenant_id, village_id=village_id)
+
+        resp = await async_client.get(
+            f"/id/{village_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()
+
+    @pytest.mark.asyncio
+    @patch("apps.api.auth.decorators.get_current_user")
+    async def test_same_tenant_village_id_resolves(
+        self, mock_get_user, async_client, generate_token, app
+    ):
+        """Sanity: resolving the caller's own tenant's village_id still works."""
+        mock_get_user.return_value = MagicMock(id=1, is_superuser=False)
+        token = generate_token(tenant_id=1, scopes=["infrastructure:read"])
+
+        db = app.db
+        village_id = f"{1:08x}-{uuid4().hex[:16]}"
+        identity_id = _identity_with_village_id(db, tenant_id=1, village_id=village_id)
+
+        resp = await async_client.get(
+            f"/id/{village_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()
+        body = await resp.get_json()
+        assert body["resource_type"] == "identity"
+        assert body["resource_id"] == identity_id

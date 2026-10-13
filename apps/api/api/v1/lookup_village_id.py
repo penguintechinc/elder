@@ -8,13 +8,17 @@ Maintains backward compatibility with existing clients.
 
 from quart import Blueprint, current_app, jsonify
 
+from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.refs.registry import get_type, resolve_by_village_id
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 bp = Blueprint("lookup_village_id", __name__)
 
 
 @bp.route("/id/<village_id>", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
 async def lookup_village_id(village_id: str):
     """
     Lookup a resource by its village_id (registry-driven).
@@ -22,12 +26,20 @@ async def lookup_village_id(village_id: str):
     Uses the cross-reference registry to resolve village_id to resource
     type, ID, and navigation URL. Maintains backward compatibility.
 
+    regression: gh-237 -- this route previously had no auth at all and
+    called the registry resolver WITHOUT a tenant id, which (prior to the
+    registry fail-closed fix) fell through to an unscoped query and let any
+    unauthenticated caller enumerate another tenant's resources by
+    village_id. Now requires infrastructure:read and passes the caller's
+    JWT tenant through so the registry resolver scopes the lookup.
+
     Path Parameters:
         - village_id: The village_id to lookup (25-char format: TTTTTTTT-OOOOOOOOOOOOOOOO)
 
     Returns:
         200: Resource found with type, ID, and redirect URL
-        404: Resource not found
+        401: Authentication required
+        404: Resource not found (including resources belonging to another tenant)
 
     Example:
         GET /id/0000002a-000000000000f3c1
@@ -39,10 +51,11 @@ async def lookup_village_id(village_id: str):
         }
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     def search():
-        """Search registry for the village_id."""
-        result = resolve_by_village_id(db, village_id)
+        """Search registry for the village_id, scoped to the caller's tenant."""
+        result = resolve_by_village_id(db, village_id, tenant_id=tenant_id)
         if not result:
             return None
 
