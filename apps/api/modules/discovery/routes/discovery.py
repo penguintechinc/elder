@@ -9,6 +9,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.discovery import DiscoveryService
+from apps.api.utils.tenant_scoping import get_current_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,30 @@ def get_discovery_service(read_only=False):
     """
     db = current_app.db_read if read_only else current_app.db
     return DiscoveryService(db)
+
+
+def _tenant_organization_ids(db, tenant_id: int | None) -> set[int]:
+    """Organization ids owned by tenant_id (empty set if tenant_id is falsy)."""
+    if not tenant_id:
+        return set()
+    return {
+        row.id
+        for row in db(db.organizations.tenant_id == tenant_id).select(
+            db.organizations.id
+        )
+    }
+
+
+def _job_organization_id(job_config_json) -> int | None:
+    """Return the owning organization id for a discovery job.
+
+    ``discovery_jobs`` has no ``organization_id`` column (see
+    ``create_job()`` in ``apps/worker/discovery/service.py`` -- it's stashed
+    in ``config_json["_organization_id"]`` pending a schema migration).
+    Tenant-scoping a job has to read it back the same way.
+    """
+    config = job_config_json or {}
+    return config.get("_organization_id")
 
 
 # Discovery Jobs endpoints
@@ -330,6 +355,8 @@ def get_all_discovery_history():
 
 
 @bp.route("/jobs/pending", methods=["GET"])
+@login_required
+@require_scope("discovery:read")
 def get_pending_jobs():
     """
     Get pending scan jobs for the scanner service.
@@ -338,12 +365,26 @@ def get_pending_jobs():
     Jobs are considered pending if they have schedule_interval=0 (one-time run)
     and haven't been run yet, or scheduled jobs that are due.
 
+    regression: gh-237 -- this route previously had no auth at all and
+    returned EVERY tenant's pending jobs (including provider config) to an
+    unauthenticated caller. Now requires discovery:read and filters results
+    to jobs whose organization_id belongs to the caller's tenant.
+
     Returns:
-        200: List of pending jobs
+        200: List of pending jobs (caller's tenant only)
+        401: Authentication required
     """
     try:
+        db = current_app.db_read
+        tenant_id = get_current_tenant_id()
+        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+
         service = get_discovery_service(read_only=True)
-        jobs = service.get_pending_jobs()
+        jobs = [
+            job
+            for job in service.get_pending_jobs()
+            if _job_organization_id(job.get("config_json")) in tenant_org_ids
+        ]
         return jsonify({"jobs": jobs}), 200
 
     except Exception as e:
@@ -351,17 +392,32 @@ def get_pending_jobs():
 
 
 @bp.route("/jobs/<int:job_id>/start", methods=["POST"])
+@login_required
+@require_scope("discovery:write")
 def start_job(job_id):
     """
     Mark a job as running.
 
     Called by the scanner service when it picks up a job.
 
+    regression: gh-237 -- this route previously had no auth at all, letting
+    any caller mark any tenant's job as running (arbitrary write). Now
+    requires discovery:write and verifies job_id belongs to the caller's
+    tenant via organization_id before mutating it.
+
     Returns:
         200: Job marked as running
-        404: Job not found
+        401: Authentication required
+        404: Job not found (including jobs belonging to another tenant)
     """
     try:
+        db = current_app.db
+        tenant_id = get_current_tenant_id()
+        job = db.discovery_jobs[job_id]  # tenant-scope-exempt: verified below
+        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+        if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
+            return jsonify({"error": f"Job not found: {job_id}"}), 404
+
         service = get_discovery_service()
         result = service.mark_job_running(job_id)
         return jsonify(result), 200
@@ -373,11 +429,18 @@ def start_job(job_id):
 
 
 @bp.route("/jobs/<int:job_id>/complete", methods=["POST"])
+@login_required
+@require_scope("discovery:write")
 async def complete_job(job_id):
     """
     Submit job results and mark as completed.
 
     Called by the scanner service when a job finishes.
+
+    regression: gh-237 -- this route previously had no auth at all, letting
+    any caller submit arbitrary results for any tenant's job (arbitrary
+    write). Now requires discovery:write and verifies job_id belongs to the
+    caller's tenant via organization_id before mutating it.
 
     Request body:
         {
@@ -388,9 +451,18 @@ async def complete_job(job_id):
 
     Returns:
         200: Results recorded
-        404: Job not found
+        400: Request body required
+        401: Authentication required
+        404: Job not found (including jobs belonging to another tenant)
     """
     try:
+        db = current_app.db
+        tenant_id = get_current_tenant_id()
+        job = db.discovery_jobs[job_id]  # tenant-scope-exempt: verified below
+        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+        if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
+            return jsonify({"error": f"Job not found: {job_id}"}), 404
+
         data = await request.get_json()
 
         if not data:
