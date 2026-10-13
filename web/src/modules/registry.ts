@@ -54,34 +54,53 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
   return routes
 }
 
+/** The five WIRED pillars, in acronym order — this is the sidebar's top level. */
+const GROUP_ORDER: [string, string][] = [
+  ['workstreams', 'Workstreams'],
+  ['issues', 'Issues'],
+  ['relationships', 'Relationships'],
+  ['entities', 'Entities'],
+  ['documents', 'Documents'],
+]
+
 /**
- * Get navigation categories for enabled modules, bucketed by WIRED pillar.
- * Groups render in acronym order (Workstreams, Issues, Relationships, Entities,
- * Documents), each preceded by a header category before its navigation items.
- * @param enabledModuleIds Set of module IDs that are enabled
- * @returns MenuCategory[] with headers for each group followed by that group's nav items
+ * Get navigation categories for enabled modules: exactly one collapsible section
+ * per WIRED pillar, in acronym order, holding every enabled module's nav items.
+ *
+ * Modules each author their own `nav` categories, and those headers collide across
+ * modules — `sbom` and `services_oncall` both ship a "Software & Services", and a
+ * single-item module renders its name twice (header + item). Emitting one section
+ * per pillar removes both classes of duplicate by construction. It also has to be
+ * this shape: `MenuCategory` is flat, and `SidebarMenu` drops any category whose
+ * visible items are empty, so a header-only pillar row renders as nothing at all.
+ *
+ * Module sub-headers are intentionally discarded; the items themselves are still
+ * contributed by module manifests and gated per tenant by the caller's enabled set.
+ *
+ * @param enabledModuleIds Set of module IDs that are enabled (effective=true)
+ * @returns One MenuCategory per populated pillar; empty pillars are omitted
  */
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
-  const GROUP_ORDER: [string, string][] = [
-    ['workstreams', 'Workstreams'],
-    ['issues', 'Issues'],
-    ['relationships', 'Relationships'],
-    ['entities', 'Entities'],
-    ['documents', 'Documents'],
-  ]
-
   const out: MenuCategory[] = []
 
   for (const [key, label] of GROUP_ORDER) {
-    const cats: MenuCategory[] = []
+    const items: MenuItem[] = []
+    const seenHrefs = new Set<string>()
+
     for (const module of MODULES) {
-      if (module.group === key && enabledModuleIds.has(module.id)) {
-        cats.push(...module.nav)
+      if (module.group !== key || !enabledModuleIds.has(module.id)) continue
+      for (const category of module.nav) {
+        for (const item of category.items) {
+          // Two modules can surface the same route; keep the first registration.
+          if (seenHrefs.has(item.href)) continue
+          seenHrefs.add(item.href)
+          items.push(item)
+        }
       }
     }
-    if (cats.length) {
-      out.push({ header: label, key: `group-${key}`, items: [] })
-      out.push(...cats)
+
+    if (items.length) {
+      out.push({ header: label, key: `group-${key}`, collapsible: true, items })
     }
   }
 
