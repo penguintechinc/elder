@@ -17,6 +17,7 @@ mypy==1.14.0
 types-requests==2.32.0.20241016
 types-redis==4.6.0.20241004
 types-pytz==2024.2.0.20241003
+urllib3>=2.8.0  # GHSA-8988-9cw3-xx77 / GHSA-vxq7-64xx-v4gw, transitive via types-requests
 
 # OSS dependency license compliance (make license-check-deps) — Elder is
 # AGPL-3.0 (LICENSE.md); this flags dependencies whose license isn't on the

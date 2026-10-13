@@ -38,6 +38,8 @@ anyio>=4.14.2           # via httpx — GHSA-5p39, GHSA-82r6
 h2>=4.4.1                # via hypercorn — GHSA-6hr6 request smuggling
 httplib2>=0.32.0         # via google-api-python-client — GHSA-j5g9 decompression bomb
 pyasn1>=0.6.4            # via ldap3/pyasn1-modules — GHSA-8ppf/hm4w/m4p7
+werkzeug>=3.1.9          # via flask/quart — CVE-2026-102598
+oauthlib>=4.0.0          # via google-auth-oauthlib/requests-oauthlib — CVE-2026-49264/CVE-2026-49265
 
 # Database (direct DB access for discovery jobs)
 penguin-dal==0.3.0
