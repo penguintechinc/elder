@@ -15,7 +15,6 @@ Provides validated Pydantic 2 models for IPAM entities:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -48,10 +47,10 @@ class IPAMPrefixDTO(ImmutableModel):
     tenant_id: int
     organization_id: int
     prefix: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
-    parent_id: Optional[int] = None
-    vlan_id: Optional[int] = None
+    parent_id: int | None = None
+    vlan_id: int | None = None
     is_pool: bool
     created_at: datetime
     updated_at: datetime
@@ -80,9 +79,9 @@ class IPAMAddressDTO(ImmutableModel):
     tenant_id: int
     prefix_id: int
     address: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
-    dns_name: Optional[str] = None
+    dns_name: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -111,7 +110,7 @@ class IPAMVlanDTO(ImmutableModel):
     organization_id: int
     vid: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
     created_at: datetime
     updated_at: datetime
@@ -143,7 +142,7 @@ class CreateIPAMPrefixRequest(RequestModel):
         ge=1,
         description="Associated organization ID (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
@@ -151,12 +150,12 @@ class CreateIPAMPrefixRequest(RequestModel):
         default="active",
         description="Current status (active/reserved/deprecated)",
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional parent prefix ID",
     )
-    vlan_id: Optional[int] = Field(
+    vlan_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional associated VLAN ID",
@@ -184,33 +183,33 @@ class UpdateIPAMPrefixRequest(RequestModel):
         organization_id: Associated organization ID (optional)
     """
 
-    prefix: Optional[str] = Field(
+    prefix: str | None = Field(
         default=None,
         description="CIDR notation",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="Current status",
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional parent prefix ID",
     )
-    vlan_id: Optional[int] = Field(
+    vlan_id: int | None = Field(
         default=None,
         ge=1,
         description="Optional associated VLAN ID",
     )
-    is_pool: Optional[bool] = Field(
+    is_pool: bool | None = Field(
         default=None,
         description="Whether prefix is address pool",
     )
-    organization_id: Optional[int] = Field(
+    organization_id: int | None = Field(
         default=None,
         ge=1,
         description="Associated organization ID",
@@ -241,7 +240,7 @@ class CreateIPAMAddressRequest(RequestModel):
         ge=1,
         description="Associated prefix ID (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
@@ -249,7 +248,7 @@ class CreateIPAMAddressRequest(RequestModel):
         default="active",
         description="Current status (active/reserved/deprecated/dhcp)",
     )
-    dns_name: Optional[str] = Field(
+    dns_name: str | None = Field(
         default=None,
         description="Optional DNS hostname",
     )
@@ -270,24 +269,24 @@ class UpdateIPAMAddressRequest(RequestModel):
         dns_name: Optional DNS hostname
     """
 
-    address: Optional[str] = Field(
+    address: str | None = Field(
         default=None,
         description="IP address with prefix",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="Current status",
     )
-    prefix_id: Optional[int] = Field(
+    prefix_id: int | None = Field(
         default=None,
         ge=1,
         description="Associated prefix ID",
     )
-    dns_name: Optional[str] = Field(
+    dns_name: str | None = Field(
         default=None,
         description="Optional DNS hostname",
     )
@@ -323,7 +322,7 @@ class CreateIPAMVlanRequest(RequestModel):
         ge=1,
         description="Associated organization ID (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
@@ -348,25 +347,25 @@ class UpdateIPAMVlanRequest(RequestModel):
         organization_id: Associated organization ID (optional)
     """
 
-    vid: Optional[int] = Field(
+    vid: int | None = Field(
         default=None,
         ge=0,
         le=4094,
         description="VLAN ID",
     )
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="VLAN name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    status: Optional[str] = Field(
+    status: str | None = Field(
         default=None,
         description="Current status",
     )
-    organization_id: Optional[int] = Field(
+    organization_id: int | None = Field(
         default=None,
         ge=1,
         description="Associated organization ID",

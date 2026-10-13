@@ -1,7 +1,14 @@
 #!/bin/bash
 # Elder API Testing Script
 # Tests core API endpoints with admin user
-
+#
+# Deliberately NOT `set -euo pipefail`: this is an ad-hoc harness that runs
+# every test in sequence and prints a pass/fail per test, continuing past
+# individual failures (ORG_ID/ENTITY_ID/ROTATION_ID are only conditionally
+# set by earlier tests and read again, unguarded, by later ones; adding -u
+# would abort on the first "previous test didn't run" state, and the bare
+# `| grep | head` in the metrics test would abort under pipefail on a
+# no-match, both defeating the "run everything, report everything" design).
 set -e
 
 API_URL="http://localhost:5000"

@@ -2,23 +2,29 @@
 
 # flake8: noqa: E501
 
-
+import asyncio
 import logging
 import os
 
 import structlog
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
-from quart import Quart, jsonify, make_response
+from penguin_aaa.audit.emitter import Emitter
+from penguin_aaa.audit.sinks import StdoutSink
+from penguin_aaa.middleware.asgi import AuditMiddleware
+from penguin_aaa.middleware.tenant import TenantMiddleware
+from quart import Quart, g, jsonify, make_response
 from quart_cors import cors
+from quart_schema import QuartSchema
 
 from apps.api.config import get_config
 from apps.api.logging_config import setup_logging
+from apps.api.utils.rate_limiter import init_rate_limiter
 from shared.database import (
     ensure_database_ready,
     init_db,
     init_sqlalchemy_tables,
     log_startup_status,
 )
+from shared.observability import auto_instrument_app, init_telemetry
 
 # Configure standard library logging
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -69,7 +75,11 @@ def create_app(config_name: str = None) -> Quart:
     app.config.from_object(config)
     config.init_app(app)
 
-    # Setup logging (must be after config but before other initializations)
+    # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
+    otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "elder-api"))
+    app.extensions["otel"] = otel
+
+    # Setup logging (must be after OTel but before other initializations)
     setup_logging(app)
 
     # Initialize extensions
@@ -92,11 +102,22 @@ def create_app(config_name: str = None) -> Quart:
     # Initialize license client
     _init_license_client(app)
 
+    # Register this pod for node-count license enforcement (Phase 2, Task 2)
+    _init_service_node_registration(app)
+
+    # Initialize module-enforcement Redis client (cached for all requests)
+    _init_redis_client(app)
+
     # Initialize access review scheduler (v3.1.0)
     _init_access_review_scheduler(app)
 
-    # Register blueprints
+    # Initialize audit log retention scheduler (auto-enforces GDPR Art. 5
+    # storage-limitation window; see apps/api/services/audit/scheduler.py)
+    _init_audit_retention_scheduler(app)
+
+    # Register core blueprints and load feature modules
     _register_blueprints(app)
+    _load_modules(app)
 
     # Register error handlers
     _register_error_handlers(app)
@@ -130,10 +151,230 @@ def create_app(config_name: str = None) -> Quart:
         version=app.config["APP_VERSION"],
     )
 
+    _register_before_request(app)
+
+    # Rate limiting (finding #5) -- registered AFTER _register_before_request
+    # so the tenant claim it populates on g.claims is available for the
+    # per-tenant + per-IP compound key. Degrades open if Redis is down.
+    init_rate_limiter(app)
+
+    # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
+    auto_instrument_app(app)
+
     return app
 
 
-_metrics_registry = CollectorRegistry(auto_describe=True)
+def create_asgi_app(config_name: str = None):
+    """Return a production-ready ASGI callable wrapped with penguin-aaa middleware.
+
+    Layer order (outermost first):
+      AuditMiddleware → TenantMiddleware → Quart app
+
+    Use this as the uvicorn entry point. Tests can use ``create_app()`` directly
+    to get the bare Quart app and call ``app.test_client()``.
+    """
+    quart_app = create_app(config_name)
+    emitter = Emitter(StdoutSink())
+    asgi = TenantMiddleware(quart_app, required=False)
+    asgi = AuditMiddleware(asgi, emitter)
+    return asgi
+
+
+def _register_before_request(app: Quart) -> None:
+    """Populate g.claims from the JWT payload on every authenticated request.
+
+    This bridges Elder's Bearer-token auth into the penguin-aaa claims format
+    so that @require_scope / @require_role decorators work without an extra DB
+    round-trip — the scopes and roles are embedded in the token itself.
+    """
+
+    @app.before_request
+    async def populate_claims():
+        from apps.api.auth.jwt_handler import get_token_from_header, verify_token
+
+        token = get_token_from_header()
+        if not token:
+            return
+        payload = verify_token(token)
+        if not payload:
+            return
+        sub = payload.get("sub", "")
+        try:
+            identity_id = int(sub)
+        except (TypeError, ValueError):
+            identity_id = None
+        g.claims = {
+            "sub": sub,
+            # Portal-auth JWTs carry the tenant under `tenant_id`, not `tenant`.
+            # The absorbed modules (streams/diagrams/documents/pages/helpdesk/
+            # flows) read g.claims["tenant"], so map tenant_id through here —
+            # otherwise every one of them 403s with "Tenant not found".
+            "tenant": payload.get("tenant") or payload.get("tenant_id", ""),
+            "roles": payload.get("roles", []),
+            "scope": payload.get("scope", []),
+            # The subject IS the authenticated identity id; expose it under the
+            # keys module handlers read (documents: identity_id, pages: user_identity_id).
+            "identity_id": identity_id,
+            "user_identity_id": identity_id,
+        }
+
+    @app.before_request
+    async def enforce_csrf_protection():
+        """Reject cookie-authenticated state-changing requests missing a
+        matching CSRF header (double-submit pattern).
+
+        The SPA's access/refresh tokens moved from localStorage into
+        HttpOnly cookies (gh security audit, High), which the browser now
+        attaches automatically -- exactly the property CSRF exploits. A
+        Bearer `Authorization` header is never auto-attached cross-site by
+        the browser, so header-authenticated (non-browser) callers are
+        exempt; only requests relying on the auth cookies need the extra
+        `X-CSRF-Token` header the SPA echoes back from its (non-HttpOnly)
+        `elder_csrf_token` cookie. Runs after populate_claims so header vs.
+        cookie auth is already distinguishable via the raw header itself.
+        """
+        from quart import request
+
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+
+        if request.headers.get("Authorization"):
+            return  # Bearer-token caller: browsers don't auto-send this cross-site
+
+        from apps.api.auth.portal_cookies import (
+            get_access_token_from_cookie,
+            get_refresh_token_from_cookie,
+            is_csrf_valid,
+        )
+
+        if not get_access_token_from_cookie() and not get_refresh_token_from_cookie():
+            return  # No cookie session to protect; downstream auth will 401
+
+        if not is_csrf_valid():
+            return jsonify({"error": "CSRF token missing or invalid"}), 403
+
+    @app.before_request
+    async def enforce_module_access():
+        """Enforce module licensing and tenant enablement (layers 2-3).
+
+        Resolves the current request blueprint to its module manifest and checks:
+        - Layer 2 (license): Is the module licensed? If not → 403 MODULE_UNLICENSED
+        - Layer 3 (tenant): Is the module enabled for this tenant? If not → 403 MODULE_DISABLED
+
+        Core (non-module) routes are unaffected.
+
+        Runs after populate_claims so g.claims is available.
+        Fails gracefully on infra errors (never crashes, never hard-denies).
+        """
+        from quart import request
+
+        try:
+            # Resolve blueprint → module name
+            blueprint_name = request.blueprint
+            if not blueprint_name:
+                return  # No blueprint, allow (core route)
+
+            elder_module_by_blueprint = app.extensions.get(
+                "elder_module_by_blueprint", {}
+            )
+            module_name = elder_module_by_blueprint.get(blueprint_name)
+            if not module_name:
+                return  # Not a module route, allow (core route)
+
+            # Resolve module manifest
+            elder_modules = app.extensions.get("elder_modules", {})
+            manifest = elder_modules.get(module_name)
+            if not manifest:
+                logger.warning(
+                    "module_manifest_not_found",
+                    module=module_name,
+                    blueprint=blueprint_name,
+                )
+                return  # Manifest missing, allow (shouldn't happen)
+
+            # Layer 2: Check if module is licensed
+            from apps.api.common.modules.licensing import module_licensed
+
+            if not module_licensed(app, manifest):
+                logger.info(
+                    "module_access_denied_unlicensed",
+                    module=module_name,
+                    feature=manifest.license_feature,
+                )
+                return (
+                    jsonify(
+                        {
+                            "error": "MODULE_UNLICENSED",
+                            "module": module_name,
+                            "message": f"Module '{module_name}' is not licensed",
+                        }
+                    ),
+                    403,
+                )
+
+            # Layer 3: Check if module is enabled for this tenant
+            claims = getattr(g, "claims", {}) or {}
+            tenant_str = claims.get("tenant", "")
+
+            if tenant_str:
+                # Tenant is present; check if module is enabled for them
+                try:
+                    tenant_id = int(tenant_str)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "invalid_tenant_claim",
+                        tenant_str=tenant_str,
+                    )
+                    return  # Invalid tenant claim, allow to let auth decorators handle
+
+                try:
+                    # Use cached Redis client (initialized at app startup)
+                    redis_client = app.extensions.get("module_redis")
+                    db = app.db
+
+                    from apps.api.common.modules.tenant_toggle import is_module_enabled
+
+                    if not is_module_enabled(
+                        db,
+                        redis_client,
+                        tenant_id,
+                        module_name,
+                        manifest.default_enabled,
+                    ):
+                        logger.info(
+                            "module_access_denied_disabled",
+                            module=module_name,
+                            tenant_id=tenant_id,
+                        )
+                        return (
+                            jsonify(
+                                {
+                                    "error": "MODULE_DISABLED",
+                                    "module": module_name,
+                                    "message": f"Module '{module_name}' is not enabled for your tenant",
+                                }
+                            ),
+                            403,
+                        )
+                except Exception as e:
+                    # Fail-soft: if toggle check fails, allow the request
+                    logger.warning(
+                        "module_toggle_check_failed",
+                        module=module_name,
+                        tenant_id=tenant_id,
+                        error=str(e),
+                        fallback="allow",
+                    )
+                    return  # Allow on infra failure
+
+        except Exception as e:
+            # Outermost catch: log and allow
+            logger.error(
+                "module_enforcement_unexpected_error",
+                error=str(e),
+                fallback="allow",
+            )
+            return  # Allow on unexpected error
 
 
 def _init_extensions(app: Quart) -> None:
@@ -147,19 +388,20 @@ def _init_extensions(app: Quart) -> None:
         expose_headers=app.config.get("CORS_EXPOSE_HEADERS", []),
     )
 
-    if app.config.get("METRICS_ENABLED"):
-        _register_metrics_endpoint(app)
+    # quart-schema powers @validate_request/@validate_response (security-audit
+    # fix: explicit response DTOs instead of raw ORM/dataclass serialization).
+    # Public OpenAPI/Swagger/Redoc/Scalar doc routes are intentionally disabled
+    # here — gating them behind penguin-aaa auth is a separate tracked decision
+    # (security.md: "public doc exposes only the login endpoint, nothing else").
+    QuartSchema(
+        app,
+        openapi_path=None,
+        swagger_ui_path=None,
+        redoc_ui_path=None,
+        scalar_ui_path=None,
+    )
 
     logger.info("extensions_initialized")
-
-
-def _register_metrics_endpoint(app: Quart) -> None:
-    @app.route("/metrics")
-    async def metrics_endpoint():
-        data = generate_latest(_metrics_registry)
-        response = await make_response(data)
-        response.headers["Content-Type"] = CONTENT_TYPE_LATEST
-        return response
 
 
 def _init_license_client(app: Quart) -> None:
@@ -174,6 +416,8 @@ def _init_license_client(app: Quart) -> None:
 
         client = get_license_client()
         validation = client.validate()
+        # Persist client on app.extensions for use in module enforcement
+        app.extensions["license_client"] = client
         logger.info(
             "license_client_initialized",
             tier=validation.tier,
@@ -185,6 +429,87 @@ def _init_license_client(app: Quart) -> None:
             error=str(e),
             fallback="community",
         )
+        # Stash None to signal licensing unavailable (graceful degradation)
+        app.extensions["license_client"] = None
+
+
+def _init_service_node_registration(app: Quart) -> None:
+    """Best-effort service_nodes self-registration on API startup.
+
+    Node counting (license-enforcement framework, Phase 2 Task 2) needs every
+    running pod to have a row; a failure here must never block API startup,
+    so this is deliberately try/except-wrapped and only logs a warning.
+
+    Args:
+        app: Quart application (must already have app.db initialized).
+    """
+    try:
+        from apps.api.common.licensing.enforce import check_limit
+        from apps.api.models.service_node import register_node
+
+        service_type = os.getenv("ELDER_SERVICE_TYPE", "main")
+        pod_id = os.getenv("HOSTNAME", "unknown")
+
+        async def _check_node_limit() -> None:
+            # Node limits are a soft scale gate: check_limit's WARN log
+            # (`license_limit_would_block`) is the entire point of this call
+            # -- its 402 return is intentionally discarded so a deployment's
+            # own pod is never refused startup, even when the
+            # elder.license-enforcement flag is ON (see Phase 2 plan Task 5).
+            async with app.app_context():
+                await check_limit("node", None)
+
+        asyncio.run(_check_node_limit())
+
+        register_node(app.db, service_type, pod_id)
+        logger.info("service_node_registered", service_type=service_type, pod_id=pod_id)
+    except Exception as e:
+        logger.warning(
+            "service_node_registration_failed",
+            error=str(e),
+        )
+
+
+def _init_redis_client(app: Quart) -> None:
+    """
+    Initialize Redis client for module enforcement (tenant toggles).
+
+    Caches a single Redis client at app startup for reuse across all requests.
+    Fail-soft: if Redis unavailable, enforcement queries will catch the error
+    and allow the request (graceful degradation).
+
+    Args:
+        app: Quart application
+    """
+    try:
+        import redis
+
+        redis_url = app.config.get("REDIS_URL", "")
+        if not redis_url:
+            logger.warning(
+                "module_redis_init_skipped",
+                reason="REDIS_URL not configured",
+            )
+            app.extensions["module_redis"] = None
+            app.redis_client = None
+            return
+
+        redis_client = redis.from_url(redis_url)
+        # Test connectivity
+        redis_client.ping()
+        app.extensions["module_redis"] = redis_client
+        # Alias used by modules that mint village_ids (documents, pages).
+        app.redis_client = redis_client
+        logger.info("module_redis_initialized")
+    except Exception as e:
+        logger.warning(
+            "module_redis_init_failed",
+            error=str(e),
+            fallback="defer_to_request_time",
+        )
+        # Stash None; enforcement will fail-soft at request time
+        app.extensions["module_redis"] = None
+        app.redis_client = None
 
 
 def _init_access_review_scheduler(app: Quart) -> None:
@@ -206,198 +531,131 @@ def _init_access_review_scheduler(app: Quart) -> None:
         )
 
 
+def _init_audit_retention_scheduler(app: Quart) -> None:
+    """
+    Initialize the audit log retention scheduler.
+
+    Automatically purges audit log records past each tenant's configured
+    (and compliance-floored) retention window on a periodic sweep, rather
+    than relying solely on the manual admin-triggered cleanup endpoint.
+
+    Args:
+        app: Quart application
+    """
+    from apps.api.services.audit.scheduler import init_scheduler
+
+    try:
+        init_scheduler(app.db)
+        logger.info("audit_retention_scheduler_initialized")
+    except Exception as e:
+        logger.warning(
+            "audit_retention_scheduler_init_failed",
+            error=str(e),
+        )
+
+
 def _register_blueprints(app: Quart) -> None:
-    """Register blueprints."""
-    # Import blueprints (async versions where available)
-    from apps.api.api.v1 import access_reviews  # v3.1.0: Access Review System
-    from apps.api.api.v1 import audit  # Phase 8: Audit System Enhancement
-    from apps.api.api.v1 import audit_enterprise  # v2.2.0: Enhanced Audit & Compliance
-    from apps.api.api.v1 import backup  # Phase 10: Backup & Data Management
-    from apps.api.api.v1 import builtin_secrets  # v2.0.0: Built-in Secrets Storage
-    from apps.api.api.v1 import certificates  # v2.4.0: Certificate Management
-    from apps.api.api.v1 import costs  # Cost tracking
-    from apps.api.api.v1 import data_stores  # v3.0.0: Data Store Tracking
-    from apps.api.api.v1 import discovery  # Phase 5: Cloud Auto-Discovery
-    from apps.api.api.v1 import group_membership  # v3.x: Group Membership Management
-    from apps.api.api.v1 import iam  # Phase 4: IAM Integration
-    from apps.api.api.v1 import ipam  # v2.3.0: IP Address Management
-    from apps.api.api.v1 import keys  # Phase 3: Keys Management
-    from apps.api.api.v1 import license_policies  # v3.0.0: License Compliance
-    from apps.api.api.v1 import logs  # Admin Log Viewer
-    from apps.api.api.v1 import networking  # v2.0.0: Networking Resources & Topology
-    from apps.api.api.v1 import on_call_rotations  # v3.x: On-Call Rotation Management
-    from apps.api.api.v1 import portal_auth  # v2.2.0: Portal User Authentication
-    from apps.api.api.v1 import sbom  # v3.0.0: SBOM Component Tracking
-    from apps.api.api.v1 import sbom_scans  # v3.0.0: SBOM Scan Management
-    from apps.api.api.v1 import sbom_schedules  # v3.0.0: SBOM Scan Schedules
-    from apps.api.api.v1 import search  # Phase 10: Advanced Search
-    from apps.api.api.v1 import secrets  # Phase 2: Secrets Management
-    from apps.api.api.v1 import services  # v2.3.0: Services Tracking
-    from apps.api.api.v1 import software  # v2.3.0: Software Tracking
-    from apps.api.api.v1 import sso  # v2.2.0: SSO/SAML/SCIM
-    from apps.api.api.v1 import tenants  # v2.2.0: Tenant Management
-    from apps.api.api.v1 import vulnerabilities  # v3.0.0: Vulnerability Management
-    from apps.api.api.v1 import webhooks  # Phase 9: Webhook & Notification System
-    from apps.api.api.v1 import (  # Phase 7: Google Workspace Integration
+    """Register CORE (always-on) blueprints.
+
+    Phase 0: Core blueprints that are always available. Feature modules
+    are registered separately via _load_modules().
+    """
+    # Lookup endpoints with special prefixes
+    from apps.api.api.v1 import (
         api_keys,
+        audit,
+        audit_enterprise,
         auth,
-        dependencies,
-        entities,
-        entity_types,
-        google_workspace,
-        graph,
+        backup,
         identities,
-        issues,
-        labels,
+        logs,
         lookup,
         lookup_village_id,
-        metadata,
-        milestones,
-        organization_tree,
-        organizations_pydal,
+        modules,
+        portal_auth,
+        privacy,
+        privacy_admin,
         profile,
-        projects,
-        resource_roles,
-        sync,
+        refs,
+        search,
+        sso,
+        tenant_modules,
+        tenants,
         users,
     )
     from apps.api.web import routes as web
 
-    # Register API v1 blueprints
     api_prefix = app.config["API_PREFIX"]
 
-    # Use async organizations_pydal blueprint (PyDAL + async/await)
-    app.register_blueprint(
-        organizations_pydal.bp, url_prefix=f"{api_prefix}/organizations"
-    )
-    app.register_blueprint(entities.bp, url_prefix=f"{api_prefix}/entities")
-    app.register_blueprint(entity_types.bp, url_prefix=f"{api_prefix}/entity-types")
-    app.register_blueprint(dependencies.bp, url_prefix=f"{api_prefix}/dependencies")
-    app.register_blueprint(graph.bp, url_prefix=f"{api_prefix}/graph")
+    # Core authentication and identity
     app.register_blueprint(auth.bp, url_prefix=f"{api_prefix}/auth")
     app.register_blueprint(profile.bp, url_prefix=f"{api_prefix}/profile")
     app.register_blueprint(identities.bp, url_prefix=f"{api_prefix}/identities")
     app.register_blueprint(api_keys.bp, url_prefix=f"{api_prefix}/api-keys")
     app.register_blueprint(users.bp, url_prefix=f"{api_prefix}/users")
 
-    # Enterprise feature blueprints
-    app.register_blueprint(resource_roles.bp, url_prefix=f"{api_prefix}/resource-roles")
-    app.register_blueprint(issues.bp, url_prefix=f"{api_prefix}/issues")
-    app.register_blueprint(labels.bp, url_prefix=f"{api_prefix}/labels")
-    app.register_blueprint(metadata.bp, url_prefix=f"{api_prefix}/metadata")
-    app.register_blueprint(projects.bp, url_prefix=f"{api_prefix}/projects")
-    app.register_blueprint(milestones.bp, url_prefix=f"{api_prefix}/milestones")
-    app.register_blueprint(organization_tree.bp, url_prefix=f"{api_prefix}")
-    app.register_blueprint(sync.bp, url_prefix=f"{api_prefix}/sync")
-    app.register_blueprint(
-        group_membership.bp, url_prefix=f"{api_prefix}/group-membership"
-    )  # v3.x: Group Membership Management
-    app.register_blueprint(
-        access_reviews.bp, url_prefix=f"{api_prefix}"
-    )  # v3.1.0: Access Review System
+    # Tenancy and administration
+    app.register_blueprint(tenants.bp, url_prefix=f"{api_prefix}/tenants")
+    app.register_blueprint(tenant_modules.bp, url_prefix=f"{api_prefix}")
+    app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
+    app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
 
-    # v1.2.0 Feature blueprints
-    app.register_blueprint(secrets.bp, url_prefix=f"{api_prefix}/secrets")  # Phase 2
-    app.register_blueprint(keys.bp, url_prefix=f"{api_prefix}/keys")  # Phase 3
-    app.register_blueprint(iam.bp, url_prefix=f"{api_prefix}/iam")  # Phase 4
-    app.register_blueprint(
-        discovery.bp, url_prefix=f"{api_prefix}/discovery"
-    )  # Phase 5
-    app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")  # Phase 8
-    app.register_blueprint(logs.bp, url_prefix=f"{api_prefix}/logs")  # Admin Log Viewer
-    app.register_blueprint(webhooks.bp, url_prefix=f"{api_prefix}/webhooks")  # Phase 9
-    app.register_blueprint(search.bp, url_prefix=f"{api_prefix}/search")  # Phase 10
-    app.register_blueprint(backup.bp, url_prefix=f"{api_prefix}/backup")  # Phase 10
-    app.register_blueprint(
-        google_workspace.bp, url_prefix=f"{api_prefix}/google-workspace"
-    )  # Phase 7
+    # Self-service DSAR (Free+) and its Enterprise-gated admin convenience
+    # layer -- see docs/compliance and apps/api/services/privacy.
+    app.register_blueprint(privacy.bp, url_prefix=f"{api_prefix}/privacy")
+    app.register_blueprint(privacy_admin.bp, url_prefix=f"{api_prefix}/privacy-admin")
 
-    # v2.0.0 Feature blueprints
-    app.register_blueprint(
-        networking.bp
-    )  # Networking already has /api/v1/networking prefix
-    app.register_blueprint(
-        builtin_secrets.bp
-    )  # Built-in secrets already has /api/v1/builtin-secrets prefix
-
-    # v2.2.0 Enterprise Edition blueprints
-    app.register_blueprint(
-        portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth"
-    )  # Portal user authentication
-    app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")  # SSO/SAML/SCIM
+    # Audit and logging
+    app.register_blueprint(audit.bp, url_prefix=f"{api_prefix}/audit")
     app.register_blueprint(
         audit_enterprise.bp, url_prefix=f"{api_prefix}/audit-enterprise"
-    )  # Enhanced audit & compliance
-    app.register_blueprint(
-        tenants.bp, url_prefix=f"{api_prefix}/tenants"
-    )  # Tenant management
+    )
+    app.register_blueprint(logs.bp, url_prefix=f"{api_prefix}/logs")
 
-    # v2.3.0 Feature blueprints
-    app.register_blueprint(
-        software.bp, url_prefix=f"{api_prefix}/software"
-    )  # Software tracking
-    app.register_blueprint(
-        services.bp, url_prefix=f"{api_prefix}/services"
-    )  # Services tracking
-    app.register_blueprint(
-        ipam.bp, url_prefix=f"{api_prefix}/ipam"
-    )  # IP Address Management
-    app.register_blueprint(
-        data_stores.bp, url_prefix=f"{api_prefix}/data-stores"
-    )  # v3.0.0: Data Store Tracking (Community)
-    app.register_blueprint(
-        sbom.bp, url_prefix=f"{api_prefix}/sbom/components"
-    )  # v3.0.0: SBOM Component Tracking
-    app.register_blueprint(
-        sbom_scans.bp, url_prefix=f"{api_prefix}/sbom/scans"
-    )  # v3.0.0: SBOM Scan Management
-    app.register_blueprint(
-        sbom_schedules.bp, url_prefix=f"{api_prefix}/sbom/schedules"
-    )  # v3.0.0: SBOM Scan Schedules
-    app.register_blueprint(
-        vulnerabilities.bp, url_prefix=f"{api_prefix}/vulnerabilities"
-    )  # v3.0.0: Vulnerability Management
-    app.register_blueprint(
-        license_policies.bp, url_prefix=f"{api_prefix}/license-policies"
-    )  # v3.0.0: License Compliance
+    # Search and backup
+    app.register_blueprint(search.bp, url_prefix=f"{api_prefix}/search")
+    app.register_blueprint(backup.bp, url_prefix=f"{api_prefix}/backup")
 
-    # v2.4.0 Feature blueprints
-    app.register_blueprint(
-        certificates.bp, url_prefix=f"{api_prefix}/certificates"
-    )  # Certificate management
-    app.register_blueprint(costs.bp, url_prefix=f"{api_prefix}/costs")  # Cost tracking
+    # Module registry endpoint
+    app.register_blueprint(modules.bp, url_prefix=f"{api_prefix}")
 
-    # v3.x Feature blueprints
-    app.register_blueprint(
-        on_call_rotations.bp, url_prefix=f"{api_prefix}/on-call"
-    )  # On-Call Rotation Management
+    # Cross-reference resolution
+    app.register_blueprint(refs.bp, url_prefix=f"{api_prefix}")
 
-    # Public lookup endpoint (no /api/v1 prefix for cleaner URLs)
+    # Special-prefix endpoints
     app.register_blueprint(lookup.bp, url_prefix="/lookup")
-
-    # Village ID lookup endpoint (no prefix - accessible at /id/{village_id})
     app.register_blueprint(lookup_village_id.bp, url_prefix="")
 
     # Web UI blueprint (root routes)
     app.register_blueprint(web.bp, url_prefix="")
 
     logger.info(
-        "blueprints_registered",
+        "core_blueprints_registered",
         api_prefix=api_prefix,
-        blueprints=[
-            "organizations (async PyDAL)",
-            "entities",
-            "dependencies",
-            "graph",
-            "auth",
-            "identities",
-            "resource_roles",
-            "issues",
-            "metadata",
-            "lookup",
-            "web",
-        ],
+        count=16,
     )
+
+
+def _load_modules(app: Quart) -> None:
+    """Load and mount feature modules based on environment configuration.
+
+    Resolves enabled modules from ELDER_MODULES_ENABLED env var and per-module
+    overrides, then registers their blueprints. Phase 0: all modules re-export
+    existing blueprints from apps.api.api.v1 with zero file moves.
+    """
+    from apps.api.modules.registry import mount, resolve_enabled
+
+    try:
+        enabled_modules = resolve_enabled(os.environ)
+        mount(app, enabled_modules)
+        logger.info(
+            "feature_modules_loaded",
+            module_count=len(enabled_modules),
+            modules=[m.name for m in enabled_modules],
+        )
+    except Exception as e:
+        logger.error("feature_modules_load_failed", error=str(e))
+        raise
 
 
 def _register_error_handlers(app: Quart) -> None:
@@ -454,7 +712,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        create_app(),
-        host=os.getenv("HOST", "0.0.0.0"),
+        create_asgi_app(),
+        host=os.getenv("HOST", "0.0.0.0"),  # nosec B104
         port=int(os.getenv("PORT", 5000)),
     )

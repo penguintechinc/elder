@@ -1,0 +1,633 @@
+"""Resource Role management API endpoints using PyDAL with async/await."""
+
+# flake8: noqa: E501
+
+from dataclasses import asdict
+
+from pydantic import ValidationError
+from quart import Blueprint, current_app, g, jsonify, request
+
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.licensing_fallback import license_required
+from apps.api.models.dataclasses import ResourceRoleDTO, from_pydal_rows
+from apps.api.models.pydantic import CreateResourceRoleRequest, ResourceRoleResponse
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+
+bp = Blueprint("resource_roles", __name__)
+
+
+# The resource_roles Postgres enums store UPPERCASE member names
+# (``resourcetype`` -> ENTITY/ORGANIZATION, ``resourceroletype`` ->
+# MAINTAINER/OPERATOR/VIEWER; see alembic/versions/001_add_enterprise_features.py),
+# while the API contract (CreateResourceRoleRequest/ResourceRoleResponse) is
+# lowercase. Every insert/filter against ``resource_type``/``role_type`` MUST
+# therefore upshift, and every value read back MUST be lowered for responses.
+
+
+def _role_response(row) -> ResourceRoleResponse:
+    """Build a lowercase-contract API response from a resource_roles row.
+
+    The row carries the DB's uppercase enum member names plus columns
+    (``role_type``, ``granted_by_id``, ``updated_at``, ``village_id``) that
+    ``ResourceRoleResponse`` (extra='forbid') rejects, so the fields are
+    selected and case-normalized explicitly rather than via from_pydal_row().
+    ``role_type`` is the NOT-NULL source of truth; the nullable ``role``
+    string column is preferred when present for an exact contract echo.
+    """
+    return ResourceRoleResponse(
+        id=row.id,
+        identity_id=row.identity_id,
+        group_id=row.group_id,
+        resource_type=str(row.resource_type).lower(),
+        resource_id=row.resource_id,
+        role=str(row.role or row.role_type).lower(),
+        created_at=row.created_at,
+    )
+
+
+def _role_dto_dicts(rows) -> list[dict]:
+    """Serialize resource_roles rows to lowercase-contract response dicts.
+
+    Mirrors ``_role_response()``'s case normalization for the DTO-based list
+    endpoints: the DB returns ``resource_type``/``role`` uppercase, the API
+    contract is lowercase.
+    """
+    out = []
+    for item in from_pydal_rows(rows, ResourceRoleDTO):
+        d = asdict(item)
+        if d.get("resource_type"):
+            d["resource_type"] = str(d["resource_type"]).lower()
+        if d.get("role"):
+            d["role"] = str(d["role"]).lower()
+        out.append(d)
+    return out
+
+
+def _resource_owner(db, resource_type: str, resource_id: int, tenant_id: int | None):
+    """Verify a polymorphic resource_roles target belongs to the caller's tenant.
+
+    resource_roles grants access to either an "entity" or an "organization"
+    (``resource_type`` + ``resource_id``), never carrying a ``tenant_id`` of
+    its own. Delegates to ``get_tenant_scoped()`` for each shape so there is
+    never a fallback to an unscoped bracket read (gh-237). Returns ``None``
+    for an unrecognized ``resource_type`` or a tenant mismatch.
+
+    Normalizes case before comparing: the API contract is lowercase
+    (``CreateResourceRoleRequest.resource_type: Literal["entity", "organization"]``),
+    but the underlying Postgres enum (``alembic/versions/001_add_enterprise_features.py``)
+    stores the member names uppercase (``"ENTITY"``/``"ORGANIZATION"``) --
+    a caller-supplied value and a value read back off an existing row may
+    legitimately differ in case.
+    """
+    normalized = str(resource_type).upper()
+    if normalized == "ORGANIZATION":
+        return get_tenant_scoped(db, db.organizations, resource_id, tenant_id)
+    if normalized == "ENTITY":
+        return get_tenant_scoped(
+            db, db.entities, resource_id, tenant_id, org_fk="organization_id"
+        )
+    return None
+
+
+def _get_tenant_scoped_role(db, table, role_id: int, tenant_id: int | None):
+    """Resolve a resource_roles row, verifying its target belongs to the caller's tenant.
+
+    Mirrors ``get_tenant_scoped()``'s org_fk pattern for a table whose
+    tenant-owning parent is polymorphic: resolve the row by primary key,
+    then verify tenant ownership of whichever resource it references via
+    ``_resource_owner()`` before returning it. Returns ``None`` (never
+    raises) when ``tenant_id``/``role_id`` is falsy, the row doesn't exist,
+    or its target resource belongs to a different tenant -- callers MUST
+    map ``None`` to a 404, never a 403 (see get_tenant_scoped() docstring).
+    """
+    if not tenant_id or not role_id:
+        return None
+
+    row = table[role_id]
+    if not row:
+        return None
+
+    if not _resource_owner(db, row.resource_type, row.resource_id, tenant_id):
+        return None
+
+    return row
+
+
+@bp.route("", methods=["GET"])
+@login_required
+@require_scope("access_reviews:read")
+@license_required("enterprise")
+async def list_resource_roles():
+    """
+    List resource role assignments with optional filtering.
+
+    Query Parameters:
+        - identity_id: Filter by identity
+        - group_id: Filter by group
+        - resource_type: Filter by resource type (entity/organization)
+        - resource_id: Filter by resource ID
+        - role: Filter by role (maintainer/operator/viewer)
+
+    Returns:
+        200: List of resource roles
+        403: License required
+
+    Example:
+        GET /api/v1/resource-roles?resource_type=entity&resource_id=42
+        {
+            "items": [
+                {
+                    "id": 1,
+                    "identity_id": 5,
+                    "resource_type": "entity",
+                    "resource_id": 42,
+                    "role": "maintainer",
+                    "created_at": "2024-10-23T10:00:00Z"
+                }
+            ],
+            "total": 1
+        }
+    """
+    db = current_app.db
+
+    # Build query
+    def get_roles():
+        query = db.resource_roles.id > 0
+
+        # Apply filters from query params
+        if request.args.get("identity_id"):
+            try:
+                identity_id = int(request.args.get("identity_id"))
+                query &= db.resource_roles.identity_id == identity_id
+            except (ValueError, TypeError):
+                return None, "Invalid identity_id", 400
+
+        if request.args.get("group_id"):
+            try:
+                group_id = int(request.args.get("group_id"))
+                query &= db.resource_roles.group_id == group_id
+            except (ValueError, TypeError):
+                return None, "Invalid group_id", 400
+
+        if request.args.get("resource_type"):
+            resource_type = request.args.get("resource_type")
+            if resource_type not in ("entity", "organization"):
+                return None, "Invalid resource_type", 400
+            # Upshift to the uppercase enum member stored in Postgres.
+            query &= db.resource_roles.resource_type == resource_type.upper()
+
+        if request.args.get("resource_id"):
+            try:
+                resource_id = int(request.args.get("resource_id"))
+                query &= db.resource_roles.resource_id == resource_id
+            except (ValueError, TypeError):
+                return None, "Invalid resource_id", 400
+
+        if request.args.get("role"):
+            role = request.args.get("role")
+            if role not in ("maintainer", "operator", "viewer"):
+                return None, "Invalid role", 400
+            # Filter on the NOT-NULL role_type enum (uppercase member names)
+            # rather than the nullable ``role`` string column.
+            query &= db.resource_roles.role_type == role.upper()
+
+        roles = db(query).select()
+        return roles, None, None
+
+    result = await run_in_threadpool(get_roles)
+
+    # Handle errors from query building
+    if isinstance(result, tuple) and result[1] is not None:
+        _, error, status = result
+        return jsonify({"error": error}), status
+
+    rows = result[0] if isinstance(result, tuple) else result
+
+    # Convert to DTOs (case-normalized to the lowercase API contract).
+    items = [_role_response(row) for row in rows]
+
+    return (
+        jsonify(
+            {
+                "items": [item.model_dump(exclude_none=True) for item in items],
+                "total": len(items),
+            }
+        ),
+        200,
+    )
+
+
+@bp.route("", methods=["POST"])
+@login_required
+@require_scope("access_reviews:write")
+@license_required("enterprise")
+async def create_resource_role():
+    """
+    Grant a resource role to an identity or group.
+
+    Requires maintainer role on the resource to grant roles.
+
+    Request Body:
+        {
+            "identity_id": 5 (optional),
+            "group_id": 3 (optional),
+            "resource_type": "entity",
+            "resource_id": 42,
+            "role": "operator"
+        }
+
+    Returns:
+        201: Resource role created
+        400: Invalid request
+        403: License required or insufficient permissions
+        409: Role already exists
+
+    Example:
+        POST /api/v1/resource-roles
+        {
+            "identity_id": 5,
+            "resource_type": "entity",
+            "resource_id": 42,
+            "role": "operator"
+        }
+
+        Response:
+        {
+            "id": 1,
+            "identity_id": 5,
+            "resource_type": "entity",
+            "resource_id": 42,
+            "role": "operator",
+            "created_at": "2024-10-23T10:00:00Z"
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    # Validate request body
+    try:
+        req_data = CreateResourceRoleRequest(**await request.get_json() or {})
+    except ValidationError as e:
+        errors = []
+        for err in e.errors():
+            errors.append(
+                {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
+            )
+        return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    # Must have either identity_id or group_id
+    if not req_data.identity_id and not req_data.group_id:
+        return jsonify({"error": "Either identity_id or group_id is required"}), 400
+
+    # Check if current user has maintainer role on this resource
+    def check_and_create():
+        # gh-237: resource_type/resource_id are caller-supplied -- verify the
+        # target resource belongs to the caller's tenant before granting any
+        # role on it (applies even to superusers, whose token still carries
+        # a tenant claim; cross-tenant super-admin is a separately issued,
+        # short-lived credential -- see security.md Service-to-Service Auth).
+        if not _resource_owner(
+            db, req_data.resource_type, req_data.resource_id, tenant_id
+        ):
+            return None, "Resource not found", 404
+
+        # Superusers can grant any role
+        if not g.current_user.is_superuser:
+            # Check if current user has maintainer role
+            # resource_type/role_type are stored uppercase (see module note).
+            has_maintainer = (
+                db(
+                    (db.resource_roles.identity_id == g.current_user.id)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
+                    & (db.resource_roles.resource_id == req_data.resource_id)
+                    & (db.resource_roles.role_type == "MAINTAINER")
+                )
+                .select()
+                .first()
+            )
+
+            if not has_maintainer:
+                return (
+                    None,
+                    "Insufficient permissions - only maintainers can grant resource roles",
+                    403,
+                )
+
+        # Check if role already exists
+        if req_data.identity_id:
+            existing_role = (
+                db(
+                    (db.resource_roles.identity_id == req_data.identity_id)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
+                    & (db.resource_roles.resource_id == req_data.resource_id)
+                )
+                .select()
+                .first()
+            )
+        else:
+            existing_role = (
+                db(
+                    (db.resource_roles.group_id == req_data.group_id)
+                    & (
+                        db.resource_roles.resource_type
+                        == req_data.resource_type.upper()
+                    )
+                    & (db.resource_roles.resource_id == req_data.resource_id)
+                )
+                .select()
+                .first()
+            )
+
+        if existing_role:
+            return (
+                None,
+                "Role already exists for this identity/group on this resource",
+                409,
+            )
+
+        # Create resource role. resource_type/role_type persist as the
+        # uppercase Postgres enum member names; role_type is NOT NULL and was
+        # previously never set (the insert 500'd on this constraint). The
+        # nullable ``role`` string column keeps the lowercase contract value.
+        role_id = db.resource_roles.insert(
+            identity_id=req_data.identity_id,
+            group_id=req_data.group_id,
+            resource_type=req_data.resource_type.upper(),
+            resource_id=req_data.resource_id,
+            role=req_data.role,
+            role_type=req_data.role.upper(),
+        )
+        db.commit()
+
+        # Post-insert fetch of the row we just created -- role_id is
+        # server-generated, and the target resource was already
+        # tenant-verified above.
+        return db.resource_roles[role_id], None, None  # tenant-scope-exempt
+
+    result, error, status = await run_in_threadpool(check_and_create)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    role_dto = _role_response(result)
+    return jsonify(role_dto.model_dump(exclude_none=True)), 201
+
+
+@bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("access_reviews:write")
+@license_required("enterprise")
+async def revoke_resource_role(id: int):
+    """
+    Revoke a resource role.
+
+    Requires maintainer role on the resource to revoke roles.
+
+    Path Parameters:
+        - id: Resource role ID
+
+    Returns:
+        204: Resource role revoked
+        403: License required or insufficient permissions
+        404: Resource role not found
+
+    Example:
+        DELETE /api/v1/resource-roles/1
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    # Check and delete role
+    def check_and_delete():
+        # gh-237: id is caller-supplied -- verify the role's target resource
+        # belongs to the caller's tenant before revealing/revoking it.
+        role = _get_tenant_scoped_role(db, db.resource_roles, id, tenant_id)
+        if not role:
+            return None, "Resource role not found", 404
+
+        # Check if current user has maintainer role on this resource
+        # Superusers can revoke any role
+        if not g.current_user.is_superuser:
+            # role.resource_type is read back uppercase; compare like-for-like
+            # and gate on the NOT-NULL role_type enum.
+            has_maintainer = (
+                db(
+                    (db.resource_roles.identity_id == g.current_user.id)
+                    & (db.resource_roles.resource_type == role.resource_type)
+                    & (db.resource_roles.resource_id == role.resource_id)
+                    & (db.resource_roles.role_type == "MAINTAINER")
+                )
+                .select()
+                .first()
+            )
+
+            if not has_maintainer:
+                return (
+                    None,
+                    "Insufficient permissions - only maintainers can revoke resource roles",
+                    403,
+                )
+
+        # Delete role
+        db(db.resource_roles.id == id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(check_and_delete)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204
+
+
+@bp.route("/entities/<int:id>/roles", methods=["GET"])
+@login_required
+@require_scope("access_reviews:read")
+@license_required("enterprise")
+async def list_entity_roles(id: int):
+    """
+    List all resource roles for an entity.
+
+    Path Parameters:
+        - id: Entity ID
+
+    Returns:
+        200: List of resource roles for this entity
+        403: License required
+        404: Entity not found
+
+    Example:
+        GET /api/v1/resource-roles/entities/42/roles
+        {
+            "items": [
+                {
+                    "id": 1,
+                    "identity_id": 5,
+                    "role": "maintainer"
+                }
+            ],
+            "total": 1
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def get_entity_roles():
+        # gh-237: entities has no tenant_id of its own -- scope via the
+        # owning organization's tenant_id.
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return None, "Entity not found", 404
+
+        # Get all roles for this entity (resource_type stored uppercase).
+        roles = db(
+            (db.resource_roles.resource_type == "ENTITY")
+            & (db.resource_roles.resource_id == id)
+        ).select()
+
+        return roles, None, None
+
+    result, error, status = await run_in_threadpool(get_entity_roles)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    items = _role_dto_dicts(result)
+
+    return (
+        jsonify({"items": items, "total": len(items)}),
+        200,
+    )
+
+
+@bp.route("/organizations/<int:id>/roles", methods=["GET"])
+@login_required
+@require_scope("access_reviews:read")
+@license_required("enterprise")
+async def list_organization_roles(id: int):
+    """
+    List all resource roles for an organization.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Returns:
+        200: List of resource roles for this organization
+        403: License required
+        404: Organization not found
+
+    Example:
+        GET /api/v1/resource-roles/organizations/1/roles
+        {
+            "items": [
+                {
+                    "id": 2,
+                    "identity_id": 3,
+                    "role": "operator"
+                }
+            ],
+            "total": 1
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def get_org_roles():
+        # gh-237: organizations carries its own tenant_id -- scope directly.
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
+        if not org:
+            return None, "Organization not found", 404
+
+        # Get all roles for this organization (resource_type stored uppercase).
+        roles = db(
+            (db.resource_roles.resource_type == "ORGANIZATION")
+            & (db.resource_roles.resource_id == id)
+        ).select()
+
+        return roles, None, None
+
+    result, error, status = await run_in_threadpool(get_org_roles)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    items = _role_dto_dicts(result)
+
+    return (
+        jsonify({"items": items, "total": len(items)}),
+        200,
+    )
+
+
+@bp.route("/identities/<int:id>/resource-roles", methods=["GET"])
+@login_required
+@require_scope("access_reviews:read")
+@license_required("enterprise")
+async def list_identity_resource_roles(id: int):
+    """
+    List all resource roles assigned to an identity.
+
+    Path Parameters:
+        - id: Identity ID
+
+    Returns:
+        200: List of resource roles for this identity
+        403: License required
+        404: Identity not found
+
+    Example:
+        GET /api/v1/resource-roles/identities/5/resource-roles
+        {
+            "items": [
+                {
+                    "id": 1,
+                    "resource_type": "entity",
+                    "resource_id": 42,
+                    "role": "maintainer"
+                },
+                {
+                    "id": 2,
+                    "resource_type": "organization",
+                    "resource_id": 1,
+                    "role": "operator"
+                }
+            ],
+            "total": 2
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def get_identity_roles():
+        # gh-237: identities carries its own tenant_id -- scope directly.
+        identity = get_tenant_scoped(db, db.identities, id, tenant_id)
+        if not identity:
+            return None, "Identity not found", 404
+
+        # Get all roles for this identity
+        roles = db(db.resource_roles.identity_id == id).select()
+
+        return roles, None, None
+
+    result, error, status = await run_in_threadpool(get_identity_roles)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    items = _role_dto_dicts(result)
+
+    return (
+        jsonify({"items": items, "total": len(items)}),
+        200,
+    )

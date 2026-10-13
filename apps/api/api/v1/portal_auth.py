@@ -6,33 +6,58 @@ MFA management, and password operations with tenant context.
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from functools import wraps
+from inspect import iscoroutinefunction
 
 import jwt
-from quart import Blueprint, current_app, jsonify, request
 from pydantic import ValidationError
+from quart import Blueprint, current_app, jsonify, make_response, request
 
+from apps.api.auth.portal_cookies import (
+    clear_portal_auth_cookies,
+    get_access_token_from_cookie,
+    get_refresh_token_from_cookie,
+    set_portal_auth_cookies,
+)
 from apps.api.models.schemas import PortalLoginRequest, PortalRegisterRequest
 from apps.api.services.portal_auth import PortalAuthService
+from apps.api.utils.api_responses import ApiResponse
 
 bp = Blueprint("portal_auth", __name__)
 
 
 def portal_token_required(f):
-    """Decorator to require portal user JWT authentication."""
+    """Decorator to require portal user JWT authentication.
 
-    @wraps(f)
-    def decorated(*args, **kwargs):
+    Sync/async-aware: wraps `f` with a same-flavor `decorated` function so an
+    `async def` view actually gets awaited. A plain `def decorated` wrapping
+    an async view would return the un-awaited coroutine object itself as the
+    "response", which Quart rejects with `TypeError: The response value type
+    (coroutine) is not valid` -- this bit every async view using this
+    decorator (e.g. tenants.py::create_tenant) until fixed here.
+    """
+
+    def _authenticate() -> tuple | None:
+        """Validate the Bearer token, stashing the payload on request.portal_user.
+
+        Returns:
+            An `ApiResponse.unauthorized(...)` tuple if auth failed, else None.
+        """
         token = None
         auth_header = request.headers.get("Authorization")
 
         if auth_header and auth_header.startswith("Bearer "):
             token = auth_header.split(" ")[1]
 
+        # Browser client: no Authorization header, fall back to the SPA's
+        # HttpOnly access-token cookie (gh security audit -- tokens no
+        # longer live in localStorage for this decorator to read via header).
         if not token:
-            return jsonify({"error": "Token is missing"}), 401
+            token = get_access_token_from_cookie()
+
+        if not token:
+            return ApiResponse.unauthorized("Token is missing")
 
         try:
             secret_key = current_app.config.get(
@@ -41,15 +66,33 @@ def portal_token_required(f):
             payload = jwt.decode(token, secret_key, algorithms=["HS256"])
 
             if payload.get("type") != "portal_user":
-                return jsonify({"error": "Invalid token type"}), 401
+                return ApiResponse.unauthorized("Invalid token type")
 
             request.portal_user = payload
         except jwt.ExpiredSignatureError:
-            return jsonify({"error": "Token has expired"}), 401
+            return ApiResponse.unauthorized("Token has expired")
         except jwt.InvalidTokenError:
-            return jsonify({"error": "Invalid token"}), 401
+            return ApiResponse.unauthorized("Invalid token")
 
-        return f(*args, **kwargs)
+        return None
+
+    if iscoroutinefunction(f):
+
+        @wraps(f)
+        async def decorated(*args, **kwargs):
+            error = _authenticate()
+            if error is not None:
+                return error
+            return await f(*args, **kwargs)
+
+    else:
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            error = _authenticate()
+            if error is not None:
+                return error
+            return f(*args, **kwargs)
 
     return decorated
 
@@ -64,7 +107,7 @@ def generate_tokens(user: dict) -> dict:
     access_token_expires = current_app.config["JWT_ACCESS_TOKEN_EXPIRES"]
     refresh_token_expires = current_app.config["JWT_REFRESH_TOKEN_EXPIRES"]
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Access token
     access_payload = PortalAuthService.generate_jwt_claims(user)
@@ -90,8 +133,52 @@ def generate_tokens(user: dict) -> dict:
     }
 
 
+async def _issue_token_response(
+    result: dict, tokens: dict, *, roles: list, status_code: int = 200
+):
+    """Build the register/login/MFA-verify success response with HttpOnly auth cookies.
+
+    The JSON body still carries the tokens (react-libs LoginPageBuilder's
+    `LoginResponse.token`/`refreshToken` fields, and any non-browser caller
+    that predates this change) -- but the browser client must not persist
+    them; it relies on the cookies set here instead (gh security audit,
+    High: XSS-exfiltratable localStorage tokens).
+    """
+    response_data = {
+        "success": True,
+        "user": {
+            "id": str(result["id"]),
+            "email": result["email"],
+            "name": result.get("full_name"),
+            "roles": roles,
+        },
+        "token": tokens.get("access_token"),
+        "refreshToken": tokens.get("refresh_token"),
+        "access_token": tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_type": tokens.get("token_type"),
+        "expires_in": tokens.get("expires_in"),
+    }
+
+    response = await make_response(jsonify(response_data), status_code)
+    secure = not current_app.config.get("DEBUG", False)
+    set_portal_auth_cookies(
+        response,
+        tokens["access_token"],
+        tokens["refresh_token"],
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
+    return response
+
+
 @bp.route("/register", methods=["POST"])
-def register():
+async def register():
     """Register a new portal user.
 
     Request body:
@@ -104,9 +191,9 @@ def register():
         User info and tokens on success
         422: Invalid email format or validation error
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Validate request using Pydantic schema
     try:
@@ -149,8 +236,10 @@ def register():
             400,
         )
 
-    # Verify tenant exists
-    tenant = current_app.db.tenants[tenant_id]
+    # Verify tenant exists. tenants is the top-level tenant table itself
+    # (nothing to scope it by), and this is a pre-auth public registration
+    # flow -- there is no caller tenant context yet.
+    tenant = current_app.db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant or not tenant.is_active:
         return (
             jsonify(
@@ -163,7 +252,7 @@ def register():
             400,
         )
 
-    result = PortalAuthService.create_portal_user(
+    result = await PortalAuthService.create_portal_user(
         tenant_id=tenant_id,
         email=validated_data.email,
         password=validated_data.password,
@@ -172,44 +261,29 @@ def register():
     )
 
     if "error" in result:
+        status_code = result.get("status_code", 400)
+        error_code = "LIMIT_REACHED" if status_code == 402 else "REGISTRATION_FAILED"
         return (
             jsonify(
                 {
                     "success": False,
                     "error": result["error"],
-                    "errorCode": "REGISTRATION_FAILED",
+                    "errorCode": error_code,
                 }
             ),
-            400,
+            status_code,
         )
 
     # Generate tokens
     tokens = generate_tokens(result)
 
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": ["reader"],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        201,
+    return await _issue_token_response(
+        result, tokens, roles=["reader"], status_code=201
     )
 
 
 @bp.route("/login", methods=["POST"])
-def login():
+async def login():
     """Authenticate a portal user.
 
     Request body:
@@ -221,9 +295,9 @@ def login():
         Tokens on success, or MFA challenge
         422: Invalid email format or validation error
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Validate request using Pydantic schema
     try:
@@ -270,7 +344,7 @@ def login():
             tenant_id = default_tenant.id
 
     if not tenant_id:
-        return jsonify({"error": "Valid tenant is required"}), 400
+        return ApiResponse.bad_request("Valid tenant is required")
 
     result = PortalAuthService.authenticate(
         tenant_id, validated_data.email, validated_data.password
@@ -307,30 +381,12 @@ def login():
     tokens = generate_tokens(result)
 
     # Format response for react-libs LoginPageBuilder compatibility
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        200,
-    )
+    roles = [result.get("tenant_role")] if result.get("tenant_role") else []
+    return await _issue_token_response(result, tokens, roles=roles)
 
 
 @bp.route("/mfa/verify", methods=["POST"])
-def verify_mfa():
+async def verify_mfa():
     """Verify MFA code after initial authentication.
 
     Request body:
@@ -340,15 +396,15 @@ def verify_mfa():
     Returns:
         Tokens on success
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     user_id = data.get("user_id")
     totp_code = data.get("totp_code")
 
     if not all([user_id, totp_code]):
-        return jsonify({"error": "user_id and totp_code are required"}), 400
+        return ApiResponse.bad_request("user_id and totp_code are required")
 
     result = PortalAuthService.verify_mfa(user_id, totp_code)
 
@@ -367,26 +423,8 @@ def verify_mfa():
     # Generate tokens
     tokens = generate_tokens(result)
 
-    response_data = {
-        "success": True,
-        "user": {
-            "id": str(result["id"]),
-            "email": result["email"],
-            "name": result.get("full_name"),
-            "roles": [result.get("tenant_role")] if result.get("tenant_role") else [],
-        },
-        "token": tokens.get("access_token"),
-        "refreshToken": tokens.get("refresh_token"),
-        "access_token": tokens.get("access_token"),
-        "refresh_token": tokens.get("refresh_token"),
-        "token_type": tokens.get("token_type"),
-        "expires_in": tokens.get("expires_in"),
-    }
-
-    return (
-        jsonify(response_data),
-        200,
-    )
+    roles = [result.get("tenant_role")] if result.get("tenant_role") else []
+    return await _issue_token_response(result, tokens, roles=roles)
 
 
 @bp.route("/mfa/enable", methods=["POST"])
@@ -425,7 +463,7 @@ def disable_mfa():
 
 @bp.route("/password/change", methods=["POST"])
 @portal_token_required
-def change_password():
+async def change_password():
     """Change password for the authenticated user.
 
     Request body:
@@ -435,15 +473,15 @@ def change_password():
     Returns:
         Success status
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     current_password = data.get("current_password")
     new_password = data.get("new_password")
 
     if not all([current_password, new_password]):
-        return jsonify({"error": "current_password and new_password are required"}), 400
+        return ApiResponse.bad_request("current_password and new_password are required")
 
     user_id = int(request.portal_user["sub"])
     result = PortalAuthService.change_password(user_id, current_password, new_password)
@@ -455,7 +493,7 @@ def change_password():
 
 
 @bp.route("/password/reset", methods=["POST"])
-def reset_password():
+async def reset_password():
     """Initiate password reset.
 
     Request body:
@@ -465,15 +503,15 @@ def reset_password():
     Returns:
         Success message (token in development only)
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     tenant_id = data.get("tenant_id")
     email = data.get("email")
 
     if not all([tenant_id, email]):
-        return jsonify({"error": "tenant_id and email are required"}), 400
+        return ApiResponse.bad_request("tenant_id and email are required")
 
     result = PortalAuthService.reset_password(email, tenant_id)
 
@@ -481,38 +519,40 @@ def reset_password():
 
 
 @bp.route("/refresh", methods=["POST"])
-def refresh_token():
+async def refresh_token():
     """Refresh access token using refresh token.
 
     Request body:
-        refresh_token: str - Refresh token
+        refresh_token: str - Refresh token (non-browser callers). Browser
+            callers omit this -- the refresh token is read from the HttpOnly
+            `elder_refresh_token` cookie instead (gh security audit, High:
+            tokens no longer live in localStorage for the SPA to resend).
 
     Returns:
-        New access token
+        New access token (also re-set as HttpOnly cookies for the browser)
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    data = await request.get_json(force=True, silent=True) or {}
 
-    refresh_token = data.get("refresh_token")
-    if not refresh_token:
-        return jsonify({"error": "refresh_token is required"}), 400
+    refresh_token_value = data.get("refresh_token") or get_refresh_token_from_cookie()
+    if not refresh_token_value:
+        return ApiResponse.bad_request("refresh_token is required")
 
     try:
         secret_key = current_app.config.get("JWT_SECRET_KEY") or current_app.config.get(
             "SECRET_KEY"
         )
-        payload = jwt.decode(refresh_token, secret_key, algorithms=["HS256"])
+        payload = jwt.decode(refresh_token_value, secret_key, algorithms=["HS256"])
 
         if payload.get("type") != "portal_refresh":
-            return jsonify({"error": "Invalid token type"}), 401
+            return ApiResponse.unauthorized("Invalid token type")
 
-        # Get user
+        # Get user: self-lookup via the verified refresh token's own sub
+        # claim, never a client param
         user_id = int(payload["sub"])
-        user = current_app.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
         if not user or not user.is_active:
-            return jsonify({"error": "User not found or inactive"}), 401
+            return ApiResponse.unauthorized("User not found or inactive")
 
         # Generate new tokens (with refresh token rotation for security)
         user_dict = {
@@ -524,12 +564,49 @@ def refresh_token():
         }
         tokens = generate_tokens(user_dict)
 
-        return jsonify(tokens), 200
+        response = await make_response(jsonify(tokens), 200)
+        secure = not current_app.config.get("DEBUG", False)
+        set_portal_auth_cookies(
+            response,
+            tokens["access_token"],
+            tokens["refresh_token"],
+            access_max_age=int(
+                current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+            ),
+            refresh_max_age=int(
+                current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+            ),
+            secure=secure,
+        )
+        return response
 
     except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Refresh token has expired"}), 401
+        response = await make_response(
+            *ApiResponse.unauthorized("Refresh token has expired")
+        )
+        clear_portal_auth_cookies(response)
+        return response
     except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid refresh token"}), 401
+        response = await make_response(
+            *ApiResponse.unauthorized("Invalid refresh token")
+        )
+        clear_portal_auth_cookies(response)
+        return response
+
+
+@bp.route("/logout", methods=["POST"])
+async def logout():
+    """Clear the SPA's HttpOnly auth cookies.
+
+    Portal-auth JWTs are stateless -- there's no server-side session to
+    invalidate -- so this is a cookie-clear operation only, mirroring
+    apps/api/web's SSR logout (apps.api.auth.web_auth.clear_session_cookie).
+    Deliberately unauthenticated: it must still succeed (and clear a stale
+    refresh cookie) even if the caller's access token already expired.
+    """
+    response = await make_response(jsonify({"message": "Logged out successfully"}), 200)
+    clear_portal_auth_cookies(response)
+    return response
 
 
 @bp.route("/me", methods=["GET"])
@@ -540,11 +617,13 @@ def get_current_user():
     Returns:
         User info and permissions
     """
+    # Self-lookup via the validated portal token's own sub claim, never a
+    # client param
     user_id = int(request.portal_user["sub"])
-    user = current_app.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     permissions = PortalAuthService.get_user_permissions(user_id)
 
@@ -577,14 +656,21 @@ def update_current_user():
     Returns:
         Updated user info
     """
+    # Self-lookup via the validated portal token's own sub claim, never a
+    # client param
     user_id = int(request.portal_user["sub"])
-    user = current_app.db.portal_users[user_id]
+    user = current_app.db.portal_users[user_id]  # tenant-scope-exempt: see above
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     data = request.get_json(silent=True) or {}
 
+    # NOTE (flagged, not fixed here -- out of tenant-scoping-backfill
+    # scope): organization_id below is accepted from the request body with
+    # no check that the target organization belongs to this user's own
+    # tenant, unlike the equivalent fix in api/v1/profile.py. See final
+    # report for follow-up.
     updates = {}
     if "full_name" in data:
         updates["full_name"] = data["full_name"]
@@ -594,7 +680,7 @@ def update_current_user():
     if updates:
         current_app.db(current_app.db.portal_users.id == user_id).update(**updates)
         current_app.db.commit()
-        user = current_app.db.portal_users[user_id]
+        user = current_app.db.portal_users[user_id]  # tenant-scope-exempt
 
     return (
         jsonify(
@@ -615,7 +701,7 @@ def update_current_user():
 
 @bp.route("/org-assignments", methods=["POST"])
 @portal_token_required
-def assign_org_role():
+async def assign_org_role():
     """Assign a portal user to an organization with a role.
 
     Requires tenant admin or global admin.
@@ -633,11 +719,11 @@ def assign_org_role():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     portal_user_id = data.get("portal_user_id")
     organization_id = data.get("organization_id")
@@ -652,7 +738,7 @@ def assign_org_role():
         )
 
     if role not in ["admin", "maintainer", "reader"]:
-        return jsonify({"error": "Invalid role"}), 400
+        return ApiResponse.bad_request("Invalid role")
 
     result = PortalAuthService.assign_org_role(portal_user_id, organization_id, role)
 

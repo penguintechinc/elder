@@ -9,13 +9,20 @@ global:
   imagePullSecrets:
     - name: ghcr-pull-secret
 
+# OpenTelemetry - enabled, in-cluster SigNoz collector on dal2-beta
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
 # PostgreSQL - 1 replica for beta (RWO PVC cannot be multi-attached)
 postgres:
   enabled: true
   replicaCount: 1
   image:
-    repository: postgres
-    tag: 17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
+    # pgvector required: Elder supports ONLY Postgres+pgvector (no MySQL/MariaDB/SQLite)
+    repository: pgvector/pgvector
+    tag: pg17-bookworm@sha256:dd467f03ca5c5581222490e5217e48a262864ccb659be559f8491bbafdc97da0
     pullPolicy: IfNotPresent
   env:
     POSTGRES_DB: elder
@@ -63,6 +70,12 @@ web:
     repository: ghcr.io/penguintechinc/elder-web
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
+  # Explicit here (matches the corrected base values.yaml default) — container
+  # is nginx-unprivileged listening on 8080, not 3000. Release audit finding #7.
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
   buildArgs:
     VITE_API_URL: ""
   resources:
@@ -123,6 +136,7 @@ scanner:
   env:
     SCANNER_POLL_INTERVAL: "300"
     LOG_LEVEL: INFO
+    ELDER_API_URL: "http://elder-api:5000"
   resources:
     requests:
       memory: "256Mi"
@@ -145,9 +159,10 @@ worker:
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
-    DATABASE_URL: ""
+    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
     DATABASE_READ_URL: ""
     DB_POOL_SIZE: "10"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
   resources:
     requests:
       memory: "256Mi"
@@ -158,65 +173,30 @@ worker:
   credentialsSecret:
     name: ""
 
-# Prometheus - Enabled in beta
-prometheus:
+# Flows Invoker Service - Single replica for beta (dedicated isolated consumer,
+# no HA fan-out needed at this stage — Redis consumer groups still parallelize
+# safely if replicaCount is raised later)
+flows-invoker:
   enabled: true
   replicaCount: 1
   image:
-    repository: prom/prometheus
-    tag: latest
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "250m"
-    limits:
-      memory: "2Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 20Gi
-    storageClass: "longhorn"
-
-# Alertmanager - Enabled in beta
-alertmanager:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: prom/alertmanager
-    tag: latest
-    pullPolicy: IfNotPresent
+    repository: ghcr.io/penguintechinc/elder-flows-invoker
+    tag: 3.2.1.1776737340-beta
+    pullPolicy: Always
+  env:
+    LOG_LEVEL: INFO
+    DATABASE_URL: "postgresql://elder:elder_beta_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+    FLOWS_WORKSPACE_ROOT: "/workspace"
   resources:
     requests:
       memory: "128Mi"
       cpu: "100m"
     limits:
-      memory: "512Mi"
-      cpu: "500m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: "longhorn"
-
-# Grafana - Enabled in beta
-grafana:
-  enabled: true
-  replicaCount: 1
-  image:
-    repository: grafana/grafana
-    tag: latest
-    pullPolicy: IfNotPresent
-  resources:
-    requests:
       memory: "256Mi"
       cpu: "250m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: "longhorn"
 
 # Ingress - Disabled in beta (migrated to Cilium Gateway API)
 ingress:
@@ -236,7 +216,7 @@ ingress:
         - path: /
           pathType: Prefix
           service: web
-          port: 3000
+          port: 8080
         - path: /api
           pathType: Prefix
           service: api
@@ -287,3 +267,26 @@ affinity:
               operator: In
               values:
                 - "true"
+
+# Cluster security baseline — Cilium CNI is live on dal2-beta, so all three
+# are ON per the release audit (findings #2/#3/#4).
+networkPolicy:
+  enabled: true
+  gatewayNamespace: "gateway"
+
+tetragon:
+  enabled: true
+
+# NOTE (k8s-ops): the "elder" namespace on dal2-beta already exists,
+# created out-of-band and not currently Helm-managed. Before the first
+# upgrade with this flag on, either pre-adopt it:
+#   kubectl label ns elder app.kubernetes.io/managed-by=Helm --overwrite
+#   kubectl annotate ns elder meta.helm.sh/release-name=elder \
+#     meta.helm.sh/release-namespace=elder --overwrite
+# or apply the three pod-security labels directly and leave this false.
+namespaceManagement:
+  create: true
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

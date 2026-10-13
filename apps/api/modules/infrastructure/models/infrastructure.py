@@ -1,0 +1,116 @@
+# flake8: noqa: E501
+"""Infrastructure models: networking, services, software, data stores."""
+
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
+
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
+
+
+class NetworkingResource(Base, IDMixin, TimestampMixin):
+    """Networking resources (subnets, VPCs, firewalls, etc.)."""
+
+    __tablename__ = "networking_resources"
+
+    name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+    network_type = Column(String(50), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("networking_resources.id"), nullable=True)
+    region = Column(String(100), nullable=True)
+    location = Column(String(255), nullable=True)
+    poc = Column(String(255), nullable=True)
+    organizational_unit = Column(String(255), nullable=True)
+    attributes = Column(JSON, nullable=True)
+    status_metadata = Column(JSON, nullable=True)
+    tags = Column(JSON, nullable=True)
+    is_active = Column(Boolean, nullable=True)
+
+
+class NetworkEntityMapping(Base, IDMixin, TimestampMixin):
+    """Links networking resources to entities."""
+
+    __tablename__ = "network_entity_mappings"
+
+    network_id = Column(Integer, ForeignKey("networking_resources.id"), nullable=False)
+    entity_id = Column(Integer, ForeignKey("entities.id"), nullable=False)
+    relationship_type = Column(String(50), nullable=False)
+    extra_metadata = Column("metadata", JSON, nullable=True)
+
+
+class NetworkTopology(Base, IDMixin, TimestampMixin):
+    """Network topology connections between networking resources."""
+
+    __tablename__ = "network_topology"
+
+    source_network_id = Column(
+        Integer, ForeignKey("networking_resources.id"), nullable=False
+    )
+    target_network_id = Column(
+        Integer, ForeignKey("networking_resources.id"), nullable=False
+    )
+    connection_type = Column(String(50), nullable=False)
+    bandwidth = Column(String(50), nullable=True)
+    latency = Column(String(50), nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
+
+
+class DataStore(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
+    """Data inventory management."""
+
+    __tablename__ = "data_stores"
+
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    name = Column(String(255), nullable=False)
+    external_id = Column(String(255), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+    storage_type = Column(String(50), nullable=True)
+    storage_provider = Column(String(100), nullable=True)
+    location_region = Column(String(50), nullable=True)
+    location_physical = Column(String(255), nullable=True)
+    data_classification = Column(String(20), nullable=True)
+    encryption_at_rest = Column(Boolean, nullable=True)
+    encryption_in_transit = Column(Boolean, nullable=True)
+    encryption_key_id = Column(Integer, ForeignKey("crypto_keys.id"), nullable=True)
+    retention_days = Column(Integer, nullable=True)
+    backup_enabled = Column(Boolean, nullable=True)
+    backup_frequency = Column(String(50), nullable=True)
+    access_control_type = Column(String(20), nullable=True)
+    poc_identity_id = Column(Integer, ForeignKey("identities.id"), nullable=True)
+    compliance_frameworks = Column(JSON, nullable=True)
+    contains_pii = Column(Boolean, nullable=True)
+    contains_phi = Column(Boolean, nullable=True)
+    contains_pci = Column(Boolean, nullable=True)
+    size_bytes = Column(BigInteger, nullable=True)
+    last_access_audit = Column(DateTime(timezone=True), nullable=True)
+    extra_metadata = Column("metadata", JSON, nullable=True)
+    created_by = Column(Integer, ForeignKey("portal_users.id"), nullable=True)
+    is_active = Column(Boolean, nullable=True)
+
+
+class DataStoreLabel(Base, IDMixin):
+    """Labels applied to data stores."""
+
+    __tablename__ = "data_store_labels"
+
+    data_store_id = Column(Integer, ForeignKey("data_stores.id"), nullable=False)
+    label_id = Column(Integer, ForeignKey("labels.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=True)

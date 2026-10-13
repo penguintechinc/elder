@@ -9,7 +9,6 @@ Provides validated Pydantic 2 equivalents of Entity dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Optional
 
@@ -44,19 +43,19 @@ class EntityDTO(ImmutableModel):
 
     id: int
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     entity_type: str
-    sub_type: Optional[str] = None
+    sub_type: str | None = None
     organization_id: int
-    parent_id: Optional[int] = None
-    attributes: Optional[dict] = None
-    tags: Optional[list[str]] = None
+    parent_id: int | None = None
+    attributes: dict | None = None
+    tags: list[str] | None = None
     is_active: bool
-    default_metadata: Optional[dict] = None
-    status_metadata: Optional[dict] = None
+    default_metadata: dict | None = None
+    status_metadata: dict | None = None
     created_at: datetime
     updated_at: datetime
-    village_id: Optional[str] = None
+    village_id: str | None = None
 
 
 class CreateEntityRequest(RequestModel):
@@ -92,31 +91,31 @@ class CreateEntityRequest(RequestModel):
         ge=1,
         description="Associated organization ID (must be positive)",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Optional detailed description",
     )
-    sub_type: Optional[str] = Field(
+    sub_type: str | None = Field(
         default=None,
         description="Optional sub-type classification",
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         default=None,
         description="Optional parent entity ID",
     )
-    external_id: Optional[str] = Field(
+    external_id: str | None = Field(
         default=None,
         description="Optional external system identifier for deduplication",
     )
-    attributes: Optional[dict] = Field(
+    attributes: dict | None = Field(
         default=None,
         description="Optional custom attributes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default_factory=list,
         description="Optional classification tags",
     )
-    default_metadata: Optional[dict] = Field(
+    default_metadata: dict | None = Field(
         default=None,
         description="Optional default metadata",
     )
@@ -146,48 +145,48 @@ class UpdateEntityRequest(RequestModel):
         is_active: Active status (optional)
     """
 
-    name: Optional[str] = Field(
+    name: str | None = Field(
         default=None,
         description="Entity name",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         default=None,
         description="Detailed description",
     )
-    entity_type: Optional[str] = Field(
+    entity_type: str | None = Field(
         default=None,
         description="Type classification",
     )
-    sub_type: Optional[str] = Field(
+    sub_type: str | None = Field(
         default=None,
         description="Sub-type classification",
     )
-    organization_id: Optional[int] = Field(
+    organization_id: int | None = Field(
         default=None,
         ge=1,
         description="Organization ID reassignment (must be positive)",
     )
-    parent_id: Optional[int] = Field(
+    parent_id: int | None = Field(
         default=None,
         description="Parent entity ID",
     )
-    external_id: Optional[str] = Field(
+    external_id: str | None = Field(
         default=None,
         description="External system identifier for deduplication",
     )
-    attributes: Optional[dict] = Field(
+    attributes: dict | None = Field(
         default=None,
         description="Custom attributes",
     )
-    tags: Optional[list[str]] = Field(
+    tags: list[str] | None = Field(
         default=None,
         description="Classification tags",
     )
-    default_metadata: Optional[dict] = Field(
+    default_metadata: dict | None = Field(
         default=None,
         description="Default metadata",
     )
-    is_active: Optional[bool] = Field(
+    is_active: bool | None = Field(
         default=None,
         description="Active status",
     )

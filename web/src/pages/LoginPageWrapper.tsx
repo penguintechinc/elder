@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { LoginPageBuilder, ELDER_LOGIN_THEME } from '@penguintechinc/react-libs/components'
 import type { LoginResponse } from '@penguintechinc/react-libs/components'
+import { markAuthenticated } from '@/lib/api'
 
 export default function LoginPageWrapper() {
   const navigate = useNavigate()
@@ -21,17 +22,12 @@ export default function LoginPageWrapper() {
           }}
           colors={ELDER_LOGIN_THEME}
           onSuccess={(response: LoginResponse) => {
+            // The access/refresh JWT arrive as HttpOnly cookies on this same
+            // response (gh security audit, High: they used to be copied into
+            // localStorage here) -- only the non-sensitive "logged in" flag
+            // is tracked client-side now.
             if (response.token) {
-              localStorage.setItem('elder_token', response.token)
-            }
-            // Store refresh token for automatic token refresh
-            const anyResp = response as LoginResponse & {
-              refreshToken?: string
-              refresh_token?: string
-            }
-            const refreshToken = anyResp.refreshToken ?? anyResp.refresh_token
-            if (refreshToken) {
-              localStorage.setItem('elder_refresh_token', refreshToken)
+              markAuthenticated()
             }
             navigate('/')
           }}

@@ -9,12 +9,36 @@ Provides validated Pydantic 2 equivalents of Metadata Field dataclasses:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
+
+
+class MetadataFieldResponse(ImmutableModel):
+    """
+    Immutable Metadata Field response DTO matching the actual
+    `metadata_fields` table columns (`field_key`/`field_value`, not the
+    stale `key`/`value` names in `MetadataFieldDTO` above, which is unused
+    by apps/api/modules/issues/routes/metadata.py).
+
+    `field_value` holds the *parsed* value (str/int/float/bool/dict/list
+    depending on `field_type`), not the raw stored string — matching what
+    the route handlers already return.
+    """
+
+    id: int
+    resource_type: str
+    resource_id: int
+    field_key: str
+    field_type: str
+    field_value: Any = None
+    is_system: bool
+    created_by_id: int | None = None
+    village_id: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class MetadataFieldDTO(ImmutableModel):
@@ -38,7 +62,7 @@ class MetadataFieldDTO(ImmutableModel):
 
     id: int
     key: str
-    value: Optional[str] = None
+    value: str | None = None
     field_type: str
     is_system: bool
     resource_type: str
@@ -69,7 +93,7 @@ class CreateMetadataFieldRequest(RequestModel):
         min_length=1,
         max_length=255,
     )
-    value: Optional[str] = Field(
+    value: str | None = Field(
         default=None,
         description="Optional metadata field value",
     )
@@ -106,21 +130,21 @@ class UpdateMetadataFieldRequest(RequestModel):
         is_system: Flag indicating if this is a system-managed field (optional)
     """
 
-    key: Optional[str] = Field(
+    key: str | None = Field(
         default=None,
         description="Metadata field key/name",
         min_length=1,
         max_length=255,
     )
-    value: Optional[str] = Field(
+    value: str | None = Field(
         default=None,
         description="Metadata field value",
     )
-    field_type: Optional[str] = Field(
+    field_type: str | None = Field(
         default=None,
         description="Type of the field (string, number, date, boolean, json)",
     )
-    is_system: Optional[bool] = Field(
+    is_system: bool | None = Field(
         default=None,
         description="Flag indicating if this is a system-managed field",
     )

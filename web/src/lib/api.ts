@@ -1,9 +1,53 @@
 import axios from 'axios'
-import type { AxiosInstance, AxiosError } from 'axios'
+import type { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios'
+
+// Extend AxiosRequestConfig with _retry flag for token refresh logic
+interface RetryableAxiosRequestConfig extends AxiosRequestConfig {
+  _retry?: boolean
+}
 
 // Use relative URL by default - nginx proxies /api/* to the API server
 // Only use VITE_API_URL for local development outside Docker
 const API_BASE_URL = import.meta.env.VITE_API_URL || ''
+
+// gh security audit, High: the access + refresh JWT used to live in
+// localStorage (XSS-exfiltratable). Both tokens are now HttpOnly cookies set
+// by the backend (apps.api.auth.portal_cookies) -- this client never reads
+// or writes them directly. AUTH_FLAG_KEY is a non-sensitive "was a login
+// completed" boolean only, used to decide whether to attempt a cookie-based
+// refresh on 401 and for route-guard checks (App.tsx) -- it carries no
+// credential material, so it's safe to keep in localStorage.
+const AUTH_FLAG_KEY = 'elder_authenticated'
+const CSRF_COOKIE_NAME = 'elder_csrf_token'
+const CSRF_HEADER_NAME = 'X-CSRF-Token'
+const STATE_CHANGING_METHODS = new Set(['post', 'put', 'patch', 'delete'])
+
+/** Read a single cookie value by name (the CSRF cookie is intentionally not
+ * HttpOnly so the SPA can echo it back -- see portal_cookies.is_csrf_valid). */
+function readCookie(name: string): string | null {
+  const match = document.cookie.match(
+    new RegExp(`(?:^|; )${name}=([^;]*)`)
+  )
+  return match ? decodeURIComponent(match[1]) : null
+}
+
+/** True once a login/refresh has completed this session. Non-sensitive --
+ * never carries token material, safe for route guards (App.tsx, Layout.tsx). */
+export function isAuthenticated(): boolean {
+  return localStorage.getItem(AUTH_FLAG_KEY) === '1'
+}
+
+/** Set after a login/MFA-verify response whose cookies (not this call) are
+ * the actual credential. Exported for the LoginPageBuilder onSuccess
+ * handlers (Login.tsx, LoginPageWrapper.tsx), which bypass this client and
+ * call fetch() directly against the same-origin login endpoint. */
+export function markAuthenticated(): void {
+  localStorage.setItem(AUTH_FLAG_KEY, '1')
+}
+
+function clearAuthenticated(): void {
+  localStorage.removeItem(AUTH_FLAG_KEY)
+}
 
 class ApiClient {
   private client: AxiosInstance
@@ -21,14 +65,25 @@ class ApiClient {
         'Content-Type': 'application/json',
       },
       timeout: 30000,
+      // The access/refresh JWT now live in HttpOnly cookies (gh security
+      // audit) -- withCredentials makes axios send/accept them even if
+      // VITE_API_URL points at a cross-origin dev API instead of the
+      // same-origin nginx/Express proxy.
+      withCredentials: true,
     })
 
-    // Request interceptor for auth token
+    // Request interceptor: echo the CSRF cookie on state-changing requests
+    // (double-submit pattern -- see apps.api.main.enforce_csrf_protection).
+    // No Authorization header injection here anymore: the browser attaches
+    // the HttpOnly auth cookies automatically.
     this.client.interceptors.request.use(
       (config) => {
-        const token = localStorage.getItem('elder_token')
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`
+        const method = (config.method ?? 'get').toLowerCase()
+        if (STATE_CHANGING_METHODS.has(method)) {
+          const csrfToken = readCookie(CSRF_COOKIE_NAME)
+          if (csrfToken) {
+            config.headers[CSRF_HEADER_NAME] = csrfToken
+          }
         }
         return config
       },
@@ -39,16 +94,16 @@ class ApiClient {
     this.client.interceptors.response.use(
       (response) => response,
       async (error: AxiosError) => {
-        const originalRequest = error.config as any
+        const originalRequest = error.config as RetryableAxiosRequestConfig | undefined
 
         // Redirect to login on 401 Unauthorized, but try refresh first
         if (error.response?.status === 401 && !originalRequest._retry) {
-          const hadToken = !!localStorage.getItem('elder_token')
-          const refreshToken = localStorage.getItem('elder_refresh_token')
+          const wasAuthenticated = isAuthenticated()
           const isLoginPage = window.location.pathname === '/login'
 
-          // Only attempt refresh if we had tokens and not on login page
-          if (hadToken && refreshToken && !isLoginPage) {
+          // Only attempt refresh if a session was ever established and
+          // we're not already on the login page
+          if (wasAuthenticated && !isLoginPage) {
             if (this.isRefreshing) {
               // Queue this request to be retried after refresh completes
               return new Promise((resolve, reject) => {
@@ -65,18 +120,11 @@ class ApiClient {
             this.isRefreshing = true
 
             try {
-              // Attempt to refresh the token
-              const response = await this.client.post('/portal-auth/refresh', {
-                refresh_token: refreshToken,
-              })
+              // Refresh token comes from the HttpOnly cookie -- no body needed.
+              const response = await this.client.post('/portal-auth/refresh')
 
               if (response.data.access_token) {
-                localStorage.setItem('elder_token', response.data.access_token)
-
-                // Store new refresh token if provided (token rotation)
-                if (response.data.refresh_token) {
-                  localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-                }
+                markAuthenticated()
 
                 // Schedule next proactive refresh
                 this.scheduleTokenRefresh(response.data.expires_in)
@@ -88,22 +136,19 @@ class ApiClient {
                 return this.client(originalRequest)
               }
             } catch (refreshError) {
-              // Refresh failed - clear tokens and redirect to login
+              // Refresh failed - clear the auth flag and redirect to login
               this.processQueue(refreshError)
-              localStorage.removeItem('elder_token')
-              localStorage.removeItem('elder_refresh_token')
+              clearAuthenticated()
               this.clearRefreshTimer()
               window.location.href = '/login'
               return Promise.reject(refreshError)
             } finally {
               this.isRefreshing = false
             }
-          }
 
-          // No tokens or on login page - just clear and redirect
-          if (hadToken && !isLoginPage) {
-            localStorage.removeItem('elder_token')
-            localStorage.removeItem('elder_refresh_token')
+            // Refresh responded 200 but with no access_token (unexpected
+            // shape) -- treat the same as a failed refresh.
+            clearAuthenticated()
             this.clearRefreshTimer()
             window.location.href = '/login'
           }
@@ -154,25 +199,17 @@ class ApiClient {
   }
 
   /**
-   * Proactively refresh token before expiration
+   * Proactively refresh token before expiration. The refresh token itself
+   * is an HttpOnly cookie the browser attaches automatically -- nothing to
+   * read from localStorage here.
    */
   private async proactiveRefreshToken() {
-    const refreshToken = localStorage.getItem('elder_refresh_token')
-    if (!refreshToken) return
+    if (!isAuthenticated()) return
 
     try {
-      const response = await this.client.post('/portal-auth/refresh', {
-        refresh_token: refreshToken,
-      })
+      const response = await this.client.post('/portal-auth/refresh')
 
       if (response.data.access_token) {
-        localStorage.setItem('elder_token', response.data.access_token)
-
-        // Store new refresh token if provided (token rotation)
-        if (response.data.refresh_token) {
-          localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-        }
-
         // Schedule next refresh
         this.scheduleTokenRefresh(response.data.expires_in)
       }
@@ -194,11 +231,13 @@ class ApiClient {
     return response.data
   }
 
-  // Auth endpoints
+  // Auth endpoints. The access/refresh JWT are HttpOnly cookies set directly
+  // by the backend response -- nothing for this client to persist beyond the
+  // non-sensitive "logged in" flag used by route guards.
   async login(username: string, password: string) {
     const response = await this.client.post('/auth/login', { username, password })
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
+      markAuthenticated()
     }
     return response.data
   }
@@ -214,9 +253,17 @@ class ApiClient {
   }
 
   async logout() {
-    localStorage.removeItem('elder_token')
-    localStorage.removeItem('elder_refresh_token')
-    this.clearRefreshTimer()
+    try {
+      await this.client.post('/portal-auth/logout')
+    } catch (error) {
+      // Cookie clearing is best-effort from the client's perspective -- the
+      // server-side cookies may already be expired/gone. Never block the
+      // local logout on a network error.
+      console.error('[Elder] Logout request failed:', error)
+    } finally {
+      clearAuthenticated()
+      this.clearRefreshTimer()
+    }
   }
 
   // Profile (Portal Users)
@@ -254,12 +301,12 @@ class ApiClient {
     return response.data
   }
 
-  async createOrganization(data: { name: string; description?: string; parent_id?: number; metadata?: any }) {
+  async createOrganization(data: { name: string; description?: string; parent_id?: number; metadata?: Record<string, unknown> }) {
     const response = await this.client.post('/organizations', data)
     return response.data
   }
 
-  async updateOrganization(id: number, data: Partial<{ name: string; description: string; metadata: any }>) {
+  async updateOrganization(id: number, data: Partial<{ name: string; description: string; metadata: Record<string, unknown> }>) {
     const response = await this.client.put(`/organizations/${id}`, data)
     return response.data
   }
@@ -288,6 +335,7 @@ class ApiClient {
     organization_id?: number
     entity_type?: string
     sub_type?: string
+    parent_id?: number
     search?: string
   }) {
     const response = await this.client.get('/entities', { params })
@@ -305,7 +353,7 @@ class ApiClient {
     entity_type: string
     sub_type?: string
     organization_id: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/entities', data)
     return response.data
@@ -314,7 +362,7 @@ class ApiClient {
   async updateEntity(id: number, data: Partial<{
     name: string
     description: string
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/entities/${id}`, data)
     return response.data
@@ -342,27 +390,29 @@ class ApiClient {
   }
 
   // Dependencies
+  // NOTE: backend only recognizes source_type/source_id/target_type/target_id
+  // (see apps/api/modules/infrastructure/routes/dependencies.py) — do not add
+  // *_entity_id aliases back, the backend silently ignores unknown params.
   async getDependencies(params?: {
     page?: number
     per_page?: number
-    source_entity_id?: number
-    target_entity_id?: number
     source_type?: string
+    source_id?: number
     target_type?: string
+    target_id?: number
+    dependency_type?: string
   }) {
     const response = await this.client.get('/dependencies', { params })
     return response.data
   }
 
   async createDependency(data: {
-    source_entity_id?: number
-    target_entity_id?: number
-    source_type?: string
-    source_id?: number
-    target_type?: string
-    target_id?: number
+    source_type: string
+    source_id: number
+    target_type: string
+    target_id: number
     dependency_type: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/dependencies', data)
     return response.data
@@ -618,7 +668,9 @@ class ApiClient {
     project_id?: number
     status?: string
     priority?: string
+    issue_type?: string
     assigned_to?: number
+    assignee_id?: number
     search?: string
   }) {
     const response = await this.client.get('/issues', { params })
@@ -632,25 +684,40 @@ class ApiClient {
 
   async createIssue(data: {
     title: string
-    description?: string
-    priority?: string
     organization_id?: number
-    entity_ids?: number[]
-    assigned_to?: number
-    label_ids?: number[]
+    description?: string
+    status?: string
+    priority?: string
+    issue_type?: string
+    assignee_id?: number
+    assignee_type?: 'identity' | 'org_unit'
+    is_incident?: number
+    channel?: string
+    category?: string
+    parent_issue_id?: number
   }) {
     const response = await this.client.post('/issues', data)
     return response.data
   }
 
+  // Note: apps/api/modules/issues/routes/issues.py::update_issue only
+  // registers PATCH for /issues/:id (no PUT route exists) — using PUT here
+  // 405s every issue update.
   async updateIssue(id: number, data: Partial<{
     title: string
     description: string
     status: string
     priority: string
-    assignee_id: number | null
+    issue_type: string
+    assignee_id: number
+    assignee_type: 'identity' | 'org_unit'
+    organization_id: number
+    is_incident: number
+    channel: string
+    category: string
+    parent_issue_id: number
   }>) {
-    const response = await this.client.put(`/issues/${id}`, data)
+    const response = await this.client.patch(`/issues/${id}`, data)
     return response.data
   }
 
@@ -894,12 +961,12 @@ class ApiClient {
     return response.data
   }
 
-  async createOrganizationMetadata(id: number, data: { key: string; field_type: string; value: any }) {
+  async createOrganizationMetadata(id: number, data: { key: string; field_type: string; value: unknown }) {
     const response = await this.client.post(`/metadata/organizations/${id}/metadata`, data)
     return response.data
   }
 
-  async updateOrganizationMetadata(id: number, key: string, data: { value: any; field_type?: string }) {
+  async updateOrganizationMetadata(id: number, key: string, data: { value: unknown; field_type?: string }) {
     const response = await this.client.patch(`/metadata/organizations/${id}/metadata/${key}`, data)
     return response.data
   }
@@ -915,12 +982,12 @@ class ApiClient {
     return response.data
   }
 
-  async createEntityMetadata(id: number, data: { key: string; field_type: string; value: any }) {
+  async createEntityMetadata(id: number, data: { key: string; field_type: string; value: unknown }) {
     const response = await this.client.post(`/metadata/entities/${id}/metadata`, data)
     return response.data
   }
 
-  async updateEntityMetadata(id: number, key: string, data: { value: any; field_type?: string }) {
+  async updateEntityMetadata(id: number, key: string, data: { value: unknown; field_type?: string }) {
     const response = await this.client.patch(`/metadata/entities/${id}/metadata/${key}`, data)
     return response.data
   }
@@ -949,14 +1016,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/secrets/providers', data)
     return response.data
   }
 
-  async updateSecretProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateSecretProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/secrets/providers/${id}`, data)
     return response.data
   }
@@ -996,14 +1063,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/keys/providers', data)
     return response.data
   }
 
-  async updateKeyProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateKeyProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/keys/providers/${id}`, data)
     return response.data
   }
@@ -1018,12 +1085,12 @@ class ApiClient {
     return response.data
   }
 
-  async encryptData(providerId: number, keyId: string, data: { plaintext: string; context?: any }) {
+  async encryptData(providerId: number, keyId: string, data: { plaintext: string; context?: Record<string, unknown> }) {
     const response = await this.client.post(`/keys/${keyId}/encrypt`, data)
     return response.data
   }
 
-  async decryptData(providerId: number, keyId: string, data: { ciphertext: string; context?: any }) {
+  async decryptData(providerId: number, keyId: string, data: { ciphertext: string; context?: Record<string, unknown> }) {
     const response = await this.client.post(`/keys/${keyId}/decrypt`, data)
     return response.data
   }
@@ -1043,14 +1110,14 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/iam/providers', data)
     return response.data
   }
 
-  async updateIAMProvider(id: number, data: Partial<{ name: string; config: any; description: string; enabled: boolean }>) {
+  async updateIAMProvider(id: number, data: Partial<{ name: string; config: Record<string, unknown>; description: string; enabled: boolean }>) {
     const response = await this.client.put(`/iam/providers/${id}`, data)
     return response.data
   }
@@ -1090,7 +1157,7 @@ class ApiClient {
     name: string
     provider_type: string
     organization_id: number
-    config: any
+    config: Record<string, unknown>
     schedule?: string
     enabled?: boolean
   }) {
@@ -1107,7 +1174,7 @@ class ApiClient {
     return response.data
   }
 
-  async updateDiscoveryJob(id: number, data: Partial<{ name: string; config: any; schedule: string; enabled: boolean }>) {
+  async updateDiscoveryJob(id: number, data: Partial<{ name: string; config: Record<string, unknown>; schedule: string; enabled: boolean }>) {
     const response = await this.client.put(`/discovery/jobs/${id}`, data)
     return response.data
   }
@@ -1143,7 +1210,7 @@ class ApiClient {
     organization_id: number
     customer_id: string
     admin_email: string
-    service_account_json: any
+    service_account_json: Record<string, unknown>
     description?: string
   }) {
     const response = await this.client.post('/google-workspace/providers', data)
@@ -1154,7 +1221,7 @@ class ApiClient {
     name: string
     customer_id: string
     admin_email: string
-    service_account_json: any
+    service_account_json: Record<string, unknown>
     description: string
     enabled: boolean
   }>) {
@@ -1196,16 +1263,32 @@ class ApiClient {
   async createWebhook(data: {
     name: string
     url: string
-    organization_id: number
+    organization_id?: number
     events: string[]
     secret?: string
-    enabled?: boolean
+    is_active?: boolean
+    headers?: Record<string, string>
+    filter_issue_type?: string
+    filter_assignee_type?: 'identity' | 'org_unit'
+    filter_assignee_id?: number
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/webhooks', data)
     return response.data
   }
 
-  async updateWebhook(id: number, data: Partial<{ name: string; url: string; events: string[]; secret: string; enabled: boolean }>) {
+  async updateWebhook(id: number, data: Partial<{
+    name: string
+    url: string
+    events: string[]
+    secret: string
+    is_active: boolean
+    headers: Record<string, string>
+    filter_issue_type: string
+    filter_assignee_type: 'identity' | 'org_unit'
+    filter_assignee_id: number
+    metadata: Record<string, unknown>
+  }>) {
     const response = await this.client.put(`/webhooks/${id}`, data)
     return response.data
   }
@@ -1303,7 +1386,7 @@ class ApiClient {
     parent_id?: number
     poc?: string
     organizational_unit?: string
-    attributes?: any
+    attributes?: Record<string, unknown>
     tags?: string[]
   }) {
     const response = await this.client.post('/networking/networks', data)
@@ -1315,7 +1398,7 @@ class ApiClient {
     description: string
     region: string
     location: string
-    attributes: any
+    attributes: Record<string, unknown>
     tags: string[]
   }>) {
     const response = await this.client.put(`/networking/networks/${id}`, data)
@@ -1343,7 +1426,7 @@ class ApiClient {
     connection_type: string
     bandwidth?: string
     latency?: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/networking/topology/connections', data)
     return response.data
@@ -1363,7 +1446,7 @@ class ApiClient {
     network_id: number
     entity_id: number
     relationship_type: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/networking/mappings', data)
     return response.data
@@ -1428,7 +1511,9 @@ class ApiClient {
     return response.data
   }
 
-  // v2.2.0 Enterprise Edition - Portal Authentication
+  // v2.2.0 Enterprise Edition - Portal Authentication. Tokens are HttpOnly
+  // cookies set by the backend response -- only the "logged in" flag and the
+  // proactive-refresh timer are managed client-side.
   async portalLogin(email: string, password: string, tenant?: string) {
     const response = await this.client.post('/portal-auth/login', {
       email,
@@ -1436,10 +1521,7 @@ class ApiClient {
       tenant: tenant || 'system'
     })
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
-      if (response.data.refresh_token) {
-        localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-      }
+      markAuthenticated()
       // Schedule proactive token refresh
       if (response.data.expires_in) {
         this.scheduleTokenRefresh(response.data.expires_in)
@@ -1477,14 +1559,10 @@ class ApiClient {
   }
 
   async portalRefreshToken() {
-    const refreshToken = localStorage.getItem('elder_refresh_token')
-    const response = await this.client.post('/portal-auth/refresh', { refresh_token: refreshToken })
+    // Refresh token is the HttpOnly cookie -- no body needed.
+    const response = await this.client.post('/portal-auth/refresh')
     if (response.data.access_token) {
-      localStorage.setItem('elder_token', response.data.access_token)
-      // Store new refresh token if provided (token rotation)
-      if (response.data.refresh_token) {
-        localStorage.setItem('elder_refresh_token', response.data.refresh_token)
-      }
+      markAuthenticated()
       // Schedule next proactive refresh
       if (response.data.expires_in) {
         this.scheduleTokenRefresh(response.data.expires_in)
@@ -1515,7 +1593,7 @@ class ApiClient {
     domain?: string
     subscription_tier?: string
     license_key?: string
-    settings?: Record<string, any>
+    settings?: Record<string, unknown>
     feature_flags?: Record<string, boolean>
     data_retention_days?: number
     storage_quota_gb?: number
@@ -1530,7 +1608,7 @@ class ApiClient {
     domain: string
     subscription_tier: string
     license_key: string
-    settings: Record<string, any>
+    settings: Record<string, unknown>
     feature_flags: Record<string, boolean>
     data_retention_days: number
     storage_quota_gb: number
@@ -2217,7 +2295,7 @@ class ApiClient {
     timezone?: string
     enabled?: boolean
     escalation_policy_id?: number
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post('/on-call/rotations', data)
     return response.data
@@ -2230,7 +2308,7 @@ class ApiClient {
     timezone: string
     enabled: boolean
     escalation_policy_id: number
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/on-call/rotations/${id}`, data)
     return response.data
@@ -2256,7 +2334,7 @@ class ApiClient {
     order: number
     start_date?: string
     end_date?: string
-    metadata?: any
+    metadata?: Record<string, unknown>
   }) {
     const response = await this.client.post(`/on-call/rotations/${rotationId}/participants`, data)
     return response.data
@@ -2267,7 +2345,7 @@ class ApiClient {
     start_date: string
     end_date: string
     is_active: boolean
-    metadata: any
+    metadata: Record<string, unknown>
   }>) {
     const response = await this.client.put(`/on-call/rotations/${rotationId}/participants/${participantId}`, data)
     return response.data
@@ -2379,6 +2457,386 @@ class ApiClient {
 
   async updateResourceCosts(resourceType: string, resourceId: number, data: Record<string, unknown>) {
     const response = await this.client.post(`/costs/${resourceType}/${resourceId}`, data)
+    return response.data
+  }
+
+  // Module management (Phase 0)
+  async getModules() {
+    const response = await this.client.get('/modules')
+    return response.data
+  }
+
+  // Module management (Phase 2) - tenant per-module toggles
+  async getTenantModules(tenantId: string) {
+    const response = await this.client.get(`/tenants/${tenantId}/modules`)
+    return response.data
+  }
+
+  async setTenantModule(
+    tenantId: string,
+    data: {
+      module_name: string
+      enabled: boolean
+      settings?: Record<string, unknown>
+    }
+  ) {
+    const response = await this.client.put(`/tenants/${tenantId}/modules`, data)
+    return response.data
+  }
+
+  // ===========================
+  // Diagrams (Phase 4c)
+  // ===========================
+
+  async getDiagrams(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    q?: string
+    is_template?: boolean
+  }) {
+    const response = await this.client.get('/diagrams', { params })
+    return response.data
+  }
+
+  async getDiagram(id: number) {
+    const response = await this.client.get(`/diagrams/${id}`)
+    return response.data
+  }
+
+  async createDiagram(data: {
+    title: string
+    description?: string
+    tags?: string[]
+    is_public?: boolean
+    is_template?: boolean
+    status?: string
+    content?: { nodes: unknown[]; edges: unknown[] }
+  }) {
+    const response = await this.client.post('/diagrams', data)
+    return response.data
+  }
+
+  async updateDiagram(id: number, data: Partial<{
+    title: string
+    description: string
+    tags: string[]
+    status: string
+    is_public: boolean
+    is_template: boolean
+    thumbnail_url: string
+  }>) {
+    const response = await this.client.patch(`/diagrams/${id}`, data)
+    return response.data
+  }
+
+  async deleteDiagram(id: number) {
+    const response = await this.client.delete(`/diagrams/${id}`)
+    return response.data
+  }
+
+  async saveDiagramVersion(id: number, data: {
+    content: { nodes: unknown[]; edges: unknown[] }
+    change_summary?: string
+  }) {
+    const response = await this.client.post(`/diagrams/${id}/versions`, data)
+    return response.data
+  }
+
+  async getDiagramVersions(id: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/diagrams/${id}/versions`, { params })
+    return response.data
+  }
+
+  async getDiagramVersion(id: number, versionNumber: number) {
+    const response = await this.client.get(`/diagrams/${id}/versions/${versionNumber}`)
+    return response.data
+  }
+
+  async restoreDiagramVersion(id: number, versionNumber: number) {
+    const response = await this.client.post(`/diagrams/${id}/versions/${versionNumber}/restore`)
+    return response.data
+  }
+
+  // Diagram Collaboration (Phase 4d-2)
+  async getCollabTicket(id: number) {
+    const response = await this.client.post(`/diagrams/${id}/collab/ticket`)
+    return response.data as { ticket: string; ws_path: string }
+  }
+
+  // ===========================
+  // Documents (Phase 4e)
+  // ===========================
+
+  async getDocuments(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    category?: string
+    q?: string
+  }) {
+    const response = await this.client.get('/documents', { params })
+    return response.data
+  }
+
+  async getDocument(slug: string) {
+    const response = await this.client.get(`/documents/${slug}`)
+    return response.data
+  }
+
+  async createDocument(data: {
+    title: string
+    body: string
+    category?: string
+    tags?: string[]
+    visibility?: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles?: string[]
+    visibility_users?: number[]
+  }) {
+    const response = await this.client.post('/documents', data)
+    return response.data
+  }
+
+  async updateDocument(docId: number, data: Partial<{
+    title: string
+    body: string
+    category: string
+    tags: string[]
+    visibility: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles: string[]
+    visibility_users: number[]
+  }>) {
+    const response = await this.client.patch(`/documents/${docId}`, data)
+    return response.data
+  }
+
+  async deleteDocument(docId: number) {
+    const response = await this.client.delete(`/documents/${docId}`)
+    return response.data
+  }
+
+  async publishDocument(docId: number) {
+    const response = await this.client.post(`/documents/${docId}/publish`)
+    return response.data
+  }
+
+  async getCollections() {
+    const response = await this.client.get('/collections')
+    return response.data
+  }
+
+  async createCollection(data: {
+    name: string
+    slug?: string
+    description?: string
+    parent_id?: number
+  }) {
+    const response = await this.client.post('/collections', data)
+    return response.data
+  }
+
+  async updateCollection(collId: number, data: Partial<{
+    name: string
+    slug: string
+    description: string
+    parent_id: number
+  }>) {
+    const response = await this.client.patch(`/collections/${collId}`, data)
+    return response.data
+  }
+
+  async deleteCollection(collId: number) {
+    const response = await this.client.delete(`/collections/${collId}`)
+    return response.data
+  }
+
+  async attachDocumentToCollection(collId: number, docId: number) {
+    const response = await this.client.post(`/collections/${collId}/documents/${docId}`)
+    return response.data
+  }
+
+  async detachDocumentFromCollection(collId: number, docId: number) {
+    const response = await this.client.delete(`/collections/${collId}/documents/${docId}`)
+    return response.data
+  }
+
+  async getDocumentVersions(docId: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/documents/${docId}/versions`, { params })
+    return response.data
+  }
+
+  async getDocumentVersion(docId: number, versionNumber: number) {
+    const response = await this.client.get(`/documents/${docId}/versions/${versionNumber}`)
+    return response.data
+  }
+
+  async restoreDocumentVersion(docId: number, versionNumber: number) {
+    const response = await this.client.post(`/documents/${docId}/versions/${versionNumber}/restore`)
+    return response.data
+  }
+
+  // ===========================
+  // Pages (Phase 4f)
+  // ===========================
+
+  async getPages(params?: {
+    page?: number
+    per_page?: number
+    status?: string
+    visibility?: string
+    search?: string
+  }) {
+    const response = await this.client.get('/pages', { params })
+    return response.data
+  }
+
+  async getPage(slug: string) {
+    const response = await this.client.get(`/pages/${slug}`)
+    return response.data
+  }
+
+  async createPage(data: {
+    title: string
+    body_html: string
+    status?: 'draft' | 'published'
+    visibility?: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles?: string[]
+    visibility_users?: number[]
+    is_public?: boolean
+  }) {
+    const response = await this.client.post('/pages', data)
+    return response.data
+  }
+
+  async updatePage(slug: string, data: Partial<{
+    title: string
+    body_html: string
+    status: 'draft' | 'published'
+    visibility: 'public' | 'authenticated' | 'roles' | 'users'
+    visibility_roles: string[]
+    visibility_users: number[]
+    is_public: boolean
+  }>) {
+    const response = await this.client.put(`/pages/${slug}`, data)
+    return response.data
+  }
+
+  async deletePage(slug: string) {
+    const response = await this.client.delete(`/pages/${slug}`)
+    return response.data
+  }
+
+  async attachPageToCollection(slug: string, collectionId: number) {
+    const response = await this.client.post(`/pages/${slug}/collections/${collectionId}`)
+    return response.data
+  }
+
+  async detachPageFromCollection(slug: string, collectionId: number) {
+    const response = await this.client.delete(`/pages/${slug}/collections/${collectionId}`)
+    return response.data
+  }
+
+  async getPageBacklinks(slug: string) {
+    const response = await this.client.get(`/pages/${slug}/backlinks`)
+    return response.data
+  }
+
+  // ===========================
+  // Streams (Phase 4g)
+  // ===========================
+
+  async listStreams(params?: { page?: number; per_page?: number; search?: string }) {
+    const response = await this.client.get('/streams', { params })
+    return response.data
+  }
+
+  async getStream(id: number) {
+    const response = await this.client.get(`/streams/${id}`)
+    return response.data
+  }
+
+  async createStream(data: {
+    name: string
+    description?: string
+    trigger_type?: string
+    is_enabled?: boolean
+  }) {
+    const response = await this.client.post('/streams', data)
+    return response.data
+  }
+
+  async updateStream(id: number, data: Partial<{
+    name: string
+    description: string
+    trigger_type: string
+    is_enabled: boolean
+  }>) {
+    const response = await this.client.patch(`/streams/${id}`, data)
+    return response.data
+  }
+
+  async deleteStream(id: number) {
+    const response = await this.client.delete(`/streams/${id}`)
+    return response.data
+  }
+
+  async duplicateStream(id: number, data?: { name?: string }) {
+    const response = await this.client.post(`/streams/${id}/duplicate`, data || {})
+    return response.data
+  }
+
+  async getStreamLock(id: number) {
+    const response = await this.client.get(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async acquireStreamLock(id: number) {
+    const response = await this.client.post(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async releaseStreamLock(id: number) {
+    const response = await this.client.delete(`/streams/${id}/lock`)
+    return response.data
+  }
+
+  async executeStream(id: number, data?: Record<string, unknown>) {
+    const response = await this.client.post(`/streams/${id}/execute`, data || {})
+    return response.data
+  }
+
+  async listStreamExecutions(id: number, params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get(`/streams/${id}/executions`, { params })
+    return response.data
+  }
+
+  async listAllStreamExecutions(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/streams/executions', { params })
+    return response.data
+  }
+
+  async getStreamExecution(id: number, executionId: string) {
+    const response = await this.client.get(`/streams/${id}/executions/${executionId}`)
+    return response.data
+  }
+
+  async listMyApprovals(params?: { page?: number; per_page?: number }) {
+    const response = await this.client.get('/streams/my-approvals', { params })
+    return response.data
+  }
+
+  async approveExecution(executionId: string, data?: { comment?: string }) {
+    const response = await this.client.post(`/streams/executions/${executionId}/approve`, data || {})
+    return response.data
+  }
+
+  async rejectExecution(executionId: string, data?: { comment?: string }) {
+    const response = await this.client.post(`/streams/executions/${executionId}/reject`, data || {})
+    return response.data
+  }
+
+  async getApprovalStatus(executionId: string) {
+    const response = await this.client.get(`/streams/executions/${executionId}/approval-status`)
     return response.data
   }
 }

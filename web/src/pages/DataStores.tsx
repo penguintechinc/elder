@@ -12,6 +12,33 @@ import Input from '@/components/Input'
 import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
+interface Organization {
+  id: number
+  name: string
+}
+
+interface Identity {
+  id: number
+  username: string
+  full_name?: string
+}
+
+interface DataStore {
+  id: number
+  name: string
+  description?: string
+  organization_id: number
+  data_classification: string
+  storage_type: string
+  location_region?: string
+  contains_pii: boolean
+  contains_phi: boolean
+  contains_pci: boolean
+  compliance_framework?: string
+  poc_identity_id?: number
+}
+
+
 const DATA_CLASSIFICATIONS = [
   { value: 'public', label: 'Public', color: 'bg-green-500/20 text-green-400' },
   { value: 'internal', label: 'Internal', color: 'bg-yellow-500/20 text-yellow-400' },
@@ -60,8 +87,8 @@ export default function DataStores() {
   const [storageTypeFilter, setStorageTypeFilter] = useState<string>('')
   const [regionFilter, setRegionFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingDataStore, setEditingDataStore] = useState<any>(null)
-  const [viewingDataStore, setViewingDataStore] = useState<any>(null)
+  const [editingDataStore, setEditingDataStore] = useState<DataStore | null>(null)
+  const [viewingDataStore, setViewingDataStore] = useState<DataStore | null>(null)
   const queryClient = useQueryClient()
 
   const { data: organizations } = useQuery({
@@ -92,7 +119,7 @@ export default function DataStores() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createDataStore(data),
+    mutationFn: (data: Record<string, unknown>) => api.createDataStore(data as Parameters<typeof api.createDataStore>[0]),
     onSuccess: async () => {
       await invalidateCache.dataStores(queryClient)
       toast.success('Data store created successfully')
@@ -104,7 +131,7 @@ export default function DataStores() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateDataStore(editingDataStore.id, data),
+    mutationFn: (data: unknown) => api.updateDataStore(editingDataStore!.id, data as Parameters<typeof api.updateDataStore>[1]),
     onSuccess: async () => {
       await invalidateCache.dataStores(queryClient)
       toast.success('Data store updated successfully')
@@ -137,15 +164,21 @@ export default function DataStores() {
     return classif?.color || 'bg-slate-500/20 text-slate-400'
   }
 
-  const organizationOptions = organizations?.items?.map((org: any) => ({
-    value: org.id.toString(),
-    label: org.name,
-  })) || []
+  const organizationOptions = useMemo(
+    () => organizations?.items?.map((org: Organization) => ({
+      value: org.id.toString(),
+      label: org.name,
+    })) || [],
+    [organizations?.items]
+  )
 
-  const pocOptions = identities?.items?.map((identity: any) => ({
-    value: identity.id.toString(),
-    label: identity.full_name || identity.username,
-  })) || []
+  const pocOptions = useMemo(
+    () => identities?.items?.map((identity: Identity) => ({
+      value: identity.id.toString(),
+      label: identity.full_name || identity.username,
+    })) || [],
+    [identities?.items]
+  )
 
   const dataStoreFields: FormField[] = useMemo(() => [
     {
@@ -200,7 +233,7 @@ export default function DataStores() {
       label: 'Custom Region/Location',
       type: 'text',
       placeholder: 'Enter custom location or region',
-      showWhen: (values: Record<string, any>) => values.location_region === 'other',
+      showWhen: (values: Record<string, unknown>) => values.location_region === 'other',
     },
     {
       name: 'contains_pii',
@@ -245,16 +278,16 @@ export default function DataStores() {
       : editingDataStore?.[field.name],
   })), [dataStoreFields, editingDataStore])
 
-  const handleCreateSubmit = (data: Record<string, any>) => {
+  const handleCreateSubmit = (data: Record<string, unknown>) => {
     // Use custom region if "other" is selected
     const locationRegion = data.location_region === 'other'
-      ? data.location_region_other?.trim()
-      : data.location_region
+      ? (data.location_region_other as string)?.trim()
+      : (data.location_region as string)
 
     createMutation.mutate({
-      name: data.name?.trim(),
-      description: data.description?.trim() || undefined,
-      organization_id: parseInt(data.organization_id),
+      name: (data.name as string)?.trim(),
+      description: (data.description as string)?.trim() || undefined,
+      organization_id: parseInt(data.organization_id as string),
       data_classification: data.data_classification,
       storage_type: data.storage_type,
       location_region: locationRegion || undefined,
@@ -262,19 +295,19 @@ export default function DataStores() {
       contains_phi: data.contains_phi || false,
       contains_pci: data.contains_pci || false,
       compliance_framework: data.compliance_framework || undefined,
-      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id) : undefined,
-    })
+      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id as string) : undefined,
+    } as Parameters<typeof api.createDataStore>[0])
   }
 
-  const handleEditSubmit = (data: Record<string, any>) => {
+  const handleEditSubmit = (data: Record<string, unknown>) => {
     // Use custom region if "other" is selected
     const locationRegion = data.location_region === 'other'
-      ? data.location_region_other?.trim()
-      : data.location_region
+      ? (data.location_region_other as string)?.trim()
+      : (data.location_region as string)
 
     updateMutation.mutate({
-      name: data.name?.trim(),
-      description: data.description?.trim() || undefined,
+      name: (data.name as string)?.trim(),
+      description: (data.description as string)?.trim() || undefined,
       data_classification: data.data_classification,
       storage_type: data.storage_type,
       location_region: locationRegion || undefined,
@@ -282,8 +315,8 @@ export default function DataStores() {
       contains_phi: data.contains_phi || false,
       contains_pci: data.contains_pci || false,
       compliance_framework: data.compliance_framework || undefined,
-      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id) : undefined,
-    })
+      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id as string) : undefined,
+    } as Parameters<typeof api.updateDataStore>[1])
   }
 
   return (
@@ -322,7 +355,7 @@ export default function DataStores() {
           className="w-48"
         >
           <option value="">All Organizations</option>
-          {organizations?.items?.map((org: any) => (
+          {organizations?.items?.map((org: Organization) => (
             <option key={org.id} value={org.id}>
               {org.name}
             </option>
@@ -383,7 +416,7 @@ export default function DataStores() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((dataStore: any) => (
+          {data?.items?.map((dataStore: DataStore) => (
             <Card
               key={dataStore.id}
               className="cursor-pointer hover:border-primary-500/50 transition-colors"
@@ -513,15 +546,15 @@ export default function DataStores() {
 }
 
 interface DataStoreDetailModalProps {
-  dataStore: any
-  identities: any[]
+  dataStore: DataStore
+  identities: Identity[]
   onClose: () => void
   onEdit: () => void
 }
 
 function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataStoreDetailModalProps) {
-  const getPOCName = (pocId: number) => {
-    const identity = identities.find(i => i.id === pocId)
+  const getPOCName = (pocId: number): string => {
+    const identity = identities.find((i: Identity) => i.id === pocId)
     return identity?.full_name || identity?.username || 'Unknown'
   }
 

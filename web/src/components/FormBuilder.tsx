@@ -17,8 +17,8 @@ const generatePassword = () => {
 
 interface FormBuilderProps {
   config: FormConfig
-  initialValues?: Record<string, any>
-  onSubmit: (data: Record<string, any>) => void
+  initialValues?: Record<string, unknown>
+  onSubmit: (data: Record<string, unknown>) => void
   onCancel?: () => void
   isLoading?: boolean
   className?: string
@@ -33,7 +33,7 @@ export default function FormBuilder({
   className = '',
 }: FormBuilderProps) {
   const defaultValues = useMemo(() => getDefaultValues(config.fields), [config.fields])
-  const [values, setValues] = useState<Record<string, any>>(() => ({
+  const [values, setValues] = useState<Record<string, unknown>>(() => ({
     ...defaultValues,
     ...initialValues,
   }))
@@ -48,7 +48,7 @@ export default function FormBuilder({
     setErrors({})
   }, [initialValues, defaultValues])
 
-  const handleChange = (name: string, value: any) => {
+  const handleChange = (name: string, value: unknown) => {
     setValues(prev => ({ ...prev, [name]: value }))
     // Clear error when user starts typing
     if (errors[name]) {
@@ -93,6 +93,8 @@ export default function FormBuilder({
 
     const value = values[field.name]
     const error = errors[field.name]
+    // Type assertion for HTML input values (unknown -> string when used in form elements)
+    const stringValue = (typeof value === 'string' || typeof value === 'number') ? String(value) : ''
 
     // Helper to wrap field with error message
     const withError = (element: React.ReactNode) => (
@@ -109,7 +111,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value}
+            value={(value ?? '') as string | number}
             onChange={(e) => handleChange(field.name, e.target.value)}
           >
             {!field.required && <option value="">Select...</option>}
@@ -146,7 +148,7 @@ export default function FormBuilder({
             <textarea
               required={field.required}
               disabled={field.disabled}
-              value={value || ''}
+              value={stringValue}
               onChange={(e) => handleChange(field.name, e.target.value)}
               placeholder={field.placeholder}
               rows={field.rows || 4}
@@ -165,7 +167,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value || ''}
+            value={stringValue}
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
@@ -179,7 +181,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value || ''}
+            value={stringValue}
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
@@ -194,7 +196,7 @@ export default function FormBuilder({
                 type="text"
                 required={field.required}
                 disabled={field.disabled}
-                value={value || ''}
+                value={stringValue}
                 onChange={(e) => handleChange(field.name, e.target.value)}
                 placeholder={field.placeholder}
                 className="flex-1 font-mono"
@@ -222,7 +224,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value || ''}
+            value={stringValue}
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
@@ -236,7 +238,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value || ''}
+            value={stringValue}
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
@@ -249,13 +251,13 @@ export default function FormBuilder({
             <div className="flex gap-2 items-center">
               <input
                 type="color"
-                value={value || '#3b82f6'}
+                value={(typeof value === 'string' && value) ? value : '#3b82f6'}
                 onChange={(e) => handleChange(field.name, e.target.value)}
                 disabled={field.disabled}
                 className="w-10 h-10 rounded cursor-pointer"
               />
               <Input
-                value={value || ''}
+                value={stringValue}
                 onChange={(e) => handleChange(field.name, e.target.value)}
                 placeholder="#3b82f6"
                 className="flex-1"
@@ -271,7 +273,7 @@ export default function FormBuilder({
             label={field.label}
             required={field.required}
             disabled={field.disabled}
-            value={value || ''}
+            value={stringValue}
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
@@ -307,4 +309,5 @@ export default function FormBuilder({
 
 // Re-export types for convenience
 export type { FormField, FormConfig, SelectOption } from '@/types/form'
+// eslint-disable-next-line react-refresh/only-export-components -- Utility functions exported for convenience alongside FormBuilder component
 export { processFieldValue, processFormData, getDefaultValues } from '@/types/form'

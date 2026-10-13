@@ -15,7 +15,7 @@ on:
           description: the head sha
           required: true
       base_ref:
-          description: the base ref 
+          description: the base ref
           required: true
       installation_id:
           description: the installation id

@@ -6,7 +6,6 @@ with tenant context for multi-tenancy support.
 
 # flake8: noqa: E501
 
-
 import datetime
 import secrets
 from typing import Optional
@@ -14,6 +13,32 @@ from typing import Optional
 import pyotp
 from quart import current_app
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from apps.api.common.licensing.enforce import check_limit
+
+
+def _admin_kind(tenant_role: str | None, global_role: str | None) -> str | None:
+    """Determine the license-enforcement kind for a portal user's role.
+
+    Mirrors apps/api/common/licensing/counters.py's PortalUser branches (see
+    its module docstring for the full admin heuristic): `global_role` in
+    {"admin", "superadmin"} is a global admin; `tenant_role == "admin"` is a
+    tenant admin; anything else (including "reader"/"maintainer") is an
+    unlimited member.
+
+    Args:
+        tenant_role: Role within the tenant (admin/maintainer/reader).
+        global_role: Optional global role (admin/superadmin/support).
+
+    Returns:
+        "global_admin", "tenant_admin", or None (unlimited member -- skip
+        enforcement).
+    """
+    if global_role in ("admin", "superadmin"):
+        return "global_admin"
+    if tenant_role == "admin":
+        return "tenant_admin"
+    return None
 
 
 class PortalAuthService:
@@ -25,13 +50,13 @@ class PortalAuthService:
     LOCKOUT_DURATION_MINUTES = 30
 
     @staticmethod
-    def create_portal_user(
+    async def create_portal_user(
         tenant_id: int,
         email: str,
         password: str,
-        full_name: Optional[str] = None,
+        full_name: str | None = None,
         tenant_role: str = "reader",
-        global_role: Optional[str] = None,
+        global_role: str | None = None,
     ) -> dict:
         """Create a new portal user.
 
@@ -44,7 +69,10 @@ class PortalAuthService:
             global_role: Optional global role (admin/support)
 
         Returns:
-            Created user dict or error dict
+            Created user dict or error dict. A license-limit block sets
+            `status_code: 402` on the error dict (see `_admin_kind`);
+            callers that previously assumed 400 on any `"error"` key must
+            read `status_code` (defaults to 400) rather than hardcoding it.
         """
         # Validate password
         if len(password) < PortalAuthService.MIN_PASSWORD_LENGTH:
@@ -65,6 +93,18 @@ class PortalAuthService:
         if existing:
             return {"error": "Email already registered in this tenant"}
 
+        # License enforcement: block minting a new global/tenant admin once
+        # the tier's admin limit is reached (observe-only unless the
+        # elder.license-enforcement flag is ON -- see
+        # apps/api/common/licensing/enforce.py). Non-admin members are
+        # unlimited on every tier, so this is a no-op for the common
+        # self-registration path (tenant_role="reader", global_role=None).
+        kind = _admin_kind(tenant_role, global_role)
+        if kind:
+            blocked = await check_limit(kind, tenant_id)
+            if blocked is not None:
+                return {"error": "limit_reached", "status_code": 402, "limit": kind}
+
         # Hash password
         password_hash = generate_password_hash(password)
 
@@ -79,7 +119,7 @@ class PortalAuthService:
             is_active=True,
             email_verified=False,
             failed_login_attempts=0,
-            password_changed_at=datetime.datetime.now(datetime.timezone.utc),
+            password_changed_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -117,14 +157,14 @@ class PortalAuthService:
 
         # Check if account is locked
         if user.locked_until:
-            if user.locked_until > datetime.datetime.now(datetime.timezone.utc):
+            if user.locked_until > datetime.datetime.now(datetime.UTC):
                 return {"error": "Account locked. Try again later."}
             else:
                 # Unlock account
                 current_app.db(current_app.db.portal_users.id == user.id).update(
                     locked_until=None,
                     failed_login_attempts=0,
-                    updated_at=datetime.datetime.now(datetime.timezone.utc),
+                    updated_at=datetime.datetime.now(datetime.UTC),
                 )
                 current_app.db.commit()
 
@@ -140,12 +180,12 @@ class PortalAuthService:
 
             if attempts >= PortalAuthService.MAX_LOGIN_ATTEMPTS:
                 updates["locked_until"] = datetime.datetime.now(
-                    datetime.timezone.utc
+                    datetime.UTC
                 ) + datetime.timedelta(
                     minutes=PortalAuthService.LOCKOUT_DURATION_MINUTES
                 )
 
-            updates["updated_at"] = datetime.datetime.now(datetime.timezone.utc)
+            updates["updated_at"] = datetime.datetime.now(datetime.UTC)
             current_app.db(current_app.db.portal_users.id == user.id).update(**updates)
             current_app.db.commit()
             return {"error": "Invalid credentials"}
@@ -153,8 +193,8 @@ class PortalAuthService:
         # Reset failed attempts on successful login
         current_app.db(current_app.db.portal_users.id == user.id).update(
             failed_login_attempts=0,
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -230,7 +270,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=secret,
             mfa_backup_codes=backup_codes,
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -261,7 +301,7 @@ class PortalAuthService:
         current_app.db(current_app.db.portal_users.id == user.id).update(
             mfa_secret=None,
             mfa_backup_codes=None,
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 
@@ -296,8 +336,8 @@ class PortalAuthService:
         # Update password
         current_app.db(current_app.db.portal_users.id == user.id).update(
             password_hash=generate_password_hash(new_password),
-            password_changed_at=datetime.datetime.now(datetime.timezone.utc),
-            updated_at=datetime.datetime.now(datetime.timezone.utc),
+            password_changed_at=datetime.datetime.now(datetime.UTC),
+            updated_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
 

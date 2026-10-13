@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 
+interface ErrorWithResponse {
+  response?: {
+    data?: {
+      message?: string
+    }
+  }
+  message?: string
+}
+
 export default function VillageIdRedirect() {
   const { villageId } = useParams<{ villageId: string }>()
   const navigate = useNavigate()
@@ -26,8 +35,12 @@ export default function VillageIdRedirect() {
         } else {
           setError('No redirect URL found for this Village ID')
         }
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to resolve Village ID')
+      } catch (err: unknown) {
+        const errorWithResponse = err as ErrorWithResponse | undefined
+        const errorMessage = errorWithResponse?.response?.data?.message
+          || (errorWithResponse instanceof Error ? errorWithResponse.message : undefined)
+          || 'Failed to resolve Village ID'
+        setError(errorMessage)
       }
     }
 

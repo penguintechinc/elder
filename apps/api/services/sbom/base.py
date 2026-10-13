@@ -6,7 +6,6 @@ including support for package managers like npm, pip, go.mod, Composer, etc.
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
@@ -34,7 +33,7 @@ class BaseDependencyParser(ABC):
         """
 
     @abstractmethod
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse a dependency file and extract components.
 
         Extracts structured information about dependencies from the file content,
@@ -59,7 +58,7 @@ class BaseDependencyParser(ABC):
         """
 
     @abstractmethod
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency filenames and patterns.
 
         Defines which files this parser is responsible for handling.

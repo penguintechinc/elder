@@ -10,11 +10,13 @@ Provides automated and manual access review workflows:
 
 import datetime
 import logging
-import secrets
 from datetime import timezone
 from typing import Any, Dict, List, Optional
 
+import redis
+
 from apps.api.services.audit.service import AuditService
+from shared.utils.village_id import generate_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +39,37 @@ class AccessReviewService:
     ASSIGNMENT_MODE_ALL_OWNERS = "all_owners"
     ASSIGNMENT_MODE_PRIMARY_OWNER = "primary_owner"
 
-    def __init__(self, db):
-        """Initialize service with database connection."""
+    def __init__(self, db, redis_client: redis.Redis | None = None):
+        """Initialize service with database connection.
+
+        Args:
+            db: Database connection
+            redis_client: Redis client for allocating village IDs
+        """
         self.db = db
+        self.redis_client = redis_client
 
-    def _generate_village_id(self) -> str:
-        """Generate a unique village ID for reviews."""
-        return secrets.token_hex(16)
+    def _generate_village_id(self, tenant_id: int) -> str:
+        """Generate a unique village ID for reviews.
 
-    def _review_to_dict(self, review) -> Dict[str, Any]:
+        Uses AD-3 format: TTTTTTTT-OOOOOOOOOOOOOOOO
+
+        Args:
+            tenant_id: The tenant ID
+
+        Returns:
+            str: A 25-character village ID
+        """
+        if self.redis_client is None:
+            # Create sync redis client if not provided
+            from apps.api.config import Config
+
+            redis_url = getattr(Config, "REDIS_URL", "redis://localhost:6379/0")
+            self.redis_client = redis.from_url(redis_url)
+
+        return generate_village_id(tenant_id, self.redis_client)
+
+    def _review_to_dict(self, review) -> dict[str, Any]:
         """Convert review record to dictionary."""
         return {
             "id": review.id,
@@ -77,7 +101,7 @@ class AccessReviewService:
             "updated_at": review.updated_at.isoformat() if review.updated_at else None,
         }
 
-    def _review_item_to_dict(self, item) -> Dict[str, Any]:
+    def _review_item_to_dict(self, item) -> dict[str, Any]:
         """Convert review item record to dictionary."""
         return {
             "id": item.id,
@@ -104,7 +128,7 @@ class AccessReviewService:
         due_date: datetime.datetime,
         tenant_id: int = 1,
         auto_apply: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new access review for a group.
 
         Creates review record and items for all current members.
@@ -129,7 +153,7 @@ class AccessReviewService:
             raise ValueError(f"Group {group_id} not found")
 
         # Create review record
-        now = datetime.datetime.now(timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         review_id = db.access_reviews.insert(
             tenant_id=tenant_id,
             group_id=group_id,
@@ -138,7 +162,7 @@ class AccessReviewService:
             due_date=due_date,
             status=self.STATUS_SCHEDULED,
             auto_apply_decisions=auto_apply,
-            village_id=self._generate_village_id(),
+            village_id=self._generate_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )
@@ -217,7 +241,7 @@ class AccessReviewService:
                         reviewers.append(membership.identity_id)
 
         # Create assignments
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         for reviewer_id in reviewers:
             db.access_review_assignments.insert(
                 tenant_id=group.tenant_id or 1,
@@ -229,7 +253,7 @@ class AccessReviewService:
 
         db.commit()
 
-    def get_review(self, review_id: int) -> Optional[Dict[str, Any]]:
+    def get_review(self, review_id: int) -> dict[str, Any] | None:
         """Get review details with progress statistics.
 
         Args:
@@ -278,12 +302,12 @@ class AccessReviewService:
     def list_reviews(
         self,
         tenant_id: int = 1,
-        status: Optional[str] = None,
-        group_id: Optional[int] = None,
-        reviewer_id: Optional[int] = None,
+        status: str | None = None,
+        group_id: int | None = None,
+        reviewer_id: int | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """List access reviews with filters.
 
         Args:
@@ -336,7 +360,7 @@ class AccessReviewService:
 
     def get_review_items(
         self, review_id: int, include_identity_info: bool = True
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Get all review items (members to review).
 
         Args:
@@ -387,9 +411,9 @@ class AccessReviewService:
         membership_id: int,
         decision: str,
         reviewed_by: int,
-        justification: Optional[str] = None,
-        new_expiration: Optional[datetime.datetime] = None,
-    ) -> Dict[str, Any]:
+        justification: str | None = None,
+        new_expiration: datetime.datetime | None = None,
+    ) -> dict[str, Any]:
         """Submit a review decision for a member.
 
         Args:
@@ -434,7 +458,7 @@ class AccessReviewService:
             )
 
         # Update the item
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
         db(db.access_review_items.id == item.id).update(
             decision=decision,
             justification=justification,
@@ -484,7 +508,7 @@ class AccessReviewService:
 
         db.commit()
 
-    def complete_review(self, review_id: int, completed_by: int) -> Dict[str, Any]:
+    def complete_review(self, review_id: int, completed_by: int) -> dict[str, Any]:
         """Complete a review and optionally apply decisions.
 
         Args:
@@ -512,7 +536,7 @@ class AccessReviewService:
                 f"Cannot complete review: {len(unreviewed)} members not reviewed"
             )
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Mark review as completed
         db(db.access_reviews.id == review_id).update(
@@ -613,7 +637,7 @@ class AccessReviewService:
         if not group or not group.review_enabled:
             return
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Calculate next review date
         interval_days = group.review_interval_days or 90
@@ -626,13 +650,12 @@ class AccessReviewService:
         db.commit()
 
         logger.info(
-            f"Scheduled next review for group {group_id} on "
-            f"{next_review.isoformat()}"
+            f"Scheduled next review for group {group_id} on {next_review.isoformat()}"
         )
 
     def get_reviews_for_owner(
-        self, owner_identity_id: int, status: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, owner_identity_id: int, status: str | None = None
+    ) -> list[dict[str, Any]]:
         """Get all reviews assigned to an owner.
 
         Args:
@@ -669,7 +692,7 @@ class AccessReviewService:
 
         return result
 
-    def check_overdue_reviews(self) -> List[int]:
+    def check_overdue_reviews(self) -> list[int]:
         """Check for overdue reviews and update their status.
 
         Returns:
@@ -677,7 +700,7 @@ class AccessReviewService:
         """
         db = self.db
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         # Find reviews that are past due but not completed
         query = (

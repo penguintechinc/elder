@@ -9,13 +9,13 @@ when resources are created, updated, or deleted on external platforms.
 
 # flake8: noqa: E501
 
-
 import hashlib
 import hmac
 import json
+from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 
 from apps.worker.sync.base import (
     BaseSyncClient,
@@ -72,8 +72,8 @@ class WebhookPayload:
         resource_type: ResourceType,
         resource_id: str,
         action: str,
-        data: Dict[str, Any],
-        timestamp: Optional[datetime] = None,
+        data: dict[str, Any],
+        timestamp: datetime | None = None,
     ):
         """Initialize webhook payload."""
         self.event_type = event_type
@@ -94,7 +94,7 @@ class WebhookHandler:
     def __init__(
         self,
         platform: str,
-        secret: Optional[str],
+        secret: str | None,
         sync_client: BaseSyncClient,
         conflict_resolver: ConflictResolver,
         logger: Any,
@@ -115,7 +115,7 @@ class WebhookHandler:
         self.logger = logger
 
         # Platform-specific parsers
-        self.parsers: Dict[str, Callable] = {
+        self.parsers: dict[str, Callable] = {
             "github": self._parse_github_webhook,
             "gitlab": self._parse_gitlab_webhook,
             "jira": self._parse_jira_webhook,
@@ -158,7 +158,7 @@ class WebhookHandler:
 
     def handle_webhook(
         self,
-        headers: Dict[str, str],
+        headers: dict[str, str],
         payload: bytes,
     ) -> SyncResult:
         """Process incoming webhook.
@@ -357,8 +357,8 @@ class WebhookHandler:
 
     def _parse_github_webhook(
         self,
-        headers: Dict[str, str],
-        data: Dict[str, Any],
+        headers: dict[str, str],
+        data: dict[str, Any],
     ) -> WebhookPayload:
         """Parse GitHub webhook payload.
 
@@ -428,8 +428,8 @@ class WebhookHandler:
 
     def _parse_gitlab_webhook(
         self,
-        headers: Dict[str, str],
-        data: Dict[str, Any],
+        headers: dict[str, str],
+        data: dict[str, Any],
     ) -> WebhookPayload:
         """Parse GitLab webhook payload.
 
@@ -476,8 +476,8 @@ class WebhookHandler:
 
     def _parse_jira_webhook(
         self,
-        headers: Dict[str, str],
-        data: Dict[str, Any],
+        headers: dict[str, str],
+        data: dict[str, Any],
     ) -> WebhookPayload:
         """Parse Jira webhook payload.
 
@@ -522,8 +522,8 @@ class WebhookHandler:
 
     def _parse_trello_webhook(
         self,
-        headers: Dict[str, str],
-        data: Dict[str, Any],
+        headers: dict[str, str],
+        data: dict[str, Any],
     ) -> WebhookPayload:
         """Parse Trello webhook payload.
 
@@ -557,8 +557,8 @@ class WebhookHandler:
 
     def _parse_openproject_webhook(
         self,
-        headers: Dict[str, str],
-        data: Dict[str, Any],
+        headers: dict[str, str],
+        data: dict[str, Any],
     ) -> WebhookPayload:
         """Parse OpenProject webhook payload.
 

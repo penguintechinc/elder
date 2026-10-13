@@ -1,0 +1,394 @@
+"""Software tracking management API endpoints for Elder using PyDAL with async/await and shared helpers."""
+
+# flake8: noqa: E501
+
+from dataclasses import asdict
+from datetime import UTC, datetime, timezone
+
+from quart import Blueprint, Response, current_app, jsonify, request
+from quart_schema import validate_response
+
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
+from apps.api.models.dataclasses import (
+    PaginatedResponse,
+    SBOMComponentDTO,
+    from_pydal_rows,
+)
+from apps.api.models.pydantic.software import (
+    CreateSoftwareRequest,
+    SoftwareDTO,
+    SoftwareListResponse,
+    UpdateSoftwareRequest,
+)
+from apps.api.services.sbom.exporters import CycloneDXExporter, SPDXExporter
+from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.validation_helpers import (
+    validate_organization_and_get_tenant,
+)
+
+bp = Blueprint("software", __name__)
+
+
+@bp.route("", methods=["GET"])
+@login_required
+@require_scope("sbom:read")
+@validate_response(SoftwareListResponse)
+async def list_software():
+    """List software with optional filtering."""
+    db = current_app.db
+    pagination = PaginationParams.from_request()
+
+    def get_software():
+        query = db.software.id > 0
+
+        if request.args.get("organization_id"):
+            query &= db.software.organization_id == request.args.get(
+                "organization_id", type=int
+            )
+        if request.args.get("software_type"):
+            query &= db.software.software_type == request.args.get("software_type")
+        if request.args.get("is_active") is not None:
+            is_active = request.args.get("is_active", "").lower() == "true"
+            query &= db.software.is_active == is_active
+        if request.args.get("search"):
+            search = f"%{request.args.get('search')}%"
+            query &= (db.software.name.ilike(search)) | (
+                db.software.description.ilike(search)
+            )
+
+        total = db(query).count()
+        rows = db(query).select(
+            orderby=~db.software.created_at,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
+        )
+        return total, rows
+
+    total, rows = await run_in_threadpool(get_software)
+    pages = pagination.calculate_pages(total)
+
+    return SoftwareListResponse(
+        items=[SoftwareDTO.model_validate(row) for row in rows],
+        total=total,
+        page=pagination.page,
+        per_page=pagination.per_page,
+        pages=pages,
+    ), 200
+
+
+@bp.route("", methods=["POST"])
+@login_required
+@require_scope("sbom:write")
+@validated_request(body_model=CreateSoftwareRequest)
+@validate_response(SoftwareDTO, status_code=201)
+async def create_software(body: CreateSoftwareRequest):
+    """Create a new software entry."""
+    db = current_app.db
+
+    org, tenant_id, error = await validate_organization_and_get_tenant(
+        body.organization_id
+    )
+    if error:
+        return error
+
+    if body.purchasing_poc_id:
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, body.purchasing_poc_id, tenant_id
+            )
+        )
+        if not identity:
+            return ApiResponse.not_found(
+                "Purchasing POC identity", body.purchasing_poc_id
+            )
+
+    def create():
+        now = datetime.now(UTC)
+        software_id = db.software.insert(
+            name=body.name,
+            description=body.description,
+            organization_id=body.organization_id,
+            tenant_id=tenant_id,
+            purchasing_poc_id=body.purchasing_poc_id,
+            license_url=body.license_url,
+            version=body.version,
+            business_purpose=body.business_purpose,
+            software_type=body.software_type,
+            seats=body.seats,
+            cost_monthly=body.cost_monthly,
+            renewal_date=body.renewal_date,
+            vendor=body.vendor,
+            support_contact=body.support_contact,
+            notes=body.notes,
+            tags=body.tags,
+            is_active=body.is_active,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+        return get_tenant_scoped(db, db.software, software_id, tenant_id)
+
+    software = await run_in_threadpool(create)
+    return SoftwareDTO.model_validate(software), 201
+
+
+@bp.route("/<int:id>", methods=["GET"])
+@login_required
+@require_scope("sbom:read")
+@validate_response(SoftwareDTO)
+async def get_software(id: int):
+    """Get a single software entry by ID."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
+
+    return SoftwareDTO.model_validate(software), 200
+
+
+@bp.route("/<int:id>", methods=["PUT"])
+@login_required
+@require_scope("sbom:write")
+@resource_role_required("maintainer")
+@validated_request(body_model=UpdateSoftwareRequest)
+@validate_response(SoftwareDTO)
+async def update_software(id: int, body: UpdateSoftwareRequest):
+    """Update a software entry."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    if body.purchasing_poc_id:
+        identity = await run_in_threadpool(
+            lambda: get_tenant_scoped(
+                db, db.identities, body.purchasing_poc_id, tenant_id
+            )
+        )
+        if not identity:
+            return ApiResponse.not_found(
+                "Purchasing POC identity", body.purchasing_poc_id
+            )
+
+    org_tenant_id = None
+    if body.organization_id is not None:
+        org, org_tenant_id, error = await validate_organization_and_get_tenant(
+            body.organization_id
+        )
+        if error:
+            return error
+
+    def update():
+        # gh-237: 404 on cross-tenant id guesses instead of leaking existence
+        software = get_tenant_scoped(db, db.software, id, tenant_id)
+        if not software:
+            return None
+
+        update_dict = {}
+        updateable_fields = [
+            "name",
+            "description",
+            "purchasing_poc_id",
+            "license_url",
+            "version",
+            "business_purpose",
+            "software_type",
+            "seats",
+            "cost_monthly",
+            "renewal_date",
+            "vendor",
+            "support_contact",
+            "notes",
+            "tags",
+            "is_active",
+        ]
+
+        data_dict = body.model_dump(exclude_unset=True)
+        for field in updateable_fields:
+            if field in data_dict:
+                update_dict[field] = getattr(body, field)
+
+        if body.organization_id is not None:
+            update_dict["organization_id"] = body.organization_id
+            update_dict["tenant_id"] = org_tenant_id
+
+        if update_dict:
+            db(db.software.id == id).update(**update_dict)
+            db.commit()
+
+        return db.software[id]  # tenant-scope-exempt: verified above
+
+    software = await run_in_threadpool(update)
+
+    if not software:
+        return ApiResponse.not_found("Software", id)
+
+    return SoftwareDTO.model_validate(software), 200
+
+
+@bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("sbom:write")
+@resource_role_required("maintainer")
+async def delete_software(id: int):
+    """Delete a software entry."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
+
+    def delete():
+        del db.software[id]  # tenant-scope-exempt: verified above
+        db.commit()
+
+    await run_in_threadpool(delete)
+
+    return ApiResponse.no_content()
+
+
+@bp.route("/<int:id>/sbom", methods=["GET"])
+@login_required
+@require_scope("sbom:read")
+async def get_software_sbom(id: int):
+    """
+    Get SBOM components for a software.
+
+    Path Parameters:
+        - id: Software ID
+
+    Returns:
+        200: List of SBOM components
+        404: Software not found
+
+    Example:
+        GET /api/v1/software/1/sbom
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    # Validate software exists and belongs to caller's tenant (gh-237)
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
+
+    def get_components():
+        query = (db.sbom_components.parent_type == "software") & (
+            db.sbom_components.parent_id == id
+        )
+        rows = db(query).select(orderby=db.sbom_components.name)
+        return rows
+
+    rows = await run_in_threadpool(get_components)
+
+    # Convert to DTOs
+    items = from_pydal_rows(rows, SBOMComponentDTO)
+
+    return jsonify([asdict(item) for item in items]), 200
+
+
+@bp.route("/<int:id>/sbom/export", methods=["GET"])
+@login_required
+@require_scope("sbom:read")
+async def export_software_sbom(id: int):
+    """
+    Export software SBOM in standard format.
+
+    Path Parameters:
+        - id: Software ID
+
+    Query Parameters:
+        - format: Export format (cyclonedx_json, cyclonedx_xml, spdx) - default: cyclonedx_json
+
+    Returns:
+        200: SBOM file content
+        400: Invalid format or no components
+        404: Software not found
+
+    Example:
+        GET /api/v1/software/1/sbom/export?format=cyclonedx_json
+        GET /api/v1/software/1/sbom/export?format=cyclonedx_xml
+        GET /api/v1/software/1/sbom/export?format=spdx
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    # Validate software exists and belongs to caller's tenant (gh-237)
+    software = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
+    )
+    if not software:
+        return ApiResponse.not_found("Software", id)
+
+    # Get format parameter
+    export_format = request.args.get("format", "cyclonedx_json")
+    supported_formats = ["cyclonedx_json", "cyclonedx_xml", "spdx"]
+
+    if export_format not in supported_formats:
+        return ApiResponse.error(
+            f"Invalid format. Supported: {', '.join(supported_formats)}", 400
+        )
+
+    def get_components():
+        query = (db.sbom_components.parent_type == "software") & (
+            db.sbom_components.parent_id == id
+        )
+        rows = db(query).select(orderby=db.sbom_components.name)
+        # Convert rows to dictionaries
+        return [dict(row) for row in rows]
+
+    components = await run_in_threadpool(get_components)
+
+    if not components:
+        return ApiResponse.error("No SBOM components found for this software", 400)
+
+    # Build metadata
+    metadata = {
+        "name": software.name,
+        "version": getattr(software, "version", "unknown"),
+        "description": software.description,
+    }
+
+    # Export based on format
+    try:
+        if export_format == "cyclonedx_json":
+            exporter = CycloneDXExporter()
+            content = exporter.export_json(components, metadata)
+            mimetype = "application/json"
+            filename = f"{software.name.replace(' ', '_')}_sbom_cyclonedx.json"
+
+        elif export_format == "cyclonedx_xml":
+            exporter = CycloneDXExporter()
+            content = exporter.export_xml(components, metadata)
+            mimetype = "application/xml"
+            filename = f"{software.name.replace(' ', '_')}_sbom_cyclonedx.xml"
+
+        else:  # spdx
+            exporter = SPDXExporter()
+            content = exporter.export_json(components, metadata)
+            mimetype = "application/json"
+            filename = f"{software.name.replace(' ', '_')}_sbom_spdx.json"
+
+        # Return as downloadable file
+        return Response(
+            content,
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+
+    except Exception as e:
+        return ApiResponse.error(f"Failed to export SBOM: {str(e)}", 500)

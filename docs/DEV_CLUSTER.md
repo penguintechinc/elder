@@ -25,8 +25,6 @@ All services are accessible from your local machine:
 |---------|-----|---------|-------------|
 | **API Server** | http://localhost:5000 | REST API endpoints | admin / admin123 |
 | **Web UI** | http://localhost:3000 | Frontend application | admin / admin123 |
-| **Grafana** | http://localhost:3001 | Monitoring dashboards | admin / admin |
-| **Prometheus** | http://localhost:9091 | Metrics collection | N/A |
 
 ### Databases
 
@@ -68,7 +66,6 @@ Services communicate internally using the `elder-network` Docker network:
 - API: `http://api:5000`
 - PostgreSQL: `postgres:5432`
 - Redis: `redis:6379`
-- Prometheus: `prometheus:9090`
 
 ## Testing
 
@@ -160,11 +157,6 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 ADMIN_EMAIL=admin@localhost.local
 
-# Monitoring
-PROMETHEUS_PORT=9091
-GRAFANA_PORT=3001
-GRAFANA_USER=admin
-GRAFANA_PASSWORD=admin
 ```
 
 ## API Examples
@@ -224,12 +216,12 @@ curl "http://localhost:5000/api/v1/graph/analyze?organization_id=1" \
 
 ## Metrics
 
-Prometheus metrics are exposed at:
-```bash
-curl http://localhost:5000/metrics
-```
-
-View in Grafana at http://localhost:3001
+Elder exports OpenTelemetry traces/metrics/logs over OTLP (no `/metrics`
+Prometheus-scrape endpoint) -- set `OTEL_EXPORTER_OTLP_ENDPOINT` to point the
+api/worker/scanner services at your OTLP collector/backend. Dashboards,
+alert rules, and SLOs built against the metrics these services actually
+emit live under `observability/` (see `observability/README.md`) -- no
+Prometheus/Grafana stack is provisioned by this compose file.
 
 ## Troubleshooting
 
@@ -239,8 +231,6 @@ If ports are already allocated, update `.env`:
 API_PORT=5001
 POSTGRES_PORT=5434
 REDIS_PORT=6383
-PROMETHEUS_PORT=9092
-GRAFANA_PORT=3002
 ```
 
 ### Can't Connect to API
@@ -272,22 +262,21 @@ docker-compose up -d
 
 ```
 ┌─────────────┐     ┌──────────────┐
-│   Web UI    │────▶│  API Server  │
+│   Web UI    │────▶│  API Server  │──────▶ OTLP export (OTEL_EXPORTER_OTLP_ENDPOINT)
 │ (Port 3000) │     │ (Port 5000)  │
 └─────────────┘     └──────┬───────┘
                            │
-           ┌───────────────┼───────────────┐
-           │               │               │
-      ┌────▼────┐    ┌─────▼─────┐  ┌─────▼──────┐
-      │PostgreSQL│    │   Redis   │  │ Prometheus │
-      │(Pt 5433)│    │ (Pt 6382) │  │ (Pt 9091)  │
-      └─────────┘    └───────────┘  └──────┬─────┘
-                                            │
-                                     ┌──────▼──────┐
-                                     │   Grafana   │
-                                     │ (Pt 3001)   │
-                                     └─────────────┘
+                  ┌────────┴────────┐
+                  │                 │
+             ┌────▼────┐      ┌─────▼─────┐
+             │PostgreSQL│      │   Redis   │
+             │(Pt 5433)│      │ (Pt 6382) │
+             └─────────┘      └───────────┘
 ```
+
+See `observability/README.md` for what's on the other end of that OTLP
+export -- dashboards, alerts, and SLOs built against the metrics/spans the
+api/worker/scanner services actually emit.
 
 ## PyDAL Migration Status
 
@@ -303,7 +292,7 @@ docker-compose up -d
 
 1. **Test API Endpoints**: Use the examples above or run `./scripts/test-api-docker.sh`
 2. **Explore Web UI**: Visit http://localhost:3000
-3. **View Metrics**: Check Grafana at http://localhost:3001
+3. **View Metrics**: Point an OTLP-compatible backend at `OTEL_EXPORTER_OTLP_ENDPOINT` and load the dashboards under `observability/`
 4. **Create Organizations and Entities**: Use the API examples above
 5. **Build Dependency Graphs**: Use the graph endpoints to visualize relationships
 

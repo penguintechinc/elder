@@ -7,8 +7,8 @@ export interface ModalFormBuilderProps {
   onClose: () => void
   title: string
   config: FormConfig
-  initialValues?: Record<string, any>
-  onSubmit: (data: Record<string, any>) => void
+  initialValues?: Record<string, unknown>
+  onSubmit: (data: Record<string, unknown>) => void
   isLoading?: boolean
   submitLabel?: string
 }

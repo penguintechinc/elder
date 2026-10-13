@@ -3,10 +3,28 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+# Canonical edge types allowed in dependencies table.
+CANONICAL_EDGE_TYPES: frozenset[str] = frozenset(
+    {
+        "in_network",
+        "in_subnet",
+        "uses_security_group",
+        "attached_to",
+        "routes_to",
+        "assumes_role",
+        "in_resource_group",
+        "bound_to",
+        "runs_on",
+        "runs_in",
+        "manages",
+        "discovered_from",
+    }
+)
 
 from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
 from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
@@ -14,6 +32,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
 from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
+from shared.certificates import calculate_certificate_status
 
 
 class DiscoveryService:
@@ -73,10 +92,10 @@ class DiscoveryService:
 
     def list_jobs(
         self,
-        provider: Optional[str] = None,
-        enabled: Optional[bool] = None,
-        organization_id: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+        provider: str | None = None,
+        enabled: bool | None = None,
+        organization_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         """List all discovery jobs with optional filters."""
         query = self.db.discovery_jobs.id > 0
 
@@ -93,7 +112,7 @@ class DiscoveryService:
 
         return [self._sanitize_job(j.as_dict()) for j in jobs]
 
-    def get_job(self, job_id: int) -> Dict[str, Any]:
+    def get_job(self, job_id: int) -> dict[str, Any]:
         """Get discovery job details."""
         job = self.db.discovery_jobs[job_id]
 
@@ -106,11 +125,11 @@ class DiscoveryService:
         self,
         name: str,
         provider: str,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         organization_id: int = None,  # Optional - stored in config for now
-        schedule_interval: Optional[int] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        schedule_interval: int | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """Create a new discovery job."""
         # Validate provider type
         valid_providers = [
@@ -136,7 +155,7 @@ class DiscoveryService:
             job_config["_description"] = description
 
         # Create job
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         job_id = self.db.discovery_jobs.insert(
             name=name,
             provider=provider.lower(),
@@ -154,12 +173,12 @@ class DiscoveryService:
     def update_job(
         self,
         job_id: int,
-        name: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        schedule_interval: Optional[int] = None,
-        description: Optional[str] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        config: dict[str, Any] | None = None,
+        schedule_interval: int | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """Update discovery job configuration."""
         job = self.db.discovery_jobs[job_id]
 
@@ -184,7 +203,7 @@ class DiscoveryService:
 
         return self.get_job(job_id)
 
-    def delete_job(self, job_id: int) -> Dict[str, Any]:
+    def delete_job(self, job_id: int) -> dict[str, Any]:
         """Delete a discovery job."""
         job = self.db.discovery_jobs[job_id]
 
@@ -200,7 +219,7 @@ class DiscoveryService:
 
         return {"message": "Discovery job deleted successfully"}
 
-    def test_job(self, job_id: int) -> Dict[str, Any]:
+    def test_job(self, job_id: int) -> dict[str, Any]:
         """Test discovery job connectivity."""
         try:
             client = self._get_discovery_client(job_id)
@@ -209,7 +228,7 @@ class DiscoveryService:
             result = {
                 "job_id": job_id,
                 "success": success,
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
             # Add auth method if available (AWS client)
@@ -229,12 +248,12 @@ class DiscoveryService:
                 "job_id": job_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     # Discovery Execution
 
-    def run_discovery(self, job_id: int) -> Dict[str, Any]:
+    def run_discovery(self, job_id: int) -> dict[str, Any]:
         """Execute discovery for a job."""
         job = self.db.discovery_jobs[job_id]
 
@@ -252,33 +271,38 @@ class DiscoveryService:
                     "discovery_time"
                 ].isoformat()
 
-            # Record discovery history
-            now = datetime.now(timezone.utc)
-            history_id = self.db.discovery_history.insert(
-                job_id=job_id,
-                started_at=now,
-                entities_discovered=results["resources_count"],
-                status="completed",
-                results_json=results_for_storage,
-                created_at=now,
-                updated_at=now,
-            )
-
-            # Update job's last_run timestamp
-            self.db(self.db.discovery_jobs.id == job_id).update(
-                last_run_at=datetime.now(timezone.utc)
-            )
-
-            self.db.commit()
-
             # Get organization_id from config if available
             organization_id = None
             if job.config_json:
                 organization_id = job.config_json.get("_organization_id")
 
-            # Store discovered resources as entities (if organization_id available)
+            # Store discovered resources as entities (if organization_id
+            # available) and capture edge-linkage counts so they're visible
+            # in both the persisted history row and the job result below.
+            edge_counts = {"edges_created": 0, "unresolved_edges": 0}
             if organization_id:
-                self._store_discovered_resources(organization_id, results)
+                edge_counts = self._store_discovered_resources(organization_id, results)
+            results_for_storage.update(edge_counts)
+
+            # Record discovery history
+            now = datetime.now(UTC)
+            history_id = self.db.discovery_history.insert(
+                job_id=job_id,
+                started_at=now,
+                completed_at=now,
+                entities_discovered=results["resources_count"],
+                entities_created=0,
+                entities_updated=0,
+                status="completed",
+                results_json=results_for_storage,
+            )
+
+            # Update job's last_run timestamp
+            self.db(self.db.discovery_jobs.id == job_id).update(
+                last_run_at=datetime.now(UTC)
+            )
+
+            self.db.commit()
 
             return {
                 "job_id": job_id,
@@ -286,19 +310,21 @@ class DiscoveryService:
                 "resources_discovered": results["resources_count"],
                 "success": True,
                 "discovery_time": results["discovery_time"].isoformat(),
+                **edge_counts,
             }
 
         except Exception as e:
             # Record failed discovery
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self.db.discovery_history.insert(
                 job_id=job_id,
                 started_at=now,
+                completed_at=now,
                 entities_discovered=0,
+                entities_created=0,
+                entities_updated=0,
                 status="failed",
                 error_message=str(e),
-                created_at=now,
-                updated_at=now,
             )
             self.db.commit()
 
@@ -309,9 +335,37 @@ class DiscoveryService:
                 "error": str(e),
             }
 
+    def queue_job_for_worker(self, job_id: int) -> dict[str, Any]:
+        """Queue a discovery job for the worker service by setting next_run_at = now.
+
+        The worker polls discovery_jobs and will pick this up on its next cycle.
+
+        Args:
+            job_id: Discovery job ID
+
+        Returns:
+            Status dict with job_id and queued message
+        """
+        job = self.db.discovery_jobs[job_id]
+        if not job:
+            raise Exception(f"Discovery job not found: {job_id}")
+
+        self.db(self.db.discovery_jobs.id == job_id).update(
+            next_run_at=datetime.now(UTC),
+        )
+        self.db.commit()
+
+        logger.info(f"Discovery job {job_id} queued for worker execution")
+        return {
+            "job_id": job_id,
+            "success": True,
+            "message": "Job queued for worker execution",
+            "queued_at": datetime.now(UTC).isoformat(),
+        }
+
     def get_discovery_history(
-        self, job_id: Optional[int] = None, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+        self, job_id: int | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
         """Get discovery execution history."""
         query = self.db.discovery_history.id > 0
 
@@ -328,7 +382,7 @@ class DiscoveryService:
 
     # Provider detection
 
-    def _detect_provider_type(self, discovery_results: Dict[str, Any]) -> str:
+    def _detect_provider_type(self, discovery_results: dict[str, Any]) -> str:
         """Detect cloud provider from discovery results."""
         for category in ["compute", "storage", "network", "iam"]:
             resources = discovery_results.get(category, [])
@@ -349,8 +403,8 @@ class DiscoveryService:
     # Provider root entity
 
     def _ensure_provider_root_entity(
-        self, organization_id: int, provider: str, config: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, provider: str, config: dict[str, Any]
+    ) -> int | None:
         """Create or update a provider root entity (cluster/account/project)."""
         sub_type_map = {
             "kubernetes": "kubernetes_cluster",
@@ -381,17 +435,17 @@ class DiscoveryService:
 
         if existing:
             self.db(self.db.entities.id == existing.id).update(
-                updated_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(UTC),
             )
             return existing.id
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entity_id = self.db.entities.insert(
             name=name,
-            entity_type="compute",
+            type="compute",
             sub_type=sub_type,
             organization_id=organization_id,
-            attributes={
+            metadata={
                 "provider": provider,
                 "discovered_at": now.isoformat(),
             },
@@ -406,9 +460,9 @@ class DiscoveryService:
         self,
         organization_id: int,
         provider: str,
-        root_entity_id: Optional[int],
-        discovery_results: Dict[str, Any],
-    ) -> Dict[str, int]:
+        root_entity_id: int | None,
+        discovery_results: dict[str, Any],
+    ) -> dict[str, int]:
         """Create intermediate networking resources (VPCs, Namespaces) and return lookup maps."""
         networking_lookup = {}
 
@@ -455,6 +509,7 @@ class DiscoveryService:
                             "is_default": meta.get("is_default"),
                         },
                         tags=["aws", "vpc", "discovered"],
+                        external_id=vpc_id_str,
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -469,6 +524,9 @@ class DiscoveryService:
                     meta = resource.get("metadata", {})
                     parent_vpc = meta.get("vpc_id")
                     parent_id = vpc_lookup.get(parent_vpc) if parent_vpc else None
+                    subnet_id_str = meta.get(
+                        "subnet_id", resource.get("resource_id", "")
+                    )
                     net_id = self._upsert_networking_resource(
                         organization_id=organization_id,
                         name=resource.get("name", ""),
@@ -481,9 +539,7 @@ class DiscoveryService:
                             "available_ips": meta.get("available_ips"),
                         },
                         tags=["aws", "subnet", "discovered"],
-                    )
-                    subnet_id_str = meta.get(
-                        "subnet_id", resource.get("resource_id", "")
+                        external_id=subnet_id_str,
                     )
                     networking_lookup[f"subnet:{subnet_id_str}"] = net_id
 
@@ -502,6 +558,7 @@ class DiscoveryService:
                             )
                         },
                         tags=["gcp", "vpc", "discovered"],
+                        external_id=resource.get("resource_id"),
                     )
                     if net_id and root_entity_id:
                         self._upsert_network_entity_mapping(
@@ -516,11 +573,12 @@ class DiscoveryService:
         organization_id: int,
         name: str,
         network_type: str,
-        region: Optional[str] = None,
-        parent_id: Optional[int] = None,
-        attributes: Optional[Dict] = None,
-        tags: Optional[List[str]] = None,
-    ) -> Optional[int]:
+        region: str | None = None,
+        parent_id: int | None = None,
+        attributes: dict | None = None,
+        tags: list[str] | None = None,
+        external_id: str | None = None,
+    ) -> int | None:
         """Create or update a networking_resources record."""
         try:
             existing = (
@@ -534,13 +592,18 @@ class DiscoveryService:
             )
 
             if existing:
+                update_dict = {
+                    "attributes": attributes or {},
+                    "updated_at": datetime.now(UTC),
+                }
+                if external_id is not None:
+                    update_dict["external_id"] = external_id
                 self.db(self.db.networking_resources.id == existing.id).update(
-                    attributes=attributes or {},
-                    updated_at=datetime.now(timezone.utc),
+                    **update_dict
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             net_id = self.db.networking_resources.insert(
                 name=name,
                 network_type=network_type,
@@ -549,6 +612,7 @@ class DiscoveryService:
                 parent_id=parent_id,
                 attributes=attributes or {},
                 tags=tags or [],
+                external_id=external_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -564,19 +628,16 @@ class DiscoveryService:
         try:
             existing = (
                 self.db(
-                    (
-                        self.db.network_entity_mappings.networking_resource_id
-                        == network_id
-                    )
+                    (self.db.network_entity_mappings.network_id == network_id)
                     & (self.db.network_entity_mappings.entity_id == entity_id)
                 )
                 .select()
                 .first()
             )
             if not existing:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 self.db.network_entity_mappings.insert(
-                    networking_resource_id=network_id,
+                    network_id=network_id,
                     entity_id=entity_id,
                     relationship_type=relationship_type,
                     created_at=now,
@@ -588,9 +649,9 @@ class DiscoveryService:
     # Domain table helpers
 
     def _store_as_service(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
-    ) -> Optional[int]:
-        """Store a K8s Service or Lambda function in the services table."""
+        self, organization_id: int, resource: dict[str, Any], provider: str
+    ) -> int | None:
+        """Store a K8s Service, Lambda function, or messaging service in the services table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
         resource_type = resource.get("resource_type", "")
@@ -603,16 +664,27 @@ class DiscoveryService:
         elif resource_type == "lambda_function":
             deployment_method = "serverless"
             port = None
-            runtime = metadata.get("runtime", "")
-            lang_map = {
-                "python": "python",
-                "nodejs": "nodejs",
-                "java": "java",
-                "go": "go",
-                "ruby": "ruby",
-                "dotnet": "dotnet",
-            }
             status = "active" if metadata.get("state") == "Active" else "active"
+        elif resource_type == "sqs_queue":
+            deployment_method = "aws_sqs"
+            port = None
+            status = "active"
+        elif resource_type == "sns_topic":
+            deployment_method = "aws_sns"
+            port = None
+            status = "active"
+        elif resource_type == "step_function":
+            deployment_method = "aws_stepfunctions"
+            port = None
+            status = "active"
+        elif resource_type == "eventbridge_rule":
+            deployment_method = "aws_eventbridge"
+            port = None
+            status = "active"
+        elif resource_type == "api_gateway_rest_api":
+            deployment_method = "api_gateway"
+            port = None
+            status = "active"
         else:
             return None
 
@@ -627,21 +699,27 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.services.id == existing.id).update(
-                    updated_at=datetime.now(timezone.utc),
+                    external_id=native_id,
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             svc_id = self.db.services.insert(
                 name=name,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 deployment_method=deployment_method,
                 port=port,
                 status=status,
+                is_public=False,
                 tags=[provider, "discovered"],
                 notes=f"Discovered from {provider} discovery",
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -651,9 +729,9 @@ class DiscoveryService:
             return None
 
     def _store_as_data_store(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
-    ) -> Optional[int]:
-        """Store S3/EBS/GCS/RDS/PV in the data_stores table."""
+        self, organization_id: int, resource: dict[str, Any], provider: str
+    ) -> int | None:
+        """Store S3/EBS/GCS/RDS/DynamoDB/ECR/Logs/EFS/ElastiCache/PV in the data_stores table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
         resource_type = resource.get("resource_type", "")
@@ -665,6 +743,11 @@ class DiscoveryService:
             "gcs_bucket": ("gcs", "GCP"),
             "k8s_persistent_volume": ("disk", "Kubernetes"),
             "k8s_pvc": ("disk", "Kubernetes"),
+            "dynamodb_table": ("database", "AWS"),
+            "ecr_repository": ("container_registry", "AWS"),
+            "cloudwatch_log_group": ("logs", "AWS"),
+            "efs_filesystem": ("filesystem", "AWS"),
+            "elasticache_cluster": ("cache", "AWS"),
         }
 
         if resource_type not in type_map:
@@ -683,21 +766,25 @@ class DiscoveryService:
                 .first()
             )
 
+            native_id = resource.get("external_id") or resource.get("resource_id")
+
             if existing:
                 self.db(self.db.data_stores.id == existing.id).update(
-                    updated_at=datetime.now(timezone.utc),
+                    external_id=native_id,
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             ds_id = self.db.data_stores.insert(
                 name=name,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 storage_type=storage_type,
                 storage_provider=storage_provider,
                 location_region=resource.get("region"),
-                tags=[provider, storage_type, "discovered"],
                 metadata=metadata,
+                external_id=native_id,
                 created_at=now,
                 updated_at=now,
             )
@@ -709,9 +796,9 @@ class DiscoveryService:
     def _store_as_networking_resource(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
-    ) -> Optional[int]:
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
+    ) -> int | None:
         """Store load balancers in the networking_resources table."""
         resource_type = resource.get("resource_type", "")
         if resource_type != "load_balancer":
@@ -734,11 +821,12 @@ class DiscoveryService:
                 "state": metadata.get("state"),
             },
             tags=["aws", "load-balancer", "discovered"],
+            external_id=resource.get("external_id") or resource.get("resource_id"),
         )
 
     def _store_k8s_service_account_as_identity(
-        self, organization_id: int, resource: Dict[str, Any], cluster_name: str
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any], cluster_name: str
+    ) -> int | None:
         """Store a K8s ServiceAccount in the identities table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -758,13 +846,13 @@ class DiscoveryService:
 
             if existing:
                 self.db(self.db.identities.id == existing.id).update(
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             identity_id = self.db.identities.insert(
-                tenant_id=1,
+                tenant_id=self._tenant_for_org(organization_id),
                 identity_type="serviceAccount",
                 username=username,
                 full_name=f"{namespace}/{name}",
@@ -774,6 +862,7 @@ class DiscoveryService:
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                must_change_password=False,
                 created_at=now,
                 updated_at=now,
             )
@@ -784,7 +873,7 @@ class DiscoveryService:
 
     def _store_container_image_as_software(
         self, organization_id: int, image: str
-    ) -> Optional[int]:
+    ) -> int | None:
         """Store a container image in the software table."""
         # Parse image:tag
         if ":" in image and not image.startswith("sha256:"):
@@ -812,14 +901,17 @@ class DiscoveryService:
             if existing:
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             sw_id = self.db.software.insert(
                 name=image_name,
                 version=version,
+                tenant_id=self._tenant_for_org(organization_id),
                 organization_id=organization_id,
                 software_type="container",
+                is_active=True,
                 vendor=vendor,
                 tags=["kubernetes", "container-image", "discovered"],
+                external_id=image,
                 created_at=now,
                 updated_at=now,
             )
@@ -834,10 +926,39 @@ class DiscoveryService:
         source_id: int,
         target_type: str,
         target_id: int,
+        tenant_id: int,
         dep_type: str = "discovered_from",
-        meta: Optional[Dict] = None,
-    ) -> None:
-        """Create a dependencies record linking domain table entries."""
+        meta: dict | None = None,
+    ) -> bool:
+        """Create a dependencies record linking domain table entries.
+
+        Args:
+            source_type: Type of source resource
+            source_id: ID of source resource
+            target_type: Type of target resource
+            target_id: ID of target resource
+            tenant_id: Tenant ID (scopes the dependency)
+            dep_type: Dependency type (default: discovered_from)
+            meta: Optional metadata dictionary
+
+        Returns:
+            True if the row now exists (inserted or already present), False
+            if the write failed. Callers that need to count actual edges
+            (e.g. the pass-2 linker) rely on this to avoid counting a
+            swallowed write exception as a success.
+        """
+        # Warn on non-canonical dependency types but still persist them
+        if dep_type not in CANONICAL_EDGE_TYPES:
+            logger.warning(
+                "Non-canonical dependency_type %r for edge %s(%s)->"
+                "%s(%s); persisting anyway",
+                dep_type,
+                source_type,
+                source_id,
+                target_type,
+                target_id,
+            )
+
         try:
             existing = (
                 self.db(
@@ -845,32 +966,153 @@ class DiscoveryService:
                     & (self.db.dependencies.source_id == source_id)
                     & (self.db.dependencies.target_type == target_type)
                     & (self.db.dependencies.target_id == target_id)
+                    & (self.db.dependencies.dependency_type == dep_type)
                 )
                 .select()
                 .first()
             )
             if not existing:
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 self.db.dependencies.insert(
                     source_type=source_type,
                     source_id=source_id,
                     target_type=target_type,
                     target_id=target_id,
+                    tenant_id=tenant_id,
                     dependency_type=dep_type,
                     metadata=meta or {},
                     created_at=now,
                     updated_at=now,
                 )
+            return True
         except Exception as e:
             logger.warning("Failed to create dependency link: %s", e)
+            return False
+
+    # Native-id -> domain table for DB-fallback resolution.
+    _RESOLVE_TABLES = {
+        "entity": "entities",
+        "networking_resource": "networking_resources",
+        "data_store": "data_stores",
+        "service": "services",
+        "software": "software",
+        "identity": "identities",
+    }
+
+    def _resolve_target(
+        self,
+        scan_index: dict[Any, Any],
+        provider: str,
+        target_external_id: str | None,
+        target_kind: str | None,
+        organization_id: int,
+    ) -> tuple[str, int] | None:
+        """Resolve a native cloud id to (type_string, row_id).
+
+        Scan-local index first (same job), then a DB lookup on external_id so
+        targets discovered by an earlier scan still resolve.
+        """
+        hit = scan_index.get((provider, target_external_id))
+        if hit:
+            return hit
+        return self._resolve_target_in_db(
+            target_external_id, target_kind, organization_id
+        )
+
+    def _resolve_target_in_db(
+        self,
+        external_id: str | None,
+        target_kind: str | None,
+        organization_id: int,
+    ) -> tuple[str, int] | None:
+        """Look up a persisted row by external_id, hinted table first."""
+        order = []
+        if target_kind in self._RESOLVE_TABLES:
+            order.append(target_kind)
+        order += [k for k in self._RESOLVE_TABLES if k not in order]
+        for type_string in order:
+            table = getattr(self.db, self._RESOLVE_TABLES[type_string])
+            row = (
+                self.db(
+                    (table.external_id == external_id)
+                    & (table.organization_id == organization_id)
+                )
+                .select()
+                .first()
+            )
+            if row:
+                return (type_string, row.id)
+        return None
+
+    def _link_resources(
+        self,
+        source: tuple[str, int],
+        target: tuple[str, int],
+        edge_type: str | None,
+        tenant_id: int,
+    ) -> bool:
+        """Write a dependencies edge; dual-write network membership.
+
+        Args:
+            source: Tuple of (source_type, source_id)
+            target: Tuple of (target_type, target_id)
+            edge_type: Type of dependency edge
+            tenant_id: Tenant ID (scopes the dependency)
+
+        Returns:
+            True/False from `_create_dependency_link`. The network_entity_mappings
+            dual-write is a projection of that edge, so its own success/failure
+            doesn't change the return value here.
+        """
+        src_type, src_id = source
+        tgt_type, tgt_id = target
+        linked = self._create_dependency_link(
+            src_type,
+            src_id,
+            tgt_type,
+            tgt_id,
+            tenant_id,
+            edge_type,
+            {"linked_by": "discovery"},
+        )
+        if (
+            edge_type in ("in_network", "in_subnet")
+            and src_type == "entity"
+            and tgt_type == "networking_resource"
+        ):
+            self._upsert_network_entity_mapping(tgt_id, src_id, edge_type)
+        return linked
+
+    def _register(
+        self,
+        scan_index: dict[Any, Any],
+        provider: str,
+        resource: dict[str, Any],
+        type_string: str,
+        row_id: int | None,
+    ) -> None:
+        """Index a just-persisted resource by its native id for edge resolution."""
+        if not row_id:
+            return
+        ext = resource.get("external_id") or resource.get("resource_id")
+        if ext:
+            scan_index[(provider, ext)] = (type_string, row_id)
 
     def _store_k8s_ingress(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
-    ) -> Optional[int]:
-        """Store a K8s Ingress in the networking_resources table."""
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
+        tenant_id: int,
+    ) -> int | None:
+        """Store a K8s Ingress in the networking_resources table.
+
+        Args:
+            organization_id: Organization ID
+            resource: K8s Ingress resource data
+            networking_lookup: Mapping of network names to IDs
+            tenant_id: Tenant ID (scopes dependencies)
+        """
         metadata = resource.get("metadata", {})
         namespace = metadata.get("namespace", "default")
         parent_id = networking_lookup.get(f"namespace:{namespace}")
@@ -909,6 +1151,7 @@ class DiscoveryService:
                             ingress_id,
                             "service",
                             svc.id,
+                            tenant_id,
                             "routes_to",
                             {"ingress": resource.get("name", "")},
                         )
@@ -921,7 +1164,7 @@ class DiscoveryService:
                                     existing_paths.append(endpoint)
                                     self.db(self.db.services.id == svc.id).update(
                                         paths=existing_paths,
-                                        updated_at=datetime.now(timezone.utc),
+                                        updated_at=datetime.now(UTC),
                                     )
                 except Exception as e:
                     logger.warning(
@@ -931,9 +1174,20 @@ class DiscoveryService:
         return ingress_id
 
     def _store_k8s_pvc_as_data_store(
-        self, organization_id: int, resource: Dict[str, Any], provider: str
-    ) -> Optional[int]:
-        """Store a K8s PVC in data_stores and link to PV via dependencies."""
+        self,
+        organization_id: int,
+        resource: dict[str, Any],
+        provider: str,
+        tenant_id: int,
+    ) -> int | None:
+        """Store a K8s PVC in data_stores and link to PV via dependencies.
+
+        Args:
+            organization_id: Organization ID
+            resource: K8s PVC resource data
+            provider: Provider type (e.g., 'kubernetes')
+            tenant_id: Tenant ID (scopes dependencies)
+        """
         pvc_id = self._store_as_data_store(organization_id, resource, provider)
 
         if pvc_id:
@@ -958,6 +1212,7 @@ class DiscoveryService:
                             pvc_id,
                             "data_store",
                             pv.id,
+                            tenant_id,
                             "bound_to",
                             {"pvc": resource.get("name", ""), "pv": volume_name},
                         )
@@ -967,8 +1222,8 @@ class DiscoveryService:
         return pvc_id
 
     def _store_k8s_secret(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """Store a K8s Secret in builtin_secrets (metadata only, NEVER values)."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -995,15 +1250,16 @@ class DiscoveryService:
                         "cluster": "kubernetes",
                         "annotations": metadata.get("annotations", {}),
                     },
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             secret_id = self.db.builtin_secrets.insert(
                 name=full_name,
                 organization_id=organization_id,
                 secret_type="other",
+                is_active=True,
                 secret_value=None,
                 secret_json={
                     "namespace": namespace,
@@ -1022,8 +1278,8 @@ class DiscoveryService:
             return None
 
     def _store_cert_manager_certificate(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> Optional[int]:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """Store a cert-manager Certificate in the certificates table."""
         name = resource.get("name", "Unnamed")
         metadata = resource.get("metadata", {})
@@ -1032,12 +1288,25 @@ class DiscoveryService:
         dns_names = metadata.get("dns_names", [])
         issuer_ref = metadata.get("issuer_ref", {})
         not_after = metadata.get("not_after")
+        not_before = metadata.get("not_before")
 
         # Parse expiration date
         expiration = None
         if not_after:
             try:
                 expiration = datetime.fromisoformat(not_after.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                pass
+
+        # issue_date is NOT NULL. Prefer the certificate's own notBefore; fall
+        # back to the discovery date, which is the earliest point we can attest
+        # the certificate existed.
+        issue_date = datetime.now(UTC).date()
+        if not_before:
+            try:
+                issue_date = datetime.fromisoformat(
+                    not_before.replace("Z", "+00:00")
+                ).date()
             except (ValueError, AttributeError):
                 pass
 
@@ -1057,14 +1326,19 @@ class DiscoveryService:
                     common_name=common_name,
                     subject_alternative_names=dns_names,
                     expiration_date=expiration,
-                    updated_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(UTC),
                 )
                 return existing.id
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             cert_id = self.db.certificates.insert(
-                tenant_id=1,
+                tenant_id=self._tenant_for_org(organization_id),
                 name=name,
+                issue_date=issue_date,
+                status=calculate_certificate_status(
+                    expiration.date() if expiration else None, 30, False
+                ),
+                is_active=True,
                 organization_id=organization_id,
                 creator="cert_manager",
                 cert_type="server_cert",
@@ -1087,9 +1361,9 @@ class DiscoveryService:
     def _store_cni_as_networking(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
-        networking_lookup: Dict[str, int],
-    ) -> Optional[int]:
+        resource: dict[str, Any],
+        networking_lookup: dict[str, int],
+    ) -> int | None:
         """Store CNI plugin info in networking_resources."""
         metadata = resource.get("metadata", {})
 
@@ -1123,6 +1397,7 @@ class DiscoveryService:
             "cert_manager_certificate": "certificate",
             "vpc": "networking",
             "subnet": "networking",
+            "security_group": "networking",
             "load_balancer": "networking",
             "ec2_instance": "entity",
             "s3_bucket": "data_store",
@@ -1133,22 +1408,56 @@ class DiscoveryService:
             "iam_role": "identity",
             "gce_instance": "entity",
             "gcs_bucket": "data_store",
+            "dynamodb_table": "data_store",
+            "sqs_queue": "service",
+            "sns_topic": "service",
+            "ecr_repository": "data_store",
+            "cloudwatch_log_group": "data_store",
+            "step_function": "service",
+            "eventbridge_rule": "service",
+            "api_gateway_rest_api": "service",
+            "efs_filesystem": "data_store",
+            "elasticache_cluster": "data_store",
+            "cloudfront_distribution": "networking",
+            "route53_hosted_zone": "networking",
         }
         return domain_map.get(resource_type, "entity")
 
     # Main storage orchestrator
 
+    def _tenant_for_org(self, organization_id: int) -> int:
+        """Resolve the tenant owning an organization.
+
+        Domain tables carry a NOT NULL tenant_id, and discovery runs without a
+        request token, so the tenant is derived from the organization rather
+        than assumed to be the default one.
+        """
+        org = self.db.organizations[organization_id]
+        if org is None or getattr(org, "tenant_id", None) is None:
+            raise ValueError(
+                f"Cannot resolve tenant for organization {organization_id}"
+            )
+        return org.tenant_id
+
     def _store_discovered_resources(
-        self, organization_id: int, discovery_results: Dict[str, Any]
-    ) -> None:
+        self, organization_id: int, discovery_results: dict[str, Any]
+    ) -> dict[str, int]:
         """
         Store discovered resources with hierarchy and domain table mapping.
 
         Creates provider root entities, intermediate networking, and routes
         resources to their proper domain tables (services, data_stores,
-        networking_resources, identities, software, entities).
+        networking_resources, identities, software, entities). A second pass
+        then resolves each resource's declared `relationships` into
+        dependencies edges (native-id resolution, scan-local then DB).
+
+        Returns:
+            Dict with `edges_created` and `unresolved_edges` counts.
         """
         provider = self._detect_provider_type(discovery_results)
+
+        # Resolve tenant_id from organization
+        tenant_id = self._tenant_for_org(organization_id)
 
         # Get config for root entity naming
         root_config = {"name": f"{provider} discovery"}
@@ -1160,6 +1469,17 @@ class DiscoveryService:
         networking_lookup = self._ensure_intermediate_networking(
             organization_id, provider, root_entity_id, discovery_results
         )
+
+        # (provider, external_id) -> (type_string, row_id); seeded from the
+        # networking resources so pass 2 can resolve edges into VPCs/subnets/
+        # namespaces without a DB round-trip.
+        scan_index: dict[Any, Any] = {}
+        for key, net_id in networking_lookup.items():
+            _, _, ext = key.partition(":")
+            if ext and net_id:
+                scan_index[(provider, ext)] = ("networking_resource", net_id)
+        edges_created = 0
+        unresolved_edges = 0
 
         # Track container images for software extraction
         seen_images = set()
@@ -1185,11 +1505,29 @@ class DiscoveryService:
 
                 if domain == "identity":
                     if resource_type in ("iam_user", "iam_role"):
-                        self._store_iam_as_identity(organization_id, resource)
+                        identity_id = self._store_iam_as_identity(
+                            organization_id, resource
+                        )
+                        self._register(
+                            scan_index, provider, resource, "identity", identity_id
+                        )
+                        if identity_id and root_entity_id:
+                            self._create_dependency_link(
+                                "identity",
+                                identity_id,
+                                "entity",
+                                root_entity_id,
+                                tenant_id,
+                                "discovered_from",
+                                {"provider": provider},
+                            )
                     elif resource_type == "k8s_service_account":
                         cluster_name = root_config.get("name", "unknown")
                         sa_id = self._store_k8s_service_account_as_identity(
                             organization_id, resource, cluster_name
+                        )
+                        self._register(
+                            scan_index, provider, resource, "identity", sa_id
                         )
                         if sa_id and root_entity_id:
                             self._create_dependency_link(
@@ -1197,18 +1535,21 @@ class DiscoveryService:
                                 sa_id,
                                 "entity",
                                 root_entity_id,
+                                tenant_id,
                                 "discovered_from",
                                 {"provider": provider},
                             )
 
                 elif domain == "service":
                     svc_id = self._store_as_service(organization_id, resource, provider)
+                    self._register(scan_index, provider, resource, "service", svc_id)
                     if svc_id and root_entity_id:
                         self._create_dependency_link(
                             "service",
                             svc_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1216,18 +1557,20 @@ class DiscoveryService:
                 elif domain == "data_store":
                     if resource_type == "k8s_pvc":
                         ds_id = self._store_k8s_pvc_as_data_store(
-                            organization_id, resource, provider
+                            organization_id, resource, provider, tenant_id
                         )
                     else:
                         ds_id = self._store_as_data_store(
                             organization_id, resource, provider
                         )
+                    self._register(scan_index, provider, resource, "data_store", ds_id)
                     if ds_id and root_entity_id:
                         self._create_dependency_link(
                             "data_store",
                             ds_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1240,6 +1583,7 @@ class DiscoveryService:
                             secret_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
@@ -1254,22 +1598,45 @@ class DiscoveryService:
                             cert_id,
                             "entity",
                             root_entity_id,
+                            tenant_id,
                             "discovered_from",
                             {"provider": provider},
                         )
 
                 elif domain == "networking":
                     if resource_type == "load_balancer":
-                        self._store_as_networking_resource(
+                        lb_id = self._store_as_networking_resource(
                             organization_id, resource, networking_lookup
+                        )
+                        self._register(
+                            scan_index, provider, resource, "networking_resource", lb_id
                         )
                     elif resource_type == "k8s_ingress":
                         self._store_k8s_ingress(
-                            organization_id, resource, networking_lookup
+                            organization_id, resource, networking_lookup, tenant_id
                         )
                     elif resource_type == "k8s_cni":
                         self._store_cni_as_networking(
                             organization_id, resource, networking_lookup
+                        )
+                    elif resource_type == "security_group":
+                        # Store security group as networking resource
+                        net_id = self._upsert_networking_resource(
+                            organization_id=organization_id,
+                            name=resource.get("name", ""),
+                            network_type="security_group",
+                            region=resource.get("region"),
+                            attributes=resource.get("metadata", {}),
+                            tags=["aws", "security_group", "discovered"],
+                            external_id=resource.get("external_id")
+                            or resource.get("resource_id"),
+                        )
+                        self._register(
+                            scan_index,
+                            provider,
+                            resource,
+                            "networking_resource",
+                            net_id,
                         )
                     # VPCs and subnets already handled in _ensure_intermediate_networking
 
@@ -1283,12 +1650,21 @@ class DiscoveryService:
                         parent_id=root_entity_id,
                         networking_lookup=networking_lookup,
                     )
+                    self._register(scan_index, provider, resource, "entity", entity_id)
 
                     # Link entity to networking resource if applicable
                     metadata = resource.get("metadata", {})
                     if entity_id:
                         vpc_id = metadata.get("vpc_id")
-                        if vpc_id and f"vpc:{vpc_id}" in networking_lookup:
+                        # AWS now emits explicit in_network relationships in pass 2,
+                        # so skip the legacy connected_to mapping for it (it would
+                        # otherwise duplicate the edge on the Topology tab). Providers
+                        # not yet migrated (gcp/azure) keep the legacy fallback.
+                        if (
+                            vpc_id
+                            and provider != "aws"
+                            and f"vpc:{vpc_id}" in networking_lookup
+                        ):
                             self._upsert_network_entity_mapping(
                                 networking_lookup[f"vpc:{vpc_id}"],
                                 entity_id,
@@ -1312,27 +1688,89 @@ class DiscoveryService:
                             sw_id = self._store_container_image_as_software(
                                 organization_id, image
                             )
+                            # Register the image under its OWN native id (the
+                            # image string, which is also its external_id),
+                            # never via _register(resource=<pod>, ...) — the
+                            # pod dict's resource_id/external_id belongs to
+                            # the pod's own ("entity", entity_id) scan_index
+                            # entry (set above), and keying software off the
+                            # pod's id would clobber it, silently corrupting
+                            # resolution for any relationship naming the pod.
+                            if sw_id:
+                                scan_index[(provider, image)] = ("software", sw_id)
                             if sw_id and root_entity_id:
                                 self._create_dependency_link(
                                     "software",
                                     sw_id,
                                     "entity",
                                     root_entity_id,
+                                    tenant_id,
                                     "discovered_from",
                                     {"provider": provider},
                                 )
 
+        # Pass 2: resolve declared relationships into edges.
+        for category, resources in discovery_results.items():
+            if category in ["resources_count", "discovery_time", "duration_seconds"]:
+                continue
+            for resource in resources or []:
+                rels = resource.get("relationships") or []
+                if not rels:
+                    continue
+                ext = resource.get("external_id") or resource.get("resource_id")
+                source = scan_index.get((provider, ext))
+                if not source:
+                    # The resource's own id was never registered (its branch
+                    # returned no row id, or the row id came back None) — its
+                    # declared relationships have nowhere to originate from.
+                    # Count and log each one rather than dropping silently.
+                    unresolved_edges += len(rels)
+                    logger.warning(
+                        "Unresolved discovery edge source: %s has no registered "
+                        "scan_index entry (provider=%s); dropping %d relationship(s)",
+                        ext,
+                        provider,
+                        len(rels),
+                    )
+                    continue
+                for rel in rels:
+                    target = self._resolve_target(
+                        scan_index,
+                        provider,
+                        rel.get("target_external_id"),
+                        rel.get("target_kind"),
+                        organization_id,
+                    )
+                    if not target:
+                        unresolved_edges += 1
+                        logger.warning(
+                            "Unresolved discovery edge: %s -[%s]-> %s (provider=%s)",
+                            ext,
+                            rel.get("edge_type"),
+                            rel.get("target_external_id"),
+                            provider,
+                        )
+                        continue
+                    if self._link_resources(
+                        source, target, rel.get("edge_type"), tenant_id
+                    ):
+                        edges_created += 1
+
         self.db.commit()
+        return {"edges_created": edges_created, "unresolved_edges": unresolved_edges}
 
     def _store_iam_as_identity(
-        self, organization_id: int, resource: Dict[str, Any]
-    ) -> None:
+        self, organization_id: int, resource: dict[str, Any]
+    ) -> int | None:
         """
         Store IAM user or role as an Identity resource.
 
         Args:
             organization_id: Organization ID
             resource: Discovered IAM resource data
+
+        Returns:
+            Identity row ID or None
         """
         resource_type = resource.get("resource_type", "")
         name = resource.get("name", "Unnamed")
@@ -1372,38 +1810,55 @@ class DiscoveryService:
         )
 
         if existing:
-            # Update existing identity
+            # Update existing identity. Unlike every other _store_as_*/
+            # _upsert_* helper in this file, the "existing" lookup above is
+            # NOT organization_id-scoped — identities.username carries a
+            # DB-level UNIQUE constraint, so a re-discovered principal can't
+            # get its own per-org row the way networking/data_store/service/
+            # entity resources do. Without reassigning organization_id (and
+            # tenant_id, which /graph/map filters identities on directly)
+            # here, an identity first discovered by one org would stay
+            # permanently invisible to any other org's org/tenant-scoped
+            # queries even after that org's own scan re-observes the same
+            # external principal.
             self.db(self.db.identities.id == existing.id).update(
                 full_name=name,
-                updated_at=datetime.now(timezone.utc),
+                external_id=arn,
+                organization_id=organization_id,
+                tenant_id=self._tenant_for_org(organization_id),
+                updated_at=datetime.now(UTC),
             )
+            return existing.id
         else:
             # Create new identity
-            now = datetime.now(timezone.utc)
-            self.db.identities.insert(
-                tenant_id=1,  # Default tenant
+            now = datetime.now(UTC)
+            identity_id = self.db.identities.insert(
+                tenant_id=self._tenant_for_org(organization_id),
                 identity_type=identity_type,
                 username=aws_username,
                 full_name=name,
                 organization_id=organization_id,
                 auth_provider="aws",
                 auth_provider_id=arn,
+                external_id=arn,
                 portal_role="observer",  # AWS identities get observer role by default
                 is_active=True,
                 is_superuser=False,
                 mfa_enabled=False,
+                must_change_password=False,
                 created_at=now,
                 updated_at=now,
             )
+            return identity_id
 
     def _store_as_entity(
         self,
         organization_id: int,
-        resource: Dict[str, Any],
+        resource: dict[str, Any],
         entity_type: str,
-        parent_id: Optional[int] = None,
-        networking_lookup: Optional[Dict[str, int]] = None,
-    ) -> Optional[int]:
+        parent_id: int | None = None,
+        networking_lookup: dict[str, int] | None = None,
+    ) -> int | None:
         """
         Store a discovered resource in the generic entities table.
 
@@ -1416,9 +1871,21 @@ class DiscoveryService:
 
         Returns:
             Entity ID or None
+
+        Note on `tags` vs `metadata`:
+            K8s labels / cloud provider tags (a flat {key: value} dict) go
+            to the dedicated `entities.tags` column. Structural discovery
+            data (namespace, replicas, images, capacity_cpu, etc.) goes to
+            `entities.metadata`, flattened to the top level alongside
+            discovery provenance fields (resource_id, resource_type,
+            region, discovered_at) -- e.g. `entity.metadata.namespace`, not
+            `entity.metadata.metadata.namespace`. On update, `metadata` is
+            merged (not replaced) so out-of-band keys another writer added
+            (e.g. a geo-enrichment agent's `location`) survive a rescan.
         """
         name = resource.get("name", "Unnamed")
         resource_type = resource.get("resource_type", "")
+        native_id = resource.get("external_id") or resource.get("resource_id")
 
         # Check if entity already exists
         existing = (
@@ -1431,22 +1898,29 @@ class DiscoveryService:
             .first()
         )
 
-        # Prepare attributes JSON
-        resource_attrs = {
-            "resource_id": resource.get("resource_id"),
-            "resource_type": resource_type,
-            "region": resource.get("region"),
-            "tags": resource.get("tags", {}),
-            "metadata": resource.get("metadata", {}),
-            "discovered_at": datetime.now(timezone.utc).isoformat(),
-        }
+        # Structural/provenance metadata -- flattened, no nested "metadata" key
+        resource_metadata = dict(resource.get("metadata") or {})
+        resource_metadata["resource_id"] = resource.get("resource_id")
+        resource_metadata["resource_type"] = resource_type
+        resource_metadata["region"] = resource.get("region")
+        resource_metadata["discovered_at"] = datetime.now(UTC).isoformat()
+
+        # K8s labels / cloud provider tags -- dedicated column, never merged
+        # into metadata
+        resource_tags = resource.get("tags") or {}
 
         if existing:
-            # Update existing entity
+            # Merge into existing metadata so unrelated keys written by
+            # other agents (e.g. geo-enrichment) aren't wiped on rescan
+            merged_metadata = dict(existing.metadata or {})
+            merged_metadata.update(resource_metadata)
+
             update_data = {
                 "name": name,
-                "attributes": resource_attrs,
-                "updated_at": datetime.now(timezone.utc),
+                "metadata": merged_metadata,
+                "tags": resource_tags,
+                "external_id": native_id,
+                "updated_at": datetime.now(UTC),
             }
             if parent_id is not None:
                 update_data["parent_id"] = parent_id
@@ -1454,13 +1928,15 @@ class DiscoveryService:
             return existing.id
         else:
             # Create new entity
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             insert_data = {
                 "name": name,
-                "entity_type": entity_type,
+                "type": entity_type,
                 "sub_type": resource_type,
                 "organization_id": organization_id,
-                "attributes": resource_attrs,
+                "metadata": resource_metadata,
+                "tags": resource_tags,
+                "external_id": native_id,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -1468,7 +1944,7 @@ class DiscoveryService:
                 insert_data["parent_id"] = parent_id
             return self.db.entities.insert(**insert_data)
 
-    def _sanitize_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_job(self, job: dict[str, Any]) -> dict[str, Any]:
         """Remove sensitive fields from job data."""
         sanitized = dict(job)
 
@@ -1495,7 +1971,7 @@ class DiscoveryService:
 
     # Scanner service methods
 
-    def get_pending_jobs(self) -> List[Dict[str, Any]]:
+    def get_pending_jobs(self) -> list[dict[str, Any]]:
         """
         Get jobs that are ready to be picked up by the scanner.
 
@@ -1519,7 +1995,7 @@ class DiscoveryService:
         ).select()
 
         # Also get scheduled jobs that are due
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         scheduled_jobs = self.db(
             (self.db.discovery_jobs.enabled == True)  # noqa: E712
             & (self.db.discovery_jobs.provider.belongs(local_providers))
@@ -1534,7 +2010,7 @@ class DiscoveryService:
 
         return [self._sanitize_job(job.as_dict()) for job in all_jobs]
 
-    def mark_job_running(self, job_id: int) -> Dict[str, Any]:
+    def mark_job_running(self, job_id: int) -> dict[str, Any]:
         """
         Mark a job as currently running.
 
@@ -1553,11 +2029,11 @@ class DiscoveryService:
 
         # Update job status
         self.db(self.db.discovery_jobs.id == job_id).update(
-            last_run_at=datetime.now(timezone.utc),
+            last_run_at=datetime.now(UTC),
         )
 
         # Create history entry
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.db.discovery_history.insert(
             job_id=job_id,
             started_at=now,
@@ -1565,8 +2041,6 @@ class DiscoveryService:
             entities_discovered=0,
             entities_updated=0,
             entities_created=0,
-            created_at=now,
-            updated_at=now,
         )
 
         self.db.commit()
@@ -1577,9 +2051,9 @@ class DiscoveryService:
         self,
         job_id: int,
         success: bool,
-        results: Dict[str, Any],
-        error_message: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        results: dict[str, Any],
+        error_message: str | None = None,
+    ) -> dict[str, Any]:
         """
         Complete a job and record results.
 
@@ -1613,7 +2087,7 @@ class DiscoveryService:
             # Update history entry
             status = "completed" if success else "failed"
             self.db(self.db.discovery_history.id == history_entry.id).update(
-                completed_at=datetime.now(timezone.utc),
+                completed_at=datetime.now(UTC),
                 status=status,
                 error_message=error_message,
                 results_json=results,
@@ -1623,9 +2097,7 @@ class DiscoveryService:
         if job.schedule_interval and job.schedule_interval > 0:
             from datetime import timedelta
 
-            next_run = datetime.now(timezone.utc) + timedelta(
-                seconds=job.schedule_interval
-            )
+            next_run = datetime.now(UTC) + timedelta(seconds=job.schedule_interval)
             self.db(self.db.discovery_jobs.id == job_id).update(next_run_at=next_run)
 
         self.db.commit()

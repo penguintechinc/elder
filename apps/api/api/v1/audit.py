@@ -2,15 +2,20 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from quart import Blueprint, current_app, jsonify, request
+from quart_schema import validate_response
 
 from apps.api.auth.decorators import admin_required, login_required
 from apps.api.logging_config import log_error_and_respond
+from apps.api.models.pydantic.audit import (
+    AuditRetentionPolicyListResponse,
+    AuditRetentionPolicyResponse,
+)
+from apps.api.utils.api_responses import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,7 @@ bp = Blueprint("audit", __name__)
 
 @bp.route("/retention-policies", methods=["GET"])
 @login_required
+@validate_response(AuditRetentionPolicyListResponse)
 def list_retention_policies():
     """
     List all audit retention policies.
@@ -43,8 +49,11 @@ def list_retention_policies():
         )
 
         return (
-            jsonify(
-                {"policies": [p.as_dict() for p in policies], "count": len(policies)}
+            AuditRetentionPolicyListResponse(
+                policies=[
+                    AuditRetentionPolicyResponse.model_validate(p) for p in policies
+                ],
+                count=len(policies),
             ),
             200,
         )
@@ -56,6 +65,7 @@ def list_retention_policies():
 
 @bp.route("/retention-policies/<int:policy_id>", methods=["GET"])
 @login_required
+@validate_response(AuditRetentionPolicyResponse)
 def get_retention_policy(policy_id):
     """
     Get retention policy details.
@@ -73,12 +83,15 @@ def get_retention_policy(policy_id):
         except Exception:
             db.rollback()
 
-        policy = db.audit_retention_policies[policy_id]
+        # audit_retention_policies is a global, admin-only system config
+        # table (no tenant_id/organization_id column, unique on
+        # resource_type), gated by @admin_required.
+        policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
         if not policy:
-            return jsonify({"error": "Retention policy not found"}), 404
+            return ApiResponse.error("Retention policy not found", 404)
 
-        return jsonify(policy.as_dict()), 200
+        return AuditRetentionPolicyResponse.model_validate(policy), 200
 
     except Exception as e:
         db.rollback()  # Rollback failed transaction
@@ -88,6 +101,7 @@ def get_retention_policy(policy_id):
 @bp.route("/retention-policies", methods=["POST"])
 @login_required
 @admin_required
+@validate_response(AuditRetentionPolicyResponse, status_code=201)
 async def create_retention_policy():
     """
     Create audit retention policy.
@@ -104,10 +118,10 @@ async def create_retention_policy():
         400: Invalid request
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         if "name" not in data or "retention_days" not in data:
             return (
@@ -130,11 +144,11 @@ async def create_retention_policy():
             if existing:
                 return (
                     None,
-                    f'Retention policy already exists for {data["name"]}',
+                    f"Retention policy already exists for {data['name']}",
                     400,
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             policy_id = db.audit_retention_policies.insert(
                 resource_type=data.get("resource_type", data.get("name")),
                 description=data.get("description"),
@@ -147,13 +161,13 @@ async def create_retention_policy():
 
             db.commit()
 
-            policy = db.audit_retention_policies[policy_id]
-            return policy.as_dict(), None, None
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
+            return policy, None, None
 
-        policy_dict, error, status = await asyncio.to_thread(inner)
+        policy_row, error, status = await asyncio.to_thread(inner)
         if error:
             return jsonify({"error": error}), status
-        return jsonify(policy_dict), 201
+        return AuditRetentionPolicyResponse.model_validate(policy_row), 201
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
@@ -161,6 +175,7 @@ async def create_retention_policy():
 
 @bp.route("/retention-policies/<int:policy_id>", methods=["PUT"])
 @admin_required
+@validate_response(AuditRetentionPolicyResponse)
 async def update_retention_policy(policy_id):
     """
     Update retention policy.
@@ -176,15 +191,15 @@ async def update_retention_policy(policy_id):
         404: Policy not found
     """
     try:
-        data = request.get_json()
+        data = await request.get_json()
 
         if not data:
-            return jsonify({"error": "Request body required"}), 400
+            return ApiResponse.bad_request("Request body required")
 
         def inner():
             db = current_app.db
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
             if not policy:
                 return None, "Retention policy not found", 404
@@ -198,18 +213,18 @@ async def update_retention_policy(policy_id):
                 update_data["description"] = data["description"]
             if "event_types" in data:
                 update_data["event_types"] = data["event_types"]
-            update_data["updated_at"] = datetime.now(timezone.utc)
+            update_data["updated_at"] = datetime.now(UTC)
 
             db(db.audit_retention_policies.id == policy_id).update(**update_data)
             db.commit()
 
-            policy = db.audit_retention_policies[policy_id]
-            return policy.as_dict(), None, None
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
+            return policy, None, None
 
-        policy_dict, error, status = await asyncio.to_thread(inner)
+        policy_row, error, status = await asyncio.to_thread(inner)
         if error:
             return jsonify({"error": error}), status
-        return jsonify(policy_dict), 200
+        return AuditRetentionPolicyResponse.model_validate(policy_row), 200
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
@@ -230,7 +245,7 @@ async def delete_retention_policy(policy_id):
         def inner():
             db = current_app.db
 
-            policy = db.audit_retention_policies[policy_id]
+            policy = db.audit_retention_policies[policy_id]  # tenant-scope-exempt
 
             if not policy:
                 return None, "Retention policy not found", 404
@@ -285,9 +300,7 @@ def cleanup_audit_logs():
         total_deleted = 0
 
         for policy in policies:
-            cutoff_date = datetime.now(timezone.utc) - timedelta(
-                days=policy.retention_days
-            )
+            cutoff_date = datetime.now(UTC) - timedelta(days=policy.retention_days)
 
             # Count/delete old audit logs for this resource type
             # Note: This is a simplified implementation
@@ -313,7 +326,7 @@ def cleanup_audit_logs():
                     "dry_run": dry_run,
                     "results": results,
                     "total_deleted": total_deleted,
-                    "executed_at": datetime.now(timezone.utc).isoformat(),
+                    "executed_at": datetime.now(UTC).isoformat(),
                 }
             ),
             200,

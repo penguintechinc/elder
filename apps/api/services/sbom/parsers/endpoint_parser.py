@@ -6,7 +6,6 @@ including Flask, FastAPI, Django, Express.js, and Go frameworks.
 
 # flake8: noqa: E501
 
-
 import os
 from typing import Dict, List
 
@@ -44,7 +43,7 @@ class EndpointParser:
         """
         return any(parser.can_parse(filename) for parser in self.parsers)
 
-    def parse(self, content: str, filename: str) -> List[Dict]:
+    def parse(self, content: str, filename: str) -> list[dict]:
         """Parse content with all applicable parsers and combine results.
 
         Tries all parsers that can handle the file type and combines
@@ -84,7 +83,7 @@ class EndpointParser:
 
         return all_endpoints
 
-    def parse_directory(self, directory: str) -> List[Dict]:
+    def parse_directory(self, directory: str) -> list[dict]:
         """Walk directory tree and parse all supported files.
 
         Recursively scans directory for files with supported extensions
@@ -104,7 +103,7 @@ class EndpointParser:
                     filepath = os.path.join(root, filename)
 
                     try:
-                        with open(filepath, "r", encoding="utf-8") as f:
+                        with open(filepath, encoding="utf-8") as f:
                             content = f.read()
 
                         endpoints = self.parse(content, filename)
@@ -116,7 +115,7 @@ class EndpointParser:
 
         return all_endpoints
 
-    def get_supported_extensions(self) -> List[str]:
+    def get_supported_extensions(self) -> list[str]:
         """Return list of all supported file extensions.
 
         Returns:

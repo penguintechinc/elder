@@ -8,6 +8,33 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 // Input is used in form configs only, not directly imported for this component
 import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { Organization } from '@/types'
+
+interface Certificate {
+  id: number
+  name: string
+  organization_id: number
+  creator: string
+  cert_type: string
+  common_name?: string
+  issue_date?: string
+  expiration_date?: string
+  status: string
+  renewal_days_before?: number
+  auto_renew?: boolean
+  certificate_pem?: string
+  description?: string
+}
+
+interface CertificateResponse {
+  certificates: Certificate[]
+}
+
+interface OrganizationResponse {
+  items: Organization[]
+}
+
+type ApiError = { response?: { data?: { message?: string }, status?: number }, message?: string }
 
 const CERT_CREATORS = [
   { value: 'digicert', label: 'DigiCert' },
@@ -62,7 +89,7 @@ export default function Certificates() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [selectedCertificate, setSelectedCertificate] = useState<any>(null)
+  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
   const [filterCreator, setFilterCreator] = useState('')
   const [filterType, setFilterType] = useState('')
   const [filterOrg, setFilterOrg] = useState('')
@@ -70,12 +97,12 @@ export default function Certificates() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['certificates'],
-    queryFn: () => api.getCertificates(),
+    queryFn: () => api.getCertificates() as Promise<CertificateResponse>,
   })
 
   const { data: orgs } = useQuery({
     queryKey: ['organizations'],
-    queryFn: () => api.getOrganizations(),
+    queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
   })
 
   const deleteMutation = useMutation({
@@ -92,7 +119,7 @@ export default function Certificates() {
     },
   })
 
-  const filteredCerts = data?.certificates?.filter((cert: any) => {
+  const filteredCerts = data?.certificates?.filter((cert: Certificate) => {
     if (filterCreator && cert.creator !== filterCreator) return false
     if (filterType && cert.cert_type !== filterType) return false
     if (filterOrg && cert.organization_id !== parseInt(filterOrg)) return false
@@ -141,7 +168,7 @@ export default function Certificates() {
           onChange={(e) => setFilterOrg(e.target.value)}
           options={[
             { value: '', label: 'All Organizations' },
-            ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
+            ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
           ]}
         />
       </div>
@@ -165,11 +192,11 @@ export default function Certificates() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredCerts.map((cert: any) => {
+          {filteredCerts.map((cert: Certificate) => {
             const { badge, className } = getStatusBadge(cert.status, cert.expiration_date, cert.renewal_days_before)
             const creatorLabel = CERT_CREATORS.find(c => c.value === cert.creator)?.label || cert.creator
             const typeLabel = CERT_TYPES.find(t => t.value === cert.cert_type)?.label || cert.cert_type
-            const orgName = orgs?.items?.find((o: any) => o.id === cert.organization_id)?.name || 'Unknown'
+            const orgName = orgs?.items?.find((o: Organization) => o.id === cert.organization_id)?.name || 'Unknown'
 
             return (
               <Card key={cert.id}>
@@ -305,19 +332,24 @@ export default function Certificates() {
   )
 }
 
-function CreateCertificateModal({ onClose, onSuccess }: any) {
+interface CreateEditModalProps {
+  onClose: () => void
+  onSuccess: () => Promise<void>
+}
+
+function CreateCertificateModal({ onClose, onSuccess }: CreateEditModalProps) {
   const { data: orgs } = useQuery({
     queryKey: ['organizations'],
-    queryFn: () => api.getOrganizations(),
+    queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createCertificate(data),
+    mutationFn: (data: Record<string, unknown>) => api.createCertificate(data as Parameters<typeof api.createCertificate>[0]),
     onSuccess: () => {
       toast.success('Certificate created successfully')
       onSuccess()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Failed to create certificate')
     },
   })
@@ -337,7 +369,7 @@ function CreateCertificateModal({ onClose, onSuccess }: any) {
       required: true,
       options: [
         { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
+        ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
       ],
     },
     {
@@ -398,18 +430,19 @@ function CreateCertificateModal({ onClose, onSuccess }: any) {
     },
   ], [orgs?.items])
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: Record<string, unknown>) => {
+    const orgId = data.organization_id
     createMutation.mutate({
-      name: data.name,
-      organization_id: parseInt(data.organization_id),
-      creator: data.creator,
-      cert_type: data.cert_type,
-      common_name: data.common_name || undefined,
-      issue_date: data.issue_date,
-      expiration_date: data.expiration_date,
-      auto_renew: data.auto_renew || false,
-      certificate_pem: data.certificate_pem || undefined,
-      description: data.description || undefined,
+      name: String(data.name),
+      organization_id: typeof orgId === 'string' ? parseInt(orgId) : orgId,
+      creator: String(data.creator),
+      cert_type: String(data.cert_type),
+      common_name: data.common_name ? String(data.common_name) : undefined,
+      issue_date: String(data.issue_date),
+      expiration_date: String(data.expiration_date),
+      auto_renew: data.auto_renew === true,
+      certificate_pem: data.certificate_pem ? String(data.certificate_pem) : undefined,
+      description: data.description ? String(data.description) : undefined,
     })
   }
 
@@ -425,19 +458,23 @@ function CreateCertificateModal({ onClose, onSuccess }: any) {
   )
 }
 
-function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
+interface EditCertificateModalProps extends CreateEditModalProps {
+  certificate: Certificate
+}
+
+function EditCertificateModal({ certificate, onClose, onSuccess }: EditCertificateModalProps) {
   const { data: orgs } = useQuery({
     queryKey: ['organizations'],
-    queryFn: () => api.getOrganizations(),
+    queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateCertificate(certificate.id, data),
+    mutationFn: (data: Record<string, unknown>) => api.updateCertificate(certificate.id, data as Parameters<typeof api.updateCertificate>[1]),
     onSuccess: () => {
       toast.success('Certificate updated successfully')
       onSuccess()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Failed to update certificate')
     },
   })
@@ -458,7 +495,7 @@ function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
       defaultValue: String(certificate.organization_id),
       options: [
         { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: any) => ({ value: String(o.id), label: o.name })),
+        ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
       ],
     },
     {
@@ -525,18 +562,19 @@ function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
     },
   ], [orgs?.items, certificate])
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: Record<string, unknown>) => {
+    const orgId = data.organization_id
     updateMutation.mutate({
-      name: data.name,
-      organization_id: parseInt(data.organization_id),
-      creator: data.creator,
-      cert_type: data.cert_type,
-      common_name: data.common_name || undefined,
-      issue_date: data.issue_date,
-      expiration_date: data.expiration_date,
-      auto_renew: data.auto_renew || false,
-      certificate_pem: data.certificate_pem || undefined,
-      description: data.description || undefined,
+      name: String(data.name),
+      organization_id: typeof orgId === 'string' ? parseInt(orgId) : orgId,
+      creator: String(data.creator),
+      cert_type: String(data.cert_type),
+      common_name: data.common_name ? String(data.common_name) : undefined,
+      issue_date: String(data.issue_date),
+      expiration_date: String(data.expiration_date),
+      auto_renew: data.auto_renew === true,
+      certificate_pem: data.certificate_pem ? String(data.certificate_pem) : undefined,
+      description: data.description ? String(data.description) : undefined,
     })
   }
 
@@ -552,7 +590,12 @@ function EditCertificateModal({ certificate, onClose, onSuccess }: any) {
   )
 }
 
-function CertificateDetailsModal({ certificate, onClose }: any) {
+interface CertificateDetailsModalProps {
+  certificate: Certificate
+  onClose: () => void
+}
+
+function CertificateDetailsModal({ certificate, onClose }: CertificateDetailsModalProps) {
   const creatorLabel = CERT_CREATORS.find(c => c.value === certificate.creator)?.label || certificate.creator
   const typeLabel = CERT_TYPES.find(t => t.value === certificate.cert_type)?.label || certificate.cert_type
   const { badge, className } = getStatusBadge(certificate.status, certificate.expiration_date, certificate.renewal_days_before)

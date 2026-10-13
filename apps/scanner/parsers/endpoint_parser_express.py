@@ -4,7 +4,6 @@ Express.js endpoint parser for detecting routes in JavaScript/TypeScript source 
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Dict, List, Optional
 
@@ -23,10 +22,11 @@ class ExpressEndpointParser:
         # Pattern for app.use('/path', router)
         self.use_pattern = re.compile(r'(?:app|router)\.use\s*\(\s*[\'"]([^\'"]+)[\'"]')
 
-        # Pattern for app.route('/path').get().post()
+        # Pattern for app.route('/path').get().post() - supports multi-line with DOTALL
         self.route_chain_pattern = re.compile(
             r'(?:app|router)\.route\s*\(\s*[\'"]([^\'"]+)[\'"]\s*\)'
-            r"((?:\s*\.\s*(?:get|post|put|delete|patch|options|head)\s*\([^)]*\))+)"
+            r"((?:\s*\.\s*(?:get|post|put|delete|patch|options|head)\s*\([^)]*\))+)",
+            re.DOTALL,
         )
 
         # Pattern for chained methods
@@ -51,7 +51,7 @@ class ExpressEndpointParser:
         """
         return filename.endswith((".js", ".ts", ".mjs", ".tsx", ".jsx"))
 
-    def parse(self, content: str, filename: str) -> List[Dict]:
+    def parse(self, content: str, filename: str) -> list[dict]:
         """
         Parse Express.js routes from source code.
 
@@ -76,14 +76,14 @@ class ExpressEndpointParser:
             # Parse app.use() routes
             endpoints.extend(self._parse_use_routes(line, line_num, filename))
 
-            # Parse chained routes
-            endpoints.extend(self._parse_chained_routes(line, line_num, filename))
+        # Parse chained routes on full content to handle multi-line chains
+        endpoints.extend(self._parse_chained_routes(content, filename))
 
         return endpoints
 
     def _parse_method_routes(
         self, line: str, line_num: int, filename: str
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Parse method-specific routes like app.get('/path', handler)."""
         endpoints = []
 
@@ -113,7 +113,7 @@ class ExpressEndpointParser:
 
         return endpoints
 
-    def _parse_use_routes(self, line: str, line_num: int, filename: str) -> List[Dict]:
+    def _parse_use_routes(self, line: str, line_num: int, filename: str) -> list[dict]:
         """Parse app.use('/path', router) routes."""
         endpoints = []
 
@@ -135,13 +135,11 @@ class ExpressEndpointParser:
 
         return endpoints
 
-    def _parse_chained_routes(
-        self, line: str, line_num: int, filename: str
-    ) -> List[Dict]:
+    def _parse_chained_routes(self, content: str, filename: str) -> list[dict]:
         """Parse chained routes like app.route('/path').get().post()."""
         endpoints = []
 
-        for match in self.route_chain_pattern.finditer(line):
+        for match in self.route_chain_pattern.finditer(content):
             path = match.group(1)
             chain = match.group(2)
 
@@ -153,6 +151,9 @@ class ExpressEndpointParser:
                 methods.append(method_match.group(1).upper())
 
             if methods:
+                # Find line number from position in content
+                line_num = content[: match.start()].count("\n") + 1
+
                 endpoint = {
                     "path": path,
                     "methods": methods,
@@ -195,7 +196,7 @@ class ExpressEndpointParser:
         # Count commas (if > 1, there are middleware functions)
         return remainder.count(",") > 1
 
-    def _find_handler_name(self, line: str, start_pos: int) -> Optional[str]:
+    def _find_handler_name(self, line: str, start_pos: int) -> str | None:
         """
         Try to find the handler function name.
 
@@ -208,21 +209,78 @@ class ExpressEndpointParser:
         """
         remainder = line[start_pos:]
 
-        # Look for simple function references
-        simple_ref = re.search(r",\s*(\w+)\s*[,)]", remainder)
-        if simple_ref:
-            return simple_ref.group(1)
+        # Find the closing paren of the function call
+        # We're already inside the function call, so start paren_depth at 1
+        # Remainder starts after the path, e.g., ", handler);" or ", (req, res) => ...);"
+        paren_depth = 1
+        call_end = -1
 
-        # Look for inline function definitions
-        inline_func = re.search(
-            r"(?:function\s+(\w+)|async\s+(?:function\s+)?(\w+))", remainder
-        )
-        if inline_func:
-            return inline_func.group(1) or inline_func.group(2)
+        for i, char in enumerate(remainder):
+            if char == "(":
+                paren_depth += 1
+            elif char == ")":
+                paren_depth -= 1
+                if paren_depth == 0:
+                    call_end = i
+                    break
 
-        # Look for arrow functions with names
-        arrow_func = re.search(r"(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>", remainder)
-        if arrow_func:
-            return arrow_func.group(1)
+        if call_end == -1:
+            return None
+
+        args_str = remainder[:call_end].strip()
+
+        # Split by comma, but be careful about nested parens/brackets
+        args = []
+        current_arg = []
+        paren_depth = 0
+        bracket_depth = 0
+        for char in args_str:
+            if char == "(":
+                paren_depth += 1
+                current_arg.append(char)
+            elif char == ")":
+                paren_depth -= 1
+                current_arg.append(char)
+            elif char == "[":
+                bracket_depth += 1
+                current_arg.append(char)
+            elif char == "]":
+                bracket_depth -= 1
+                current_arg.append(char)
+            elif char == "," and paren_depth == 0 and bracket_depth == 0:
+                arg_text = "".join(current_arg).strip()
+                if arg_text:  # Skip empty args
+                    args.append(arg_text)
+                current_arg = []
+            else:
+                current_arg.append(char)
+
+        # Add last argument
+        arg_text = "".join(current_arg).strip()
+        if arg_text:
+            args.append(arg_text)
+
+        if not args:
+            return None
+
+        # Get the last argument (the handler)
+        last_arg = args[-1]
+
+        # Check if last arg is an anonymous arrow function: (req, res) => ...
+        if "=>" in last_arg:
+            return None
+
+        # Check if last arg is an anonymous function: function(...) or function(...){}
+        if last_arg.startswith("function"):
+            return None
+
+        # Check if last arg is an inline arrow function: (req, res) => or (something) =>
+        if last_arg.startswith("(") and "=>" in last_arg:
+            return None
+
+        # Check if last arg is a bare identifier (a handler name)
+        match = re.match(r"^(\w+)$", last_arg)
+        if match:
+            return match.group(1)
 
         return None

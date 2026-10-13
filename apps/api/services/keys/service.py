@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apps.api.services.keys.aws_client import AWSKMSClient
@@ -63,7 +62,7 @@ class KeysService:
 
     # Provider Management
 
-    def list_providers(self, enabled_only: bool = False) -> List[Dict[str, Any]]:
+    def list_providers(self, enabled_only: bool = False) -> list[dict[str, Any]]:
         """
         List all key providers.
 
@@ -82,7 +81,7 @@ class KeysService:
 
         return [self._sanitize_provider(p.as_dict()) for p in providers]
 
-    def get_provider(self, provider_id: int) -> Dict[str, Any]:
+    def get_provider(self, provider_id: int) -> dict[str, Any]:
         """
         Get provider details.
 
@@ -106,9 +105,9 @@ class KeysService:
         self,
         name: str,
         provider_type: str,
-        config: Dict[str, Any],
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        config: dict[str, Any],
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new key provider.
 
@@ -129,7 +128,7 @@ class KeysService:
             )
 
         # Create provider
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         provider_id = self.db.key_providers.insert(
             name=name,
             provider_type=provider_type.lower(),
@@ -147,11 +146,11 @@ class KeysService:
     def update_provider(
         self,
         provider_id: int,
-        name: Optional[str] = None,
-        config: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        config: dict[str, Any] | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """
         Update provider configuration.
 
@@ -186,7 +185,7 @@ class KeysService:
 
         return self.get_provider(provider_id)
 
-    def delete_provider(self, provider_id: int) -> Dict[str, Any]:
+    def delete_provider(self, provider_id: int) -> dict[str, Any]:
         """
         Delete a key provider.
 
@@ -215,7 +214,7 @@ class KeysService:
 
         return {"message": "Provider deleted successfully"}
 
-    def test_provider(self, provider_id: int) -> Dict[str, Any]:
+    def test_provider(self, provider_id: int) -> dict[str, Any]:
         """
         Test provider connectivity.
 
@@ -232,7 +231,7 @@ class KeysService:
             return {
                 "provider_id": provider_id,
                 "success": success,
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as e:
@@ -240,7 +239,7 @@ class KeysService:
                 "provider_id": provider_id,
                 "success": False,
                 "error": str(e),
-                "tested_at": datetime.now(timezone.utc).isoformat(),
+                "tested_at": datetime.now(UTC).isoformat(),
             }
 
     # Key Management
@@ -250,10 +249,10 @@ class KeysService:
         provider_id: int,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new encryption key.
 
@@ -274,7 +273,7 @@ class KeysService:
         key_data = client.create_key(key_name, key_type, key_spec, description, tags)
 
         # Register key in database
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         key_id = self.db.crypto_keys.insert(
             key_provider_id=provider_id,
             provider_key_id=key_data["key_id"],
@@ -296,7 +295,7 @@ class KeysService:
 
         return self.get_key(key_id)
 
-    def get_key(self, key_id: int) -> Dict[str, Any]:
+    def get_key(self, key_id: int) -> dict[str, Any]:
         """
         Get key details.
 
@@ -322,10 +321,10 @@ class KeysService:
 
     def list_keys(
         self,
-        provider_id: Optional[int] = None,
-        key_type: Optional[str] = None,
+        provider_id: int | None = None,
+        key_type: str | None = None,
         enabled_only: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List all registered keys.
 
@@ -363,7 +362,7 @@ class KeysService:
 
         return result
 
-    def enable_key(self, key_id: int) -> Dict[str, Any]:
+    def enable_key(self, key_id: int) -> dict[str, Any]:
         """Enable a disabled key."""
         key = self.db.crypto_keys[key_id]
 
@@ -381,7 +380,7 @@ class KeysService:
 
         return self.get_key(key_id)
 
-    def disable_key(self, key_id: int) -> Dict[str, Any]:
+    def disable_key(self, key_id: int) -> dict[str, Any]:
         """Disable a key."""
         key = self.db.crypto_keys[key_id]
 
@@ -399,7 +398,7 @@ class KeysService:
 
         return self.get_key(key_id)
 
-    def delete_key(self, key_id: int, pending_days: int = 30) -> Dict[str, Any]:
+    def delete_key(self, key_id: int, pending_days: int = 30) -> dict[str, Any]:
         """Schedule key deletion."""
         key = self.db.crypto_keys[key_id]
 
@@ -423,8 +422,8 @@ class KeysService:
     # Cryptographic Operations
 
     def encrypt(
-        self, key_id: int, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: int, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """Encrypt data using a key."""
         key = self.db.crypto_keys[key_id]
 
@@ -443,8 +442,8 @@ class KeysService:
         return result
 
     def decrypt(
-        self, key_id: int, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: int, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """Decrypt data using a key."""
         key = self.db.crypto_keys[key_id]
 
@@ -466,8 +465,8 @@ class KeysService:
         self,
         key_id: int,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """Generate a data encryption key."""
         key = self.db.crypto_keys[key_id]
 
@@ -487,7 +486,7 @@ class KeysService:
 
     def sign(
         self, key_id: int, message: str, signing_algorithm: str = "RSASSA_PSS_SHA_256"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sign a message using an asymmetric key."""
         key = self.db.crypto_keys[key_id]
 
@@ -512,7 +511,7 @@ class KeysService:
 
     def verify(
         self, key_id: int, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Verify a message signature."""
         key = self.db.crypto_keys[key_id]
 
@@ -534,7 +533,7 @@ class KeysService:
 
         return result
 
-    def rotate_key(self, key_id: int) -> Dict[str, Any]:
+    def rotate_key(self, key_id: int) -> dict[str, Any]:
         """Rotate a key."""
         key = self.db.crypto_keys[key_id]
 
@@ -553,7 +552,7 @@ class KeysService:
 
     def _log_access(self, key_id: int, operation: str, **kwargs):
         """Log key access for audit trail."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         self.db.key_access_log.insert(
             key_id=key_id,
             operation=operation,
@@ -566,7 +565,7 @@ class KeysService:
 
     def get_access_log(
         self, key_id: int, limit: int = 100, offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get access log for a key.
 
@@ -587,7 +586,7 @@ class KeysService:
 
     # Utility Methods
 
-    def _sanitize_provider(self, provider: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
         """Remove sensitive fields from provider data."""
         # Create a copy
         sanitized = dict(provider)

@@ -25,13 +25,15 @@ jobs:
         run: |
           if [ ! -f .version ]; then
             echo "0.0.0" > .version
-            echo "version=0.0.0" >> $GITHUB_OUTPUT
-            echo "full_version=0.0.0" >> $GITHUB_OUTPUT
-            echo "epoch64=" >> $GITHUB_OUTPUT
-            echo "should_release=false" >> $GITHUB_OUTPUT
+            {
+              echo "version=0.0.0"
+              echo "full_version=0.0.0"
+              echo "epoch64="
+              echo "should_release=false"
+            } >> "$GITHUB_OUTPUT"
           else
             # Read .version file and remove whitespace
-            VERSION=$(cat .version | tr -d '[:space:]')
+            VERSION=$(tr -d '[:space:]' < .version)
 
             # Validate format: vMajor.Minor.Patch.epoch64
             # Example: 3.0.0.1764083000
@@ -50,16 +52,18 @@ jobs:
               EPOCH64=$(date +%s)
             fi
 
-            echo "version=$SEMVER" >> $GITHUB_OUTPUT
-            echo "full_version=$VERSION" >> $GITHUB_OUTPUT
-            echo "epoch64=$EPOCH64" >> $GITHUB_OUTPUT
+            {
+              echo "version=$SEMVER"
+              echo "full_version=$VERSION"
+              echo "epoch64=$EPOCH64"
+            } >> "$GITHUB_OUTPUT"
 
             # Check if version is default (0.0.0)
             if [ "$SEMVER" = "0.0.0" ]; then
-              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
               echo "Version is default (0.0.0), skipping release"
             else
-              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
               echo "Version is $SEMVER with epoch64=$EPOCH64, proceeding with release"
             fi
           fi
@@ -72,10 +76,10 @@ jobs:
         run: |
           VERSION="${{ steps.check_version.outputs.version }}"
           if gh release view "v$VERSION" > /dev/null 2>&1; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release v$VERSION already exists"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "Release v$VERSION does not exist, will create"
           fi
 
@@ -106,16 +110,16 @@ jobs:
             ' "$RELEASE_NOTES_FILE")
 
             if [ -n "$NOTES" ]; then
-              echo "found_notes=true" >> $GITHUB_OUTPUT
+              echo "found_notes=true" >> "$GITHUB_OUTPUT"
               # Save notes to a file for later use (handles multi-line)
               echo "$NOTES" > extracted_notes.md
               echo "Extracted release notes for v$VERSION"
             else
-              echo "found_notes=false" >> $GITHUB_OUTPUT
+              echo "found_notes=false" >> "$GITHUB_OUTPUT"
               echo "No release notes found for v$VERSION in $RELEASE_NOTES_FILE"
             fi
           else
-            echo "found_notes=false" >> $GITHUB_OUTPUT
+            echo "found_notes=false" >> "$GITHUB_OUTPUT"
             echo "$RELEASE_NOTES_FILE not found"
           fi
 
@@ -145,11 +149,13 @@ jobs:
 
           # Add extracted notes from RELEASE_NOTES.md if found
           if [ "${{ steps.extract_notes.outputs.found_notes }}" = "true" ] && [ -f extracted_notes.md ]; then
-            echo "" >> release_notes.md
-            cat extracted_notes.md >> release_notes.md
-            echo "" >> release_notes.md
-            echo "---" >> release_notes.md
-            echo "" >> release_notes.md
+            {
+              echo ""
+              cat extracted_notes.md
+              echo ""
+              echo "---"
+              echo ""
+            } >> release_notes.md
           fi
 
           # Add version metadata

@@ -5,13 +5,13 @@ Revises: 003
 Create Date: 2025-10-25
 """
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = '004'
-down_revision = '003'
+revision = "004"
+down_revision = "003"
 branch_labels = None
 depends_on = None
 
@@ -41,11 +41,11 @@ def upgrade():
     """)
 
     # Create index on issue_type
-    op.create_index('ix_issues_issue_type', 'issues', ['issue_type'])
+    op.create_index("ix_issues_issue_type", "issues", ["issue_type"])
 
 
 def downgrade():
     """Remove issue_type column and enum type."""
-    op.drop_index('ix_issues_issue_type', table_name='issues')
-    op.drop_column('issues', 'issue_type')
+    op.drop_index("ix_issues_issue_type", table_name="issues")
+    op.drop_column("issues", "issue_type")
     op.execute("DROP TYPE issuetype")

@@ -14,7 +14,6 @@ The primary strategy is Last-Modified-Wins as specified in the v1.1.0 requiremen
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -59,10 +58,10 @@ class ConflictResolver:
 
     def detect_conflict(
         self,
-        elder_data: Dict[str, Any],
-        external_data: Dict[str, Any],
-        mapping: Optional[SyncMapping] = None,
-    ) -> Optional[ConflictResolution]:
+        elder_data: dict[str, Any],
+        external_data: dict[str, Any],
+        mapping: SyncMapping | None = None,
+    ) -> ConflictResolution | None:
         """Detect if a conflict exists between Elder and external data.
 
         Args:
@@ -127,7 +126,7 @@ class ConflictResolver:
     def resolve_conflict(
         self,
         conflict: ConflictResolution,
-        strategy: Optional[ResolutionStrategy] = None,
+        strategy: ResolutionStrategy | None = None,
     ) -> ConflictResolution:
         """Resolve a conflict using specified or default strategy.
 
@@ -173,7 +172,7 @@ class ConflictResolver:
     def _resolve_last_modified_wins(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Resolve conflict using last-modified-wins strategy.
 
         Args:
@@ -208,7 +207,7 @@ class ConflictResolver:
     def _resolve_field_merge(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Resolve conflict by merging fields intelligently.
 
         For each field:
@@ -273,9 +272,9 @@ class ConflictResolver:
 
     def _find_field_mismatches(
         self,
-        elder_data: Dict[str, Any],
-        external_data: Dict[str, Any],
-    ) -> List[str]:
+        elder_data: dict[str, Any],
+        external_data: dict[str, Any],
+    ) -> list[str]:
         """Find fields that have mismatched values.
 
         Args:
@@ -300,7 +299,7 @@ class ConflictResolver:
 
         return mismatches
 
-    def _parse_datetime(self, dt: Any) -> Optional[datetime]:
+    def _parse_datetime(self, dt: Any) -> datetime | None:
         """Parse datetime from various formats.
 
         Args:
@@ -334,7 +333,7 @@ class ConflictResolver:
     def get_conflict_summary(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a human-readable summary of a conflict.
 
         Args:

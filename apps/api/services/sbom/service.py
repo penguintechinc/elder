@@ -7,7 +7,6 @@ multiple package managers and dependency formats.
 
 # flake8: noqa: E501
 
-
 import os
 from typing import Any, Dict, List, Optional
 
@@ -26,7 +25,7 @@ class SBOMService:
         db: Database connection/session reference for storing parsed components.
     """
 
-    def __init__(self, db: Optional[Any] = None) -> None:
+    def __init__(self, db: Any | None = None) -> None:
         """Initialize SBOM service.
 
         Args:
@@ -35,7 +34,7 @@ class SBOMService:
                 is performed without persistence.
         """
         self.db = db
-        self._parsers: List[BaseDependencyParser] = []
+        self._parsers: list[BaseDependencyParser] = []
 
     def register_parser(self, parser: BaseDependencyParser) -> None:
         """Register a dependency parser with the service.
@@ -50,7 +49,7 @@ class SBOMService:
             raise ValueError("Parser must be an instance of BaseDependencyParser")
         self._parsers.append(parser)
 
-    def get_parser_for_file(self, filename: str) -> Optional[BaseDependencyParser]:
+    def get_parser_for_file(self, filename: str) -> BaseDependencyParser | None:
         """Find appropriate parser for the given dependency file.
 
         Iterates through registered parsers and returns the first one
@@ -69,7 +68,7 @@ class SBOMService:
 
     def parse_dependency_file(
         self, filename: str, content: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Parse a single dependency file and extract components.
 
         Finds an appropriate parser for the file and uses it to extract
@@ -92,7 +91,7 @@ class SBOMService:
 
         return parser.parse(content, filename)
 
-    def scan_repository(self, repo_path: str) -> Dict[str, Any]:
+    def scan_repository(self, repo_path: str) -> dict[str, Any]:
         """Scan entire repository for dependency files.
 
         Recursively scans a repository directory for known dependency files
@@ -121,7 +120,7 @@ class SBOMService:
         if not os.path.isdir(repo_path):
             raise ValueError(f"Invalid repository path: {repo_path}")
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "status": "success",
             "path": repo_path,
             "files_scanned": 0,

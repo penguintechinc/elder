@@ -876,11 +876,11 @@ For example let me link any security risks to any Identity, VPC, network, comput
 ### Models
 - Network IPAM section with collapsible tree CIDR superset views
 - Full IPAM features (inspired by NIPAP https://spritelink.github.io/NIPAP/)
-#### Software 
+#### Software
 - add a software page / model under the tracking category
 - have it track things like Purchasing POC (who bought it), License or Contract Link, version , business purpose, type, seats, and notes fields
 - make the Purchasing POC field a search field for identities within Elder, auto link the two once set
-- Make the default url for License link to the GNU AGPL3 url but let the user with write permissions be able to change it 
+- Make the default url for License link to the GNU AGPL3 url but let the user with write permissions be able to change it
 - Make the type a drop down of: SaaS, PaaS, IaaS, Productivity, Software, Administrative, and other types you would commonly expect here (opening this up for your awarenes to add more here Claude)
 - Put validation to ensure seats is an integer
 

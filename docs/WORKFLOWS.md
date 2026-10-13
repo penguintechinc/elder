@@ -136,7 +136,7 @@ Elder includes the following services with independent deployment:
 ### APIs
 - REST endpoints
 - gRPC services (enterprise)
-- Flask framework
+- Quart framework (async Flask superset)
 - JWT authentication
 
 ## Path-Based Filtering

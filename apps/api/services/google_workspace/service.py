@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from google.oauth2 import service_account
@@ -30,8 +29,8 @@ class GoogleWorkspaceService:
     # ===========================
 
     def list_providers(
-        self, organization_id: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+        self, organization_id: int | None = None
+    ) -> list[dict[str, Any]]:
         """
         List Google Workspace providers.
 
@@ -54,7 +53,7 @@ class GoogleWorkspaceService:
 
         return [self._sanitize_provider(p.as_dict()) for p in providers]
 
-    def get_provider(self, provider_id: int) -> Dict[str, Any]:
+    def get_provider(self, provider_id: int) -> dict[str, Any]:
         """
         Get provider details.
 
@@ -80,9 +79,9 @@ class GoogleWorkspaceService:
         organization_id: int,
         customer_id: str,
         admin_email: str,
-        service_account_json: Dict[str, Any],
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        service_account_json: dict[str, Any],
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Create Google Workspace provider.
 
@@ -105,7 +104,7 @@ class GoogleWorkspaceService:
                 f"Invalid service account JSON. Missing keys: {', '.join(missing)}"
             )
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         provider_id = self.db.google_workspace_providers.insert(
             name=name,
             organization_id=organization_id,
@@ -126,13 +125,13 @@ class GoogleWorkspaceService:
     def update_provider(
         self,
         provider_id: int,
-        name: Optional[str] = None,
-        customer_id: Optional[str] = None,
-        admin_email: Optional[str] = None,
-        service_account_json: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        customer_id: str | None = None,
+        admin_email: str | None = None,
+        service_account_json: dict[str, Any] | None = None,
+        description: str | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """
         Update provider configuration.
 
@@ -156,7 +155,7 @@ class GoogleWorkspaceService:
         if not provider:
             raise Exception(f"Google Workspace provider {provider_id} not found")
 
-        update_data = {"updated_at": datetime.now(timezone.utc)}
+        update_data = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
             update_data["name"] = name
@@ -184,7 +183,7 @@ class GoogleWorkspaceService:
         provider = self.db.google_workspace_providers[provider_id]
         return self._sanitize_provider(provider.as_dict())
 
-    def delete_provider(self, provider_id: int) -> Dict[str, str]:
+    def delete_provider(self, provider_id: int) -> dict[str, str]:
         """
         Delete provider.
 
@@ -207,7 +206,7 @@ class GoogleWorkspaceService:
 
         return {"message": "Google Workspace provider deleted successfully"}
 
-    def test_provider(self, provider_id: int) -> Dict[str, Any]:
+    def test_provider(self, provider_id: int) -> dict[str, Any]:
         """
         Test provider connectivity.
 
@@ -250,8 +249,8 @@ class GoogleWorkspaceService:
     # ===========================
 
     def list_users(
-        self, provider_id: int, domain: Optional[str] = None, limit: int = 100
-    ) -> Dict[str, Any]:
+        self, provider_id: int, domain: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
         """
         List Google Workspace users.
 
@@ -289,7 +288,7 @@ class GoogleWorkspaceService:
         except HttpError as e:
             raise Exception(f"Failed to list users: {str(e)}")
 
-    def get_user(self, provider_id: int, user_key: str) -> Dict[str, Any]:
+    def get_user(self, provider_id: int, user_key: str) -> dict[str, Any]:
         """
         Get user details.
 
@@ -327,7 +326,7 @@ class GoogleWorkspaceService:
         family_name: str,
         password: str,
         org_unit_path: str = "/",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create Google Workspace user.
 
@@ -368,11 +367,11 @@ class GoogleWorkspaceService:
         self,
         provider_id: int,
         user_key: str,
-        given_name: Optional[str] = None,
-        family_name: Optional[str] = None,
-        suspended: Optional[bool] = None,
-        org_unit_path: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        given_name: str | None = None,
+        family_name: str | None = None,
+        suspended: bool | None = None,
+        org_unit_path: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update user details.
 
@@ -417,7 +416,7 @@ class GoogleWorkspaceService:
         except HttpError as e:
             raise Exception(f"Failed to update user: {str(e)}")
 
-    def delete_user(self, provider_id: int, user_key: str) -> Dict[str, str]:
+    def delete_user(self, provider_id: int, user_key: str) -> dict[str, str]:
         """
         Delete Google Workspace user.
 
@@ -447,8 +446,8 @@ class GoogleWorkspaceService:
     # ===========================
 
     def list_groups(
-        self, provider_id: int, domain: Optional[str] = None, limit: int = 100
-    ) -> Dict[str, Any]:
+        self, provider_id: int, domain: str | None = None, limit: int = 100
+    ) -> dict[str, Any]:
         """
         List Google Workspace groups.
 
@@ -486,7 +485,7 @@ class GoogleWorkspaceService:
         except HttpError as e:
             raise Exception(f"Failed to list groups: {str(e)}")
 
-    def get_group(self, provider_id: int, group_key: str) -> Dict[str, Any]:
+    def get_group(self, provider_id: int, group_key: str) -> dict[str, Any]:
         """
         Get group details.
 
@@ -514,8 +513,8 @@ class GoogleWorkspaceService:
             raise Exception(f"Failed to get group: {str(e)}")
 
     def create_group(
-        self, provider_id: int, email: str, name: str, description: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, provider_id: int, email: str, name: str, description: str | None = None
+    ) -> dict[str, Any]:
         """
         Create Google Workspace group.
 
@@ -548,7 +547,7 @@ class GoogleWorkspaceService:
         except HttpError as e:
             raise Exception(f"Failed to create group: {str(e)}")
 
-    def delete_group(self, provider_id: int, group_key: str) -> Dict[str, str]:
+    def delete_group(self, provider_id: int, group_key: str) -> dict[str, str]:
         """
         Delete Google Workspace group.
 
@@ -575,7 +574,7 @@ class GoogleWorkspaceService:
 
     def list_group_members(
         self, provider_id: int, group_key: str, limit: int = 100
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         List group members.
 
@@ -610,7 +609,7 @@ class GoogleWorkspaceService:
 
     def add_group_member(
         self, provider_id: int, group_key: str, member_email: str, role: str = "MEMBER"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Add member to group.
 
@@ -644,7 +643,7 @@ class GoogleWorkspaceService:
 
     def remove_group_member(
         self, provider_id: int, group_key: str, member_email: str
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Remove member from group.
 
@@ -701,7 +700,7 @@ class GoogleWorkspaceService:
 
         return build("admin", "directory_v1", credentials=delegated_credentials)
 
-    def _sanitize_provider(self, provider_dict: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_provider(self, provider_dict: dict[str, Any]) -> dict[str, Any]:
         """
         Sanitize provider dictionary (mask credentials).
 
@@ -716,7 +715,7 @@ class GoogleWorkspaceService:
 
         return provider_dict
 
-    def _format_user(self, user: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_user(self, user: dict[str, Any]) -> dict[str, Any]:
         """Format user data for API response."""
         return {
             "id": user.get("id"),
@@ -729,7 +728,7 @@ class GoogleWorkspaceService:
             "last_login_time": user.get("lastLoginTime"),
         }
 
-    def _format_group(self, group: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_group(self, group: dict[str, Any]) -> dict[str, Any]:
         """Format group data for API response."""
         return {
             "id": group.get("id"),

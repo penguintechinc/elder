@@ -4,18 +4,15 @@
 # source: auth.proto
 # Protobuf Python Version: 5.29.0
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    29,
-    0,
-    '',
-    'auth.proto'
+    _runtime_version.Domain.PUBLIC, 5, 29, 0, "", "auth.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -24,63 +21,68 @@ _sym_db = _symbol_database.Default()
 
 from . import common_pb2 as common__pb2
 
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\nauth.proto\x12\nelder.auth\x1a\x0c\x63ommon.proto\"\xf9\x02\n\x08Identity\x12\n\n\x02id\x18\x01 \x01(\x05\x12/\n\ridentity_type\x18\x02 \x01(\x0e\x32\x18.elder.auth.IdentityType\x12\x10\n\x08username\x18\x03 \x01(\t\x12\r\n\x05\x65mail\x18\x04 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x05 \x01(\t\x12/\n\rauth_provider\x18\x06 \x01(\x0e\x32\x18.elder.auth.AuthProvider\x12\x18\n\x10\x61uth_provider_id\x18\x07 \x01(\t\x12\x11\n\tis_active\x18\x08 \x01(\x08\x12\x14\n\x0cis_superuser\x18\t \x01(\x08\x12+\n\nlast_login\x18\n \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\ncreated_at\x18\x0b \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\nupdated_at\x18\x0c \x01(\x0b\x32\x17.elder.common.Timestamp\"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t\"\x8c\x01\n\rLoginResponse\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\x12\x15\n\rrefresh_token\x18\x02 \x01(\t\x12\x12\n\ntoken_type\x18\x03 \x01(\t\x12\x12\n\nexpires_in\x18\x04 \x01(\x05\x12&\n\x08identity\x18\x05 \x01(\x0b\x32\x14.elder.auth.Identity\",\n\x13RefreshTokenRequest\x12\x15\n\rrefresh_token\x18\x01 \x01(\t\"T\n\x14RefreshTokenResponse\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\x12\x12\n\ntoken_type\x18\x02 \x01(\t\x12\x12\n\nexpires_in\x18\x03 \x01(\x05\"%\n\rLogoutRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\">\n\x0eLogoutResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"1\n\x19GetCurrentIdentityRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\"D\n\x1aGetCurrentIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity\"G\n\x15\x43hangePasswordRequest\x12\x18\n\x10\x63urrent_password\x18\x01 \x01(\t\x12\x14\n\x0cnew_password\x18\x02 \x01(\t\"F\n\x16\x43hangePasswordResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"\x93\x01\n\x17RegisterIdentityRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\r\n\x05\x65mail\x18\x02 \x01(\t\x12\x10\n\x08password\x18\x03 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x04 \x01(\t\x12/\n\ridentity_type\x18\x05 \x01(\x0e\x32\x18.elder.auth.IdentityType\"o\n\x18RegisterIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x02 \x01(\t\x12\x15\n\rrefresh_token\x18\x03 \x01(\t\",\n\x14ValidateTokenRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\"{\n\x15ValidateTokenResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12&\n\x08identity\x18\x02 \x01(\x0b\x32\x14.elder.auth.Identity\x12+\n\nexpires_at\x18\x03 \x01(\x0b\x32\x17.elder.common.Timestamp\"\xf1\x01\n\x15ListIdentitiesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12/\n\ridentity_type\x18\x03 \x01(\x0e\x32\x18.elder.auth.IdentityType\x12/\n\rauth_provider\x18\x04 \x01(\x0e\x32\x18.elder.auth.AuthProvider\x12\x13\n\x0b\x61\x63tive_only\x18\x05 \x01(\x08\"x\n\x16ListIdentitiesResponse\x12(\n\nidentities\x18\x01 \x03(\x0b\x32\x14.elder.auth.Identity\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse\" \n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\"=\n\x13GetIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity\"\xbf\x01\n\x15UpdateIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x12\n\x05\x65mail\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x19\n\x0c\x64isplay_name\x18\x03 \x01(\tH\x01\x88\x01\x01\x12\x16\n\tis_active\x18\x04 \x01(\x08H\x02\x88\x01\x01\x12\x19\n\x0cis_superuser\x18\x05 \x01(\x08H\x03\x88\x01\x01\x42\x08\n\x06_emailB\x0f\n\r_display_nameB\x0c\n\n_is_activeB\x0f\n\r_is_superuser\"@\n\x16UpdateIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity\"#\n\x15\x44\x65leteIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\"F\n\x16\x44\x65leteIdentityResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse*M\n\x0cIdentityType\x12\x1d\n\x19IDENTITY_TYPE_UNSPECIFIED\x10\x00\x12\t\n\x05HUMAN\x10\x01\x12\x13\n\x0fSERVICE_ACCOUNT\x10\x02*X\n\x0c\x41uthProvider\x12\x1d\n\x19\x41UTH_PROVIDER_UNSPECIFIED\x10\x00\x12\t\n\x05LOCAL\x10\x01\x12\x08\n\x04SAML\x10\x02\x12\n\n\x06OAUTH2\x10\x03\x12\x08\n\x04LDAP\x10\x04\x42G\n\x19io.penguintech.elder.authZ*github.com/penguintechinc/elder/proto/authb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\nauth.proto\x12\nelder.auth\x1a\x0c\x63ommon.proto"\xf9\x02\n\x08Identity\x12\n\n\x02id\x18\x01 \x01(\x05\x12/\n\ridentity_type\x18\x02 \x01(\x0e\x32\x18.elder.auth.IdentityType\x12\x10\n\x08username\x18\x03 \x01(\t\x12\r\n\x05\x65mail\x18\x04 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x05 \x01(\t\x12/\n\rauth_provider\x18\x06 \x01(\x0e\x32\x18.elder.auth.AuthProvider\x12\x18\n\x10\x61uth_provider_id\x18\x07 \x01(\t\x12\x11\n\tis_active\x18\x08 \x01(\x08\x12\x14\n\x0cis_superuser\x18\t \x01(\x08\x12+\n\nlast_login\x18\n \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\ncreated_at\x18\x0b \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\nupdated_at\x18\x0c \x01(\x0b\x32\x17.elder.common.Timestamp"2\n\x0cLoginRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\x10\n\x08password\x18\x02 \x01(\t"\x8c\x01\n\rLoginResponse\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\x12\x15\n\rrefresh_token\x18\x02 \x01(\t\x12\x12\n\ntoken_type\x18\x03 \x01(\t\x12\x12\n\nexpires_in\x18\x04 \x01(\x05\x12&\n\x08identity\x18\x05 \x01(\x0b\x32\x14.elder.auth.Identity",\n\x13RefreshTokenRequest\x12\x15\n\rrefresh_token\x18\x01 \x01(\t"T\n\x14RefreshTokenResponse\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t\x12\x12\n\ntoken_type\x18\x02 \x01(\t\x12\x12\n\nexpires_in\x18\x03 \x01(\x05"%\n\rLogoutRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t">\n\x0eLogoutResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse"1\n\x19GetCurrentIdentityRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t"D\n\x1aGetCurrentIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity"G\n\x15\x43hangePasswordRequest\x12\x18\n\x10\x63urrent_password\x18\x01 \x01(\t\x12\x14\n\x0cnew_password\x18\x02 \x01(\t"F\n\x16\x43hangePasswordResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse"\x93\x01\n\x17RegisterIdentityRequest\x12\x10\n\x08username\x18\x01 \x01(\t\x12\r\n\x05\x65mail\x18\x02 \x01(\t\x12\x10\n\x08password\x18\x03 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x04 \x01(\t\x12/\n\ridentity_type\x18\x05 \x01(\x0e\x32\x18.elder.auth.IdentityType"o\n\x18RegisterIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x02 \x01(\t\x12\x15\n\rrefresh_token\x18\x03 \x01(\t",\n\x14ValidateTokenRequest\x12\x14\n\x0c\x61\x63\x63\x65ss_token\x18\x01 \x01(\t"{\n\x15ValidateTokenResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12&\n\x08identity\x18\x02 \x01(\x0b\x32\x14.elder.auth.Identity\x12+\n\nexpires_at\x18\x03 \x01(\x0b\x32\x17.elder.common.Timestamp"\xf1\x01\n\x15ListIdentitiesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12/\n\ridentity_type\x18\x03 \x01(\x0e\x32\x18.elder.auth.IdentityType\x12/\n\rauth_provider\x18\x04 \x01(\x0e\x32\x18.elder.auth.AuthProvider\x12\x13\n\x0b\x61\x63tive_only\x18\x05 \x01(\x08"x\n\x16ListIdentitiesResponse\x12(\n\nidentities\x18\x01 \x03(\x0b\x32\x14.elder.auth.Identity\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse" \n\x12GetIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05"=\n\x13GetIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity"\xbf\x01\n\x15UpdateIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x12\n\x05\x65mail\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x19\n\x0c\x64isplay_name\x18\x03 \x01(\tH\x01\x88\x01\x01\x12\x16\n\tis_active\x18\x04 \x01(\x08H\x02\x88\x01\x01\x12\x19\n\x0cis_superuser\x18\x05 \x01(\x08H\x03\x88\x01\x01\x42\x08\n\x06_emailB\x0f\n\r_display_nameB\x0c\n\n_is_activeB\x0f\n\r_is_superuser"@\n\x16UpdateIdentityResponse\x12&\n\x08identity\x18\x01 \x01(\x0b\x32\x14.elder.auth.Identity"#\n\x15\x44\x65leteIdentityRequest\x12\n\n\x02id\x18\x01 \x01(\x05"F\n\x16\x44\x65leteIdentityResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse*M\n\x0cIdentityType\x12\x1d\n\x19IDENTITY_TYPE_UNSPECIFIED\x10\x00\x12\t\n\x05HUMAN\x10\x01\x12\x13\n\x0fSERVICE_ACCOUNT\x10\x02*X\n\x0c\x41uthProvider\x12\x1d\n\x19\x41UTH_PROVIDER_UNSPECIFIED\x10\x00\x12\t\n\x05LOCAL\x10\x01\x12\x08\n\x04SAML\x10\x02\x12\n\n\x06OAUTH2\x10\x03\x12\x08\n\x04LDAP\x10\x04\x42G\n\x19io.penguintech.elder.authZ*github.com/penguintechinc/elder/proto/authb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'auth_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "auth_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\031io.penguintech.elder.authZ*github.com/penguintechinc/elder/proto/auth'
-  _globals['_IDENTITYTYPE']._serialized_start=2382
-  _globals['_IDENTITYTYPE']._serialized_end=2459
-  _globals['_AUTHPROVIDER']._serialized_start=2461
-  _globals['_AUTHPROVIDER']._serialized_end=2549
-  _globals['_IDENTITY']._serialized_start=41
-  _globals['_IDENTITY']._serialized_end=418
-  _globals['_LOGINREQUEST']._serialized_start=420
-  _globals['_LOGINREQUEST']._serialized_end=470
-  _globals['_LOGINRESPONSE']._serialized_start=473
-  _globals['_LOGINRESPONSE']._serialized_end=613
-  _globals['_REFRESHTOKENREQUEST']._serialized_start=615
-  _globals['_REFRESHTOKENREQUEST']._serialized_end=659
-  _globals['_REFRESHTOKENRESPONSE']._serialized_start=661
-  _globals['_REFRESHTOKENRESPONSE']._serialized_end=745
-  _globals['_LOGOUTREQUEST']._serialized_start=747
-  _globals['_LOGOUTREQUEST']._serialized_end=784
-  _globals['_LOGOUTRESPONSE']._serialized_start=786
-  _globals['_LOGOUTRESPONSE']._serialized_end=848
-  _globals['_GETCURRENTIDENTITYREQUEST']._serialized_start=850
-  _globals['_GETCURRENTIDENTITYREQUEST']._serialized_end=899
-  _globals['_GETCURRENTIDENTITYRESPONSE']._serialized_start=901
-  _globals['_GETCURRENTIDENTITYRESPONSE']._serialized_end=969
-  _globals['_CHANGEPASSWORDREQUEST']._serialized_start=971
-  _globals['_CHANGEPASSWORDREQUEST']._serialized_end=1042
-  _globals['_CHANGEPASSWORDRESPONSE']._serialized_start=1044
-  _globals['_CHANGEPASSWORDRESPONSE']._serialized_end=1114
-  _globals['_REGISTERIDENTITYREQUEST']._serialized_start=1117
-  _globals['_REGISTERIDENTITYREQUEST']._serialized_end=1264
-  _globals['_REGISTERIDENTITYRESPONSE']._serialized_start=1266
-  _globals['_REGISTERIDENTITYRESPONSE']._serialized_end=1377
-  _globals['_VALIDATETOKENREQUEST']._serialized_start=1379
-  _globals['_VALIDATETOKENREQUEST']._serialized_end=1423
-  _globals['_VALIDATETOKENRESPONSE']._serialized_start=1425
-  _globals['_VALIDATETOKENRESPONSE']._serialized_end=1548
-  _globals['_LISTIDENTITIESREQUEST']._serialized_start=1551
-  _globals['_LISTIDENTITIESREQUEST']._serialized_end=1792
-  _globals['_LISTIDENTITIESRESPONSE']._serialized_start=1794
-  _globals['_LISTIDENTITIESRESPONSE']._serialized_end=1914
-  _globals['_GETIDENTITYREQUEST']._serialized_start=1916
-  _globals['_GETIDENTITYREQUEST']._serialized_end=1948
-  _globals['_GETIDENTITYRESPONSE']._serialized_start=1950
-  _globals['_GETIDENTITYRESPONSE']._serialized_end=2011
-  _globals['_UPDATEIDENTITYREQUEST']._serialized_start=2014
-  _globals['_UPDATEIDENTITYREQUEST']._serialized_end=2205
-  _globals['_UPDATEIDENTITYRESPONSE']._serialized_start=2207
-  _globals['_UPDATEIDENTITYRESPONSE']._serialized_end=2271
-  _globals['_DELETEIDENTITYREQUEST']._serialized_start=2273
-  _globals['_DELETEIDENTITYREQUEST']._serialized_end=2308
-  _globals['_DELETEIDENTITYRESPONSE']._serialized_start=2310
-  _globals['_DELETEIDENTITYRESPONSE']._serialized_end=2380
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = (
+        b"\n\031io.penguintech.elder.authZ*github.com/penguintechinc/elder/proto/auth"
+    )
+    _globals["_IDENTITYTYPE"]._serialized_start = 2382
+    _globals["_IDENTITYTYPE"]._serialized_end = 2459
+    _globals["_AUTHPROVIDER"]._serialized_start = 2461
+    _globals["_AUTHPROVIDER"]._serialized_end = 2549
+    _globals["_IDENTITY"]._serialized_start = 41
+    _globals["_IDENTITY"]._serialized_end = 418
+    _globals["_LOGINREQUEST"]._serialized_start = 420
+    _globals["_LOGINREQUEST"]._serialized_end = 470
+    _globals["_LOGINRESPONSE"]._serialized_start = 473
+    _globals["_LOGINRESPONSE"]._serialized_end = 613
+    _globals["_REFRESHTOKENREQUEST"]._serialized_start = 615
+    _globals["_REFRESHTOKENREQUEST"]._serialized_end = 659
+    _globals["_REFRESHTOKENRESPONSE"]._serialized_start = 661
+    _globals["_REFRESHTOKENRESPONSE"]._serialized_end = 745
+    _globals["_LOGOUTREQUEST"]._serialized_start = 747
+    _globals["_LOGOUTREQUEST"]._serialized_end = 784
+    _globals["_LOGOUTRESPONSE"]._serialized_start = 786
+    _globals["_LOGOUTRESPONSE"]._serialized_end = 848
+    _globals["_GETCURRENTIDENTITYREQUEST"]._serialized_start = 850
+    _globals["_GETCURRENTIDENTITYREQUEST"]._serialized_end = 899
+    _globals["_GETCURRENTIDENTITYRESPONSE"]._serialized_start = 901
+    _globals["_GETCURRENTIDENTITYRESPONSE"]._serialized_end = 969
+    _globals["_CHANGEPASSWORDREQUEST"]._serialized_start = 971
+    _globals["_CHANGEPASSWORDREQUEST"]._serialized_end = 1042
+    _globals["_CHANGEPASSWORDRESPONSE"]._serialized_start = 1044
+    _globals["_CHANGEPASSWORDRESPONSE"]._serialized_end = 1114
+    _globals["_REGISTERIDENTITYREQUEST"]._serialized_start = 1117
+    _globals["_REGISTERIDENTITYREQUEST"]._serialized_end = 1264
+    _globals["_REGISTERIDENTITYRESPONSE"]._serialized_start = 1266
+    _globals["_REGISTERIDENTITYRESPONSE"]._serialized_end = 1377
+    _globals["_VALIDATETOKENREQUEST"]._serialized_start = 1379
+    _globals["_VALIDATETOKENREQUEST"]._serialized_end = 1423
+    _globals["_VALIDATETOKENRESPONSE"]._serialized_start = 1425
+    _globals["_VALIDATETOKENRESPONSE"]._serialized_end = 1548
+    _globals["_LISTIDENTITIESREQUEST"]._serialized_start = 1551
+    _globals["_LISTIDENTITIESREQUEST"]._serialized_end = 1792
+    _globals["_LISTIDENTITIESRESPONSE"]._serialized_start = 1794
+    _globals["_LISTIDENTITIESRESPONSE"]._serialized_end = 1914
+    _globals["_GETIDENTITYREQUEST"]._serialized_start = 1916
+    _globals["_GETIDENTITYREQUEST"]._serialized_end = 1948
+    _globals["_GETIDENTITYRESPONSE"]._serialized_start = 1950
+    _globals["_GETIDENTITYRESPONSE"]._serialized_end = 2011
+    _globals["_UPDATEIDENTITYREQUEST"]._serialized_start = 2014
+    _globals["_UPDATEIDENTITYREQUEST"]._serialized_end = 2205
+    _globals["_UPDATEIDENTITYRESPONSE"]._serialized_start = 2207
+    _globals["_UPDATEIDENTITYRESPONSE"]._serialized_end = 2271
+    _globals["_DELETEIDENTITYREQUEST"]._serialized_start = 2273
+    _globals["_DELETEIDENTITYREQUEST"]._serialized_end = 2308
+    _globals["_DELETEIDENTITYRESPONSE"]._serialized_start = 2310
+    _globals["_DELETEIDENTITYRESPONSE"]._serialized_end = 2380
 # @@protoc_insertion_point(module_scope)

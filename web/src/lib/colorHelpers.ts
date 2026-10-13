@@ -7,10 +7,24 @@
 
 /**
  * Get Tailwind CSS classes for status badges
+ * Case-insensitive; supports both issue statuses (open, in_progress, closed, resolved)
+ * and generic status values (active, healthy, offline, etc.)
  */
 export const getStatusColor = (status: string): string => {
   const statusLower = status?.toLowerCase() || '';
 
+  // Issue statuses (from issues module)
+  switch (statusLower) {
+    case 'open':
+      return 'bg-green-500/20 text-green-400 border-green-500/30';
+    case 'in_progress':
+      return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    case 'resolved':
+    case 'closed':
+      return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+  }
+
+  // Generic/system statuses
   switch (statusLower) {
     case 'active':
     case 'running':

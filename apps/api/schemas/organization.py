@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from marshmallow import Schema, fields, validate
 
 
@@ -14,7 +13,14 @@ class OrganizationCreateSchema(Schema):
     organization_type = fields.String(
         load_default="organization",
         validate=validate.OneOf(
-            ["department", "organization", "team", "collection", "other"]
+            [
+                "department",
+                "organization",
+                "team",
+                "collection",
+                "other",
+                "customer_company",
+            ]
         ),
     )
     parent_id = fields.Integer(allow_none=True)
@@ -32,7 +38,14 @@ class OrganizationUpdateSchema(Schema):
     description = fields.String(allow_none=True)
     organization_type = fields.String(
         validate=validate.OneOf(
-            ["department", "organization", "team", "collection", "other"]
+            [
+                "department",
+                "organization",
+                "team",
+                "collection",
+                "other",
+                "customer_company",
+            ]
         )
     )
     parent_id = fields.Integer(allow_none=True)

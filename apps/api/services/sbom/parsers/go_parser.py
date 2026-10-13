@@ -10,7 +10,6 @@ Supports:
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List, Optional
 
@@ -76,7 +75,7 @@ class GoParser(BaseDependencyParser):
         """
         return filename.strip() in ("go.mod", "go.sum")
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported Go dependency files.
 
         Returns:
@@ -84,7 +83,7 @@ class GoParser(BaseDependencyParser):
         """
         return ["go.mod", "go.sum"]
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Go module files and extract dependency information.
 
         Args:
@@ -114,7 +113,7 @@ class GoParser(BaseDependencyParser):
         else:
             raise ValueError(f"Unsupported file: {filename}")
 
-    def _parse_go_mod(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_go_mod(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse go.mod file and extract dependencies.
 
         Handles both single-line and multi-line require/replace/exclude blocks.
@@ -127,7 +126,7 @@ class GoParser(BaseDependencyParser):
         Returns:
             List of parsed dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         # First, normalize the content to handle multi-line blocks
         normalized_content = self._normalize_go_mod_blocks(content)
@@ -162,7 +161,7 @@ class GoParser(BaseDependencyParser):
 
         return dependencies
 
-    def _parse_go_sum(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_go_sum(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse go.sum file for hash verification.
 
         Args:
@@ -172,7 +171,7 @@ class GoParser(BaseDependencyParser):
         Returns:
             List of parsed dependency dictionaries with hash information.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
         seen_modules: set = set()
 
         # Parse all go.sum entries
@@ -263,8 +262,8 @@ class GoParser(BaseDependencyParser):
         version: str,
         source_file: str,
         is_direct: bool,
-        hash_value: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        hash_value: str | None = None,
+    ) -> dict[str, Any]:
         """Build a standardized dependency dictionary.
 
         Args:
@@ -284,7 +283,7 @@ class GoParser(BaseDependencyParser):
         # Build Package URL (PURL)
         purl = f"pkg:golang/{name}@{version}"
 
-        dep_dict: Dict[str, Any] = {
+        dep_dict: dict[str, Any] = {
             "name": name,
             "version": version,
             "purl": purl,

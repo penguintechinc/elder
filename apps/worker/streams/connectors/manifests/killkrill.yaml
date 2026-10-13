@@ -1,0 +1,465 @@
+# KillKrill Service Connector Manifest
+# Security incident management and pager platform
+# Provides incident management, alerting, monitoring, and Prometheus integration
+
+connector:
+  id: killkrill
+  name: KillKrill
+  description: Security incident management and pager platform for monitoring, alerting, and incident response
+  icon: "killkrill-logo"
+  color: "#DC2626"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: KILLKRILL_API_KEY
+
+  connection:
+    base_url_env: KILLKRILL_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/health
+
+  triggers:
+    - id: incident_created
+      name: Incident Created
+      description: Triggered when a new incident is created in KillKrill
+      icon: "🚨"
+      webhook_path: /webhooks/killkrill/incident/created
+      outputs:
+        - name: incident
+          type: object
+          description: The created incident details including ID, severity, status, and metadata
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Filter by incident severity levels
+          options:
+            - critical
+            - high
+            - medium
+            - low
+          required: false
+        - field: categories
+          type: multiselect
+          label: Incident Categories
+          description: Filter by incident categories
+          options:
+            - security
+            - infrastructure
+            - application
+            - network
+            - data_breach
+          required: false
+
+    - id: alert_fired
+      name: Alert Fired
+      description: Triggered when a monitoring alert fires in KillKrill
+      icon: "⚠️"
+      webhook_path: /webhooks/killkrill/alert/fired
+      outputs:
+        - name: alert
+          type: object
+          description: Alert details including source, severity, labels, and annotations
+      config_schema:
+        - field: alert_sources
+          type: multiselect
+          label: Alert Sources
+          description: Filter by alert source systems
+          options:
+            - prometheus
+            - elasticsearch
+            - custom
+          required: false
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Filter by alert severity
+          options:
+            - critical
+            - warning
+            - info
+          required: false
+
+    - id: sensor_check_failed
+      name: Sensor Check Failed
+      description: Triggered when a sensor health check fails
+      icon: "🔴"
+      webhook_path: /webhooks/killkrill/sensor/failed
+      outputs:
+        - name: sensor
+          type: object
+          description: Sensor details including type, status, failure reason, and check history
+      config_schema:
+        - field: sensor_types
+          type: multiselect
+          label: Sensor Types
+          description: Filter by sensor type
+          options:
+            - uptime
+            - certificate
+            - dns
+            - port
+            - http
+          required: false
+        - field: consecutive_failures
+          type: number
+          label: Consecutive Failures Threshold
+          description: Trigger only after this many consecutive failures
+          default: 3
+          required: false
+
+    - id: elasticsearch_alert
+      name: Elasticsearch Alert
+      description: Triggered by Elasticsearch alert matching configured criteria
+      icon: "📊"
+      webhook_path: /webhooks/killkrill/elasticsearch/alert
+      outputs:
+        - name: alert
+          type: object
+          description: Elasticsearch alert with matched documents and query results
+      config_schema:
+        - field: index_pattern
+          type: string
+          label: Index Pattern
+          description: Elasticsearch index pattern to monitor
+          placeholder: "logs-*"
+          required: false
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Filter by alert severity
+          options:
+            - critical
+            - warning
+            - info
+          required: false
+
+  actions:
+    - id: acknowledge_incident
+      name: Acknowledge Incident
+      description: Acknowledge an incident to indicate response has begun
+      icon: "✅"
+      endpoint: /api/v1/incidents/{{incident_id}}/acknowledge
+      method: POST
+      inputs:
+        - name: incident
+          type: any
+          required: false
+          description: Incident data from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Updated incident details with acknowledgment information
+      config_schema:
+        - field: incident_id
+          type: string
+          label: Incident ID
+          description: The ID of the incident to acknowledge
+          supports_variables: true
+          required: true
+        - field: message
+          type: textarea
+          label: Acknowledgment Message
+          description: Optional message explaining the acknowledgment
+          supports_variables: true
+          required: false
+
+    - id: resolve_incident
+      name: Resolve Incident
+      description: Mark an incident as resolved with resolution details
+      icon: "✔️"
+      endpoint: /api/v1/incidents/{{incident_id}}/resolve
+      method: POST
+      inputs:
+        - name: incident
+          type: any
+          required: false
+          description: Incident data from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Resolved incident details with resolution information
+      config_schema:
+        - field: incident_id
+          type: string
+          label: Incident ID
+          description: The ID of the incident to resolve
+          supports_variables: true
+          required: true
+        - field: resolution
+          type: textarea
+          label: Resolution Details
+          description: Description of how the incident was resolved
+          supports_variables: true
+          required: true
+        - field: root_cause
+          type: textarea
+          label: Root Cause Analysis
+          description: Optional root cause analysis
+          supports_variables: true
+          required: false
+
+    - id: reassign_incident
+      name: Reassign Incident
+      description: Reassign an incident to another responder or team
+      icon: "👤"
+      endpoint: /api/v1/incidents/{{incident_id}}/reassign
+      method: POST
+      inputs:
+        - name: incident
+          type: any
+          required: false
+          description: Incident data from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Updated incident with new assignee information
+      config_schema:
+        - field: incident_id
+          type: string
+          label: Incident ID
+          description: The ID of the incident to reassign
+          supports_variables: true
+          required: true
+        - field: assignee_id
+          type: string
+          label: Assignee ID
+          description: User ID or team ID to assign the incident to
+          supports_variables: true
+          required: true
+        - field: reason
+          type: textarea
+          label: Reassignment Reason
+          description: Optional reason for reassignment
+          supports_variables: true
+          required: false
+
+    - id: create_silence
+      name: Create Alert Silence
+      description: Create an alert silence/mute to suppress notifications
+      icon: "🔇"
+      endpoint: /api/v1/silences
+      method: POST
+      inputs:
+        - name: alert
+          type: any
+          required: false
+          description: Alert data from previous step
+      outputs:
+        - name: silence
+          type: object
+          description: Created silence with ID, matchers, and expiration
+      config_schema:
+        - field: matchers
+          type: textarea
+          label: Label Matchers
+          description: JSON array of label matchers for the silence
+          required: true
+          placeholder: '[{"name":"alertname","value":"HighCPU","isRegex":false}]'
+        - field: duration
+          type: string
+          label: Duration
+          description: Duration for the silence (e.g., 1h, 30m, 2d)
+          default: "1h"
+          required: false
+        - field: comment
+          type: string
+          label: Comment
+          description: Reason for creating this silence
+          supports_variables: true
+          required: false
+
+    - id: prometheus_query
+      name: Execute Prometheus Query
+      description: Execute a PromQL query against Prometheus
+      icon: "🔍"
+      endpoint: /api/v1/prometheus/query
+      method: POST
+      inputs:
+        - name: query_params
+          type: any
+          required: false
+          description: Query parameters from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Query results with metrics data
+      config_schema:
+        - field: query
+          type: textarea
+          label: PromQL Query
+          description: Prometheus query to execute
+          supports_variables: true
+          required: true
+          placeholder: 'up{job="myservice"}'
+        - field: time_range
+          type: string
+          label: Time Range
+          description: Time range for the query (e.g., 5m, 1h)
+          default: "5m"
+          required: false
+
+  transforms:
+    - id: list_incidents
+      name: List Incidents
+      description: Retrieve a list of incidents with optional filtering
+      icon: "📋"
+      endpoint: /api/v1/incidents
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: incidents
+          type: object
+          description: Array of incidents matching the filter criteria
+      config_schema:
+        - field: status
+          type: select
+          label: Status Filter
+          description: Filter incidents by status
+          options:
+            - any
+            - open
+            - acknowledged
+            - resolved
+          default: any
+          required: false
+        - field: severity
+          type: select
+          label: Severity Filter
+          description: Filter incidents by severity
+          options:
+            - any
+            - critical
+            - high
+            - medium
+            - low
+          default: any
+          required: false
+        - field: limit
+          type: number
+          label: Result Limit
+          description: Maximum number of incidents to return
+          default: 50
+          required: false
+
+    - id: get_incident
+      name: Get Incident Details
+      description: Retrieve detailed information about a specific incident
+      icon: "🔎"
+      endpoint: /api/v1/incidents/{{incident_id}}
+      method: GET
+      inputs:
+        - name: incident_id
+          type: any
+          required: true
+          description: Incident ID from previous step
+      outputs:
+        - name: incident
+          type: object
+          description: Complete incident details including timeline and history
+      config_schema:
+        - field: incident_id
+          type: string
+          label: Incident ID
+          description: The ID of the incident to retrieve
+          supports_variables: true
+          required: true
+        - field: include_timeline
+          type: checkbox
+          label: Include Timeline
+          description: Include full incident timeline and event history
+          default: true
+          required: false
+
+    - id: get_dashboard_overview
+      name: Get Dashboard Overview
+      description: Retrieve dashboard overview with key metrics and statistics
+      icon: "📊"
+      endpoint: /api/v1/dashboard/overview
+      method: GET
+      inputs:
+        - name: params
+          type: any
+          required: false
+          description: Parameters from previous step
+      outputs:
+        - name: overview
+          type: object
+          description: Dashboard data with incident counts, trends, and system health
+      config_schema:
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for dashboard metrics
+          options:
+            - 1h
+            - 24h
+            - 7d
+            - 30d
+          default: 24h
+          required: false
+
+    - id: get_prometheus_targets
+      name: Get Prometheus Targets
+      description: Retrieve list of Prometheus scrape targets
+      icon: "🎯"
+      endpoint: /api/v1/prometheus/targets
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: targets
+          type: object
+          description: List of Prometheus targets with health status
+      config_schema:
+        - field: state
+          type: select
+          label: Target State
+          description: Filter targets by state
+          options:
+            - any
+            - active
+            - dropped
+          default: any
+          required: false
+
+    - id: get_sensor_status
+      name: Get Sensor Status
+      description: Retrieve health status of monitoring sensors
+      icon: "📡"
+      endpoint: /api/v1/sensors/status
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: sensors
+          type: object
+          description: Array of sensors with current health status
+      config_schema:
+        - field: sensor_type
+          type: select
+          label: Sensor Type
+          description: Filter by sensor type
+          options:
+            - any
+            - uptime
+            - certificate
+            - dns
+            - port
+            - http
+          default: any
+          required: false

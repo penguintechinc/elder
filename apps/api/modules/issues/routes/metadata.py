@@ -1,0 +1,751 @@
+"""Metadata management API endpoints for Elder enterprise features using PyDAL with async/await."""
+
+# flake8: noqa: E501
+
+import json
+from datetime import UTC, datetime, timezone
+from typing import Optional, Union
+
+from penguin_libs.pydantic import RequestModel
+from quart import Blueprint, current_app, jsonify
+from quart_schema import validate_response
+
+from apps.api.auth.decorators import (
+    login_required,
+    require_scope,
+    resource_role_required,
+)
+from apps.api.models.pydantic.metadata import MetadataFieldResponse
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+
+bp = Blueprint("metadata", __name__)
+
+
+# ============================================================================
+# Pydantic Models for Request Validation
+# ============================================================================
+
+
+class CreateMetadataRequest(RequestModel):
+    """Request model for creating metadata fields."""
+
+    key: str
+    field_type: str
+    value: str | int | float | bool | dict | list
+
+
+class UpdateMetadataRequest(RequestModel):
+    """Request model for updating metadata fields."""
+
+    value: str | int | float | bool | dict | list
+    field_type: str | None = None
+
+
+# Helper functions for type conversion
+def _coerce_value(value, field_type: str):
+    """Convert value to appropriate type based on field_type."""
+    if field_type == "string":
+        return str(value)
+    elif field_type == "number":
+        try:
+            return float(value) if "." in str(value) else int(value)
+        except (ValueError, TypeError):
+            raise ValueError(f"Invalid number value: {value}")
+    elif field_type == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes")
+        return bool(value)
+    elif field_type == "date":
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+    elif field_type == "json":
+        if isinstance(value, (dict, list)):
+            return json.dumps(value)
+        return str(value)
+    else:
+        return str(value)
+
+
+def _parse_value(value_str: str, field_type: str):
+    """Parse stored string value back to original type."""
+    if value_str is None:
+        return None
+
+    if field_type == "string":
+        return value_str
+    elif field_type == "number":
+        try:
+            return float(value_str) if "." in value_str else int(value_str)
+        except ValueError:
+            return value_str
+    elif field_type == "boolean":
+        return value_str.lower() in ("true", "1", "yes")
+    elif field_type == "date":
+        return value_str
+    elif field_type == "json":
+        try:
+            return json.loads(value_str)
+        except json.JSONDecodeError:
+            return value_str
+    else:
+        return value_str
+
+
+# ============================================================================
+# Entity Metadata Endpoints
+# ============================================================================
+
+
+@bp.route("/entities/<int:id>/metadata", methods=["GET"])
+@login_required
+@require_scope("issues:read")
+@resource_role_required("viewer", resource_param="id")
+async def get_entity_metadata(id: int):
+    """
+    Get all metadata for an entity.
+
+    Requires viewer role on the entity.
+
+    Path Parameters:
+        - id: Entity ID
+
+    Returns:
+        200: Metadata as key-value dictionary
+        403: License required or insufficient permissions
+        404: Entity not found
+
+    Example:
+        GET /api/v1/metadata/entities/42/metadata
+        {
+            "metadata": {
+                "hostname": "web-01.example.com",
+                "ip_address": "10.0.1.5",
+                "last_updated": "2024-10-23T10:00:00Z",
+                "is_production": true,
+                "cpu_count": 8
+            }
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def get_metadata():
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return None, "Entity not found", 404
+
+        # Get all metadata fields
+        fields = db(
+            (db.metadata_fields.resource_type == "entity")
+            & (db.metadata_fields.resource_id == id)
+        ).select()
+
+        # Build metadata dictionary with type conversion
+        metadata = {}
+        for field in fields:
+            metadata[field.field_key] = _parse_value(
+                field.field_value, field.field_type
+            )
+
+        return {"metadata": metadata}, None, None
+
+    result, error, status = await run_in_threadpool(get_metadata)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return jsonify(result), 200
+
+
+@bp.route("/entities/<int:id>/metadata", methods=["POST"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+@validated_request(body_model=CreateMetadataRequest)
+@validate_response(MetadataFieldResponse, status_code=201)
+async def create_entity_metadata(id: int, body: CreateMetadataRequest):
+    """
+    Create or update a metadata field for an entity.
+
+    Requires maintainer role on the entity.
+
+    Path Parameters:
+        - id: Entity ID
+
+    Request Body:
+        {
+            "key": "hostname",
+            "field_type": "string",
+            "value": "web-01.example.com"
+        }
+
+    Returns:
+        201: Metadata field created/updated
+        400: Invalid request
+        403: License required or insufficient permissions
+        404: Entity not found
+
+    Example:
+        POST /api/v1/metadata/entities/42/metadata
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def create_or_update():
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return None, "Entity not found", 404
+
+        # Check if system metadata
+        existing = (
+            db(
+                (db.metadata_fields.resource_type == "entity")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == body.key)
+            )
+            .select()
+            .first()
+        )
+
+        if existing and existing.is_system:
+            return None, "System metadata fields cannot be modified", 403
+
+        # Coerce value to correct type
+        try:
+            coerced_value = _coerce_value(body.value, body.field_type)
+            value_str = str(coerced_value)
+        except ValueError as e:
+            return None, str(e), 400
+
+        # Create or update metadata field
+        if existing:
+            # Update existing
+            db(db.metadata_fields.id == existing.id).update(
+                field_type=body.field_type,
+                field_value=value_str,
+            )
+            db.commit()
+            field = db.metadata_fields[existing.id]  # tenant-scope-exempt
+        else:
+            # Create new
+            now = datetime.now(UTC)
+            field_id = db.metadata_fields.insert(
+                field_key=body.key,
+                field_value=value_str,
+                field_type=body.field_type,
+                resource_type="entity",
+                resource_id=id,
+                is_system=False,
+                created_at=now,
+                updated_at=now,
+            )
+            db.commit()
+            field = db.metadata_fields[field_id]  # tenant-scope-exempt
+
+        # Build response with parsed value
+        field_dict = field.as_dict()
+        field_dict["field_value"] = _parse_value(field.field_value, field.field_type)
+
+        return field_dict, None, None
+
+    result, error, status = await run_in_threadpool(create_or_update)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return MetadataFieldResponse.model_validate(result), 201
+
+
+@bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+@validated_request(body_model=UpdateMetadataRequest)
+@validate_response(MetadataFieldResponse)
+async def update_entity_metadata(id: int, field_key: str, body: UpdateMetadataRequest):
+    """
+    Update a metadata field for an entity.
+
+    Requires maintainer role on the entity.
+
+    Path Parameters:
+        - id: Entity ID
+        - field_key: Metadata field key
+
+    Request Body:
+        {
+            "value": "web-02.example.com",
+            "field_type": "string" (optional)
+        }
+
+    Returns:
+        200: Metadata field updated
+        400: Invalid request
+        403: License required or insufficient permissions
+        404: Entity or metadata field not found
+
+    Example:
+        PATCH /api/v1/metadata/entities/42/metadata/hostname
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def update():
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return None, "Entity not found", 404
+
+        # Get metadata field
+        field = (
+            db(
+                (db.metadata_fields.resource_type == "entity")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == field_key)
+            )
+            .select()
+            .first()
+        )
+
+        if not field:
+            return None, f"Metadata field '{field_key}' not found", 404
+
+        # Check if system metadata
+        if field.is_system:
+            return None, "System metadata fields cannot be modified", 403
+
+        # Get field type (use provided or existing)
+        field_type = body.field_type if body.field_type else field.field_type
+
+        # Coerce value to correct type
+        try:
+            coerced_value = _coerce_value(body.value, field_type)
+            value_str = str(coerced_value)
+        except ValueError as e:
+            return None, str(e), 400
+
+        # Update field
+        update_fields = {"field_value": value_str}
+        if body.field_type:
+            update_fields["field_type"] = body.field_type
+
+        db(db.metadata_fields.id == field.id).update(**update_fields)
+        db.commit()
+
+        # Fetch updated field
+        updated_field = db.metadata_fields[field.id]  # tenant-scope-exempt
+
+        # Build response with parsed value
+        field_dict = updated_field.as_dict()
+        field_dict["field_value"] = _parse_value(
+            updated_field.field_value, updated_field.field_type
+        )
+
+        return field_dict, None, None
+
+    result, error, status = await run_in_threadpool(update)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return MetadataFieldResponse.model_validate(result), 200
+
+
+@bp.route("/entities/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+async def delete_entity_metadata(id: int, field_key: str):
+    """
+    Delete a metadata field from an entity.
+
+    Requires maintainer role on the entity.
+
+    Path Parameters:
+        - id: Entity ID
+        - field_key: Metadata field key
+
+    Returns:
+        204: Metadata field deleted
+        403: License required or insufficient permissions
+        404: Entity or metadata field not found
+
+    Example:
+        DELETE /api/v1/metadata/entities/42/metadata/hostname
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def delete():
+        # Verify entity exists and belongs to caller's tenant (gh-237)
+        entity = get_tenant_scoped(
+            db, db.entities, id, tenant_id, org_fk="organization_id"
+        )
+        if not entity:
+            return None, "Entity not found", 404
+
+        # Get metadata field
+        field = (
+            db(
+                (db.metadata_fields.resource_type == "entity")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == field_key)
+            )
+            .select()
+            .first()
+        )
+
+        if not field:
+            return None, f"Metadata field '{field_key}' not found", 404
+
+        # Check if system metadata
+        if field.is_system:
+            return None, "System metadata fields cannot be deleted", 403
+
+        # Delete field
+        db(db.metadata_fields.id == field.id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(delete)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204
+
+
+# ============================================================================
+# Organization Metadata Endpoints
+# ============================================================================
+
+
+@bp.route("/organizations/<int:id>/metadata", methods=["GET"])
+@login_required
+@require_scope("issues:read")
+@resource_role_required("viewer", resource_param="id")
+async def get_organization_metadata(id: int):
+    """
+    Get all metadata for an organization.
+
+    Requires viewer role on the organization.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Returns:
+        200: Metadata as key-value dictionary
+        403: License required or insufficient permissions
+        404: Organization not found
+
+    Example:
+        GET /api/v1/metadata/organizations/1/metadata
+        {
+            "metadata": {
+                "budget": 1000000,
+                "fiscal_year": "2024",
+                "cost_center": "CC-1234"
+            }
+        }
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def get_metadata():
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
+        if not org:
+            return None, "Organization not found", 404
+
+        # Get all metadata fields
+        fields = db(
+            (db.metadata_fields.resource_type == "organization")
+            & (db.metadata_fields.resource_id == id)
+        ).select()
+
+        # Build metadata dictionary with type conversion
+        metadata = {}
+        for field in fields:
+            metadata[field.field_key] = _parse_value(
+                field.field_value, field.field_type
+            )
+
+        return {"metadata": metadata}, None, None
+
+    result, error, status = await run_in_threadpool(get_metadata)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return jsonify(result), 200
+
+
+@bp.route("/organizations/<int:id>/metadata", methods=["POST"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+@validated_request(body_model=CreateMetadataRequest)
+@validate_response(MetadataFieldResponse, status_code=201)
+async def create_organization_metadata(id: int, body: CreateMetadataRequest):
+    """
+    Create or update a metadata field for an organization.
+
+    Requires maintainer role on the organization.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Request Body:
+        {
+            "key": "budget",
+            "field_type": "number",
+            "value": 1000000
+        }
+
+    Returns:
+        201: Metadata field created/updated
+        400: Invalid request
+        403: License required or insufficient permissions
+        404: Organization not found
+
+    Example:
+        POST /api/v1/metadata/organizations/1/metadata
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def create_or_update():
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
+        if not org:
+            return None, "Organization not found", 404
+
+        # Check if system metadata
+        existing = (
+            db(
+                (db.metadata_fields.resource_type == "organization")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == body.key)
+            )
+            .select()
+            .first()
+        )
+
+        if existing and existing.is_system:
+            return None, "System metadata fields cannot be modified", 403
+
+        # Coerce value to correct type
+        try:
+            coerced_value = _coerce_value(body.value, body.field_type)
+            value_str = str(coerced_value)
+        except ValueError as e:
+            return None, str(e), 400
+
+        # Create or update metadata field
+        if existing:
+            # Update existing
+            db(db.metadata_fields.id == existing.id).update(
+                field_type=body.field_type,
+                field_value=value_str,
+            )
+            db.commit()
+            field = db.metadata_fields[existing.id]  # tenant-scope-exempt
+        else:
+            # Create new
+            field_id = db.metadata_fields.insert(
+                field_key=body.key,
+                field_value=value_str,
+                field_type=body.field_type,
+                resource_type="organization",
+                resource_id=id,
+                is_system=False,
+            )
+            db.commit()
+            field = db.metadata_fields[field_id]  # tenant-scope-exempt
+
+        # Build response with parsed value
+        field_dict = field.as_dict()
+        field_dict["field_value"] = _parse_value(field.field_value, field.field_type)
+
+        return field_dict, None, None
+
+    result, error, status = await run_in_threadpool(create_or_update)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return MetadataFieldResponse.model_validate(result), 201
+
+
+@bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["PATCH"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+@validated_request(body_model=UpdateMetadataRequest)
+@validate_response(MetadataFieldResponse)
+async def update_organization_metadata(
+    id: int, field_key: str, body: UpdateMetadataRequest
+):
+    """
+    Update a metadata field for an organization.
+
+    Requires maintainer role on the organization.
+
+    Path Parameters:
+        - id: Organization ID
+        - field_key: Metadata field key
+
+    Request Body:
+        {
+            "value": 1500000,
+            "field_type": "number" (optional)
+        }
+
+    Returns:
+        200: Metadata field updated
+        400: Invalid request
+        403: License required or insufficient permissions
+        404: Organization or metadata field not found
+
+    Example:
+        PATCH /api/v1/metadata/organizations/1/metadata/budget
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def update():
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
+        if not org:
+            return None, "Organization not found", 404
+
+        # Get metadata field
+        field = (
+            db(
+                (db.metadata_fields.resource_type == "organization")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == field_key)
+            )
+            .select()
+            .first()
+        )
+
+        if not field:
+            return None, f"Metadata field '{field_key}' not found", 404
+
+        # Check if system metadata
+        if field.is_system:
+            return None, "System metadata fields cannot be modified", 403
+
+        # Get field type (use provided or existing)
+        field_type = body.field_type if body.field_type else field.field_type
+
+        # Coerce value to correct type
+        try:
+            coerced_value = _coerce_value(body.value, field_type)
+            value_str = str(coerced_value)
+        except ValueError as e:
+            return None, str(e), 400
+
+        # Update field
+        update_fields = {"field_value": value_str}
+        if body.field_type:
+            update_fields["field_type"] = body.field_type
+
+        db(db.metadata_fields.id == field.id).update(**update_fields)
+        db.commit()
+
+        # Fetch updated field
+        updated_field = db.metadata_fields[field.id]  # tenant-scope-exempt
+
+        # Build response with parsed value
+        field_dict = updated_field.as_dict()
+        field_dict["field_value"] = _parse_value(
+            updated_field.field_value, updated_field.field_type
+        )
+
+        return field_dict, None, None
+
+    result, error, status = await run_in_threadpool(update)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return MetadataFieldResponse.model_validate(result), 200
+
+
+@bp.route("/organizations/<int:id>/metadata/<string:field_key>", methods=["DELETE"])
+@login_required
+@require_scope("issues:write")
+@resource_role_required("maintainer", resource_param="id")
+async def delete_organization_metadata(id: int, field_key: str):
+    """
+    Delete a metadata field from an organization.
+
+    Requires maintainer role on the organization.
+
+    Path Parameters:
+        - id: Organization ID
+        - field_key: Metadata field key
+
+    Returns:
+        204: Metadata field deleted
+        403: License required or insufficient permissions
+        404: Organization or metadata field not found
+
+    Example:
+        DELETE /api/v1/metadata/organizations/1/metadata/budget
+    """
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+
+    def delete():
+        # Verify organization exists and belongs to caller's tenant (gh-237)
+        org = get_tenant_scoped(db, db.organizations, id, tenant_id)
+        if not org:
+            return None, "Organization not found", 404
+
+        # Get metadata field
+        field = (
+            db(
+                (db.metadata_fields.resource_type == "organization")
+                & (db.metadata_fields.resource_id == id)
+                & (db.metadata_fields.field_key == field_key)
+            )
+            .select()
+            .first()
+        )
+
+        if not field:
+            return None, f"Metadata field '{field_key}' not found", 404
+
+        # Check if system metadata
+        if field.is_system:
+            return None, "System metadata fields cannot be deleted", 403
+
+        # Delete field
+        db(db.metadata_fields.id == field.id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(delete)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204

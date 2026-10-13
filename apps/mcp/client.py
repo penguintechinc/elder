@@ -20,7 +20,7 @@ class ElderClient:
         """
         self.session = session
 
-    async def get(self, path: str, params: Optional[dict] = None) -> dict:
+    async def get(self, path: str, params: dict | None = None) -> dict:
         """
         GET request to Elder API.
 

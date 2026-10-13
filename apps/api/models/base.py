@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict
 
-from sqlalchemy import Column, DateTime, Integer
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -25,13 +24,13 @@ class TimestampMixin:
     created_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at = Column(
         DateTime(timezone=True),
         nullable=True,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -41,7 +40,27 @@ class IDMixin:
     id = Column(Integer, primary_key=True, autoincrement=True)
 
 
-def to_dict(obj: Any, exclude: list = None) -> Dict[str, Any]:
+class VillageIDMixin:
+    """Mixin for adding village_id (unique cross-object reference identifier).
+
+    Every referenceable object should carry a village_id for stable cross-system
+    references. This is nullable to support legacy objects and bulk operations.
+    """
+
+    village_id = Column(String(32), unique=True, nullable=True)
+
+
+class TenantScopedMixin:
+    """Mixin for adding tenant_id (tenant isolation and scope).
+
+    Foreign key to tenants table for multi-tenant isolation. Mandatory for
+    tenant-scoped resources.
+    """
+
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
+
+
+def to_dict(obj: Any, exclude: list = None) -> dict[str, Any]:
     """
     Convert SQLAlchemy model instance to dictionary.
 

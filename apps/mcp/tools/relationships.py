@@ -34,9 +34,9 @@ async def get_entity_relationships(
 
 async def search_relationships(
     client: ElderClient,
-    source_entity_id: Optional[int] = None,
-    target_entity_id: Optional[int] = None,
-    relationship_type: Optional[str] = None,
+    source_entity_id: int | None = None,
+    target_entity_id: int | None = None,
+    relationship_type: str | None = None,
     limit: int = 20,
 ) -> dict:
     """
@@ -74,7 +74,7 @@ async def create_relationship(
     source_entity_id: int,
     target_entity_id: int,
     relationship_type: str,
-    description: Optional[str] = None,
+    description: str | None = None,
 ) -> dict:
     """
     Create a new relationship between entities.

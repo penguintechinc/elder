@@ -8,6 +8,13 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 
+interface Service {
+  id: number
+  name: string
+  paths?: string[]
+  language?: string
+}
+
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
 type HttpMethod = typeof HTTP_METHODS[number]
 
@@ -37,7 +44,7 @@ export default function ServiceEndpoints() {
     if (!services?.items) return []
 
     const result: Endpoint[] = []
-    services.items.forEach((service: any) => {
+    services.items.forEach((service: Service) => {
       if (service.paths && Array.isArray(service.paths)) {
         service.paths.forEach((path: string, index: number) => {
           // Extract method from path if format is "METHOD /path"
@@ -200,7 +207,7 @@ export default function ServiceEndpoints() {
           className="w-48"
         >
           <option value="">All Services</option>
-          {services?.items?.map((service: any) => (
+          {services?.items?.map((service: Service) => (
             <option key={service.id} value={service.id}>
               {service.name}
             </option>

@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   - MicroK8s running with context local-alpha
-#   - elder.localhost.local in /etc/hosts pointing to 127.0.0.1
+#   - Web reachable on the alpha NodePort (default http://localhost:30090)
 #   - Deployment already applied (use deploy-alpha.sh if needed)
 #
 # Usage: ./scripts/e2e-test-alpha.sh [OPTIONS]
@@ -33,7 +33,11 @@ NC='\033[0m'
 # Configuration
 CONTEXT="local-alpha"
 NAMESPACE="elder"
-BASE_URL="http://elder.localhost.local"
+# Alpha exposes web+api via NodePort -- alpha.yml sets ingress.enabled=false
+# ("web/api reachable via NodePort instead"). The web container's nginx proxies
+# both /api/ and /healthz to elder-api:5000, so this one base URL covers the UI,
+# the API suite and the health checks. Override for other targets.
+BASE_URL="${BASE_URL:-http://localhost:30090}"
 DEPLOY=false
 VERBOSE=false
 
@@ -78,8 +82,12 @@ echo ""
 ###############################################################################
 if [ "$DEPLOY" = true ]; then
     log_section "Phase 1: Deploy"
-    log_info "Deploying via Kustomize..."
-    kubectl apply --context "$CONTEXT" -k "$PROJECT_ROOT/k8s/kustomize/overlays/alpha"
+    log_info "Deploying via Helm..."
+    helm --kube-context "$CONTEXT" upgrade --install elder "$PROJECT_ROOT/k8s/helm/elder" \
+        --namespace "$NAMESPACE" \
+        --create-namespace \
+        --values "$PROJECT_ROOT/k8s/helm/elder/alpha.yml" \
+        --wait --timeout 300s
     log_info "Waiting 60s for pods to settle..."
     sleep 60
     log_success "Deployed"
@@ -120,7 +128,7 @@ log_info "  Running per-service healthchecks..."
 HEALTH_FAILURES=0
 
 # Scanner — exec python healthcheck.py inside the container
-SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$SCANNER_POD" ]]; then
     if kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$SCANNER_POD" -- python healthcheck.py >/dev/null 2>&1; then
         log_success "  Scanner healthcheck: OK"
@@ -133,7 +141,7 @@ else
 fi
 
 # Worker — hit its HTTP health endpoint (port matches HEALTH_CHECK_PORT in deployment, default 28000)
-WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$WORKER_POD" ]]; then
     WORKER_HEALTH=$(kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$WORKER_POD" -- \
         python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:28000/healthz',timeout=5); print(r.status)" 2>/dev/null || echo "ERR")
@@ -154,31 +162,27 @@ else
 fi
 
 ###############################################################################
-# PHASE 3: Smoke — ingress reachability
+# PHASE 3: Smoke — NodePort reachability
 ###############################################################################
-log_section "Phase 3: Ingress Reachability"
-
-if ! grep -q "elder.localhost.local" /etc/hosts 2>/dev/null; then
-    log_warn "elder.localhost.local not in /etc/hosts — add: echo '127.0.0.1 elder.localhost.local' | sudo tee -a /etc/hosts"
-fi
+log_section "Phase 3: NodePort Reachability"
 
 WEB_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/" 2>/dev/null || echo "000")
 API_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/healthz" 2>/dev/null || echo "000")
 
 if [ "$WEB_CODE" != "200" ]; then
-    log_error "WebUI not reachable via ingress (HTTP $WEB_CODE) — $BASE_URL/"
-    PHASE_RESULTS+=("Ingress: FAIL (web $WEB_CODE)")
+    log_error "WebUI not reachable via NodePort (HTTP $WEB_CODE) — $BASE_URL/"
+    PHASE_RESULTS+=("NodePort: FAIL (web $WEB_CODE)")
     exit 1
 fi
 
 if [ "$API_CODE" != "200" ]; then
-    log_error "API not reachable via ingress (HTTP $API_CODE) — $BASE_URL/healthz"
-    PHASE_RESULTS+=("Ingress: FAIL (api $API_CODE)")
+    log_error "API not reachable via NodePort (HTTP $API_CODE) — $BASE_URL/healthz"
+    PHASE_RESULTS+=("NodePort: FAIL (api $API_CODE)")
     exit 1
 fi
 
-log_success "Web ($WEB_CODE) and API ($API_CODE) reachable via ingress"
-PHASE_RESULTS+=("Ingress: PASS")
+log_success "Web ($WEB_CODE) and API ($API_CODE) reachable via NodePort"
+PHASE_RESULTS+=("NodePort: PASS")
 
 ###############################################################################
 # PHASE 4: API endpoint suite
@@ -286,7 +290,9 @@ check_response "$(api_call GET "/dependencies")"                                
 check_response "$(api_call GET "/graph")"                                       "200"     "/graph"                                "GET"
 check_response "$(api_call GET "/graph/analyze")"                               "200"     "/graph/analyze"                        "GET"
 check_response "$(api_call GET "/users")"                                       "200"     "/users"                                "GET"
-check_response "$(api_call GET "/resource-roles")"                              "200"     "/resource-roles"                       "GET"
+# access_reviews is the one premium module license-gated on alpha (empty LICENSE_KEY),
+# so /resource-roles correctly returns 403 MODULE_UNLICENSED here — see modules/access_reviews.
+check_response "$(api_call GET "/resource-roles")"                              "403"     "/resource-roles"                       "GET"
 check_response "$(api_call GET "/labels")"                                      "200"     "/labels"                               "GET"
 check_response "$(api_call GET "/issues")"                                      "200"     "/issues"                               "GET"
 check_response "$(api_call GET "/issues/labels")"                               "200"     "/issues/labels"                        "GET"
@@ -342,11 +348,9 @@ if [[ $FAILED -gt 0 ]]; then
     log_error "API suite: $FAILED/$TOTAL_API failed"
     for ep in "${FAILED_ENDPOINTS[@]}"; do echo "    $ep"; done
     PHASE_RESULTS+=("API Suite: FAIL ($FAILED/$TOTAL_API failed)")
-    API_SUITE_FAILED=true
 else
     log_success "API suite: $PASSED/$TOTAL_API passed"
     PHASE_RESULTS+=("API Suite: PASS ($PASSED/$TOTAL_API)")
-    API_SUITE_FAILED=false
 fi
 
 ###############################################################################
@@ -361,7 +365,12 @@ if [ ! -f "$WEB_DIR/playwright.config.ts" ]; then
 else
     cd "$WEB_DIR"
     PLAYWRIGHT_EXIT=0
-    PLAYWRIGHT_BASE_URL="$BASE_URL" npx playwright test --reporter=list 2>&1 || PLAYWRIGHT_EXIT=$?
+    # Test against the already-deployed alpha NodePort — disable Playwright's built-in
+    # webServer (it would otherwise start a redundant `npm run dev` Vite server and test
+    # THAT instead of the cluster). Chromium-only, single worker to bound memory on a
+    # shared local node.
+    PLAYWRIGHT_WEBSERVER_DISABLED=1 PLAYWRIGHT_BASE_URL="$BASE_URL" \
+        npx playwright test --project=chromium --workers=1 --reporter=list 2>&1 || PLAYWRIGHT_EXIT=$?
     cd "$PROJECT_ROOT"
 
     if [ $PLAYWRIGHT_EXIT -eq 0 ]; then

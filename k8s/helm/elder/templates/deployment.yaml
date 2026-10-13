@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
@@ -34,13 +34,39 @@ spec:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
-        {{- if $componentConfig.env }}
+        {{- $hasModules := or (eq $component "api") (eq $component "worker") }}
+        {{- $isOtelComponent := or (eq $component "api") (eq $component "worker") (eq $component "scanner") }}
+        {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
+        {{- if or $hasModules $hasOtel }}
+        envFrom:
+        {{- if $hasModules }}
+        - configMapRef:
+            name: elder-modules
+        {{- end }}
+        {{- if $hasOtel }}
+        - configMapRef:
+            name: elder-otel
+        {{- end }}
+        {{- end }}
+        {{- $needsPodName := or (eq $component "worker") (eq $component "flows-invoker") }}
+        {{- if or $componentConfig.env $hasOtel $needsPodName }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
+        {{- if $hasOtel }}
+        - name: OTEL_SERVICE_NAME
+          value: {{ printf "elder-%s" $component | quote }}
         {{- end }}
+        {{- if $needsPodName }}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        {{- end }}
+        {{- end }}
+        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "web") (eq $component "api") (eq $component "worker") }}
         ports:
         {{- if eq $component "postgres" }}
         - name: postgres
@@ -65,25 +91,26 @@ spec:
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
-        {{- else if eq $component "prometheus" }}
-        - name: http
-          containerPort: 9090
-          protocol: TCP
-        {{- else if eq $component "alertmanager" }}
-        - name: http
-          containerPort: 9093
-          protocol: TCP
-        {{- else if eq $component "grafana" }}
-        - name: http
-          containerPort: 3000
-          protocol: TCP
+        {{- end }}
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
+        {{- $isHttpProbe := or (eq $component "web") (eq $component "api") (eq $component "worker") }}
+        {{/* Release audit finding #6: liveness must be a lighter,
+             dependency-free self-check while readiness gates traffic on
+             dependency availability — previously identical for
+             web/api/worker, and scanner had no probes at all.
+             livenessPath falls back to the readiness path when a
+             component has no separate self-only endpoint (api/worker);
+             web overrides it to "/" (see values.yaml). `dig` safely
+             returns the readiness-equivalent default when no
+             `healthcheck.liveness` override block is set, so
+             postgres/redis/flows-invoker render identically to before. */}}
+        {{- $livenessPath := $componentConfig.healthcheck.livenessPath | default $componentConfig.healthcheck.path }}
         livenessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if $isHttpProbe }}
           httpGet:
-            path: {{ $componentConfig.healthcheck.path }}
+            path: {{ $livenessPath }}
             port: http
           {{- else if eq $component "postgres" }}
           exec:
@@ -96,13 +123,28 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "scanner" }}
+          # No HTTP server (poll-loop service) — reuses the exact script its
+          # own Docker HEALTHCHECK already runs (apps/scanner/healthcheck.py:
+          # verifies imports, ELDER_API_URL is set, screenshot dir writable).
+          exec:
+            command:
+            - python3
+            - healthcheck.py
+          {{- else if eq $component "flows-invoker" }}
+          # No HTTP server in this service (pure Redis Streams consumer) —
+          # health is verified via a native Python exec probe.
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
-          initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
-          periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
-          timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
-          failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
+          initialDelaySeconds: {{ dig "liveness" "initialDelaySeconds" ($componentConfig.healthcheck.initialDelaySeconds | default 30) $componentConfig.healthcheck }}
+          periodSeconds: {{ dig "liveness" "periodSeconds" ($componentConfig.healthcheck.periodSeconds | default 10) $componentConfig.healthcheck }}
+          timeoutSeconds: {{ dig "liveness" "timeoutSeconds" ($componentConfig.healthcheck.timeoutSeconds | default 5) $componentConfig.healthcheck }}
+          failureThreshold: {{ dig "liveness" "failureThreshold" ($componentConfig.healthcheck.failureThreshold | default 3) $componentConfig.healthcheck }}
         readinessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if $isHttpProbe }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -117,6 +159,16 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "scanner" }}
+          exec:
+            command:
+            - python3
+            - healthcheck.py
+          {{- else if eq $component "flows-invoker" }}
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
           initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
           periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
@@ -126,14 +178,20 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
           mountPath: /var/lib/postgresql/data
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "redis" }}
         - name: data
           mountPath: /data
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "scanner" }}
         - name: screenshots
           mountPath: /app/screenshots
@@ -148,15 +206,14 @@ spec:
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "prometheus" }}
-        - name: data
-          mountPath: /prometheus
-        {{- else if eq $component "alertmanager" }}
-        - name: data
-          mountPath: /alertmanager
-        {{- else if eq $component "grafana" }}
-        - name: data
-          mountPath: /var/lib/grafana
+        {{- else if eq $component "web" }}
+        - name: tmp
+          mountPath: /tmp
+        {{- else if eq $component "flows-invoker" }}
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
         {{- end }}
         {{- end }}
         securityContext:
@@ -165,7 +222,7 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
       volumes:
       {{- if eq $component "scanner" }}
       - name: screenshots
@@ -181,6 +238,28 @@ spec:
         secret:
           secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
           optional: true
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "web" }}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "flows-invoker" }}
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "postgres" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
+      - name: run
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "redis" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
       - name: tmp
         emptyDir: {}
       {{- else }}

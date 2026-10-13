@@ -23,9 +23,55 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
+import { Identity } from '@/types'
 
 interface GroupMembershipManagerProps {
   organizationId?: number
+}
+
+interface ApiError {
+  response?: {
+    data?: {
+      error?: string
+    }
+  }
+  message?: string
+}
+
+interface Group {
+  id: number
+  name: string
+  description?: string
+  owner_identity_id?: number
+  approval_mode?: string
+  approval_threshold?: number
+  members?: GroupMember[]
+  pending_requests?: AccessRequest[]
+  provider?: string
+  provider_group_id?: string
+  sync_enabled?: boolean
+  member_count?: number
+  pending_count?: number
+}
+
+interface GroupMember {
+  id: number
+  identity_id: number
+  joined_at: string
+  expires_at?: string
+  role?: string
+}
+
+interface AccessRequest {
+  id: number
+  identity_id: number
+  status: 'pending' | 'approved' | 'denied'
+  reason?: string
+  created_at: string
+  identity_name?: string
+  requester_name?: string
+  requester_id?: number
+  group_name?: string
 }
 
 const APPROVAL_MODES = [
@@ -41,7 +87,7 @@ const PROVIDERS = [
 ]
 
 export default function GroupMembershipManager({ organizationId: _organizationId }: GroupMembershipManagerProps) {
-  const [selectedGroup, setSelectedGroup] = useState<any>(null)
+  const [selectedGroup, setSelectedGroup] = useState<Group | null>(null)
   const [showGroupDetails, setShowGroupDetails] = useState(false)
   const [showRequestModal, setShowRequestModal] = useState(false)
   const [showAddMemberModal, setShowAddMemberModal] = useState(false)
@@ -95,7 +141,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
       setRequestExpiry('')
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to submit request')
     },
   })
@@ -107,7 +153,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
       toast.success('Request approved')
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to approve request')
     },
   })
@@ -119,7 +165,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
       toast.success('Request denied')
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to deny request')
     },
   })
@@ -134,7 +180,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
       setAddMemberExpiry('')
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to add member')
     },
   })
@@ -146,20 +192,20 @@ export default function GroupMembershipManager({ organizationId: _organizationId
       toast.success('Member removed')
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to remove member')
     },
   })
 
   const updateGroupMutation = useMutation({
-    mutationFn: (data: { groupId: number; updates: any }) =>
+    mutationFn: (data: { groupId: number; updates: Record<string, unknown> }) =>
       api.updateGroupMembershipGroup(data.groupId, data.updates),
     onSuccess: () => {
       toast.success('Group settings updated')
       setShowSettingsModal(false)
       queryClient.invalidateQueries({ queryKey: ['groupMembership'] })
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update group')
     },
   })
@@ -197,7 +243,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
     })
   }
 
-  const openSettingsModal = (group: any) => {
+  const openSettingsModal = (group: Group) => {
     setSelectedGroup(group)
     setSettingsOwnerIdentity(group.owner_identity_id?.toString() || '')
     setSettingsApprovalMode(group.approval_mode || 'any')
@@ -208,10 +254,10 @@ export default function GroupMembershipManager({ organizationId: _organizationId
     setShowSettingsModal(true)
   }
 
-  const groups = groupsData?.groups || []
-  const pendingRequests = pendingData?.requests || []
+  const groups = (groupsData?.groups || []) as Group[]
+  const pendingRequests = (pendingData?.requests || []) as AccessRequest[]
 
-  const filteredGroups = groups.filter((g: any) =>
+  const filteredGroups = groups.filter((g) =>
     !searchQuery || g.name?.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
@@ -289,7 +335,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
             </Card>
           ) : (
             <div className="grid gap-4">
-              {filteredGroups.map((group: any) => (
+              {filteredGroups.map((group) => (
                 <Card
                   key={group.id}
                   className="hover:border-primary-500/50 transition-colors cursor-pointer"
@@ -375,7 +421,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
             </Card>
           ) : (
             <div className="grid gap-4">
-              {pendingRequests.map((request: any) => (
+              {pendingRequests.map((request) => (
                 <Card key={request.id}>
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
@@ -509,7 +555,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
                   onChange={(e) => setAddMemberIdentityId(e.target.value)}
                 >
                   <option value="">Select identity</option>
-                  {(identitiesData?.items || []).map((identity: any) => (
+                  {(identitiesData?.items || []).map((identity) => (
                     <option key={identity.id} value={identity.id}>
                       {identity.full_name || identity.username} ({identity.email})
                     </option>
@@ -559,7 +605,7 @@ export default function GroupMembershipManager({ organizationId: _organizationId
                   onChange={(e) => setSettingsOwnerIdentity(e.target.value)}
                 >
                   <option value="">No owner</option>
-                  {(identitiesData?.items || []).map((identity: any) => (
+                  {(identitiesData?.items || []).map((identity) => (
                     <option key={identity.id} value={identity.id}>
                       {identity.full_name || identity.username}
                     </option>
@@ -650,8 +696,8 @@ export default function GroupMembershipManager({ organizationId: _organizationId
 
 // Group Details Modal Component
 interface GroupDetailsModalProps {
-  group: any
-  identities: any[]
+  group: Group
+  identities: Identity[]
   onClose: () => void
   onAddMember: () => void
   onRemoveMember: (identityId: number) => void
@@ -737,7 +783,7 @@ function GroupDetailsModal({
             </div>
           ) : (
             <div className="space-y-2">
-              {members.map((member: any) => (
+              {members.map((member) => (
                 <div
                   key={member.identity_id}
                   className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg"

@@ -6,15 +6,26 @@ HIPAA, and GDPR compliance requirements.
 
 # flake8: noqa: E501
 
-
 import datetime
+import logging
+import os
 from typing import Optional
 
+from penguin_dal import FieldProxy, Query
 from quart import current_app
+
+logger = logging.getLogger(__name__)
 
 
 class AuditService:
     """Enhanced audit logging service."""
+
+    # Retention enforcement defaults (GDPR Art. 5 storage-limitation).
+    # Overridable per-deployment via env vars; a per-tenant
+    # data_retention_days setting is always respected but is floored at
+    # AUDIT_RETENTION_MIN_DAYS so a misconfigured tenant can never cause
+    # records to be purged before a compliance-mandated minimum.
+    DEFAULT_RETENTION_DAYS = 90
 
     # Event categories
     CATEGORY_AUTH = "authentication"
@@ -47,18 +58,18 @@ class AuditService:
     def log(
         action: str,
         resource_type: str,
-        resource_id: Optional[int] = None,
-        identity_id: Optional[int] = None,
-        portal_user_id: Optional[int] = None,
-        tenant_id: Optional[int] = None,
-        details: Optional[dict] = None,
+        resource_id: int | None = None,
+        identity_id: int | None = None,
+        portal_user_id: int | None = None,
+        tenant_id: int | None = None,
+        details: dict | None = None,
         success: bool = True,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        correlation_id: Optional[str] = None,
-        category: Optional[str] = None,
-        old_values: Optional[dict] = None,
-        new_values: Optional[dict] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        correlation_id: str | None = None,
+        category: str | None = None,
+        old_values: dict | None = None,
+        new_values: dict | None = None,
     ) -> int:
         """Log an audit event.
 
@@ -125,10 +136,10 @@ class AuditService:
         email: str,
         tenant_id: int,
         success: bool = True,
-        ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None,
-        details: Optional[dict] = None,
-        portal_user_id: Optional[int] = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        details: dict | None = None,
+        portal_user_id: int | None = None,
     ) -> int:
         """Log an authentication event.
 
@@ -167,8 +178,8 @@ class AuditService:
         resource_id: int,
         portal_user_id: int,
         tenant_id: int,
-        fields_accessed: Optional[list] = None,
-        ip_address: Optional[str] = None,
+        fields_accessed: list | None = None,
+        ip_address: str | None = None,
     ) -> int:
         """Log a data access event (for sensitive data).
 
@@ -205,9 +216,9 @@ class AuditService:
         resource_id: int,
         portal_user_id: int,
         tenant_id: int,
-        old_values: Optional[dict] = None,
-        new_values: Optional[dict] = None,
-        ip_address: Optional[str] = None,
+        old_values: dict | None = None,
+        new_values: dict | None = None,
+        ip_address: str | None = None,
     ) -> int:
         """Log a data modification event.
 
@@ -238,16 +249,16 @@ class AuditService:
 
     @staticmethod
     def query_logs(
-        tenant_id: Optional[int] = None,
-        resource_type: Optional[str] = None,
-        resource_id: Optional[int] = None,
-        action: Optional[str] = None,
-        category: Optional[str] = None,
-        identity_id: Optional[int] = None,
-        portal_user_id: Optional[int] = None,
-        start_date: Optional[datetime.datetime] = None,
-        end_date: Optional[datetime.datetime] = None,
-        success: Optional[bool] = None,
+        tenant_id: int | None = None,
+        resource_type: str | None = None,
+        resource_id: int | None = None,
+        action: str | None = None,
+        category: str | None = None,
+        identity_id: int | None = None,
+        portal_user_id: int | None = None,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        success: bool | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> dict:
@@ -452,7 +463,7 @@ class AuditService:
                 "unique_resources": unique_resources,
             },
             "events": [AuditService._log_to_dict(log) for log in logs],
-            "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         }
 
     @staticmethod
@@ -478,39 +489,169 @@ class AuditService:
         }
 
     @staticmethod
-    def cleanup_old_logs(tenant_id: int) -> dict:
-        """Clean up audit logs older than retention period.
+    def min_retention_days() -> int:
+        """Hard floor (days) below which no tenant's logs may ever be purged.
+
+        Read from AUDIT_RETENTION_MIN_DAYS (default 30). Protects against a
+        misconfigured tenant `data_retention_days` value causing premature
+        deletion of records still needed for compliance/investigation.
+        """
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_MIN_DAYS", "30")))
+        except (TypeError, ValueError):
+            return 30
+
+    @staticmethod
+    def retention_batch_size() -> int:
+        """Max rows deleted per batch during a retention purge (bounded delete)."""
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_BATCH_SIZE", "500")))
+        except (TypeError, ValueError):
+            return 500
+
+    @staticmethod
+    def retention_max_batches() -> int:
+        """Max batches processed per tenant per purge call (runaway guard)."""
+        try:
+            return max(1, int(os.getenv("AUDIT_RETENTION_MAX_BATCHES", "200")))
+        except (TypeError, ValueError):
+            return 200
+
+    @staticmethod
+    def get_active_tenant_ids(db) -> list[int]:
+        """List active tenant IDs, for retention sweeps and similar jobs.
+
+        Args:
+            db: PyDAL database instance
+
+        Returns:
+            IDs of tenants with is_active == True
+        """
+        rows = db(db.tenants.is_active == True).select(db.tenants.id)  # noqa: E712
+        return [row.id for row in rows]
+
+    @staticmethod
+    def _tenant_details_query(db, tenant_id: int):
+        """Build the "audit log belongs to this tenant" predicate.
+
+        `audit_logs.details` is a plain SQLAlchemy ``JSON`` column (not
+        ``JSONB``); penguin-dal's generic ``FieldProxy.contains()`` degrades
+        to ``ILIKE`` for every field type it accepts, which Postgres rejects
+        on a native ``json`` column (``operator does not exist: json ~~*
+        unknown``). That silently broke every tenant-scoped audit query,
+        including this retention purge -- the scheduler caught and logged
+        the exception each sweep, so purges against Postgres simply never
+        ran (SQLite's dynamic typing tolerated the invalid comparison,
+        which is how this slipped past the previously all-mocked suite).
+
+        Extracting the JSON key directly is valid on both ``json`` and
+        ``jsonb`` columns, so no column-type migration is required. Falls
+        back to plain ``.contains()`` dict-equality for lightweight test
+        doubles that don't model a real SQLAlchemy column.
+
+        Args:
+            db: PyDAL/penguin-dal database instance
+            tenant_id: Tenant ID to scope the predicate to
+
+        Returns:
+            A composable query predicate for `db.audit_logs.details`
+        """
+        details = db.audit_logs.details
+        if isinstance(details, FieldProxy):
+            column = details.column
+            return Query(
+                column["tenant_id"].as_integer() == tenant_id, table=column.table
+            )
+        return details.contains({"tenant_id": tenant_id})
+
+    @staticmethod
+    def cleanup_old_logs(
+        tenant_id: int,
+        db=None,
+        batch_size: int | None = None,
+        max_batches: int | None = None,
+    ) -> dict:
+        """Clean up audit logs older than the tenant's retention period.
+
+        Called both by the manual admin-triggered endpoint and by the
+        automatic retention scheduler (`apps.api.services.audit.scheduler`).
+        Deletes are batched and bounded so a single call can never run away,
+        and the configured retention window is floored at
+        `min_retention_days()` so it can never purge below the compliance
+        minimum, regardless of tenant configuration.
 
         Args:
             tenant_id: Tenant ID
+            db: PyDAL database instance; defaults to `current_app.db` for
+                request-context callers. The scheduler passes it explicitly
+                since it runs outside a Quart request/app context.
+            batch_size: Rows per delete batch (default: retention_batch_size())
+            max_batches: Max batches this call will process (default:
+                retention_max_batches())
 
         Returns:
-            Cleanup result
+            Cleanup result with deleted_count and the effective window used
         """
-        db = current_app.db
+        db = db if db is not None else current_app.db
 
         tenant = db.tenants[tenant_id]
         if not tenant:
             return {"error": "Tenant not found"}
 
-        retention_days = tenant.data_retention_days or 90
-        cutoff_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        min_days = AuditService.min_retention_days()
+        configured_days = (
+            tenant.data_retention_days or AuditService.DEFAULT_RETENTION_DAYS
+        )
+        retention_days = max(configured_days, min_days)
+
+        cutoff_date = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             days=retention_days
         )
 
-        # Count logs to delete
-        query = db.audit_logs.details.contains({"tenant_id": tenant_id}) & (
+        batch_size = batch_size or AuditService.retention_batch_size()
+        max_batches = max_batches or AuditService.retention_max_batches()
+
+        query = AuditService._tenant_details_query(db, tenant_id) & (
             db.audit_logs.created_at < cutoff_date
         )
-        count = db(query).count()
 
-        # Delete old logs
-        db(query).delete()
-        db.commit()
+        deleted_count = 0
+        batches_run = 0
+
+        # Bounded batch delete: select a page of matching IDs, delete just
+        # those, commit, repeat. Idempotent — re-running (e.g. after a crash
+        # mid-sweep) simply re-selects whatever still matches the cutoff.
+        while batches_run < max_batches:
+            page = db(query).select(db.audit_logs.id, limitby=(0, batch_size))
+            ids = [row.id for row in page]
+            if not ids:
+                break
+
+            db(db.audit_logs.id.belongs(ids)).delete()
+            db.commit()
+
+            deleted_count += len(ids)
+            batches_run += 1
+
+            if len(ids) < batch_size:
+                break
+
+        truncated = batches_run >= max_batches and deleted_count > 0
+
+        if truncated:
+            logger.warning(
+                "audit_retention_purge_truncated "
+                f"tenant_id={tenant_id} batches_run={batches_run} "
+                f"deleted_count={deleted_count}"
+            )
 
         return {
             "tenant_id": tenant_id,
-            "deleted_count": count,
+            "deleted_count": deleted_count,
             "retention_days": retention_days,
+            "configured_retention_days": configured_days,
+            "min_retention_days": min_days,
             "cutoff_date": cutoff_date.isoformat(),
+            "batches_run": batches_run,
+            "truncated": truncated,
         }

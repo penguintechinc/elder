@@ -1,0 +1,353 @@
+"""Sync configuration and management API endpoints.
+
+Provides API endpoints for managing two-way synchronization with external
+project management platforms (GitHub, GitLab, Jira, Trello, OpenProject).
+"""
+
+# flake8: noqa: E501
+
+from datetime import UTC, datetime, timezone
+
+from quart import Blueprint, current_app, g, jsonify, request
+from quart_cors import route_cors
+from quart_schema import validate_response
+
+from apps.api.auth.decorators import admin_required, login_required, require_scope
+from apps.api.models.pydantic.sync import (
+    SyncConfigEnvelopeResponse,
+    SyncConfigListResponse,
+    SyncConfigResponse,
+    SyncConflictEnvelopeResponse,
+    SyncConflictResponse,
+)
+from apps.api.utils.async_utils import run_in_threadpool
+
+bp = Blueprint("sync", __name__, url_prefix="/api/v1/sync")
+
+
+@bp.route("/configs", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+@validate_response(SyncConfigListResponse)
+def list_sync_configs():
+    """List all sync configurations."""
+    db = current_app.db
+
+    rows = db(db.sync_configs.id > 0).select()
+
+    return SyncConfigListResponse(
+        configs=[SyncConfigResponse.from_row(row) for row in rows]
+    ), 200
+
+
+@bp.route("/configs", methods=["POST"])
+@route_cors()
+@login_required
+@require_scope("discovery:admin")
+@admin_required
+@validate_response(SyncConfigEnvelopeResponse, status_code=201)
+async def create_sync_config():
+    """Create a new sync configuration."""
+    db = current_app.db
+    data = request.json
+
+    # Validate required fields
+    required = ["name", "platform"]
+    if not all(field in data for field in required):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    def inner():
+        now = datetime.now(UTC)
+        config_id = db.sync_configs.insert(
+            name=data["name"],
+            platform=data["platform"],
+            enabled=data.get("enabled", True),
+            sync_interval=data.get("sync_interval", 300),
+            batch_fallback_enabled=data.get("batch_fallback_enabled", True),
+            batch_size=data.get("batch_size", 100),
+            two_way_create=data.get("two_way_create", False),
+            webhook_enabled=data.get("webhook_enabled", True),
+            webhook_secret=data.get("webhook_secret"),
+            config_json=data.get("config_json", {}),
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+        # sync_configs is a global, admin-only platform-integration config
+        # table (no tenant_id/organization_id column) — gated by
+        # @admin_required, not per-tenant data.
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: see above
+        return config, None, None
+
+    config_row, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return SyncConfigEnvelopeResponse(
+        config=SyncConfigResponse.from_row(config_row)
+    ), 201
+
+
+@bp.route("/configs/<int:config_id>", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+@validate_response(SyncConfigEnvelopeResponse)
+def get_sync_config(config_id):
+    """Get sync configuration details."""
+    db = current_app.db
+
+    config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
+
+    if not config:
+        return jsonify({"error": "Config not found"}), 404
+
+    return SyncConfigEnvelopeResponse(config=SyncConfigResponse.from_row(config)), 200
+
+
+@bp.route("/configs/<int:config_id>", methods=["PATCH"])
+@route_cors()
+@admin_required
+@require_scope("discovery:admin")
+@validate_response(SyncConfigEnvelopeResponse)
+async def update_sync_config(config_id):
+    """Update sync configuration."""
+    db = current_app.db
+    data = request.json
+
+    def inner():
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
+        if not config:
+            return None, "Config not found", 404
+
+        allowed_fields = [
+            "enabled",
+            "sync_interval",
+            "batch_fallback_enabled",
+            "batch_size",
+            "two_way_create",
+            "webhook_enabled",
+            "webhook_secret",
+            "config_json",
+        ]
+
+        update_data = {k: v for k, v in data.items() if k in allowed_fields}
+        db(db.sync_configs.id == config_id).update(**update_data)
+        db.commit()
+
+        updated_config = db.sync_configs[config_id]  # tenant-scope-exempt
+        return updated_config, None, None
+
+    config_row, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return SyncConfigEnvelopeResponse(
+        config=SyncConfigResponse.from_row(config_row)
+    ), 200
+
+
+@bp.route("/configs/<int:config_id>", methods=["DELETE"])
+@route_cors()
+@admin_required
+@require_scope("discovery:admin")
+async def delete_sync_config(config_id):
+    """Delete sync configuration."""
+    db = current_app.db
+
+    def inner():
+        config = db.sync_configs[config_id]  # tenant-scope-exempt: global admin config
+        if not config:
+            return None, "Config not found", 404
+
+        db(db.sync_configs.id == config_id).delete()
+        db.commit()
+        return {"message": "Config deleted"}, None, None
+
+    result, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return jsonify(result), 200
+
+
+@bp.route("/history", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+def list_sync_history():
+    """List sync history with pagination."""
+    db = current_app.db
+
+    # Pagination
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 50, type=int)
+    offset = (page - 1) * per_page
+
+    # Filters
+    config_id = request.args.get("config_id", type=int)
+    sync_type = request.args.get("sync_type")
+
+    query = db.sync_history
+
+    if config_id:
+        query = query(db.sync_history.sync_config_id == config_id)
+
+    if sync_type:
+        query = query(db.sync_history.sync_type == sync_type)
+
+    # Get total count
+    total = query.count()
+
+    # Get paginated results
+    history = query.select(
+        orderby=~db.sync_history.started_at, limitby=(offset, offset + per_page)
+    ).as_list()
+
+    return (
+        jsonify(
+            {
+                "history": history,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": total,
+                    "pages": (total + per_page - 1) // per_page,
+                },
+            }
+        ),
+        200,
+    )
+
+
+@bp.route("/conflicts", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+def list_sync_conflicts():
+    """List unresolved sync conflicts."""
+    db = current_app.db
+
+    # Filters
+    resolved = request.args.get("resolved", "false").lower() == "true"
+
+    conflicts = (
+        db(db.sync_conflicts.resolved == resolved)
+        .select(orderby=~db.sync_conflicts.created_at)
+        .as_list()
+    )
+
+    return jsonify({"conflicts": conflicts}), 200
+
+
+@bp.route("/conflicts/<int:conflict_id>/resolve", methods=["POST"])
+@route_cors()
+@admin_required
+@require_scope("discovery:admin")
+@validate_response(SyncConflictEnvelopeResponse)
+async def resolve_conflict(conflict_id):
+    """Resolve a sync conflict manually."""
+    db = current_app.db
+    data = request.json
+    user_id = g.current_user.id
+
+    def inner():
+        # sync_conflicts has no tenant_id/organization_id column -- it's
+        # tied to sync_mappings/sync_configs, both global admin-only
+        # platform-integration config (see create_sync_config)
+        conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt: see above
+        if not conflict:
+            return None, "Conflict not found", 404
+
+        strategy = data.get("resolution_strategy", "manual")
+        db(db.sync_conflicts.id == conflict_id).update(
+            resolved=True,
+            resolved_at=datetime.now(),
+            resolved_by_id=user_id,
+            resolution_strategy=strategy,
+        )
+        db.commit()
+
+        updated_conflict = db.sync_conflicts[conflict_id]  # tenant-scope-exempt
+        return updated_conflict, None, None
+
+    conflict_row, error, status = await run_in_threadpool(inner)
+    if error:
+        return jsonify({"error": error}), status
+    return SyncConflictEnvelopeResponse(
+        conflict=SyncConflictResponse.model_validate(conflict_row)
+    ), 200
+
+
+@bp.route("/mappings", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+def list_sync_mappings():
+    """List sync mappings."""
+    db = current_app.db
+
+    # Filters
+    config_id = request.args.get("config_id", type=int)
+    elder_type = request.args.get("elder_type")
+
+    query = db.sync_mappings
+
+    if config_id:
+        query = query(db.sync_mappings.sync_config_id == config_id)
+
+    if elder_type:
+        query = query(db.sync_mappings.elder_type == elder_type)
+
+    mappings = query.select().as_list()
+
+    return jsonify({"mappings": mappings}), 200
+
+
+@bp.route("/status", methods=["GET"])
+@route_cors()
+@login_required
+@require_scope("discovery:read")
+def sync_status():
+    """Get overall sync status summary."""
+    db = current_app.db
+
+    # Count configs
+    total_configs = db(db.sync_configs.id > 0).count()
+    enabled_configs = db(db.sync_configs.enabled is True).count()
+
+    # Count recent syncs (last 24 hours)
+    from datetime import timedelta
+
+    cutoff = datetime.now() - timedelta(hours=24)
+
+    recent_syncs = db(db.sync_history.started_at > cutoff).count()
+    recent_failures = db(
+        (db.sync_history.started_at > cutoff) & (db.sync_history.success is False)
+    ).count()
+
+    # Count unresolved conflicts
+    unresolved_conflicts = db(db.sync_conflicts.resolved is False).count()
+
+    # Count mappings
+    total_mappings = db(db.sync_mappings.id > 0).count()
+
+    return (
+        jsonify(
+            {
+                "configs": {
+                    "total": total_configs,
+                    "enabled": enabled_configs,
+                },
+                "recent_activity": {
+                    "syncs_24h": recent_syncs,
+                    "failures_24h": recent_failures,
+                },
+                "conflicts": {
+                    "unresolved": unresolved_conflicts,
+                },
+                "mappings": {
+                    "total": total_mappings,
+                },
+            }
+        ),
+        200,
+    )

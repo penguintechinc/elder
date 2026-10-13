@@ -2,12 +2,15 @@
 
 # flake8: noqa: E501
 
-
 import os
 
 from quart import Blueprint, flash, redirect, render_template, url_for
 
-from apps.api.auth.web_auth import clear_session_cookie, get_web_user, web_login_required
+from apps.api.auth.web_auth import (
+    clear_session_cookie,
+    get_web_user,
+    web_login_required,
+)
 from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
@@ -160,7 +163,9 @@ async def create_entity():
 @web_login_required
 async def view_entity(id):
     """View entity details."""
-    return await render_template("entities/view.html", entity_id=id, **get_template_context())
+    return await render_template(
+        "entities/view.html", entity_id=id, **get_template_context()
+    )
 
 
 @bp.route("/entities/<int:id>/edit")
@@ -211,6 +216,21 @@ async def view_issue(id):
 
 
 # ============================================================================
+# SPA Catch-All Route
+# ============================================================================
+
+
+@bp.route("/<path:path>")
+async def spa_catch_all(path):
+    """Catch-all route for SPA client-side routing."""
+    if path.startswith("api/"):
+        from quart import jsonify
+
+        return jsonify({"error": "Not found"}), 404
+    return await render_template("dashboard.html", **get_template_context())
+
+
+# ============================================================================
 # Error Handlers
 # ============================================================================
 
@@ -218,10 +238,20 @@ async def view_issue(id):
 @bp.errorhandler(404)
 async def not_found(error):
     """404 error handler."""
-    return await render_template("errors/404.html", **get_template_context()), 404
+    from quart import request
+
+    if request.path.startswith("/api/"):
+        from quart import jsonify
+
+        return jsonify({"error": "Not found"}), 404
+    return await render_template("dashboard.html", **get_template_context()), 404
 
 
 @bp.errorhandler(500)
 async def internal_error(error):
     """500 error handler."""
-    return await render_template("errors/500.html", **get_template_context()), 500
+    from quart import jsonify, request
+
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Internal server error"}), 500
+    return await render_template("dashboard.html", **get_template_context()), 500

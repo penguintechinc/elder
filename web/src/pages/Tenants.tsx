@@ -10,6 +10,14 @@ import Card, { CardContent } from '@/components/Card'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import type { Tenant } from '@/types'
 
+interface ApiError {
+  response?: {
+    data?: { error?: string }
+    status?: number
+  }
+  message?: string
+}
+
 // Form fields for tenant creation
 const tenantFields: FormField[] = [
   {
@@ -71,26 +79,26 @@ export default function Tenants() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, any>) => api.createTenant(data as Parameters<typeof api.createTenant>[0]),
+    mutationFn: (data: Record<string, unknown>) => api.createTenant(data as Parameters<typeof api.createTenant>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant created successfully')
       setShowCreateModal(false)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to create tenant')
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, any> }) =>
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
       api.updateTenant(id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant updated successfully')
       setEditingTenant(null)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update tenant')
     },
   })
@@ -101,16 +109,16 @@ export default function Tenants() {
       await queryClient.invalidateQueries({ queryKey: ['tenants'], refetchType: 'all' })
       toast.success('Tenant deactivated successfully')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to deactivate tenant')
     },
   })
 
-  const handleCreate = (data: Record<string, any>) => {
+  const handleCreate = (data: Record<string, unknown>) => {
     createMutation.mutate(data)
   }
 
-  const handleUpdate = (data: Record<string, any>) => {
+  const handleUpdate = (data: Record<string, unknown>) => {
     if (editingTenant) {
       updateMutation.mutate({
         id: editingTenant.id,

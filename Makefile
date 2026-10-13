@@ -1,17 +1,18 @@
 # Elder - Entity Relationship Tracking Application Makefile
 
 .PHONY: help \
-        setup setup-env setup-python \
-        dev dev-api dev-stop generate-grpc \
+        setup setup-env setup-python setup-lint verify-venv install-hooks verify-hooks \
+        dev dev-api dev-stop test-db-up test-db-down build-test-image generate-grpc openapi-spec \
         test test-unit test-integration test-e2e test-functional test-security test-coverage \
-        smoke-test smoke-test-beta seed-mock-data screenshots \
+        smoke-test smoke-test-beta seed-mock-data seed-cloud-discovery seed-demo-unified seed-k8s-geo-demo screenshots \
         lint format format-check \
         test-ui test-ui-headed test-ui-debug test-beta \
         build docker-build docker-build-alpha docker-push docker-scan \
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
         helm-lint helm-template \
-        license-validate license-check-features \
+        lock lock-api lock-dev lock-worker lock-scanner lock-mcp \
+        license-validate license-check-features license-check-deps \
         clean clean-docker \
         version version-bump-patch version-bump-minor version-bump-major \
         health pre-commit
@@ -28,6 +29,7 @@ K8S_NAMESPACE   := $(PROJECT_NAME)
 VENV            := .venv
 PYTHON          := $(VENV)/bin/python3
 PIP             := $(VENV)/bin/pip
+PYTHON_VERSION  := 3.13
 
 # Colors
 RED    := \033[31m
@@ -44,8 +46,16 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(YELLOW)%-28s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # ── Setup ──────────────────────────────────────────────────────────────────
-setup: setup-env setup-python ## Install all dependencies and initialize the project
+setup: setup-env setup-python install-hooks ## Install all dependencies and initialize the project
 	@echo "$(GREEN)Setup complete! Edit .env, then run 'make dev'$(RESET)"
+
+install-hooks: ## Install pre-commit git hooks
+	@bash scripts/install-pre-commit.sh
+	@echo "$(GREEN)Git hooks installed$(RESET)"
+
+verify-hooks: ## Verify pre-commit hooks are installed and working
+	@bash scripts/install-pre-commit.sh --verify
+	@echo "$(GREEN)Git hooks verified$(RESET)"
 
 setup-env: ## Create .env from template (no-op if already exists)
 	@if [ ! -f .env ]; then \
@@ -71,13 +81,94 @@ setup-env: ## Create .env from template (no-op if already exists)
 		echo "$(YELLOW).env already exists$(RESET)"; \
 	fi
 
-setup-python: ## Create .venv and install Python dependencies
+setup-python: ## Create .venv (Python $(PYTHON_VERSION)) and install Python dependencies
 	@echo "$(BLUE)Setting up Python virtualenv...$(RESET)"
-	@python3 --version
-	@python3 -m venv $(VENV)
-	@$(PIP) install --upgrade pip --quiet
-	@$(PIP) install -r requirements.txt --quiet
+	@if command -v uv >/dev/null 2>&1; then \
+		uv venv --seed -p $(PYTHON_VERSION) $(VENV); \
+	elif command -v python$(PYTHON_VERSION) >/dev/null 2>&1; then \
+		python$(PYTHON_VERSION) -m venv $(VENV); \
+	else \
+		echo "$(RED)Python $(PYTHON_VERSION) not found. Install it (or uv) and re-run.$(RESET)"; \
+		echo "$(RED)Elder requires $(PYTHON_VERSION)+ — 3.12 is end-of-support for this project.$(RESET)"; \
+		exit 1; \
+	fi
+	@$(PYTHON) --version
+	@$(PYTHON) -c 'import sys; v=sys.version_info; sys.exit(0) if (v.major,v.minor)>=(3,13) else sys.exit("venv is %d.%d, need >=3.13" % (v.major,v.minor))'
+	@# Install with pip, not `uv pip`: requirements.txt excludes `pip` itself
+	@# (lock-api passes --no-emit-package pip), and pip-audit depends on pip.
+	@# pip treats its own already-installed self as satisfied; uv does not, and
+	@# fails --require-hashes. This is the same command the Dockerfiles run.
+	@$(PIP) install --require-hashes -r requirements.txt --quiet
+	@$(PIP) install --require-hashes -r requirements-dev.txt --quiet
 	@echo "$(GREEN)Python dependencies installed into $(VENV)/$(RESET)"
+
+setup-lint: ## Create .venv if absent and install ONLY the lint/type-check toolchain
+	@if [ ! -x $(PYTHON) ]; then \
+		echo "$(BLUE)No .venv — creating one for the lint toolchain...$(RESET)"; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv venv --seed -p $(PYTHON_VERSION) $(VENV); \
+		elif command -v python$(PYTHON_VERSION) >/dev/null 2>&1; then \
+			python$(PYTHON_VERSION) -m venv $(VENV); \
+		else \
+			echo "$(RED)Python $(PYTHON_VERSION) not found. Install it (or uv) and re-run.$(RESET)"; \
+			exit 1; \
+		fi; \
+	fi
+	@$(PIP) install --require-hashes -r requirements-dev.txt --quiet
+	@echo "$(GREEN)Lint toolchain ready in $(VENV)/$(RESET)"
+
+verify-venv: ## Fail if .venv is missing, wrong Python version, or missing dev tooling
+	@test -x $(PYTHON) || { echo "$(RED).venv missing — run 'make setup-python'$(RESET)"; exit 1; }
+	@$(PYTHON) -c 'import sys; v=sys.version_info; sys.exit(0) if (v.major,v.minor)>=(3,13) else sys.exit("venv is %d.%d, need >=3.13 — run: rm -rf .venv && make setup-python" % (v.major,v.minor))'
+	@$(PYTHON) -m ruff --version >/dev/null 2>&1 || { echo "$(RED)ruff missing from .venv — run 'make setup-python'$(RESET)"; exit 1; }
+	@$(PYTHON) -m mypy --version >/dev/null 2>&1 || { echo "$(RED)mypy missing from .venv — run 'make setup-python'$(RESET)"; exit 1; }
+	@echo "$(GREEN).venv OK ($$($(PYTHON) --version), ruff + mypy present)$(RESET)"
+
+# ── Dependency Compilation ─────────────────────────────────────────────
+# uv (https://github.com/astral-sh/uv) is a fast, modern Python package installer
+# Replaces pip-compile with faster resolution and native hash pinning
+lock: lock-api lock-dev lock-worker lock-scanner lock-mcp ## Compile all lockfiles (uv pip compile with hashes)
+	@echo "$(GREEN)All lockfiles compiled with uv$(RESET)"
+
+lock-api: ## Compile root requirements.txt (uv pip compile --generate-hashes)
+	@echo "$(BLUE)Compiling requirements.txt (api)...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip requirements.in -o requirements.txt && \
+		chown $$(id -u):$$(id -g) requirements.txt"
+	@echo "$(GREEN)requirements.txt compiled$(RESET)"
+
+lock-dev: ## Compile requirements-dev.txt (lint/type-check toolchain)
+	@echo "$(BLUE)Compiling requirements-dev.txt...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip requirements-dev.in -o requirements-dev.txt && \
+		chown $$(id -u):$$(id -g) requirements-dev.txt"
+	@echo "$(GREEN)requirements-dev.txt compiled$(RESET)"
+
+lock-worker: ## Compile apps/worker/requirements.txt (uv pip compile --generate-hashes)
+	@echo "$(BLUE)Compiling apps/worker/requirements.txt...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip apps/worker/requirements.in -o apps/worker/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/worker/requirements.txt"
+	@echo "$(GREEN)apps/worker/requirements.txt compiled$(RESET)"
+
+lock-scanner: ## Compile apps/scanner/requirements.txt (uv pip compile --generate-hashes)
+	@echo "$(BLUE)Compiling apps/scanner/requirements.txt...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip apps/scanner/requirements.in -o apps/scanner/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/scanner/requirements.txt"
+	@echo "$(GREEN)apps/scanner/requirements.txt compiled$(RESET)"
+
+lock-mcp: ## Compile apps/mcp/requirements.txt (uv pip compile --generate-hashes)
+	@echo "$(BLUE)Compiling apps/mcp/requirements.txt...$(RESET)"
+	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
+		pip install --quiet uv==0.11.28 && \
+		uv pip compile --generate-hashes --no-emit-package pip apps/mcp/requirements.in -o apps/mcp/requirements.txt && \
+		chown $$(id -u):$$(id -g) apps/mcp/requirements.txt"
+	@echo "$(GREEN)apps/mcp/requirements.txt compiled$(RESET)"
 
 # ── Development ────────────────────────────────────────────────────────────
 dev: ## Start backing services (postgres + redis) for local Flask development
@@ -100,6 +191,30 @@ dev-stop: ## Stop local backing services
 	@docker stop elder-postgres elder-redis 2>/dev/null || true
 	@echo "$(GREEN)Backing services stopped$(RESET)"
 
+# ── Test Infrastructure ────────────────────────────────────────────────────────
+test-db-up: ## Start test Postgres (pgvector) + Redis containers (non-default ports)
+	@echo "$(BLUE)Starting test database containers...$(RESET)"
+	@docker run -d --name elder-test-postgres -p 55432:5432 \
+		-e POSTGRES_DB=elder_test -e POSTGRES_USER=elder_test \
+		-e POSTGRES_PASSWORD=elder_test_password \
+		-e PGDATA=/var/lib/postgresql/data/pgdata \
+		pgvector/pgvector:pg16 2>/dev/null || docker start elder-test-postgres
+	@docker run -d --name elder-test-redis -p 56379:6379 \
+		redis:7-bookworm redis-server 2>/dev/null || docker start elder-test-redis
+	@echo "$(GREEN)Test databases ready:$(RESET)"
+	@echo "  DATABASE_URL=postgresql://elder_test:elder_test_password@localhost:55432/elder_test"
+	@echo "  REDIS_URL=redis://localhost:56379/0"
+
+test-db-down: ## Stop test Postgres + Redis containers
+	@docker stop elder-test-postgres elder-test-redis 2>/dev/null || true
+	@docker rm elder-test-postgres elder-test-redis 2>/dev/null || true
+	@echo "$(GREEN)Test databases stopped$(RESET)"
+
+build-test-image: ## Build test image (elder-test:3.13) with all deps
+	@echo "$(BLUE)Building test image...$(RESET)"
+	@docker build -f tests/Dockerfile -t elder-test:3.13 .
+	@echo "$(GREEN)Test image built: elder-test:3.13$(RESET)"
+
 generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
 	@echo "$(BLUE)Generating gRPC stubs...$(RESET)"
 	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim bash -c "\
@@ -115,6 +230,15 @@ generate-grpc: ## Regenerate Python gRPC stubs from protobuf schemas
 		done"
 	@touch apps/api/grpc/generated/__init__.py
 	@echo "$(GREEN)gRPC stubs generated$(RESET)"
+
+openapi-spec: test-db-up build-test-image ## Regenerate openapi/v4.yaml from quart-schema route definitions
+	@echo "$(BLUE)Generating openapi/v4.yaml...$(RESET)"
+	@docker run --rm --network host \
+		-e DATABASE_URL="postgresql://elder_test:elder_test_password@localhost:55432/elder_test" \
+		-e REDIS_URL="redis://localhost:56379/0" \
+		-v $(PWD):/app -w /app --entrypoint python3 elder-test:3.13 \
+		scripts/generate_openapi_spec.py
+	@echo "$(GREEN)openapi/v4.yaml regenerated$(RESET)"
 
 # ── Testing ────────────────────────────────────────────────────────────────
 test: lint test-unit test-integration test-functional test-security ## Run all tests (lint + unit + integration + functional + security)
@@ -202,6 +326,21 @@ seed-mock-data: ## Seed 3-4 realistic mock items per feature for local testing
 	@$(PYTHON) scripts/seed_mock_data.py
 	@echo "$(GREEN)Mock data seeded$(RESET)"
 
+seed-cloud-discovery: ## Seed a demo AWS cloud-discovery topology via the real linker (no live AWS)
+	@echo "$(BLUE)Seeding cloud-discovery demo topology...$(RESET)"
+	@$(PYTHON) scripts/seed_cloud_discovery.py
+	@echo "$(GREEN)Cloud-discovery demo topology seeded$(RESET)"
+
+seed-demo-unified: ## Seed native unified-model demo data (support issues, CRM, intake forms, webhooks)
+	@echo "$(BLUE)Seeding unified-model demo data (support/CRM experience)...$(RESET)"
+	@$(PYTHON) scripts/seed_demo_unified.py
+	@echo "$(GREEN)Unified-model demo data seeded$(RESET)"
+
+seed-k8s-geo-demo: ## Seed demo K8s cluster hierarchy (parent_id-linked) + geo-located entities for the Map
+	@echo "$(BLUE)Seeding K8s cluster hierarchy + geo-located entities...$(RESET)"
+	@$(PYTHON) scripts/seed_k8s_geo_demo.py
+	@echo "$(GREEN)K8s/geo demo data seeded$(RESET)"
+
 screenshots: ## Capture screenshots with mock data (requires seed-mock-data first)
 	@node scripts/capture-screenshots.cjs
 
@@ -214,31 +353,38 @@ pre-commit: ## Run full pre-commit sequence (lint + security + tests + smoke-tes
 	@echo "$(GREEN)All pre-commit checks passed$(RESET)"
 
 # ── Code Quality ───────────────────────────────────────────────────────────
-lint: ## Run all linters (flake8, black, isort, mypy, hadolint, shellcheck)
-	@echo "$(BLUE)[1/6] flake8 — Python style...$(RESET)"
-	@$(PYTHON) -m flake8 apps/ shared/ --max-line-length=120 --exclude=.git,__pycache__,venv,node_modules || true
-	@echo "$(BLUE)[2/6] black — Python formatting...$(RESET)"
-	@$(PYTHON) -m black --check apps/ shared/ tests/ --exclude '/(\.git|venv|__pycache__|node_modules)/' || true
-	@echo "$(BLUE)[3/6] isort — Python import ordering...$(RESET)"
-	@$(PYTHON) -m isort --check-only apps/ shared/ tests/ || true
-	@echo "$(BLUE)[4/6] mypy — Python type checking...$(RESET)"
-	@$(PYTHON) -m mypy apps/ shared/ --ignore-missing-imports || true
-	@echo "$(BLUE)[5/6] hadolint — Dockerfile linting...$(RESET)"
-	@find . -name "Dockerfile*" -not -path "*/.git/*" | xargs -I {} sh -c 'echo "  Checking {}..."; docker run --rm -i hadolint/hadolint:2.12.0 < {} || true'
-	@echo "$(BLUE)[6/6] shellcheck — Shell script linting...$(RESET)"
-	@find . -name "*.sh" -not -path "*/.git/*" -not -path "*/node_modules/*" | xargs -I {} sh -c 'echo "  Checking {}..."; shellcheck {} || true'
-	@echo "$(BLUE)Running web linters...$(RESET)"
-	@cd web && npm run lint
-	@echo "$(GREEN)All linters passed$(RESET)"
+# Steps 1-3 are hard gates: they pass today and must keep passing.
+# Step 4 ratchets the linters that still carry debt (mypy, shellcheck, prettier,
+# eslint) — it fails when a count rises above .lint-baseline. Step 5 ratchets
+# gh-237 cross-tenant IDOR debt (unscoped `db.<table>[<id>]` lookups) the same
+# way. Nothing here is wrapped in `|| true`; a gate that cannot fail is not a gate.
+lint: verify-venv ## Run all linters (ruff, ruff-format, hadolint hard-gate; mypy/shellcheck/eslint/prettier + tenant-scoping ratcheted)
+	@echo "$(BLUE)[1/4] ruff — Python linting...$(RESET)"
+	@$(PYTHON) -m ruff check apps/ shared/ scripts/ tests/
+	@echo "$(BLUE)[2/4] ruff-format — Python formatting check...$(RESET)"
+	@$(PYTHON) -m ruff format --check apps/ shared/ scripts/ tests/
+	@echo "$(BLUE)[3/4] hadolint — Dockerfile linting...$(RESET)"
+	@set -e; n=0; \
+	for f in $$(find . -name "Dockerfile*" -not -path "*/.git/*" -not -path "*/node_modules/*"); do \
+		n=$$((n+1)); \
+		docker run --rm -i hadolint/hadolint:2.12.0 < $$f || { echo "$(RED)hadolint failed: $$f$(RESET)"; exit 1; }; \
+	done; \
+	test $$n -gt 0 || { echo "$(RED)No Dockerfiles examined — the scan found nothing.$(RESET)"; exit 1; }; \
+	echo "  $$n Dockerfiles clean"
+	@echo "$(BLUE)[4/5] lint debt ratchet — mypy, shellcheck, prettier, eslint...$(RESET)"
+	@bash scripts/lint-debt.sh
+	@echo "$(BLUE)[5/5] tenant-scoping gate — gh-237 cross-tenant IDOR ratchet...$(RESET)"
+	@$(PYTHON) scripts/check_tenant_scoping.py
+	@echo "$(GREEN)Lint gates passed (hard gates clean, no debt regressions)$(RESET)"
 
-format: ## Auto-format Python code (black + isort)
-	@$(PYTHON) -m black apps/ shared/ tests/
-	@$(PYTHON) -m isort apps/ shared/ tests/
+format: ## Auto-format Python and web code (ruff + prettier)
+	@$(PYTHON) -m ruff format apps/ shared/ scripts/ tests/
+	@cd web && npm run format
 	@echo "$(GREEN)Code formatted$(RESET)"
 
-format-check: ## Check Python formatting without modifying files
-	@$(PYTHON) -m black --check apps/ shared/ tests/
-	@$(PYTHON) -m isort --check apps/ shared/ tests/
+format-check: ## Check formatting without modifying files (ruff + prettier)
+	@$(PYTHON) -m ruff format --check apps/ shared/ scripts/ tests/
+	@cd web && npm run format:check
 
 # ── Build ──────────────────────────────────────────────────────────────────
 build: docker-build ## Build all service containers
@@ -268,6 +414,7 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 	@docker build -t localhost:32000/elder-web:alpha-latest \
 		--build-arg VITE_VERSION=$(VERSION) \
 		--build-arg VITE_BUILD_TIME=$(shell date +%s) \
+		--build-arg VITE_API_URL=http://localhost:30081 \
 		-f web/Dockerfile .
 	@docker push localhost:32000/elder-web:alpha-latest
 	@echo "$(BLUE)Building elder-scanner → localhost:32000...$(RESET)"
@@ -327,9 +474,14 @@ db-backup: ## Backup local postgres to backups/
 	@echo "$(GREEN)Backup saved to backups/$(RESET)"
 
 # ── Kubernetes Deployment ──────────────────────────────────────────────────
-deploy-alpha: ## Deploy to local alpha cluster via Kustomize (context: local-alpha)
-	@echo "$(BLUE)Deploying to alpha (kustomize)...$(RESET)"
-	@kubectl apply --context local-alpha -k k8s/kustomize/overlays/alpha
+deploy-alpha: ## Deploy to local alpha cluster via Helm (context: local-alpha) — assumes images already built/pushed (make docker-build-alpha)
+	@echo "$(BLUE)Deploying to alpha (helm)...$(RESET)"
+	@helm upgrade --install $(PROJECT_NAME) $(HELM_DIR) \
+		--kube-context local-alpha \
+		--namespace $(K8S_NAMESPACE) \
+		--create-namespace \
+		--values $(HELM_DIR)/alpha.yml \
+		--wait --timeout 300s
 	@kubectl --context local-alpha rollout status deployment -n $(K8S_NAMESPACE) --timeout=120s
 	@echo "$(GREEN)Alpha deployment complete$(RESET)"
 
@@ -344,7 +496,7 @@ deploy-prod: ## Deploy to production cluster via Helm (context: $(PROJECT_NAME)-
 	@echo "$(BLUE)Deploying to production...$(RESET)"
 	@echo "$(YELLOW)Ensure you have pushed a git tag before deploying to prod$(RESET)"
 	@helm upgrade --install $(PROJECT_NAME) $(HELM_DIR) \
-		--context $(PROJECT_NAME)-prod \
+		--kube-context $(PROJECT_NAME)-prod \
 		--namespace $(K8S_NAMESPACE) \
 		--create-namespace \
 		--values $(HELM_DIR)/values-prod.yaml \
@@ -356,7 +508,7 @@ helm-lint: ## Lint the Helm chart
 	@helm lint $(HELM_DIR)
 
 helm-template: ## Render Helm templates with alpha values (dry-run review)
-	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/values-alpha.yaml
+	@helm template $(PROJECT_NAME) $(HELM_DIR) --values $(HELM_DIR)/alpha.yml
 
 # ── License ────────────────────────────────────────────────────────────────
 license-validate: ## Validate license configuration
@@ -364,6 +516,47 @@ license-validate: ## Validate license configuration
 
 license-check-features: ## List available licensed features
 	@$(PYTHON) scripts/license/check_features.py
+
+# ── OSS License Compliance ─────────────────────────────────────────────────
+# Elder is AGPL-3.0 (LICENSE.md). Allowlist, not denylist: anything NOT on
+# the list fails — safer than enumerating "bad" licenses, which can never be
+# complete. The root venv ($(VENV)) holds requirements.txt + requirements-dev.txt;
+# the apps/ lock files are each compiled independently and pin conflicting
+# versions (e.g. protobuf 5.x vs 7.x), so they cannot share one venv and are
+# each scanned in a throwaway venv via pip-licenses --python.
+#
+# LICENSE_ALLOW is the single source of truth for the pip-licenses policy,
+# shared across every Python tree scanned below.
+LICENSE_ALLOW := MIT;MIT License;MIT-0;MIT No Attribution;BSD License;BSD;BSD-2-Clause;BSD-3-Clause;3-Clause BSD License;Apache-2.0;Apache Software License;Apache License 2.0;Apache Software License; BSD License;Apache Software License; MIT License;Apache-2.0 AND MIT;Apache-2.0 OR BSD-2-Clause;Apache-2.0 OR BSD-3-Clause;BSD 3-Clause OR Apache-2.0;MIT AND PSF-2.0;MIT OR Apache-2.0;ISC License (ISCL);ISC;PSF-2.0;Python Software Foundation License;Mozilla Public License 2.0 (MPL 2.0);MPL-2.0;GNU Lesser General Public License v2 (LGPLv2);GNU Lesser General Public License v2 or later (LGPLv2+);GNU Lesser General Public License v3 (LGPLv3);GNU Lesser General Public License v3 or later (LGPLv3+);GNU Library or Lesser General Public License (LGPL);GNU General Public License v3 (GPLv3);GNU General Public License v3 or later (GPLv3+);GNU Affero General Public License v3;GNU Affero General Public License v3 or later (AGPLv3+);The Unlicense (Unlicense);Unlicense;Public Domain;zlib/libpng License;HPND;CC0-1.0;0BSD
+# Targeted exceptions: packages whose wheel ships no parseable license metadata
+# but whose bundled LICENSE is a known allowlisted license. NOT a blanket
+# UNKNOWN allowance — each entry is justified here, one package at a time.
+#   google-crc32c (apps/worker): real license is Apache-2.0 (LICENSE bundled in
+#   the wheel), but 1.8.0 exposes no License field, License-Expression, or
+#   License classifier, so pip-licenses reports UNKNOWN. Ignore it specifically.
+LICENSE_IGNORE_PKGS := google-crc32c
+# App dependency trees scanned in addition to the root venv.
+LICENSE_APP_REQS := apps/worker/requirements.txt apps/scanner/requirements.txt apps/mcp/requirements.txt
+license-check-deps: ## Flag AGPL/GPL-incompatible OSS dependency licenses (Python + npm)
+	@echo "$(BLUE)[1/3] pip-licenses — root Python dependency licenses ($(VENV))...$(RESET)"
+	@$(VENV)/bin/pip-licenses --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS)
+	@echo "$(BLUE)[2/3] pip-licenses — app dependency trees (worker/scanner/mcp)...$(RESET)"
+	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	for req in $(LICENSE_APP_REQS); do \
+		if [ ! -f "$$req" ]; then echo "$(YELLOW)  skip (missing): $$req$(RESET)"; continue; fi; \
+		echo "$(BLUE)  → $$req$(RESET)"; \
+		vdir="$$tmp/$$(echo "$$req" | tr '/.' '__')"; \
+		if command -v uv >/dev/null 2>&1; then \
+			uv venv --seed -p $(PYTHON_VERSION) "$$vdir" >/dev/null; \
+		else \
+			python$(PYTHON_VERSION) -m venv "$$vdir"; \
+		fi; \
+		"$$vdir/bin/pip" install --require-hashes -r "$$req" --quiet; \
+		$(VENV)/bin/pip-licenses --python "$$vdir/bin/python" --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS); \
+	done
+	@echo "$(BLUE)[3/3] license-checker — npm dependency licenses...$(RESET)"
+	@cd web && npx --yes license-checker@25.0.1 --production --onlyAllow "MIT;MIT-0;(MIT OR Apache-2.0);ISC;BSD;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD;CC0-1.0;CC-BY-3.0;CC-BY-4.0;Unlicense;WTFPL;MPL-2.0;LGPL-2.1;LGPL-2.1+;LGPL-3.0;LGPL-3.0+;GPL-3.0;GPL-3.0+;AGPL-3.0;AGPL-3.0+;Python-2.0" --excludePackages "project-template-web@4.0.0"
+	@echo "$(GREEN)No AGPL/GPL-incompatible dependency licenses found$(RESET)"
 
 # ── Housekeeping ───────────────────────────────────────────────────────────
 clean: ## Remove Python caches, pytest artifacts, and coverage reports

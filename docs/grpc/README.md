@@ -511,7 +511,7 @@ grpc.StatusCode.UNIMPLEMENTED: Method not yet implemented
 
 ### CORS Issues (gRPC-Web)
 
-If browser requests fail with CORS errors, check Envoy proxy configuration in `infrastructure/envoy/envoy.yaml` and ensure CORS is properly configured.
+If browser requests fail with CORS errors, check the CORS configuration on the gRPC-Web proxy in front of the API. Elder ships no Envoy config of its own — `infrastructure/envoy/envoy.yaml` has never existed in this repo.
 
 ## References
 

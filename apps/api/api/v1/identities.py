@@ -2,16 +2,16 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
-from dataclasses import asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
-from penguin_libs.pydantic.flask_integration import validated_request
+from quart_schema import validate_response
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import login_required, permission_required
+from apps.api.common.licensing.enforce import check_limit
 from apps.api.models.dataclasses import (
     IdentityDTO,
     PaginatedResponse,
@@ -25,9 +25,62 @@ from apps.api.models.pydantic.identity import (
     UpdateIdentityGroupRequest,
     UpdateIdentityRequest,
 )
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import PaginationParams
+from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 bp = Blueprint("identities", __name__)
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityListResponse:
+    """Paginated list of identities."""
+
+    items: list[IdentityDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+@dataclass(slots=True, frozen=True)
+class IdentityGroupListResponse:
+    """Paginated list of identity groups."""
+
+    items: list[IdentityGroupDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+def _identity_admin_kind(is_superuser: bool, portal_role: str | None) -> str | None:
+    """Determine the license-enforcement kind for an Identity row about to be created.
+
+    Mirrors apps/api/common/licensing/counters.py's Identity branches (see
+    its module docstring for the full admin heuristic): `is_superuser` is a
+    global admin; `portal_role == "admin"` is a tenant admin; anything else
+    is an unlimited member.
+
+    Note: `create_identity` below force-sets `is_superuser=False` and
+    `portal_role="observer"` on every insert (mass-assignment guard -- see
+    the comment on `insert_data`), so this can only ever resolve to
+    "member" through this endpoint today. It's kept as a real check (not
+    hardcoded) so enforcement activates automatically the moment that guard
+    is ever relaxed behind a proper admin-only elevation path, rather than
+    silently staying a no-op forever.
+
+    Returns:
+        "global_admin", "tenant_admin", or None (unlimited member -- skip
+        enforcement).
+    """
+    if is_superuser:
+        return "global_admin"
+    if portal_role == "admin":
+        return "tenant_admin"
+    return None
 
 
 def _identity_row_to_dto(row) -> IdentityDTO:
@@ -52,6 +105,7 @@ def _identity_row_to_dto(row) -> IdentityDTO:
 
 @bp.route("", methods=["GET"])
 @login_required
+@validate_response(IdentityListResponse)
 async def list_identities():
     """
     List all identities with pagination.
@@ -70,8 +124,7 @@ async def list_identities():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     query = db.identities.id > 0
@@ -103,9 +156,6 @@ async def list_identities():
     if auth_provider_id:
         query &= db.identities.auth_provider_id == auth_provider_id
 
-    # Calculate pagination
-    offset = (page - 1) * per_page
-
     # Execute database queries in a single thread pool task to avoid cursor issues
     def get_identities():
         total = db(query).count()
@@ -124,33 +174,31 @@ async def list_identities():
             db.identities.created_at,
             db.identities.updated_at,
             orderby=db.identities.username,
-            limitby=(offset, offset + per_page),
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
         return total, rows
 
     total, rows = await run_in_threadpool(get_identities)
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     items = [_identity_row_to_dto(row) for row in rows]
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityListResponse(
+        items=items,
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityRequest)
+@validate_response(IdentityDTO, status_code=201)
 async def create_identity(body: CreateIdentityRequest):
     """
     Create a new identity/user.
@@ -176,12 +224,15 @@ async def create_identity(body: CreateIdentityRequest):
         f"Creating identity: username={body.username}, type={body.identity_type}, auth={body.auth_provider}"
     )
 
-    # Create identity
-    def create():
+    # Check username uniqueness + derive tenant_id + build insert data.
+    # Split from the actual insert (below) so the license-enforcement check
+    # -- which is async and needs a Quart app context -- can run in between,
+    # since run_in_threadpool closures execute off the event loop.
+    def prepare():
         # Check if username exists
         existing = db(db.identities.username == body.username).select().first()
         if existing:
-            return None, "Username already exists", 400
+            return None, None, "Username already exists", 400
 
         # Derive tenant_id: from request body, then from current user, then from DB default
         tenant_id = body.tenant_id
@@ -201,30 +252,56 @@ async def create_identity(body: CreateIdentityRequest):
             "full_name": body.full_name,
             "auth_provider_id": body.auth_provider_id,
             "is_active": body.is_active,
+            "mfa_enabled": body.mfa_enabled,
             "tenant_id": tenant_id,
+            # Security: is_superuser is NEVER taken from the request body —
+            # accepting it would let any identities:write caller mint a
+            # superuser (privilege escalation / mass assignment). Force
+            # non-superuser here; elevation is a separate admin-only path.
+            "is_superuser": False,
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly.
+            "must_change_password": False,
+            "portal_role": "observer",
         }
 
-        # Create identity
-        now = datetime.now(timezone.utc)
-        identity_id = db.identities.insert(
-            created_at=now, updated_at=now, **insert_data
-        )
-        db.commit()
+        return tenant_id, insert_data, None, None
 
-        return db.identities[identity_id], None, None
-
-    identity, error, status = await run_in_threadpool(create)
+    tenant_id, insert_data, error, status = await run_in_threadpool(prepare)
 
     if error:
         return jsonify({"error": error}), status
 
+    # License enforcement: block creating a new global/tenant admin identity
+    # once the tier's admin limit is reached (observe-only unless the
+    # elder.license-enforcement flag is ON -- see
+    # apps/api/common/licensing/enforce.py). See _identity_admin_kind's
+    # docstring for why this is always a no-op through this endpoint today.
+    kind = _identity_admin_kind(insert_data["is_superuser"], insert_data["portal_role"])
+    if kind:
+        blocked = await check_limit(kind, tenant_id)
+        if blocked is not None:
+            return blocked
+
+    def insert():
+        now = datetime.now(UTC)
+        identity_id = db.identities.insert(
+            created_at=now, updated_at=now, **insert_data
+        )
+        db.commit()
+        return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
+
+    identity = await run_in_threadpool(insert)
+
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 201
+    return identity_dto, 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityDTO)
 async def get_identity(id: int):
     """
     Get identity by ID.
@@ -237,20 +314,28 @@ async def get_identity(id: int):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    identity = await run_in_threadpool(lambda: db.identities[id])
+    # gh-237: without this, any caller granted the global "view_users" role
+    # scope (not just superusers) could read another tenant's identities by
+    # guessing their numeric id -- check_permission()/check_org_permission()
+    # are role-scope checks only, not tenant-aware.
+    identity = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
 
     if not identity:
-        return jsonify({"error": "Identity not found"}), 404
+        return ApiResponse.error("Identity not found", 404)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityRequest)
+@validate_response(IdentityDTO)
 async def update_identity(id: int, body: UpdateIdentityRequest):
     """
     Update identity.
@@ -275,11 +360,14 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         404: Identity not found
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
-    existing = await run_in_threadpool(lambda: db.identities[id])
+    # Check if identity exists and belongs to caller's tenant (gh-237)
+    existing = await run_in_threadpool(
+        lambda: get_tenant_scoped(db, db.identities, id, tenant_id)
+    )
     if not existing:
-        return jsonify({"error": "Identity not found"}), 404
+        return ApiResponse.error("Identity not found", 404)
 
     # Update identity
     def update():
@@ -297,12 +385,12 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
 
         db(db.identities.id == id).update(**update_fields)
         db.commit()
-        return db.identities[id]
+        return db.identities[id]  # tenant-scope-exempt: verified above
 
     identity = await run_in_threadpool(update)
 
     identity_dto = _identity_row_to_dto(identity)
-    return jsonify(asdict(identity_dto)), 200
+    return identity_dto, 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
@@ -321,10 +409,11 @@ async def delete_identity(id: int):
         400: Cannot delete own account or superuser
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
-    # Check if identity exists
+    # Check if identity exists and belongs to caller's tenant (gh-237)
     def check_and_delete():
-        identity = db.identities[id]
+        identity = get_tenant_scoped(db, db.identities, id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 
@@ -351,6 +440,7 @@ async def delete_identity(id: int):
 @bp.route("/groups", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupListResponse)
 async def list_groups():
     """
     List all identity groups.
@@ -365,14 +455,10 @@ async def list_groups():
     db = current_app.db
 
     # Get pagination params
-    page = request.args.get("page", 1, type=int)
-    per_page = min(request.args.get("per_page", 50, type=int), 1000)
+    pagination = PaginationParams.from_request()
 
     # Build query
     query = db.identity_groups.id > 0
-
-    # Calculate pagination
-    offset = (page - 1) * per_page
 
     # Use asyncio TaskGroup for concurrent queries (Python 3.12)
     async with asyncio.TaskGroup() as tg:
@@ -380,7 +466,11 @@ async def list_groups():
         rows_task = tg.create_task(
             run_in_threadpool(
                 lambda: db(query).select(
-                    orderby=db.identity_groups.name, limitby=(offset, offset + per_page)
+                    orderby=db.identity_groups.name,
+                    limitby=(
+                        pagination.offset,
+                        pagination.offset + pagination.per_page,
+                    ),
                 )
             )
         )
@@ -389,27 +479,25 @@ async def list_groups():
     rows = rows_task.result()
 
     # Calculate total pages
-    pages = (total + per_page - 1) // per_page if total > 0 else 0
+    pages = pagination.calculate_pages(total)
 
     # Convert PyDAL rows to DTOs
     items = from_pydal_rows(rows, IdentityGroupDTO)
 
-    # Create paginated response
-    response = PaginatedResponse(
-        items=[asdict(item) for item in items],
+    return IdentityGroupListResponse(
+        items=items,
         total=total,
-        page=page,
-        per_page=per_page,
+        page=pagination.page,
+        per_page=pagination.per_page,
         pages=pages,
-    )
-
-    return jsonify(asdict(response)), 200
+    ), 200
 
 
 @bp.route("/groups", methods=["POST"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=CreateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO, status_code=201)
 async def create_group(body: CreateIdentityGroupRequest):
     """
     Create a new identity group.
@@ -443,7 +531,8 @@ async def create_group(body: CreateIdentityGroupRequest):
         )
         db.commit()
 
-        return db.identity_groups[group_id], None, None
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: schema gap
+        return (group, None, None)
 
     group, error, status = await run_in_threadpool(create)
 
@@ -451,29 +540,33 @@ async def create_group(body: CreateIdentityGroupRequest):
         return jsonify({"error": error}), status
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 201
+    return group_dto, 201
 
 
 @bp.route("/groups/<int:id>", methods=["GET"])
 @login_required
 @permission_required("view_users")
+@validate_response(IdentityGroupDTO)
 async def get_group(id: int):
     """Get identity group by ID."""
     db = current_app.db
 
-    group = await run_in_threadpool(lambda: db.identity_groups[id])
+    group = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
 
     if not group:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["PATCH", "PUT"])
 @login_required
 @permission_required("manage_users")
 @validated_request(body_model=UpdateIdentityGroupRequest)
+@validate_response(IdentityGroupDTO)
 async def update_group(id: int, body: UpdateIdentityGroupRequest):
     """
     Update identity group.
@@ -497,9 +590,11 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     # Update group
     def update():
@@ -518,12 +613,12 @@ async def update_group(id: int, body: UpdateIdentityGroupRequest):
 
         db(db.identity_groups.id == id).update(**update_fields)
         db.commit()
-        return db.identity_groups[id]
+        return db.identity_groups[id]  # tenant-scope-exempt: schema gap
 
     group = await run_in_threadpool(update)
 
     group_dto = from_pydal_row(group, IdentityGroupDTO)
-    return jsonify(asdict(group_dto)), 200
+    return group_dto, 200
 
 
 @bp.route("/groups/<int:id>", methods=["DELETE"])
@@ -534,9 +629,11 @@ async def delete_group(id: int):
     db = current_app.db
 
     # Check if group exists
-    existing = await run_in_threadpool(lambda: db.identity_groups[id])
+    existing = await run_in_threadpool(
+        lambda: db.identity_groups[id]  # tenant-scope-exempt: schema gap
+    )
     if not existing:
-        return jsonify({"error": "Group not found"}), 404
+        return ApiResponse.error("Group not found", 404)
 
     # Delete group
     await run_in_threadpool(
@@ -562,16 +659,19 @@ async def add_group_member(group_id: int, identity_id: int):
         400: Already a member
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     # Check and add membership
     def add_member():
-        # Verify group exists
-        group = db.identity_groups[group_id]
+        # Verify group exists. identity_groups has no tenant_id/
+        # organization_id column (schema gap -- groups are currently
+        # global; flagged for follow-up, not fixed here).
+        group = db.identity_groups[group_id]  # tenant-scope-exempt: see above
         if not group:
             return None, "Group not found", 404
 
-        # Verify identity exists
-        identity = db.identities[identity_id]
+        # Verify identity exists and belongs to caller's tenant (gh-237)
+        identity = get_tenant_scoped(db, db.identities, identity_id, tenant_id)
         if not identity:
             return None, "Identity not found", 404
 

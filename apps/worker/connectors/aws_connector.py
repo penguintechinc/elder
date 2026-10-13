@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import time
 from typing import Any, Dict, Optional
 
@@ -26,11 +25,11 @@ class AWSConnector(BaseConnector):
     def __init__(self):
         """Initialize AWS connector."""
         super().__init__("aws")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.aws_clients: Dict[str, Any] = {}
-        self.organization_cache: Dict[str, int] = {}
+        self.elder_client: ElderAPIClient | None = None
+        self.aws_clients: dict[str, Any] = {}
+        self.organization_cache: dict[str, int] = {}
         # external_id -> entity_id cache to resolve dependency targets within a sync run
-        self._entity_id_cache: Dict[str, int] = {}
+        self._entity_id_cache: dict[str, int] = {}
 
     async def connect(self) -> None:
         """Establish connection to AWS and Elder API."""
@@ -86,7 +85,7 @@ class AWSConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """Get or create an organization in Elder."""
         cache_key = f"{parent_id or 'root'}:{name}"
@@ -659,7 +658,7 @@ class AWSConnector(BaseConnector):
                     function_name = func.get("FunctionName")
                     state = func.get("State", "Active")
 
-                    attributes: Dict[str, Any] = {
+                    attributes: dict[str, Any] = {
                         "function_arn": function_arn,
                         "function_name": function_name,
                         "runtime": func.get("Runtime"),

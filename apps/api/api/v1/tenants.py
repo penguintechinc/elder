@@ -6,16 +6,19 @@ and usage statistics for the Super Admin Console.
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional
 
-from quart import Blueprint, current_app, jsonify, request
+import redis
 from penguin_libs.pydantic import Name255, RequestModel, SlugStr
 from pydantic import Field, ValidationError
+from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import portal_token_required
+from apps.api.common.licensing.enforce import check_limit
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from shared.utils.village_id import generate_village_id
 
 bp = Blueprint("tenants", __name__)
 
@@ -26,11 +29,11 @@ class CreateTenantRequest(RequestModel):
 
     name: Name255
     slug: SlugStr
-    domain: Optional[str] = Field(default=None, max_length=255)
+    domain: str | None = Field(default=None, max_length=255)
     subscription_tier: str = Field(default="community", max_length=50)
-    license_key: Optional[str] = Field(default=None, max_length=500)
-    settings: Optional[dict] = Field(default=None)
-    feature_flags: Optional[dict] = Field(default=None)
+    license_key: str | None = Field(default=None, max_length=500)
+    settings: dict | None = Field(default=None)
+    feature_flags: dict | None = Field(default=None)
     data_retention_days: int = Field(default=90, ge=1, le=36500)
     storage_quota_gb: int = Field(default=10, ge=1, le=1000000)
 
@@ -38,27 +41,44 @@ class CreateTenantRequest(RequestModel):
 class UpdateTenantRequest(RequestModel):
     """Validation model for updating a tenant."""
 
-    name: Optional[Name255] = None
-    domain: Optional[str] = Field(default=None, max_length=255)
-    slug: Optional[SlugStr] = None
-    subscription_tier: Optional[str] = Field(default=None, max_length=50)
-    license_key: Optional[str] = Field(default=None, max_length=500)
-    settings: Optional[dict] = None
-    feature_flags: Optional[dict] = None
-    data_retention_days: Optional[int] = Field(default=None, ge=1, le=36500)
-    storage_quota_gb: Optional[int] = Field(default=None, ge=1, le=1000000)
-    is_active: Optional[bool] = None
+    name: Name255 | None = None
+    domain: str | None = Field(default=None, max_length=255)
+    slug: SlugStr | None = None
+    subscription_tier: str | None = Field(default=None, max_length=50)
+    license_key: str | None = Field(default=None, max_length=500)
+    settings: dict | None = None
+    feature_flags: dict | None = None
+    data_retention_days: int | None = Field(default=None, ge=1, le=36500)
+    storage_quota_gb: int | None = Field(default=None, ge=1, le=1000000)
+    is_active: bool | None = None
 
 
 def global_admin_required(f):
-    """Decorator to require global admin permission."""
-    from functools import wraps
+    """Decorator to require global admin permission.
 
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if request.portal_user.get("global_role") != "admin":
-            return jsonify({"error": "Global admin permission required"}), 403
-        return f(*args, **kwargs)
+    Sync/async-aware -- see portal_token_required's docstring
+    (apps/api/api/v1/portal_auth.py) for why this matters: a plain `def
+    decorated` wrapping an `async def` view (e.g. create_tenant) returns an
+    un-awaited coroutine as the "response", which Quart rejects.
+    """
+    from functools import wraps
+    from inspect import iscoroutinefunction
+
+    if iscoroutinefunction(f):
+
+        @wraps(f)
+        async def decorated(*args, **kwargs):
+            if request.portal_user.get("global_role") != "admin":
+                return ApiResponse.forbidden("Global admin permission required")
+            return await f(*args, **kwargs)
+
+    else:
+
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if request.portal_user.get("global_role") != "admin":
+                return ApiResponse.forbidden("Global admin permission required")
+            return f(*args, **kwargs)
 
     return decorated
 
@@ -79,7 +99,7 @@ def list_tenants():
     """
     # Check permissions
     if request.portal_user.get("global_role") not in ["admin", "support"]:
-        return jsonify({"error": "Global admin or support role required"}), 403
+        return ApiResponse.forbidden("Global admin or support role required")
 
     db = current_app.db
     query = db.tenants.id > 0
@@ -132,12 +152,16 @@ def get_tenant(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin/support
+    # callers to tenant_id == their own portal_user.tenant_id -- tenants is
+    # the top-level tenant table, so there is no "outer" tenant to
+    # additionally scope this by.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Get usage statistics
     org_count = db(db.organizations.tenant_id == tenant_id).count()
@@ -179,7 +203,6 @@ def get_tenant(tenant_id):
 
 
 @bp.route("", methods=["POST"])
-@login_required
 @portal_token_required
 @global_admin_required
 async def create_tenant():
@@ -202,13 +225,19 @@ async def create_tenant():
         Created tenant
     """
     try:
-        body = CreateTenantRequest.model_validate(request.get_json())
+        body = CreateTenantRequest.model_validate(await request.get_json())
     except ValidationError as e:
         errors = [
             {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
             for err in e.errors()
         ]
         return jsonify({"error": "Validation failed", "details": errors}), 400
+
+    # Tenants are counted globally (max_tenants), not per-tenant -- see
+    # docs/superpowers/plans/2026-08-20-license-enforcement-phase2.md Task 5.
+    blocked = await check_limit("tenant", None)
+    if blocked is not None:
+        return blocked
 
     db = current_app.db
 
@@ -218,7 +247,7 @@ async def create_tenant():
         if existing:
             return None, "Slug already exists", 400
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         tenant_id = db.tenants.insert(
             name=body.name,
             slug=body.slug,
@@ -234,6 +263,17 @@ async def create_tenant():
             updated_at=now,
         )
         db.commit()
+
+        # Generate village_id for the tenant using its own ID
+        redis_client = redis.from_url(
+            current_app.config.get("REDIS_URL", "redis://localhost:6379/0")
+        )
+        village_id = generate_village_id(tenant_id, redis_client)
+
+        # Update tenant with village_id
+        db(db.tenants.id == tenant_id).update(village_id=village_id)
+        db.commit()
+
         return {"id": tenant_id, "name": body.name, "slug": body.slug}, None, None
 
     result, error, status = await run_in_threadpool(inner)
@@ -244,7 +284,7 @@ async def create_tenant():
 
 @bp.route("/<int:tenant_id>", methods=["PUT"])
 @portal_token_required
-def update_tenant(tenant_id):
+async def update_tenant(tenant_id):
     """Update a tenant.
 
     Args:
@@ -261,15 +301,17 @@ def update_tenant(tenant_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin callers
+    # to tenant_id == their own tenant.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     try:
-        body = UpdateTenantRequest.model_validate(request.get_json())
+        body = UpdateTenantRequest.model_validate(await request.get_json())
     except ValidationError as e:
         errors = [
             {"field": ".".join(str(x) for x in err["loc"]), "message": err["msg"]}
@@ -320,12 +362,14 @@ def delete_tenant(tenant_id):
         Success status
     """
     if tenant_id == 1:
-        return jsonify({"error": "Cannot delete system tenant"}), 400
+        return ApiResponse.bad_request("Cannot delete system tenant")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # @global_admin_required above already restricts this whole route to
+    # global admins.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Soft delete - deactivate instead
     db(db.tenants.id == tenant.id).update(is_active=False)
@@ -350,7 +394,7 @@ def list_tenant_users(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     users = db(db.portal_users.tenant_id == tenant_id).select(
@@ -383,7 +427,7 @@ def list_tenant_users(tenant_id):
 
 @bp.route("/<int:tenant_id>/users/<int:user_id>", methods=["PUT"])
 @portal_token_required
-def update_tenant_user(tenant_id, user_id):
+async def update_tenant_user(tenant_id, user_id):
     """Update a portal user in a tenant.
 
     Args:
@@ -401,7 +445,7 @@ def update_tenant_user(tenant_id, user_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     user = (
@@ -411,11 +455,11 @@ def update_tenant_user(tenant_id, user_id):
     )
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     # Allowed update fields
     allowed_fields = {"full_name", "tenant_role", "is_active"}
@@ -450,7 +494,7 @@ def delete_tenant_user(tenant_id, user_id):
     )
 
     if not is_global_admin and not is_tenant_admin:
-        return jsonify({"error": "Permission denied"}), 403
+        return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
     user = (
@@ -460,7 +504,7 @@ def delete_tenant_user(tenant_id, user_id):
     )
 
     if not user:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     # Soft delete
     db(db.portal_users.id == user.id).update(is_active=False)
@@ -485,12 +529,14 @@ def get_tenant_stats(tenant_id):
             request.portal_user.get("tenant_id") != tenant_id
             or request.portal_user.get("tenant_role") != "admin"
         ):
-            return jsonify({"error": "Permission denied"}), 403
+            return ApiResponse.forbidden("Permission denied")
 
     db = current_app.db
-    tenant = db.tenants[tenant_id]
+    # The permission check above already restricts non-global-admin/support
+    # callers to tenant_id == their own portal_user.tenant_id.
+    tenant = db.tenants[tenant_id]  # tenant-scope-exempt: see above
     if not tenant:
-        return jsonify({"error": "Tenant not found"}), 404
+        return ApiResponse.error("Tenant not found", 404)
 
     # Gather statistics
     stats = {

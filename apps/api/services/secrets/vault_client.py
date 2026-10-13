@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 from datetime import datetime
@@ -27,7 +26,7 @@ logger = logging.getLogger(__name__)
 class HashicorpVaultClient(SecretProviderClient):
     """Hashicorp Vault implementation of SecretProviderClient."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Hashicorp Vault client.
 
@@ -67,38 +66,16 @@ class HashicorpVaultClient(SecretProviderClient):
 
     def _init_client(self) -> None:
         """Initialize Vault client session."""
+        from apps.api.common.providers.vault import create_vault_session
+
         self.base_url = self.config["url"].rstrip("/")
-        self.token = self.config["token"]
-        self.namespace = self.config.get("namespace")
         self.mount_point = self.config.get("mount_point", "secret")
         self.kv_version = self.config.get("kv_version", "2")
-        self.verify_tls = self.config.get("verify_tls", True)
 
-        # Setup session
-        self.session = requests.Session()
-        self.session.headers.update(
-            {"X-Vault-Token": self.token, "Content-Type": "application/json"}
-        )
-
-        if self.namespace:
-            self.session.headers.update({"X-Vault-Namespace": self.namespace})
-
-        # Setup TLS verification
-        if isinstance(self.verify_tls, str):
-            # Path to CA certificate
-            self.session.verify = self.verify_tls
-        elif self.verify_tls and self.config.get("ca_cert"):
-            self.session.verify = self.config["ca_cert"]
-        else:
-            self.session.verify = self.verify_tls
-
-        # Setup mTLS if provided
-        if self.config.get("client_cert") and self.config.get("client_key"):
-            self.session.cert = (self.config["client_cert"], self.config["client_key"])
-
+        self.session = create_vault_session(self.config)
         logger.info(f"Initialized Hashicorp Vault client for {self.base_url}")
 
-    def _make_request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, method: str, path: str, **kwargs) -> dict[str, Any]:
         """Make a request to Vault API."""
         url = f"{self.base_url}{path}"
 
@@ -159,7 +136,7 @@ class HashicorpVaultClient(SecretProviderClient):
 
         return f"/v1/{self.mount_point}/{path}"
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """Retrieve a secret from Vault."""
         try:
             api_path = self._get_kv_path(path, "data")
@@ -220,7 +197,7 @@ class HashicorpVaultClient(SecretProviderClient):
             logger.error(f"Failed to get secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to get secret: {str(e)}")
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in Vault."""
         try:
             path = prefix or ""
@@ -303,7 +280,7 @@ class HashicorpVaultClient(SecretProviderClient):
             raise SecretProviderException(f"Failed to list secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in Vault."""
         try:
@@ -320,9 +297,9 @@ class HashicorpVaultClient(SecretProviderClient):
                 payload = {"data": data, "options": {}}
 
                 # Add Check-And-Set (CAS) to ensure creation only
-                payload["options"][
-                    "cas"
-                ] = 0  # cas=0 means only create if doesn't exist
+                payload["options"]["cas"] = (
+                    0  # cas=0 means only create if doesn't exist
+                )
             else:
                 # KV v1
                 payload = data
@@ -451,7 +428,7 @@ class HashicorpVaultClient(SecretProviderClient):
             logger.error(f"Failed to delete secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to delete secret: {str(e)}")
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """
         Get all versions of a secret.
 

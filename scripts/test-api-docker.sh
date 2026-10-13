@@ -2,7 +2,7 @@
 # Elder API Testing Script - Run inside Docker network
 # This script runs a test container inside the elder-network to test API endpoints
 
-set -e
+set -euo pipefail
 
 echo "========================================="
 echo "Elder API Testing Script (Docker Network)"

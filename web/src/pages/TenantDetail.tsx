@@ -10,6 +10,14 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import CreateIdentityModal from '@/components/CreateIdentityModal'
 import type { PortalUser } from '@/types'
 
+interface ApiError {
+  response?: {
+    data?: { error?: string }
+    status?: number
+  }
+  message?: string
+}
+
 export default function TenantDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -50,7 +58,7 @@ export default function TenantDetail() {
       toast.success('User updated successfully')
       setEditingUser(null)
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to update user')
     },
   })
@@ -61,7 +69,7 @@ export default function TenantDetail() {
       await queryClient.invalidateQueries({ queryKey: ['tenant-users', tenantId] })
       toast.success('User deactivated successfully')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.error || 'Failed to deactivate user')
     },
   })

@@ -2,24 +2,21 @@
 
 # flake8: noqa: E501
 
-
 import base64
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, Optional
 
-try:
-    import requests
-except ImportError:
-    requests = None
+import requests
 
+from apps.api.common.providers.infisical import create_infisical_session
 from apps.api.services.keys.base import BaseKeyProvider
 
 
 class InfisicalClient(BaseKeyProvider):
     """Infisical implementation of key management provider."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Infisical client.
 
@@ -31,38 +28,24 @@ class InfisicalClient(BaseKeyProvider):
         """
         super().__init__(config)
 
-        if requests is None:
-            raise ImportError(
-                "requests is required for Infisical. Install with: pip install requests"
-            )
-
-        self.host = config.get("host", "https://app.infisical.com").rstrip("/")
-        self.token = config.get("token")
         self.workspace_id = config.get("workspace_id")
-
-        if not self.token:
-            raise ValueError("token is required for Infisical")
 
         if not self.workspace_id:
             raise ValueError("workspace_id is required for Infisical")
 
-        self.headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-        }
-
-        # Infisical API version
-        self.api_version = "v3"
-        self.base_url = f"{self.host}/api/{self.api_version}"
+        session, api_base = create_infisical_session(config)
+        self.session = session
+        self.headers = dict(session.headers)
+        self.base_url = api_base
 
     def create_key(
         self,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new encryption key in Infisical.
 
@@ -112,7 +95,7 @@ class InfisicalClient(BaseKeyProvider):
             # Add metadata
             key_data["description"] = description or f"Elder managed key: {key_name}"
             key_data["tags"] = tags or {}
-            key_data["created_at"] = datetime.now(timezone.utc).isoformat()
+            key_data["created_at"] = datetime.now(UTC).isoformat()
             key_data["enabled"] = True
 
             # Store as secret in Infisical
@@ -126,7 +109,9 @@ class InfisicalClient(BaseKeyProvider):
                 "secretComment": description or "",
             }
 
-            response = requests.post(endpoint, headers=self.headers, json=payload)
+            response = requests.post(
+                endpoint, headers=self.headers, json=payload, timeout=15
+            )
 
             if response.status_code not in [200, 201]:
                 raise Exception(f"Infisical API error: {response.text}")
@@ -147,7 +132,7 @@ class InfisicalClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"Infisical create key error: {str(e)}")
 
-    def get_key(self, key_id: str) -> Dict[str, Any]:
+    def get_key(self, key_id: str) -> dict[str, Any]:
         """
         Get key metadata from Infisical.
 
@@ -161,7 +146,9 @@ class InfisicalClient(BaseKeyProvider):
             endpoint = f"{self.base_url}/secrets/{key_id}"
             params = {"workspaceId": self.workspace_id, "environment": "production"}
 
-            response = requests.get(endpoint, headers=self.headers, params=params)
+            response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
 
             if response.status_code == 404:
                 raise Exception(f"Key not found: {key_id}")
@@ -196,8 +183,8 @@ class InfisicalClient(BaseKeyProvider):
             raise Exception(f"Infisical get key error: {str(e)}")
 
     def list_keys(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all encryption keys.
 
@@ -212,7 +199,9 @@ class InfisicalClient(BaseKeyProvider):
             endpoint = f"{self.base_url}/secrets"
             params = {"workspaceId": self.workspace_id, "environment": "production"}
 
-            response = requests.get(endpoint, headers=self.headers, params=params)
+            response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
 
             if response.status_code != 200:
                 raise Exception(f"Infisical API error: {response.text}")
@@ -265,7 +254,7 @@ class InfisicalClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"Infisical list keys error: {str(e)}")
 
-    def enable_key(self, key_id: str) -> Dict[str, Any]:
+    def enable_key(self, key_id: str) -> dict[str, Any]:
         """Enable a disabled key."""
         try:
             # Get current key data
@@ -276,7 +265,9 @@ class InfisicalClient(BaseKeyProvider):
 
             # Fetch full secret data
             params = {"workspaceId": self.workspace_id, "environment": "production"}
-            get_response = requests.get(endpoint, headers=self.headers, params=params)
+            get_response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
             if get_response.status_code != 200:
                 raise Exception(f"Infisical API error: {get_response.text}")
 
@@ -293,7 +284,7 @@ class InfisicalClient(BaseKeyProvider):
             }
 
             update_response = requests.patch(
-                endpoint, headers=self.headers, json=payload
+                endpoint, headers=self.headers, json=payload, timeout=15
             )
             if update_response.status_code != 200:
                 raise Exception(f"Infisical API error: {update_response.text}")
@@ -303,14 +294,16 @@ class InfisicalClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"Infisical enable key error: {str(e)}")
 
-    def disable_key(self, key_id: str) -> Dict[str, Any]:
+    def disable_key(self, key_id: str) -> dict[str, Any]:
         """Disable a key."""
         try:
             # Get current key data
             endpoint = f"{self.base_url}/secrets/{key_id}"
             params = {"workspaceId": self.workspace_id, "environment": "production"}
 
-            get_response = requests.get(endpoint, headers=self.headers, params=params)
+            get_response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
             if get_response.status_code != 200:
                 raise Exception(f"Infisical API error: {get_response.text}")
 
@@ -327,7 +320,7 @@ class InfisicalClient(BaseKeyProvider):
             }
 
             update_response = requests.patch(
-                endpoint, headers=self.headers, json=payload
+                endpoint, headers=self.headers, json=payload, timeout=15
             )
             if update_response.status_code != 200:
                 raise Exception(f"Infisical API error: {update_response.text}")
@@ -339,7 +332,7 @@ class InfisicalClient(BaseKeyProvider):
 
     def schedule_key_deletion(
         self, key_id: str, pending_days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule key deletion.
 
@@ -349,7 +342,9 @@ class InfisicalClient(BaseKeyProvider):
             endpoint = f"{self.base_url}/secrets/{key_id}"
             params = {"workspaceId": self.workspace_id, "environment": "production"}
 
-            response = requests.delete(endpoint, headers=self.headers, params=params)
+            response = requests.delete(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
 
             if response.status_code not in [200, 204]:
                 raise Exception(f"Infisical API error: {response.text}")
@@ -363,13 +358,13 @@ class InfisicalClient(BaseKeyProvider):
         except Exception as e:
             raise Exception(f"Infisical schedule deletion error: {str(e)}")
 
-    def cancel_key_deletion(self, key_id: str) -> Dict[str, Any]:
+    def cancel_key_deletion(self, key_id: str) -> dict[str, Any]:
         """Cancel scheduled key deletion."""
         raise NotImplementedError("Infisical doesn't support canceling deletion")
 
     def encrypt(
-        self, key_id: str, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Encrypt data using a key.
 
@@ -388,7 +383,9 @@ class InfisicalClient(BaseKeyProvider):
             # Fetch key material
             endpoint = f"{self.base_url}/secrets/{key_id}"
             params = {"workspaceId": self.workspace_id, "environment": "production"}
-            response = requests.get(endpoint, headers=self.headers, params=params)
+            response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
 
             if response.status_code != 200:
                 raise Exception(f"Infisical API error: {response.text}")
@@ -426,8 +423,8 @@ class InfisicalClient(BaseKeyProvider):
             raise Exception(f"Infisical encrypt error: {str(e)}")
 
     def decrypt(
-        self, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Decrypt data.
 
@@ -442,8 +439,8 @@ class InfisicalClient(BaseKeyProvider):
         self,
         key_id: str,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a data encryption key.
 
@@ -480,17 +477,17 @@ class InfisicalClient(BaseKeyProvider):
         key_id: str,
         message: str,
         signing_algorithm: str = "RSASSA_PSS_SHA_256",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Sign a message using an asymmetric key."""
         raise NotImplementedError("Infisical sign not yet implemented")
 
     def verify(
         self, key_id: str, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Verify a message signature."""
         raise NotImplementedError("Infisical verify not yet implemented")
 
-    def rotate_key(self, key_id: str) -> Dict[str, Any]:
+    def rotate_key(self, key_id: str) -> dict[str, Any]:
         """
         Rotate a key by creating a new version.
 
@@ -514,7 +511,9 @@ class InfisicalClient(BaseKeyProvider):
             params = {"workspaceId": self.workspace_id, "environment": "production"}
 
             # Fetch current data
-            get_response = requests.get(endpoint, headers=self.headers, params=params)
+            get_response = requests.get(
+                endpoint, headers=self.headers, params=params, timeout=15
+            )
             if get_response.status_code != 200:
                 raise Exception(f"Infisical API error: {get_response.text}")
 
@@ -524,7 +523,7 @@ class InfisicalClient(BaseKeyProvider):
 
             # Update material
             key_data["material"] = base64.b64encode(new_material).decode("utf-8")
-            key_data["rotated_at"] = datetime.now(timezone.utc).isoformat()
+            key_data["rotated_at"] = datetime.now(UTC).isoformat()
 
             payload = {
                 "workspaceId": self.workspace_id,
@@ -534,7 +533,7 @@ class InfisicalClient(BaseKeyProvider):
             }
 
             update_response = requests.patch(
-                endpoint, headers=self.headers, json=payload
+                endpoint, headers=self.headers, json=payload, timeout=15
             )
             if update_response.status_code != 200:
                 raise Exception(f"Infisical API error: {update_response.text}")

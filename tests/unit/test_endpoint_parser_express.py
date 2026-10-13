@@ -303,7 +303,9 @@ class TestExpressEndpointParserChainedRoutes:
     def test_parse_chained_multiple_methods(self) -> None:
         """Test parsing chained route with multiple methods."""
         parser = ExpressEndpointParser()
-        content = "app.route('/items/:id').get(getItem).put(updateItem).delete(deleteItem);"
+        content = (
+            "app.route('/items/:id').get(getItem).put(updateItem).delete(deleteItem);"
+        )
 
         endpoints = parser.parse(content, "api.js")
 
@@ -500,7 +502,7 @@ app.listen(3000);
         assert len(endpoints) > 0
 
         # Check that paths are normalized
-        user_route = next(e for e in endpoints if "users/:id" in e.get("path", ""))
+        user_route = next(e for e in endpoints if "{id}" in e.get("path", ""))
         assert user_route["path"] == "/users/{id}"
 
     def test_parse_typescript_express_file(self) -> None:

@@ -5,12 +5,14 @@ Polls the Elder API for pending scan jobs and executes them.
 
 # flake8: noqa: E501
 
-
 import asyncio
 import datetime
+import functools
 import logging
 import os
+import signal
 import sys
+import time
 from typing import Any, Dict, Optional
 
 import httpx
@@ -19,6 +21,8 @@ from scanners.banner import BannerScanner
 from scanners.http_screenshot import HTTPScreenshotScanner
 from scanners.network import NetworkScanner
 from scanners.sbom_scanner import SBOMScanner
+
+from shared.observability import get_meter, get_tracer, init_telemetry
 
 # Configuration from environment
 POLL_INTERVAL = int(os.getenv("SCANNER_POLL_INTERVAL", "300"))
@@ -29,6 +33,16 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 NVD_SYNC_INTERVAL_HOURS = int(
     os.getenv("NVD_SYNC_INTERVAL_HOURS", "24")
 )  # Run NVD sync once per day
+
+# Initialize OpenTelemetry (Phase 0.5)
+otel = init_telemetry("elder-scanner")
+_tracer = get_tracer("elder-scanner")
+_meter = get_meter("elder-scanner")
+_scan_duration_histogram = _meter.create_histogram(
+    "scanner.scan.duration",
+    unit="s",
+    description="Scan/job execution duration (discovery job or SBOM scan)",
+)
 
 # Setup logging
 logging.basicConfig(
@@ -62,7 +76,13 @@ class ScannerService:
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
         # Track last NVD sync time
-        self.last_nvd_sync: Optional[datetime.datetime] = None
+        self.last_nvd_sync: datetime.datetime | None = None
+
+        # Graceful shutdown: set by the SIGTERM/SIGINT handler registered in
+        # run(). The poll loop checks this between cycles rather than being
+        # killed mid-scan -- in-flight execute_job()/execute_sbom_scan()
+        # calls are allowed to finish and submit their results before exit.
+        self._shutdown_event = asyncio.Event()
 
     async def get_pending_jobs(self) -> list:
         """Fetch pending scan jobs from the API."""
@@ -122,7 +142,7 @@ class ScannerService:
             logger.error(f"Error fetching due schedules: {e}")
             return []
 
-    async def create_scheduled_scan(self, schedule: Dict[str, Any]) -> bool:
+    async def create_scheduled_scan(self, schedule: dict[str, Any]) -> bool:
         """Create a scan job from a schedule and update the schedule."""
         schedule_id = schedule["id"]
         parent_type = schedule["parent_type"]
@@ -146,7 +166,7 @@ class ScannerService:
                     logger.info(f"Created scan job for schedule {schedule_id}")
 
                     # Update schedule with last_run_at and calculate next_run_at
-                    now = datetime.datetime.now(datetime.timezone.utc)
+                    now = datetime.datetime.now(datetime.UTC)
                     cron_expr = schedule.get("schedule_cron", "0 0 * * *")
 
                     try:
@@ -208,8 +228,8 @@ class ScannerService:
         self,
         job_id: int,
         success: bool,
-        results: Dict[str, Any],
-        error_message: Optional[str] = None,
+        results: dict[str, Any],
+        error_message: str | None = None,
     ) -> bool:
         """Submit scan results back to the API."""
         try:
@@ -229,7 +249,7 @@ class ScannerService:
             logger.error(f"Error submitting results for job {job_id}: {e}")
             return False
 
-    async def execute_job(self, job: Dict[str, Any]) -> None:
+    async def execute_job(self, job: dict[str, Any]) -> None:
         """Execute a single scan job."""
         job_id = job["id"]
         provider = job["provider"]
@@ -237,31 +257,63 @@ class ScannerService:
 
         logger.info(f"Executing job {job_id} (type: {provider})")
 
-        # Mark job as running
-        if not await self.mark_job_running(job_id):
-            logger.error(f"Failed to mark job {job_id} as running")
-            return
+        start_time = time.monotonic()
+        status = "error"
 
-        # Get appropriate scanner
-        scanner = self.scanners.get(provider)
-        if not scanner:
-            error_msg = f"Unknown scanner type: {provider}"
-            logger.error(error_msg)
-            await self.submit_results(job_id, False, {}, error_msg)
-            return
+        with _tracer.start_as_current_span(
+            "scanner.execute_job",
+            attributes={"job.id": job_id, "job.provider": provider},
+        ):
+            try:
+                # Mark job as running
+                if not await self.mark_job_running(job_id):
+                    logger.error(f"Failed to mark job {job_id} as running")
+                    status = "mark_running_failed"
+                    return
 
-        # Execute scan
-        try:
-            results = await scanner.scan(config)
-            await self.submit_results(job_id, True, results)
-            logger.info(f"Job {job_id} completed successfully")
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Job {job_id} failed: {error_msg}")
-            await self.submit_results(job_id, False, {}, error_msg)
+                # Get appropriate scanner
+                scanner = self.scanners.get(provider)
+                if not scanner:
+                    error_msg = f"Unknown scanner type: {provider}"
+                    logger.error(error_msg)
+                    await self.submit_results(job_id, False, {}, error_msg)
+                    status = "unknown_provider"
+                    return
 
-    async def execute_sbom_scan(self, scan: Dict[str, Any]) -> None:
-        """Execute a single SBOM scan."""
+                # Execute scan
+                try:
+                    results = await scanner.scan(config)
+                    await self.submit_results(job_id, True, results)
+                    logger.info(f"Job {job_id} completed successfully")
+                    status = "success"
+                except Exception as e:
+                    error_msg = str(e)
+                    logger.error(f"Job {job_id} failed: {error_msg}")
+                    await self.submit_results(job_id, False, {}, error_msg)
+                    status = "error"
+            finally:
+                _scan_duration_histogram.record(
+                    time.monotonic() - start_time,
+                    attributes={"job.provider": provider, "status": status},
+                )
+
+    async def execute_sbom_scan(self, scan: dict[str, Any]) -> None:
+        """Execute a single SBOM scan, wrapped in a span + duration metric."""
+        scan_id = scan["id"]
+        start_time = time.monotonic()
+        with _tracer.start_as_current_span(
+            "scanner.execute_sbom_scan", attributes={"sbom.scan_id": scan_id}
+        ):
+            try:
+                await self._execute_sbom_scan_body(scan)
+            finally:
+                _scan_duration_histogram.record(
+                    time.monotonic() - start_time,
+                    attributes={"job.provider": "sbom"},
+                )
+
+    async def _execute_sbom_scan_body(self, scan: dict[str, Any]) -> None:
+        """Execute a single SBOM scan (see execute_sbom_scan for the span/metric wrapper)."""
         scan_id = scan["id"]
         repository_url = scan.get("repository_url")
         repository_branch = scan.get("repository_branch", "main")
@@ -362,8 +414,19 @@ class ScannerService:
         if self.last_nvd_sync is None:
             return True
 
-        elapsed = datetime.datetime.now(datetime.timezone.utc) - self.last_nvd_sync
+        elapsed = datetime.datetime.now(datetime.UTC) - self.last_nvd_sync
         return elapsed.total_seconds() >= (NVD_SYNC_INTERVAL_HOURS * 3600)
+
+    def request_shutdown(self, sig_name: str = "signal") -> None:
+        """Signal the poll loop to stop after the current cycle finishes.
+
+        Registered against SIGTERM/SIGINT so a pod eviction/restart lets any
+        in-flight execute_job()/execute_sbom_scan() call finish and submit
+        its results before the process exits, instead of being killed
+        mid-scan.
+        """
+        logger.info(f"Shutdown requested via {sig_name}; finishing current cycle")
+        self._shutdown_event.set()
 
     async def run(self) -> None:
         """Main poll loop."""
@@ -371,7 +434,13 @@ class ScannerService:
         logger.info(f"API URL: {self.api_url}")
         logger.info(f"NVD sync interval: {NVD_SYNC_INTERVAL_HOURS} hours")
 
-        while True:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(
+                sig, functools.partial(self.request_shutdown, sig.name)
+            )
+
+        while not self._shutdown_event.is_set():
             try:
                 # Check for due schedules and create scan jobs
                 due_schedules = await self.get_due_schedules()
@@ -407,15 +476,21 @@ class ScannerService:
                 if self._should_run_nvd_sync():
                     logger.info("Running scheduled NVD sync...")
                     if await self.trigger_nvd_sync():
-                        self.last_nvd_sync = datetime.datetime.now(
-                            datetime.timezone.utc
-                        )
+                        self.last_nvd_sync = datetime.datetime.now(datetime.UTC)
 
             except Exception as e:
                 logger.error(f"Error in poll loop: {e}")
 
-            # Wait before next poll
-            await asyncio.sleep(POLL_INTERVAL)
+            # Wait before next poll, but wake immediately on shutdown rather
+            # than blocking for the full POLL_INTERVAL.
+            try:
+                await asyncio.wait_for(
+                    self._shutdown_event.wait(), timeout=POLL_INTERVAL
+                )
+            except TimeoutError:
+                pass
+
+        logger.info("Scanner poll loop stopped; shutdown complete")
 
 
 def main():

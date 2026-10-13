@@ -29,6 +29,33 @@ import Select from '@/components/Select'
 import NetworkTopologyGraph from '@/components/NetworkTopologyGraph'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
+interface Organization {
+  id: number
+  name: string
+}
+
+interface NetworkResource {
+  id: number
+  name: string
+  network_type: string
+  cidr?: string
+  description?: string
+  region?: string
+  location?: string
+  is_active: boolean
+  organization_id: number
+}
+
+interface TopologyConnection {
+  id: number
+  source_network_id: number
+  target_network_id: number
+  connection_type: string
+  bandwidth?: string
+  latency?: number
+  description?: string
+}
+
 // Icon mapping for network types
 const NETWORK_TYPE_ICONS: Record<string, LucideIcon> = {
   vpc: Cloud,
@@ -122,7 +149,7 @@ export default function Networking() {
   })
 
   const createNetworkMutation = useMutation({
-    mutationFn: (data: any) => api.createNetwork(data),
+    mutationFn: (data: Record<string, unknown>) => api.createNetwork(data as Parameters<typeof api.createNetwork>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['networks'],
@@ -131,13 +158,13 @@ export default function Networking() {
       toast.success('Network created')
       setShowCreateModal(false)
     },
-    onError: (error: any) => {
+    onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error.response?.data?.error || 'Failed to create network')
     },
   })
 
   const createConnectionMutation = useMutation({
-    mutationFn: (data: any) => api.createTopologyConnection(data),
+    mutationFn: (data: Record<string, unknown>) => api.createTopologyConnection(data as Parameters<typeof api.createTopologyConnection>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ['networkConnections'],
@@ -146,7 +173,7 @@ export default function Networking() {
       toast.success('Connection created')
       setShowCreateConnectionModal(false)
     },
-    onError: (error: any) => {
+    onError: (error: { response?: { data?: { error?: string } } }) => {
       toast.error(error.response?.data?.error || 'Failed to create connection')
     },
   })
@@ -159,7 +186,7 @@ export default function Networking() {
       type: 'select',
       required: true,
       defaultValue: selectedOrg?.toString() || '',
-      options: (orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+      options: (orgs?.items || []).map((o: Organization) => ({ value: o.id, label: o.name })),
     },
     {
       name: 'name',
@@ -215,7 +242,7 @@ export default function Networking() {
       label: 'Source Network',
       type: 'select',
       required: true,
-      options: (allNetworks?.networks || []).map((n: any) => ({
+      options: (allNetworks?.networks || []).map((n: NetworkResource) => ({
         value: n.id,
         label: `${n.name} (${n.network_type})`
       })),
@@ -225,7 +252,7 @@ export default function Networking() {
       label: 'Target Network',
       type: 'select',
       required: true,
-      options: (allNetworks?.networks || []).map((n: any) => ({
+      options: (allNetworks?.networks || []).map((n: NetworkResource) => ({
         value: n.id,
         label: `${n.name} (${n.network_type})`
       })),
@@ -257,31 +284,38 @@ export default function Networking() {
     },
   ], [allNetworks?.networks])
 
-  const handleCreateNetwork = (data: Record<string, any>) => {
+  const handleCreateNetwork = (data: Record<string, unknown>) => {
     if (!data.organization_id) {
       toast.error('Please select an organization first')
       return
     }
 
-    // For network types that don't have IP addressing, use a placeholder CIDR
-    // to satisfy backend requirements (this is a workaround until backend makes CIDR optional)
-    const needsCidr = ['vpc', 'subnet', 'vlan', 'vxlan', 'namespace'].includes(data.network_type)
-    const cidr = data.cidr || (needsCidr ? undefined : '0.0.0.0/0')
-
-    createNetworkMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-      cidr,
-    })
+    const networkData: Parameters<typeof api.createNetwork>[0] = {
+      name: data.name as string,
+      network_type: data.network_type as string,
+      organization_id: parseInt(data.organization_id as string),
+      description: data.description as string | undefined,
+      region: data.region as string | undefined,
+      location: data.location as string | undefined,
+      parent_id: data.parent_id ? parseInt(data.parent_id as string) : undefined,
+      poc: data.poc as string | undefined,
+      organizational_unit: data.organizational_unit as string | undefined,
+      attributes: data.attributes as Record<string, unknown> | undefined,
+      tags: data.tags as string[] | undefined,
+    }
+    createNetworkMutation.mutate(networkData)
   }
 
-  const handleCreateConnection = (data: Record<string, any>) => {
-    createConnectionMutation.mutate({
-      ...data,
-      source_network_id: parseInt(data.source_network_id),
-      target_network_id: parseInt(data.target_network_id),
-      latency: data.latency ? parseInt(data.latency) : undefined,
-    })
+  const handleCreateConnection = (data: Record<string, unknown>) => {
+    const connData: Parameters<typeof api.createTopologyConnection>[0] = {
+      source_network_id: parseInt(data.source_network_id as string),
+      target_network_id: parseInt(data.target_network_id as string),
+      connection_type: data.connection_type as string,
+      bandwidth: data.bandwidth as string | undefined,
+      latency: data.latency ? parseInt(data.latency as string) : undefined,
+      metadata: data.metadata as Record<string, unknown> | undefined,
+    }
+    createConnectionMutation.mutate(connData)
   }
 
   return (
@@ -311,7 +345,7 @@ export default function Networking() {
           onChange={(e) => setSelectedOrg(parseInt(e.target.value))}
           options={[
             { value: '', label: 'Select organization' },
-            ...(orgs?.items || []).map((o: any) => ({ value: o.id, label: o.name })),
+            ...(orgs?.items || []).map((o: Organization) => ({ value: o.id, label: o.name })),
           ]}
         />
       </div>
@@ -371,7 +405,7 @@ export default function Networking() {
                   All ({networks?.networks?.length || 0})
                 </button>
                 {NETWORK_TYPES.map((type) => {
-                  const count = networks?.networks?.filter((n: any) => n.network_type === type.value).length || 0
+                  const count = networks?.networks?.filter((n: NetworkResource) => n.network_type === type.value).length || 0
                   if (count === 0) return null
                   return (
                     <button
@@ -390,8 +424,8 @@ export default function Networking() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {networks?.networks
-                  ?.filter((network: any) => selectedNetworkType === 'all' || network.network_type === selectedNetworkType)
-                  .map((network: any) => (
+                  ?.filter((network: NetworkResource) => selectedNetworkType === 'all' || network.network_type === selectedNetworkType)
+                  .map((network: NetworkResource) => (
                 <Card key={network.id}>
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -476,7 +510,7 @@ export default function Networking() {
               </CardContent>
             </Card>
           ) : (
-            connections?.connections?.map((conn: any) => (
+            connections?.connections?.map((conn: TopologyConnection) => (
               <Card key={conn.id}>
                 <CardContent>
                   <div className="flex items-center justify-between">
@@ -533,7 +567,12 @@ export default function Networking() {
   )
 }
 
-function TopologyModal({ organizationId, onClose }: any) {
+interface TopologyModalProps {
+  organizationId: number
+  onClose: () => void
+}
+
+function TopologyModal({ organizationId, onClose }: TopologyModalProps) {
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">

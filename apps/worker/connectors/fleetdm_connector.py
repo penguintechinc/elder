@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Dict, Optional
 
 import httpx
@@ -22,17 +21,17 @@ class FleetDMConnector(BaseConnector):
     def __init__(self):
         """Initialize FleetDM connector."""
         super().__init__("fleetdm")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.http_client: Optional[httpx.AsyncClient] = None
-        self.organization_cache: Dict[str, int] = {}
+        self.elder_client: ElderAPIClient | None = None
+        self.http_client: httpx.AsyncClient | None = None
+        self.organization_cache: dict[str, int] = {}
         # Cache for entity IDs to create relationships
-        self.host_entity_cache: Dict[int, int] = (
-            {}
-        )  # fleetdm_host_id -> elder_entity_id
-        self.software_entity_cache: Dict[int, int] = (
-            {}
-        )  # fleetdm_software_id -> elder_entity_id
-        self.vuln_entity_cache: Dict[str, int] = {}  # cve -> elder_entity_id
+        self.host_entity_cache: dict[
+            int, int
+        ] = {}  # fleetdm_host_id -> elder_entity_id
+        self.software_entity_cache: dict[
+            int, int
+        ] = {}  # fleetdm_software_id -> elder_entity_id
+        self.vuln_entity_cache: dict[str, int] = {}  # cve -> elder_entity_id
 
     async def connect(self) -> None:
         """Establish connection to FleetDM API and Elder API."""
@@ -84,7 +83,7 @@ class FleetDMConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """Get or create an organization in Elder."""
         cache_key = f"{parent_id or 'root'}:{name}"
@@ -114,7 +113,7 @@ class FleetDMConnector(BaseConnector):
                 f"Organization '{name}' not found and auto-creation disabled"
             )
 
-    async def _sync_teams(self, fleetdm_org_id: int) -> Dict[int, int]:
+    async def _sync_teams(self, fleetdm_org_id: int) -> dict[int, int]:
         """Sync FleetDM teams as sub-organizations.
 
         Returns:
@@ -148,7 +147,7 @@ class FleetDMConnector(BaseConnector):
         return team_map
 
     async def _sync_hosts(
-        self, fleetdm_org_id: int, team_map: Dict[int, int]
+        self, fleetdm_org_id: int, team_map: dict[int, int]
     ) -> tuple[int, int]:
         """Sync FleetDM hosts to Elder.
 

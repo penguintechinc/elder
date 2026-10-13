@@ -4,18 +4,15 @@
 # source: dependency.proto
 # Protobuf Python Version: 5.29.0
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    29,
-    0,
-    '',
-    'dependency.proto'
+    _runtime_version.Domain.PUBLIC, 5, 29, 0, "", "dependency.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -25,49 +22,52 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 from . import entity_pb2 as entity__pb2
 
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10\x64\x65pendency.proto\x12\x10\x65lder.dependency\x1a\x0c\x63ommon.proto\x1a\x0c\x65ntity.proto\"\xe7\x01\n\x17ListDependenciesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12\x18\n\x10source_entity_id\x18\x03 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x04 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x05 \x01(\x0e\x32\x1c.elder.entity.DependencyType\"\x80\x01\n\x18ListDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse\"\"\n\x14GetDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05\"E\n\x15GetDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency\"\x80\x02\n\x17\x43reateDependencyRequest\x12\x18\n\x10source_entity_id\x18\x01 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x02 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x03 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12I\n\x08metadata\x18\x04 \x03(\x0b\x32\x37.elder.dependency.CreateDependencyRequest.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"H\n\x18\x43reateDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency\"\xf1\x01\n\x17UpdateDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12:\n\x0f\x64\x65pendency_type\x18\x02 \x01(\x0e\x32\x1c.elder.entity.DependencyTypeH\x00\x88\x01\x01\x12I\n\x08metadata\x18\x03 \x03(\x0b\x32\x37.elder.dependency.UpdateDependencyRequest.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x12\n\x10_dependency_type\"H\n\x18UpdateDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency\"%\n\x17\x44\x65leteDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05\"H\n\x18\x44\x65leteDependencyResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"`\n\x1d\x42ulkCreateDependenciesRequest\x12?\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32).elder.dependency.CreateDependencyRequest\"`\n\x1e\x42ulkCreateDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\t\",\n\x1d\x42ulkDeleteDependenciesRequest\x12\x0b\n\x03ids\x18\x01 \x03(\x05\"G\n\x1e\x42ulkDeleteDependenciesResponse\x12\x15\n\rdeleted_count\x18\x01 \x01(\x05\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\tBS\n\x1fio.penguintech.elder.dependencyZ0github.com/penguintechinc/elder/proto/dependencyb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x10\x64\x65pendency.proto\x12\x10\x65lder.dependency\x1a\x0c\x63ommon.proto\x1a\x0c\x65ntity.proto"\xe7\x01\n\x17ListDependenciesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12\x18\n\x10source_entity_id\x18\x03 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x04 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x05 \x01(\x0e\x32\x1c.elder.entity.DependencyType"\x80\x01\n\x18ListDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse""\n\x14GetDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05"E\n\x15GetDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency"\x80\x02\n\x17\x43reateDependencyRequest\x12\x18\n\x10source_entity_id\x18\x01 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x02 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x03 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12I\n\x08metadata\x18\x04 \x03(\x0b\x32\x37.elder.dependency.CreateDependencyRequest.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"H\n\x18\x43reateDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency"\xf1\x01\n\x17UpdateDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12:\n\x0f\x64\x65pendency_type\x18\x02 \x01(\x0e\x32\x1c.elder.entity.DependencyTypeH\x00\x88\x01\x01\x12I\n\x08metadata\x18\x03 \x03(\x0b\x32\x37.elder.dependency.UpdateDependencyRequest.MetadataEntry\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x12\n\x10_dependency_type"H\n\x18UpdateDependencyResponse\x12,\n\ndependency\x18\x01 \x01(\x0b\x32\x18.elder.entity.Dependency"%\n\x17\x44\x65leteDependencyRequest\x12\n\n\x02id\x18\x01 \x01(\x05"H\n\x18\x44\x65leteDependencyResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse"`\n\x1d\x42ulkCreateDependenciesRequest\x12?\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32).elder.dependency.CreateDependencyRequest"`\n\x1e\x42ulkCreateDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\t",\n\x1d\x42ulkDeleteDependenciesRequest\x12\x0b\n\x03ids\x18\x01 \x03(\x05"G\n\x1e\x42ulkDeleteDependenciesResponse\x12\x15\n\rdeleted_count\x18\x01 \x01(\x05\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\tBS\n\x1fio.penguintech.elder.dependencyZ0github.com/penguintechinc/elder/proto/dependencyb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'dependency_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "dependency_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\037io.penguintech.elder.dependencyZ0github.com/penguintechinc/elder/proto/dependency'
-  _globals['_CREATEDEPENDENCYREQUEST_METADATAENTRY']._loaded_options = None
-  _globals['_CREATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_UPDATEDEPENDENCYREQUEST_METADATAENTRY']._loaded_options = None
-  _globals['_UPDATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_LISTDEPENDENCIESREQUEST']._serialized_start=67
-  _globals['_LISTDEPENDENCIESREQUEST']._serialized_end=298
-  _globals['_LISTDEPENDENCIESRESPONSE']._serialized_start=301
-  _globals['_LISTDEPENDENCIESRESPONSE']._serialized_end=429
-  _globals['_GETDEPENDENCYREQUEST']._serialized_start=431
-  _globals['_GETDEPENDENCYREQUEST']._serialized_end=465
-  _globals['_GETDEPENDENCYRESPONSE']._serialized_start=467
-  _globals['_GETDEPENDENCYRESPONSE']._serialized_end=536
-  _globals['_CREATEDEPENDENCYREQUEST']._serialized_start=539
-  _globals['_CREATEDEPENDENCYREQUEST']._serialized_end=795
-  _globals['_CREATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_start=748
-  _globals['_CREATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_end=795
-  _globals['_CREATEDEPENDENCYRESPONSE']._serialized_start=797
-  _globals['_CREATEDEPENDENCYRESPONSE']._serialized_end=869
-  _globals['_UPDATEDEPENDENCYREQUEST']._serialized_start=872
-  _globals['_UPDATEDEPENDENCYREQUEST']._serialized_end=1113
-  _globals['_UPDATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_start=748
-  _globals['_UPDATEDEPENDENCYREQUEST_METADATAENTRY']._serialized_end=795
-  _globals['_UPDATEDEPENDENCYRESPONSE']._serialized_start=1115
-  _globals['_UPDATEDEPENDENCYRESPONSE']._serialized_end=1187
-  _globals['_DELETEDEPENDENCYREQUEST']._serialized_start=1189
-  _globals['_DELETEDEPENDENCYREQUEST']._serialized_end=1226
-  _globals['_DELETEDEPENDENCYRESPONSE']._serialized_start=1228
-  _globals['_DELETEDEPENDENCYRESPONSE']._serialized_end=1300
-  _globals['_BULKCREATEDEPENDENCIESREQUEST']._serialized_start=1302
-  _globals['_BULKCREATEDEPENDENCIESREQUEST']._serialized_end=1398
-  _globals['_BULKCREATEDEPENDENCIESRESPONSE']._serialized_start=1400
-  _globals['_BULKCREATEDEPENDENCIESRESPONSE']._serialized_end=1496
-  _globals['_BULKDELETEDEPENDENCIESREQUEST']._serialized_start=1498
-  _globals['_BULKDELETEDEPENDENCIESREQUEST']._serialized_end=1542
-  _globals['_BULKDELETEDEPENDENCIESRESPONSE']._serialized_start=1544
-  _globals['_BULKDELETEDEPENDENCIESRESPONSE']._serialized_end=1615
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\037io.penguintech.elder.dependencyZ0github.com/penguintechinc/elder/proto/dependency"
+    _globals["_CREATEDEPENDENCYREQUEST_METADATAENTRY"]._loaded_options = None
+    _globals["_CREATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_UPDATEDEPENDENCYREQUEST_METADATAENTRY"]._loaded_options = None
+    _globals["_UPDATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_LISTDEPENDENCIESREQUEST"]._serialized_start = 67
+    _globals["_LISTDEPENDENCIESREQUEST"]._serialized_end = 298
+    _globals["_LISTDEPENDENCIESRESPONSE"]._serialized_start = 301
+    _globals["_LISTDEPENDENCIESRESPONSE"]._serialized_end = 429
+    _globals["_GETDEPENDENCYREQUEST"]._serialized_start = 431
+    _globals["_GETDEPENDENCYREQUEST"]._serialized_end = 465
+    _globals["_GETDEPENDENCYRESPONSE"]._serialized_start = 467
+    _globals["_GETDEPENDENCYRESPONSE"]._serialized_end = 536
+    _globals["_CREATEDEPENDENCYREQUEST"]._serialized_start = 539
+    _globals["_CREATEDEPENDENCYREQUEST"]._serialized_end = 795
+    _globals["_CREATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_start = 748
+    _globals["_CREATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_end = 795
+    _globals["_CREATEDEPENDENCYRESPONSE"]._serialized_start = 797
+    _globals["_CREATEDEPENDENCYRESPONSE"]._serialized_end = 869
+    _globals["_UPDATEDEPENDENCYREQUEST"]._serialized_start = 872
+    _globals["_UPDATEDEPENDENCYREQUEST"]._serialized_end = 1113
+    _globals["_UPDATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_start = 748
+    _globals["_UPDATEDEPENDENCYREQUEST_METADATAENTRY"]._serialized_end = 795
+    _globals["_UPDATEDEPENDENCYRESPONSE"]._serialized_start = 1115
+    _globals["_UPDATEDEPENDENCYRESPONSE"]._serialized_end = 1187
+    _globals["_DELETEDEPENDENCYREQUEST"]._serialized_start = 1189
+    _globals["_DELETEDEPENDENCYREQUEST"]._serialized_end = 1226
+    _globals["_DELETEDEPENDENCYRESPONSE"]._serialized_start = 1228
+    _globals["_DELETEDEPENDENCYRESPONSE"]._serialized_end = 1300
+    _globals["_BULKCREATEDEPENDENCIESREQUEST"]._serialized_start = 1302
+    _globals["_BULKCREATEDEPENDENCIESREQUEST"]._serialized_end = 1398
+    _globals["_BULKCREATEDEPENDENCIESRESPONSE"]._serialized_start = 1400
+    _globals["_BULKCREATEDEPENDENCIESRESPONSE"]._serialized_end = 1496
+    _globals["_BULKDELETEDEPENDENCIESREQUEST"]._serialized_start = 1498
+    _globals["_BULKDELETEDEPENDENCIESREQUEST"]._serialized_end = 1542
+    _globals["_BULKDELETEDEPENDENCIESRESPONSE"]._serialized_start = 1544
+    _globals["_BULKDELETEDEPENDENCIESRESPONSE"]._serialized_end = 1615
 # @@protoc_insertion_point(module_scope)

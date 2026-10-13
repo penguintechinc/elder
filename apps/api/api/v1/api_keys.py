@@ -2,11 +2,10 @@
 
 # flake8: noqa: E501
 
-
 import hashlib
 import secrets
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, jsonify, request
 
@@ -17,6 +16,7 @@ from apps.api.models.dataclasses import (
     PaginatedResponse,
     from_pydal_rows,
 )
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("api_keys", __name__)
@@ -53,9 +53,9 @@ async def list_api_keys():
 
     # Validate pagination
     if page < 1:
-        return jsonify({"error": "Page must be >= 1"}), 400
+        return ApiResponse.bad_request("Page must be >= 1")
     if per_page < 1 or per_page > 1000:
-        return jsonify({"error": "Per page must be between 1 and 1000"}), 400
+        return ApiResponse.bad_request("Per page must be between 1 and 1000")
 
     # Calculate pagination
     offset = (page - 1) * per_page
@@ -110,13 +110,13 @@ async def create_api_key():
     user = get_current_user()
 
     # Parse request data
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Validate required fields
     if "name" not in data or not data["name"].strip():
-        return jsonify({"error": "Name is required"}), 400
+        return ApiResponse.bad_request("Name is required")
 
     # Generate API key
     full_key, key_hash, prefix = generate_api_key()
@@ -136,10 +136,10 @@ async def create_api_key():
 
     # Insert into database
     def create_key():
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         key_id = db.api_keys.insert(created_at=now, updated_at=now, **insert_data)
         db.commit()
-        return db.api_keys[key_id]
+        return db.api_keys[key_id]  # tenant-scope-exempt
 
     api_key_row = await run_in_threadpool(create_key)
 
@@ -163,9 +163,12 @@ async def delete_api_key(key_id: int):
     db = current_app.db
     user = get_current_user()
 
-    # Verify the key belongs to the current user
+    # Verify the key belongs to the current user. api_keys has no
+    # tenant_id/organization_id of its own -- ownership is by identity_id,
+    # checked explicitly below before any write, which is an equivalent
+    # security boundary since each identity belongs to exactly one tenant.
     def revoke_key():
-        api_key = db.api_keys[key_id]
+        api_key = db.api_keys[key_id]  # tenant-scope-exempt: see above
         if not api_key:
             return None, "API key not found", 404
 
@@ -173,7 +176,7 @@ async def delete_api_key(key_id: int):
             return None, "Access denied", 403
 
         # Delete the key
-        del db.api_keys[key_id]
+        del db.api_keys[key_id]  # tenant-scope-exempt: ownership verified above
         db.commit()
         return api_key, None, None
 

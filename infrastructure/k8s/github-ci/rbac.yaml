@@ -1,4 +1,12 @@
 ---
+# Namespace-scoped (elder only, not cluster-wide) Role for the CI/CD
+# ServiceAccount that deploys Elder via `helm upgrade --install`. Write
+# access to Services/Ingress is a required, least-privilege grant: Helm must
+# create/update/patch (Services: also delete, for `helm uninstall` and
+# resource pruning across releases) the chart's own Service/Ingress objects.
+# Already excludes cluster-scoped resources (nodes, namespaces, ClusterRoles)
+# and any other namespace. Suppressed as AVD-KSV-0056 in .trivyignore (repo
+# root) — trivy's Kubernetes scanner does not honor inline ignore comments.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -24,7 +32,8 @@ rules:
   resources: ["pods/log"]
   verbs: ["get", "list"]
 
-# Ingress resources
+# Ingress resources (no "delete": ingress removal is not part of this role's
+# normal deploy lifecycle)
 - apiGroups: ["networking.k8s.io"]
   resources: ["ingresses"]
   verbs: ["get", "list", "create", "update", "patch"]

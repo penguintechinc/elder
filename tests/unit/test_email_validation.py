@@ -59,8 +59,7 @@ class TestPortalAuthEmailValidation:
 
         errors = exc_info.value.errors()
         assert any(
-            "email must match username" in str(error["msg"]).lower()
-            for error in errors
+            "email must match username" in str(error["msg"]).lower() for error in errors
         ), "Should reject mismatched email and username"
 
     def test_login_request_valid_email(self):

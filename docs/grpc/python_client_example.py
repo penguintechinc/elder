@@ -11,12 +11,13 @@ Usage:
 """
 
 import grpc
+
 from apps.api.grpc.generated import (
+    common_pb2,
     elder_pb2,
     elder_pb2_grpc,
-    organization_pb2,
     entity_pb2,
-    common_pb2,
+    organization_pb2,
 )
 
 
@@ -28,7 +29,7 @@ def run_examples():
     # credentials = grpc.ssl_channel_credentials()
     # channel = grpc.secure_channel('grpc.example.com:443', credentials)
 
-    channel = grpc.insecure_channel('localhost:50051')
+    channel = grpc.insecure_channel("localhost:50051")
 
     # Create stub (client)
     stub = elder_pb2_grpc.ElderServiceStub(channel)
@@ -53,10 +54,7 @@ def run_examples():
     print("-" * 70)
     try:
         request = organization_pb2.ListOrganizationsRequest(
-            pagination=common_pb2.PaginationRequest(
-                page=1,
-                per_page=10
-            )
+            pagination=common_pb2.PaginationRequest(page=1, per_page=10)
         )
         response = stub.ListOrganizations(request)
         print(f"Total: {response.pagination.total}")
@@ -74,10 +72,7 @@ def run_examples():
         request = organization_pb2.CreateOrganizationRequest(
             name="Engineering Department",
             description="Engineering team organization",
-            metadata={
-                "team_size": "50",
-                "location": "Building A"
-            }
+            metadata={"team_size": "50", "location": "Building A"},
         )
         response = stub.CreateOrganization(request)
         print(f"Created Organization:")
@@ -113,15 +108,14 @@ def run_examples():
             request = organization_pb2.UpdateOrganizationRequest(
                 id=org_id,
                 description="Updated engineering team organization",
-                metadata={
-                    "team_size": "60",
-                    "location": "Building B"
-                }
+                metadata={"team_size": "60", "location": "Building B"},
             )
             response = stub.UpdateOrganization(request)
             print(f"Updated Organization:")
             print(f"  Description: {response.organization.description}")
-            print(f"  Metadata: {[f'{m.key}={m.value}' for m in response.organization.metadata]}")
+            print(
+                f"  Metadata: {[f'{m.key}={m.value}' for m in response.organization.metadata]}"
+            )
         except grpc.RpcError as e:
             print(f"Error: {e.code()} - {e.details()}")
 
@@ -130,11 +124,8 @@ def run_examples():
     print("-" * 70)
     try:
         request = entity_pb2.ListEntitiesRequest(
-            pagination=common_pb2.PaginationRequest(
-                page=1,
-                per_page=10
-            ),
-            entity_type=entity_pb2.EntityType.COMPUTE
+            pagination=common_pb2.PaginationRequest(page=1, per_page=10),
+            entity_type=entity_pb2.EntityType.COMPUTE,
         )
         response = stub.ListEntities(request)
         print(f"Total Compute Entities: {response.pagination.total}")
@@ -156,8 +147,8 @@ def run_examples():
                 metadata={
                     "ip_address": "10.0.1.100",
                     "cpu_cores": "8",
-                    "memory_gb": "32"
-                }
+                    "memory_gb": "32",
+                },
             )
             response = stub.CreateEntity(request)
             print(f"Created Entity:")

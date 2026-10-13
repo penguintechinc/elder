@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "web" "api" "worker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 {{- if $componentConfig.service }}
@@ -28,11 +28,17 @@ spec:
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
     name: http
+    {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
+    nodePort: {{ $componentConfig.service.nodePort }}
+    {{- end }}
   {{- else if eq $component "api" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
     name: http
+    {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
+    nodePort: {{ $componentConfig.service.nodePort }}
+    {{- end }}
   - port: {{ $componentConfig.service.grpcPort }}
     targetPort: {{ $componentConfig.service.grpcPort }}
     protocol: TCP
@@ -40,21 +46,6 @@ spec:
   {{- else if eq $component "worker" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
-    protocol: TCP
-    name: http
-  {{- else if eq $component "prometheus" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 9090
-    protocol: TCP
-    name: http
-  {{- else if eq $component "alertmanager" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 9093
-    protocol: TCP
-    name: http
-  {{- else if eq $component "grafana" }}
-  - port: {{ $componentConfig.service.port }}
-    targetPort: 3000
     protocol: TCP
     name: http
   {{- end }}

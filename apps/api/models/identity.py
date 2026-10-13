@@ -2,11 +2,20 @@
 
 # flake8: noqa: E501
 
-
 import enum
 from typing import List
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    false,
+)
 from sqlalchemy.orm import Mapped, relationship
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -25,6 +34,10 @@ class IdentityType(enum.Enum):
     INTEGRATION = "integration"
     OTHER_HUMAN = "otherHuman"
     OTHER = "other"
+    # v4.x: CRM entities (Ruffled) -- external customer contact, not a
+    # platform user. Optional details (phone, location, etc.) live in
+    # identity_metadata (see 033_identity_metadata.py).
+    CUSTOMER_CONTACT = "customer_contact"
 
 
 class AuthProvider(enum.Enum):
@@ -112,6 +125,14 @@ class Identity(Base, IDMixin, TimestampMixin):
         comment="Associated organization (integer, no FK to avoid circular ref)",
     )
 
+    # External ID for cloud provider integration (e.g., AWS ARN, GCP email)
+    external_id = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="External identifier from cloud provider (AWS ARN, GCP email, etc.)",
+    )
+
     # Portal access level
     portal_role = Column(
         String(20),
@@ -123,6 +144,13 @@ class Identity(Base, IDMixin, TimestampMixin):
     # village_id for cross-system reference
     village_id = Column(String(32), unique=True, nullable=True, index=True)
 
+    # Universal metadata bag (universal-audits plan). `metadata` is reserved
+    # on SQLAlchemy declarative models, so it's mapped via a differently-
+    # named Python attribute, exactly like Vulnerability.extra_metadata in
+    # apps/api/models/security.py. Plan 03 (CRM) uses this for optional
+    # customer-contact details (phone, location, etc.).
+    identity_metadata = Column("metadata", JSON, nullable=True)
+
     # Last activity
     last_login_at = Column(
         String(255),  # Using String for ISO format datetime
@@ -130,14 +158,30 @@ class Identity(Base, IDMixin, TimestampMixin):
         comment="Last login timestamp (ISO format)",
     )
 
+    # Self-service DSAR (GDPR Art. 17 / CCPA-CPRA) -- see
+    # apps/api/services/privacy/service.py and
+    # docs/compliance/data-retention-policy.md. `do_not_sell_share` and
+    # `consent_withdrawn_at` implement the CCPA/CPRA opt-out; `anonymized_at`
+    # marks a completed right-to-erasure (row survives, PII fields blanked,
+    # so audit_logs/RBAC history referencing this id by FK stay intact).
+    # server_default (not just default=) is required: runtime inserts go
+    # through penguin-dal, not the SQLAlchemy ORM session, so the
+    # Python-side Column default is never applied to the many existing
+    # `db.identities.insert(...)` call sites that predate this column.
+    # Matches the server_default in alembic/versions/041_dsar_privacy_
+    # fields.py, which this model must stay in sync with.
+    do_not_sell_share = Column(Boolean, nullable=False, server_default=false())
+    consent_withdrawn_at = Column(DateTime(timezone=True), nullable=True)
+    anonymized_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
-    group_memberships: Mapped[List["IdentityGroupMembership"]] = relationship(
+    group_memberships: Mapped[list["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",
         back_populates="identity",
         cascade="all, delete-orphan",
     )
 
-    roles: Mapped[List["UserRole"]] = relationship(
+    roles: Mapped[list["UserRole"]] = relationship(
         "UserRole",
         back_populates="identity",
         cascade="all, delete-orphan",
@@ -152,7 +196,7 @@ class Identity(Base, IDMixin, TimestampMixin):
         """Get display name (full name or username)."""
         return self.full_name or self.username
 
-    def get_groups(self) -> List["IdentityGroup"]:
+    def get_groups(self) -> list["IdentityGroup"]:
         """
         Get all identity groups this identity belongs to.
 
@@ -234,14 +278,14 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
     # Access review configuration (Enterprise feature)
     review_enabled = Column(Boolean, nullable=False, default=False)
     review_interval_days = Column(Integer, nullable=True, default=90)
-    last_review_date = Column(String(255), nullable=True)
-    next_review_date = Column(String(255), nullable=True)
+    last_review_date = Column(DateTime(timezone=True), nullable=True)
+    next_review_date = Column(DateTime(timezone=True), nullable=True)
     review_assignment_mode = Column(String(20), nullable=True, default="all_owners")
     review_due_days = Column(Integer, nullable=True, default=14)
     review_auto_apply = Column(Boolean, nullable=False, default=True)
 
     # Relationships
-    memberships: Mapped[List["IdentityGroupMembership"]] = relationship(
+    memberships: Mapped[list["IdentityGroupMembership"]] = relationship(
         "IdentityGroupMembership",
         back_populates="group",
         cascade="all, delete-orphan",
@@ -251,7 +295,7 @@ class IdentityGroup(Base, IDMixin, TimestampMixin):
         """String representation of identity group."""
         return f"<IdentityGroup(id={self.id}, name='{self.name}')>"
 
-    def get_members(self) -> List["Identity"]:
+    def get_members(self) -> list["Identity"]:
         """
         Get all identities that are members of this group.
 

@@ -67,49 +67,49 @@ class TestFlaskParserSimpleRoutes:
         # Mock validate_content to return True
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/users')
 def get_users():
     return []
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/users'
-        assert endpoints[0]['methods'] == ['GET']
-        assert endpoints[0]['function_name'] == 'get_users'
-        assert endpoints[0]['framework'] == 'flask'
-        assert endpoints[0]['source_file'] == 'app.py'
+        assert endpoints[0]["path"] == "/users"
+        assert endpoints[0]["methods"] == ["GET"]
+        assert endpoints[0]["function_name"] == "get_users"
+        assert endpoints[0]["framework"] == "flask"
+        assert endpoints[0]["source_file"] == "app.py"
 
     def test_parse_app_route_with_methods(self) -> None:
         """Test parsing @app.route with explicit methods."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/users', methods=['GET', 'POST'])
 def users_handler():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/users'
-        assert set(endpoints[0]['methods']) == {'GET', 'POST'}
-        assert endpoints[0]['function_name'] == 'users_handler'
+        assert endpoints[0]["path"] == "/users"
+        assert set(endpoints[0]["methods"]) == {"GET", "POST"}
+        assert endpoints[0]["function_name"] == "users_handler"
 
     def test_parse_blueprint_route(self) -> None:
         """Test parsing @bp.route() decorator."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @bp.route('/posts')
 def list_posts():
     return []
-'''
+"""
         endpoints = parser.parse(code, "routes.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/posts'
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["path"] == "/posts"
+        assert endpoints[0]["methods"] == ["GET"]
 
 
 class TestFlaskParserMethodShortcuts:
@@ -120,57 +120,57 @@ class TestFlaskParserMethodShortcuts:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.get('/items')
 def get_items():
     return []
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['GET']
+        assert endpoints[0]["methods"] == ["GET"]
 
     def test_parse_app_post_shortcut(self) -> None:
         """Test parsing @app.post() shortcut."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.post('/items')
 def create_item():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['POST']
+        assert endpoints[0]["methods"] == ["POST"]
 
     def test_parse_app_put_shortcut(self) -> None:
         """Test parsing @app.put() shortcut."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.put('/items/<int:id>')
 def update_item(id):
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['PUT']
-        assert endpoints[0]['path'] == '/items/{id}'
+        assert endpoints[0]["methods"] == ["PUT"]
+        assert endpoints[0]["path"] == "/items/{id}"
 
     def test_parse_app_delete_shortcut(self) -> None:
         """Test parsing @app.delete() shortcut."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.delete('/items/<int:id>')
 def delete_item(id):
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['methods'] == ['DELETE']
+        assert endpoints[0]["methods"] == ["DELETE"]
 
 
 class TestFlaskParserPathNormalization:
@@ -179,38 +179,38 @@ class TestFlaskParserPathNormalization:
     def test_normalize_path_int_param(self) -> None:
         """Test normalization of <int:id> parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/users/<int:id>')
-        assert normalized == '/users/{id}'
+        normalized = parser._normalize_path("/users/<int:id>")
+        assert normalized == "/users/{id}"
 
     def test_normalize_path_string_param(self) -> None:
         """Test normalization of <string:name> parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/posts/<string:slug>')
-        assert normalized == '/posts/{slug}'
+        normalized = parser._normalize_path("/posts/<string:slug>")
+        assert normalized == "/posts/{slug}"
 
     def test_normalize_path_bare_param(self) -> None:
         """Test normalization of bare <id> parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/items/<id>')
-        assert normalized == '/items/{id}'
+        normalized = parser._normalize_path("/items/<id>")
+        assert normalized == "/items/{id}"
 
     def test_normalize_path_multiple_params(self) -> None:
         """Test normalization of multiple parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/users/<int:user_id>/posts/<int:post_id>')
-        assert normalized == '/users/{user_id}/posts/{post_id}'
+        normalized = parser._normalize_path("/users/<int:user_id>/posts/<int:post_id>")
+        assert normalized == "/users/{user_id}/posts/{post_id}"
 
     def test_normalize_path_uuid_param(self) -> None:
         """Test normalization of UUID parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/resources/<uuid:resource_id>')
-        assert normalized == '/resources/{resource_id}'
+        normalized = parser._normalize_path("/resources/<uuid:resource_id>")
+        assert normalized == "/resources/{resource_id}"
 
     def test_normalize_path_no_params(self) -> None:
         """Test normalization of paths without parameters."""
         parser = FlaskEndpointParser()
-        normalized = parser._normalize_path('/users/list')
-        assert normalized == '/users/list'
+        normalized = parser._normalize_path("/users/list")
+        assert normalized == "/users/list"
 
 
 class TestFlaskParserAuthentication:
@@ -221,44 +221,44 @@ class TestFlaskParserAuthentication:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @login_required
 @app.route('/protected')
 def protected_route():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is True
+        assert endpoints[0]["auth_required"] is True
 
     def test_auth_required_with_jwt_required(self) -> None:
         """Test detection of @jwt_required decorator."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @jwt_required()
 @app.route('/api/data')
 def get_data():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is True
+        assert endpoints[0]["auth_required"] is True
 
     def test_no_auth_required(self) -> None:
         """Test that routes without auth are marked as public."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/public')
 def public_route():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['auth_required'] is False
+        assert endpoints[0]["auth_required"] is False
 
 
 class TestFlaskParserRestfulResources:
@@ -269,26 +269,26 @@ class TestFlaskParserRestfulResources:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 api.add_resource(UserResource, '/users')
-'''
+"""
         endpoints = parser.parse(code, "api.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/users'
-        assert endpoints[0]['function_name'] == 'UserResource'
-        assert set(endpoints[0]['methods']) == {'GET', 'POST', 'PUT', 'PATCH', 'DELETE'}
+        assert endpoints[0]["path"] == "/users"
+        assert endpoints[0]["function_name"] == "UserResource"
+        assert set(endpoints[0]["methods"]) == {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
     def test_parse_add_resource_with_path_params(self) -> None:
         """Test parsing api.add_resource() with path parameters."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 api.add_resource(UserResource, '/users/<int:id>')
-'''
+"""
         endpoints = parser.parse(code, "api.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['path'] == '/users/{id}'
+        assert endpoints[0]["path"] == "/users/{id}"
 
 
 class TestFlaskParserMultipleEndpoints:
@@ -299,7 +299,7 @@ class TestFlaskParserMultipleEndpoints:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/users')
 def get_users():
     return []
@@ -311,12 +311,12 @@ def posts_handler():
 @app.delete('/items/<int:id>')
 def delete_item(id):
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 3
-        assert endpoints[0]['path'] == '/users'
-        assert endpoints[1]['path'] == '/posts'
-        assert endpoints[2]['path'] == '/items/{id}'
+        assert endpoints[0]["path"] == "/users"
+        assert endpoints[1]["path"] == "/posts"
+        assert endpoints[2]["path"] == "/items/{id}"
 
 
 class TestFlaskParserEdgeCases:
@@ -335,10 +335,10 @@ class TestFlaskParserEdgeCases:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 def helper_function():
     return "not a route"
-'''
+"""
         endpoints = parser.parse(code, "helpers.py")
         assert len(endpoints) == 0
 
@@ -347,19 +347,19 @@ def helper_function():
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/orphan')
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 1
-        assert endpoints[0]['function_name'] == 'unknown'
+        assert endpoints[0]["function_name"] == "unknown"
 
     def test_line_numbers_correct(self) -> None:
         """Test that line numbers are correctly reported."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/first')
 def first():
     return {}
@@ -367,11 +367,11 @@ def first():
 @app.route('/second')
 def second():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
         assert len(endpoints) == 2
-        assert endpoints[0]['line_number'] == 2
-        assert endpoints[1]['line_number'] == 6
+        assert endpoints[0]["line_number"] == 2
+        assert endpoints[1]["line_number"] == 6
 
 
 class TestFlaskParserMetadata:
@@ -382,17 +382,24 @@ class TestFlaskParserMetadata:
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/test')
 def test_route():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "test.py")
         assert len(endpoints) == 1
         endpoint = endpoints[0]
 
-        required_fields = ['path', 'methods', 'function_name', 'line_number',
-                          'framework', 'source_file', 'auth_required']
+        required_fields = [
+            "path",
+            "methods",
+            "function_name",
+            "line_number",
+            "framework",
+            "source_file",
+            "auth_required",
+        ]
         for field in required_fields:
             assert field in endpoint
 
@@ -401,24 +408,24 @@ def test_route():
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/test')
 def test():
     return {}
-'''
+"""
         endpoints = parser.parse(code, "app.py")
-        assert all(e['framework'] == 'flask' for e in endpoints)
+        assert all(e["framework"] == "flask" for e in endpoints)
 
     def test_source_file_matches_input(self) -> None:
         """Test that source_file field matches input filename."""
         parser = FlaskEndpointParser()
         parser.validate_content = lambda x: True
 
-        code = '''
+        code = """
 @app.route('/test')
 def test():
     return {}
-'''
+"""
         filename = "custom_routes.py"
         endpoints = parser.parse(code, filename)
-        assert all(e['source_file'] == filename for e in endpoints)
+        assert all(e["source_file"] == filename for e in endpoints)

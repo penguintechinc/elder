@@ -3,12 +3,40 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { Organization } from '@/types'
+
+interface OnCallRotation {
+  id: number
+  name: string
+  description?: string
+  scope_type: string
+  organization_id?: number
+  service_id?: number
+  schedule_type: string
+  rotation_length_days?: number
+  rotation_start_date?: string
+  schedule_cron?: string
+  handoff_timezone?: string
+  shift_split?: boolean
+  is_active: boolean
+}
+
+interface Service {
+  id: number
+  name: string
+}
+
+interface PaginatedResponse<T> {
+  items: T[]
+}
+
+type ApiError = { response?: { data?: { message?: string }, status?: number }, message?: string }
 
 interface CreateOnCallRotationModalProps {
   isOpen: boolean
   onClose: () => void
-  rotation?: any
-  onSuccess?: () => void
+  rotation?: OnCallRotation
+  onSuccess?: () => Promise<void>
 }
 
 // Timezone options for follow-the-sun schedules
@@ -37,34 +65,34 @@ export default function CreateOnCallRotationModal({
   // Fetch organizations and services
   const { data: organizations } = useQuery({
     queryKey: ['organizations-dropdown'],
-    queryFn: () => api.getOrganizations({ per_page: 1000 }),
+    queryFn: () => api.getOrganizations({ per_page: 1000 }) as Promise<PaginatedResponse<Organization>>,
   })
 
   const { data: services } = useQuery({
     queryKey: ['services-dropdown'],
-    queryFn: () => api.getServices({ per_page: 1000 }),
+    queryFn: () => api.getServices({ per_page: 1000 }) as Promise<PaginatedResponse<Service>>,
   })
 
   // Create/update mutation
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createOnCallRotation(data),
+    mutationFn: (data: Record<string, unknown>) => api.createOnCallRotation(data as Parameters<typeof api.createOnCallRotation>[0]),
     onSuccess: () => {
       toast.success('Rotation created successfully')
       onSuccess?.()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       const message = error?.response?.data?.message || 'Failed to create rotation'
       toast.error(message)
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateOnCallRotation(rotation.id, data),
+    mutationFn: (data: Record<string, unknown>) => api.updateOnCallRotation(rotation?.id ?? 0, data as Parameters<typeof api.updateOnCallRotation>[1]),
     onSuccess: () => {
       toast.success('Rotation updated successfully')
       onSuccess?.()
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       const message = error?.response?.data?.message || 'Failed to update rotation'
       toast.error(message)
     },
@@ -73,7 +101,7 @@ export default function CreateOnCallRotationModal({
   // Build organization and service options
   const organizationOptions = useMemo(
     () =>
-      organizations?.items?.map((org: any) => ({
+      organizations?.items?.map((org: Organization) => ({
         value: org.id.toString(),
         label: org.name,
       })) || [],
@@ -82,7 +110,7 @@ export default function CreateOnCallRotationModal({
 
   const serviceOptions = useMemo(
     () =>
-      services?.items?.map((svc: any) => ({
+      services?.items?.map((svc: Service) => ({
         value: svc.id.toString(),
         label: svc.name,
       })) || [],
@@ -221,38 +249,41 @@ export default function CreateOnCallRotationModal({
     })
   }, [organizationOptions, serviceOptions, editDefaults])
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: Record<string, unknown>) => {
     console.log('[CreateOnCallRotationModal] Form submitted with data:', data)
 
     // Clean up data based on schedule type
-    const cleanedData: any = {
-      name: data.name,
-      description: data.description || undefined,
-      scope_type: data.scope_type,
-      schedule_type: data.schedule_type,
+    const cleanedData: Record<string, unknown> = {
+      name: String(data.name),
+      description: data.description ? String(data.description) : undefined,
+      scope_type: String(data.scope_type),
+      schedule_type: String(data.schedule_type),
       is_active: data.is_active !== false,
     }
 
     // Add scope-specific fields
     if (data.scope_type === 'organization') {
-      cleanedData.organization_id = parseInt(data.organization_id)
+      const orgId = data.organization_id
+      cleanedData.organization_id = typeof orgId === 'string' ? parseInt(orgId) : orgId
     } else if (data.scope_type === 'service') {
-      cleanedData.service_id = parseInt(data.service_id)
+      const svcId = data.service_id
+      cleanedData.service_id = typeof svcId === 'string' ? parseInt(svcId) : svcId
     }
 
     // Add schedule-specific fields
     if (data.schedule_type === 'weekly') {
-      cleanedData.rotation_length_days = parseInt(data.rotation_length_days) || 7
-      cleanedData.rotation_start_date = data.rotation_start_date
+      const rotationDays = data.rotation_length_days
+      cleanedData.rotation_length_days = typeof rotationDays === 'string' ? parseInt(rotationDays) : rotationDays || 7
+      cleanedData.rotation_start_date = String(data.rotation_start_date)
     } else if (data.schedule_type === 'cron') {
-      cleanedData.schedule_cron = data.schedule_cron
+      cleanedData.schedule_cron = String(data.schedule_cron)
     } else if (data.schedule_type === 'follow_the_sun') {
-      cleanedData.handoff_timezone = data.handoff_timezone || 'UTC'
+      cleanedData.handoff_timezone = String(data.handoff_timezone || 'UTC')
       cleanedData.shift_split = data.shift_split !== false
       // Default shift config for follow-the-sun (can be customized later)
       cleanedData.shift_config = {
         shifts: [
-          { name: 'Day Shift', start_hour: 8, end_hour: 20, timezone: data.handoff_timezone || 'UTC' }
+          { name: 'Day Shift', start_hour: 8, end_hour: 20, timezone: String(data.handoff_timezone || 'UTC') }
         ]
       }
     }

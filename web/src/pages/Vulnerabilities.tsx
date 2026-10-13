@@ -6,6 +6,45 @@ import api from '@/lib/api'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 
+interface AffectedEntity {
+  parent_type: string
+  parent_name: string
+  source_file?: string
+}
+
+interface Vulnerability {
+  id: number
+  cve_id: string
+  severity: string
+  component: string
+  status: string
+  published_date: string
+  description: string
+  affected_versions: string[]
+  affected_entities: AffectedEntity[]
+}
+
+interface VulnerabilitiesResponse {
+  items: Vulnerability[]
+  total: number
+  page: number
+  per_page: number
+  pages: number
+}
+
+interface Service {
+  id: number
+  name: string
+}
+
+interface Software {
+  id: number
+  name: string
+}
+
+interface PaginatedResponse<T> {
+  items: T[]
+}
 
 const SEVERITY_LEVELS = [
   { value: 'all', label: 'All', color: 'bg-slate-500/20 text-slate-400' },
@@ -28,19 +67,19 @@ export default function Vulnerabilities() {
   const [severityFilter, setSeverityFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [assignModalOpen, setAssignModalOpen] = useState(false)
-  const [selectedVulnerability, setSelectedVulnerability] = useState<any>(null)
+  const [selectedVulnerability, setSelectedVulnerability] = useState<Vulnerability | null>(null)
   const [assignParentType, setAssignParentType] = useState<string>('service')
   const queryClient = useQueryClient()
 
   // Fetch services and software for assignment dropdowns
   const { data: servicesData } = useQuery({
     queryKey: queryKeys.services.all,
-    queryFn: () => api.getServices({ per_page: 200 }),
+    queryFn: () => api.getServices({ per_page: 200 }) as Promise<PaginatedResponse<Service>>,
   })
 
   const { data: softwareData } = useQuery({
     queryKey: queryKeys.software.all,
-    queryFn: () => api.getSoftware({ per_page: 200 }),
+    queryFn: () => api.getSoftware({ per_page: 200 }) as Promise<PaginatedResponse<Software>>,
   })
 
   const assignMutation = useMutation({
@@ -111,9 +150,9 @@ export default function Vulnerabilities() {
       search: search || undefined,
       severity: severityFilter !== 'all' ? severityFilter : undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
-    }),
+    }) as Promise<VulnerabilitiesResponse>,
     placeholderData: {
-      items: mockVulnerabilities,
+      items: mockVulnerabilities as Vulnerability[],
       total: mockVulnerabilities.length,
       page: 1,
       per_page: 50,
@@ -271,7 +310,7 @@ export default function Vulnerabilities() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data?.items?.map((vuln: any, idx: number) => (
+                  {data?.items?.map((vuln: Vulnerability, idx: number) => (
                     <tr
                       key={vuln.id}
                       className={`border-b border-slate-700 hover:bg-slate-800/50 transition-colors ${
@@ -298,7 +337,7 @@ export default function Vulnerabilities() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-wrap gap-1">
-                          {vuln.affected_entities?.map((entity: any, i: number) => (
+                          {vuln.affected_entities?.map((entity: AffectedEntity, i: number) => (
                             <span
                               key={i}
                               className={`px-2 py-0.5 rounded text-xs font-medium ${
@@ -314,7 +353,7 @@ export default function Vulnerabilities() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-slate-400 text-xs font-mono">
-                          {vuln.affected_entities?.map((e: any) => e.source_file).filter(Boolean).join(', ') || '—'}
+                          {vuln.affected_entities?.map((e: AffectedEntity) => e.source_file).filter(Boolean).join(', ') || '—'}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -397,10 +436,10 @@ export default function Vulnerabilities() {
                   >
                     <option value="">Select...</option>
                     {assignParentType === 'service'
-                      ? servicesData?.items?.map((s: any) => (
+                      ? servicesData?.items?.map((s: Service) => (
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))
-                      : softwareData?.items?.map((s: any) => (
+                      : softwareData?.items?.map((s: Software) => (
                           <option key={s.id} value={s.id}>{s.name}</option>
                         ))}
                   </select>

@@ -4,9 +4,9 @@ name: "CodeQL Config"
 paths-ignore:
   - scripts/**  # Development and testing scripts only
   - tests/**    # Test files with mock data
-  - **/node_modules/**
-  - **/vendor/**
-  - **/generated/**
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/generated/**"
 
 # Query filters - exclude certain queries for specific paths
 query-filters:

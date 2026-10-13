@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,14 +13,14 @@ class SecretValue:
     """Represents a secret value retrieved from a provider."""
 
     name: str
-    value: Optional[str] = None  # None if masked
+    value: str | None = None  # None if masked
     is_masked: bool = True
     is_kv: bool = False
-    kv_pairs: Optional[Dict[str, str]] = None
-    version: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    metadata: Optional[Dict[str, Any]] = None
+    kv_pairs: dict[str, str] | None = None
+    version: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    metadata: dict[str, Any] | None = None
 
     def mask(self) -> "SecretValue":
         """Return a masked version of this secret."""
@@ -49,16 +48,16 @@ class SecretMetadata:
     name: str
     path: str
     is_kv: bool
-    version: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    metadata: Optional[Dict[str, Any]] = None
+    version: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class SecretProviderClient(ABC):
     """Abstract base class for secret provider clients."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize the secret provider client.
 
@@ -87,7 +86,7 @@ class SecretProviderClient(ABC):
         """
 
     @abstractmethod
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """
         Retrieve a secret from the provider.
 
@@ -105,7 +104,7 @@ class SecretProviderClient(ABC):
         """
 
     @abstractmethod
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """
         List secrets available in the provider.
 
@@ -121,7 +120,7 @@ class SecretProviderClient(ABC):
 
     @abstractmethod
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """
         Create a new secret in the provider.
@@ -174,7 +173,7 @@ class SecretProviderClient(ABC):
         """
 
     @abstractmethod
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """
         Get all versions of a secret.
 

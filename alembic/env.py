@@ -1,26 +1,37 @@
 """Alembic environment configuration for Elder."""
 
+import importlib
 import os
 import sys
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
+
 from alembic import context
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
-# Import Base and all SQLAlchemy models
-from apps.api.models.base import Base
-from apps.api.models.organization import Organization
-from apps.api.models.entity import Entity
-from apps.api.models.dependency import Dependency
-from apps.api.models.identity import Identity, IdentityGroup, IdentityGroupMembership
-from apps.api.models.rbac import Role, Permission, RolePermission, UserRole
-from apps.api.models.audit import AuditLog
-from apps.api.models.resource_role import ResourceRole
-from apps.api.models.issue import Issue, IssueLabel, IssueComment, IssueEntityLink
-from apps.api.models.metadata import MetadataField
+# Import Base and all SQLAlchemy models registry-driven.
+# Imports intentionally follow sys.path.insert above, so E402 is expected here.
+from apps.api.models.base import Base  # noqa: E402
+from apps.api.modules import CORE_MODELS, MODULES  # noqa: E402
+
+# Import all model modules to register them with Base.metadata
+# This ensures that alembic autogenerate picks up all tables
+model_modules_to_import = set(CORE_MODELS)
+
+for module_manifest in MODULES:
+    for model_module in module_manifest.models_import:
+        model_modules_to_import.add(model_module)
+
+for model_module_path in sorted(model_modules_to_import):
+    try:
+        importlib.import_module(model_module_path)
+    except ImportError as e:
+        import warnings
+
+        warnings.warn(f"Failed to import model module {model_module_path}: {e}")
 
 # Alembic Config object
 config = context.config

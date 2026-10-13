@@ -19,12 +19,12 @@ class ManualCostProvider(BaseCostProvider):
 
     def fetch_costs(
         self, resource_type: str, resource_id: str, start_date: str, end_date: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Manual provider does not fetch costs externally."""
         return []
 
     def get_recommendations(
         self, resource_type: str, resource_id: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Manual provider does not provide recommendations."""
         return []

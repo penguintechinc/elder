@@ -27,7 +27,7 @@ class AccessReviewScheduler:
         self.db = db
         self.service = AccessReviewService(db)
         self._stop_event = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._check_interval = 3600  # 1 hour in seconds
         self._overdue_check_interval = 21600  # 6 hours in seconds
         self._last_overdue_check = 0
@@ -74,7 +74,7 @@ class AccessReviewScheduler:
     def _create_pending_reviews(self):
         """Create reviews for groups with next_review_date <= now."""
         try:
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
 
             # Find groups that need reviews
             groups = self.db(
@@ -126,7 +126,7 @@ class AccessReviewScheduler:
 
 
 # Global scheduler instance
-_scheduler: Optional[AccessReviewScheduler] = None
+_scheduler: AccessReviewScheduler | None = None
 
 
 def init_scheduler(db):
@@ -145,7 +145,7 @@ def init_scheduler(db):
     _scheduler.start()
 
 
-def get_scheduler() -> Optional[AccessReviewScheduler]:
+def get_scheduler() -> AccessReviewScheduler | None:
     """Get the global scheduler instance.
 
     Returns:

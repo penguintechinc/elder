@@ -27,9 +27,12 @@ class TestWorkerHealth:
             "ModuleNotFoundError (PYTHONPATH version mismatch in Dockerfile)."
         )
         data = response.json()
-        assert data.get("status") in ["healthy", "ok", "up", "stopped"], (
-            f"Unexpected worker health status: {data}"
-        )
+        assert data.get("status") in [
+            "healthy",
+            "ok",
+            "up",
+            "stopped",
+        ], f"Unexpected worker health status: {data}"
 
     def test_worker_status_endpoint(self, worker_url, check_services):
         """Test worker /status endpoint is reachable."""

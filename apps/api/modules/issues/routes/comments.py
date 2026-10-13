@@ -1,0 +1,271 @@
+"""Issue comments API endpoints with Pydantic validation."""
+
+# flake8: noqa: E501
+
+from dataclasses import asdict
+from datetime import UTC, datetime, timezone
+
+from penguin_libs.pydantic import Description1000, RequestModel
+from quart import Blueprint, current_app, g, jsonify
+
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.models.dataclasses import IssueCommentDTO, from_pydal_row, from_pydal_rows
+from apps.api.modules.issues.routes.common import _tenant_id, get_tenant_scoped_issue
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.quart_validation import validated_request
+
+bp = Blueprint("comments", __name__)
+
+
+class CreateCommentRequest(RequestModel):
+    """Pydantic model for creating a comment."""
+
+    content: Description1000
+
+
+class UpdateCommentRequest(RequestModel):
+    """Pydantic model for updating a comment."""
+
+    content: Description1000
+
+
+# ============================================================================
+# Issue Comments Endpoints
+# ============================================================================
+
+
+@bp.route("/<int:id>/comments", methods=["GET"])
+@login_required
+@require_scope("issues:read")
+async def list_issue_comments(id: int):
+    """
+    List comments for an issue.
+
+    Path Parameters:
+        - id: Issue ID
+
+    Returns:
+        200: List of comments
+        403: License required
+        404: Issue not found
+
+    Example:
+        GET /api/v1/issues/1/comments
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def get_comments():
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        # Get comments
+        comments = db(db.issue_comments.issue_id == id).select(
+            orderby=db.issue_comments.created_at
+        )
+
+        return comments, None, None
+
+    result, error, status = await run_in_threadpool(get_comments)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    # Convert to DTOs
+    items = from_pydal_rows(result, IssueCommentDTO)
+
+    return (
+        jsonify({"items": [asdict(item) for item in items], "total": len(items)}),
+        200,
+    )
+
+
+@bp.route("/<int:id>/comments", methods=["POST"])
+@login_required
+@require_scope("issues:write")
+@validated_request(body_model=CreateCommentRequest)
+async def create_issue_comment(id: int, body: CreateCommentRequest):
+    """
+    Add a comment to an issue.
+
+    Path Parameters:
+        - id: Issue ID
+
+    Request Body:
+        {
+            "content": "This has been fixed"
+        }
+
+    Returns:
+        201: Comment created
+        400: Invalid request
+        403: License required
+        404: Issue not found
+
+    Example:
+        POST /api/v1/issues/1/comments
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def create():
+        from shared.utils.village_id import generate_village_id
+
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        # Create comment
+        now = datetime.now(UTC)
+        redis_client = current_app.redis_client
+        village_id = generate_village_id(issue.tenant_id, redis_client)
+        comment_id = db.issue_comments.insert(
+            issue_id=id,
+            author_id=g.current_user.id,
+            content=body.content,
+            tenant_id=issue.tenant_id,
+            village_id=village_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt
+        return (comment, None, None)
+
+    result, error, status = await run_in_threadpool(create)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    comment_dto = from_pydal_row(result, IssueCommentDTO)
+    return jsonify(asdict(comment_dto)), 201
+
+
+@bp.route("/<int:id>/comments/<int:comment_id>", methods=["DELETE"])
+@login_required
+@require_scope("issues:write")
+async def delete_issue_comment(id: int, comment_id: int):
+    """
+    Delete a comment from an issue.
+
+    Path Parameters:
+        - id: Issue ID
+        - comment_id: Comment ID
+
+    Returns:
+        204: Comment deleted
+        403: License required or not comment author
+        404: Issue or comment not found
+
+    Example:
+        DELETE /api/v1/issues/1/comments/5
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def delete():
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        # Get comment: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt: see above
+        if not comment or comment.issue_id != id:
+            return None, "Comment not found", 404
+
+        # Check if user is author or superuser
+        if comment.author_id != g.current_user.id and not g.current_user.is_superuser:
+            return None, "Only comment author can delete comments", 403
+
+        # Delete comment
+        db(db.issue_comments.id == comment_id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(delete)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204
+
+
+@bp.route("/<int:id>/comments/<int:comment_id>", methods=["PATCH"])
+@login_required
+@require_scope("issues:write")
+@validated_request(body_model=UpdateCommentRequest)
+async def update_issue_comment(id: int, comment_id: int, body: UpdateCommentRequest):
+    """
+    Update a comment on an issue.
+
+    Path Parameters:
+        - id: Issue ID
+        - comment_id: Comment ID
+
+    Request Body:
+        {
+            "content": "Updated comment text"
+        }
+
+    Returns:
+        200: Comment updated
+        400: Invalid request
+        403: License required or not comment author
+        404: Issue or comment not found
+
+    Example:
+        PATCH /api/v1/issues/1/comments/5
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def update():
+        # Verify issue exists and belongs to caller's tenant
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        # Get comment: issue_id checked against `id` below, which is the
+        # already tenant-verified issue above
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt: see above
+        if not comment or comment.issue_id != id:
+            return None, "Comment not found", 404
+
+        # Check if user is author or superuser
+        if comment.author_id != g.current_user.id and not g.current_user.is_superuser:
+            return None, "Only comment author can update comments", 403
+
+        # Update comment
+        update_data = dict(content=body.content)
+        db.issue_comments[comment_id] = update_data  # tenant-scope-exempt
+        db.commit()
+
+        comment = db.issue_comments[comment_id]  # tenant-scope-exempt
+        return (comment, None, None)
+
+    result, error, status = await run_in_threadpool(update)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    comment_dto = from_pydal_row(result, IssueCommentDTO)
+    return jsonify(asdict(comment_dto)), 200

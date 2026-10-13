@@ -44,7 +44,7 @@ class RegisterRequest(BaseModel):
     email: Email = Field(
         ..., description="Email address (must match username for portal auth)"
     )
-    full_name: Optional[str] = Field(None, max_length=255, description="Full name")
+    full_name: str | None = Field(None, max_length=255, description="Full name")
 
     @field_validator("email")
     @classmethod
@@ -73,8 +73,8 @@ class PortalRegisterRequest(BaseModel):
     password: str = Field(
         ..., min_length=8, description="Password (minimum 8 characters)"
     )
-    full_name: Optional[str] = Field(None, max_length=255, description="Full name")
-    tenant: Optional[str] = Field(None, description="Tenant slug or ID")
+    full_name: str | None = Field(None, max_length=255, description="Full name")
+    tenant: str | None = Field(None, description="Tenant slug or ID")
 
 
 class PortalLoginRequest(BaseModel):
@@ -82,7 +82,7 @@ class PortalLoginRequest(BaseModel):
 
     email: Email = Field(..., description="Email address")
     password: str = Field(..., min_length=1, description="Password")
-    tenant: Optional[str] = Field(None, description="Tenant slug or ID")
+    tenant: str | None = Field(None, description="Tenant slug or ID")
 
 
 class ChangePasswordRequest(BaseModel):
@@ -111,7 +111,7 @@ class UserResponse(BaseModel):
     id: int
     username: str
     email: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
 
 
 class LoginResponse(BaseModel):
@@ -134,4 +134,4 @@ class ErrorResponse(BaseModel):
     """Error response schema."""
 
     error: str
-    details: Optional[dict] = None
+    details: dict | None = None

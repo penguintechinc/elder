@@ -1,0 +1,5 @@
+Contact: mailto:security@penguintech.io
+Expires: 2027-09-23T20:39:13Z
+Preferred-Languages: en
+Canonical: https://github.com/penguintechinc/elder/blob/main/.well-known/security.txt
+Policy: https://github.com/penguintechinc/elder/blob/main/SECURITY.md

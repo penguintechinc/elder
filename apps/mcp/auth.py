@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import httpx
-from jose import jwt
-from jose.exceptions import ExpiredSignatureError, JWTError
+import jwt
+from jwt import PyJWTError
 
 
 @dataclass(slots=True)
@@ -20,13 +20,13 @@ class ElderSession:
 
     def is_valid(self) -> bool:
         """Check if session token is still valid."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return now < self.expires_at
 
     @classmethod
     async def from_credentials(
         cls, base_url: str, username: str, password: str
-    ) -> "ElderSession":
+    ) -> ElderSession:
         """
         Authenticate with Elder API and create a session.
 
@@ -60,7 +60,7 @@ class ElderSession:
         return cls(base_url=base_url, token=token, expires_at=expires_at)
 
     @classmethod
-    def from_token(cls, base_url: str, token: str) -> "ElderSession":
+    def from_token(cls, base_url: str, token: str) -> ElderSession:
         """
         Create a session from an existing token.
 
@@ -94,18 +94,18 @@ class ElderSession:
         """
         try:
             # Decode without verification (we only need exp claim)
-            payload = jwt.get_unverified_claims(token)
-        except (JWTError, ExpiredSignatureError) as e:
+            payload = jwt.decode(token, options={"verify_signature": False})
+        except PyJWTError as e:
             raise ValueError(f"Invalid JWT token: {e}")
 
         if "exp" not in payload:
             raise ValueError("Token missing 'exp' claim")
 
         exp_timestamp = payload["exp"]
-        exp_from_token = datetime.fromtimestamp(exp_timestamp, tz=timezone.utc)
+        exp_from_token = datetime.fromtimestamp(exp_timestamp, tz=UTC)
 
         # Cap at 24h from now
-        max_expiry = datetime.now(timezone.utc) + timedelta(hours=24)
+        max_expiry = datetime.now(UTC) + timedelta(hours=24)
         expires_at = min(exp_from_token, max_expiry)
 
         return expires_at

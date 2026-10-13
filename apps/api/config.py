@@ -2,19 +2,24 @@
 
 # flake8: noqa: E501
 
-
 import os
 from datetime import timedelta
 from typing import Any, Dict
 
 from decouple import config
 
+# In-repo fallback value for SECRET_KEY/JWT_SECRET_KEY -- visible to anyone
+# with source access, so signing a real token with it is equivalent to no
+# authentication at all. ProductionConfig.init_app fails closed if either
+# secret is unset or still equals this value (gh-237 companion finding).
+_DEV_SECRET_KEY_VALUE = "dev-secret-key-change-in-production"
+
 
 class Config:
     """Base configuration."""
 
     # Flask
-    SECRET_KEY = config("SECRET_KEY", default="dev-secret-key-change-in-production")
+    SECRET_KEY = config("SECRET_KEY", default=_DEV_SECRET_KEY_VALUE)
     DEBUG = config("DEBUG", default=False, cast=bool)
     TESTING = config("TESTING", default=False, cast=bool)
 
@@ -56,6 +61,10 @@ class Config:
         days=config("JWT_REFRESH_TOKEN_DAYS", default=30, cast=int)
     )
     JWT_ALGORITHM = "HS256"
+    # iss/aud claims for tokens issued via jwt_handler.generate_token() --
+    # validated on verify to reject a forged/mismatched-issuer token.
+    JWT_ISSUER = config("JWT_ISSUER", default="elder-api")
+    JWT_AUDIENCE = config("JWT_AUDIENCE", default="elder-api")
 
     # CORS - Build origins from SITE_URL
     SITE_URL = config("SITE_URL", default="http://localhost")
@@ -97,6 +106,9 @@ class Config:
         "X-Requested-With",
         "Access-Control-Request-Method",
         "Access-Control-Request-Headers",
+        # Double-submit CSRF header the SPA echoes back from the
+        # elder_csrf_token cookie -- see apps.api.auth.portal_cookies.
+        "X-CSRF-Token",
     ]
     CORS_SUPPORTS_CREDENTIALS = True
     CORS_EXPOSE_HEADERS = ["Content-Type", "Authorization"]
@@ -143,6 +155,10 @@ class Config:
     )
     PRODUCT_NAME = "elder"
 
+    # PostHog Feature Flags & Analytics
+    POSTHOG_KEY = config("POSTHOG_KEY", default=None)
+    POSTHOG_HOST = config("POSTHOG_HOST", default="https://license.penguintech.io")
+
     # Logging
     LOG_LEVEL = config("LOG_LEVEL", default="INFO")
     LOG_FORMAT = config("LOG_FORMAT", default="json")  # json or text
@@ -150,7 +166,12 @@ class Config:
     SYSLOG_HOST = config("SYSLOG_HOST", default="localhost")
     SYSLOG_PORT = config("SYSLOG_PORT", default=514, cast=int)
 
-    # Prometheus Metrics
+    # OpenTelemetry (Phase 0.5) — OTLP export to SigNoz, ungated/free
+    OTEL_EXPORTER_OTLP_ENDPOINT = config("OTEL_EXPORTER_OTLP_ENDPOINT", default="")
+    OTEL_EXPORTER_OTLP_PROTOCOL = config("OTEL_EXPORTER_OTLP_PROTOCOL", default="grpc")
+    OTEL_SERVICE_NAME = config("OTEL_SERVICE_NAME", default="elder-api")
+
+    # Prometheus Metrics (legacy, migrating to OTel)
     METRICS_ENABLED = config("METRICS_ENABLED", default=True, cast=bool)
 
     # API
@@ -185,8 +206,36 @@ class ProductionConfig(Config):
 
     @staticmethod
     def init_app(app: Any) -> None:
-        """Initialize production application."""
+        """Initialize production application.
+
+        Fail-closed on the signing secrets: production must never start
+        with SECRET_KEY/JWT_SECRET_KEY unset or still equal to the in-repo
+        dev fallback -- either lets anyone forge a valid JWT (impersonate
+        any tenant/identity) using a value that ships in source control.
+        """
         Config.init_app(app)
+
+        secret_key = app.config.get("SECRET_KEY")
+        if not secret_key or secret_key == _DEV_SECRET_KEY_VALUE:
+            raise RuntimeError(
+                "SECRET_KEY is unset or equals the insecure development default "
+                "('dev-secret-key-change-in-production'). Set SECRET_KEY to a "
+                "strong, unique value (via penguin-sal / a secrets manager) "
+                "before starting in production."
+            )
+
+        # jwt_handler.generate_token()/verify_token() fall back to SECRET_KEY
+        # whenever JWT_SECRET_KEY is unset, so the *effective* JWT secret must
+        # be checked too -- an explicitly-set JWT_SECRET_KEY that happens to
+        # equal the dev value is exactly as unsafe as leaving it unset.
+        jwt_secret_key = app.config.get("JWT_SECRET_KEY")
+        effective_jwt_secret = jwt_secret_key or secret_key
+        if not effective_jwt_secret or effective_jwt_secret == _DEV_SECRET_KEY_VALUE:
+            raise RuntimeError(
+                "JWT_SECRET_KEY (and its SECRET_KEY fallback) is unset or "
+                "equals the insecure development default. Set JWT_SECRET_KEY "
+                "to a strong, unique value before starting in production."
+            )
 
         # Production-specific initialization
         import logging
@@ -217,7 +266,7 @@ class TestingConfig(Config):
 
 
 # Configuration dictionary
-config_by_name: Dict[str, type] = {
+config_by_name: dict[str, type] = {
     "development": DevelopmentConfig,
     "production": ProductionConfig,
     "testing": TestingConfig,

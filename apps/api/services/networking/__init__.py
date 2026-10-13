@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from apps.api.services.networking.service import NetworkingService
 
 __all__ = [

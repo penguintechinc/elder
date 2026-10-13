@@ -1,0 +1,34 @@
+{{/*
+HorizontalPodAutoscaler for web + api — the only two components that declare
+an `autoscaling` block in values.yaml. Rendered only when the component's own
+autoscaling.enabled is true; deployment.yaml already omits `replicas` in that
+case so the HPA (not Helm) owns replica count. Release audit finding #1 —
+autoscaling.enabled was previously inert (no HPA template existed at all).
+*/}}
+{{- range $component := list "web" "api" }}
+{{- $componentConfig := index $.Values $component }}
+{{- if and $componentConfig.enabled ($componentConfig.autoscaling).enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  namespace: {{ $.Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "elder.fullname" $ }}-{{ $component }}
+  minReplicas: {{ $componentConfig.autoscaling.minReplicas | default 2 }}
+  maxReplicas: {{ $componentConfig.autoscaling.maxReplicas | default 10 }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $componentConfig.autoscaling.targetCPUUtilizationPercentage | default 80 }}
+{{- end }}
+{{- end }}

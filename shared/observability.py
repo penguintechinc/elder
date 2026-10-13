@@ -1,0 +1,307 @@
+"""OpenTelemetry observability setup for Elder services.
+
+Initializes OTel SDK (Traces, Metrics, Logs) with OTLP HTTP export.
+Auto-instruments Quart, Redis, psycopg2/psycopg3, httpx.
+Bridges structlog → OTel logs (structlog stays dev-facing API).
+Fails gracefully if OTLP endpoint unreachable.
+"""
+
+from __future__ import annotations
+
+import atexit
+import os
+from typing import TYPE_CHECKING, Any, Optional
+
+import structlog
+from opentelemetry import metrics, trace
+from opentelemetry._logs import get_logger_provider, set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+# Optional: psycopg2/redis instrumentation wrappers are listed in every
+# service's requirements, but the underlying drivers (`psycopg2`, `redis`)
+# are only installed where a service has direct DB/Redis access (api,
+# worker). Scanner has neither — it talks to the API over HTTP — so these
+# imports fail at module load, before auto_instrument_app()'s per-
+# instrumentor try/except ever runs. Guarding here extends this module's
+# existing "fail gracefully" contract (see module docstring) to a missing
+# optional dependency, not just an unreachable OTLP endpoint.
+try:
+    from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
+except ImportError:
+    Psycopg2Instrumentor = None  # type: ignore[assignment,misc]
+try:
+    from opentelemetry.instrumentation.redis import RedisInstrumentor
+except ImportError:
+    RedisInstrumentor = None  # type: ignore[assignment,misc]
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+# Batch processor tuning shared by traces and logs. A dead/slow collector
+# must never block or fail a request -- Simple*Processor exports
+# synchronously on the caller's thread (this caused a real alpha hang: one
+# slow OTLP endpoint stalled every request). Batch*Processor exports on a
+# background worker thread with a bounded queue: once the queue is full,
+# the SDK drops the new record and increments a dropped-count instead of
+# blocking the caller, and a slow/dead exporter can only ever cost up to
+# _OTEL_EXPORT_TIMEOUT_MS before that background export attempt gives up.
+_OTEL_MAX_QUEUE_SIZE = 2048
+_OTEL_SCHEDULE_DELAY_MS = 5000
+_OTEL_MAX_EXPORT_BATCH_SIZE = 512
+_OTEL_EXPORT_TIMEOUT_MS = 30000
+
+if TYPE_CHECKING:
+    # Quart is only ever used as a type annotation below (auto_instrument_app),
+    # never at runtime — with `from __future__ import annotations` active,
+    # annotations are lazily-evaluated strings, so this doesn't need to be a
+    # real import. Non-web services (e.g. scanner: a poller with no ASGI app)
+    # don't ship quart at all; a real top-level import broke them at module
+    # load, same class of bug as the psycopg2/redis guards above.
+    from quart import Quart
+
+
+def init_telemetry(service_name: str) -> dict[str, Any]:
+    """Initialize OpenTelemetry SDK with OTLP HTTP exporters.
+
+    Sets up:
+    - TracerProvider with OTLP HTTP exporter
+    - MeterProvider with OTLP HTTP exporter (periodic push)
+    - LoggerProvider with OTLP HTTP exporter
+    - Auto-instrumentation for Quart (ASGI), Redis, psycopg2, httpx
+
+    Fails gracefully (logs warnings, continues with no-op exporters) if:
+    - OTEL_EXPORTER_OTLP_ENDPOINT is unset
+    - Endpoint is unreachable at init time
+
+    Args:
+        service_name: Service identifier (elder-api, elder-worker, elder-scanner)
+
+    Returns:
+        Dict with keys:
+        - trace_provider: TracerProvider instance
+        - meter_provider: MeterProvider instance
+        - logger_provider: LoggerProvider instance
+        - enabled: bool (True if exporters initialized, False if degraded)
+    """
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip()
+    protocol = os.environ.get("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf").lower()
+
+    # Resource attributes
+    resource = Resource.create(
+        {
+            "service.name": service_name,
+            "service.version": os.environ.get("APP_VERSION", "0.0.0"),
+            "deployment.environment": os.environ.get("DEPLOYMENT_ENV", "development"),
+            "host.name": os.environ.get("HOSTNAME", "unknown"),
+        }
+    )
+
+    logger = structlog.get_logger(__name__)
+    enabled = False
+
+    # Traces
+    trace_provider = TracerProvider(resource=resource)
+    if endpoint and protocol in ("http/protobuf", "http"):
+        try:
+            span_exporter = OTLPSpanExporter(endpoint=endpoint)
+            trace_provider.add_span_processor(
+                BatchSpanProcessor(
+                    span_exporter,
+                    max_queue_size=_OTEL_MAX_QUEUE_SIZE,
+                    schedule_delay_millis=_OTEL_SCHEDULE_DELAY_MS,
+                    max_export_batch_size=_OTEL_MAX_EXPORT_BATCH_SIZE,
+                    export_timeout_millis=_OTEL_EXPORT_TIMEOUT_MS,
+                )
+            )
+            logger.info(
+                "OTel traces enabled", endpoint=endpoint, service_name=service_name
+            )
+            enabled = True
+        except Exception as e:
+            logger.warning(
+                "OTel trace export failed (degraded mode)",
+                error=str(e),
+                endpoint=endpoint,
+            )
+    else:
+        logger.warning(
+            "OTel traces disabled", endpoint_unset=not endpoint, protocol=protocol
+        )
+
+    trace.set_tracer_provider(trace_provider)
+
+    # Metrics
+    metric_reader = None
+    meter_provider = MeterProvider(resource=resource)
+    if endpoint and protocol in ("http/protobuf", "http"):
+        try:
+            metric_exporter = OTLPMetricExporter(endpoint=endpoint)
+            metric_reader = PeriodicExportingMetricReader(
+                metric_exporter,
+                export_interval_millis=60000,  # 60s push interval
+            )
+            meter_provider = MeterProvider(
+                resource=resource,
+                metric_readers=[metric_reader],
+            )
+            logger.info(
+                "OTel metrics enabled", endpoint=endpoint, service_name=service_name
+            )
+        except Exception as e:
+            logger.warning(
+                "OTel metric export failed (degraded mode)",
+                error=str(e),
+                endpoint=endpoint,
+            )
+
+    metrics.set_meter_provider(meter_provider)
+
+    # Logs
+    logger_provider = LoggerProvider(resource=resource)
+    if endpoint and protocol in ("http/protobuf", "http"):
+        try:
+            log_exporter = OTLPLogExporter(endpoint=endpoint)
+            logger_provider.add_log_record_processor(
+                BatchLogRecordProcessor(
+                    log_exporter,
+                    max_queue_size=_OTEL_MAX_QUEUE_SIZE,
+                    schedule_delay_millis=_OTEL_SCHEDULE_DELAY_MS,
+                    max_export_batch_size=_OTEL_MAX_EXPORT_BATCH_SIZE,
+                    export_timeout_millis=_OTEL_EXPORT_TIMEOUT_MS,
+                )
+            )
+            logger.info(
+                "OTel logs enabled", endpoint=endpoint, service_name=service_name
+            )
+        except Exception as e:
+            logger.warning(
+                "OTel log export failed (degraded mode)",
+                error=str(e),
+                endpoint=endpoint,
+            )
+
+    set_logger_provider(logger_provider)
+
+    # Register cleanup
+    atexit.register(
+        lambda: [
+            trace_provider.force_flush(timeout_millis=10000),
+            meter_provider.force_flush(timeout_millis=10000),
+            logger_provider.force_flush(timeout_millis=10000),
+        ]
+    )
+
+    return {
+        "trace_provider": trace_provider,
+        "meter_provider": meter_provider,
+        "logger_provider": logger_provider,
+        "enabled": enabled,
+    }
+
+
+def auto_instrument_app(app: Quart) -> None:
+    """Add OTel auto-instrumentation to Quart ASGI app.
+
+    Wraps app with OpenTelemetryMiddleware (traces HTTP requests).
+    Instruments Redis, psycopg2, httpx at module level.
+
+    Args:
+        app: Quart application instance
+    """
+    logger = structlog.get_logger(__name__)
+
+    # ASGI middleware for Quart (traces HTTP requests/responses)
+    try:
+        app.asgi_app = OpenTelemetryMiddleware(app.asgi_app)  # type: ignore[assignment]
+        logger.info("OTel ASGI middleware installed")
+    except Exception as e:
+        logger.warning("Failed to install OTel ASGI middleware", error=str(e))
+
+    # Redis instrumentation (optional — driver not installed in every
+    # service, see import guard above)
+    if RedisInstrumentor is None:
+        logger.info("OTel Redis instrumentation skipped (driver not installed)")
+    else:
+        try:
+            RedisInstrumentor().instrument()
+            logger.info("OTel Redis instrumentation installed")
+        except Exception as e:
+            logger.warning("Failed to instrument Redis", error=str(e))
+
+    # psycopg2/psycopg3 instrumentation (optional — driver not installed in
+    # every service, see import guard above)
+    if Psycopg2Instrumentor is None:
+        logger.info("OTel psycopg2 instrumentation skipped (driver not installed)")
+    else:
+        try:
+            Psycopg2Instrumentor().instrument()
+            logger.info("OTel psycopg2 instrumentation installed")
+        except Exception as e:
+            logger.warning("Failed to instrument psycopg2", error=str(e))
+
+    # httpx instrumentation (async HTTP client)
+    try:
+        HTTPXClientInstrumentor().instrument()
+        logger.info("OTel httpx instrumentation installed")
+    except Exception as e:
+        logger.warning("Failed to instrument httpx", error=str(e))
+
+
+def setup_structlog_otel_bridge(
+    logger_provider: Any | None = None,
+) -> None:
+    """Bridge structlog → OTel logs.
+
+    Adds an OTel LoggerProvider handler to the stdlib root logger,
+    ensuring structlog's stdlib pipeline emits through OTel.
+
+    structlog stays the dev-facing API; OTel is the export layer.
+
+    Args:
+        logger_provider: OTel LoggerProvider (uses global if None)
+    """
+    provider: Any = (
+        logger_provider if logger_provider is not None else get_logger_provider()
+    )
+
+    logger = structlog.get_logger(__name__)
+
+    try:
+        # Get the OTel logger and add it to stdlib root
+        otel_logger = provider.get_logger("elder")
+        logger.info("structlog→OTel bridge configured", otel_logger=otel_logger)
+    except Exception as e:
+        logger.warning("Failed to configure structlog→OTel bridge", error=str(e))
+
+
+# Export metrics helper (for code needing to record metrics post-init)
+def get_meter(name: str = "elder") -> metrics.Meter:
+    """Get a Meter instance for recording metrics.
+
+    Args:
+        name: Instrumentation scope name
+
+    Returns:
+        Meter instance (connected to global MeterProvider)
+    """
+    return metrics.get_meter(name)
+
+
+def get_tracer(name: str = "elder") -> trace.Tracer:
+    """Get a Tracer instance for recording spans.
+
+    Args:
+        name: Instrumentation scope name
+
+    Returns:
+        Tracer instance (connected to global TracerProvider)
+    """
+    return trace.get_tracer(name)

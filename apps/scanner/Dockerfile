@@ -6,6 +6,8 @@ FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c1
 
 WORKDIR /app
 
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libldap2-dev \
@@ -14,16 +16,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY apps/scanner/requirements.txt .
 # Install to /usr/local so site-packages can be trivially copied to runtime stage
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 # Runtime stage — no compiler; ldap runtime shared libs only
 FROM python:3.13-slim-bookworm@sha256:01f42367a0a94ad4bc17111776fd66e3500c1d87c15bbd6055b7371d39c124fb
 
 ARG SCANNER_POLL_INTERVAL=300
 
+# Exact apt patch versions are removed — they are dropped from Debian repos after security updates, breaking builds.
+# hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     masscan \
-    curl \
     libldap-2.5-0 \
     libsasl2-2 \
     && rm -rf /var/lib/apt/lists/*
@@ -38,6 +41,7 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 RUN playwright install chromium && playwright install-deps chromium
 
 COPY apps/scanner/ .
+COPY shared /app/shared
 
 RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
     mkdir -p /app/screenshots && \
@@ -46,7 +50,7 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 appuser && \
 # ROOT CAPABILITY EXCEPTION (approved): masscan requires CAP_NET_RAW for raw socket
 # access (SYN scanning). Process runs as UID 1000 (non-root) with only NET_RAW
 # capability granted via Kubernetes securityContext. See k8s/helm/elder/values.yaml.
-USER appuser
+USER 1000
 
 ENV SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL}
 ENV ELDER_API_URL=http://api:5000
@@ -56,6 +60,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox
 
 HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
-    CMD python healthcheck.py || exit 1
+    CMD ["python", "healthcheck.py"]
 
 CMD ["python", "main.py"]

@@ -6,7 +6,6 @@ at both global and tenant levels.
 
 # flake8: noqa: E501
 
-
 import datetime
 from typing import Optional
 
@@ -17,7 +16,7 @@ class SAMLService:
     """SAML 2.0 Service Provider implementation."""
 
     @staticmethod
-    def get_idp_config(tenant_id: Optional[int] = None) -> Optional[dict]:
+    def get_idp_config(tenant_id: int | None = None) -> dict | None:
         """Get IdP configuration for a tenant or global.
 
         Args:
@@ -101,19 +100,19 @@ class SAMLService:
     def create_idp_config(
         name: str,
         idp_type: str = "saml",
-        tenant_id: Optional[int] = None,
-        entity_id: Optional[str] = None,
-        metadata_url: Optional[str] = None,
-        sso_url: Optional[str] = None,
-        slo_url: Optional[str] = None,
-        certificate: Optional[str] = None,
-        oidc_client_id: Optional[str] = None,
-        oidc_client_secret: Optional[str] = None,
-        oidc_issuer_url: Optional[str] = None,
-        oidc_scopes: Optional[str] = None,
-        oidc_response_type: Optional[str] = None,
-        oidc_token_endpoint_auth_method: Optional[str] = None,
-        attribute_mappings: Optional[dict] = None,
+        tenant_id: int | None = None,
+        entity_id: str | None = None,
+        metadata_url: str | None = None,
+        sso_url: str | None = None,
+        slo_url: str | None = None,
+        certificate: str | None = None,
+        oidc_client_id: str | None = None,
+        oidc_client_secret: str | None = None,
+        oidc_issuer_url: str | None = None,
+        oidc_scopes: str | None = None,
+        oidc_response_type: str | None = None,
+        oidc_token_endpoint_auth_method: str | None = None,
+        attribute_mappings: dict | None = None,
         jit_provisioning_enabled: bool = True,
         default_role: str = "reader",
     ) -> dict:
@@ -231,7 +230,7 @@ class SAMLService:
 
     @staticmethod
     def process_saml_response(
-        tenant_id: int, saml_response: str, relay_state: Optional[str] = None
+        tenant_id: int, saml_response: str, relay_state: str | None = None
     ) -> dict:
         """Process SAML response and authenticate user.
 
@@ -291,7 +290,7 @@ class SAMLService:
         if existing:
             # Update last login
             db(db.portal_users.id == existing.id).update(
-                last_login_at=datetime.datetime.now(datetime.timezone.utc)
+                last_login_at=datetime.datetime.now(datetime.UTC)
             )
             return {
                 "id": existing.id,
@@ -314,7 +313,7 @@ class SAMLService:
             tenant_role=idp_config.get("default_role", "reader"),
             is_active=True,
             email_verified=True,  # SSO validates email
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
 
@@ -328,7 +327,7 @@ class SAMLService:
         }
 
     @staticmethod
-    def get_sp_metadata(base_url: str, tenant_id: Optional[int] = None) -> str:
+    def get_sp_metadata(base_url: str, tenant_id: int | None = None) -> str:
         """Generate Service Provider SAML metadata XML.
 
         Args:
@@ -366,7 +365,7 @@ class SAMLService:
         return metadata
 
     @staticmethod
-    def list_idp_configs(tenant_id: Optional[int] = None) -> list:
+    def list_idp_configs(tenant_id: int | None = None) -> list:
         """List all IdP configurations.
 
         Args:

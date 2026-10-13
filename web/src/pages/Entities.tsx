@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { Entity, Organization } from '@/types'
 import api from '@/lib/api'
 import { queryKeys } from '@/lib/queryKeys'
 import { invalidateCache } from '@/lib/invalidateCache'
@@ -12,6 +13,17 @@ import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import VillageIdBadge from '@/components/VillageIdBadge'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+
+interface EntityType {
+  type: string
+  subtypes?: string[]
+}
+
+interface CreateEntityModalProps {
+  initialOrganizationId?: number
+  onClose: () => void
+  onSuccess: () => void
+}
 
 export default function Entities() {
   const [search, setSearch] = useState('')
@@ -74,7 +86,7 @@ export default function Entities() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {data?.items?.map((entity: any) => (
+          {data?.items?.map((entity: Entity) => (
             <Card
               key={entity.id}
               className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
@@ -111,7 +123,7 @@ export default function Entities() {
 
       {showCreateModal && (
         <CreateEntityModal
-          initialOrganizationId={initialOrgId}
+          initialOrganizationId={initialOrgId ? parseInt(initialOrgId, 10) : undefined}
           onClose={() => {
             setShowCreateModal(false)
             // Clear query params when closing modal
@@ -133,7 +145,7 @@ export default function Entities() {
   )
 }
 
-function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
+function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: CreateEntityModalProps) {
   // Fetch entity types from API
   const { data: entityTypesData } = useQuery({
     queryKey: ['entityTypes'],
@@ -146,13 +158,23 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
   })
 
   // Get category options from entity_types array
-  const categoryOptions = entityTypesData?.entity_types?.map((et: any) => ({
-    value: et.type,
-    label: et.type.charAt(0).toUpperCase() + et.type.slice(1).replace('_', ' ')
-  })) || []
+  const categoryOptions = useMemo(() =>
+    entityTypesData?.entity_types?.map((et: EntityType) => ({
+      value: et.type,
+      label: et.type.charAt(0).toUpperCase() + et.type.slice(1).replace('_', ' ')
+    })) || []
+  , [entityTypesData?.entity_types])
+
+  interface CreateEntityData {
+    name: string
+    description?: string
+    entity_type: string
+    sub_type?: string
+    organization_id: number
+  }
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createEntity(data),
+    mutationFn: (data: CreateEntityData) => api.createEntity(data),
     onSuccess: () => {
       toast.success('Entity created successfully')
       onSuccess()
@@ -185,7 +207,7 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
       // and use showWhen for visibility
       options: [
         // Flatten all subtypes from all categories
-        ...(entityTypesData?.entity_types?.flatMap((et: any) =>
+        ...(entityTypesData?.entity_types?.flatMap((et: EntityType) =>
           (et.subtypes || []).map((subtype: string) => ({
             value: subtype,
             label: subtype.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
@@ -194,7 +216,7 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
       ],
       showWhen: (values) => {
         const category = values.entity_type
-        const categoryData = entityTypesData?.entity_types?.find((et: any) => et.type === category)
+        const categoryData = entityTypesData?.entity_types?.find((et: EntityType) => et.type === category)
         return categoryData?.subtypes?.length > 0
       },
     },
@@ -204,7 +226,7 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
       type: 'select',
       required: true,
       defaultValue: initialOrganizationId || '',
-      options: (orgs?.items || []).map((o: any) => ({
+      options: (orgs?.items || []).map((o: Organization) => ({
         value: o.id,
         label: o.name,
       })),
@@ -217,13 +239,13 @@ function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
     },
   ], [categoryOptions, orgs, entityTypesData, initialOrganizationId])
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: Record<string, unknown>) => {
     createMutation.mutate({
-      name: data.name,
-      description: data.description || undefined,
-      entity_type: data.entity_type,
-      sub_type: data.entity_sub_type || undefined,
-      organization_id: parseInt(data.organization_id),
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      entity_type: data.entity_type as string,
+      sub_type: (data.entity_sub_type as string) || undefined,
+      organization_id: parseInt(data.organization_id as string),
     })
   }
 

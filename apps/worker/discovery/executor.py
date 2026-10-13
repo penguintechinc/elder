@@ -9,7 +9,7 @@ polled by the scanner service via the API.
 # flake8: noqa: E501
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Optional
 
 from penguin_dal import DAL
@@ -34,7 +34,7 @@ class DiscoveryExecutor:
     the scanner service, which polls the API for those.
     """
 
-    def __init__(self, db_write: DAL, db_read: Optional[DAL] = None):
+    def __init__(self, db_write: DAL, db_read: DAL | None = None):
         """Initialize the executor.
 
         Args:
@@ -53,7 +53,7 @@ class DiscoveryExecutor:
         - provider is a cloud type (aws, gcp, azure, kubernetes)
         - next_run_at <= now OR last_run_at is None (never run)
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         try:
             query = (self.db_read.discovery_jobs.enabled == True) & (  # noqa: E712
@@ -72,7 +72,7 @@ class DiscoveryExecutor:
                     # Check if enough time has passed since last run
                     last_run = job.last_run_at
                     if last_run.tzinfo is None:
-                        last_run = last_run.replace(tzinfo=timezone.utc)
+                        last_run = last_run.replace(tzinfo=UTC)
                     elapsed = (now - last_run).total_seconds()
                     if elapsed >= job.schedule_interval:
                         pending.append(job)
@@ -83,7 +83,7 @@ class DiscoveryExecutor:
             logger.error(f"Failed to query pending discovery jobs: {e}")
             return []
 
-    def execute_job(self, job_id: int) -> Optional[dict]:
+    def execute_job(self, job_id: int) -> dict | None:
         """Execute a single discovery job.
 
         Args:

@@ -1,0 +1,70 @@
+# Prometheus-compatible alerting rules for apps/worker and apps/scanner.
+#
+# Built against the OTel instruments those services actually create:
+# apps/worker/main.py:_init_otel_metrics (worker.jobbus.job.duration,
+# worker.sync.duration, worker.sync.errors, worker.sync.operations,
+# worker.discovery.poll.duration, worker.discovery.jobs.executed) and
+# apps/scanner/main.py (scanner.scan.duration).
+#
+# No queue-depth alert: neither service emits a queue-depth/backlog gauge
+# today. See ../README.md Known Gaps before adding one here.
+
+groups:
+  - name: elder-worker.jobs
+    interval: 30s
+    rules:
+      - alert: ElderWorkerJobFailureRateHigh
+        expr: |
+          sum(rate(worker_jobbus_job_duration_count{status="error"}[10m]))
+          /
+          sum(rate(worker_jobbus_job_duration_count[10m]))
+          > 0.10
+        for: 10m
+        labels:
+          severity: high
+          component: worker
+        annotations:
+          summary: "Elder worker job-bus failure rate above 10%"
+          description: "{{ $value | humanizePercentage }} of worker.process_job invocations ended status=error over the last 10m."
+
+      - alert: ElderWorkerSyncErrorRateHigh
+        expr: |
+          sum(rate(worker_sync_operations_total{status=~"failed|partial"}[15m])) by (connector)
+          /
+          sum(rate(worker_sync_operations_total[15m])) by (connector)
+          > 0.20
+        for: 15m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Elder worker connector sync failure rate above 20%"
+          description: "Connector {{ $labels.connector }} has a {{ $value | humanizePercentage }} failed/partial sync ratio over 15m."
+
+      - alert: ElderWorkerDiscoveryPollStalled
+        expr: |
+          absent_over_time(worker_discovery_poll_duration_count[15m])
+        for: 15m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Elder worker discovery poll has not run in 15m"
+          description: "No worker.discovery.poll.duration samples observed -- the discovery poll loop may be stuck or the worker process may be down."
+
+  - name: elder-scanner.jobs
+    interval: 30s
+    rules:
+      - alert: ElderScannerJobFailureRateHigh
+        expr: |
+          sum(rate(scanner_scan_duration_count{status!="success"}[10m]))
+          /
+          sum(rate(scanner_scan_duration_count[10m]))
+          > 0.10
+        for: 10m
+        labels:
+          severity: high
+          component: scanner
+        annotations:
+          summary: "Elder scanner job failure rate above 10%"
+          description: "{{ $value | humanizePercentage }} of scanner.execute_job/execute_sbom_scan runs did not finish status=success over the last 10m."

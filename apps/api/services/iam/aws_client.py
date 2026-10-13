@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 from typing import Any, Dict, List, Optional
 
@@ -20,7 +19,7 @@ from apps.api.services.iam.base import BaseIAMProvider
 class AWSIAMClient(BaseIAMProvider):
     """AWS IAM implementation of IAM provider."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize AWS IAM client.
 
@@ -61,8 +60,8 @@ class AWSIAMClient(BaseIAMProvider):
     # User Management
 
     def list_users(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all IAM users."""
         try:
             params = {}
@@ -88,7 +87,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM list users error: {str(e)}")
 
-    def get_user(self, user_identifier: str) -> Dict[str, Any]:
+    def get_user(self, user_identifier: str) -> dict[str, Any]:
         """Get IAM user details."""
         try:
             response = self.client.get_user(UserName=user_identifier)
@@ -116,10 +115,10 @@ class AWSIAMClient(BaseIAMProvider):
     def create_user(
         self,
         username: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new IAM user."""
         try:
             create_params = {"UserName": username}
@@ -148,7 +147,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM create user error: {str(e)}")
 
-    def delete_user(self, user_identifier: str) -> Dict[str, Any]:
+    def delete_user(self, user_identifier: str) -> dict[str, Any]:
         """Delete an IAM user."""
         try:
             # Must delete access keys, inline policies, and detach managed policies first
@@ -213,10 +212,10 @@ class AWSIAMClient(BaseIAMProvider):
     def update_user(
         self,
         user_identifier: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update IAM user metadata."""
         try:
             # Update user path or name if provided
@@ -259,8 +258,8 @@ class AWSIAMClient(BaseIAMProvider):
     # Role Management
 
     def list_roles(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all IAM roles."""
         try:
             params = {}
@@ -286,7 +285,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM list roles error: {str(e)}")
 
-    def get_role(self, role_identifier: str) -> Dict[str, Any]:
+    def get_role(self, role_identifier: str) -> dict[str, Any]:
         """Get IAM role details."""
         try:
             response = self.client.get_role(RoleName=role_identifier)
@@ -315,11 +314,11 @@ class AWSIAMClient(BaseIAMProvider):
     def create_role(
         self,
         role_name: str,
-        description: Optional[str] = None,
-        trust_policy: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        trust_policy: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new IAM role."""
         try:
             # Default trust policy if not provided
@@ -369,7 +368,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM create role error: {str(e)}")
 
-    def delete_role(self, role_identifier: str) -> Dict[str, Any]:
+    def delete_role(self, role_identifier: str) -> dict[str, Any]:
         """Delete an IAM role."""
         try:
             # Must detach managed policies and delete inline policies first
@@ -425,10 +424,10 @@ class AWSIAMClient(BaseIAMProvider):
     def update_role(
         self,
         role_identifier: str,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update IAM role metadata."""
         try:
             # Update description if provided
@@ -476,10 +475,10 @@ class AWSIAMClient(BaseIAMProvider):
 
     def list_policies(
         self,
-        scope: Optional[str] = None,
-        limit: Optional[int] = None,
-        next_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        scope: str | None = None,
+        limit: int | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
         """List IAM policies."""
         try:
             params = {}
@@ -512,7 +511,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM list policies error: {str(e)}")
 
-    def get_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def get_policy(self, policy_identifier: str) -> dict[str, Any]:
         """Get IAM policy details."""
         try:
             response = self.client.get_policy(PolicyArn=policy_identifier)
@@ -544,11 +543,11 @@ class AWSIAMClient(BaseIAMProvider):
     def create_policy(
         self,
         policy_name: str,
-        policy_document: Dict[str, Any],
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        policy_document: dict[str, Any],
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new IAM policy."""
         try:
             create_params = {
@@ -582,7 +581,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM create policy error: {str(e)}")
 
-    def delete_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def delete_policy(self, policy_identifier: str) -> dict[str, Any]:
         """Delete an IAM policy."""
         try:
             # Must delete all non-default versions first
@@ -614,7 +613,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def attach_policy_to_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Attach a policy to a user."""
         try:
             self.client.attach_user_policy(
@@ -634,7 +633,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def detach_policy_from_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Detach a policy from a user."""
         try:
             self.client.detach_user_policy(
@@ -654,7 +653,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def attach_policy_to_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Attach a policy to a role."""
         try:
             self.client.attach_role_policy(
@@ -674,7 +673,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def detach_policy_from_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Detach a policy from a role."""
         try:
             self.client.detach_role_policy(
@@ -692,7 +691,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM detach policy from role error: {str(e)}")
 
-    def list_user_policies(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_user_policies(self, user_identifier: str) -> list[dict[str, Any]]:
         """List all policies attached to a user."""
         try:
             response = self.client.list_attached_user_policies(UserName=user_identifier)
@@ -711,7 +710,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM list user policies error: {str(e)}")
 
-    def list_role_policies(self, role_identifier: str) -> List[Dict[str, Any]]:
+    def list_role_policies(self, role_identifier: str) -> list[dict[str, Any]]:
         """List all policies attached to a role."""
         try:
             response = self.client.list_attached_role_policies(RoleName=role_identifier)
@@ -732,7 +731,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     # Access Keys
 
-    def create_access_key(self, user_identifier: str) -> Dict[str, Any]:
+    def create_access_key(self, user_identifier: str) -> dict[str, Any]:
         """Create access key for a user."""
         try:
             response = self.client.create_access_key(UserName=user_identifier)
@@ -753,7 +752,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM create access key error: {str(e)}")
 
-    def list_access_keys(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_access_keys(self, user_identifier: str) -> list[dict[str, Any]]:
         """List access keys for a user."""
         try:
             response = self.client.list_access_keys(UserName=user_identifier)
@@ -780,7 +779,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def delete_access_key(
         self, user_identifier: str, access_key_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Delete an access key."""
         try:
             self.client.delete_access_key(
@@ -801,8 +800,8 @@ class AWSIAMClient(BaseIAMProvider):
     # Group Management (AWS IAM supports groups)
 
     def list_groups(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all IAM groups."""
         try:
             params = {}
@@ -840,8 +839,8 @@ class AWSIAMClient(BaseIAMProvider):
             raise Exception(f"AWS IAM list groups error: {str(e)}")
 
     def create_group(
-        self, group_name: str, description: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, group_name: str, description: str | None = None
+    ) -> dict[str, Any]:
         """Create a new IAM group."""
         try:
             create_params = {"GroupName": group_name}
@@ -864,7 +863,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"AWS IAM create group error: {str(e)}")
 
-    def delete_group(self, group_identifier: str) -> Dict[str, Any]:
+    def delete_group(self, group_identifier: str) -> dict[str, Any]:
         """Delete an IAM group."""
         try:
             # Must detach policies and remove users first
@@ -905,7 +904,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def add_user_to_group(
         self, user_identifier: str, group_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add user to group."""
         try:
             self.client.add_user_to_group(
@@ -925,7 +924,7 @@ class AWSIAMClient(BaseIAMProvider):
 
     def remove_user_from_group(
         self, user_identifier: str, group_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove user from group."""
         try:
             self.client.remove_user_from_group(
@@ -954,7 +953,7 @@ class AWSIAMClient(BaseIAMProvider):
         except Exception:
             return False
 
-    def sync_from_provider(self) -> Dict[str, Any]:
+    def sync_from_provider(self) -> dict[str, Any]:
         """Sync IAM resources from AWS to Elder database."""
         errors = []
         users_synced = 0

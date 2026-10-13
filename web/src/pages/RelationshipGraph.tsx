@@ -7,6 +7,13 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import { NetworkGraph } from '@/components/NetworkGraph'
 
+interface GraphNode {
+  id: string
+  label: string
+  type: string
+  metadata?: Record<string, unknown>
+}
+
 export default function RelationshipGraph() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -44,7 +51,7 @@ export default function RelationshipGraph() {
     )
   }
 
-  const handleNodeClick = (node: any) => {
+  const handleNodeClick = (node: GraphNode) => {
     const nodeId = node.metadata?.id
     if (!nodeId) return
 

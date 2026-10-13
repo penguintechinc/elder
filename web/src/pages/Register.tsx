@@ -7,6 +7,23 @@ import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import { FormConfig } from '@/types/form'
 
+interface ApiError {
+  response?: {
+    data?: {
+      message?: string
+    }
+  }
+  message?: string
+}
+
+interface RegisterFormData {
+  email: string
+  password: string
+  full_name?: string
+  tenant?: string
+  confirmPassword?: string
+}
+
 const registerFormConfig: FormConfig = {
   fields: [
     {
@@ -57,12 +74,12 @@ export default function Register() {
       toast.success('Registration successful! Please login.')
       navigate('/login')
     },
-    onError: (error: any) => {
+    onError: (error: ApiError) => {
       toast.error(error.response?.data?.message || 'Registration failed')
     },
   })
 
-  const handleSubmit = (data: Record<string, any>) => {
+  const handleSubmit = (data: RegisterFormData) => {
     if (data.password !== data.confirmPassword) {
       toast.error('Passwords do not match')
       return
@@ -78,7 +95,7 @@ export default function Register() {
 
   // Custom FormBuilder wrapper to handle custom buttons
   const CustomFormBuilder = () => {
-    const [values, setValues] = useState<Record<string, any>>({
+    const [values, setValues] = useState<RegisterFormData>({
       email: '',
       full_name: '',
       password: '',
@@ -86,7 +103,7 @@ export default function Register() {
       tenant: 'Global',
     })
 
-    const handleChange = (name: string, value: any) => {
+    const handleChange = (name: string, value: string) => {
       setValues(prev => ({ ...prev, [name]: value }))
     }
 

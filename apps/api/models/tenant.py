@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
 )
 
 from apps.api.models.base import Base, IDMixin, TimestampMixin
@@ -32,9 +33,41 @@ class Tenant(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False)
     village_id = Column(String(32), unique=True, nullable=True)
 
+    # DSAR right-to-erasure guard (GDPR Art. 17 exception; see
+    # docs/compliance/data-retention-policy.md Legal Holds & Data
+    # Preservation). While True, PrivacyService.erase_identity /
+    # bulk_erase refuse to anonymize any identity owned by this tenant.
+    #
+    # server_default (not just default=) is required: runtime inserts go
+    # through penguin-dal, not the SQLAlchemy ORM session, so the
+    # Python-side Column default is never applied -- only a real
+    # database-level default covers the dozens of existing `db.tenants.
+    # insert(...)` call sites (app bootstrap, scripts, test fixtures) that
+    # predate this column and don't pass it explicitly. Matches the
+    # server_default already used by alembic/versions/041_dsar_privacy_
+    # fields.py, which this model must stay in sync with.
+    legal_hold = Column(Boolean, nullable=False, server_default=false())
+
 
 class PortalUser(Base, IDMixin, TimestampMixin):
-    """Enterprise portal user management."""
+    """Enterprise portal user management.
+
+    OPEN GRC QUESTION (PII tokenization finding, see fix/pii-tokenization,
+    deferred for a human decision -- NOT resolved by that change): this
+    table is itself a second, parallel human-identity/auth table
+    (email + password_hash + mfa_secret + mfa_backup_codes +
+    failed_login_attempts, exactly like `apps.api.models.identity.Identity`)
+    with no shared key to `identities` -- see
+    `apps.api.common.licensing.counters` module docstring, which already
+    documents that a person holding both an `identities` row and a
+    `portal_users` row is counted once per table today. The PII
+    Tokenization rule calls for one identity table per product; whether
+    `portal_users` should be merged into `identities` (touches
+    apps/api/services/portal_auth, licensing counters, and login flows --
+    auth-owned surfaces) or is an intentionally separate authentication
+    realm for the enterprise portal is an architecture call outside this
+    fix's model/migration-only scope.
+    """
 
     __tablename__ = "portal_users"
 

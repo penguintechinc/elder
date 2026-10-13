@@ -7,11 +7,11 @@ regression: gh-110 — no dependencies were ever written for AWS resources.
 regression: aws-identities — IAM users/roles were never synced as Elder identities.
 """
 
-import pytest
-import tests.unit.conftest_worker_stubs  # noqa: F401 — stubs heavy optional deps before any connector import
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+import tests.unit.conftest_worker_stubs  # noqa: F401 — stubs heavy optional deps before any connector import
 from apps.worker.connectors.aws_connector import AWSConnector
 from apps.worker.utils.elder_client import Entity
 
@@ -451,7 +451,9 @@ class TestAWSIdentityTenantId:
 
         # Verify tenant_id is in the payload
         assert "tenant_id" in payload, "tenant_id must be included in request payload"
-        assert payload["tenant_id"] == 3, f"Expected tenant_id=3, got {payload['tenant_id']}"
+        assert (
+            payload["tenant_id"] == 3
+        ), f"Expected tenant_id=3, got {payload['tenant_id']}"
 
     @pytest.mark.asyncio
     async def test_create_identity_omits_none_tenant_id(self):

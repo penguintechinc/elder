@@ -8,7 +8,6 @@ Detects Django URL patterns from Python source code including:
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Dict, List
 
@@ -53,7 +52,7 @@ class DjangoEndpointParser:
         """
         return filename.endswith(".py")
 
-    def parse(self, content: str, filename: str) -> List[Dict]:
+    def parse(self, content: str, filename: str) -> list[dict]:
         """Parse Django URL patterns from content.
 
         Args:
@@ -124,7 +123,7 @@ class DjangoEndpointParser:
             # ViewSets get all CRUD methods
             endpoints.append(
                 {
-                    "path": f'/{prefix.strip("/")}/',
+                    "path": f"/{prefix.strip('/')}/",
                     "methods": ["GET", "POST", "PUT", "PATCH", "DELETE"],
                     "view_name": viewset_name.strip(),
                     "line_number": line_number,
@@ -186,7 +185,7 @@ class DjangoEndpointParser:
 
         return normalized
 
-    def _infer_methods(self, view_name: str) -> List[str]:
+    def _infer_methods(self, view_name: str) -> list[str]:
         """Infer HTTP methods from view name.
 
         Args:

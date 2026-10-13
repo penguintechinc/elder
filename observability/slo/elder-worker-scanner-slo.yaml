@@ -1,0 +1,119 @@
+# SLO definitions for apps/worker and apps/scanner, in the OpenSLO
+# (openslo.com) v1 shape. SLIs query the real worker.jobbus.job.duration
+# and scanner.scan.duration series -- see ../README.md for the OTel->PromQL
+# name translation and ../dashboards/elder-worker-scanner-jobs.json for the
+# matching dashboard.
+
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: elder-worker-job-success
+  displayName: Elder Worker Job-Bus Success Rate
+spec:
+  service: elder-worker
+  description: >
+    Fraction of worker.process_job invocations (apps/worker/main.py) that do
+    not end with status=error, from the worker.jobbus.job.duration histogram's
+    status attribute.
+  indicator:
+    metadata:
+      name: elder-worker-non-error-ratio
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(worker_jobbus_job_duration_count{status!="error"}[10m]))
+        total:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(worker_jobbus_job_duration_count[10m]))
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: 99% job success
+      target: 0.99
+      # Error budget: 1% of jobs over 30d may end status=error.
+
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: elder-scanner-job-success
+  displayName: Elder Scanner Job Success Rate
+spec:
+  service: elder-scanner
+  description: >
+    Fraction of scanner.execute_job / scanner.execute_sbom_scan runs
+    (apps/scanner/main.py) that finish status=success, from the
+    scanner.scan.duration histogram's status attribute. Target is lower
+    than the worker's because scan jobs (network probes, SBOM clones from
+    third-party repos) fail for reasons outside Elder's control more often
+    than internal job dispatch does.
+  indicator:
+    metadata:
+      name: elder-scanner-success-ratio
+    spec:
+      ratioMetric:
+        counter: true
+        good:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(scanner_scan_duration_count{status="success"}[10m]))
+        total:
+          metricSource:
+            type: prometheus
+            spec:
+              query: >
+                sum(rate(scanner_scan_duration_count[10m]))
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  budgetingMethod: Occurrences
+  objectives:
+    - displayName: 98% scan success
+      target: 0.98
+      # Error budget: 2% of scan jobs over 30d may not finish status=success.
+
+---
+apiVersion: openslo/v1
+kind: SLO
+metadata:
+  name: elder-worker-job-latency
+  displayName: Elder Worker Job-Bus Processing Latency
+spec:
+  service: elder-worker
+  description: >
+    95th-percentile job processing duration (dequeue to ack/dead-letter),
+    from worker.jobbus.job.duration. Evaluated via histogram_quantile rather
+    than a fixed bucket ratio -- worker.jobbus.job.duration uses the OTel SDK
+    default bucket boundaries (0..10000, unit seconds), which are coarse at
+    this scale, so pin the objective to a quantile query rather than a
+    specific `le` bucket edge.
+  indicator:
+    metadata:
+      name: elder-worker-job-duration-p95
+    spec:
+      thresholdMetric:
+        metricSource:
+          type: prometheus
+          spec:
+            query: >
+              histogram_quantile(0.95, sum(rate(worker_jobbus_job_duration_bucket[10m])) by (le))
+  timeWindow:
+    - duration: 30d
+      isRolling: true
+  objectives:
+    - displayName: p95 job duration under 750s
+      op: lte
+      value: 750
+      target: 0.95

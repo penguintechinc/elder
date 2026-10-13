@@ -1,0 +1,410 @@
+# Snowflake Data Warehouse Connector Manifest for IceCharts
+connector:
+  id: db_snowflake
+  name: Snowflake
+  description: Snowflake data warehouse connector for IceCharts workflows
+  icon: "❄️"
+  color: "#29B5E8"
+  version: "1.0.0"
+  vendor: database
+
+  auth:
+    methods:
+      - type: api_key
+        env_var: SNOWFLAKE_CONNECTION_STRING
+
+  connection:
+    base_url_env: ICECHARTS_API_URL
+    default_url: http://localhost:5000
+    health_endpoint: /api/v1/database-ops/health
+
+  triggers:
+    - id: data_changed
+      name: Data Changed
+      description: Poll for data changes in a Snowflake table
+      icon: "🔄"
+      webhook_path: /webhooks/database/snowflake/data_changed
+      outputs:
+        - name: out
+          type: object
+          description: Changed data with operation type
+      config_schema:
+        - field: table
+          type: string
+          label: Table Name
+          required: true
+        - field: poll_interval
+          type: number
+          label: Poll Interval (seconds)
+          default: 60
+        - field: track_column
+          type: string
+          label: Track Column
+          placeholder: "updated_at"
+
+    - id: scheduled_query
+      name: Scheduled Query
+      description: Run a query on a schedule
+      icon: "⏰"
+      webhook_path: /webhooks/database/snowflake/scheduled
+      outputs:
+        - name: out
+          type: object
+          description: Query results
+      config_schema:
+        - field: query
+          type: textarea
+          label: Query
+          required: true
+        - field: schedule
+          type: string
+          label: Cron Schedule
+          required: true
+          placeholder: "*/5 * * * *"
+
+  actions:
+    - id: execute_query
+      name: Execute Query
+      description: Execute a query against Snowflake
+      icon: "🔍"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: fields
+          type: string
+          label: Fields
+          placeholder: "id, name, email"
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+        - field: limit
+          type: number
+          label: Limit
+          default: 100
+        - field: warehouse
+          type: string
+          label: Warehouse
+          required: true
+          supports_variables: true
+        - field: role
+          type: string
+          label: Role
+          default: "PUBLIC"
+          supports_variables: true
+        - field: account
+          type: string
+          label: Account
+          required: true
+          supports_variables: true
+
+    - id: insert_row
+      name: Insert Row
+      description: Insert a row
+      icon: "➕"
+      endpoint: /api/v1/database-ops/insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: data
+          type: textarea
+          label: Data (JSON)
+          required: true
+          supports_variables: true
+
+    - id: update_rows
+      name: Update Rows
+      description: Update matching rows
+      icon: "✏️"
+      endpoint: /api/v1/database-ops/update
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+        - field: data
+          type: textarea
+          label: Update Data (JSON)
+          required: true
+          supports_variables: true
+
+    - id: delete_rows
+      name: Delete Rows
+      description: Delete matching rows
+      icon: "🗑️"
+      endpoint: /api/v1/database-ops/delete
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: bulk_insert
+      name: Bulk Insert
+      description: Insert multiple rows
+      icon: "📥"
+      endpoint: /api/v1/database-ops/bulk-insert
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: rows
+          type: textarea
+          label: Rows (JSON Array)
+          required: true
+          supports_variables: true
+
+    - id: call_procedure
+      name: Call Procedure
+      description: Call a stored procedure
+      icon: "⚙️"
+      endpoint: /api/v1/database-ops/procedure
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: procedure_name
+          type: string
+          label: Procedure Name
+          required: true
+          supports_variables: true
+        - field: parameters
+          type: textarea
+          label: Parameters (JSON)
+          supports_variables: true
+
+    - id: copy_into
+      name: Copy Into
+      description: Load data from stage
+      icon: "📤"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: stage
+          type: string
+          label: Stage
+          required: true
+          supports_variables: true
+        - field: file_format
+          type: select
+          label: File Format
+          options:
+            - csv
+            - json
+            - parquet
+            - avro
+          default: csv
+        - field: pattern
+          type: string
+          label: Pattern
+          placeholder: "*.csv"
+          supports_variables: true
+
+    - id: create_stage
+      name: Create Stage
+      description: Create a data stage
+      icon: "🎭"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: stage_name
+          type: string
+          label: Stage Name
+          required: true
+          supports_variables: true
+        - field: stage_type
+          type: select
+          label: Stage Type
+          options:
+            - internal
+            - external_s3
+            - external_gcs
+            - external_azure
+          default: internal
+        - field: url
+          type: string
+          label: URL
+          description: External stage URL
+          supports_variables: true
+
+  transforms:
+    - id: query_lookup
+      name: Query Lookup
+      description: Lookup data from Snowflake
+      icon: "🔎"
+      endpoint: /api/v1/database-ops/query
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+        - field: limit
+          type: number
+          label: Limit
+          default: 1
+
+    - id: count_rows
+      name: Count Rows
+      description: Count matching rows
+      icon: "🔢"
+      endpoint: /api/v1/database-ops/count
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          supports_variables: true
+
+    - id: check_exists
+      name: Check Exists
+      description: Check if a record exists
+      icon: "❓"
+      endpoint: /api/v1/database-ops/exists
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table
+          required: true
+          supports_variables: true
+        - field: where
+          type: textarea
+          label: Where (JSON)
+          required: true
+          supports_variables: true
+
+    - id: get_schema
+      name: Get Schema
+      description: Get schema information
+      icon: "📋"
+      endpoint: /api/v1/database-ops/schema
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: table
+          type: string
+          label: Table Name
+          supports_variables: true

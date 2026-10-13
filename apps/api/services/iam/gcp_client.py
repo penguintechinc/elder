@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 from typing import Any, Dict, List, Optional
 
@@ -22,7 +21,7 @@ from apps.api.services.iam.base import BaseIAMProvider
 class GCPIAMClient(BaseIAMProvider):
     """Google Cloud IAM implementation of IAM provider."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize GCP IAM client.
 
@@ -69,8 +68,8 @@ class GCPIAMClient(BaseIAMProvider):
     # User Management (Service Accounts in GCP)
 
     def list_users(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all service accounts in the project."""
         try:
             request = iam_admin_v1.ListServiceAccountsRequest(
@@ -96,7 +95,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM list users error: {str(e)}")
 
-    def get_user(self, user_identifier: str) -> Dict[str, Any]:
+    def get_user(self, user_identifier: str) -> dict[str, Any]:
         """Get service account details."""
         try:
             # Ensure full resource name
@@ -118,10 +117,10 @@ class GCPIAMClient(BaseIAMProvider):
     def create_user(
         self,
         username: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new service account."""
         try:
             # Ensure account_id doesn't have @ or project info
@@ -150,7 +149,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM create user error: {str(e)}")
 
-    def delete_user(self, user_identifier: str) -> Dict[str, Any]:
+    def delete_user(self, user_identifier: str) -> dict[str, Any]:
         """Delete a service account."""
         try:
             # Ensure full resource name
@@ -174,10 +173,10 @@ class GCPIAMClient(BaseIAMProvider):
     def update_user(
         self,
         user_identifier: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update service account metadata."""
         try:
             # Ensure full resource name
@@ -210,8 +209,8 @@ class GCPIAMClient(BaseIAMProvider):
     # Role Management (GCP uses predefined and custom roles)
 
     def list_roles(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all custom roles in the project."""
         try:
             request = iam_admin_v1.ListRolesRequest(
@@ -238,7 +237,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM list roles error: {str(e)}")
 
-    def get_role(self, role_identifier: str) -> Dict[str, Any]:
+    def get_role(self, role_identifier: str) -> dict[str, Any]:
         """Get role details."""
         try:
             # Ensure full resource name
@@ -260,11 +259,11 @@ class GCPIAMClient(BaseIAMProvider):
     def create_role(
         self,
         role_name: str,
-        description: Optional[str] = None,
-        trust_policy: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        trust_policy: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new custom role."""
         try:
             # trust_policy in GCP context means permissions
@@ -295,7 +294,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM create role error: {str(e)}")
 
-    def delete_role(self, role_identifier: str) -> Dict[str, Any]:
+    def delete_role(self, role_identifier: str) -> dict[str, Any]:
         """Delete a custom role."""
         try:
             # Ensure full resource name
@@ -315,10 +314,10 @@ class GCPIAMClient(BaseIAMProvider):
     def update_role(
         self,
         role_identifier: str,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update custom role metadata."""
         try:
             # Ensure full resource name
@@ -352,10 +351,10 @@ class GCPIAMClient(BaseIAMProvider):
 
     def list_policies(
         self,
-        scope: Optional[str] = None,
-        limit: Optional[int] = None,
-        next_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        scope: str | None = None,
+        limit: int | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
         """
         List IAM policy bindings for the project.
 
@@ -397,7 +396,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM list policies error: {str(e)}")
 
-    def get_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def get_policy(self, policy_identifier: str) -> dict[str, Any]:
         """
         Get IAM policy binding details.
 
@@ -435,11 +434,11 @@ class GCPIAMClient(BaseIAMProvider):
     def create_policy(
         self,
         policy_name: str,
-        policy_document: Dict[str, Any],
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        policy_document: dict[str, Any],
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create IAM policy binding (attach role to members).
 
@@ -486,7 +485,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM create policy error: {str(e)}")
 
-    def delete_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def delete_policy(self, policy_identifier: str) -> dict[str, Any]:
         """Delete IAM policy binding (remove all members from role)."""
         try:
             if not self.resource_manager:
@@ -522,7 +521,7 @@ class GCPIAMClient(BaseIAMProvider):
 
     def attach_policy_to_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Attach role to service account (add to IAM policy binding)."""
         try:
             if not self.resource_manager:
@@ -574,7 +573,7 @@ class GCPIAMClient(BaseIAMProvider):
 
     def detach_policy_from_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Detach role from service account (remove from IAM policy binding)."""
         try:
             if not self.resource_manager:
@@ -618,17 +617,17 @@ class GCPIAMClient(BaseIAMProvider):
 
     def attach_policy_to_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Not applicable in GCP - roles don't have policies attached."""
         raise NotImplementedError("GCP doesn't support attaching policies to roles")
 
     def detach_policy_from_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Not applicable in GCP - roles don't have policies attached."""
         raise NotImplementedError("GCP doesn't support detaching policies from roles")
 
-    def list_user_policies(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_user_policies(self, user_identifier: str) -> list[dict[str, Any]]:
         """List all roles attached to a service account."""
         try:
             if not self.resource_manager:
@@ -667,13 +666,13 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM list user policies error: {str(e)}")
 
-    def list_role_policies(self, role_identifier: str) -> List[Dict[str, Any]]:
+    def list_role_policies(self, role_identifier: str) -> list[dict[str, Any]]:
         """Not applicable in GCP - roles don't have policies."""
         return []
 
     # Access Keys (Service Account Keys in GCP)
 
-    def create_access_key(self, user_identifier: str) -> Dict[str, Any]:
+    def create_access_key(self, user_identifier: str) -> dict[str, Any]:
         """Create service account key."""
         try:
             # Ensure full resource name
@@ -705,7 +704,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"GCP IAM create access key error: {str(e)}")
 
-    def list_access_keys(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_access_keys(self, user_identifier: str) -> list[dict[str, Any]]:
         """List service account keys."""
         try:
             # Ensure full resource name
@@ -746,7 +745,7 @@ class GCPIAMClient(BaseIAMProvider):
 
     def delete_access_key(
         self, user_identifier: str, access_key_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Delete service account key."""
         try:
             # Ensure full resource name
@@ -783,7 +782,7 @@ class GCPIAMClient(BaseIAMProvider):
         except Exception:
             return False
 
-    def sync_from_provider(self) -> Dict[str, Any]:
+    def sync_from_provider(self) -> dict[str, Any]:
         """Sync IAM resources from GCP to Elder database."""
         errors = []
         users_synced = 0
@@ -824,7 +823,7 @@ class GCPIAMClient(BaseIAMProvider):
 
     # Helper methods
 
-    def _sa_to_dict(self, sa) -> Dict[str, Any]:
+    def _sa_to_dict(self, sa) -> dict[str, Any]:
         """Convert service account protobuf to dict."""
         return {
             "id": sa.unique_id,
@@ -838,7 +837,7 @@ class GCPIAMClient(BaseIAMProvider):
             "disabled": sa.disabled,
         }
 
-    def _role_to_dict(self, role) -> Dict[str, Any]:
+    def _role_to_dict(self, role) -> dict[str, Any]:
         """Convert role protobuf to dict."""
         return {
             "id": role.name,

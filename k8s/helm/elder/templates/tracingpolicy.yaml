@@ -1,0 +1,75 @@
+{{/*
+Tetragon runtime-execution allowlist (enforced Sigkill, not observe-only) —
+release audit finding #3. Scoped per pod/service, not one global policy
+(devops-kubernetes.md Cluster Security Baseline) — api/worker/scanner run
+python3, web runs nginx (NOT node: web/Dockerfile's runtime stage is
+nginxinc/nginx-unprivileged; node only exists in the discarded npm-build
+stage). Deviates from a literal "node for web" reading because that would
+allowlist a binary the shipped image never runs and Sigkill nginx's own
+master process on every request.
+
+flows-invoker is intentionally NOT covered: executing arbitrary
+user-defined CI commands inside a process sandbox (apps/flows_invoker/
+sandbox.py) is its actual product feature, not a compromise indicator —
+this policy would break normal operation. Isolation there comes from the
+sandbox plus networkpolicy-flows-invoker.yaml.
+
+Gated behind tetragon.enabled so alpha (local MicroK8s, no Tetragon
+DaemonSet/CRDs installed today) can opt out — see alpha.yml.
+*/}}
+{{- if .Values.tetragon.enabled }}
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-python
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values: ["api", "worker", "scanner"]
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/usr/local/bin/python3"
+                - "/usr/local/bin/python"
+                # scanner (apps/scanner/scanners/network.py) shells out to
+                # masscan for raw-socket SYN scanning — see the matching
+                # ROOT CAPABILITY EXCEPTION (approved) in values.yaml's
+                # scanner.securityContext.
+                - "/usr/bin/masscan"
+          matchActions:
+            - action: Sigkill
+---
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-exec-allowlist-web
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: web
+  kprobes:
+    - call: "sys_execve"
+      syscall: true
+      args:
+        - index: 0
+          type: "string"
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: "NotEquals"
+              values:
+                - "/usr/sbin/nginx"
+          matchActions:
+            - action: Sigkill
+{{- end }}

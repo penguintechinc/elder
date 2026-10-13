@@ -80,12 +80,21 @@ app.kubernetes.io/component: {{ $component }}
 {{- end }}
 
 {{/*
-Image name helper
+Image name helper.
+global.imageRegistry only applies to the PenguinTech-built app images
+(web/api/scanner/worker/flows-invoker) — postgres and redis are external
+upstream images (pgvector/pgvector, redis) that must keep pulling from their
+own registry (docker.io) regardless of the local alpha registry override,
+otherwise setting global.imageRegistry: localhost:32000 breaks them.
 */}}
 {{- define "elder.image" -}}
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
-{{- $registry := $context.Values.global.imageRegistry -}}
+{{- $isAppImage := or (eq $component "web") (eq $component "api") (eq $component "scanner") (eq $component "worker") (eq $component "flows-invoker") -}}
+{{- $registry := "" -}}
+{{- if $isAppImage -}}
+{{- $registry = $context.Values.global.imageRegistry -}}
+{{- end -}}
 {{- $repository := (index $context.Values $component).image.repository -}}
 {{- $tag := (index $context.Values $component).image.tag -}}
 {{- if $registry }}
@@ -102,4 +111,21 @@ Image pull policy helper
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
 {{- (index $context.Values $component).image.pullPolicy | default "IfNotPresent" }}
+{{- end }}
+
+{{/*
+Convert a camelCase module key to UPPER_SNAKE_CASE for ELDER_MODULE_<NAME> env vars.
+e.g. servicesOncall -> SERVICES_ONCALL, aiSearch -> AI_SEARCH
+*/}}
+{{- define "elder.upperSnakeCase" -}}
+{{- $input := . -}}
+{{- $result := "" -}}
+{{- range $i, $char := regexSplit "" $input -1 }}
+{{- if and (regexMatch "[A-Z]" $char) (gt $i 0) }}
+{{- $result = printf "%s_%s" $result $char }}
+{{- else }}
+{{- $result = printf "%s%s" $result ($char | upper) }}
+{{- end }}
+{{- end }}
+{{- $result }}
 {{- end }}

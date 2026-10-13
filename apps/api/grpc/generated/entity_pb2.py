@@ -4,18 +4,15 @@
 # source: entity.proto
 # Protobuf Python Version: 5.29.0
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    5,
-    29,
-    0,
-    '',
-    'entity.proto'
+    _runtime_version.Domain.PUBLIC, 5, 29, 0, "", "entity.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -24,57 +21,60 @@ _sym_db = _symbol_database.Default()
 
 from . import common_pb2 as common__pb2
 
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x65ntity.proto\x12\x0c\x65lder.entity\x1a\x0c\x63ommon.proto\"\xed\x02\n\x06\x45ntity\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x11\n\tunique_id\x18\x02 \x01(\t\x12\x17\n\x0forganization_id\x18\x03 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x04 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x06 \x01(\t\x12-\n\x08metadata\x18\x07 \x03(\x0b\x32\x1b.elder.common.MetadataField\x12\x19\n\x11owner_identity_id\x18\x08 \x01(\x05\x12+\n\ncreated_at\x18\t \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\nupdated_at\x18\n \x01(\x0b\x32\x17.elder.common.Timestamp\x12\x19\n\x11organization_name\x18\x0b \x01(\t\x12\x1a\n\x12\x64\x65pendencies_count\x18\x0c \x01(\x05\"\xd0\x01\n\x13ListEntitiesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12\x17\n\x0forganization_id\x18\x03 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x04 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0e\n\x06search\x18\x05 \x01(\t\"t\n\x14ListEntitiesResponse\x12&\n\x08\x65ntities\x18\x01 \x03(\x0b\x32\x14.elder.entity.Entity\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse\"{\n\x10GetEntityRequest\x12\x0c\n\x02id\x18\x01 \x01(\x05H\x00\x12\x13\n\tunique_id\x18\x02 \x01(\tH\x00\x12\x1c\n\x14include_dependencies\x18\x03 \x01(\x08\x12\x18\n\x10include_metadata\x18\x04 \x01(\x08\x42\x0c\n\nidentifier\"i\n\x11GetEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity\x12.\n\x0c\x64\x65pendencies\x18\x02 \x03(\x0b\x32\x18.elder.entity.Dependency\"\x8f\x02\n\x13\x43reateEntityRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x02 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x41\n\x08metadata\x18\x05 \x03(\x0b\x32/.elder.entity.CreateEntityRequest.MetadataEntry\x12\x19\n\x11owner_identity_id\x18\x06 \x01(\x05\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"<\n\x14\x43reateEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity\"\x87\x03\n\x13UpdateEntityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x1c\n\x0forganization_id\x18\x02 \x01(\x05H\x00\x88\x01\x01\x12\x32\n\x0b\x65ntity_type\x18\x03 \x01(\x0e\x32\x18.elder.entity.EntityTypeH\x01\x88\x01\x01\x12\x11\n\x04name\x18\x04 \x01(\tH\x02\x88\x01\x01\x12\x18\n\x0b\x64\x65scription\x18\x05 \x01(\tH\x03\x88\x01\x01\x12\x41\n\x08metadata\x18\x06 \x03(\x0b\x32/.elder.entity.UpdateEntityRequest.MetadataEntry\x12\x1e\n\x11owner_identity_id\x18\x07 \x01(\x05H\x04\x88\x01\x01\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x12\n\x10_organization_idB\x0e\n\x0c_entity_typeB\x07\n\x05_nameB\x0e\n\x0c_descriptionB\x14\n\x12_owner_identity_id\"<\n\x14UpdateEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity\"!\n\x13\x44\x65leteEntityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\"D\n\x14\x44\x65leteEntityResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse\"_\n\x1cGetEntityDependenciesRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x33\n\npagination\x18\x02 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\"\x85\x01\n\x1dGetEntityDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse\"\xb9\x02\n\nDependency\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x18\n\x10source_entity_id\x18\x02 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x03 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x04 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12-\n\x08metadata\x18\x05 \x03(\x0b\x32\x1b.elder.common.MetadataField\x12+\n\ncreated_at\x18\x06 \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\rsource_entity\x18\x07 \x01(\x0b\x32\x14.elder.entity.Entity\x12+\n\rtarget_entity\x18\x08 \x01(\x0b\x32\x14.elder.entity.Entity\"Q\n\x1a\x42\x61tchCreateEntitiesRequest\x12\x33\n\x08\x65ntities\x18\x01 \x03(\x0b\x32!.elder.entity.CreateEntityRequest\"U\n\x1b\x42\x61tchCreateEntitiesResponse\x12&\n\x08\x65ntities\x18\x01 \x03(\x0b\x32\x14.elder.entity.Entity\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\t*\x86\x01\n\nEntityType\x12\x1b\n\x17\x45NTITY_TYPE_UNSPECIFIED\x10\x00\x12\x0e\n\nDATACENTER\x10\x01\x12\x07\n\x03VPC\x10\x02\x12\n\n\x06SUBNET\x10\x03\x12\x0b\n\x07\x43OMPUTE\x10\x04\x12\x0b\n\x07NETWORK\x10\x05\x12\x08\n\x04USER\x10\x06\x12\x12\n\x0eSECURITY_ISSUE\x10\x07*^\n\x0e\x44\x65pendencyType\x12\x1f\n\x1b\x44\x45PENDENCY_TYPE_UNSPECIFIED\x10\x00\x12\x0e\n\nDEPENDS_ON\x10\x01\x12\x0e\n\nRELATED_TO\x10\x02\x12\x0b\n\x07PART_OF\x10\x03\x42K\n\x1bio.penguintech.elder.entityZ,github.com/penguintechinc/elder/proto/entityb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0c\x65ntity.proto\x12\x0c\x65lder.entity\x1a\x0c\x63ommon.proto"\xed\x02\n\x06\x45ntity\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x11\n\tunique_id\x18\x02 \x01(\t\x12\x17\n\x0forganization_id\x18\x03 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x04 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0c\n\x04name\x18\x05 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x06 \x01(\t\x12-\n\x08metadata\x18\x07 \x03(\x0b\x32\x1b.elder.common.MetadataField\x12\x19\n\x11owner_identity_id\x18\x08 \x01(\x05\x12+\n\ncreated_at\x18\t \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\nupdated_at\x18\n \x01(\x0b\x32\x17.elder.common.Timestamp\x12\x19\n\x11organization_name\x18\x0b \x01(\t\x12\x1a\n\x12\x64\x65pendencies_count\x18\x0c \x01(\x05"\xd0\x01\n\x13ListEntitiesRequest\x12\x33\n\npagination\x18\x01 \x01(\x0b\x32\x1f.elder.common.PaginationRequest\x12,\n\x07\x66ilters\x18\x02 \x01(\x0b\x32\x1b.elder.common.FilterOptions\x12\x17\n\x0forganization_id\x18\x03 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x04 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0e\n\x06search\x18\x05 \x01(\t"t\n\x14ListEntitiesResponse\x12&\n\x08\x65ntities\x18\x01 \x03(\x0b\x32\x14.elder.entity.Entity\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse"{\n\x10GetEntityRequest\x12\x0c\n\x02id\x18\x01 \x01(\x05H\x00\x12\x13\n\tunique_id\x18\x02 \x01(\tH\x00\x12\x1c\n\x14include_dependencies\x18\x03 \x01(\x08\x12\x18\n\x10include_metadata\x18\x04 \x01(\x08\x42\x0c\n\nidentifier"i\n\x11GetEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity\x12.\n\x0c\x64\x65pendencies\x18\x02 \x03(\x0b\x32\x18.elder.entity.Dependency"\x8f\x02\n\x13\x43reateEntityRequest\x12\x17\n\x0forganization_id\x18\x01 \x01(\x05\x12-\n\x0b\x65ntity_type\x18\x02 \x01(\x0e\x32\x18.elder.entity.EntityType\x12\x0c\n\x04name\x18\x03 \x01(\t\x12\x13\n\x0b\x64\x65scription\x18\x04 \x01(\t\x12\x41\n\x08metadata\x18\x05 \x03(\x0b\x32/.elder.entity.CreateEntityRequest.MetadataEntry\x12\x19\n\x11owner_identity_id\x18\x06 \x01(\x05\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01"<\n\x14\x43reateEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity"\x87\x03\n\x13UpdateEntityRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x1c\n\x0forganization_id\x18\x02 \x01(\x05H\x00\x88\x01\x01\x12\x32\n\x0b\x65ntity_type\x18\x03 \x01(\x0e\x32\x18.elder.entity.EntityTypeH\x01\x88\x01\x01\x12\x11\n\x04name\x18\x04 \x01(\tH\x02\x88\x01\x01\x12\x18\n\x0b\x64\x65scription\x18\x05 \x01(\tH\x03\x88\x01\x01\x12\x41\n\x08metadata\x18\x06 \x03(\x0b\x32/.elder.entity.UpdateEntityRequest.MetadataEntry\x12\x1e\n\x11owner_identity_id\x18\x07 \x01(\x05H\x04\x88\x01\x01\x1a/\n\rMetadataEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x42\x12\n\x10_organization_idB\x0e\n\x0c_entity_typeB\x07\n\x05_nameB\x0e\n\x0c_descriptionB\x14\n\x12_owner_identity_id"<\n\x14UpdateEntityResponse\x12$\n\x06\x65ntity\x18\x01 \x01(\x0b\x32\x14.elder.entity.Entity"!\n\x13\x44\x65leteEntityRequest\x12\n\n\x02id\x18\x01 \x01(\x05"D\n\x14\x44\x65leteEntityResponse\x12,\n\x06status\x18\x01 \x01(\x0b\x32\x1c.elder.common.StatusResponse"_\n\x1cGetEntityDependenciesRequest\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x33\n\npagination\x18\x02 \x01(\x0b\x32\x1f.elder.common.PaginationRequest"\x85\x01\n\x1dGetEntityDependenciesResponse\x12.\n\x0c\x64\x65pendencies\x18\x01 \x03(\x0b\x32\x18.elder.entity.Dependency\x12\x34\n\npagination\x18\x02 \x01(\x0b\x32 .elder.common.PaginationResponse"\xb9\x02\n\nDependency\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x18\n\x10source_entity_id\x18\x02 \x01(\x05\x12\x18\n\x10target_entity_id\x18\x03 \x01(\x05\x12\x35\n\x0f\x64\x65pendency_type\x18\x04 \x01(\x0e\x32\x1c.elder.entity.DependencyType\x12-\n\x08metadata\x18\x05 \x03(\x0b\x32\x1b.elder.common.MetadataField\x12+\n\ncreated_at\x18\x06 \x01(\x0b\x32\x17.elder.common.Timestamp\x12+\n\rsource_entity\x18\x07 \x01(\x0b\x32\x14.elder.entity.Entity\x12+\n\rtarget_entity\x18\x08 \x01(\x0b\x32\x14.elder.entity.Entity"Q\n\x1a\x42\x61tchCreateEntitiesRequest\x12\x33\n\x08\x65ntities\x18\x01 \x03(\x0b\x32!.elder.entity.CreateEntityRequest"U\n\x1b\x42\x61tchCreateEntitiesResponse\x12&\n\x08\x65ntities\x18\x01 \x03(\x0b\x32\x14.elder.entity.Entity\x12\x0e\n\x06\x65rrors\x18\x02 \x03(\t*\x86\x01\n\nEntityType\x12\x1b\n\x17\x45NTITY_TYPE_UNSPECIFIED\x10\x00\x12\x0e\n\nDATACENTER\x10\x01\x12\x07\n\x03VPC\x10\x02\x12\n\n\x06SUBNET\x10\x03\x12\x0b\n\x07\x43OMPUTE\x10\x04\x12\x0b\n\x07NETWORK\x10\x05\x12\x08\n\x04USER\x10\x06\x12\x12\n\x0eSECURITY_ISSUE\x10\x07*^\n\x0e\x44\x65pendencyType\x12\x1f\n\x1b\x44\x45PENDENCY_TYPE_UNSPECIFIED\x10\x00\x12\x0e\n\nDEPENDS_ON\x10\x01\x12\x0e\n\nRELATED_TO\x10\x02\x12\x0b\n\x07PART_OF\x10\x03\x42K\n\x1bio.penguintech.elder.entityZ,github.com/penguintechinc/elder/proto/entityb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'entity_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "entity_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\033io.penguintech.elder.entityZ,github.com/penguintechinc/elder/proto/entity'
-  _globals['_CREATEENTITYREQUEST_METADATAENTRY']._loaded_options = None
-  _globals['_CREATEENTITYREQUEST_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_UPDATEENTITYREQUEST_METADATAENTRY']._loaded_options = None
-  _globals['_UPDATEENTITYREQUEST_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_ENTITYTYPE']._serialized_start=2590
-  _globals['_ENTITYTYPE']._serialized_end=2724
-  _globals['_DEPENDENCYTYPE']._serialized_start=2726
-  _globals['_DEPENDENCYTYPE']._serialized_end=2820
-  _globals['_ENTITY']._serialized_start=45
-  _globals['_ENTITY']._serialized_end=410
-  _globals['_LISTENTITIESREQUEST']._serialized_start=413
-  _globals['_LISTENTITIESREQUEST']._serialized_end=621
-  _globals['_LISTENTITIESRESPONSE']._serialized_start=623
-  _globals['_LISTENTITIESRESPONSE']._serialized_end=739
-  _globals['_GETENTITYREQUEST']._serialized_start=741
-  _globals['_GETENTITYREQUEST']._serialized_end=864
-  _globals['_GETENTITYRESPONSE']._serialized_start=866
-  _globals['_GETENTITYRESPONSE']._serialized_end=971
-  _globals['_CREATEENTITYREQUEST']._serialized_start=974
-  _globals['_CREATEENTITYREQUEST']._serialized_end=1245
-  _globals['_CREATEENTITYREQUEST_METADATAENTRY']._serialized_start=1198
-  _globals['_CREATEENTITYREQUEST_METADATAENTRY']._serialized_end=1245
-  _globals['_CREATEENTITYRESPONSE']._serialized_start=1247
-  _globals['_CREATEENTITYRESPONSE']._serialized_end=1307
-  _globals['_UPDATEENTITYREQUEST']._serialized_start=1310
-  _globals['_UPDATEENTITYREQUEST']._serialized_end=1701
-  _globals['_UPDATEENTITYREQUEST_METADATAENTRY']._serialized_start=1198
-  _globals['_UPDATEENTITYREQUEST_METADATAENTRY']._serialized_end=1245
-  _globals['_UPDATEENTITYRESPONSE']._serialized_start=1703
-  _globals['_UPDATEENTITYRESPONSE']._serialized_end=1763
-  _globals['_DELETEENTITYREQUEST']._serialized_start=1765
-  _globals['_DELETEENTITYREQUEST']._serialized_end=1798
-  _globals['_DELETEENTITYRESPONSE']._serialized_start=1800
-  _globals['_DELETEENTITYRESPONSE']._serialized_end=1868
-  _globals['_GETENTITYDEPENDENCIESREQUEST']._serialized_start=1870
-  _globals['_GETENTITYDEPENDENCIESREQUEST']._serialized_end=1965
-  _globals['_GETENTITYDEPENDENCIESRESPONSE']._serialized_start=1968
-  _globals['_GETENTITYDEPENDENCIESRESPONSE']._serialized_end=2101
-  _globals['_DEPENDENCY']._serialized_start=2104
-  _globals['_DEPENDENCY']._serialized_end=2417
-  _globals['_BATCHCREATEENTITIESREQUEST']._serialized_start=2419
-  _globals['_BATCHCREATEENTITIESREQUEST']._serialized_end=2500
-  _globals['_BATCHCREATEENTITIESRESPONSE']._serialized_start=2502
-  _globals['_BATCHCREATEENTITIESRESPONSE']._serialized_end=2587
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\033io.penguintech.elder.entityZ,github.com/penguintechinc/elder/proto/entity"
+    _globals["_CREATEENTITYREQUEST_METADATAENTRY"]._loaded_options = None
+    _globals["_CREATEENTITYREQUEST_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_UPDATEENTITYREQUEST_METADATAENTRY"]._loaded_options = None
+    _globals["_UPDATEENTITYREQUEST_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_ENTITYTYPE"]._serialized_start = 2590
+    _globals["_ENTITYTYPE"]._serialized_end = 2724
+    _globals["_DEPENDENCYTYPE"]._serialized_start = 2726
+    _globals["_DEPENDENCYTYPE"]._serialized_end = 2820
+    _globals["_ENTITY"]._serialized_start = 45
+    _globals["_ENTITY"]._serialized_end = 410
+    _globals["_LISTENTITIESREQUEST"]._serialized_start = 413
+    _globals["_LISTENTITIESREQUEST"]._serialized_end = 621
+    _globals["_LISTENTITIESRESPONSE"]._serialized_start = 623
+    _globals["_LISTENTITIESRESPONSE"]._serialized_end = 739
+    _globals["_GETENTITYREQUEST"]._serialized_start = 741
+    _globals["_GETENTITYREQUEST"]._serialized_end = 864
+    _globals["_GETENTITYRESPONSE"]._serialized_start = 866
+    _globals["_GETENTITYRESPONSE"]._serialized_end = 971
+    _globals["_CREATEENTITYREQUEST"]._serialized_start = 974
+    _globals["_CREATEENTITYREQUEST"]._serialized_end = 1245
+    _globals["_CREATEENTITYREQUEST_METADATAENTRY"]._serialized_start = 1198
+    _globals["_CREATEENTITYREQUEST_METADATAENTRY"]._serialized_end = 1245
+    _globals["_CREATEENTITYRESPONSE"]._serialized_start = 1247
+    _globals["_CREATEENTITYRESPONSE"]._serialized_end = 1307
+    _globals["_UPDATEENTITYREQUEST"]._serialized_start = 1310
+    _globals["_UPDATEENTITYREQUEST"]._serialized_end = 1701
+    _globals["_UPDATEENTITYREQUEST_METADATAENTRY"]._serialized_start = 1198
+    _globals["_UPDATEENTITYREQUEST_METADATAENTRY"]._serialized_end = 1245
+    _globals["_UPDATEENTITYRESPONSE"]._serialized_start = 1703
+    _globals["_UPDATEENTITYRESPONSE"]._serialized_end = 1763
+    _globals["_DELETEENTITYREQUEST"]._serialized_start = 1765
+    _globals["_DELETEENTITYREQUEST"]._serialized_end = 1798
+    _globals["_DELETEENTITYRESPONSE"]._serialized_start = 1800
+    _globals["_DELETEENTITYRESPONSE"]._serialized_end = 1868
+    _globals["_GETENTITYDEPENDENCIESREQUEST"]._serialized_start = 1870
+    _globals["_GETENTITYDEPENDENCIESREQUEST"]._serialized_end = 1965
+    _globals["_GETENTITYDEPENDENCIESRESPONSE"]._serialized_start = 1968
+    _globals["_GETENTITYDEPENDENCIESRESPONSE"]._serialized_end = 2101
+    _globals["_DEPENDENCY"]._serialized_start = 2104
+    _globals["_DEPENDENCY"]._serialized_end = 2417
+    _globals["_BATCHCREATEENTITIESREQUEST"]._serialized_start = 2419
+    _globals["_BATCHCREATEENTITIESREQUEST"]._serialized_end = 2500
+    _globals["_BATCHCREATEENTITIESRESPONSE"]._serialized_start = 2502
+    _globals["_BATCHCREATEENTITIESRESPONSE"]._serialized_end = 2587
 # @@protoc_insertion_point(module_scope)

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -17,9 +16,9 @@ async def send_issue_created_webhooks(
     issue_title: str,
     issue_type: str,
     is_incident: int,
-    organization_id: Optional[int],
+    organization_id: int | None,
     web_url_base: str = "http://localhost:3000",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     Send webhook notifications for a newly created issue to all configured webhooks for the organization.
 
@@ -41,10 +40,16 @@ async def send_issue_created_webhooks(
         )
         return []
 
-    # Get all webhook configurations for this organization
+    # Get all webhook configurations for this organization.
+    # NOTE: destination_type is a SQLAlchemy Enum(AlertDestinationType) column
+    # with no values_callable, so it persists the member NAME — the pg enum
+    # `alertdestinationtype` accepts EMAIL/WEBHOOK/PAGERDUTY/SLACK (upper), not
+    # the lowercase `.value`. Comparing to "webhook" raised
+    # InvalidTextRepresentation and silently killed this fire-and-forget task,
+    # so issue-created webhooks never dispatched. Match the stored name.
     webhook_configs = db(
         (db.alert_configurations.organization_id == organization_id)
-        & (db.alert_configurations.destination_type == "webhook")
+        & (db.alert_configurations.destination_type == "WEBHOOK")
         & (db.alert_configurations.enabled == 1)
     ).select()
 

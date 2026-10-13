@@ -5,6 +5,7 @@ with various dependency configurations and edge cases.
 """
 
 import pytest
+
 from apps.api.services.sbom.parsers.java_parser import JavaDependencyParser
 
 
@@ -80,7 +81,9 @@ class TestJavaDependencyParser:
         assert len(deps) == 2
 
         # Check spring-core dependency
-        spring_dep = next((d for d in deps if d["name"] == "org.springframework:spring-core"), None)
+        spring_dep = next(
+            (d for d in deps if d["name"] == "org.springframework:spring-core"), None
+        )
         assert spring_dep is not None
         assert spring_dep["version"] == "5.3.0"
         assert spring_dep["purl"] == "pkg:maven/org.springframework/spring-core@5.3.0"
@@ -178,7 +181,9 @@ dependencies {
         assert len(deps) == 3
 
         # Check implementation dependency
-        spring_dep = next((d for d in deps if d["name"] == "org.springframework:spring-core"), None)
+        spring_dep = next(
+            (d for d in deps if d["name"] == "org.springframework:spring-core"), None
+        )
         assert spring_dep is not None
         assert spring_dep["version"] == "5.3.0"
         assert spring_dep["scope"] == "runtime"
@@ -194,7 +199,9 @@ dependencies {
         assert slf4j_dep is not None
         assert slf4j_dep["scope"] == "runtime"
 
-    def test_parse_gradle_with_double_quotes(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_with_double_quotes(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test that parser handles both single and double quotes in Gradle."""
         gradle_content = """
 dependencies {
@@ -233,7 +240,9 @@ dependencies {
         assert scopes["junit:junit"] == "test"
         assert scopes["org.junit.vintage:junit-vintage-engine"] == "test"
 
-    def test_parse_gradle_empty_dependencies(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_empty_dependencies(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test parsing Gradle with empty dependencies block."""
         gradle_content = """
 dependencies {
@@ -258,7 +267,9 @@ dependencies {
         assert len(deps) == 3
 
         # Check implementation dependency
-        spring_dep = next((d for d in deps if d["name"] == "org.springframework:spring-core"), None)
+        spring_dep = next(
+            (d for d in deps if d["name"] == "org.springframework:spring-core"), None
+        )
         assert spring_dep is not None
         assert spring_dep["version"] == "5.3.0"
         assert spring_dep["scope"] == "runtime"
@@ -268,7 +279,9 @@ dependencies {
         assert junit_dep is not None
         assert junit_dep["scope"] == "test"
 
-    def test_parse_gradle_kts_with_single_quotes(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_kts_with_single_quotes(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test that Kotlin DSL parser handles both single and double quotes."""
         gradle_kts_content = """
 dependencies {
@@ -283,7 +296,9 @@ dependencies {
         assert "org.springframework:spring-core" in names
         assert "junit:junit" in names
 
-    def test_parse_gradle_kts_various_scopes(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_kts_various_scopes(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test parsing Gradle Kotlin DSL with various scope keywords."""
         gradle_kts_content = """
 dependencies {
@@ -329,7 +344,9 @@ dependencies {
         assert len(deps) == 1
         assert deps[0]["version"] == "unknown"
 
-    def test_parse_gradle_with_multiline_spacing(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_with_multiline_spacing(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test parsing Gradle with extra whitespace and formatting."""
         gradle_content = """
 dependencies {
@@ -341,7 +358,9 @@ dependencies {
 
         assert len(deps) == 2
 
-    def test_parse_gradle_kts_with_multiline_spacing(self, parser: JavaDependencyParser) -> None:
+    def test_parse_gradle_kts_with_multiline_spacing(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test parsing Gradle Kotlin DSL with extra whitespace."""
         gradle_kts_content = """
 dependencies {
@@ -356,7 +375,9 @@ dependencies {
         # At minimum, it shouldn't crash
         assert isinstance(deps, list)
 
-    def test_validate_content_with_whitespace(self, parser: JavaDependencyParser) -> None:
+    def test_validate_content_with_whitespace(
+        self, parser: JavaDependencyParser
+    ) -> None:
         """Test that parser rejects whitespace-only content."""
         with pytest.raises(ValueError):
             parser.parse("   \n\t\n   ", "pom.xml")

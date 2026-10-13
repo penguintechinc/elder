@@ -10,7 +10,6 @@ Requires Enterprise license.
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -37,10 +36,10 @@ class AuthentikConnector(BaseConnector, GroupOperationsMixin):
     def __init__(self):
         """Initialize Authentik connector."""
         super().__init__("authentik")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.base_url: Optional[str] = None
-        self.headers: Dict[str, str] = {}
-        self._http_client: Optional[httpx.AsyncClient] = None
+        self.elder_client: ElderAPIClient | None = None
+        self.base_url: str | None = None
+        self.headers: dict[str, str] = {}
+        self._http_client: httpx.AsyncClient | None = None
 
     async def connect(self) -> None:
         """Establish connection to Authentik API and Elder API."""
@@ -196,7 +195,7 @@ class AuthentikConnector(BaseConnector, GroupOperationsMixin):
 
         self.logger.info("Authentik groups synced", count=len(groups))
 
-    async def _paginate(self, endpoint: str) -> List[Dict[str, Any]]:
+    async def _paginate(self, endpoint: str) -> list[dict[str, Any]]:
         """
         Handle Authentik pagination.
 
@@ -405,7 +404,7 @@ class AuthentikConnector(BaseConnector, GroupOperationsMixin):
                 error=str(e),
             )
 
-    async def get_group_members(self, group_id: str) -> List[str]:
+    async def get_group_members(self, group_id: str) -> list[str]:
         """
         Get current members of an Authentik group.
 

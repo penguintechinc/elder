@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import asyncio
 import logging
 from typing import Any, Dict, Optional
@@ -35,7 +34,7 @@ SERVICE_PROBES = {
 class BannerScanner(BaseScanner):
     """Banner grabber using socket connections."""
 
-    async def scan(self, config: Dict[str, Any]) -> Dict[str, Any]:
+    async def scan(self, config: dict[str, Any]) -> dict[str, Any]:
         """Grab service banners from specified targets and ports.
 
         Config schema:
@@ -107,7 +106,7 @@ class BannerScanner(BaseScanner):
         target: str,
         port: int,
         timeout: int,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Grab banner with concurrency limiting."""
         async with semaphore:
             return await self._grab_banner(target, port, timeout)
@@ -117,7 +116,7 @@ class BannerScanner(BaseScanner):
         target: str,
         port: int,
         timeout: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Grab banner from a single target/port."""
         service_name, probe = SERVICE_PROBES.get(port, ("Unknown", b""))
 
@@ -152,14 +151,14 @@ class BannerScanner(BaseScanner):
                 result["banner"] = banner
                 result["success"] = True
                 logger.debug(f"Banner grabbed from {target}:{port}: {banner[:50]}...")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Some services don't send banners until you send something
                 result["error"] = "No banner received"
 
             writer.close()
             await writer.wait_closed()
 
-        except asyncio.TimeoutError:
+        except TimeoutError:
             result["error"] = "Connection timeout"
         except ConnectionRefusedError:
             result["error"] = "Connection refused"

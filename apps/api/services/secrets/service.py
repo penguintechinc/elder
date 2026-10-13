@@ -2,9 +2,8 @@
 
 # flake8: noqa: E501
 
-
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from quart import current_app
@@ -78,8 +77,8 @@ class SecretsService:
             )
 
     def get_secret(
-        self, secret_id: int, unmask: bool = False, identity_id: Optional[int] = None
-    ) -> Dict[str, Any]:
+        self, secret_id: int, unmask: bool = False, identity_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Retrieve a secret, masked or unmasked.
 
@@ -139,10 +138,10 @@ class SecretsService:
 
     def list_secrets(
         self,
-        organization_id: Optional[int] = None,
-        provider_id: Optional[int] = None,
-        secret_type: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        organization_id: int | None = None,
+        provider_id: int | None = None,
+        secret_type: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         List secrets with optional filters.
 
@@ -190,9 +189,9 @@ class SecretsService:
         secret_type: str,
         organization_id: int,
         is_kv: bool = False,
-        metadata: Optional[Dict[str, Any]] = None,
-        identity_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+        identity_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         Register a new secret.
 
@@ -235,7 +234,7 @@ class SecretsService:
             organization_id=organization_id,
             parent_id=None,
             metadata=metadata or {},
-            last_synced_at=datetime.now(timezone.utc),
+            last_synced_at=datetime.now(UTC),
         )
         self.db.commit()
 
@@ -264,11 +263,11 @@ class SecretsService:
     def update_secret_metadata(
         self,
         secret_id: int,
-        name: Optional[str] = None,
-        secret_type: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        identity_id: Optional[int] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        secret_type: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        identity_id: int | None = None,
+    ) -> dict[str, Any]:
         """
         Update secret metadata (not the actual value in provider).
 
@@ -313,7 +312,7 @@ class SecretsService:
 
         return self.get_secret(secret_id, unmask=False)
 
-    def delete_secret(self, secret_id: int, identity_id: Optional[int] = None) -> bool:
+    def delete_secret(self, secret_id: int, identity_id: int | None = None) -> bool:
         """
         Delete a secret registration (does not delete from provider).
 
@@ -347,8 +346,8 @@ class SecretsService:
         return True
 
     def sync_secret(
-        self, secret_id: int, identity_id: Optional[int] = None
-    ) -> Dict[str, Any]:
+        self, secret_id: int, identity_id: int | None = None
+    ) -> dict[str, Any]:
         """
         Force sync secret metadata from provider.
 
@@ -373,7 +372,7 @@ class SecretsService:
 
             # Update sync timestamp and KV status
             self.db(self.db.secrets.id == secret_id).update(
-                is_kv=secret_value.is_kv, last_synced_at=datetime.now(timezone.utc)
+                is_kv=secret_value.is_kv, last_synced_at=datetime.now(UTC)
             )
 
             logger.info(f"Synced secret {secret_id} from provider")
@@ -386,7 +385,7 @@ class SecretsService:
 
     def get_secret_access_log(
         self, secret_id: int, limit: int = 100
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get access log for a secret.
 
@@ -423,7 +422,7 @@ class SecretsService:
                 identity_id=identity_id,
                 action=action,
                 masked=masked,
-                accessed_at=datetime.now(timezone.utc),
+                accessed_at=datetime.now(UTC),
             )
             self.db.commit()
         except Exception as e:
@@ -433,8 +432,8 @@ class SecretsService:
     # Provider Management Methods
 
     def list_providers(
-        self, organization_id: Optional[int] = None, provider_type: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, organization_id: int | None = None, provider_type: str | None = None
+    ) -> list[dict[str, Any]]:
         """List secret providers."""
         query = self.db.secret_providers.id > 0
 
@@ -459,7 +458,7 @@ class SecretsService:
             for p in providers
         ]
 
-    def get_provider(self, provider_id: int) -> Dict[str, Any]:
+    def get_provider(self, provider_id: int) -> dict[str, Any]:
         """Get provider details."""
         provider = self.db.secret_providers[provider_id]
         if not provider:
@@ -480,9 +479,9 @@ class SecretsService:
         self,
         name: str,
         provider_type: str,
-        config_json: Dict[str, Any],
+        config_json: dict[str, Any],
         organization_id: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new secret provider."""
         if provider_type not in self.PROVIDER_CLIENTS:
             raise ValueError(f"Unknown provider type: {provider_type}")
@@ -512,10 +511,10 @@ class SecretsService:
     def update_provider(
         self,
         provider_id: int,
-        name: Optional[str] = None,
-        config_json: Optional[Dict[str, Any]] = None,
-        enabled: Optional[bool] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        config_json: dict[str, Any] | None = None,
+        enabled: bool | None = None,
+    ) -> dict[str, Any]:
         """Update provider configuration."""
         provider = self.db.secret_providers[provider_id]
         if not provider:
@@ -564,7 +563,7 @@ class SecretsService:
         logger.info(f"Deleted provider {provider_id}")
         return True
 
-    def sync_provider(self, provider_id: int) -> Dict[str, Any]:
+    def sync_provider(self, provider_id: int) -> dict[str, Any]:
         """Sync all secrets from a provider."""
         provider = self.db.secret_providers[provider_id]
         if not provider:
@@ -590,13 +589,13 @@ class SecretsService:
                     # Update sync timestamp
                     self.db(self.db.secrets.id == existing.id).update(
                         is_kv=provider_secret.is_kv,
-                        last_synced_at=datetime.now(timezone.utc),
+                        last_synced_at=datetime.now(UTC),
                     )
                     synced_count += 1
 
             # Update provider sync timestamp
             self.db(self.db.secret_providers.id == provider_id).update(
-                last_sync_at=datetime.now(timezone.utc)
+                last_sync_at=datetime.now(UTC)
             )
 
             logger.info(f"Synced {synced_count} secrets from provider {provider_id}")
@@ -605,7 +604,7 @@ class SecretsService:
                 "provider_id": provider_id,
                 "secrets_synced": synced_count,
                 "total_provider_secrets": len(provider_secrets),
-                "synced_at": datetime.now(timezone.utc),
+                "synced_at": datetime.now(UTC),
             }
 
         except Exception as e:

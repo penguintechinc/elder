@@ -10,7 +10,6 @@ Provides secure logging that:
 
 # flake8: noqa: E501
 
-
 import logging
 import logging.handlers
 import os
@@ -22,7 +21,7 @@ from quart import Quart, jsonify
 
 # Default log file path
 DEFAULT_LOG_FILE = "/var/log/elder.log"
-FALLBACK_LOG_FILE = "/tmp/elder.log"
+FALLBACK_LOG_FILE = "/tmp/elder.log"  # nosec B108
 
 
 def setup_logging(app: Quart) -> None:
@@ -69,7 +68,9 @@ def setup_logging(app: Quart) -> None:
             os.makedirs(log_dir, mode=0o755, exist_ok=True)
 
         file_handler = logging.handlers.RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5  # 10MB per file
+            log_file,
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,  # 10MB per file
         )
         file_handler.setLevel(log_level)
         file_handler.setFormatter(formatter)
@@ -85,8 +86,7 @@ def setup_logging(app: Quart) -> None:
             file_handler.setFormatter(formatter)
             root_logger.addHandler(file_handler)
             app.logger.warning(
-                f"Could not write to {log_file}: {e}. "
-                f"Logging to {FALLBACK_LOG_FILE}"
+                f"Could not write to {log_file}: {e}. Logging to {FALLBACK_LOG_FILE}"
             )
         except Exception as fallback_error:
             app.logger.error(
@@ -125,7 +125,7 @@ def log_error_and_respond(
     message: str = "An internal error occurred",
     status_code: int = 500,
     include_error_type: bool = False,
-) -> Tuple[dict, int]:
+) -> tuple[dict, int]:
     """
     Safely log an error and return a generic response to the user.
 
@@ -172,8 +172,8 @@ def safe_error_response(
     error: Exception,
     message: str = "An internal error occurred",
     status_code: int = 500,
-    logger: Optional[logging.Logger] = None,
-) -> Tuple[dict, int]:
+    logger: logging.Logger | None = None,
+) -> tuple[dict, int]:
     """
     Create a safe error response without exposing sensitive information.
 

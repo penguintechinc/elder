@@ -2,8 +2,7 @@
 
 # flake8: noqa: E501
 
-
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List
 
 try:
@@ -21,7 +20,7 @@ from apps.worker.discovery.base import BaseDiscoveryProvider
 class AzureDiscoveryClient(BaseDiscoveryProvider):
     """Azure cloud resource discovery implementation - IaaS services."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """Initialize Azure discovery client."""
         super().__init__(config)
 
@@ -67,13 +66,13 @@ class AzureDiscoveryClient(BaseDiscoveryProvider):
         except:
             return False
 
-    def get_supported_services(self) -> List[str]:
+    def get_supported_services(self) -> list[str]:
         """Get supported Azure services."""
         return ["compute", "storage", "network"]
 
-    def discover_all(self) -> Dict[str, Any]:
+    def discover_all(self) -> dict[str, Any]:
         """Discover all Azure IaaS resources."""
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
 
         results = {
             "compute": self.discover_compute(),
@@ -88,13 +87,11 @@ class AzureDiscoveryClient(BaseDiscoveryProvider):
         return {
             **results,
             "resources_count": resources_count,
-            "discovery_time": datetime.now(timezone.utc),
-            "duration_seconds": (
-                datetime.now(timezone.utc) - start_time
-            ).total_seconds(),
+            "discovery_time": datetime.now(UTC),
+            "duration_seconds": (datetime.now(UTC) - start_time).total_seconds(),
         }
 
-    def discover_compute(self) -> List[Dict[str, Any]]:
+    def discover_compute(self) -> list[dict[str, Any]]:
         """Discover Azure VMs."""
         resources = []
         try:
@@ -123,7 +120,7 @@ class AzureDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_storage(self) -> List[Dict[str, Any]]:
+    def discover_storage(self) -> list[dict[str, Any]]:
         """Discover Azure Storage Accounts."""
         resources = []
         try:
@@ -150,7 +147,7 @@ class AzureDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_network(self) -> List[Dict[str, Any]]:
+    def discover_network(self) -> list[dict[str, Any]]:
         """Discover Azure Virtual Networks."""
         resources = []
         try:
@@ -177,10 +174,10 @@ class AzureDiscoveryClient(BaseDiscoveryProvider):
             pass
         return resources
 
-    def discover_databases(self) -> List[Dict[str, Any]]:
+    def discover_databases(self) -> list[dict[str, Any]]:
         """Not implemented - focusing on IaaS."""
         return []
 
-    def discover_serverless(self) -> List[Dict[str, Any]]:
+    def discover_serverless(self) -> list[dict[str, Any]]:
         """Not implemented - focusing on IaaS."""
         return []

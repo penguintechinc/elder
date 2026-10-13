@@ -7,8 +7,70 @@ import { queryKeys } from '@/lib/queryKeys'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 
+interface OnCallRotation {
+  id: number
+  name: string
+  description?: string
+  schedule_type: string
+  scope_type: string
+  is_active: boolean
+  organization_id?: number
+  service_id?: number
+  rotation_length_days?: number
+  rotation_start_date?: string
+  schedule_cron?: string
+  handoff_timezone?: string
+  shift_split?: boolean
+}
+
+interface CurrentOnCall {
+  identity_name?: string
+  identity_email?: string
+  shift_end: string
+  is_override?: boolean
+}
+
+interface Participant {
+  id: number
+  identity_name: string
+  order_index: number
+  is_active: boolean
+}
+
+interface ParticipantsResponse {
+  items: Participant[]
+}
+
+interface Shift {
+  id: number
+  identity_name: string
+  shift_start: string
+  shift_end: string
+  is_override?: boolean
+  alerts_received: number
+  incidents_created: number
+}
+
+interface HistoryResponse {
+  items: Shift[]
+}
+
+interface EscalationPolicy {
+  id: number
+  level: number
+  escalation_type: string
+  identity_name?: string
+  group_id?: number
+  escalation_delay_minutes: number
+  notification_channels?: string[]
+}
+
+interface EscalationResponse {
+  items: EscalationPolicy[]
+}
+
 interface OnCallRotationDetailModalProps {
-  rotation: any
+  rotation: OnCallRotation
   onClose: () => void
   onEdit: () => void
 }
@@ -24,22 +86,22 @@ export default function OnCallRotationDetailModal({
   // Fetch rotation details, participants, history, escalations
   const { data: participants } = useQuery({
     queryKey: queryKeys.onCall.participants(rotation.id),
-    queryFn: () => api.getOnCallParticipants(rotation.id),
+    queryFn: () => api.getOnCallParticipants(rotation.id) as Promise<ParticipantsResponse>,
   })
 
   const { data: history } = useQuery({
     queryKey: queryKeys.onCall.history(rotation.id),
-    queryFn: () => api.getOnCallHistory(rotation.id),
+    queryFn: () => api.getOnCallHistory(rotation.id) as Promise<HistoryResponse>,
   })
 
   const { data: escalationPolicies } = useQuery({
     queryKey: queryKeys.onCall.escalations(rotation.id),
-    queryFn: () => api.getEscalationPolicies({ rotation_id: rotation.id }),
+    queryFn: () => api.getEscalationPolicies({ rotation_id: rotation.id }) as Promise<EscalationResponse>,
   })
 
   const { data: currentOnCall } = useQuery({
     queryKey: queryKeys.onCall.current(rotation.scope_type, rotation.scope_type === 'organization' ? rotation.organization_id : rotation.service_id),
-    queryFn: () => api.getCurrentOnCall(rotation.scope_type, rotation.scope_type === 'organization' ? rotation.organization_id : rotation.service_id),
+    queryFn: () => api.getCurrentOnCall(rotation.scope_type, rotation.scope_type === 'organization' ? rotation.organization_id ?? 0 : rotation.service_id ?? 0) as Promise<CurrentOnCall>,
     enabled: !!rotation.organization_id || !!rotation.service_id,
   })
 
@@ -145,7 +207,13 @@ export default function OnCallRotationDetailModal({
   )
 }
 
-function DetailsTab({ rotation, currentOnCall, participants }: any) {
+interface DetailsTabProps {
+  rotation: OnCallRotation
+  currentOnCall?: CurrentOnCall
+  participants?: ParticipantsResponse
+}
+
+function DetailsTab({ rotation, currentOnCall, participants }: DetailsTabProps) {
   return (
     <div className="space-y-6">
       {/* Current On-Call Card */}
@@ -205,7 +273,7 @@ function DetailsTab({ rotation, currentOnCall, participants }: any) {
         <h3 className="font-medium text-white mb-3">Participants</h3>
         {participants?.items && participants.items.length > 0 ? (
           <div className="space-y-2">
-            {participants.items.map((participant: any) => (
+            {participants.items.map((participant: Participant) => (
               <div key={participant.id} className="p-3 bg-slate-800/50 rounded border border-slate-700 flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-white">{participant.identity_name}</p>
@@ -227,7 +295,11 @@ function DetailsTab({ rotation, currentOnCall, participants }: any) {
   )
 }
 
-function ScheduleTab({ rotation }: any) {
+interface ScheduleTabProps {
+  rotation: OnCallRotation
+}
+
+function ScheduleTab({ rotation }: ScheduleTabProps) {
   return (
     <div className="space-y-4">
       <div className="p-4 bg-slate-800/50 rounded border border-slate-700">
@@ -280,14 +352,18 @@ function ScheduleTab({ rotation }: any) {
   )
 }
 
-function HistoryTab({ history }: any) {
+interface HistoryTabProps {
+  history?: HistoryResponse
+}
+
+function HistoryTab({ history }: HistoryTabProps) {
   if (!history?.items || history.items.length === 0) {
     return <p className="text-sm text-slate-400">No shift history yet</p>
   }
 
   return (
     <div className="space-y-2">
-      {history.items.map((shift: any) => (
+      {history.items.map((shift: Shift) => (
         <div key={shift.id} className="p-3 bg-slate-800/50 rounded border border-slate-700">
           <div className="flex items-center justify-between mb-1">
             <p className="text-sm font-medium text-white">{shift.identity_name}</p>
@@ -309,14 +385,20 @@ function HistoryTab({ history }: any) {
   )
 }
 
-function EscalationsTab({ escalationPolicies, onDelete, isDeleting }: { escalationPolicies: any; onDelete: (id: number) => void; isDeleting: boolean }) {
+interface EscalationsTabProps {
+  escalationPolicies?: EscalationResponse
+  onDelete: (id: number) => void
+  isDeleting: boolean
+}
+
+function EscalationsTab({ escalationPolicies, onDelete, isDeleting }: EscalationsTabProps) {
   if (!escalationPolicies?.items || escalationPolicies.items.length === 0) {
     return <p className="text-sm text-slate-400">No escalation policies configured</p>
   }
 
   return (
     <div className="space-y-3">
-      {escalationPolicies.items.map((policy: any) => (
+      {escalationPolicies.items.map((policy: EscalationPolicy) => (
         <div key={policy.id} className="p-4 bg-slate-800/50 rounded border border-slate-700">
           <div className="flex items-center justify-between mb-2">
             <div>

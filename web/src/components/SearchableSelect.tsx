@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useId } from 'react'
 
 interface Option {
   value: string | number
@@ -14,6 +14,7 @@ interface SearchableSelectProps {
   isLoading?: boolean
   disabled?: boolean
   className?: string
+  ariaLabel?: string
 }
 
 export default function SearchableSelect({
@@ -25,12 +26,14 @@ export default function SearchableSelect({
   isLoading = false,
   disabled = false,
   className = '',
+  ariaLabel,
 }: SearchableSelectProps) {
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listboxId = useId()
   const debounceRef = useRef<ReturnType<typeof setTimeout>>()
 
   // Find selected option label
@@ -119,6 +122,11 @@ export default function SearchableSelect({
       <input
         ref={inputRef}
         type="text"
+        role="combobox"
+        aria-label={ariaLabel}
+        aria-expanded={isOpen}
+        aria-controls={listboxId}
+        aria-autocomplete="list"
         value={isOpen ? query : selectedOption?.label || ''}
         onChange={(e) => handleQueryChange(e.target.value)}
         onFocus={() => {
@@ -138,7 +146,11 @@ export default function SearchableSelect({
       </div>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-600 bg-slate-700 py-1 shadow-lg">
+        <div
+          id={listboxId}
+          role="listbox"
+          className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-slate-600 bg-slate-700 py-1 shadow-lg"
+        >
           {isLoading ? (
             <div className="px-3 py-2 text-sm text-slate-400">Loading...</div>
           ) : filteredOptions.length === 0 ? (
@@ -150,6 +162,8 @@ export default function SearchableSelect({
               <button
                 key={`${option.value}`}
                 type="button"
+                role="option"
+                aria-selected={String(option.value) === String(value)}
                 onClick={() => handleSelect(option)}
                 className={`w-full px-3 py-2 text-left text-sm transition-colors ${
                   index === highlightedIndex

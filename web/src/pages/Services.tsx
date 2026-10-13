@@ -14,6 +14,41 @@ import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 import OnCallBadge from '@/components/OnCallBadge'
 
+interface Organization {
+  id: number
+  name: string
+}
+
+interface Service {
+  id: number
+  name: string
+  description?: string
+  organization_id: number
+  language?: string
+  deployment_method?: string
+  status?: string
+  port?: number
+  is_public?: boolean
+  domains?: string[]
+  paths?: string[]
+}
+
+interface SBOMSchedule {
+  id: number
+  schedule_cron: string
+  is_active: boolean
+  next_run_at?: string
+  last_run_at?: string
+}
+
+interface SBOMScan {
+  id: number
+  status: string
+  components_found?: number
+  created_at: string
+}
+
+
 const SERVICE_STATUSES = [
   { value: 'active', label: 'Active' },
   { value: 'inactive', label: 'Inactive' },
@@ -52,8 +87,8 @@ export default function Services() {
   const [deploymentFilter, setDeploymentFilter] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingService, setEditingService] = useState<any>(null)
-  const [viewingService, setViewingService] = useState<any>(null)
+  const [editingService, setEditingService] = useState<Service | null>(null)
+  const [viewingService, setViewingService] = useState<Service | null>(null)
   const queryClient = useQueryClient()
 
   const { data: organizations } = useQuery({
@@ -73,7 +108,7 @@ export default function Services() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createService(data),
+    mutationFn: (data: Record<string, unknown>) => api.createService(data as Parameters<typeof api.createService>[0]),
     onSuccess: async () => {
       await invalidateCache.services(queryClient)
       toast.success('Service created successfully')
@@ -85,7 +120,7 @@ export default function Services() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => api.updateService(editingService.id, data),
+    mutationFn: (data: Record<string, unknown>) => api.updateService(editingService!.id, data as Parameters<typeof api.updateService>[1]),
     onSuccess: async () => {
       await invalidateCache.services(queryClient)
       toast.success('Service updated successfully')
@@ -132,10 +167,13 @@ export default function Services() {
   }
 
   // Build organization options for form
-  const organizationOptions = organizations?.items?.map((org: any) => ({
-    value: org.id.toString(),
-    label: org.name,
-  })) || []
+  const organizationOptions = useMemo(
+    () => organizations?.items?.map((org: Organization) => ({
+      value: org.id.toString(),
+      label: org.name,
+    })) || [],
+    [organizations?.items]
+  )
 
   // Form fields for create modal
   const serviceFields: FormField[] = useMemo(() => [
@@ -296,18 +334,35 @@ export default function Services() {
     ]
   }, [editingService, organizationOptions])
 
-  const handleCreateSubmit = (data: Record<string, any>) => {
-    createMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-    })
+  const handleCreateSubmit = (data: Record<string, unknown>) => {
+    const serviceData: Parameters<typeof api.createService>[0] = {
+      name: data.name as string,
+      organization_id: parseInt(data.organization_id as string),
+      description: data.description as string | undefined,
+      language: data.language as string | undefined,
+      deployment_method: data.deployment_method as string | undefined,
+      is_public: data.is_public as boolean | undefined,
+      domains: data.domains as string[] | undefined,
+      paths: data.paths as string[] | undefined,
+      port: data.port ? parseInt(data.port as string) : undefined,
+      status: data.status as string | undefined,
+    }
+    createMutation.mutate(serviceData)
   }
 
-  const handleEditSubmit = (data: Record<string, any>) => {
-    updateMutation.mutate({
-      ...data,
-      organization_id: parseInt(data.organization_id),
-    })
+  const handleEditSubmit = (data: Record<string, unknown>) => {
+    const updateData: Parameters<typeof api.updateService>[1] = {
+      name: data.name as string | undefined,
+      description: data.description as string | undefined,
+      language: data.language as string | undefined,
+      deployment_method: data.deployment_method as string | undefined,
+      is_public: data.is_public as boolean | undefined,
+      domains: data.domains as string[] | undefined,
+      paths: data.paths as string[] | undefined,
+      port: data.port ? parseInt(data.port as string) : undefined,
+      status: data.status as string | undefined,
+    }
+    updateMutation.mutate(updateData)
   }
 
   return (
@@ -346,7 +401,7 @@ export default function Services() {
           className="w-48"
         >
           <option value="">All Organizations</option>
-          {organizations?.items?.map((org: any) => (
+          {organizations?.items?.map((org: Organization) => (
             <option key={org.id} value={org.id}>
               {org.name}
             </option>
@@ -407,7 +462,7 @@ export default function Services() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((service: any) => (
+          {data?.items?.map((service: Service) => (
             <Card
               key={service.id}
               className="cursor-pointer hover:border-primary-500/50 transition-colors"
@@ -532,7 +587,7 @@ export default function Services() {
 }
 
 interface ServiceDetailsModalProps {
-  service: any
+  service: Service
   onClose: () => void
   onEdit: () => void
 }
@@ -601,7 +656,7 @@ function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalPr
   )
 }
 
-function ServiceDetailsTab({ service }: { service: any }) {
+function ServiceDetailsTab({ service }: { service: Service }) {
   return (
     <div className="space-y-4">
       {service.description && (
@@ -663,7 +718,7 @@ function ServiceDetailsTab({ service }: { service: any }) {
   )
 }
 
-function ServiceSchedulesTab({ service }: { service: any }) {
+function ServiceSchedulesTab({ service }: { service: Service }) {
   const [showCreateSchedule, setShowCreateSchedule] = useState(false)
   const queryClient = useQueryClient()
 
@@ -687,11 +742,11 @@ function ServiceSchedulesTab({ service }: { service: any }) {
   })
 
   const createScheduleMutation = useMutation({
-    mutationFn: (data: any) => api.createSBOMSchedule({
+    mutationFn: (data: Record<string, unknown>) => api.createSBOMSchedule({
       parent_type: 'service',
       parent_id: service.id,
-      schedule_cron: data.schedule_cron,
-      is_active: data.is_active !== false,
+      schedule_cron: data.schedule_cron as string,
+      is_active: (data.is_active as boolean) !== false,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sbom-schedules', 'service', service.id] })
@@ -768,7 +823,7 @@ function ServiceSchedulesTab({ service }: { service: any }) {
       {scans?.items && scans.items.length > 0 && (
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-slate-400">Recent Scans</h4>
-          {scans.items.map((scan: any) => (
+          {scans.items.map((scan: SBOMScan) => (
             <div key={scan.id} className="flex items-center justify-between p-2 bg-slate-800/30 rounded text-sm">
               <div className="flex items-center gap-2">
                 <span className={`w-2 h-2 rounded-full ${
@@ -809,7 +864,7 @@ function ServiceSchedulesTab({ service }: { service: any }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {schedules.items.map((schedule: any) => (
+            {schedules.items.map((schedule: SBOMSchedule) => (
               <div key={schedule.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded border border-slate-700">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">

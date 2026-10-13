@@ -2,16 +2,22 @@
 
 # flake8: noqa: E501
 
-
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth.decorators import get_current_user, login_required, role_required
-from apps.api.models.dataclasses import IdentityDTO, PaginatedResponse, from_pydal_rows
+from apps.api.models.dataclasses import (
+    IdentityAdminDTO,
+    IdentityDTO,
+    PaginatedResponse,
+    from_pydal_rows,
+)
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.tenant_scoping import get_tenant_scoped
 
 bp = Blueprint("users", __name__)
 
@@ -22,6 +28,7 @@ bp = Blueprint("users", __name__)
 async def list_users():
     """List all users (admin only)."""
     db = current_app.db
+    user = get_current_user()
 
     # Get pagination parameters
     page = request.args.get("page", 1, type=int)
@@ -29,15 +36,22 @@ async def list_users():
 
     # Validate pagination
     if page < 1:
-        return jsonify({"error": "Page must be >= 1"}), 400
+        return ApiResponse.bad_request("Page must be >= 1")
     if per_page < 1 or per_page > 1000:
-        return jsonify({"error": "Per page must be between 1 and 1000"}), 400
+        return ApiResponse.bad_request("Per page must be between 1 and 1000")
 
     # Calculate pagination
     offset = (page - 1) * per_page
 
-    # Build query outside the threadpool function (db is thread-local)
+    # Build query outside the threadpool function (db is thread-local).
+    # gh-237: role_required("admin") allows a per-tenant portal_role=="admin"
+    # user, not just global superusers -- without this filter, any tenant
+    # admin could list every tenant's users. Superusers (who bypass the
+    # decorator's role check) see everything, matching their existing
+    # global-admin bypass elsewhere.
     query = db.identities.id > 0
+    if not user.is_superuser:
+        query &= db.identities.tenant_id == user.tenant_id
 
     # Execute database queries
     def get_users():
@@ -83,16 +97,16 @@ async def create_user():
     """Create a new user (admin only)."""
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Validate required fields
     if "username" not in data or not data["username"].strip():
-        return jsonify({"error": "Username is required"}), 400
+        return ApiResponse.bad_request("Username is required")
 
     if "password" not in data or not data["password"].strip():
-        return jsonify({"error": "Password is required"}), 400
+        return ApiResponse.bad_request("Password is required")
 
     # Prepare insert data
     username = data["username"].strip()
@@ -143,20 +157,22 @@ async def create_user():
             default_tenant = db(db.tenants.id > 0).select(limitby=(0, 1)).first()
             tenant_id = default_tenant.id if default_tenant else None
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         user_id = db.identities.insert(
             created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
         )
         db.commit()
-        return db.identities[user_id], None, None
+        user_row = db.identities[user_id]  # tenant-scope-exempt
+        return (user_row, None, None)
 
     user_row, error, status = await run_in_threadpool(create)
 
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTO
-    user_dto = IdentityDTO(
+    # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
+    # admin-only response includes is_superuser/portal_role.
+    user_dto = IdentityAdminDTO(
         id=user_row.id,
         identity_type=user_row.identity_type,
         username=user_row.username,
@@ -183,23 +199,33 @@ async def create_user():
 async def update_user(user_id: int):
     """Update a user (admin only)."""
     db = current_app.db
+    caller = get_current_user()
+    caller_tenant_id = None if caller.is_superuser else caller.tenant_id
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body is required"}), 400
+        return ApiResponse.bad_request("Request body is required")
 
     # Prepare update data
     update_data = {}
 
+    # Allowlist of client-updatable fields. `is_superuser` is intentionally
+    # NOT in this base list -- regression: privilege escalation. A
+    # tenant-scoped "admin" (role_required("admin") allows portal_role ==
+    # "admin", not just global superusers -- see the gh-237 comment above)
+    # could otherwise set is_superuser=true on themselves or another user in
+    # their own tenant and escalate to a global superuser. Only append it
+    # when the caller is already a verified superuser.
     allowed_fields = [
         "email",
         "full_name",
         "organization_id",
         "portal_role",
         "is_active",
-        "is_superuser",
         "mfa_enabled",
     ]
+    if caller.is_superuser:
+        allowed_fields.append("is_superuser")
 
     for field in allowed_fields:
         if field in data:
@@ -210,24 +236,31 @@ async def update_user(user_id: int):
         update_data["password_hash"] = generate_password_hash(data["password"])
 
     if not update_data:
-        return jsonify({"error": "No valid fields to update"}), 400
+        return ApiResponse.bad_request("No valid fields to update")
 
-    # Update user
+    # Update user. gh-237: role_required("admin") allows a per-tenant
+    # portal_role=="admin" user, not just global superusers -- without this
+    # check, any tenant admin could update (including granting is_active/
+    # portal_role/mfa_enabled on) another tenant's user by guessing its id.
     def update():
-        user = db.identities[user_id]
+        if caller_tenant_id is not None:
+            user = get_tenant_scoped(db, db.identities, user_id, caller_tenant_id)
+        else:
+            user = db.identities[user_id]  # tenant-scope-exempt
         if not user:
             return None, "User not found", 404
 
         db(db.identities.id == user_id).update(**update_data)
-        return db.identities[user_id], None, None
+        return db.identities[user_id], None, None  # tenant-scope-exempt: verified above
 
     user_row, error, status = await run_in_threadpool(update)
 
     if error:
         return jsonify({"error": error}), status
 
-    # Convert to DTO
-    user_dto = IdentityDTO(
+    # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
+    # admin-only response includes is_superuser/portal_role.
+    user_dto = IdentityAdminDTO(
         id=user_row.id,
         identity_type=user_row.identity_type,
         username=user_row.username,
@@ -255,17 +288,24 @@ async def delete_user(user_id: int):
     """Delete a user (admin only)."""
     db = current_app.db
     current_user = get_current_user()
+    caller_tenant_id = None if current_user.is_superuser else current_user.tenant_id
 
     # Prevent self-deletion
     if current_user.id == user_id:
-        return jsonify({"error": "Cannot delete your own user account"}), 400
+        return ApiResponse.bad_request("Cannot delete your own user account")
 
+    # gh-237: role_required("admin") allows a per-tenant portal_role=="admin"
+    # user, not just global superusers -- without this check, any tenant
+    # admin could delete another tenant's user by guessing its id.
     def delete():
-        user = db.identities[user_id]
+        if caller_tenant_id is not None:
+            user = get_tenant_scoped(db, db.identities, user_id, caller_tenant_id)
+        else:
+            user = db.identities[user_id]  # tenant-scope-exempt
         if not user:
             return None, "User not found", 404
 
-        del db.identities[user_id]
+        del db.identities[user_id]  # tenant-scope-exempt: verified above
         db.commit()
         return user, None, None
 

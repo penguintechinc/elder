@@ -1,0 +1,266 @@
+# Temporary DigitalOcean-as-beta profile while dal2 is offline; DESTROY+FRESH
+# (beta semantics), not upgrade-in-place. Reverts to values-beta.yaml (dal2)
+# when dal2 returns.
+
+namespace: elder
+
+# Global settings for DO beta
+global:
+  imageRegistry: ""
+  imagePullSecrets:
+    - name: ghcr-pull-secret
+
+# OpenTelemetry - SigNoz lives in the `signoz` namespace on the DO cluster,
+# elder runs in `elder` ns, so the collector must be addressed with the
+# cross-namespace <svc>.<ns> form (bare "signoz-otel-collector" as used in
+# values-beta.yaml only resolves within the same namespace on dal2).
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector.signoz:4318"
+  protocol: "http/protobuf"
+
+# PostgreSQL - 1 replica (RWO PVC cannot be multi-attached), same SHA-pinned
+# image as values-beta.yaml
+postgres:
+  enabled: true
+  replicaCount: 1
+  image:
+    # pgvector required: Elder supports ONLY Postgres+pgvector (no MySQL/MariaDB/SQLite)
+    repository: pgvector/pgvector
+    tag: pg17-bookworm@sha256:dd467f03ca5c5581222490e5217e48a262864ccb659be559f8491bbafdc97da0
+    pullPolicy: IfNotPresent
+  env:
+    POSTGRES_DB: elder
+    POSTGRES_USER: elder
+    # Real value supplied at deploy time — either `--set postgres.env.POSTGRES_PASSWORD=...`
+    # or a pre-created Secret patched in post-render. This chart has no
+    # secret.yaml template (matches values-beta.yaml: plaintext env value in
+    # the Deployment spec) — do not invent new secret plumbing here.
+    POSTGRES_PASSWORD: "CHANGE_AT_DEPLOY_POSTGRES_PASSWORD"
+    POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    PGDATA: /var/lib/postgresql/data/pgdata
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: "do-block-storage"
+
+# Redis - 1 replica (RWO PVC cannot be multi-attached), same SHA-pinned
+# image as values-beta.yaml
+redis:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: redis
+    tag: 7-bookworm@sha256:24ea35ee039d7345bef2377611e3b1a615231746de4cfea74c1414575ee56167
+    pullPolicy: IfNotPresent
+  env:
+    REDIS_PASSWORD: "CHANGE_AT_DEPLOY_REDIS_PASSWORD"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: "do-block-storage"
+
+# Elder Web UI - 1 replica on DO beta (no HA requirement for this temporary profile)
+# Image tag is the CI-built -beta tag for the remediated code at branch time;
+# override with `--set web.image.tag=...` if a newer -beta build exists.
+web:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder-web
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  buildArgs:
+    VITE_API_URL: ""
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  autoscaling:
+    enabled: false
+
+# Elder Flask API - 1 replica on DO beta
+api:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder-api
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    FLASK_ENV: production
+    SECRET_KEY: "CHANGE_AT_DEPLOY_SECRET_KEY"
+    SITE_URL: "https://elderrms.app"
+    LOG_LEVEL: INFO
+    RELEASE_MODE: "false"
+    GRPC_REQUIRE_LICENSE: "true"
+    LICENSE_KEY: "CHANGE_AT_DEPLOY_LICENSE_KEY"
+    LICENSE_SERVER_URL: "https://license.penguintech.io"
+    DB_HOST: elder-postgres
+    DB_PASSWORD: "CHANGE_AT_DEPLOY_POSTGRES_PASSWORD"
+    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
+    REDIS_HOST: elder-redis
+    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  autoscaling:
+    enabled: false
+
+# Scanner Service - 1 replica on DO beta
+scanner:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder-scanner
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    SCANNER_POLL_INTERVAL: "300"
+    LOG_LEVEL: INFO
+    ELDER_API_URL: "http://elder-api:5000"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  screenshotStorage:
+    sizeLimit: "2Gi"
+
+# Worker Service - 1 replica on DO beta
+worker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder-worker
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    LOG_LEVEL: INFO
+    LOG_FORMAT: json
+    SYNC_ON_STARTUP: "true"
+    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "10"
+    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  credentialsSecret:
+    name: ""
+
+# Flows Invoker Service - 1 replica on DO beta (dedicated isolated consumer,
+# no HA fan-out needed at this stage)
+flows-invoker:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: ghcr.io/penguintechinc/elder-flows-invoker
+    tag: 4.0.0.1783820850-beta
+    pullPolicy: Always
+  env:
+    LOG_LEVEL: INFO
+    DATABASE_URL: "postgresql://elder:CHANGE_AT_DEPLOY_POSTGRES_PASSWORD@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
+    REDIS_URL: "redis://:CHANGE_AT_DEPLOY_REDIS_PASSWORD@elder-redis:6379/0"
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
+
+# Ingress - Disabled (migrated to Cilium Gateway API)
+ingress:
+  enabled: false
+
+# Cilium Gateway API - DO cluster's Gateway lives in the `cilium-gateway`
+# namespace under the `penguintech-beta` Gateway resource (not dal2's
+# `shared`/`gateway`) — see templates/httproute.yaml parentRef parameterization.
+gateway:
+  enabled: true
+  host: elderrms.app
+  parentRef:
+    name: penguintech-beta
+    namespace: cilium-gateway
+  tls:
+    secretName: penguintech-cloud-wildcard-tls
+  timeouts:
+    request: "300s"
+
+# Service Account
+serviceAccount:
+  create: false
+  name: ""
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+
+# Security Context - Strict, matches values-beta.yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Cluster security baseline — Cilium CNI is live on the DO cluster, so all
+# three are ON, same as values-beta.yaml.
+networkPolicy:
+  enabled: true
+  # Gateway lives in `cilium-gateway` on this cluster, not `gateway` — must
+  # match gateway.parentRef.namespace above or the Cilium Gateway's ingress
+  # to web/api is blocked by the default-deny baseline.
+  gatewayNamespace: "cilium-gateway"
+
+tetragon:
+  enabled: true
+
+# NOTE (k8s-ops): this is a fresh DO cluster/namespace for this temporary
+# profile (destroy+fresh, beta semantics) — unlike dal2's out-of-band
+# pre-existing "elder" namespace, Helm should own it outright here.
+namespaceManagement:
+  create: true
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

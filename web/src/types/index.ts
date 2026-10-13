@@ -4,7 +4,7 @@ export interface Organization {
   description?: string
   organization_type?: string
   parent_id?: number
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   village_id?: string
   village_segment?: string
   tenant_id?: number
@@ -12,7 +12,48 @@ export interface Organization {
   updated_at: string
 }
 
-export type OrganizationType = 'department' | 'organization' | 'team' | 'collection' | 'other'
+export type OrganizationType = 'department' | 'organization' | 'team' | 'collection' | 'customer_company' | 'other'
+
+export interface EntityLocation {
+  city?: string
+  state?: string
+  country?: string
+  latitude?: number
+  longitude?: number
+}
+
+// Flat metadata bag written by discovery providers (K8s, cloud, etc). Known
+// structural fields are typed for convenience; anything else (including
+// out-of-band writes like a geo-enrichment agent's `location`) still flows
+// through the index signature.
+export interface EntityMetadata {
+  location?: EntityLocation
+  resource_id?: string
+  resource_type?: string
+  region?: string
+  discovered_at?: string
+  capacity_cpu?: string
+  capacity_memory?: string
+  kubelet_version?: string
+  os_image?: string
+  conditions?: string[]
+  phase?: string
+  namespace?: string
+  node_name?: string
+  pod_ip?: string
+  containers_count?: number
+  replicas?: number
+  available_replicas?: number
+  ready_replicas?: number
+  images?: string[]
+  selector?: Record<string, string>
+  [key: string]: unknown
+}
+
+// K8s labels / cloud provider tags come back as a {key: value} dict;
+// user-applied classification tags (via CreateEntityRequest) are a legacy
+// list[str]. Callers should normalize via lib/entityTags before rendering.
+export type EntityTags = Record<string, string> | string[]
 
 export interface Entity {
   id: number
@@ -20,9 +61,13 @@ export interface Entity {
   name: string
   description?: string
   type: EntityType
+  sub_type?: string
   organization_id: number
+  parent_id?: number
   owner_identity_id?: number
-  metadata?: Record<string, any>
+  metadata?: EntityMetadata
+  tags?: EntityTags
+  is_active?: boolean
   village_id?: string
   created_at: string
   updated_at: string
@@ -38,25 +83,67 @@ export type EntityType =
   | 'user'
   | 'security_issue'
 
+// Matches apps/api/models/dataclasses.py DependencyDTO exactly — the API
+// returns polymorphic source/target refs only, it never joins/enriches the
+// referenced resource (no source_entity/target_entity name fields).
 export interface Dependency {
   id: number
+  tenant_id: number
   source_type: string
   source_id: number
   target_type: string
   target_id: number
   dependency_type: DependencyType
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
   created_at: string
+  updated_at: string
+  village_id?: string
 }
 
 export type DependencyType = 'calls' | 'related' | 'affects' | 'depends' | 'manages' | 'other'
 
+// Matches apps/api/modules/issues/models/issue.py IssueType enum — the DB
+// column is Enum(IssueType) and serializes to UPPERCASE over the wire (e.g. "SUPPORT").
+// Frontend normalizes to lowercase for comparison against these type constants.
+export type IssueType =
+  | 'operations'
+  | 'code'
+  | 'config'
+  | 'security'
+  | 'architecture'
+  | 'process'
+  | 'approval'
+  | 'feature'
+  | 'bug'
+  | 'support'
+  | 'other'
+
+// Disambiguates the polymorphic Issue.assignee_id: 'identity' resolves
+// against identities.id, 'org_unit' against organizations.id. Matches
+// apps/api/modules/issues/routes/issues.py::_resolve_assignee_type.
+export type IssueAssigneeType = 'identity' | 'org_unit'
+
+// Matches apps/api/models/identity.py IdentityType enum (the DB column).
+// NOTE: apps/api/models/pydantic/identity.py's CreateIdentityRequest
+// currently restricts identity_type to Literal["human","service_account"]
+// only, rejecting every other value below with a 422 — a pre-existing
+// backend gap (see this plan's Global Constraints), not fixed here.
 export interface Identity {
   id: number
   username: string
   email: string
   full_name: string
-  identity_type: 'human' | 'service_account'
+  identity_type:
+    | 'human'
+    | 'service_account'
+    | 'employee'
+    | 'vendor'
+    | 'bot'
+    | 'serviceAccount'
+    | 'integration'
+    | 'otherHuman'
+    | 'other'
+    | 'customer_contact'
   auth_provider: 'local' | 'saml' | 'oauth2' | 'ldap'
   is_active: boolean
   is_superuser: boolean
@@ -78,14 +165,37 @@ export interface Issue {
   description?: string
   status: IssueStatus
   priority: IssuePriority
-  organization_id?: number
-  assigned_to?: number
-  created_by: number
-  village_id?: string
-  tenant_id?: number
+  issue_type: IssueType
+  reporter_id?: number
+  assignee_id?: number
+  assignee_type?: IssueAssigneeType
+  resource_type?: string
+  resource_id?: number
+  is_incident?: number | boolean
+  channel?: string
+  category?: string
+  requester_contact_id?: number
+  hd_sla_policy_id?: number
+  sla_breach_at?: string
+  first_response_at?: string
+  resolved_at?: string
+  parent_issue_id?: number
+  closed_at?: string
   created_at: string
   updated_at: string
-  closed_at?: string
+  // Legacy/enrichment-only fields: NOT part of apps/api/models/dataclasses.py
+  // IssueDTO (the real GET /issues and GET /issues/:id response shape,
+  // confirmed by reading the backend directly). Kept optional so existing
+  // call sites that populate them via a *separate* fetch (labels,
+  // entity_links) or that were already reading dead fields (organization_id,
+  // village_id, created_by, tenant_id, assignee) keep compiling. Do not add
+  // new reads of these without confirming the backend actually returns them
+  // for that specific endpoint.
+  organization_id?: number
+  assigned_to?: number
+  created_by?: number
+  village_id?: string
+  tenant_id?: number
   labels?: IssueLabel[]
   entity_links?: Entity[]
   assignee?: Identity
@@ -161,7 +271,7 @@ export interface Tenant {
   domain?: string
   subscription_tier: 'community' | 'professional' | 'enterprise'
   license_key?: string
-  settings?: Record<string, any>
+  settings?: Record<string, unknown>
   feature_flags?: Record<string, boolean>
   data_retention_days: number
   storage_quota_gb: number
@@ -233,7 +343,7 @@ export interface AuditLog {
   action: string
   resource_type: string
   resource_id?: number
-  details?: Record<string, any>
+  details?: Record<string, unknown>
   success: boolean
   ip_address?: string
   user_agent?: string

@@ -10,6 +10,11 @@ import Select from '@/components/Select'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 // Types
+interface Organization {
+  id: number
+  name: string
+}
+
 interface IpamPrefix {
   id: number
   prefix: string
@@ -127,7 +132,7 @@ export default function IPAM() {
 
   // Create mutations
   const createPrefixMutation = useMutation({
-    mutationFn: (data: any) => api.createIpamPrefix(data),
+    mutationFn: (data: unknown) => api.createIpamPrefix(data as Parameters<typeof api.createIpamPrefix>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'], refetchType: 'all' })
       setShowCreatePrefixModal(false)
@@ -137,7 +142,7 @@ export default function IPAM() {
   })
 
   const createAddressMutation = useMutation({
-    mutationFn: (data: any) => api.createIpamAddress(data),
+    mutationFn: (data: unknown) => api.createIpamAddress(data as Parameters<typeof api.createIpamAddress>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-addresses'], refetchType: 'all' })
       setShowCreateAddressModal(false)
@@ -147,7 +152,7 @@ export default function IPAM() {
   })
 
   const createVlanMutation = useMutation({
-    mutationFn: (data: any) => api.createIpamVlan(data),
+    mutationFn: (data: unknown) => api.createIpamVlan(data as Parameters<typeof api.createIpamVlan>[0]),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-vlans'], refetchType: 'all' })
       setShowCreateVlanModal(false)
@@ -158,7 +163,7 @@ export default function IPAM() {
 
   // Update mutations
   const updatePrefixMutation = useMutation({
-    mutationFn: (data: any) => api.updateIpamPrefix(editingPrefix!.id, data),
+    mutationFn: (data: unknown) => api.updateIpamPrefix(editingPrefix!.id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-prefixes'], refetchType: 'all' })
       setEditingPrefix(null)
@@ -168,7 +173,7 @@ export default function IPAM() {
   })
 
   const updateAddressMutation = useMutation({
-    mutationFn: (data: any) => api.updateIpamAddress(editingAddress!.id, data),
+    mutationFn: (data: unknown) => api.updateIpamAddress(editingAddress!.id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-addresses'], refetchType: 'all' })
       setEditingAddress(null)
@@ -178,7 +183,7 @@ export default function IPAM() {
   })
 
   const updateVlanMutation = useMutation({
-    mutationFn: (data: any) => api.updateIpamVlan(editingVlan!.id, data),
+    mutationFn: (data: unknown) => api.updateIpamVlan(editingVlan!.id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['ipam-vlans'], refetchType: 'all' })
       setEditingVlan(null)
@@ -225,11 +230,11 @@ export default function IPAM() {
 
   // Organization options for forms
   const organizationOptions = useMemo(() =>
-    organizations?.items?.map((org: any) => ({
+    organizations?.items?.map((org: Organization) => ({
       value: org.id,
       label: org.name,
     })) || [],
-    [organizations]
+    [organizations?.items]
   )
 
   // Form field configurations using useMemo
@@ -500,7 +505,7 @@ export default function IPAM() {
           className="max-w-xs"
         >
           <option value="">All Organizations</option>
-          {organizations?.items?.map((org: any) => (
+          {organizations?.items?.map((org: Organization) => (
             <option key={org.id} value={org.id}>{org.name}</option>
           ))}
         </Select>
@@ -559,7 +564,7 @@ export default function IPAM() {
           onClose={() => setShowCreatePrefixModal(false)}
           title="Create Prefix"
           fields={createPrefixFields}
-          onSubmit={(data) => createPrefixMutation.mutate(data)}
+          onSubmit={(data) => createPrefixMutation.mutate(data as unknown)}
           submitButtonText="Create"
         />
       )}
@@ -570,7 +575,7 @@ export default function IPAM() {
           onClose={() => setShowCreateAddressModal(false)}
           title="Create Address"
           fields={createAddressFields}
-          onSubmit={(data) => createAddressMutation.mutate(data)}
+          onSubmit={(data) => createAddressMutation.mutate(data as unknown)}
           submitButtonText="Create"
         />
       )}
@@ -581,7 +586,7 @@ export default function IPAM() {
           onClose={() => setShowCreateVlanModal(false)}
           title="Create VLAN"
           fields={createVlanFields}
-          onSubmit={(data) => createVlanMutation.mutate(data)}
+          onSubmit={(data) => createVlanMutation.mutate(data as unknown)}
           submitButtonText="Create"
         />
       )}
@@ -592,7 +597,7 @@ export default function IPAM() {
           onClose={() => setEditingPrefix(null)}
           title="Edit Prefix"
           fields={editPrefixFields}
-          onSubmit={(data) => updatePrefixMutation.mutate(data)}
+          onSubmit={(data) => updatePrefixMutation.mutate(data as unknown)}
           submitButtonText="Update"
         />
       )}
@@ -603,7 +608,7 @@ export default function IPAM() {
           onClose={() => setEditingAddress(null)}
           title="Edit Address"
           fields={editAddressFields}
-          onSubmit={(data) => updateAddressMutation.mutate(data)}
+          onSubmit={(data) => updateAddressMutation.mutate(data as unknown)}
           submitButtonText="Update"
         />
       )}
@@ -614,7 +619,7 @@ export default function IPAM() {
           onClose={() => setEditingVlan(null)}
           title="Edit VLAN"
           fields={editVlanFields}
-          onSubmit={(data) => updateVlanMutation.mutate(data)}
+          onSubmit={(data) => updateVlanMutation.mutate(data as unknown)}
           submitButtonText="Update"
         />
       )}
@@ -624,7 +629,7 @@ export default function IPAM() {
 
 // Prefixes Tab with Tree View
 interface PrefixesTabProps {
-  data: any
+  data: { items?: IpamPrefix[] }
   isLoading: boolean
   search: string
   onEdit: (prefix: IpamPrefix) => void
@@ -789,7 +794,7 @@ function PrefixTreeNode({ prefix, childrenMap, depth, onEdit, onDelete }: Prefix
 
 // Addresses Tab
 interface AddressesTabProps {
-  data: any
+  data: { items?: IpamAddress[] }
   isLoading: boolean
   search: string
   onEdit: (address: IpamAddress) => void
@@ -883,7 +888,7 @@ function AddressesTab({ data, isLoading, search, onEdit, onDelete, onCreate }: A
 
 // VLANs Tab
 interface VlansTabProps {
-  data: any
+  data: { items?: IpamVlan[] }
   isLoading: boolean
   search: string
   onEdit: (vlan: IpamVlan) => void

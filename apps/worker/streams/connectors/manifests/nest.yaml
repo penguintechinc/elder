@@ -1,0 +1,363 @@
+# Nest Connector Manifest for IceCharts
+# Infrastructure resource management and orchestration platform
+connector:
+  id: nest
+  name: Nest
+  description: Infrastructure resource management and orchestration platform
+  icon: "nest-logo"
+  color: "#F97316"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: NEST_API_KEY
+
+  connection:
+    base_url_env: NEST_URL
+    default_url: http://localhost:8080
+    health_endpoint: /api/v1/health
+
+  # ============================================================================
+  # TRIGGERS - Webhook events from Nest
+  # ============================================================================
+  triggers:
+    # Resource Created
+    - id: resource_created
+      name: Resource Created
+      description: Triggered when a resource is created
+      icon: "🆕"
+      webhook_path: /webhooks/nest/resource/created
+      outputs:
+        - name: out
+          type: object
+          description: Created resource data with metadata
+      config_schema:
+        - field: resource_types
+          type: multiselect
+          label: Resource Types
+          options: [server, database, container, network, storage, dns, certificate, loadbalancer]
+          description: Filter by resource types (empty for all)
+        - field: environments
+          type: string
+          label: Environments
+          placeholder: "production, staging"
+          description: Comma-separated environments to filter
+
+    # Resource Updated
+    - id: resource_updated
+      name: Resource Updated
+      description: Triggered when a resource is updated
+      icon: "📝"
+      webhook_path: /webhooks/nest/resource/updated
+      outputs:
+        - name: out
+          type: object
+          description: Updated resource with changes
+      config_schema:
+        - field: resource_types
+          type: multiselect
+          label: Resource Types
+          options: [server, database, container, network, storage, dns, certificate, loadbalancer]
+        - field: track_fields
+          type: string
+          label: Track Fields
+          placeholder: "status, config.replicas"
+          description: Specific fields to track (empty for any change)
+
+    # Team Changed
+    - id: team_changed
+      name: Team Changed
+      description: Triggered on team membership changes
+      icon: "👥"
+      webhook_path: /webhooks/nest/team/changed
+      outputs:
+        - name: out
+          type: object
+          description: Team change event data
+      config_schema:
+        - field: change_types
+          type: multiselect
+          label: Change Types
+          options: [member_added, member_removed, role_changed, team_created]
+          description: Filter by change types
+
+  # ============================================================================
+  # ACTIONS - Execute operations via Nest APIs
+  # ============================================================================
+  actions:
+    # Create Resource
+    - id: create_resource
+      name: Create Resource
+      description: Create a new resource
+      icon: "➕"
+      endpoint: /api/v1/resources
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Resource data for variable interpolation
+      outputs:
+        - name: out
+          type: object
+          description: Created resource with ID
+      config_schema:
+        - field: name
+          type: string
+          label: Resource Name
+          supports_variables: true
+          required: true
+        - field: resource_type
+          type: select
+          label: Type
+          options: [server, database, container, network, storage, dns, certificate, loadbalancer]
+          required: true
+        - field: environment
+          type: select
+          label: Environment
+          options: [production, staging, development, testing]
+          required: true
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          placeholder: '{"region": "us-west-2", "owner": "platform"}'
+          supports_variables: true
+          description: JSON object with custom metadata
+
+    # Update Resource
+    - id: update_resource
+      name: Update Resource
+      description: Update a resource
+      icon: "✏️"
+      endpoint: /api/v1/resources/{{resource_id}}
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include resource_id
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: resource_id
+          type: string
+          label: Resource ID
+          supports_variables: true
+          required: true
+        - field: name
+          type: string
+          label: Name
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [active, inactive, maintenance, decommissioned]
+          description: Resource status
+        - field: metadata
+          type: textarea
+          label: Metadata (JSON)
+          supports_variables: true
+
+    # Delete Resource
+    - id: delete_resource
+      name: Delete Resource
+      description: Delete a resource
+      icon: "🗑️"
+      endpoint: /api/v1/resources/{{resource_id}}
+      method: DELETE
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: resource_id
+          type: string
+          label: Resource ID
+          supports_variables: true
+          required: true
+        - field: force
+          type: checkbox
+          label: Force Delete
+          default: false
+          description: Force delete even if resource has dependencies
+
+    # Create Team
+    - id: create_team
+      name: Create Team
+      description: Create a new team
+      icon: "👥"
+      endpoint: /api/v1/teams
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Created team with ID
+      config_schema:
+        - field: name
+          type: string
+          label: Team Name
+          supports_variables: true
+          required: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: parent_team_id
+          type: string
+          label: Parent Team ID
+          supports_variables: true
+          description: Optional parent team for hierarchy
+
+    # Add Team Member
+    - id: add_team_member
+      name: Add Team Member
+      description: Add a member to a team
+      icon: "➕"
+      endpoint: /api/v1/teams/{{team_id}}/members
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+      config_schema:
+        - field: team_id
+          type: string
+          label: Team ID
+          supports_variables: true
+          required: true
+        - field: user_id
+          type: string
+          label: User ID
+          supports_variables: true
+          required: true
+        - field: role
+          type: select
+          label: Role
+          options: [owner, admin, member, viewer]
+          default: member
+          description: Team role for the member
+
+  # ============================================================================
+  # TRANSFORMS - Data lookups and statistics
+  # ============================================================================
+  transforms:
+    # Get Resource
+    - id: get_resource
+      name: Get Resource
+      description: Get resource details
+      icon: "🔍"
+      endpoint: /api/v1/resources/{{resource_id}}
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+          description: Must include resource_id
+      outputs:
+        - name: out
+          type: object
+          description: Full resource with metadata and connections
+      config_schema:
+        - field: resource_id
+          type: string
+          label: Resource ID
+          supports_variables: true
+          required: true
+          description: Resource ID to lookup (or from input)
+        - field: include_connections
+          type: checkbox
+          label: Include Connections
+          default: true
+
+    # List Resources
+    - id: list_resources
+      name: List Resources
+      description: List resources
+      icon: "📋"
+      endpoint: /api/v1/resources
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: List of resources
+      config_schema:
+        - field: resource_type
+          type: select
+          label: Resource Type
+          options: [any, server, database, container, network, storage, dns, certificate, loadbalancer]
+          default: any
+          description: Filter by resource type
+        - field: environment
+          type: select
+          label: Environment
+          options: [any, production, staging, development, testing]
+          default: any
+          description: Filter by environment
+        - field: limit
+          type: number
+          label: Limit
+          default: 100
+          description: Maximum number of resources to return
+
+    # Get Resource Stats
+    - id: get_resource_stats
+      name: Get Resource Stats
+      description: Get resource statistics
+      icon: "📊"
+      endpoint: /api/v1/resources/stats
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Resource statistics by type and environment
+      config_schema:
+        - field: environment
+          type: select
+          label: Environment
+          options: [all, production, staging, development, testing]
+          default: all
+          description: Filter by environment
+
+    # Get Connection Info
+    - id: get_connection_info
+      name: Get Connection Info
+      description: Get resource connection info
+      icon: "🔗"
+      endpoint: /api/v1/resources/{{resource_id}}/connection
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Connection information and credentials
+      config_schema:
+        - field: resource_id
+          type: string
+          label: Resource ID
+          supports_variables: true
+          required: true

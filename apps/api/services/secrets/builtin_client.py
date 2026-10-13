@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 from datetime import datetime
@@ -26,7 +25,7 @@ logger = logging.getLogger(__name__)
 class BuiltinSecretsClient(SecretProviderClient):
     """Built-in secrets storage implementation using PyDAL."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Built-in secrets client.
 
@@ -72,7 +71,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             .first()
         )
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """
         Retrieve a secret from built-in storage.
 
@@ -99,6 +98,12 @@ class BuiltinSecretsClient(SecretProviderClient):
                     logger.error(f"Failed to parse JSON for secret '{path}'")
                     kv_pairs = {}
 
+                # Security: is_masked=True means the caller must never see real
+                # values — .mask() replaces each kv_pairs value with a
+                # placeholder while preserving the keys. Returning kv_pairs
+                # unmasked here was a credential leak (flagged by the DTO
+                # audit): callers relying on is_masked to gate display got
+                # the real secret values anyway.
                 return SecretValue(
                     name=row.name,
                     value=None,
@@ -116,7 +121,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                             row.expires_at.isoformat() if row.expires_at else None
                         ),
                     },
-                )
+                ).mask()
             else:
                 # Simple string secret (password field is encrypted by PyDAL)
                 # Note: We can't retrieve the actual password value, it's hashed
@@ -145,7 +150,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             logger.error(f"Failed to get secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to get secret: {str(e)}")
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in built-in storage."""
         try:
             query = (
@@ -196,7 +201,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             raise SecretProviderException(f"Failed to list secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in built-in storage."""
         try:
@@ -347,7 +352,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             logger.error(f"Failed to delete secret '{path}': {str(e)}")
             raise SecretProviderException(f"Failed to delete secret: {str(e)}")
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """
         Get all versions of a secret.
 

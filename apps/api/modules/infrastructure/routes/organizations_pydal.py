@@ -1,0 +1,661 @@
+"""Organization Units (OUs) API endpoints using PyDAL with async/await."""
+
+# flake8: noqa: E501
+
+import logging
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from quart import Blueprint, current_app, g, jsonify, request
+from quart_schema import validate_response
+
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.common.licensing.enforce import check_limit
+from apps.api.logging_config import log_error_and_respond
+from apps.api.models.dataclasses import (
+    OrganizationDTO,
+    PaginatedResponse,
+    from_pydal_row,
+    from_pydal_rows,
+)
+from apps.api.models.pydantic.organization import (
+    CreateOrganizationRequest,
+    UpdateOrganizationRequest,
+)
+from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.pydal_helpers import (
+    PaginationParams,
+    commit_db,
+    get_by_id,
+    insert_record,
+)
+from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint("organizations", __name__)
+
+
+@dataclass(slots=True, frozen=True)
+class OrganizationListResponse:
+    """Paginated list of Organization Units (OUs)."""
+
+    items: list[OrganizationDTO]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+
+def _resolve_caller_scope() -> tuple[bool, int | None]:
+    """Read (is_superuser, tenant_id) from g in the request coroutine.
+
+    Must be called before entering run_in_threadpool -- Quart's g does not
+    propagate into thread-pool workers.
+    """
+    current_user = getattr(g, "current_user", None)
+    is_superuser = getattr(current_user, "is_superuser", False)
+    return is_superuser, get_current_tenant_id()
+
+
+def _get_org_scoped_for_caller(
+    db: Any, org_id: int, is_superuser: bool, tenant_id: int | None
+) -> Any | None:
+    """Resolve an organization by id, tenant-scoped unless the caller is a superuser.
+
+    Superusers are separately issued and short-lived per security.md's
+    Tenant Isolation model ("Admin tokens also tenant-scoped (except
+    super-admin)") -- they legitimately need cross-tenant access here, so
+    this bypasses get_tenant_scoped() rather than requiring a tenant claim
+    that a superuser token may not carry. `is_superuser`/`tenant_id` must
+    already be resolved via `_resolve_caller_scope()` in the request
+    coroutine -- safe to call from inside run_in_threadpool.
+    """
+    if is_superuser:
+        return db.organizations[org_id]  # tenant-scope-exempt: superuser bypass
+    return get_tenant_scoped(db, db.organizations, org_id, tenant_id)
+
+
+@bp.route("", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+@validate_response(OrganizationListResponse)
+async def list_organizations():
+    """
+    List all Organization Units (OUs) with pagination and filtering.
+
+    Query Parameters:
+        - page: Page number (default: 1)
+        - per_page: Items per page (default: 50, max: 1000)
+        - parent_id: Filter by parent OU ID
+        - name: Filter by name (partial match)
+
+    Returns:
+        200: List of Organization Units with pagination metadata
+    """
+    db = current_app.db
+
+    # Extract pagination parameters using helper
+    pagination = PaginationParams.from_request()
+
+    # Build query
+    query = db.organizations.id > 0
+
+    # Apply filters
+    if request.args.get("parent_id"):
+        parent_id = request.args.get("parent_id", type=int)
+        query &= db.organizations.parent_id == parent_id
+
+    # Support both 'name' and 'search' parameters for name filtering
+    search_term = request.args.get("name") or request.args.get("search")
+    if search_term:
+        # Case-insensitive search using PostgreSQL ILIKE
+        query &= db.organizations.name.ilike(f"%{search_term}%")
+
+    # Execute database queries in a single thread pool task
+    def get_orgs():
+        total = db(query).count()
+        rows = db(query).select(
+            db.organizations.id,
+            db.organizations.name,
+            db.organizations.description,
+            db.organizations.type,
+            db.organizations.parent_id,
+            db.organizations.owner_identity_id,
+            db.organizations.owner_group_id,
+            db.organizations.created_at,
+            db.organizations.updated_at,
+            db.organizations.slug,
+            db.organizations.tenant_id,
+            db.organizations.display_name,
+            orderby=db.organizations.name,
+            limitby=(pagination.offset, pagination.offset + pagination.per_page),
+        )
+        return total, rows
+
+    total, rows = await run_in_threadpool(get_orgs)
+
+    # Calculate total pages
+    pages = pagination.calculate_pages(total)
+
+    # Convert PyDAL rows to DTOs
+    items = from_pydal_rows(rows, OrganizationDTO)
+
+    return OrganizationListResponse(
+        items=items,
+        total=total,
+        page=pagination.page,
+        per_page=pagination.per_page,
+        pages=pages,
+    ), 200
+
+
+@bp.route("", methods=["POST"])
+@login_required
+@require_scope("infrastructure:write")
+@validated_request(body_model=CreateOrganizationRequest)
+@validate_response(OrganizationDTO, status_code=201)
+async def create_organization(body: CreateOrganizationRequest):
+    """
+    Create a new Organization Unit (OU).
+
+    Request Body:
+        JSON object with Organization Unit fields
+
+    Returns:
+        201: Created Organization Unit
+        400: Validation error
+    """
+    db = current_app.db
+
+    # Insert organization using helper
+    try:
+        # Get tenant_id from current user (g.current_user set by @login_required)
+        # Default to 1 if not available (for tests without auth)
+        tenant_id = (
+            getattr(g.current_user, "tenant_id", 1) if hasattr(g, "current_user") else 1
+        )
+
+        org_data = body.model_dump(exclude_none=True)
+        if "tenant_id" not in org_data:
+            org_data["tenant_id"] = tenant_id
+
+        # Map Pydantic field 'organization_type' to DB column 'type'
+        if "organization_type" in org_data:
+            org_data["type"] = org_data.pop("organization_type")
+
+        # License-gate type='team' organizations only -- see Task 7 of
+        # docs/superpowers/plans/2026-08-20-license-enforcement-phase2.md.
+        # Non-team organization types (department, collection, etc.) are
+        # never counted against max_teams and are not gated here.
+        if org_data.get("type") == "team":
+            blocked = await check_limit("team", org_data["tenant_id"])
+            if blocked is not None:
+                return blocked
+
+        # Organizations are village_id objects -- count against the Free object
+        # quota. (Placed on the LIVE create path; T8 had wired the dead
+        # api/v1/organizations.py by mistake.)
+        obj_blocked = await check_limit("object", org_data["tenant_id"])
+        if obj_blocked is not None:
+            return obj_blocked
+
+        org_id = await insert_record(db.organizations, **org_data)
+        if not org_id:
+            return log_error_and_respond(
+                logger,
+                Exception("Failed to insert organization"),
+                "Failed to create organization",
+                500,
+            )
+
+        await commit_db(db)
+
+        # Fetch the created org to ensure it exists and return full data
+        org_row = await get_by_id(db.organizations, org_id)
+        if not org_row:
+            logger.error(
+                f"Organization {org_id} was inserted but not found after commit"
+            )
+            # Still return success with the data we have -- fill in the
+            # OrganizationDTO's required-but-unfilled fields rather than
+            # returning a partial/mismatched shape (security-audit fix).
+            now = datetime.now(UTC)
+            return OrganizationDTO(
+                id=org_id,
+                name=org_data.get("name"),
+                description=org_data.get("description"),
+                type=org_data.get("type"),
+                parent_id=org_data.get("parent_id"),
+                owner_identity_id=org_data.get("owner_identity_id"),
+                owner_group_id=org_data.get("owner_group_id"),
+                created_at=now,
+                updated_at=now,
+                slug=org_data.get("slug"),
+                tenant_id=org_data.get("tenant_id"),
+                display_name=org_data.get("display_name"),
+                cloud_provider=org_data.get("cloud_provider"),
+                cloud_account_id=org_data.get("cloud_account_id"),
+                region=org_data.get("region"),
+                is_active=org_data.get("is_active", True),
+                settings=org_data.get("settings"),
+                tags=org_data.get("tags"),
+                metadata=org_data.get("metadata"),
+            ), 201
+
+        # Convert to DTO and return
+        org_dict = await run_in_threadpool(lambda: org_row.as_dict())
+        return OrganizationDTO(
+            **{
+                k: v
+                for k, v in org_dict.items()
+                if k in OrganizationDTO.__dataclass_fields__
+            }
+        ), 201
+
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/<int:id>", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+@validate_response(OrganizationDTO)
+async def get_organization(id: int):
+    """
+    Get a single Organization Unit (OU) by ID.
+
+    Path Parameters:
+        - id: Organization Unit ID
+
+    Returns:
+        200: Organization Unit details
+        404: Organization Unit not found
+    """
+    db = current_app.db
+    is_superuser, tenant_id = _resolve_caller_scope()
+
+    # Get organization, scoped to the caller's tenant (gh-237)
+    try:
+        org_row = await run_in_threadpool(
+            lambda: _get_org_scoped_for_caller(db, id, is_superuser, tenant_id)
+        )
+        if not org_row:
+            return ApiResponse.not_found("Organization Unit")
+
+        org_dto = from_pydal_row(org_row, OrganizationDTO)
+        return org_dto, 200
+    except Exception as e:
+        logger.error(f"Error fetching organization {id}: {e}")
+        return ApiResponse.not_found("Organization Unit")
+
+
+@bp.route("/<int:id>", methods=["PATCH", "PUT"])
+@login_required
+@require_scope("infrastructure:write")
+@validated_request(body_model=UpdateOrganizationRequest)
+@validate_response(OrganizationDTO)
+async def update_organization(id: int, body: UpdateOrganizationRequest):
+    """
+    Update an Organization Unit (OU).
+
+    Path Parameters:
+        - id: Organization Unit ID
+
+    Request Body:
+        JSON object with fields to update
+
+    Returns:
+        200: Updated Organization Unit
+        404: Organization Unit not found
+    """
+    db = current_app.db
+    is_superuser, tenant_id = _resolve_caller_scope()
+
+    # Verify organization exists and belongs to caller's tenant (gh-237)
+    org_row = await run_in_threadpool(
+        lambda: _get_org_scoped_for_caller(db, id, is_superuser, tenant_id)
+    )
+    if not org_row:
+        return ApiResponse.not_found("Organization Unit")
+
+    # Get update fields from validated body
+    update_fields = body.model_dump(exclude_none=True)
+
+    if not update_fields:
+        return ApiResponse.bad_request("No fields to update")
+
+    # Map Pydantic field 'organization_type' to DB column 'type'
+    if "organization_type" in update_fields:
+        update_fields["type"] = update_fields.pop("organization_type")
+
+    # Update organization
+    try:
+        await run_in_threadpool(
+            lambda: db(db.organizations.id == id).update(**update_fields)
+        )
+        await commit_db(db)
+
+        # Fetch updated org (tenant-scope-exempt: verified above)
+        org_row = await get_by_id(db.organizations, id)
+        org_dto = from_pydal_row(org_row, OrganizationDTO)
+        return org_dto, 200
+
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/<int:id>", methods=["DELETE"])
+@login_required
+@require_scope("infrastructure:write")
+async def delete_organization(id: int):
+    """
+    Delete an Organization Unit (OU).
+
+    Path Parameters:
+        - id: Organization Unit ID
+
+    Returns:
+        204: Organization Unit deleted
+        404: Organization Unit not found
+        400: Cannot delete OU with child OUs
+    """
+    db = current_app.db
+    is_superuser, tenant_id = _resolve_caller_scope()
+
+    # Verify organization exists and belongs to caller's tenant (gh-237)
+    org_row = await run_in_threadpool(
+        lambda: _get_org_scoped_for_caller(db, id, is_superuser, tenant_id)
+    )
+    if not org_row:
+        return ApiResponse.not_found("Organization Unit")
+
+    # Check if OU has children
+    children_count = await run_in_threadpool(
+        lambda: db(db.organizations.parent_id == id).count()
+    )
+
+    if children_count > 0:
+        return ApiResponse.bad_request("Cannot delete Organization Unit with child OUs")
+
+    # Delete organization
+    try:
+        await run_in_threadpool(lambda: db(db.organizations.id == id).delete())
+        await commit_db(db)
+        return ApiResponse.no_content()
+
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/<int:id>/graph", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+async def get_organization_graph(id: int):
+    """
+    Get relationship graph for an organization and its nearby entities.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Query Parameters:
+        - depth: How many hops away to include (default: 3, max: 10)
+
+    Returns:
+        200: Graph data with nodes and edges
+        403: Missing tenant claim in token
+        404: Organization not found, or found but outside caller's tenant
+    """
+    db = current_app.db
+
+    # Resolve caller's tenant from the authenticated JWT — never from the
+    # path/query — and require it. A token with no tenant claim can prove no
+    # tenant, so it gets no data.
+    caller_tenant_id = getattr(getattr(g, "current_user", None), "tenant_id", None)
+    if caller_tenant_id is None:
+        return jsonify({"error": "Missing tenant claim in token"}), 403
+
+    # Check if organization exists AND belongs to the caller's tenant. Same
+    # 404 either way so a caller can't distinguish "doesn't exist" from
+    # "exists in another tenant" (regression: org-graph-auth-scope).
+    try:
+        org_row = await run_in_threadpool(
+            lambda: get_tenant_scoped(db, db.organizations, id, caller_tenant_id)
+        )
+        if org_row is None:
+            return ApiResponse.not_found("Organization Unit")
+    except Exception:
+        return ApiResponse.not_found("Organization Unit")
+
+    # Get depth parameter
+    depth = min(request.args.get("depth", 3, type=int), 10)
+
+    # Build graph data
+    nodes = []
+    edges = []
+    visited_orgs = set()
+    visited_entities = set()
+
+    # Helper to add organization node. Cross-tenant orgs are silently
+    # skipped (not raised) so the response graph never contains another
+    # tenant's data, even if reached transitively via parent/child links.
+    def add_org_node(org_id):
+        if org_id in visited_orgs:
+            return
+        org = get_tenant_scoped(db, db.organizations, org_id, caller_tenant_id)
+        if not org:
+            return
+        visited_orgs.add(org_id)
+        nodes.append(
+            {
+                "id": f"org-{org_id}",
+                "label": org.name,
+                "type": "organization",
+                "metadata": {
+                    "id": org_id,
+                    "description": org.description,
+                    "parent_id": org.parent_id,
+                },
+            }
+        )
+        return org
+
+    # Helper to add entity node. Safe without its own tenant check: it is
+    # only ever called for entities fetched via the `org_ids` query below,
+    # which is itself built from `visited_orgs` (already tenant-verified).
+    def add_entity_node(entity_id):
+        if entity_id in visited_entities:
+            return
+        entity = db.entities[entity_id]  # tenant-scope-exempt: see comment above
+        if not entity:
+            return
+        visited_entities.add(entity_id)
+        nodes.append(
+            {
+                "id": f"entity-{entity_id}",
+                "label": entity.name,
+                "type": entity.entity_type or "default",
+                "metadata": {
+                    "id": entity_id,
+                    "entity_type": entity.entity_type,
+                    "organization_id": entity.organization_id,
+                },
+            }
+        )
+
+    # Add current organization
+    add_org_node(id)
+
+    # Get all child organizations recursively (limit to depth * 10),
+    # scoped to the caller's tenant so the traversal never crosses into
+    # another tenant's organization tree.
+    def get_children_recursive(parent_id, current_depth=0):
+        if current_depth >= depth:
+            return []
+        children = db(
+            (db.organizations.parent_id == parent_id)
+            & (db.organizations.tenant_id == caller_tenant_id)
+        ).select()
+        all_children = list(children)
+        for child in children:
+            all_children.extend(get_children_recursive(child.id, current_depth + 1))
+        return all_children[: depth * 10]
+
+    all_children = await run_in_threadpool(lambda: get_children_recursive(id))
+    for child in all_children:
+        add_org_node(child.id)
+        if child.parent_id:
+            edges.append(
+                {
+                    "from": f"org-{child.parent_id}",
+                    "to": f"org-{child.id}",
+                    "label": "parent",
+                }
+            )
+
+    # Get parent hierarchy up to depth, stopping at the tenant boundary —
+    # a parent_id that resolves outside the caller's tenant halts the climb
+    # rather than being added to the graph.
+    current_org = org_row
+    for _ in range(depth):
+        if current_org and current_org.parent_id:
+            parent = get_tenant_scoped(
+                db, db.organizations, current_org.parent_id, caller_tenant_id
+            )
+            if parent:
+                add_org_node(parent.id)
+                edges.append(
+                    {
+                        "from": f"org-{parent.id}",
+                        "to": f"org-{current_org.id}",
+                        "label": "parent",
+                    }
+                )
+                current_org = parent
+            else:
+                break
+        else:
+            break
+
+    # Get entities for all visited organizations
+    org_ids = list(visited_orgs)
+    entities = await run_in_threadpool(
+        lambda: db(db.entities.organization_id.belongs(org_ids)).select(
+            limitby=(0, 100)
+        )
+    )
+
+    for entity in entities:
+        add_entity_node(entity.id)
+        edges.append(
+            {
+                "from": f"org-{entity.organization_id}",
+                "to": f"entity-{entity.id}",
+                "label": "contains",
+            }
+        )
+
+    # Get dependencies between entities
+    entity_ids = list(visited_entities)
+    # Dependencies table uses source_type/source_id, not source_entity_id
+    dependencies = await run_in_threadpool(
+        lambda: db(
+            (db.dependencies.source_type == "entity")
+            & (db.dependencies.source_id.belongs(entity_ids))
+            & (db.dependencies.target_type == "entity")
+            & (db.dependencies.target_id.belongs(entity_ids))
+        ).select()
+    )
+
+    for dep in dependencies:
+        edges.append(
+            {
+                "from": f"entity-{dep.source_id}",
+                "to": f"entity-{dep.target_id}",
+                "label": dep.dependency_type or "depends",
+            }
+        )
+
+    return (
+        jsonify(
+            {
+                "nodes": nodes,
+                "edges": edges,
+                "center_node": f"org-{id}",
+                "depth": depth,
+            }
+        ),
+        200,
+    )
+
+
+@bp.route("/<int:id>/children", methods=["GET"])
+@login_required
+@require_scope("infrastructure:read")
+@validate_response(list[OrganizationDTO])
+async def get_organization_children(id: int):
+    """
+    Get all child organizations scoped to the caller's tenant.
+
+    Path Parameters:
+        - id: Organization ID
+
+    Query Parameters:
+        - recursive: Include all descendants (default: false)
+
+    Returns:
+        200: List of child organizations
+        404: Organization not found
+    """
+    db = current_app.db
+
+    # Get current user's tenant_id for scoping
+    tenant_id = (
+        getattr(g.current_user, "tenant_id", None)
+        if hasattr(g, "current_user")
+        else None
+    )
+
+    # Verify organization exists and belongs to current tenant
+    def get_org_in_tenant():
+        query = db.organizations.id == id
+        if tenant_id is not None:
+            query &= db.organizations.tenant_id == tenant_id
+        return db(query).select().first()
+
+    org = await run_in_threadpool(get_org_in_tenant)
+    if not org:
+        return jsonify({"error": "Organization not found"}), 404
+
+    # Get children
+    recursive = request.args.get("recursive", "false").lower() == "true"
+
+    if recursive:
+        # Recursively get all descendants within the same tenant
+        def get_descendants(parent_id):
+            query = db.organizations.parent_id == parent_id
+            if tenant_id is not None:
+                query &= db.organizations.tenant_id == tenant_id
+            children = db(query).select()
+            result = []
+            for child in children:
+                result.append(from_pydal_row(child, OrganizationDTO))
+                result.extend(get_descendants(child.id))
+            return result
+
+        children = await run_in_threadpool(lambda: get_descendants(id))
+    else:
+        # Just direct children within the same tenant
+        def get_direct_children():
+            query = db.organizations.parent_id == id
+            if tenant_id is not None:
+                query &= db.organizations.tenant_id == tenant_id
+            rows = db(query).select()
+            return [from_pydal_row(row, OrganizationDTO) for row in rows]
+
+        children = await run_in_threadpool(get_direct_children)
+
+    return children, 200

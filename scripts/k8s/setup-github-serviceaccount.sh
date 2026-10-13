@@ -27,7 +27,6 @@ SERVICEACCOUNT="${SERVICEACCOUNT:-github-ci}"
 ROLE_NAME="${ROLE_NAME:-github-ci-deployer}"
 OUTPUT_FORMAT="${OUTPUT_FORMAT:-github}"
 KUBECTL_CMD="kubectl"
-HELM_CMD="helm"
 KUBECTL_CONTEXT=""
 
 # Color codes for output
@@ -120,7 +119,6 @@ detect_k8s_distribution() {
         if microk8s status >/dev/null 2>&1; then
             print_success "Detected MicroK8s"
             KUBECTL_CMD="microk8s kubectl"
-            HELM_CMD="microk8s helm3"
             return 0
         else
             print_warning "MicroK8s found but not running"
@@ -144,10 +142,8 @@ detect_k8s_distribution() {
         print_success "Using standard Kubernetes"
     fi
 
-    # Check for helm
-    if command -v helm >/dev/null 2>&1; then
-        HELM_CMD="helm"
-    else
+    # Check for helm (optional dependency; not otherwise used by this script)
+    if ! command -v helm >/dev/null 2>&1; then
         print_warning "Helm not found (optional, but recommended)"
     fi
 }

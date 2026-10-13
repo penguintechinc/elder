@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import time
 from typing import Dict, Optional
 
@@ -20,13 +19,13 @@ class KubernetesConnector(BaseConnector):
     def __init__(self):
         """Initialize Kubernetes connector."""
         super().__init__("kubernetes")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.k8s_core_v1: Optional[client.CoreV1Api] = None
-        self.k8s_apps_v1: Optional[client.AppsV1Api] = None
-        self.organization_cache: Dict[str, int] = (
-            {}
-        )  # Map cluster/namespace to Elder org ID
-        self.cluster_name: Optional[str] = None
+        self.elder_client: ElderAPIClient | None = None
+        self.k8s_core_v1: client.CoreV1Api | None = None
+        self.k8s_apps_v1: client.AppsV1Api | None = None
+        self.organization_cache: dict[
+            str, int
+        ] = {}  # Map cluster/namespace to Elder org ID
+        self.cluster_name: str | None = None
 
     async def connect(self) -> None:
         """Establish connection to Kubernetes and Elder API."""
@@ -76,7 +75,7 @@ class KubernetesConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """
         Get or create an organization in Elder.
