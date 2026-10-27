@@ -2,11 +2,13 @@
 
 **Status:** Draft for owner review (2026-10-27). Design only. No code, scaffolding, or Dockerfiles until the derived plan is reviewed.
 
-**Goal:** Move Elder's workflow and CI/CD engines (Streams, Flows) out of the Python monolith into one new service, `svc-workflows`: a Rust system layer that runs flows inside WASM sandboxes, behind one gated gateway, so tenants can author their own modules with lowered risk to the platform.
+**Goal:** Replace Elder's in-process workflow and CI/CD engines (Streams, Flows) with `svc-workflows`: a multi-container Rust service that runs tenant-authored flowbundles inside WASM sandboxes, behind a gated gateway, melded with Elder's own data, scalable past 100k events/second.
 
-**Architecture:** Elder API (Python/Quart) stays the control plane. `svc-workflows` (Rust) is the data plane: engine, gateway, credential-less WASM executor, and a launcher for short-lived sandboxed runner jobs. The diagram canvas is the editor for the same graph that executes.
+**Differentiator:** not a standalone automation engine. The point is "melding" with Elder's assets, issues, schedules, identities, diagrams, and documents (D9, 5A).
 
-**Tech stack:** Rust (tokio/axum, wasmtime component model + WASI 0.2), gRPC to the control plane, Valkey/Redis Streams for run dispatch, shared `penguin-libs` Rust crates (git-pinned), React Flow canvas (`@xyflow/react` 12.3.5, already in `web/package.json`), Helm only.
+**Architecture:** Elder API (Python/Quart) stays the control plane (definitions, authz, identity, summaries) and is OUT of the per-event hot path. The data plane is one Cargo workspace producing several images split along trust boundaries (gateway, engine, builder), scaled per role, dividing work over Valkey Streams, deployed as shared-nothing cells.
+
+**Tech stack:** Rust (tokio/axum, wasmtime component model + WASI 0.2), gRPC, partitioned Valkey/Redis Streams, shared `penguin-libs` Rust crates (git-pinned), React Flow canvas (`@xyflow/react` 12.3.5, in `web/package.json`), Helm only.
 
 ---
 
@@ -14,13 +16,14 @@
 
 | Marker | Meaning |
 |---|---|
-| **DECISION** | Made by the product owner. Treat as fixed. |
-| **AUTHOR'S CALL — owner to confirm** | The spec author chose it so the doc is plannable. Builder may proceed on it but must not treat it as settled. |
-| **VERIFIED** | Read in code or docs by the author. Elder = `origin/release/v4.0.X` @ `bbd5ba7`; Waddles = `ae935412`. |
-| **RECON** | Taken from the owner/recon brief; not re-read by the author. |
-| **UNVERIFIED** | Could not be verified. Builder must check before relying on it. |
+| **DECISION** | Made by the product owner. Fixed |
+| **AUTHOR'S CALL — owner to confirm** | Chosen by the author so the doc is plannable. Builder may proceed, not treat as settled |
+| **ANSWERED** | Resolved by the coordinator/owner after the first draft; stated as fact |
+| **VERIFIED** | Read by the author. Elder = `origin/release/v4.0.X` @ `bbd5ba7`; Waddles = `ae935412` |
+| **RECON** | From the recon brief; not re-read |
+| **UNVERIFIED** | Not verified. Builder checks first. All capacity numbers and toolchain-maturity claims not marked VERIFIED are UNVERIFIED |
 
-Paths are relative to the Elder repo unless prefixed `waddles:` or `penguin-libs:`.
+Paths are relative to the Elder repo unless prefixed `waddles:` or `penguin-libs:`. Sections 5A (melding), 5B (scale), 5C (languages, compile, cold start), 5D (marketplace) follow section 5 and keep other numbers stable. "Flowbundle" = Elder's term for Waddles' "app bundle".
 
 ---
 
@@ -28,53 +31,36 @@ Paths are relative to the Elder repo unless prefixed `waddles:` or `penguin-libs
 
 ### 1.1 Intent
 
-- One service presentation that combines three things users know:
-  - Lucidchart (diagrams) — Elder's existing diagrams layer.
-  - n8n / Zapier (event in, process, action out) — ingest / process / action flow bundles.
-  - GitHub Actions (CI/CD workflows plus reusable `uses:` functions).
-- All tenant-authored logic runs as WASM. Platform code never executes user code natively.
-- All traffic into and out of the service passes one gateway that we gate.
-- Elder and `svc-workflows` work fully with no other PenguinTech product present.
+- One service presentation: Lucidchart (diagrams) + n8n/Zapier (event in, process, action out) + GitHub Actions (CI/CD workflows, reusable `uses:` functions).
+- Elder's data is the differentiator: look up and act on Elder resources; data events launch flows; a diagram converts to a flow.
+- All tenant logic runs as WASM; platform code never executes user code natively. All traffic in or out passes a gateway we gate.
+- Works fully with no other PenguinTech product present. Scales horizontally and vertically, per role, past 100k events/s without redesign.
 
 ### 1.2 Why now
 
 | Problem today | Evidence |
 |---|---|
-| Two engines, ~15k prod LOC, moderately entangled, no WASM, no Rust | RECON; `find . -name Cargo.toml` returns nothing (VERIFIED) |
-| Streams runs tenant-authored graphs in-process inside the shared worker | `apps/worker/jobs/registry.py:206` `handle_streams`; `apps/worker/streams/executor/playbook_executor.py:163` (VERIFIED) |
-| Flows runs git and arbitrary test commands in a process-level sandbox only; Tetragon explicitly exempted | `apps/flows_invoker/sandbox.py`; `k8s/helm/elder/values.yaml:629-632` (VERIFIED) |
-| Users cannot safely extend: `stream_custom_modules.code_blob` exists as a table but nothing executes it | `apps/api/modules/streams/models/streams.py` (`StreamCustomModule`); grep finds no other reference (VERIFIED) |
-| Credentials are plaintext; credential writes return 501 | `iceflows_credentials.access_token`; `apps/api/modules/flows/routes/credentials.py:100-106,152-161` cites gate #171 (VERIFIED) |
-| Promised node types never built (gRPC, MCP, cloud, code, ask_ai) | `docs/design/2026-07-07-elder-platform-merge-design.md` (VERIFIED the doc promises them) |
-| `stream_schedules` has a cron model and no executor | `streams.py:263` model; no consumer found (VERIFIED by grep, not exhaustive) |
-| Egress controls are fragmented; one has a self-admitted gap | `apps/worker/streams/nodes/net_guard.py` docstring: DNS-rebinding between check and connect not pinned (VERIFIED) |
-| No per-tenant concurrency limits; no alerts/dashboards for either engine; `apps/flows_invoker` and `apps/mcp` have no OTel | RECON |
+| Two engines, ~15k prod LOC, no WASM, no Rust | RECON; no `Cargo.toml` (VERIFIED) |
+| Users cannot extend safely: `stream_custom_modules.code_blob` is a table nothing executes | `streams.py` (VERIFIED by grep) |
+| Credentials plaintext, writes return 501 (cites #171) | `routes/credentials.py:100-106,152-161` (VERIFIED) |
+| No per-tenant concurrency limits, dashboards, or OTel in `flows_invoker`/`apps/mcp` | RECON |
+| No production history: cheapest moment to replace | D10 |
 
 ### 1.3 What exists today (VERIFIED unless marked)
 
-| Piece | Where | Notes |
-|---|---|---|
-| Streams API | `apps/api/modules/streams/` (~3.4k LOC, RECON) | Tables `stream_playbooks/nodes/edges/versions/webhooks/executions/node_executions/schedules/shares/editor_locks/templates/forms/form_submissions/node_metadata/custom_modules/approval_gates` |
-| Streams triggers | `routes/streams.py:1006` manual execute; `routes/hooks.py:23,48` HMAC webhook | Cron: model only |
-| Streams executor | `apps/worker/streams/` (~5.7k LOC, RECON); 21 node classes in `nodes/{actions,conditionals,transforms}` | `expression.py:113` AST whitelist evaluator |
-| Streams connectors | `apps/worker/streams/connectors/manifests/` — 31 YAML manifests | 13 PenguinTech-product connectors (`darwin`, `waddlebot`, `waddleai`, `nest`, `killkrill`, `marchproxy`, `squawk`, `tobogganing`, `skauswatch`, `articdbm`, `iceshelves`, `elder`, `waddleperf`) + 18 DB connectors. HTTP-manifest style; auth via `env_var` |
-| Flows API | `apps/api/modules/flows/` (~3.4k LOC, RECON) | Tables `iceflows`, `_stages`, `_stage_approvers`, `_stage_tests`, `_stage_calls`, `_stage_reviews`, `_credentials`, `_promotions`, `_approvals`, `_webhooks`, `_executions` (reserved, per model docstring) |
-| Flows triggers | `routes/promotions.py:465` manual; `routes/hooks.py:29,51,74` GitHub/GitLab | |
-| Flows executor | `apps/flows_invoker/` (~1.8k LOC, RECON): `main.py:27` Redis group `flows`; `executor.py:389` `execute_promotion_pipeline`; `gitops.py:197,257`; `sandbox.py` | Darwin AI review gate (`review.py`) is fail-closed when a stage marks it required |
-| Flows → Streams coupling | `calls.py:79-195` inserts into `stream_executions` directly | Hard to extract as-is |
-| Job bus | `shared/jobbus/core.py` | `elder:jobs:<group>`, `elder:results:<group>`, `…:dead`; one JSON `data` field; constant group `workers`; idempotency key; XAUTOCLAIM; DLQ after 5 deliveries; OTel trace context in envelope |
-| Streams UI | `web/src/pages/{StreamsList,PlaybookEditor,ExecutionsList,ExecutionDetail,ApprovalCenter}.tsx` (~920 LOC, RECON) | Flows has no web UI; Runs module absent |
-| Diagrams | `apps/api/modules/diagrams/`: 18 `dg_` tables; `dg_shapes` (x/y/w/h, `style_json`, `elder_entity_id` soft numeric ref), `dg_connectors` (start/end shape) | Real-time collab: `routes/collab.py` — WebSocket + Redis pub/sub, 60 s ticket in Redis |
-| Reference registry | `apps/api/models/references.py` (`Reference`); `apps/api/api/v1/lookup_village_id.py` | Diagrams/streams/flows not yet registered (RECON; issue #165 Phase 2 open) |
-| Licensing | `apps/api/common/licensing/{limits,counters,enforce,tier_gate}.py`; `@enforce_limit`, flag `elder.license-enforcement`, observe-only by default | |
-| Egress controls to carry over | `net_guard.py:21` (private + CGNAT blocked, redirects off); `gitops.py:62` git scheme allowlist; `sandbox.py` binary allowlist (25 entries incl. `bash`, `sh`, `pip`, `npm`), rlimits (CPU 900 s, AS 2 GiB, nproc 4096, fsize 512 MiB), env scrub; `templates/networkpolicy-flows-invoker.yaml` | NetworkPolicy is plain `networking.k8s.io/v1`, not Cilium. Whether it excludes CGNAT: RECON says no |
+| Piece | Where / notes |
+|---|---|
+| Streams | `apps/api/modules/streams/` (~3.4k LOC RECON), `apps/worker/streams/` (~5.7k RECON). 16+ `stream_*` tables; triggers: manual `routes/streams.py:1006`, HMAC webhook `routes/hooks.py:23,48`; 21 node classes in `nodes/{actions,conditionals,transforms}`; `expression.py:113` AST whitelist |
+| Connectors | `apps/worker/streams/connectors/manifests/`: 31 YAML. 13 PenguinTech-product (`darwin`, `waddlebot`, `waddleai`, `nest`, `killkrill`, `marchproxy`, `squawk`, `tobogganing`, `skauswatch`, `articdbm`, `iceshelves`, `elder`, `waddleperf`) + 18 DB. HTTP-manifest style; platform-wide `env_var` auth |
+| Flows | `apps/api/modules/flows/` (~3.4k RECON), `apps/flows_invoker/` (~1.8k RECON). 11 `iceflows*` tables; triggers `routes/promotions.py:465`, `routes/hooks.py:29,51,74` (GitHub HMAC, GitLab token header); `executor.py:389`; Darwin review gate `review.py` fail-closed when required; Flows writes `stream_executions` directly (`calls.py:79-195`) |
+| Job bus | `shared/jobbus/core.py`: `elder:jobs:<group>`, one JSON `data` field, idempotency key, XAUTOCLAIM, DLQ at 5 |
+| UI | `web/src/pages/{StreamsList,PlaybookEditor,ExecutionsList,ExecutionDetail,ApprovalCenter}.tsx` (~920 LOC RECON); Flows has no UI; Runs absent |
+| Diagrams | `apps/api/modules/diagrams/`: 18 `dg_` tables; `dg_shapes.elder_entity_id` numeric soft ref; `routes/collab.py` WebSocket + Redis pub/sub |
+| Reference registry | `apps/api/models/references.py`; `apps/api/common/refs/registry.py`; `apps/api/api/v1/refs.py:95,191`. Registers tenant, organization, entity, identity, software, service, ipam_*, issue, project, milestone, document, page. NOT diagram, stream, flow |
+| Licensing | `apps/api/common/licensing/*`; flag `elder.license-enforcement`; `@enforce_limit` observe-only |
+| Egress carry-over | `net_guard.py:21` (private + CGNAT blocked); `gitops.py:62` scheme allowlist; `sandbox.py` (25 allowed binaries incl. `bash`, `pip`, `npm`; CPU 900 s, AS 2 GiB, nproc 4096, fsize 512 MiB; env scrub). `networkpolicy-flows-invoker.yaml` is plain NetworkPolicy; CGNAT exclusion RECON: no |
 
-### 1.4 Relevant issues
-
-- #168 (open): Phase 4b Streams, Flows, Runs, ~50% (RECON).
-- #171 (open): Phase 6 compliance / KMS encryption; the credential gate in `credentials.py` cites it.
-- #165 (open): Phase 2 gaps, incl. the reference registry lacking diagrams/streams/flows.
-- No `svc-workflows` issue and no Streams/Flows spec exist under `docs/superpowers/specs/`.
+Issues (open): #168 Phase 4b (~50% RECON); #171 Phase 6 compliance/KMS (the credential gate cites it); #165 Phase 2 gaps (registry lacks diagrams/streams/flows). No `svc-workflows` issue or Streams/Flows spec exists.
 
 ---
 
@@ -84,68 +70,61 @@ Paths are relative to the Elder repo unless prefixed `waddles:` or `penguin-libs
 
 | # | Goal | Verified by |
 |---|---|---|
-| G1 | Tenant-authored logic runs only as WASM components with no ambient authority | Negative tests: guest cannot open a socket, read a file, or read env; assertions counted |
-| G2 | One gateway is the only way into or out of the service; every crossing is authorized per tenant, license tier, and allowlist | Network policy test: no other pod/port reaches or leaves; denial metrics non-zero in the test run |
-| G3 | Signed, versioned bundles for ingest / process / action; reusable functions referenced via `uses:` | Unsigned/tampered/unpinned bundle refused; counted |
-| G4 | The canvas edits the same graph that runs; diagrams and flows cross-link | One graph document round-trips canvas → publish → run → canvas overlay |
-| G5 | Parity with Streams and Flows, then delete the old code | Phase gates in section 7 |
-| G6 | Credentials never enter the sandbox; encrypted at rest; closes #171 for workflow credentials | Plaintext columns empty; scan of guest memory/logs/spans finds no secret; count-verified migration |
-| G7 | Independence: works with no other product; optional integrations degrade gracefully | CI job runs the full suite with every other product absent |
-| G8 | OTel logs + metrics + traces; per-tenant usage metering | Smoke test asserts ≥1 log record, ≥1 metric point, ≥1 histogram, ≥1 span; counts printed |
-| G9 | Fail closed when the control plane is unreachable | Chaos test: kill control plane; new runs denied, no stale-grant allow beyond the bound |
+| G1 | Tenant logic runs only as WASM components with no ambient authority | Negative tests: no socket, file, env |
+| G2 | One gateway is the only way in or out; every crossing authorized | Network-policy test; denial metrics non-zero |
+| G3 | Signed, versioned flowbundles and reusable `uses:` functions | Unsigned/tampered/unpinned refused |
+| G4 | Canvas edits the graph that runs; diagrams and flows cross-link and convert | Round trip canvas → run → overlay |
+| G5 | Carry forward Streams/Flows behavior; delete old code before v4.0 GA | Fixture suite; deletion gate 7.8 |
+| G6 | Credentials never enter the sandbox; encrypted at rest; closes #171 | Secret scan of guest memory/logs/spans finds none |
+| G7 | Independence: works with no other product | CI runs the suite with every other product absent |
+| G8 | OTel logs + metrics + traces; usage metering | Telemetry gate; counts printed |
+| G9 | Fail closed when the control plane is unreachable | Chaos test |
+| G10 | **Melding with Elder data is the primary differentiator** | Scenarios 5A.8 (a)-(e) |
+| G11 | **Scale to >100k events/s sustained aggregate without redesign** (D11), horizontally and vertically per role | Load gate 5B.11 |
+| G12 | Flowbundles in Rust, JS/TS, Python at v4.0.x; Go, C#, Ruby at v4.1.x; compiled by us (D12, D13) | Conformance suite 5C.5 |
+| G13 | Git `bundles/` marketplace sources (D15) | Scenarios k-m (5D) |
 
 ### 2.2 Non-goals
 
-| # | Non-goal | Why |
-|---|---|---|
-| N1 | A shared platform service for other products | Owner: serves Elder only |
-| N2 | Rewriting Elder's control plane | Definitions, authz, run history, tenant/identity stay in Quart |
-| N3 | A general container scheduler | Runner jobs exist only for steps that cannot run in WASM |
-| N4 | Per-tenant Postgres RLS | Separate Elder PR in progress (number UNVERIFIED — not in the open-PR list when checked); dependency, not scope |
-| N5 | Changing the license tier model | Paywall gates scale/structure, not features |
-| N6 | A public marketplace storefront | Default out of scope pending Q6 |
-| N7 | Native DB-protocol egress (Postgres wire etc.) | v1 connectors are HTTP; see risk R9 |
-| N8 | The Runs (serverless) module | Absent today; design does not preclude it; Q9 |
-| N9 | C# or other SDK languages | v1 SDKs: Python, Rust, JS only |
+N1 A shared service for other products (D7). N2 Rewriting Elder's control plane. N3 A general container scheduler (runner jobs only for steps WASM cannot do). N4 Per-tenant Postgres RLS: ANSWERED, in progress on `feature/rls-tenant-isolation-v2` (no PR yet); dependency; gate = "RLS landed on `release/v4.0.X`"; Phase 0 proceeds on app-layer scoping (`apps/api/utils/tenant_scoping.py`, VERIFIED). N5 Changing the license tier model. N6 A paid/public storefront (5D is git sources only). N7 Native DB-protocol egress (R9). N8 The Runs module (Q16). N9 User-supplied prebuilt `.wasm` (D13).
 
-### 2.3 Anti-goals (must never happen)
+### 2.3 Anti-goals
 
-| # | Anti-goal |
-|---|---|
-| A1 | A user module reaching the network, filesystem, or credentials directly |
-| A2 | A cross-product dependency: compile-time, runtime, deploy-time, or data |
-| A3 | A silent fallback or stub path (an unimplemented host call returns a loud `not_implemented`, never fake success) |
-| A4 | A gate that cannot fail (`\|\| true`, zero-denominator "pass", unmounted check) |
-| A5 | A dual stack that never ends (old engines are deleted at cutover) |
-| A6 | Secrets or PII in spans, metric labels, logs, bundles, or the sandbox |
-| A7 | Guest-supplied tenant, run, or identity fields |
-| A8 | Reproducing the Waddles shortfalls listed in section 8.6 |
+- A1 A user module reaching network, filesystem, or credentials directly.
+- A2 A cross-product dependency (compile, runtime, deploy, data).
+- A3 A silent fallback or stub (an unimplemented host call returns loud `not_implemented`).
+- A4 A gate that cannot fail (`\|\| true`, zero-denominator pass, unmounted check).
+- A5 A dual stack surviving to GA.
+- A6 Secrets or PII in spans, labels, logs, bundles, or the sandbox.
+- A7 Guest-supplied tenant, run, or identity fields.
+- A8 Reproducing the Waddles shortfalls (5B.7, 5C.7).
+- A9 `svc-workflows` as a second source of truth for Elder data.
+- A10 Raw PII, or any direct database access, in the data plane.
+- A11 The control plane (Quart/Postgres) in the per-event hot path.
+- A12 Silent loss under overload (every shed is counted).
+- A13 A build with network access while executing user code, or an unscanned/unsigned artifact loading.
+- A14 Credentials, ingress, and untrusted-code execution sharing one image (D16).
 
 ---
 
 ## 3. Constraints
 
-| Rule | Source | Implication here |
+| Rule | Source | Implication |
 |---|---|---|
-| In-line-of-traffic, security-sensitive, agents/CLI = Rust; control plane = Python 3.13 + Quart | `critical-rules.md` Data Plane; `general.md` Language Selection | `svc-workflows` is Rust; Elder API stays Quart |
-| No Go | Go Phase-Out | None |
-| No PRC-origin deps, images, models, Actions | `general.md` Supply Chain | Applies to every crate, base image, toolchain |
-| All deps pinned to immutable refs, cryptographically verified | `critical-rules.md` Dependency Pinning | `Cargo.lock` + `cargo vendor`; git crates by full commit SHA; images by digest; `wasmtime` by exact `=` version |
-| Rootless and stateless | Rootless Containers | `USER` non-root, read-only rootfs; no durable local state; `.cwasm` cache is a disposable `emptyDir` |
-| OTel logs + metrics + traces, `OTEL_*` env only, dead exporter never breaks the app | Observability | Plus penguin logging (section 8.1) |
-| PostHog flag per feature, default OFF; license gate; domain bypass only | Feature Flags | Flag plan in section 7.5 |
-| No stubs; flag-on E2E | `devops.md` No-Stubs | `enforcing-no-stubs` gate in every phase |
-| PII tokenization; UUID across boundaries; int enum codes; no string references | Entity Identity & Typing | Runs, bundles, functions carry `public_id` UUID; status/kind are int codes; Elder API is the PII boundary |
-| Every Elder object has a unique `village_id` | Project rule (memory) | New tables carry it; child tables of streams/flows lack it today (RECON) |
-| Tenant is a hard boundary; tenant middleware first; client cannot set tenant | `security.md` | Tenant bound to every run and verified at every hop |
-| Service-to-service: gRPC, every call carries a short-lived signed JWT; SPIFFE-ready | `backend.md`; `security.md` | Section 5.7 |
-| REST gets OpenAPI 3.x; docs endpoints authenticated except login; gRPC versioned by package + `api_version` | `backend.md` | Gateway ingress HTTP surface needs `utoipa` spec; control-plane proto `workflows.v1` |
-| Explicit response schemas, never raw model objects | `security.md` Output Validation | Applies to every Elder API route that facades the service |
-| 90%+ coverage, all languages, builds fail below | `critical-rules.md` Coverage | `cargo llvm-cov` gate (tool choice is the builder's) |
-| Default-deny `CiliumNetworkPolicy`; Tetragon enforced; PSA `restricted` | `security.md` Kubernetes Network Security | Section 6.4. Note: existing flows-invoker uses plain NetworkPolicy |
-| Helm only; kustomize is gone (#206) | `devops.md`; RECON | Touch points in section 7.6 |
-| Builds run in a pinned container toolchain (house practice; the exact Rust rule text was not checked — UNVERIFIED) | `general.md` Build & Deployment | First Rust crate in this repo (VERIFIED no `Cargo.toml`) |
-| Independence mandate | Owner (D7) | Section 4; enforced by test G7 |
+| Data plane, security-sensitive, agents = Rust; control plane = Python 3.13 + Quart | `critical-rules.md`; `general.md` | Platform is Rust; Elder API stays Quart |
+| No Go services; never Go for security-sensitive | Go Phase-Out | PenguinTech's own services only; Go is a USER language here (5C.6) |
+| No PRC-origin deps, images, models, Actions | `general.md` | Crates, base images, toolchains, bundle dependencies |
+| Immutable pins with verification | `critical-rules.md` | `Cargo.lock` + vendoring; git crates by SHA; images by digest; `wasmtime` exact |
+| Rootless, stateless | Rootless Containers | Non-root, read-only rootfs; `.cwasm` cache is a disposable `emptyDir`. No STATEFUL EXCEPTION expected for svc-workflows roles; Valkey itself is stateful infra (how Elder deploys it: UNVERIFIED) |
+| OTel logs + metrics + traces, `OTEL_*` env only | Observability | Plus penguin logging (8.1) |
+| Flag per feature, default OFF; no stubs; flag-on real-path E2E | Feature Flags; `devops.md` | 7.5 |
+| PII tokenization; opaque IDs; int enum codes; `village_id` on every object | Entity Identity & Typing; project rule | 5A.2 |
+| Tenant hard boundary | `security.md` | Bound to every run, verified every hop |
+| Service-to-service gRPC, short-lived signed JWTs, SPIFFE-ready | `backend.md`; `security.md` | 5.7 |
+| REST gets OpenAPI 3.x; gRPC versioned | `backend.md` | Ingress HTTP spec; `workflows.v1` |
+| Decision-gating caches seeded + lazy-loaded | `general.md` Red Flags | Grants, trigger, run-as caches |
+| 90% coverage; default-deny Cilium; enforced Tetragon; PSA `restricted` | rules | 6.4 |
+| Helm only; pinned build container | `devops.md` | First Rust crate in this repo (VERIFIED) |
 
 ---
 
@@ -154,186 +133,506 @@ Paths are relative to the Elder repo unless prefixed `waddles:` or `penguin-libs
 | # | Decision |
 |---|---|
 | D1 | Move Elder's workflow and CI/CD functionality into its own image/container, `svc-workflows`: a Rust system layer that runs flows inside WASM environments |
-| D2 | Product shape: "Lucidchart + n8n/Zapier + GitHub Actions in one service presentation." The existing diagrams layer (from IceCharts; Elder's Lucidchart alternative; 18 `dg_` tables, React Flow canvas, real-time collab over WebSocket + Redis) must be usable and cross-used within workflows. Owner correction: closer to GitHub Actions than to Ansible — CI/CD workflows and reusable "functions" |
-| D3 | Flow bundles for different services covering ingest, processing, and actions — signed, versioned units. A reusable function is like a GitHub Action `uses:` |
+| D2 | "Lucidchart + n8n/Zapier + GitHub Actions in one service presentation." The existing diagrams layer (IceCharts; 18 `dg_` tables, React Flow canvas, real-time collab over WebSocket + Redis) must be usable and cross-used within workflows. Closer to GitHub Actions than Ansible: CI/CD workflows and reusable "functions" |
+| D3 | Flowbundles for different services covering ingest, processing, and actions — signed, versioned units. A reusable function is like a GitHub Action `uses:` |
 | D4 | A unified gateway layer for ingress/egress out of the system, which we gate. It is the only way in or out |
 | D5 | Take notes from the Waddles data plane (section 8) |
-| D6 | WASM is for any "logic". Intent: let users create custom modules with lowered risk to the underlying system. Bundles are user/tenant-authored, untrusted code |
-| D7 | Independence mandate: all PenguinTech products are independent with no cross-dependencies. Other products may trigger EXISTING workflows through webhook or API, and may offer simple optional integration for "better features", but nothing may depend on them. Elder and `svc-workflows` must work fully with no other product present and degrade gracefully if one is absent or down. `svc-workflows` serves Elder only |
-| D8 | (Owner direction, 2026-10-27) Reuse the shared `penguin-libs` Rust crates the Waddles data plane uses; do not reimplement them and do not depend on the Waddles repo. Details and the parts still open: call E |
+| D6 | WASM is for any "logic", so users can create custom modules with lowered risk to the system. Bundles are user/tenant-authored, untrusted code |
+| D7 | Independence: all PenguinTech products are independent. Other products may trigger EXISTING workflows by webhook or API and may offer optional integration, but nothing depends on them. Works fully with none present; degrades gracefully if one is absent or down. Serves Elder only |
+| D8 | (2026-10-27) Reuse the shared `penguin-libs` Rust crates Waddles uses; do not reimplement; do not depend on the Waddles repo (call E) |
+| D9 | (2026-10-27) "The reason workflows was merged into Elder was to allow the 'melding' of assets data, issues / schedules, diagrams, and workflows together — meaning I should be able to easily look up and use the other resources and assets of Elder (i.e. quickly add a 'schedule event' as an action, kick off a workflow which sends an email to a known hostname and user, and launch workflows when an asset is added... also quickly convert a diagram into a workflow if needed." |
+| D10 | (2026-10-27) "We never made it to prod with IceCharts product before the merger here." No real tenants, playbooks, run history, credentials, or webhook URLs exist to preserve. Elder v3.x never contained Streams/Flows (VERIFIED: tag `v3.2.2` has none of `apps/api/modules/streams`, `apps/api/modules/flows`, `apps/flows_invoker`; first commits 2026-07-10 `53ca62b`, `c09986a`); v4.0 has no tag yet. UNVERIFIED: that no internal deployment holds data that matters (owner says none) |
+| D11 | (2026-10-27) "...we should be able to scale over 100k eps if needed to (a la would this work at a large enterprise like Uber?)." A design ceiling reached without redesign, not the day-one baseline. Scope and SLOs: Q1 |
+| D12 | (2026-10-27) Flowbundles may be written in Python, C#, Node.js, Rust, Go, or Ruby, compiled to WASM components (component model, WASI 0.2, pinned wasmtime). **Sequencing (owner):** v4.0.x ships Rust, JS/TS, Python, first-class and conformance-gated. Go, C#, Ruby are a v4.1.x target: still committed scope, gated by a per-language spike + conformance + security gate. The v4.0 build pipeline is language-pluggable so 4.1.x languages are additive |
+| D13 | (2026-10-27) "We provide a means to do the compilation so we can secure them similar to Waddles": build-as-a-service (untrusted build in an ephemeral K8s Job with build + publisher containers, no network during build, publish to the artifact bucket, approve, Ed25519 sign, verify before load). User-supplied prebuilt `.wasm` is NOT accepted for tenant bundles |
+| D14 | (2026-10-27) Slow cold start of interpreter-embedded languages (Python, JS, later Ruby) is documented as a known characteristic, not a blocker; speed it up where safe. Snapshots "caused us some headache on Waddles", so they are not a baseline (5C.7) |
+| D15 | (2026-10-27) A "marketplace" is simply a `bundles/` folder in a git repo in a format we expect (manifest, folder structure, signature), as just specified for Waddles (5D) |
+| D16 | (2026-10-27) svc-workflows is a MULTI-CONTAINER service, not a single container. It scales horizontally AND vertically, per role. Roles are separated (by run mode and/or image) and communicate and divide work over Valkey Streams/queues, as Waddles does (5.3, 5.8) |
 
 ---
 
 ## 5. Architecture
 
-### 5.1 Overview
+### 5.1 Overview (one cell)
 
 ```
-  Browser (React Flow canvas)         Other products / customer systems (webhook, API)
-        |  REST /api/v1                         |  HTTPS
-        v                                       v
- +-------------------------+            +--------------------------+
- | Elder API (Quart)       |            | GATEWAY-IN               |   svc-workflows image,
- | CONTROL PLANE           |            | authN raw bytes, replay, |   run mode: gateway
- | definitions, versions,  |            | rate limit, 2nd factor   |
- | run history, authz,     |            +------------+-------------+
- | tenant/identity, vault, |                         | event
- | license, signing        |                         v
- +----+-------------+------+            +--------------------------+      +-------------------+
-      | gRPC        | enqueue           | ENGINE                   |<---->| EXECUTOR          |
-      | (machine    v                   | run scheduler, graph     | mTLS | wasmtime host,    |
-      | JWT)   Valkey/Redis Stream ---->| walker, capability gate, | host | credential-less,  |
-      |        (penguin-spine)          | quotas, checkpoints      | call | own Deployment    |
-      |                                 +-----+--------------+-----+      +-------------------+
-      |                                       |              | launch
-      |                                       v              v
-      |                          +----------------+   +--------------------+
-      +------------------------->| GATEWAY-OUT    |<--| RUNNER JOBS        |
-        grants, secrets-by-ref   | allowlist, SSRF|   | git / test / build |
-        run events               | pin, cred      |   | ephemeral, no creds|
-                                 | injection      |   +--------------------+
-                                 +-------+--------+
-                                         v
-                                   Internet / customer APIs
+  Browser (canvas)           Other products / customers (webhook, bulk API)
+        | REST                        | HTTPS
+        v                             v
+ +----------------+        +------------------------+
+ | Elder API      |        | gateway: ingress       |  image svc-workflows-gateway
+ | CONTROL PLANE  |        | verify, limit, mint,   |
+ | definitions,   |        | dedupe                 |
+ | authz, vault,  |        +-----------+------------+
+ | summaries      |                    | XADD (run stream, partitioned)
+ +--+-------+-----+                    v
+    | gRPC  | outbox      +-------------------------------+     gateway: scheduler
+    | async v events ---->| Valkey Streams (cluster, AOF, |<--- events, cron, timers
+    | batched             | HA); lease + epoch fencing    |     (mints, no internet)
+    |                     +---------------+---------------+
+    |                                     | consumer groups
+    |                    +----------------v---------+  UDS   +-------------------+
+    |                    | engine pod: engine       |<------>| executor (wasmtime|
+    |                    | gate, host-call broker   |        | holds no secrets) |
+    |   elder.* gRPC     +---+--------------+-------+        +-------------------+
+    +<-------------------+   | mTLS gRPC     | action streams
+                             v               v
+                  gateway: egress  <---- async actions
+                  allowlist, pin, vault injection --> Internet / customer APIs
 
-  Object storage: signed bundle artifacts (executor reads, read-only)
+  gateway: controller -> K8s Jobs: runner (git/test), builder + publisher (compile, 5C)
+  History sink: batches -> object storage.   Router: tenant -> cell (5B.4)
 ```
 
-- Control plane = Elder API. Data plane = `svc-workflows`. AUTHOR'S CALL A.
-- One image, several run modes, separate Deployments so the executor holds none of the engine's or gateway's secrets. AUTHOR'S CALL I.
-- Gateway scope is external traffic. Control-plane gRPC is a separate mutually authenticated channel. AUTHOR'S CALL Q.
+- Control plane = Elder API; data plane = `svc-workflows`. AUTHOR'S CALL A (revised: run/step history moves to the data plane's sink, AA).
+- External traffic enters/leaves through gateway ingress/egress. `elder.*` calls take the engine's gated Elder adapter to Elder's internal API. AUTHOR'S CALL Q (Q11).
 
 ### 5.2 Control plane (Elder API)
 
-| Owns | Notes |
-|---|---|
-| Definitions: graphs, versions, functions, bundles, triggers, schedules | Authoring store; existing `stream_*` / `iceflows_*` tables until Phase 4 |
-| Run history and approvals | Engine reports events over gRPC; Elder API is the only writer of domain tables |
-| Authz: OIDC scopes, tenant, teams | Data plane never decides authz on its own; it enforces grants the control plane issued |
-| Identity and PII | Users appear to the data plane as UUIDs only |
-| Credential vault | Envelope-encrypted; values never leave except to the gateway-out by reference |
-| License and flags | Tier resolved at tenant/team scope; limits are license-server-configurable |
-| Signing | Signs approved bundle digests; private key never in the data plane |
-| Facade | `/api/v1/streams/*` and `/api/v1/flows/*` keep their shapes during migration |
+Owns: definitions (graphs, flowbundles, triggers, schedules; schema changes need no shims, D10); authz (OIDC scopes, tenant, teams); identity and PII; credential vault (6.6); license and flags; signing (private key never in the data plane); run summaries and indexes (written in batches, never per event); the `/api/v1/streams/*` and `/api/v1/flows/*` facade the UI keeps using.
 
-### 5.3 Data plane modes (one image)
+### 5.3 Roles, images, deployments — AUTHOR'S CALL I (replaces "one image, several modes"), AQ
 
-| Mode | Holds | Network |
+One Cargo workspace, several images split along **trust boundaries** (Waddles runs ingest, process, action, bundle_executor, and egress_proxy as separate services). A run mode within an image exists only where roles share a trust level.
+
+| Deployment (SPIFFE `spiffe://penguintech.io/<env>/svc-workflows-…`) | Image / mode | Holds | Network | Scales on |
+|---|---|---|---|---|
+| `gateway-ingress` | gateway / `ingress` | Per-source auth refs; `gateway-in` producer key | Public listener; Valkey (XADD only); control plane | RPS, connections, 429 rate |
+| `gateway-egress` | gateway / `egress` | Vault access; credentials in memory per call; assertion key | Internet allowlist; vault; consumes action streams; mTLS from engine | In-flight egress, pool saturation, action-stream lag |
+| `gateway-scheduler` | gateway / `scheduler` | `scheduler` producer key; trigger cache | Control plane; Valkey; no public listener, no internet | Event/timer lag |
+| `gateway-controller` | gateway / `controller` | K8s permission: create/watch Jobs in one namespace | K8s API; object storage; control plane | Job backlog |
+| `engine` pod | engine: containers `engine` + `executor` | `engine`: Valkey consume credentials, run-as Elder tokens. `executor`: nothing | `engine`: Valkey, gateway-egress, Elder internal API. `executor`: UDS only | Run-stream lag, executor saturation |
+| `builder` Job | builder-`<lang>` (untrusted) + publisher (trusted) | build: nothing. publisher: bucket write | build: none. publisher: bucket + control plane | Build queue |
+| `runner` Job | Allowlisted runner images | Nothing | gateway-egress only | Per-tenant quota |
+
+Why split by trust boundary: (1) least privilege: credentials and external connectivity live only in the gateway image; the engine image, which executes untrusted code, has no credentials, no ingress, no K8s Job code, a minimal binary, and a tight Tetragon allowlist and NetworkPolicy, and a code path that is absent from an image cannot be leveraged; (2) different resource profiles and scaling signals per role; (3) independent rollout and drain per role; (4) smaller images, smaller attack surface.
+
+- **Ingress vs egress (recommendation):** separate Deployments of the gateway image with different modes, separate NetworkPolicies/ServiceAccounts/Tetragon policies. Trade-off: separate images would drop credential-injection code from the internet-facing binary at higher CI cost (Q6).
+- **Scheduler and controller:** gateway-image modes (platform code, no user code, no credentials), their own Deployments. The scheduler holds a minting key, so it never shares an image with the executor (Q6).
+- **Executor container (call AQ):** "credential-less" is precise: the engine process necessarily holds internal Valkey consume and Elder identity; a guest escape must not reach them. So wasmtime runs in a separate `executor` container: no secrets, no ServiceAccount token, UDS peer-credential check to `engine`. Pod-level network policy is shared, which is weaker than Waddles' separate Deployments over mTLS; a separate Deployment is the option if network isolation is required, at a network hop per host call (Q6).
+- Builder Jobs are ephemeral, not services. The controller creates them; build containers are the most hostile (they execute bundle build code).
+- No role keeps durable local state. Per-role scaling: 5.9. Helm, CI, SPIFFE, Tetragon: 7.6.
+
+| Alternative | For | Against |
 |---|---|---|
-| `engine` | Machine identity; stream consumer credentials; no external creds | Control plane (gRPC), Valkey/Redis, executor port, launcher API |
-| `gateway-in` | Raw-request authentication material (per-source secrets by ref) | Accepts external; talks to engine/stream only |
-| `gateway-out` | Credential-injection material (decrypted only in memory, per call) | Internet allowlist; control plane for secret resolution |
-| `executor` | Nothing of the stage's secrets; client cert; read-only bucket credential | Egress only to engine host-API port and bucket; no ingress |
-| `launcher` | Kubernetes API permission to create/delete runner Jobs in one namespace | K8s API only |
+| Single image, all modes | Simplest CI/ops | Credentials and the untrusted-code executor in one image: larger blast radius. Rejected for the gateway/engine boundary |
+| Two images (gateway + engine) | Minimum split | Builder code and its toolchains would share an image with something |
+| Per-trust-boundary images (above) | Least privilege | Three image families, per-role Deployments, builder Job templates, one chart |
 
-- Run dispatch: Elder API enqueues a run onto a dedicated stream; the engine consumes it with `penguin-spine` (consumer group, ack, reclaim, DLQ). AUTHOR'S CALL K.
-- Engine is stateless: in-flight run state lives in the stream's pending list plus checkpoints posted to the control plane. A crashed engine pod loses nothing the control plane has not recorded.
-- Hot reload: the engine learns the active set (bundle/graph digests, grants) by pull + push-invalidate; the executor fetches and verifies artifacts by digest.
+### 5.4 Gateway traffic
 
-### 5.4 Gateway
+**Ingress:** external webhooks (authentication per 6.5a over raw bytes before any parse or guest call; replay window; delivery-id dedupe); bulk intake for high-rate producers (per-batch signature, 5B.6); API triggers (scope `workflows:execute`); Elder-originated runs (UI, schedule, entity event, approval) come from the `api`/`scheduler` roles, not the public listener. Ingest flowbundles receive authenticated bytes and parse; they hold no socket or credential. Long-lived connections are out of v1 (a "poll" source is scheduler-driven). Other products may only trigger existing workflows.
 
-**Ingress (gateway-in)** — every way into the service:
+**Egress:** WASM `http`, runner traffic (git, package fetch), notifications, outbound webhooks, marketplace git fetch all take the pipeline in 6.5. Operator-configured infrastructure endpoints are not subject to the bundle guard (provenance, not address range; Waddles §8.5).
 
-| Source | Mechanism |
-|---|---|
-| Webhook from outside (incl. other products) | Per-source HMAC over the raw bytes, verified before any parse or guest call, plus a second factor (IP allowlist, bearer, or basic) — Waddles D29. Replay window + delivery-id dedupe |
-| API trigger | Authenticated call to an existing workflow's trigger endpoint; scope `workflows:execute` |
-| Elder-originated (UI "run", schedule, approval decision) | Control plane enqueues; does not transit the external gateway (call Q) |
-| Ingest bundles | Receive bytes the gateway already authenticated. They parse and normalize; they never hold a socket or a credential |
-
-- Long-lived connections (websocket/IRC-style sources) are out of scope for v1. A "poll" source is gateway-scheduled and the bundle only parses the response. Builder confirms.
-- Other products may only trigger workflows that already exist. They never create, edit, or read definitions through this path.
-
-**Egress (gateway-out)** — every way out:
-
-| Caller | Path |
-|---|---|
-| WASM host `http` capability | Gateway egress pipeline (section 6.5) |
-| Runner jobs (git clone/push, package fetch) | Same pipeline; credentials injected by the gateway, not the pod |
-| Notifications / outbound webhooks | Same pipeline |
-| Callbacks to Elder API | Not egress — control-plane gRPC (call Q) |
-
-- Operator-configured infrastructure endpoints (Valkey, bucket, control plane, OTLP) are NOT evaluated by the bundle egress guard. Provenance, not address range, is the test (Waddles §8.5).
-
-### 5.5 Bundle model — AUTHOR'S CALL L
+### 5.5 Flowbundle model — AUTHOR'S CALL L
 
 | Concept | Definition |
 |---|---|
-| **Function** | Smallest WASM component with typed input/output and a declared permission set. Versioned, signed, immutable by digest. Referenced from a node as `uses: <namespace>/<name>@<version>` |
-| **Flow bundle** | Signed, versioned unit for one service integration: manifest + graph(s) + function pins + stage roles (`ingest`, `process`, `action`) + declared permissions + limits |
-| **`uses:` resolution** | Authoring may name a tag/range. Publish resolves to an immutable digest and writes a lockfile into the bundle. Runtime accepts digests only — same rule as pinning Actions by SHA |
-| **Ownership scopes** | Platform (Elder-shipped), tenant-private, and marketplace-shared (Q6) |
+| Function | Smallest WASM component with typed input/output and declared permissions; signed, immutable by digest. `uses: <namespace>/<name>@<version>` |
+| Flowbundle | Signed, versioned unit for one service integration: manifest + graph(s) + function pins + stage roles (`ingest`, `process`, `action`) + permissions + limits |
+| `uses:` | Authoring may name a tag/range; publish resolves to an immutable digest and writes a lockfile; runtime accepts digests only |
+| Scopes | Platform (Elder-shipped), tenant-private, marketplace-shared (5D) |
 
-Manifest (conceptual — builder owns the schema):
+Manifest fields (builder owns the schema): `name`, `version`, `kind`, `stages`, `language`, `sdk_version`, `abi`/WIT world version, `uses[]`, `permissions` (`egress[]` host+methods, `secrets[]` names, `elder[]` ops, `diagram[]`), `limits` (timeout, memory, fuel), `inputs`/`outputs`, `license_feature`.
 
-| Field | Purpose |
-|---|---|
-| `id`, `version`, `kind` (function / flow bundle), `abi` | Identity; ABI world version (Q7) |
-| `stages[]` | Roles and the graph entry points |
-| `uses[]` | Pinned dependencies (digest) |
-| `permissions` | `egress[]` (host + methods), `secrets[]` (reference names only), `elder[]` (typed Elder capabilities), `diagram[]`, `limits` |
-| `inputs` / `outputs` | JSON Schemas |
-| `license_feature` | Flag/entitlement key |
-
-Lifecycle (int enum codes; builder fixes values):
-
-```
-draft -> built -> scanned -> published -> approved(consent) -> active -> deactivated/revoked
-```
-
-- Consent: the approver sees the full contract (hosts + methods, secret reference names, Elder capabilities, limits, scan status, ABI). Approval records a `permission_hash` over the canonical summary. Runtime authorization derives from the approval record, not the manifest (Waddles D26).
-- Widening on upgrade needs re-consent against a diff; narrowing auto-approves with an audit entry. Auto-update is blocked on any permission delta.
-- Revocation: pushing a revoked digest reaches the engine and executor in about a second; in-flight calls finish, further host calls in the same invocation are denied.
-
-Proposed v1 host capabilities (WIT surface is the builder's; every import calls the gate first):
-
-| Capability | Purpose | Notes |
-|---|---|---|
-| `context` | Run/tenant/trace UUIDs, inputs, config | Host-built; guest cannot set |
-| `http` | Outbound request through gateway-out | Secrets by reference only |
-| `log` | Structured log | Scrubbed; level capped |
-| `clock` | Wall + monotonic | No other time source |
-| `flags` | Read flag value | Cached last-known |
-| `elder` | Typed Elder operations (create issue, add comment, read entity by UUID) | One permission per operation; calls the control plane as the run's tenant |
-| `diagram` | Typed diagram operations (create/update shapes, read graph) | Per-diagram resource scope |
-| `emit` | Produce output / follow-on triggers | Depth- and rate-capped |
-
-- Deferred from v1: `kv`, `db`, `relay`. Add only with a real consumer and the gate in front.
-- No `wasi:sockets`, no `wasi:filesystem` beyond an empty read-only scratch, no `wasi:cli/environment`. The executor natively implements the refusing interfaces (Waddles round-2 finding: hand-built stubs were impractical).
+- Lifecycle (int codes): `draft → built → scanned → published → approved → active → revoked`. Consent shows hosts + methods, secret names, Elder ops, limits, scan status, ABI; approval records a `permission_hash`; runtime authorization derives from the approval record (Waddles D26). Widening needs re-consent; narrowing auto-approves with audit. Revocation reaches the data plane in about a second.
+- v1 host capabilities (the gate runs first on each): `context`, `http` (via gateway-egress, secrets by reference), `elder` (5A.3), `diagram`, `log`, `clock`, `flags`, `emit` (via the scheduler role). Deferred: `kv`, `db`, `relay`. No `wasi:sockets`, no filesystem beyond an empty scratch, no `wasi:cli/environment`; the executor natively implements the refusing interfaces.
 
 ### 5.6 Canvas and graph model — AUTHOR'S CALL D
 
-- One canonical graph document. The canvas is the editor; the same document is compiled, signed, and run.
-- Two layers in one document:
+One canonical graph document: the canvas edits it; it is compiled, signed, and run. Semantic layer (nodes, edges; executed) plus presentation layer (x/y/w/h, style, annotation shapes; not executed). Today separate: `stream_nodes`/`stream_edges` vs `dg_shapes`/`dg_connectors`; builder designs the merge (Phase 4). Cross-use: diagram → flow via registry link; flow → diagram via host `diagram`; run overlay over the existing WebSocket + Redis channel (`elder:dg:{diagram_id}`); conversion 5A.7. Editing concurrency (collab sessions vs `stream_editor_locks`): builder picks one. Loop semantics of `while_loop`/`for_each`: UNVERIFIED, read first.
 
-| Layer | Content | Executed? |
-|---|---|---|
-| Semantic | Nodes (id, kind, config, ports), edges (port to port, condition) | Yes |
-| Presentation | x/y/w/h, style, annotation shapes, swimlanes | No — engine ignores `annotation` nodes |
-
-- Today these are separate: `stream_nodes`/`stream_edges` for execution and `dg_shapes`/`dg_connectors` for drawing. Builder designs the merge and its Alembic migration (Phase 4).
-- Cross-use:
-
-| Direction | Mechanism |
-|---|---|
-| Diagram → flow | Shape type `flow-ref` / step link via the Elder reference registry (needs diagrams/streams/flows registered — #165 gap) |
-| Flow → diagram | Host `diagram` capability (read graph, update shapes) with per-diagram permission |
-| Run overlay | Node status chips painted on the canvas; live over the existing WebSocket + Redis channel (`elder:dg:{diagram_id}`) |
-| Entity links | `dg_shapes.elder_entity_id` is a numeric soft ref today; move to `village_id`/UUID through the registry |
-
-- Editing concurrency: diagrams use collab sessions, Streams uses `stream_editor_locks`. Builder picks one model for the unified editor.
-- Loop semantics (`while_loop`, `for_each`): how Streams executes them was not read. UNVERIFIED — builder reads before designing cycles in the graph.
-
-### 5.7 Identity, transport, and fail-closed
+### 5.7 Identity, transport, trust
 
 | Concern | Design |
 |---|---|
-| Machine identity | EdDSA short-lived JWT (≤1 h), `sub` = SPIFFE ID `spiffe://penguintech.io/<env>/svc-workflows[-<mode>]`; SPIFFE-ready (mTLS/X.509-SVID accepted first-class). Issuer in Elder: UNVERIFIED (penguin-aaa vs new). Builder confirms |
-| Sync control-plane calls | gRPC, proto package `workflows.v1`, `api_version` in every request, unknown version → `UNIMPLEMENTED` |
-| Sensitive claims | Nested JWT (sign then encrypt) |
-| Executor ↔ engine | mTLS, executor dials out; host calls flow back on the same connection (Waddles A3) |
-| Tenant binding | Run envelope carries tenant + run + trace bound by a MAC under a key held only by engine/gateway modes; verified at every hop; failure = DLQ, never retried, counted (Waddles D30) |
-| Fail closed | Grants: missing, cache-miss, or loader-error = deny. Flags and license: last-known cached value; never-seen flags OFF. Staleness bound for cached grants is a builder tunable (Q) |
+| Machine identity | EdDSA short-lived JWT (≤1 h), `sub` = the Deployment's SPIFFE ID; SPIFFE-ready (mTLS/X.509-SVID first-class). Elder-side issuer UNVERIFIED |
+| Control-plane calls | gRPC `workflows.v1`, `api_version` per request; async and batched (5B.2) |
+| **Run envelope producers — AUTHOR'S CALL X** | Producers sign envelopes with their own EdDSA keys: roles `api` (Elder API), `gateway-in`, `scheduler`. The engine holds only public keys by role, verifies tenant/run/trace binding at every hop, never mints. Each role may mint only its envelope kinds. Failure = DLQ, never retried, counted. Valkey ACL: only those roles may XADD the run stream; the engine is consume-only on its own group. Signature granularity is a scale tunable (5B.8) |
+| **Run-as principal — AUTHOR'S CALL Y** | Each run executes as a service identity scoped to the workflow's owning team and tenant. Effective scopes = consented permissions in the approval record ∩ the owning team's grants (narrower layers restrict, never expand). The triggering user/event is audit-only and supplies no authority. Per-user actions (if ever) use the user's seat tier; team features use the team's allocated tier. Resolves the confused-deputy claim in 6.2 |
+| Fail closed | Grants missing/cache-miss/loader-error = deny; flags/license last-known, unseen OFF; cached-grant staleness bounded (builder) |
+
+### 5.8 Communication: streams vs direct calls — AUTHOR'S CALL AP
+
+Streams (via `penguin-spine`) carry run dispatch, async actions, events, fan-out, and results, as in Waddles. Synchronous host calls from a running module go over direct mTLS gRPC/HTTP2 with deadlines, as Waddles' `bundle_executor` dials its stage and egress goes to `egress_proxy`. Reason: a stream hop per host call adds latency and reply-correlation machinery and roughly doubles stream load at 100k eps.
+
+| Interaction | Transport | Failure semantics |
+|---|---|---|
+| Ingress / scheduler → run | Partitioned run stream (XADD) | Producer acked only after XADD succeeds; `429/503` + `Retry-After` on backpressure; idempotency key; dedupe |
+| Engine consume | Consumer groups; lease + epoch fencing | At-least-once; reclaim after idle; DLQ after max deliveries; idempotent steps |
+| Engine → next step / async action | Per-flow action streams; gateway-egress consumer group | At-least-once; backoff; DLQ; dedupe key |
+| Engine → history | Bounded buffer → batched sink | Bounded, counted loss window |
+| Module `http` host call | Engine → gateway-egress, mTLS gRPC, per-call deadline | Returns typed error to module; no auto-retry unless idempotent; circuit breaker; `resource_exhausted` on backpressure |
+| Module `elder.*` host call | Engine → Elder internal API, gRPC, deadline | `elder_unavailable` fail closed; retry reads with jitter; writes carry an idempotency key |
+| Engine ↔ executor | UDS in the pod | Executor death = trip; call fails retryable |
+| Controller → Jobs; results | K8s API; results to a stream | Job TTL; failure recorded |
+| Control plane ↔ cell | gRPC, pull + push-invalidate | Bounded staleness |
+
+### 5.9 Scaling model — AUTHOR'S CALL AR
+
+| Role | Bottleneck | Scale signal | Min/max (placeholder) | Vertical knobs |
+|---|---|---|---|---|
+| gateway-ingress | TLS, connections | RPS, p99 ack, CPU, 429 rate | 3 / unbounded | Cores, connection and body limits |
+| gateway-egress | Outbound pool, TLS, vault cache | In-flight requests, pool saturation, action lag | 2 / unbounded | Pool sizes, cores |
+| gateway-scheduler | Event matching, timers | Event stream lag, due-timer backlog | 2 / ≤ partitions | Cores, trigger-cache memory |
+| engine | WASM CPU, instance memory | Run-stream lag per partition, executor saturation | 2 / ≤ partitions | Executor instances per pod, pooling-allocator memory, cores per pod, fuel budgets |
+| gateway-controller | Job creation | Job backlog | 2 (HA) / 4 | Small |
+| builder/runner Jobs | Concurrency | Queue depth, per-tenant quota | Quota-bound | Job CPU/memory/disk limits |
+| Valkey cluster | Memory, ops/s | Memory, ops, replication lag | Shards | Node size |
+
+- Horizontal: stateless roles, consumer-group sharding, partitions, autoscale on lag (HPA/KEDA: UNVERIFIED availability), PDBs, graceful drain (hot-swap: load → verify → swap → drain → unload; Waddles spec §7.6, VERIFIED), cells for blast radius (5B.4).
+- Vertical: per-role requests/limits; engine instance pooling sizing. Scale up while a pod's pooled-instance memory and per-core throughput stay efficient; scale out otherwise. Parallelism is capped by partitions (replicas × cores ≤ partitions); the fix for a ceiling is a higher partition count, not per-key migration (5B.3). Waddles' scale design has no NUMA guidance, so none is assumed (grep).
+
+---
+
+## 5A. Melding with Elder data
+
+### 5A.1 Boundary — AUTHOR'S CALL R
+
+| Rule | Design |
+|---|---|
+| System of record | Elder API for assets, issues, schedule items, identities, diagrams, documents. No copy beyond run-scoped context (A9) |
+| Only path | `elder.*` host functions are the ONLY way a module touches Elder data: module → gate (deny-by-default) → engine Elder adapter → Elder internal API (gRPC; SPIFFE-ready mTLS + short-lived machine JWT scoped to the run-as principal and tenant). Tenant scoping, RLS (once landed), PII tokenization, and OIDC scopes then apply automatically |
+| No direct DB | No Postgres credentials or read path in the data plane (A10) |
+| Failure | Elder API unreachable: step fails closed with `elder_unavailable`; no cached fallback, no stub result |
+| Scopes | Each op maps to an existing OIDC scope (`issues:read/write`, `infrastructure:read/write` VERIFIED pattern); checked at the gate (approval ∩ team grants) and by Elder API |
+| Audit | Per call: tenant, run, module digest, op, object address, outcome. No PII |
+
+Elder has gRPC stubs for auth, graph, organization only (`apps/api/grpc/generated/`, VERIFIED); no resource-CRUD service. Builder: thin internal gRPC facade over the service layer vs REST with a machine JWT (REST only if gRPC is unavailable).
+
+### 5A.2 Addressing — AUTHOR'S CALL S
+
+- Registry today: `references` table, `GET /refs/resolve`, `/refs/backlinks`; types in 1.3. Diagrams, streams, flows are not registered (VERIFIED).
+- **Finding:** no `public_id` UUID column exists in `apps/` or `shared/` (VERIFIED by grep). The stable cross-system address is `village_id` (`TTTTTTTT-OOOOOOOOOOOOOOOO`: tenant hex + per-tenant sequential Redis counter, `shared/utils/village_id.py`): opaque to users but sequential and tenant-prefixed. The global rule wants UUIDs across boundaries.
+- Call S: flows address Elder objects only by registry address `(module, type, village_id)`; never names, slugs, or numeric PKs. Every `elder.*` read re-checks tenant and scope, so enumeration yields nothing cross-tenant. A UUID `public_id` is an Elder-wide migration outside this spec (Q12).
+- A hostname may be a search INPUT; it resolves to an address immediately and definitions store addresses. Prerequisite: register `diagram`, flow, flowbundle, `run`, and (if built) `schedule_item`. `elder.ref.resolve` returns no title for `identity`.
+
+### 5A.3 `elder.*` surface (v1, curated) — part of call R
+
+| Resource | Ops | Scope | Notes |
+|---|---|---|---|
+| entity (hosts, cloud resources) | get, search (typed filter: type, tags, provider, region, status, hostname input), create, update (incl. tags), link | `infrastructure:*` | Has `organization_id`, `tags`, `entity_metadata`, no `hostname` column (VERIFIED); canonical hostname field UNVERIFIED |
+| issue | get, search, create, update, comment | `issues:*` | Structured fields only by default |
+| schedule item | create, update, list | TBD | 5A.5; absent from the WIT until built |
+| identity | get (opaque ref, type, status, team ids), `entity.owner` | UNVERIFIED | Never username, email, name, phone. Owner = `organizations.owner_identity_id` via `entities.organization_id` (VERIFIED); entity-level owner UNVERIFIED |
+| diagram | get graph, create/update shapes | `diagrams:*` (UNVERIFIED) | Per-diagram scope |
+| document / page | get, search (read-only) | `documents:read` | |
+| ref, notify | resolve, backlinks; `send` (5A.4) | tenant | |
+
+Typed ops only (no raw SQL or paths); tenant from the envelope, never arguments; explicit DTO outputs; page-size caps and per-op rate limits; no delete in v1. Free-text bodies (issue description, comments, documents) may hold PII that cannot be tokenized: reads return structured fields only unless the manifest declares a dangerous-tier `text` permission. Every op appears in `permissions.elder[]` and on the consent screen.
+
+### 5A.4 PII boundary and the email action — AUTHOR'S CALL U
+
+- **Constraint:** raw PII (name, email, username, phone, address) lives only in the Elder API server. `identities.email`/`username` (`apps/api/models/identity.py:85-86`) and alert recipient JSON (`alert_config.py:73`) are VERIFIED. `svc-workflows`, WASM memory, run history, logs, traces, queues, and DLQs never hold them.
+- **Email action:** `elder.notify.send(channel=email, recipient=<identity address> | owner_of(<entity address>), template=<id>, vars=<non-PII scalars and addresses>)`. The flow passes opaque IDs. Elder API resolves the recipient, renders the template with display names resolved there, applies suppression and rate limits, and sends via an Elder-owned transport. Only an opaque `message_ref` returns. The address exists only in Elder API memory and the transport.
+- A raw address as recipient is refused (`pii_in_argument`); external recipients use registered notification contacts held in Elder. Run history stores IDs, op names, outcomes; no response bodies by default. Rejected: SMTP from gateway-egress with a detokenize call (plaintext in gateway memory).
+- **Gap:** Elder has no working email transport; `_send_email_notification` returns success without sending (`apps/api/services/webhooks/service.py:1014-1025`, VERIFIED). A real transport is a prerequisite (Q19).
+- External trigger payloads may hold PII the platform cannot tokenize: stored per a per-trigger `payload_retention` (default: not stored); sensitive keys redacted in logs/traces.
+
+### 5A.5 Schedules — AUTHOR'S CALL V
+
+| Existing | State |
+|---|---|
+| `stream_schedules` (cron, tz, `next_run_at`) | Model only; no executor (VERIFIED) |
+| `sbom_scan_schedules` (`models/security.py:118`) | Scan scheduling; not examined |
+| On-call tables (`modules/services_oncall/models.py`) | People scheduling |
+| Issue `due_date` (`issue.py:323`); project/milestone dates (`project.py:36-37,58`) | Dates on work items |
+| Worker `aiocron` (`apps/worker/main.py:683-697`) | Precedent for a time executor |
+| Calendar / schedule-event model | **None found** (grep); UNVERIFIED that no module has one |
+
+- "Add a schedule event as an action" has **no target today**. Options: (1) issue with `due_date`; (2) on-call override/shift; (3) a new minimal schedule item (title, start/end or due, recurrence, registry links, owner team, `village_id`); (4) a flow cron trigger (a trigger, not an Elder event).
+- Call V: recommend (3). Until Q7, Phase 2 uses `elder.issue.*` with `due_date` and a `schedule.due` trigger; `elder.schedule.*` is absent from the WIT, never stubbed.
+- Time triggers are part of melding: cron (tz-aware), due dates, schedule start/end, waits. The Streams cron gap (Q14) is in scope in the `scheduler` role: fire key = (trigger, scheduled instant); missed-fire policy is the builder's.
+
+### 5A.6 Entity events as triggers — AUTHOR'S CALL T
+
+- Today: `shared/events.py::emit_event` XADDs to `elder:events:{domain}`. **Zero callers and zero consumers** (VERIFIED by grep). It is fail-soft (a Redis outage drops the event), uses a sync client in an async function, carries int IDs. Entity writes have ≥3 paths: API routes, direct DB upserts in the discovery worker (`apps/worker/discovery/service.py:428-443`), and connectors via `ElderAPIClient` (`apps/worker/utils/elder_client.py`). A common write layer: UNVERIFIED. `AuditService.log_modification` (`services/audit/service.py:213`) is a candidate hook (called on entity writes: UNVERIFIED). Reusable: stream naming, JobBus idempotency/DLQ patterns.
+- Design: events `entity.created|updated|deleted|tagged|linked`, `discovery.found`, `issue.*`, `schedule.due`; payload = village_id, changed field names, non-PII subset. **Transactional outbox** (row in the same DB transaction), via a Postgres trigger or ORM/DAL hook covering all write paths including the worker; relayed to the cell's event stream. No lost events.
+- Trigger definitions live in the control plane (tenant-scoped, owning team): event types + typed predicate filter on a whitelisted attribute set (type, tags, provider/account/region, status, org), flow digest, rate limit, dedupe window, `payload_retention`. The `scheduler` role consumes events, matches against its seeded + lazy-loaded cache, applies dedupe/loop guard/limits, and enqueues signed envelopes. The engine never sees raw events. Idempotency key = (event_id, trigger); rapid updates coalesce within the window.
+- **Loop prevention:** every envelope carries `origin` (root run, causation depth, chain hash). Writes a run makes through `elder.*` tag their outbox rows with the causing run and depth. The matcher blocks a trigger from firing on events caused by its own flow within one chain (default), caps depth, counts every block, and auto-disables a trigger after N hits with an alert. Cross-flow chains need an explicit per-trigger opt-in.
+- **Rate and burst:** per-trigger and per-tenant limits; bounded queues with backpressure to the matcher (pause consumption); batch-trigger mode (a list of addresses per run); discovery bursts (e.g. 100k events) coalesce (5B.9).
+
+### 5A.7 Diagram → flow conversion — AUTHOR'S CALL W
+
+- **Diagram-side prerequisites (not built):** `dg_shapes.elder_entity_id` is a numeric soft ref with no FK (`diagrams.py:130-135`, VERIFIED); icon sets are an unchecked item (`docs/design/inventories/icecharts.md:9`, VERIFIED); diagrams are not in the registry (VERIFIED); recon puts diagrams Phase 4 at ~70%. Needed: (1) register `diagram`; (2) entity-bound shapes as `binding` references by `village_id`, migrated off the numeric ref; (3) a shape-kind taxonomy (`shape_type`, `dg_shape_metadata`, `dg_node_metadata` exist, unread); (4) connector direction semantics (UNVERIFIED).
+
+| Diagram element | Becomes |
+|---|---|
+| Entity-bound shape | Entity-typed node, default `lookup`; reviewer assigns `trigger` (lifecycle event for that entity/type/tag), `lookup`, or `action` |
+| Connector between mapped shapes | Edge (control flow default; dependency-like types map to data edges) |
+| Unbound typed library shape (e.g. "Server") | `search` node on that type, flagged for binding |
+| Decorative text/groups | Annotation nodes (presentation layer) or dropped, reviewer's choice |
+| Ambiguous/unresolved (unbound labelled shape, deleted/inaccessible binding, undirected connector, cycle, several roots) | Listed in a guided review; **never guessed**; the draft cannot be enabled while any remain |
+
+- Output: a **DRAFT** flow in the canonical graph, flagged `draft`, linked back to the diagram (`derived_from`). Enabling needs human review and approval (consent for derived permissions) and `workflows.diagram-convert`. The draft inherits no permissions; converting needs read on the diagram and referenced objects.
+- **One-shot fork by default.** Later diagram changes raise a "changed since conversion" indicator with a diff and an offer to convert into a new draft; an enabled flow is never mutated by diagram edits. Live bidirectional link rejected for v1: edits would silently change production behavior and break signing (Q8).
+
+### 5A.8 Acceptance scenarios (flag-on, real-path E2E; counts printed; all other products absent)
+
+| # | Scenario | Assertions |
+|---|---|---|
+| a | Asset discovered → flow → issue + schedule item | Entity created (API or discovery); outbox → stream → scheduler; exactly one run; issue linked to the entity; schedule leg per Q7 (`due_date` until built); registry links; history IDs only; replay creates no second issue; another tenant's identical asset does not trigger |
+| b | User-run flow emails a known user about a known hostname | Search hostname → address; `elder.notify.send` with identity ref; email arrives at a real test transport; scan of svc-workflows logs, spans, metrics, queues, run history, executor memory for address and username: zero matches over N>0 artifacts; a raw address argument is refused |
+| c | Small topology diagram → draft → review → enable → run | 3 bound shapes + 1 decorative; draft links back; an ambiguous item blocks enable; approval required; run succeeds; overlay on canvas; later diagram edit shows "changed", enabled flow unchanged |
+| d | A flow that creates an asset does not retrigger itself | Exactly one run; `loop_guard_blocked` ≥ 1; depth cap holds for F→G→F; trigger auto-disables after N hits |
+| e | Elder API down mid-run | Step fails `elder_unavailable`; nothing fabricated; counted |
+
+---
+
+## 5B. Scale & capacity
+
+### 5B.1 Target (D11) and placeholders
+
+Target: >100,000 events/s sustained aggregate, reached by adding partitions, cores, and cells, not by redesign; day-one baseline is lower. eps = trigger events accepted per second; step rate = eps × steps per run. Q1: per tenant, per cell, or aggregate; SLOs; test environment.
+
+| Placeholder SLO (not owner-set) | Target |
+|---|---|
+| Ingest ack p99 | < 50 ms |
+| Event → run start p99 | < 1 s |
+| Native step p99 / WASM step p99 (warm, excl. module work) | < 5 ms / < 20 ms |
+| Accepted-event loss | 0 (at-least-once; duplicates counted) |
+
+### 5B.2 Control plane out of the hot path; durability tiers — AUTHOR'S CALL AA
+
+No synchronous per-step gRPC checkpoint into Quart/Postgres. Hot run state lives in the data plane; durable history goes to an append-only batched sink; Postgres holds definitions, summaries, indexes.
+
+| State | Where | Durable? | On loss |
+|---|---|---|---|
+| Definitions, grants, triggers | Postgres; cell read-only cache | Yes | Reload (seed + lazy) |
+| Accepted event | Partition stream (Valkey cluster, persistence + HA) | Yes (replicated before ack, tunable) | Producer retries; dedupe |
+| In-flight step state | Engine memory + stream pending list | Reconstructible | Reclaim, redeliver; idempotent steps (key = run, step, attempt) |
+| Short waits (≤ 30 s placeholder) | Delayed entry in the partition | Reconstructible | Redelivery |
+| Long waits (delays, schedules, approvals) | Wait record in Postgres (low volume) | Yes | Scheduler re-enqueues when due |
+| Run/step history | Append-only batches in the sink | Yes, eventually | Bounded buffer; counted loss window |
+| Summaries, indexes | Postgres via batched upserts | Yes | Rebuild from sink |
+| Logs, metrics, traces | OTel | No | Sampled; outside the hot path's failure domain |
+
+- Sink options (builder decides; a new datastore needs owner approval, Q15; the merge design fixed Postgres + Neo4j + Redis): object-storage segments + Postgres index (cheap, durable, slow ad hoc query); columnar/time-series store (fast query, new datastore, rates UNVERIFIED); partitioned Postgres (not credible at this rate).
+- History policy: full detail for failures; success steps sampled or opt-in; counters always. 500k steps/s × 200 B = 100 MB/s ≈ 8.6 TB/day if every step were stored (UNVERIFIED sizes).
+
+### 5B.3 Partitioning and fencing — AUTHOR'S CALL AC (Waddles design, not code)
+
+Source: `waddles:docs/superpowers/specs/2026-09-28-dataplane-scale-design.md` (VERIFIED). It is sized on cardinality (streams, connections, digests); it states no events/s figure. **Implementation not found:** no `fenced_commit`, `lease:epoch`, or `N_PARTITIONS` in `waddles:core/`; `penguin-spine` @ `586b8dad` has no partition/lease code. Reuse the design; build the code (in spine or here).
+
+| Waddles element | Use here |
+|---|---|
+| Fixed partitions (2048) via rendezvous hash as the transport unit | Key = hash(tenant, flow); count from capacity math |
+| Ownership by Valkey lease (`SET NX PX`, renewal, jitter, claim cap) | Same |
+| Hard self-eviction on a monotonic deadline | Same (GC-pause hole) |
+| Server-side Lua epoch fencing: XADD hand-off, **XACK last**, dedup key | Same; scripts do not roll back, so ordering + dedup are the safety |
+| Voluntary shed above 150% of average; never migrate hot keys, raise the partition count | Same |
+| Fairness: rate limit → weighted fair dispatch → executor sub-ceiling → aggregate trip | Same |
+| Lazy load, LRU by digest, decayed-score pinning, byte-capped pin budget, single-flight | Same (5C.7) |
+| HPA on partition lag and tenant aggregate lag | 5.9 |
+
+Valkey cluster mode; hash tags colocate a partition's stream and dedupe keys. Fencing does not make side effects exactly-once; at-least-once + idempotency is the contract.
+
+### 5B.4 Cells — AUTHOR'S CALL AB
+
+A cell is an independent deployment of all roles plus its own Valkey cluster and history sink. A control-plane directory assigns tenants to cells; a router sends ingress to the owning cell. Scale by adding cells or partitions; blast radius is one cell; a single deployment is one cell. Definitions replicate by pull + push-invalidate (read-only cache); no hot-path call crosses cells. Multi-region and residency are future: a cell is region-pinned with no cross-cell hot-path dependency. If D11 means 100k eps for one tenant, that tenant spans cells by (tenant, flow) hash; one hot flow cannot split without losing order (Q1).
+
+### 5B.5 Capacity math (worked example; every figure UNVERIFIED unless marked)
+
+| Item | Estimate |
+|---|---|
+| Load | 100k eps × 5 steps = 500k steps/s; 49 eps/partition average at 2048 partitions, 250 at 5× skew |
+| Valkey | ~3 commands/event = 300k/s; ~100k ops/s per shard without pipelining: ≥4 shards, plan 8-16 |
+| WASM steps | 40% = 200k/s × 1 ms = ~200 cores (Waddles measured **2-4 ms per `db` round trip, Python component, VERIFIED**); Rust modules at ~0.1 ms ≈ 20 cores |
+| Native steps | 300k/s × 20 µs ≈ 6 cores |
+| Stream memory | 60 s backlog = 6M × ~1 KB ≈ 6 GB across shards |
+| Gateway-in | ~2 KB/event = 200 MB/s ≈ 1.6 Gbps; TLS at 100k req/s; batch intake cuts per-request cost |
+| Envelope verify | EdDSA at 100k/s costs a few cores: per-batch signing if it binds |
+
+Phase 0/1 spikes (single-partition throughput, pooled call cost per language, fencing overhead, Elder bulk lookup) replace these numbers.
+
+### 5B.6 Backpressure, quotas, fairness at ingress — AUTHOR'S CALL AD
+
+| Layer (cheapest first) | Behavior |
+|---|---|
+| Connection and request limits | Reject early |
+| Per-source and per-tenant token buckets | `429` + `Retry-After` |
+| Target-partition depth/lag check | `429`/`503` before XADD; never unbounded growth |
+| Bulk intake | HTTP/2 or gRPC flow control; per-batch accept/reject counts |
+| Weighted fair dequeue in the engine | Weights by tier; no starvation |
+| Load shedding | Low-priority/bulk first; counted, audited, sampled to DLQ; never silent |
+
+An ingest rate limit is a requirement (Waddles RECON: intake endpoints unmounted, no limit). Idempotency keys on every envelope; per-flow rate limits; loop guard.
+
+### 5B.7 Hot path — AUTHOR'S CALL AE (Waddles gaps are requirements here)
+
+- wasmtime pooling allocator and pre-instantiation; fresh memory per call kept but cheap.
+- `.cwasm` cache keyed `{digest}-{wasmtime_abi}-{collector}`; lazy load + LRU + pinning (Waddles design: ~100-150 hot digests at 50 replicas, 250-entry LRU, ≥95% hit target; UNVERIFIED here).
+- CPU fuel with epoch deadline. Waddles never built fuel (`fuel_used: 0` hardcoded, `waddles:core/bundle_executor/src/wire.rs:546,910`, `invoke.rs:809`), has `.cwasm` caching as a TODO (`lib.rs:27-30`), and parses pool knobs without using them (all VERIFIED).
+- Batch/vectorized invocation: WIT `process-batch(list<event>)` for ingest/process stages. Most steps need no host call; host calls are multiplexed and batched.
+- Other Waddles lessons: mount the ingress rate limit from day one; no stub returns success (Waddles links unhandled calls to non-retryable `not_implemented`, VERIFIED); do not assume gVisor; change Helm values, not `kubectl` overrides (RECON); finish the cut-over (RECON: Waddles has `.py` remnants); WASI has no threads, so `asyncio.run` fails (VERIFIED).
+- Targets (placeholders): native step < 50 µs, warm WASM call overhead < 500 µs excl. module work, host-call round trip < 200 µs.
+
+### 5B.8 Gateway, observability, autoscaling at scale — AUTHOR'S CALLS AG
+
+- Gateways are stateless, horizontally scalable tiers. Egress: HTTP/2 and pooling; DNS cache holding **validated, pinned** IPs (TTL capped at the record TTL, revalidated per new connection); per-tenant and per-destination limits and circuit breakers; retries with backoff + jitter budgets; vault material in a short-TTL in-memory cache only, fail closed on vault outage (6.6).
+- Observability: bounded label cardinality (no tenant/run IDs as labels), head sampling at ingress + tail sampling in the collector, log sampling, OTLP batching with bounded queues that drop oldest; telemetry never in the hot path's failure domain.
+- Autoscale on lag (HPA/KEDA): verify metrics-server, an external-metrics adapter, and KEDA on MicroK8s and DOKS (UNVERIFIED).
+- Envelope verification: per envelope or per batch (tunable).
+
+### 5B.9 Elder data access at scale — AUTHOR'S CALL AF
+
+`elder.*` calls are cached and batched with epoch-based invalidation. Decision-gating caches (grants, triggers, run-as scope) are seeded and lazy-loaded, never invalidate-only. Data reads are read-through with a short TTL, invalidated from the entity event stream. Elder side needs bulk APIs (`GetMany`, cursor `SearchPage`), per-tenant/per-cell lookup limits and a circuit breaker so flows cannot overload the system of record; a read replica for lookups is a builder option. Event bursts (a scan emitting 100k events): coalesce by (trigger, resource) window, batch-trigger mode, per-flow limits, backpressure to the matcher.
+
+### 5B.10 Licensing (open)
+
+Scale is a paywall axis (scale/structure, not features). Which limits map to tiers (eps, concurrent runs, nodes/cells, retention, compile minutes, marketplace sources) is Q2; nothing is decided. Note the tier matrix gives Free/Professional one backend node per service type and Enterprise multiple (`docs/superpowers/specs/2026-08-11-module-reorg-license-gating-design.md`, VERIFIED), so multi-node scale-out is Enterprise by that model.
+
+### 5B.11 Load-test gate — AUTHOR'S CALL AH
+
+From Phase 1, every phase exit runs a load test (generator: Rust or k6-style). Report counts (sent, accepted, `429`-rejected, acked, delivered, duplicates), never a bare pass; a zero denominator fails.
+
+| Test | Pass criterion |
+|---|---|
+| Ramp to target | Sent = accepted + rejected; accepted = acked; zero accepted loss; p99 within placeholders |
+| Scaling curve | Near-linear in cores/partitions/cells until a named bottleneck |
+| Soak of the new engine (a test, not production soak) | No leak or drift over the agreed hours |
+| Noisy neighbor | A hot tenant does not move healthy tenants' p99 beyond SLO |
+| Backpressure | Overload yields `429`, not loss |
+| Chaos | Kill an engine pod mid-run and the Valkey primary: no accepted-event loss |
+
+Environments: local single-node alpha runs functional and small-load tests only; sustaining the target needs a multi-node cluster whose capacity is UNVERIFIED (dal2 beta offline as of 2026-08-21 per `testing.md`; now unknown). Q1.
+
+---
+
+## 5C. Languages, toolchains, compile pipeline, cold start
+
+### 5C.1 Languages and toolchains (D12)
+
+Maturity is evidence-based; an unverified cell is not "supported".
+
+| Language | Release | Componentization | SDK / bindings | Build image | Evidence | Cost |
+|---|---|---|---|---|---|---|
+| Rust | v4.0.x | `cargo-component` 0.21.1, Rust 1.97.1, `wasm32-wasip2` (+ `wasm32-wasip1` pre-installed) | `waddles:sdk/waddle-sdk-rs` | `rust:1.97-slim-bookworm` by digest (VERIFIED `waddles:bundles/Dockerfile.core-bundles`) | Hermetic build 0.40 s; reproducible-build script (VERIFIED) | Small artifact (size UNVERIFIED) |
+| JS/TS | v4.0.x | `componentize-js … --disable all` | `waddles:sdk/waddle-sdk-js` | By digest (version UNVERIFIED here) | Hermetic build 5.13 s (VERIFIED) | Ships a JS runtime in the component: size/instantiate UNVERIFIED |
+| Python | v4.0.x | `componentize-py` 0.25.1 `… --stub-wasi` | `waddles:sdk/waddle-sdk` | By digest | Build 3.4-5.5 s; **21.6 MB; 3.3-4.5 s uncached vs 4.5-5.4 ms from `.cwasm`**; `asyncio.run` fails (needs `PollLoop`); executes bundle code at build (VERIFIED, Waddles spec R1/R2) | Largest artifact; needs the `.cwasm` cache and pooling |
+| C# | v4.1.x | `componentize-dotnet` 0.8.0-preview00011 + NativeAOT-LLVM 10.0.0-rc.1.26306.1, .NET SDK 10.0.401 | `waddles:sdk/waddle-sdk-cs` ("Tier-1(spike)"; per-bundle adapter: wit-bindgen C# types are nominal) | By digest (VERIFIED) | Two C# bundles exist in Waddles (`csping`, `superpenguin-roll`). README: toolchain "still experimental"; spec D35 still says spike-pending (stale vs code). Build uses network for `dotnet restore` (VERIFIED; needs a vendored NuGet cache here). Executor conformance: UNVERIFIED | Preview/RC toolchain; size UNVERIFIED |
+| Go | v4.1.x | UNVERIFIED candidates: TinyGo wasip2 component support; Go wasip1 + component adaptation + `wit-bindgen-go` | To be generated | To be chosen | No Waddles evidence (no Go bundle, no spec mention; VERIFIED) | Runtime/GC overhead UNVERIFIED |
+| Ruby | v4.1.x | UNVERIFIED candidate: ruby.wasm (CRuby on WASI) + component adaptation | To be generated | To be chosen | No Waddles evidence (VERIFIED) | Embeds an interpreter: large, slow instantiate (expected) |
+
+- v4.1.x prerequisites (not dropped): a per-language feasibility spike, the conformance suite, and the security gate. Toolchain provenance versus the PRC-origin rule is UNVERIFIED for every row and every transitive build dependency.
+- **Slow start is documented, not a blocker (D14):** authoring docs and the limits table state that interpreter-embedded languages (Python, JS; later Ruby) have larger artifacts and slower cold start, with the measured Python numbers above.
+
+### 5C.2 Contracts and SDKs — AUTHOR'S CALL AM
+
+WIT worlds for `ingest`, `process`, `action` stages and a `function` world, versioned (Q13); the manifest per 5.5. Per language: bindings generated from WIT plus a thin idiomatic layer for typed host functions (`elder.*`, `http`, `log`, `clock`, `flags`, `diagram`). A shared conformance suite of "golden flowbundles" every language must pass (identical outputs on golden events, imports inside the world, limits enforced); a local dev/test harness; an authoring CLI.
+
+### 5C.3 The compile pipeline is a security boundary — AUTHOR'S CALL AK
+
+Mirrors Waddles §4.6/D27 (VERIFIED): untrusted `build` init container + trusted `publisher`, shared `emptyDir`, `backoffLimit: 0`, `activeDeadlineSeconds: 900`, TTL after finish. The pipeline is language-pluggable (D12).
+
+| Stage | Trust | Does |
+|---|---|---|
+| 1 Ingest source | Trusted fetch, no user code | Pinned commit SHA via gateway-egress (5D) or upload; size caps; archive hardening (traversal, symlinks, bombs) |
+| 2 Inert checks | Trusted | Manifest validation, semgrep, secrets scan, dependency audit, license check, forbidden constructs, PRC deny-list. **All pass before any user code executes** (Waddles D34). Each scanner reports items examined; zero = failure |
+| 3 Dependencies | Trusted verify | **Vendored dependencies required**, verified against the lockfile hashes. Matches Waddles' decided v1 ("vendored deps required for sandbox builds; no mirror in v1", marketplace design Q6, VERIFIED). A gated, checksummed mirror pre-fetch is a later option. Rejects unpinned/unhashed deps, VCS/URL deps, install scripts, native extensions without a WASM build |
+| 4 Build | **Untrusted** (runs build scripts, proc macros, source generators, import-time code) | Ephemeral Job, rootless, caps dropped, read-only rootfs + scratch, seccomp, CPU/memory/disk/time limits, **no network**, no secrets, toolchain image by digest with all components pre-installed, deterministic environment, per-language recipe with required flags (`--stub-wasi`, `--disable all`) |
+| 5 Validate + publish | Trusted publisher | `wasm-tools validate`; world matches the declared stage; **imports restricted to the allowed WIT world per language, anything else rejected**; size cap; limits recorded; digest computed here, never in the build sandbox; SBOM + vulnerability scan; provenance (source, lockfile, toolchain digests, log digest) |
+| 6 Approve, sign, publish | Control plane | `permission_hash` consent; Ed25519 sign; artifact + sidecar to the bucket; executor verifies before load |
+
+- Retained for audit: source, build log, provenance, SBOM (retention: Q15 sibling). Quotas: per-tenant build concurrency and minutes; weighted fair queue; backpressure with ETA; dedupe by (source digest, toolchain digest).
+- **Isolation floor — AUTHOR'S CALL AN:** untrusted builds need enforced default-deny Cilium + enforced Tetragon + hardened pods; gVisor/Kata optional (Waddles R3: gVisor unavailable on MicroK8s and DOKS; Elder clusters UNVERIFIED). An environment without the floor refuses untrusted builds and builds only platform-origin source. Alpha: Tetragon is off (`values.yaml` comment, VERIFIED), so tenant builds are disabled there.
+- **No prebuilt path, even first-party — AUTHOR'S CALL AL:** first-party flowbundles use the same pipeline with a system auto-approve gate (Waddles' marketplace design unifies first-party into one pipeline). One path, one gate.
+- The compile pipeline lands with the first language set (Phase 1 builds first-party bundles through it). Tenant upload stays last (call J).
+
+### 5C.4 Build threat model (adds to 6.2)
+
+Malicious source and build-time code execution: stage-4 sandbox, scan before execution. Malicious or confused dependencies, install scripts: vendored + hashed lockfile, namespace pinning. Toolchain compromise: digest-pinned checksummed images, reproducibility check, controlled updates. Resource exhaustion (zip/compile bombs, macro loops): size/time/CPU/memory/disk limits, quotas. Build sandbox escape: the isolation floor, ephemeral, no credentials. Artifact tampering: publisher-computed digest, signature, verify before load. A component importing outside its world: validator rejects, executor refuses unknown imports. Log injection or secret exfil through output: sanitized logs, no secrets in the environment.
+
+### 5C.5 Acceptance (per-language conformance)
+
+| # | Scenario | Assertions |
+|---|---|---|
+| f | Same "hello flow" built from source in each shipped language | Passes the conformance suite; identical outputs on golden events; counts per language |
+| g | Out-of-world import | Rejected at publish and by the executor |
+| h | Over-limit module (time, memory, fuel) | Trapped, counted, three-strike disable |
+| i | Build attempts network access | Fails; no packet leaves |
+| j | Tampered artifact or bad signature | Refused at load; previous version keeps serving |
+
+### 5C.6 Repo-policy note — AUTHOR'S CALL AO
+
+The platform stays Rust. The Go Phase-Out and "no Go for security-sensitive" rules govern PenguinTech's own services; Go is only a supported USER language (v4.1.x), and the Go toolchain is build tooling inside a pinned builder image. Q20.
+
+### 5C.7 Cold start and snapshots (D14) — AUTHOR'S CALL AJ
+
+Speed-ups in order of preference; snapshots are NOT a baseline dependency:
+
+1. wasmtime pooling allocator and instance pooling.
+2. Precompiled `.cwasm` cache pinned to wasmtime version and GC collector (Waddles built neither; requirements here, 5B.7).
+3. Lazy bundle load plus a warm-keep policy (pinned hot set).
+4. Language-level tuning: trim stdlib/imports, componentize flags.
+5. Pre-initialization snapshots ONLY as an opt-in, per-language, off-by-default optimization behind `workflows.snapshot-preinit`, enabled only after the safety gate below.
+
+**What went wrong at Waddles.** Waddles' repo docs contain no `wizer`/pre-init text (grep of `waddles:docs`, `core`, `sdk`, `bundles`); the evidence is in Waddles project memory notes and `.TODO`. Only what is cited is known; Q10 asks the owner for the rest.
+
+| Problem | Source |
+|---|---|
+| Python builds are non-reproducible: `componentize-py` snapshots CPython's initialized heap, so `pyping.wasm` differs on every build (ASLR, identity-ordered objects, GC timing); Rust is byte-reproducible. The #517 reproducibility gate covers Rust only. Disabling ASLR needs a privileged build container, which the rootless rule forbids; the owner pre-approved no-snapshot builds, "accepting slower cold starts" | `~/.claude/projects/-home-penguin-code-waddles/memory/python-bundle-snapshot-fallback.md:11,15`; `waddles:.TODO:60`; `.TODO:14` (#521) |
+| Rebuilding the same source gives a new digest for the same version, so the seeder refuses (`digest_conflict`); on 2026-10-15 only 3 of 86 bundles seeded, and a skipped bundle silently lost activation and grants | `…/memory/rebuild-in-place-digest-conflict.md:13` |
+| Wizening keeps only host-import submodules imported eagerly at module load; a capability referenced only inside functions was absent at runtime, the SDK guard degraded to default, and the bundle silently returned "no response" | `…/memory/componentize-py-eager-wizen.md:3,20` |
+| Module-level `random.randint` may freeze into the snapshot, making outcomes predictable | `…/memory/bundle-batch-2026-10-21.md:42` |
+| A precompiled artifact built under a different GC collector fails to load (related pinning hazard) | `waddles:docs/superpowers/specs/2026-09-14-rust-data-plane-design.md:1687` |
+
+**Snapshot hazards to guard against**
+
+| Hazard | Guard |
+|---|---|
+| Captured non-determinism (RNG seeds, time, env) | Ban init-time randomness/clock/env reads; entropy canary test: a bundle reading random at init must differ per instance |
+| Secrets or tenant data baked in: a snapshot is shared by digest across tenants, so a leak is cross-tenant | Build sandbox has no secrets or tenant data; scan init code and output; secret-canary test |
+| Staleness vs wasmtime/runtime version or collector | Cache key includes both; mismatch discards and recompiles |
+| Per-instance state sharing (identity-hash seeds, object order) | Each instance gets its own copy-on-write memory; determinism lint |
+| Build non-reproducibility (Waddles' failure) | Byte-identical digest across independent rootless builds; no privileged ASLR changes |
+| Capability tree-shaking (eager-import trap) | Import all capabilities at SDK top level; a real-wasm test per capability; guards fail loud |
+| Silent degradation | No default-on-missing fallbacks (A3) |
+
+**Safety gate before any opt-in (all required, per language):** (i) N independent rootless builds produce byte-identical digests; (ii) conformance plus a real-wasm capability-presence test; (iii) the entropy and secret canaries pass; (iv) a measured benefit over the `.cwasm` cache above a stated threshold (placeholder); (v) a per-bundle opt-in recorded in the manifest and consent; (vi) flag default OFF with a kill-switch; (vii) security sign-off.
+
+---
+
+## 5D. Marketplace sources (D15) — AUTHOR'S CALL AS
+
+A marketplace source is a git repo with a `bundles/` folder in a format we validate; one mechanism serves first-party and external bundles, as in Waddles' design (`waddles:docs/superpowers/specs/2026-10-27-unified-bundle-marketplace-sources-design.md`, VERIFIED, with its connector/permission specs). Consistent with call L: a bundle publishes as a function or flowbundle by digest and is referenced as `uses: <source-namespace>/<name>@<version>`, resolved to a digest lockfile.
+
+**Layout** (adopts Waddles' `bundles/{language}/{app}/`, VERIFIED):
+
+```
+bundles/{language}/{name}/
+  bundle.yaml    required: name, version (semver), stages (ingest|process|action|function), language,
+                 WIT world version, permissions {egress hosts+methods, secret names, elder ops, diagram ops}, limits
+  src/           source files
+  vendor/ + lockfile   required: vendored dependencies with hashes
+  README.md      required
+  bundle.sig     optional: detached signature over the source-tree digest
+```
+
+A format validator rejects unknown layouts and fields, symlinks, path traversal, and oversize trees (reject, never repair).
+
+**Source kinds and trust tiers (call AS; Q9):**
+
+| Kind | Trust | Approver | Auth |
+|---|---|---|---|
+| PenguinTech-official: the built-in source (this repo's `bundles/` at the release commit) and, optionally, a separate official marketplace repo | Highest; system auto-approve for built-in, PenguinTech review for the shared repo | PenguinTech | Public https |
+| Tenant-private git repo | Tenant's own; pinned SHA + admin ack | Tenant admin | Credentials in the vault, read-only deploy key, injected by gateway-egress |
+| Community / third-party | Highest scrutiny; opt-in by tenant admin; signature required | Tenant admin, after PenguinTech listing review (Q9) | Public https |
+
+Waddles contrast: global-admin-only sources, tenant-private deferred, no git credentials in v1 (VERIFIED). Elder's owner decision includes tenant-private, so credentials go through the vault.
+
+**Source authenticity:** git-native signed commit/tag by a key in the source's registered trust anchors and/or `bundle.sig`; required for official and community, optional for tenant-private. The primitive is the builder's choice. It is an attestation only and never replaces compiling on our infra, approval, or platform signing; the executor trusts platform keys only (Waddles `signing.rs`, VERIFIED).
+
+**Flow:** (1) add source (repo URL + path + ref) → (2) pin to an immutable commit SHA; never a branch or tag at runtime → (3) validate layout → (4) inert checks and vendored-dependency verification (5C.3) → (5) compile on our infra → (6) permission diff + consent (`permission_hash`) → (7) platform-sign → (8) publish to the artifact bucket → (9) available as `uses:` by digest.
+
+**Updates:** a new commit SHA is recorded as pending; the approved version keeps running; re-validate, re-build, permission-diff, re-approve. A permission increase always needs fresh consent; no auto-upgrade. A force-push that orphans a pinned SHA sets the source to error with the pin intact and alerts (Waddles §4.5).
+
+**Sync and limits:** poll with jitter (cadence builder's, placeholder 15 min) plus an optional provider push webhook through gateway-ingress; per-source minimum interval, per-tenant source and concurrent-scan caps, backoff. **Git egress** goes through gateway-egress (https only, allowlisted hosts, SSRF guard, DNS pin, CGNAT excluded); no direct git egress from the controller (Waddles §4.3, VERIFIED). The fetcher runs `git` with no shell, `--depth 1`, no submodules, LFS, or hooks, https-only protocol; limits on clone bytes, file count, single-file size, path depth, wall-clock. The platform assigns a source-scoped namespace so a source cannot shadow another's or first-party names.
+
+**Supply chain and audit:** dependency manifests checked against a central PRC/sanctioned deny-list; vendored dependencies hashed; audit rows for add/remove/rescan, SHA, scan counts, approvals, signatures (no raw credentials, no PII). Tier gating of sources: Q2.
+
+Scenarios (k) add a source and publish a bundle by digest; (l) update with a permission increase is held for re-consent while the old version runs; (m) a malicious repo (symlink, traversal, oversize, unknown field, shadowed namespace, bad signature) is rejected with counts.
 
 ---
 
@@ -341,448 +640,363 @@ Proposed v1 host capabilities (WIT surface is the builder's; every import calls 
 
 ### 6.1 Posture
 
-- Assumption: the WASM sandbox will eventually be escaped. Design so an escape reaches almost nothing.
-- An escaped executor can reach: its own memory, a read-only scratch, the engine's host-API port (every call re-authorized against the escaped module's own grants), and read-only bucket GETs. Not reachable: credentials, Valkey, Postgres, control plane, internet, other tenants' data.
-- Sandbox layers (outermost first; each needs a negative test):
+Assume the WASM sandbox will eventually be escaped. An escaped executor reaches only its own memory, a read-only scratch, and the engine's UDS (every call re-authorized against the module's grants). It holds no secrets or SA token and has no network path of its own beyond the pod policy. **Trust premise:** producers sign envelopes; the engine verifies and never mints (call X).
 
 | # | Layer | Stops |
 |---|---|---|
-| 1 | Executor is its own Deployment; no engine/gateway Secrets mounted | Credential theft by any means |
-| 2 | Pod security: non-root, `allowPrivilegeEscalation: false`, drop ALL caps, `RuntimeDefault` seccomp, read-only rootfs, PSA `restricted` | Escalation toward the node |
-| 3 | Default-deny `CiliumNetworkPolicy`: executor egress only to engine host-API port + bucket; no ingress | Lateral movement, internet access |
-| 4 | mTLS host API with pinned peer identity | Impersonating the executor |
-| 5 | WASM component isolation: no sockets, no fs, no env | Guest reaching anything not handed to it |
-| 6 | Capability gate on every host import | Calling a capability never granted |
-| 7 | Per-call limits: epoch deadline, fuel, memory, instances | CPU/memory DoS |
-| 8 | Three-strike disable per `(bundle, digest)` | A repeatedly tripping module degrading the service |
-| 9 | Enforced Tetragon `TracingPolicy` on engine, gateway, executor | Native escape running tooling or odd syscalls |
+| 1 | Role separation by image: the engine image has no credential-injection, ingress, or K8s Job code; the executor container holds no secrets | Credential theft; cross-role leverage |
+| 2 | Pod security: non-root, no escalation, drop ALL caps, `RuntimeDefault` seccomp, read-only rootfs, PSA `restricted` | Escalation toward the node |
+| 3 | Default-deny `CiliumNetworkPolicy` per role | Lateral movement, internet |
+| 4 | UDS peer-credential check engine ↔ executor; mTLS between roles | Impersonation |
+| 5 | WASM isolation: no sockets, fs, env | Guest reaching anything not handed to it |
+| 6 | Capability gate on every host import | Ungranted capability |
+| 7 | Epoch deadline + fuel + memory + instances | CPU/memory DoS |
+| 8 | Three-strike disable per `(bundle, digest)` | Repeat offenders |
+| 9 | Enforced Tetragon per role | Native escape running tooling |
 
-- gVisor is not assumed. Waddles found it undeliverable on MicroK8s and DOKS (waddles spec R3, D32). Elder's clusters are the same set; availability on Elder clusters is UNVERIFIED. Kata is the named escalation (Q11).
+gVisor is not assumed (Waddles R3/D32); Kata is the named escalation (Q17).
 
 ### 6.2 Threats
 
 | Threat | Mitigation | Residual |
 |---|---|---|
-| Cross-tenant read | Tenant bound per run and verified per hop; host calls scoped by host-built `InvokeScope`; fresh instance per call; Postgres RLS (separate PR) for control-plane tables | Bug in scope construction; covered by a compile-fail test (no struct literal outside the crate) |
-| Data exfiltration via egress | Declared egress allowlist, consent, gateway pipeline, tenant denylist | Exfil to an approved host is accepted — approving a host approves that reach |
-| Credential theft | Never in sandbox; injected at egress; credential bound to hosts (section 6.6) | Compromised gateway-out |
-| WASM escape | Layers 1-9 | Host-kernel syscall surface in default posture |
-| Hostile build input | Build container has no network/secrets; digest computed in a separate trusted publisher (6.7) | Container escape from the build pod |
-| Forged ingress | HMAC on raw bytes + second factor + replay window + dedupe | Leaked secret and satisfied second factor |
-| Confused deputy | Guest supplies no scope; scope host-built from the run envelope | — |
-| Supply chain | Signed, digest-pinned bundles; platform keys only; fail-closed if keys unset | Compromise of DB and signing key |
-| CPU/memory/log DoS | 6.3 | Slow-but-under-limit modules; visible in histograms |
-| Run amplification (fan-out, loops, trigger cycles) | Run caps (6.3), `uses:`/trigger depth cap, per-tenant rate | — |
-| DNS rebinding | Resolve once in gateway-out, validate every address, connect to the validated IP | — (section 6.5) |
-| CGNAT / internal address reach | Blocked in the guard AND in the network policy | — (section 6.5) |
+| Cross-tenant read | Tenant bound per run, verified per hop; host-built scope; fresh instance per call; RLS when landed | Scope-construction bug; compile-fail test |
+| Egress exfiltration; credential theft | Declared allowlist, consent, 6.5, tenant denylist; credentials never in sandbox, injected at egress, host-bound (6.6) | Exfil to an approved host; compromised gateway-egress |
+| WASM escape | Layers 1-9 | Host-kernel syscall surface |
+| Forged ingress; compromised ingress minting envelopes | 6.5a; per-role keys and envelope kinds; engine verifies against role keys | Leaked secret + second factor; key compromise |
+| **Confused deputy** | Run-as principal; scopes = approval ∩ team grants; initiator audit-only (call Y) | None |
+| Supply chain; malicious marketplace source | Signed, digest-pinned bundles; platform keys only; fail closed; 5C.4; 5D validator, pinned SHA, compile + consent | DB + signing key compromise; build sandbox escape |
+| CPU/memory/log DoS; run amplification; event storms | 6.3; depth cap; loop guard; backpressure | Slow-but-under-limit modules |
+| DNS rebinding; CGNAT | 6.5 steps 6-7; Cilium excludes CGNAT | None |
+| **PII reaching the data plane** | `elder.*` returns no PII; Elder-side send; raw addresses refused; payload retention off (5A.4) | PII in free text or external payloads |
+| Data plane reading Elder data; Elder API load from flows | Gate + Elder API recheck scopes and tenant; no DB creds; audit; per-tenant/cell limits, breaker (5B.9) | Data within the run-as grants |
 
 ### 6.3 Resource limits
 
-Starting values copied from Waddles (`waddles` master spec §7.3, VERIFIED). They are tunables to measure against Elder workloads, not commitments.
+Starting values from Waddles (master spec §7.3, VERIFIED); tunables, not commitments.
 
 | Limit | Start | Ceiling | On breach |
 |---|---|---|---|
-| Wall-clock per module call | 2000 ms | 10000 ms | Epoch interrupt; step failed; trip |
-| Linear memory per instance | 64 MB | 256 MB | Allocation refused; trap; trip |
-| **CPU fuel per call** | builder sets by measurement | per tier | Trap; trip. **Required in v1** (6.9) |
-| Concurrent calls (executor) | 32 | — | Queue to a short bound, then retryable failure |
-| Egress rate per module | 10 rps, burst 20 | per tier | `rate-limited` returned to guest; not a trip |
-| Egress response body | 1 MiB | — | Truncated with flag |
-| Egress timeout | 5 s | — | `timeout` |
-| Frame size (host API) | 1 MiB | — | Fatal protocol error; executor restarts |
+| Wall-clock per module call | 2000 ms | 10000 ms | Epoch interrupt; trip |
+| Linear memory | 64 MB | 256 MB | Allocation refused; trip |
+| CPU fuel per call | measured | per tier | Trap; trip (required, 5B.7) |
+| Executor concurrent calls | 32 | — | Short queue, then retryable failure |
+| Egress rate per module | 10 rps, burst 20 | per tier | `rate_limited` |
+| Egress body / timeout | 1 MiB / 5 s | — | Truncate / `timeout` |
+| Host-call frame | 1 MiB | — | Fatal protocol error |
 
-Run-level caps (new for Elder; values are the builder's):
-
-| Cap | Why |
-|---|---|
-| Steps per run | Stops loop bombs (`while_loop`, `for_each`) |
-| Run wall-clock | Bounded cost per run |
-| Output/log bytes per step and per run | Log flooding |
-| Host calls per run, by kind | Abuse of `elder`/`http` |
-| Fan-out and `uses:`/trigger depth | Amplification, cycles |
-| Concurrent runs and queue depth per tenant | Noisy neighbor — Elder has none today (RECON) |
-
-A manifest value above its ceiling fails validation at publish; it is never silently clamped.
+Run-level caps (builder values): steps per run, wall-clock, output/log bytes, host calls per kind, fan-out and trigger depth, per-tenant concurrent runs and queue depth (none today, RECON). A manifest value above its ceiling fails at publish; never clamped. Interpreter languages carry a documented slow cold start (5C.7); their limits are the same.
 
 ### 6.4 Network policy and Tetragon
 
-- Per mode, `CiliumNetworkPolicy` default-deny. Executor: egress to engine host-API port and bucket only. Engine: control plane, stream, executor, launcher. Gateway-in: external ingress on the serving port only. Gateway-out: internet minus the excluded ranges below, plus the control plane for secret resolution.
-- Gateway-out `toEntities: world` must exclude RFC 1918, link-local, loopback, **CGNAT 100.64.0.0/10**, multicast, reserved, IPv6 ULA/link-local, and cloud-metadata addresses. The existing flows-invoker NetworkPolicy does not exclude CGNAT (RECON).
-- Tetragon decision — AUTHOR'S CALL (inside G): enforced `TracingPolicy` (binary + syscall allowlist) on engine, gateway, and executor. No blanket exemption of the kind flows-invoker has today (`values.yaml:629-632`). Runner jobs get their own named profile (section 6.8).
-- All inter-namespace traffic default-deny; same-namespace explicit.
+Per role, default-deny `CiliumNetworkPolicy`, own ServiceAccount and SPIFFE ID. Gateway-egress `toEntities: world` excludes RFC 1918, link-local, loopback, **CGNAT 100.64.0.0/10**, multicast, reserved, IPv6 ULA/link-local, and metadata addresses (the flows-invoker policy does not exclude CGNAT, RECON). Tetragon (call G): enforced `TracingPolicy` on gateway, engine, and executor; no blanket exemption like `values.yaml:629-632`; runner and builder Jobs get named profiles.
 
-### 6.5 Egress pipeline (gateway-out)
+### 6.5 Egress pipeline (gateway-egress)
 
-Adapted from Waddles §8.2 (VERIFIED), plus Elder additions marked +. Each denial returns a reason code and increments a counter.
+Adapted from Waddles §8.2 (VERIFIED); + = Elder additions. Each denial has a reason code and counter.
 
 | # | Check | Reason |
 |---|---|---|
-| 1 | Scheme is `https` (git over https; other schemes only by explicit allowlist, carrying over `gitops.py:62`) | `scheme_not_allowed` |
-| 2 | URL parses cleanly; no embedded credentials; normalize IP-literal forms (decimal, octal, hex, IPv4-mapped, NAT64, 6to4) before any check + | `malformed_url` |
-| 3 | Host matches the run's approved `egress[]` entry | `host_not_declared` |
-| 4 | Method in that entry's methods | `method_not_declared` |
-| 5 | Tenant license tier and tenant denylist permit it + | `tier_denied` / `host_denylisted` |
-| 6 | Resolve once; EVERY returned address must pass: loopback, private, link-local, unspecified, multicast, reserved, **CGNAT**, ULA, metadata; deny if any address fails (not just the first) | `ssrf_blocked_address` |
-| 7 | **Pin the connection to the validated IP**; TLS SNI and `Host` stay the original name; no second resolution between check and connect | `dns_rebind_blocked` |
-| 8 | Credential-host binding: any injected credential is valid only for its bound hosts + | `credential_host_mismatch` |
-| 9 | Per-module token bucket and per-tenant concurrency | `rate_limited` |
-| 10 | TLS 1.2+ with a verified chain | `tls_verification_failed` |
-| 11 | Redirects: ≤3; every hop re-runs 1-8 | `redirect_off_allowlist` |
-| 12 | Response size and total timeout caps | truncation / `timeout` |
-| 13 | Audit record: tenant UUID, run UUID, module digest, host, method, outcome (no secrets, no PII) + | — |
+| 1 | Scheme `https` (git over https; others by explicit allowlist, carrying over `gitops.py:62`) | `scheme_not_allowed` |
+| 2 | Clean parse; no embedded credentials; normalize IP-literal forms (decimal, octal, hex, IPv4-mapped, NAT64, 6to4) first + | `malformed_url` |
+| 3 | Host in the run's approved `egress[]` | `host_not_declared` |
+| 4 | Method allowed | `method_not_declared` |
+| 5 | Tier and tenant denylist permit it + | `tier_denied` / `host_denylisted` |
+| 6 | Resolve once; EVERY address passes (loopback, private, link-local, unspecified, multicast, reserved, **CGNAT**, ULA, metadata); deny if any fails | `ssrf_blocked_address` |
+| 7 | **Pin the connection to the validated IP**; SNI/`Host` stay the original name | `dns_rebind_blocked` |
+| 8 | Credential-host binding + | `credential_host_mismatch` |
+| 9 | Per-module bucket and per-tenant concurrency | `rate_limited` |
+| 10 | TLS 1.2+ verified chain | `tls_verification_failed` |
+| 11 | ≤3 redirects, each re-running 1-8 | `redirect_off_allowlist` |
+| 12 | Body and time caps | truncate / `timeout` |
+| 13 | Audit: tenant, run, digest, host, method, outcome (no secrets, no PII) + | — |
 
-- Private-range hosts (self-hosted CI, on-prem) are reachable only via an explicit per-tenant opt-in that applies to hosts already in the approved allowlist. Loopback, link-local, unspecified, multicast, and metadata stay blocked always (Waddles `allowPrivateHosts` pattern). Whether Elder wants this: Q.
-- DNS rebinding is acknowledged but unfixed in today's guard (`net_guard.py` docstring, VERIFIED). Step 7 is the fix.
+Private-range hosts need an explicit per-tenant opt-in for already-allowlisted hosts; loopback, link-local, multicast, metadata stay blocked (Q18). Today's guard admits the rebinding gap (`net_guard.py` docstring); step 7 fixes it.
 
-### 6.6 Credentials — AUTHOR'S CALL B (+ M)
+**6.5a Ingress authentication — AUTHOR'S CALL AI.** Webhook URLs and schemes may change freely (D10); adopt the stricter design. Providers that sign the body (GitHub `X-Hub-Signature-256`, `flows/routes/hooks.py:29`): HMAC-SHA256 over raw bytes + timestamp window + delivery-id dedupe + a mandatory second factor (source CIDR allowlist or bearer/mTLS). Providers that cannot sign the body (GitLab token header, `hooks.py:51`): secret-token header compared in constant time + source allowlist + replay/idempotency from the provider's delivery id when present (header names UNVERIFIED) + per-source rate limit. Secrets are per source, never reused, stored in the vault; hook URLs use an unguessable per-source identifier.
 
-- Credentials never enter the sandbox, the executor, a runner pod, a log, a span, a metric label, or a response the guest sees.
-- A module names a secret by reference (header name → reference name). The gateway-out resolves it from the vault and injects it immediately before sending, then scrubs it from any reflected response.
-- Unresolvable reference → `denied(secret_unresolved)`, non-retryable.
-- **Credential-host binding (AUTHOR'S CALL M):** each stored credential carries the hosts it may be sent to. Even if a module's allowlist contains an attacker-chosen host, a token bound to `github.com` is never sent there. Waddles accepts that residual; this closes it.
-- Storage: envelope encryption with platform-managed keys as baseline; external KMS is the Enterprise upsell on top (`security.md`).
-- This resolves the credential encryption gate (#171) for workflow credentials. Today `iceflows_credentials.access_token` is plaintext and writes return 501; `iceflows_webhooks.webhook_secret` and stream webhook secrets are plaintext columns (no encryption evidenced).
+### 6.6 Credentials (ANSWERED design; resolves #171, Phase 3)
 
-### 6.7 Supply chain, signing, build
+- Credentials never enter the sandbox, executor, runner pod, log, span, metric label, or a response the guest sees. A module names a secret by reference; gateway-egress resolves and injects it just before sending and scrubs reflections. Unresolvable → `secret_unresolved`, non-retryable.
+- **Envelope encryption:** per-tenant data keys (DEKs) wrapped by a platform-managed master key (KEK) held in the platform secret store (Vault / Sealed Secrets / External Secrets Operator per `security.md`); at-rest encryption mandatory; customer-managed/external KMS is the Enterprise upsell on top. **Rotation:** KEK rotation re-wraps DEKs; DEK rotation re-encrypts lazily on next access. Plaintext exists only at the gateway-egress injection step, in memory, never logged.
+- The vault is a hot dependency of gateway-egress: short-TTL in-memory cache only; fail closed on vault outage. #171's gate is this work. Builder decides the KMS interface.
+- **Credential-host binding (call M):** each credential carries the hosts it may be sent to; a token bound to one host is never sent to another even if a module allowlists it. Credentials are per-tenant; the connector manifests' platform-wide `env_var` credentials (VERIFIED) are dropped. Git credentials for tenant-private sources (5D) live in the same vault.
+- Today `iceflows_credentials.access_token` is plaintext, writes return 501, and webhook secrets are plaintext columns (no encryption evidenced). With no production history (D10) nothing migrates.
 
-| Item | Design |
-|---|---|
-| Signature | Ed25519 over a length-prefixed, domain-separated payload binding id, version, digest, approval id. Sidecar verified by the executor on every load, before instantiation. Missing or invalid = refuse, never warn |
-| Key custody | Control plane signs at approval. Data plane holds public keys only. Unset keys = fail closed at startup. `kid` rotation with overlap |
-| Digest authority | Computed in a trusted publisher step, never in the sandbox that executed module code. The control plane re-hashes and audit-logs any disagreement |
-| Load by digest | Stage tells the executor the expected digest; the bucket alone never decides what runs |
-| Build | Source builds execute module code (`componentize-py` runs top-level code at build time — Waddles R2, VERIFIED). Build container: no network, no secrets, rootless, caps dropped, read-only rootfs, ephemeral Job. Scan source (SAST, dependency audit, secrets) before any step that executes it |
-| Prebuilt components | Accept or refuse: Q10. If accepted: permanent "not scanned" badge |
-| Pinning | `uses:` by digest at runtime; toolchains pinned with checksums |
-| Consent | 5.5 |
+### 6.7 Supply chain, signing
 
-Build pipeline mirrors Waddles D27 (untrusted `build` / trusted `publisher`). AUTHOR'S CALL (inside I/J).
+Ed25519 over a length-prefixed, domain-separated payload binding id, version, digest, approval id; the executor verifies the sidecar on every load before instantiation (missing/invalid = refuse). The control plane signs at approval; the data plane holds public keys only; unset = fail closed at startup; `kid` rotation with overlap. The publisher computes digests, never the build sandbox; the control plane re-hashes and audits disagreement. The engine states the expected digest, so the bucket never decides what runs. `uses:` pins by digest. No prebuilt `.wasm` (D13, call AL).
 
 ### 6.8 Runner jobs (heavy steps) — AUTHOR'S CALL C
 
-- Steps that cannot run in WASM (git clone/merge/push, test subprocesses, image builds) run as short-lived Kubernetes Jobs that the `launcher` creates and the gateway gates. WASM handles logic and glue. Precedent: dal2alpha already runs ARC runner pods (RECON). The owner said "WASM for any logic" — owner to confirm this split (Q2).
+Steps WASM cannot do (git clone/merge/push, test subprocesses, image builds) run as short-lived K8s Jobs the controller creates and the gateway gates. Precedent: dal2alpha runs ARC runner pods (RECON). The owner said "WASM for any logic": Q3.
 
-| Property | Design |
-|---|---|
-| Lifecycle | One Job per step; TTL; deleted after result collected; never reused |
-| Inputs | Signed job descriptor (tenant UUID, run UUID, step, image digest from an allowlist, argv from the graph) |
-| Credentials | None baked in; no ServiceAccount token mounted; git credentials injected by gateway-out |
-| Network | `CiliumNetworkPolicy`: egress only to gateway-out + DNS; everything else denied |
-| Isolation | Rootless, caps dropped, `RuntimeDefault` seccomp, read-only rootfs + workspace `emptyDir`, PSA `restricted` |
-| Limits | CPU/memory/ephemeral-storage requests and limits; wall-clock; carry over today's rlimits (CPU 900 s, AS 2 GiB, nproc 4096, fsize 512 MiB) as the starting profile |
-| Binary allowlist | Start from `DEFAULT_ALLOWED_BINARIES` and the env-key scrub in `sandbox.py`. NOT the real boundary: `bash`/`sh`/`pip`/`npm` run arbitrary code. The boundary is pod isolation + no creds + gated network |
-| Images | Allowlisted pinned digests only; tenant-supplied images are Q |
-| Tetragon | Dedicated named profile; not exempt, not shared with the executor profile |
-| Output | Exit code, bounded log, artifacts back through the engine |
+- One Job per step; TTL; deleted after results are collected. Input: signed job descriptor (tenant, run, step, allowlisted image digest, argv).
+- No credentials and no ServiceAccount token; git credentials injected by gateway-egress. Cilium: egress only to gateway-egress + DNS.
+- Rootless, caps dropped, `RuntimeDefault` seccomp, read-only rootfs + workspace `emptyDir`, PSA `restricted`; allowlisted pinned images; dedicated Tetragon profile.
+- Limits start from today's rlimits (CPU 900 s, AS 2 GiB, nproc 4096, fsize 512 MiB). The binary allowlist (`DEFAULT_ALLOWED_BINARIES` + env scrub) is a starting point, not the boundary: `bash`/`pip`/`npm` run arbitrary code. The boundary is pod isolation + no creds + gated network.
 
-- Runner jobs execute native code, not WASM. This is the highest-risk surface (R1).
-- Git over the gateway with credential injection (smart-HTTP proxy) is feasible in principle; UNVERIFIED for push. Fallback needs an owner decision because a short-lived scoped token in the pod conflicts with "no creds baked in" (Q2).
+Runner jobs execute native code: the highest-risk surface (R1). Git over the gateway with credential injection is feasible in principle; UNVERIFIED for push; a token in the pod would conflict with "no creds" (Q3).
 
-### 6.9 Waddles lessons applied as requirements
+### 6.9 Multi-tenant isolation and fairness
 
-| Requirement | Reason |
-|---|---|
-| Epoch interruption **and** fuel metering, both live in v1 | Waddles never built fuel (`fuel_used: 0` hardcoded at `waddles:core/bundle_executor/src/wire.rs:546,910`, `invoke.rs:809`, VERIFIED). Fuel is also the metering input |
-| Instance pool actually implemented; pre-instantiate; fresh memory per call | Waddles parses pool knobs in `config.rs:49-60`; grep finds no implementation (VERIFIED). Fresh-per-call is the right isolation property — make it cheap, do not skip it |
-| Precompiled artifact cache keyed `{digest}-{wasmtime_abi}-{collector}` | Waddles `lib.rs:27-30`: "Scaffolded with a TODO: precompiled `.cwasm` caching … every load JIT-compiles fresh" (VERIFIED) |
-| Lazy load on first use; bounded resident set | RECON: Waddles eager-loading 85 bundles needed 16 Gi |
-| Ingress rate limiting and body-size caps mounted from day one | RECON: Waddles generic intake endpoints were unmounted and had no intake rate limit |
-| No stub that returns success | Waddles linked unhandled `overlay` calls to a non-retryable `not_implemented` (VERIFIED in capability model doc) — copy that behavior |
-| Do not assume gVisor | Section 6.1 |
-| Chart changes via values, not `kubectl` overrides | RECON: overrides were reverted by `helm upgrade` |
-
-### 6.10 Multi-tenant isolation and fairness
-
-- Tenant is bound to every run (5.7) and to every host call by host-built scope.
-- Shared executors need per-tenant fair-share scheduling and concurrency caps. Whether Enterprise gets a dedicated executor pool: builder/Q1.
-- Precompiled artifacts shared by digest across tenants are fine (code, not data). Instance memory is never reused across calls.
-- Telemetry: tenant, run, and bundle identifiers appear as UUIDs in logs/spans, never as metric labels (cardinality). Usage goes to a metering stream and the control plane's table.
+Tenant is bound to every run and host call (host-built scope). Per-tenant fair share and concurrency caps (5B.6); a dedicated executor pool per tier is a builder option (Q2). Precompiled artifacts shared by digest are fine (code, not data); instance memory is never reused. Telemetry carries UUIDs in logs/spans, never as metric labels.
 
 ---
 
-## 7. Migration plan
+## 7. Migration plan — replace, not strangle
 
-### 7.1 Strategy — AUTHOR'S CALL F
+### 7.1 Strategy — AUTHOR'S CALL F (revised on D10)
 
-- Strangler at the API boundary. Existing Streams and Flows keep working until `svc-workflows` reaches parity, behind PostHog flags (`workflows.*`, default OFF). Then cut over and delete the old code. No dual stack forever.
-- The Elder API route shapes (`/api/v1/streams/*`, `/api/v1/flows/*`) do not change for the UI. Only what executes behind them changes.
-- Dual-run (shadow) only for side-effect-free graphs; never double-execute side effects.
-- Untrusted custom-module upload ships last (AUTHOR'S CALL J).
+- No production history, so: no shadow-run, no production soak, no recorded production parity corpus, no rotation notices, no run/credential data migration, no long-lived dual stack.
+- Keep: (i) the existing Streams/Flows tests (~6.5k LOC, RECON) as a behavioral fixture suite for the node types and promotion semantics carried forward; (ii) a short flag-gated cutover on the v4.0.X line, with the old in-process engine (`apps/worker/streams`, `handle_streams`) and `apps/flows_invoker` **deleted before v4.0 GA** (no half-wired old+new at GA); (iii) schema changes without back-compat shims. Dev/demo/seed graphs are regenerated or re-seeded; webhook URLs and schemes may change.
+- Flags develop new beside old until the fixture suite passes; then flip and delete within the release line. The role split exists from Phase 1; there is no monolith first. Untrusted upload stays last (call J). Phases 2, 3, 5 shrank accordingly.
 
 ### 7.2 Phases
 
-| Phase | Scope | Flag(s) | Exit gate |
-|---|---|---|---|
-| 0 Prereqs | Resolve blocking owner questions (Q2-Q5). RLS PR merged. `village_id` on child tables. Register diagrams/streams/flows in the reference registry (#165). `workflows.v1` proto. First Rust workspace + pinned build container + CI. `penguin-libs` consumption decided (section 8) | — | Owner sign-off on Q2-Q5; CI builds an empty crate with cargo-deny/audit/coverage gates that can fail |
-| 1 Skeleton | Image with all modes; gRPC; stream consumer via `penguin-spine`; executor; gate; gateway-out (HTTP); one first-party function end to end; fuel, pool, artifact cache, lazy load, ingress rate limit | `workflows.engine` | Flag-on E2E passes with printed counts; telemetry gate passes; every anti-goal has a failing-test proof |
-| 2 Streams parity | Port the 21 node types; triggers; run history; connectors as bundles; Streams UI unchanged | `workflows.streams-on-engine` | Parity corpus green (7.3); shadow diff zero on side-effect-free graphs |
-| 3 Flows parity | Runner jobs; promotions state machine; approvals; Darwin-style review gate as optional step; credential vault + gateway injection; Flows→Streams becomes engine-native | `workflows.flows-on-engine` | Parity corpus green; plaintext credentials migrated and cleared |
-| 4 Canvas + `uses:` + custom modules | Graph model unification; reference-registry links; run overlay; function/bundle publish pipeline; SDKs; **user upload of custom modules** after security review | `workflows.canvas-graph`, `workflows.custom-modules` | Security review of gateway/gate/executor passes; consent flow works; build pipeline has no network |
-| 5 Cutover + deletion | Flip the `on` flags to default ON by tier (kill-switch `workflows.disable-engine` stays available); then delete old code, infra, and the kill-switch | `workflows.disable-engine` | Deletion gate (7.8) |
+| Phase | Scope | Exit gate |
+|---|---|---|
+| 0 Prereqs + spikes | RLS landed on `release/v4.0.X` (or app-layer scoping); `village_id` on child tables; register diagram/flow/run in the registry; `workflows.v1` + Elder internal API contracts; first Rust workspace + pinned build container + CI + the three image families building empty; penguin-libs consumption (8); event outbox design; Q7; infra assumptions verified (7.9). Spikes: single-partition throughput, fencing, pooled wasmtime cost per Tier-1 language, Elder bulk lookup | Owner sign-off on Q1-Q6; CI builds empty gated crates and images; spike numbers replace 5B.5 |
+| 1 Role skeleton + scale spine | Gateway image (ingress, egress, scheduler, controller) and engine image (engine + executor) as separate Deployments; partitions + lease + fencing via spine; pool, `.cwasm` cache, lazy load, fuel; ingress rate limit + backpressure; batched history sink; read-only `elder.*` + gate + run-as; outbox → scheduler → run with loop guard; compile pipeline for Rust/JS/Python building first-party functions; built-in marketplace source; load harness | Flag-on E2E with counts; telemetry gate; baseline load test; anti-goal failing-test proofs; scenarios d, e, f-j |
+| 2 Streams replacement | The 21 node types; triggers (manual, webhook, cron, entity events); `elder.*` writes; `elder.notify.send` with a real transport; connectors as optional bundles | Fixture suite; scenarios a, b; scaling-curve test |
+| 3 Flows replacement | Runner jobs; promotions and approvals; credential vault + gateway injection (#171); Darwin-style gate as an optional step; Flows→Streams engine-native | Fixture suite; runner negative tests; no plaintext credential column |
+| 4 Canvas, conversion, upload | Graph unification; registry links; run overlay; diagram→draft conversion with diagram prerequisites; marketplace sources beyond built-in (tenant-private, community); **tenant upload last** | Security review; consent; scenarios c, k-m; noisy-neighbor and chaos tests |
+| 5 Cutover + deletion before GA | Flip flags; delete old engine, `flows_invoker` image/CI/Helm/NetworkPolicy/Tetragon exemption; drop `stream_custom_modules` | Deletion gate 7.8; production soak not applicable (D10) |
+| v4.1.x (post-GA) | Go, C#, Ruby: per-language spike, conformance, security gate; additive to the pluggable pipeline. Optional snapshot opt-in after its safety gate | Per-language gate |
 
-### 7.3 Parity criteria
+Anything with no consumer yet (e.g. tenant upload) may slip past GA without blocking the deletion gate.
 
-| Area | Criterion (count-verified; a zero denominator is a FAIL) |
-|---|---|
-| Streams node types | Each of the 21 classes mapped (7.4); each has a parity test comparing old vs new output on a recorded corpus; N examined and N passed printed |
-| Triggers | Manual execute and HMAC webhook produce equivalent runs; signature-failure and replay cases tested |
-| Run history | `stream_executions` / `stream_node_executions` equivalents populated; existing UI pages render without change |
-| Approvals | Approval gate pauses and resumes; decision via Elder API |
-| Flows | Pipeline → stages → tests/calls/reviews/approvers → promotions equivalent; clone/merge/test/push outcomes match; fail-closed review gate preserved |
-| Security carry-over | SSRF, CGNAT, git scheme allowlist, rlimits, env scrub reproduced and tested |
-| Regression | Every previously reported issue in either engine has a regression test |
-| Ops | Dashboards and alerts exist (none today); OTel on all modes |
+### 7.3 Behavioral parity (fixture suite)
+
+Count-verified; a zero denominator fails. Existing tests for each carried-forward node class pass against the new implementation (N examined, N passed). Triggers: manual, webhook (new scheme), signature-failure and replay. Promotions: pipeline → stages → tests/calls/reviews/approvers semantics, fail-closed review preserved. Security carry-over: SSRF, CGNAT, git scheme allowlist, rlimits, env scrub reproduced and tested. Ops: dashboards, alerts, OTel on all roles. Not carried forward: promised-but-never-built nodes (gRPC, MCP, cloud, code, ask_ai).
 
 ### 7.4 Streams' 21 node types
 
-Mapping is a proposal; builder verifies each node's semantics by reading it (UNVERIFIED for node internals).
+Proposal; the builder verifies each node by reading it (internals UNVERIFIED).
 
-| Category (files) | Target | Why |
+| Category | Target | Why |
 |---|---|---|
-| Control flow: `comparisons`, `logic_gates`, `if_then`, `switch`, `for_each`, `while_loop` | Native engine built-ins, typed and non-Turing-complete, with run-level caps | Graph-control primitives, not user logic. AUTHOR'S CALL N |
-| Data: `filter`, `json_transform`, `merge`, `split`, `delay` | Native engine built-ins (delay = scheduler wait, not a sleeping call) | Deterministic, bounded |
-| Free-form `expression` | First-party WASM function, never evaluated in the engine process | User-controlled text; an interpreter bug must not be engine RCE. Parity corpus against the Python AST whitelist |
-| Actions: `http_request`, `webhook_out` | Host `http` through gateway-out (guard moves from `net_guard.py` into the pipeline) | One egress path |
-| Action: `log` | Host `log` | Scrubbed |
-| Missing, promised (gRPC, MCP, cloud, code, ask_ai) | Not part of parity. New functions/bundles after Phase 2; `code` is user functions by definition | Never built |
+| Control flow: `comparisons`, `logic_gates`, `if_then`, `switch`, `for_each`, `while_loop` | Native engine built-ins, typed, non-Turing-complete, with run caps (call N) | Graph primitives, not user logic |
+| Data: `filter`, `json_transform`, `merge`, `split`, `delay` | Native built-ins (`delay` = scheduler wait) | Deterministic, bounded |
+| Free-form `expression` | First-party WASM function, never in the engine process | User text; an interpreter bug must not be engine RCE |
+| `http_request`, `webhook_out`, `log` | Host `http` via gateway-egress; host `log` | One egress path |
 
-- AUTHOR'S CALL N tension: the owner said "WASM is for any logic". The author reads this as tenant/user-authored logic, with engine control-flow primitives native and trusted. Owner to confirm.
-- Connectors (31 manifests): become connector bundles. The 13 PenguinTech-product connectors are optional integrations, never core: absent product = connector inert, workflows unaffected, no startup or health dependency (D7). DB connectors: manifests assume an HTTP `database-ops` backend; whether one exists in Elder is UNVERIFIED (R9).
+Call N tension: D6 says "WASM for any logic"; the author reads it as tenant-authored logic, with control-flow primitives native and trusted. Connectors (31): optional bundles; the 13 PenguinTech-product ones are never core (absent product = inert, no startup/health dependency, D7). DB connectors assume an HTTP `database-ops` backend whose existence in Elder is UNVERIFIED (R9).
 
 ### 7.5 Flag plan
 
-Elder's existing flag is `elder.license-enforcement` (VERIFIED). The brief specifies `workflows.*`; builder reconciles prefix convention with the rules' `{product}.{feature}` before first use. UNVERIFIED which is right.
+Elder's existing flag is `elder.license-enforcement` (VERIFIED); the brief specifies `workflows.*`; builder reconciles the prefix with `{product}.{feature}` first. All default OFF.
 
-| Flag | Default | Gates |
-|---|---|---|
-| `workflows.engine` | OFF | Data plane receives any dispatched run |
-| `workflows.gateway-ingress` | OFF | Webhook/API ingress through gateway-in |
-| `workflows.streams-on-engine` | OFF | Streams execution routed to `svc-workflows` |
-| `workflows.flows-on-engine` | OFF | Flows execution + runner jobs routed to `svc-workflows` |
-| `workflows.canvas-graph` | OFF | Unified graph editor |
-| `workflows.custom-modules` | OFF | Tenant upload of untrusted modules |
-| `workflows.disable-engine` | OFF | Opt-out kill-switch for the cutover state: unseen/OFF = `svc-workflows` is the engine, ON = legacy fallback. Exists only while legacy code exists; deleted in Phase 5 |
+| Flag | Gates |
+|---|---|
+| `workflows.engine`, `workflows.gateway-ingress` | Data plane receives dispatched runs; external ingress |
+| `workflows.streams-on-engine`, `workflows.flows-on-engine` | Execution routed to `svc-workflows` |
+| `workflows.elder-resources`, `workflows.entity-triggers` | `elder.*` host functions; entity-event triggers |
+| `workflows.diagram-convert`, `workflows.canvas-graph` | Conversion; unified editor |
+| `workflows.custom-modules`, `workflows.marketplace-sources` | Tenant upload of untrusted flowbundles; non-built-in sources |
+| `workflows.snapshot-preinit` | Snapshot opt-in (5C.7), per language |
+| `workflows.disable-engine` | Opt-out kill-switch until legacy deletion: unseen/OFF = `svc-workflows` is the engine, ON = legacy fallback; deleted in Phase 5 |
 
-- Flags fall back to last-known cached value; unseen flags are OFF; flag server down never crashes a run.
-- Rollback is a flag flip plus the legacy code still present until Phase 5.
+Flags fall back to last-known cached value; unseen = OFF; a flag outage never crashes a run.
 
 ### 7.6 Deployment touch points (VERIFIED paths)
 
 | Touch point | Change |
 |---|---|
-| `apps/flows_invoker/Dockerfile` | Pattern reference only (pinned python digest, USER 1000). New Dockerfile is the builder's |
-| `.github/workflows/docker-build.yml` (~lines 43-44, 116, 230) | Add `svc-workflows` to the build matrix and per-service lists |
-| `scripts/deploy-beta.sh:128` `IMAGES` | Add entry |
-| Helm values + `templates/deployment.yaml` component list | Add components for each mode |
-| NetworkPolicy template | Replace plain NetworkPolicy pattern with `CiliumNetworkPolicy` per mode |
-| Tetragon exemption `values.yaml:629-632` | Do not extend to `svc-workflows`; remove flows-invoker's at Phase 5 |
-| Chart is Helm-only | No kustomize (#206) |
-| Environments | Namespace is the product name only; env lives in context + values file; CI publishes beta and above only |
+| `.github/workflows/docker-build.yml` (~43-44, 116, 230) | Three image families in the matrix: `svc-workflows-gateway`, `svc-workflows-engine`, `svc-workflows-builder-{rust,js,python}` + publisher (one more builder image per 4.1.x language). Remove `flows-invoker` at Phase 5 |
+| `scripts/deploy-beta.sh:128` `IMAGES` | Add the entries |
+| Helm (`k8s/helm/elder`) | One chart: per-role Deployments (`gateway-ingress`, `gateway-egress`, `gateway-scheduler`, `gateway-controller`, `engine`), PDBs, HPA/KEDA objects (availability UNVERIFIED), builder/runner Job templates. Reference: Waddles' chart `waddles:k8s/helm/waddlebot` (name per its D22) |
+| Per role | `CiliumNetworkPolicy`, ServiceAccount, SPIFFE ID (`spiffe://penguintech.io/<env>/svc-workflows-gateway-ingress`, `-gateway-egress`, `-gateway-scheduler`, `-gateway-controller`, `-engine`, `-builder`), Tetragon policy; graceful drain |
+| `apps/flows_invoker/Dockerfile` | Pattern reference only (pinned digest, USER 1000); deleted in Phase 5 |
+| Tetragon exemption `values.yaml:629-632` | Not extended; removed at Phase 5 |
+| Environments | Namespace = product name only; CI publishes beta and above |
+
+CI cost: three image-family matrix entries plus per-language builders; three role families of Deployments plus Job templates; one chart.
 
 ### 7.7 Data migration
 
-| Source | Target | Method | Verification |
+Almost none (D10): dev/demo/seed definitions are regenerated or re-seeded; `stream_schedules` re-seeded; `stream_custom_modules` dropped; new tables via Alembic without shims; no credential or run-history migration, no rotation notices.
+
+### 7.8 Deletion gate (before v4.0 GA)
+
+Fixture suite and scenarios a-e green; no import of `apps.worker.streams`, `apps.flows_invoker`, or the old handlers; old images, CI entries, Helm components, NetworkPolicy, and Tetragon exemption removed. "Agreed soak period": not applicable (D10); revisit if production use appears before GA.
+
+### 7.9 Assumed infrastructure — verify per environment — AUTHOR'S CALL Z
+
+| Assumption | Needed for | Status | Task |
 |---|---|---|---|
-| `stream_playbooks/nodes/edges/versions`, `iceflows_*` definitions | Remain the authoring store through Phase 3 (no schema change needed for parity); compiled to signed graph snapshots at publish | None in Phases 1-3 | Snapshot digest recorded per version |
-| Same | Unified graph tables (Phase 4) | Idempotent Alembic data migration; mint `village_id` for child rows; keep old tables read-only until deletion | Row counts per table match; round-trip compile equality on all versions |
-| `iceflows_credentials.access_token` | Vault (envelope-encrypted) | Migration job: read plaintext, encrypt, decrypt-verify, then null the plaintext column | Count migrated = count read; zero plaintext rows remain; job fails loudly on any mismatch |
-| Webhook secrets (`iceflows_webhooks`, `stream_webhooks`) | Vault | Same | Same |
-| Credential rotation | — | Advise tenants to rotate migrated credentials: they sat plaintext at rest | Report count notified |
-| Run history (`stream_executions`, `stream_node_executions`, `iceflows_promotions`) | Stays; new runs write the same tables via the control plane | No copy | Old UI still renders old runs |
-| `stream_schedules` | Engine scheduler | Q8 | — |
-| `stream_custom_modules` rows | Reviewed manually; `code_blob` is not auto-compiled | Owner call on whether any exist (UNVERIFIED) | — |
-
-### 7.8 Deletion gate (Phase 5)
-
-Delete only after all hold:
-
-- Parity criteria green for both engines for the agreed soak period.
-- Data migration verified; plaintext columns cleared.
-- No import of `apps.worker.streams`, `apps.flows_invoker`, or the old handlers remains.
-- Legacy images, CI entries, Helm components, NetworkPolicy, and the Tetragon exemption removed.
-- Rollback path no longer needed (owner sign-off).
+| S3-compatible object storage | Signed artifacts, history sink, build records | UNVERIFIED (merge design lists `minio` as optional) | Phase 0 |
+| Cilium on the cluster running network-policy negative tests | G2, 6.1 | UNVERIFIED; flows-invoker uses plain NetworkPolicy | Phase 0 |
+| Tetragon on the E2E cluster | 6.1 layer 9, build floor | Off on alpha (VERIFIED comment); default ON beta/gamma | Run off-alpha |
+| Valkey cluster mode, AOF/RDB, HA | 5B | UNVERIFIED Elder config | Beta/DO required; alpha single-node OK |
+| Valkey per-role ACL users | Call X | UNVERIFIED | Phase 1 |
+| HPA/KEDA + metrics adapter | 5.9 | UNVERIFIED | Verify on MicroK8s and DOKS |
+| Runner/build isolation floor | 6.8, 5C.3 | UNVERIFIED | Q17 |
+| Machine-JWT issuer | 5.7 | UNVERIFIED | Phase 0 |
+| Real email transport | 5A.4 | Missing (stub, VERIFIED) | Phase 2 |
+| Multi-node cluster for load tests | 5B.11 | UNVERIFIED | Owner (Q1) |
 
 ---
 
 ## 8. Waddles reuse notes
 
-Waddles is a reference and a source of lessons. `svc-workflows` never depends on the Waddles repo (D7). Reuse happens through `penguin-libs`, a shared library repo, not a product (D8).
+Waddles is a reference and a source of lessons; `svc-workflows` never depends on the Waddles repo (D7). Reuse is through `penguin-libs`, a shared library repo, not a product (D8).
 
-### 8.1 Already in penguin-libs (reuse as git dependencies)
+### 8.1 Already in penguin-libs (git dependencies)
 
-| Crate | Path in penguin-libs | Purpose | Waddles pin | Applies here |
+| Crate | Path | Purpose | Waddles pin | Applies |
 |---|---|---|---|---|
-| `penguin-spine` | `packages/rust-spine` | Valkey Streams client (XADD / XREADGROUP / XACK), consumer groups, reclaim. Its two client-connection-separation rules (dedicated blocking XREADGROUP connection vs shared admin connection; Waddles spec §5.7) are the connection management | 0.1.0 @ `586b8dad` (VERIFIED in Waddles `svc_process/Cargo.toml`). Release tip 0.2.0 @ `90060a9` (RECON) | Yes — run dispatch consumer |
-| `penguin-bundle-host` | `packages/rust-bundle-host` | WASM host-API frame codec + manifest validator; no network | 0.2.0 @ `b063b7ba` (VERIFIED). Waddles' `bundle_compiler` pins an older 0.1.0 @ `69f77b1a` (RECON) | Yes for the codec. The manifest validator targets Waddles' `bundle.yaml` v2; whether it generalizes is UNVERIFIED |
-| `penguin-logging` | `packages/rust-logging` | Structured logs + OTel | 0.1.0 @ `69e740ce` (RECON) | Yes |
-| `penguin-licensing` | `packages/rust-licensing` | License / flag client | 0.1.0 @ `f642e069` (RECON) | Yes — flags and license fallback |
-| `rust-rpc` | `packages/rust-rpc` | Name suggests gRPC helpers | Not used by Waddles that the author saw | UNVERIFIED — builder evaluates for the control-plane channel |
-| `penguin-connector-twitch/discord` | `packages/rust-connectors` | Platform-specific | — | Not relevant |
+| `penguin-spine` | `packages/rust-spine` | Valkey Streams client (XADD/XREADGROUP/XACK), consumer groups, reclaim. Its two client-connection-separation rules (dedicated blocking XREADGROUP connection vs shared admin connection; Waddles spec §5.7) are the connection management | 0.1.0 @ `586b8dad` (VERIFIED); tip 0.2.0 @ `90060a9` (RECON) | Yes; no partition/lease/fencing code in 0.1.0 |
+| `penguin-bundle-host` | `packages/rust-bundle-host` | Host-API frame codec + manifest validator; no network | 0.2.0 @ `b063b7ba` (VERIFIED); `bundle_compiler` pins 0.1.0 @ `69f77b1a` (RECON) | Codec yes; the validator targets Waddles `bundle.yaml` v2, generalization UNVERIFIED |
+| `penguin-logging`, `penguin-licensing` | `packages/rust-logging`, `rust-licensing` | Logs + OTel; license/flag client | 0.1.0 @ `69e740ce`, `f642e069` (RECON) | Yes |
+| `rust-rpc` | `packages/rust-rpc` | Name suggests gRPC helpers | Not in Waddles pins | UNVERIFIED |
 
-- Note on "the connection library": the owner said Waddles uses shared connection crates. No crate is literally named that; the best match is `penguin-spine`. Owner to confirm (Q4).
-- All are git-pinned, not on crates.io.
-- Commits `b063b7ba` and `586b8dad` exist in the local penguin-libs clone (VERIFIED). The other SHAs above are RECON.
+"The connection library" the owner mentioned: no crate has that name; best match is `penguin-spine`. Owner to confirm (Q5). All are git-pinned, not on crates.io; `b063b7ba` and `586b8dad` exist in the local clone (VERIFIED).
 
-### 8.2 Still in the Waddles repo — extract or reimplement
+### 8.2 Still in the Waddles repo: extract or reimplement
 
-These are not penguin-libs crates today (RECON; the author confirmed the crate directories exist under `waddles:core/`). Elder must not depend on the Waddles repo.
+Extract (generic core; Elder-specific parts become config or its own implementation): `bundle_executor` (engine, `signing.rs`, `wire.rs`, `invoke.rs`; host capabilities are Elder's own), `bundle_capability_gate` (with a pluggable permission catalog), `egress_proxy` + `egress_assertion` + the `bundle_host_http` guard, `service_auth` (EdDSA machine JWT, `TrustBundle` trait; Elder needs its own issuer). Do not extract: `hub_client` (Waddles-specific; write an Elder control-plane gRPC client) and `bundle_active_set` (reads Waddles' schema; its header says same-repo path dependency; reimplement against Elder's control plane). Fixing the 5B.7 shortfalls during extraction benefits both products. Extracted crates contain no product code and never require another product.
 
-| Waddles crate | Generic or product-specific | Disposition proposed |
-|---|---|---|
-| `bundle_executor` (wasmtime engine, `signing.rs`, `wire.rs`, `invoke.rs`) | Core is generic; host implementations and manifest are product-specific | Extract engine + signing + wire to penguin-libs; Elder writes its own host capabilities. Fixing the shortfalls in 6.9 during extraction benefits both products |
-| `bundle_capability_gate` (`gate.rs`) | Gate pipeline generic; permission catalog is Waddles-specific (reputation, economy, overlay) | Extract with the catalog as a pluggable data/trait; Elder supplies its own catalog |
-| `egress_proxy`, `egress_assertion`, `bundle_host_http` guard | Generic network policy logic | Extract; Elder-specific defaults (service allowlist, JWKS source) become config |
-| `service_auth` (EdDSA machine JWT, `TrustBundle` trait) | Generic; today's issuer is Waddles hub-api | Extract; Elder needs its own issuer (5.7, UNVERIFIED) |
-| `hub_client` | Waddles-specific | Do not extract. Write an Elder control-plane gRPC client |
-| `bundle_active_set` | Reads Waddles' own schema; its header says it is deliberately a same-repo path dependency | Reimplement for Elder against the control-plane API |
-| `bundle_host_kv`, `bundle_host_db` | Product-specific | Not needed in v1 (5.5) |
-
-- Rule for extracted crates: no product code and no product assumptions inside; a library may never require another product to be present.
-
-### 8.3 Reuse vs reimplement — AUTHOR'S CALL E (revised on owner direction)
-
-Owner direction (D8): reuse the shared libs, do not reimplement, do not depend on the Waddles repo. Still open and marked for owner confirmation: which crate "connection library" means, whether the Waddles-resident crates are extracted, who does the work, and how it is pinned.
+### 8.3 Reuse vs reimplement — AUTHOR'S CALL E (revised on D8)
 
 | Option | For | Against |
 |---|---|---|
-| 1 Depend on the Waddles repo | Zero extraction work | Violates D7. Rejected |
-| 2 Extract Waddles-resident crates to penguin-libs, consume all as shared crates (**author's recommendation; matches owner direction**) | Fix once, both products inherit; security-critical code is not duplicated; shortfalls in 6.9 get fixed in one place; independence preserved because penguin-libs is a library | Waddles must migrate to the extracted crates (cross-repo coordination); generalization cost (catalog, scope shape, issuer); shared release cadence; risk of a lowest-common-denominator API; extraction is on Elder's critical path |
-| 3 Reimplement in `svc-workflows` | Fast; Elder-tailored; no coordination | Two copies of security-critical code; drift; two places to patch CVEs. Contradicts "contribute to penguin-libs before writing custom equivalents" (`backend.md`). Fallback only if extraction stalls |
-| 4 Hybrid: consume what is already in penguin-libs now; extract generic crates incrementally; reimplement product-specific ones | Unblocks Phase 1 | Interim copies must be deleted once extracted |
+| 1 Depend on the Waddles repo | No extraction | Violates D7. Rejected |
+| 2 Extract Waddles-resident crates to penguin-libs; consume all as shared crates (**recommended; matches D8**) | Fix once, both inherit; one copy of security code | Waddles must migrate; generalization cost; shared cadence; on Elder's critical path |
+| 3 Reimplement in `svc-workflows` | Fast, tailored | Two copies of security code; contradicts "contribute to penguin-libs first" (`backend.md`). Fallback if extraction stalls |
+| 4 Hybrid: consume what exists; extract incrementally; reimplement only product-specific | Unblocks Phase 1 | Interim copies must be deleted |
 
-- Plan: use the already-published crates (8.1) from Phase 0. Extract in this order as Phase 1 needs them: `service_auth`, gate, executor core, egress guard/proxy/assertion. Reimplement only `hub_client` and `active_set` equivalents.
-- Elder does not take Waddles' older pins blindly: pick the newest released commit after reading each crate's changelog, and pin the full SHA.
+Plan: consume 8.1 from Phase 0; extract `service_auth`, gate, executor core, egress guard/proxy/assertion in that order; reimplement `hub_client` and `active_set` equivalents. Use the newest released commit per crate (read its changelog), pinned by full SHA, not Waddles' older pins.
 
-### 8.4 Dependency handling — risk and open question
+### 8.4 Dependency handling and risk
 
-- **`penguin-spine` and `penguin-bundle-host` are not on penguin-libs' default branch.** `origin/main` has `packages/rust-licensing` and `packages/rust-rpc` only among Rust crates (VERIFIED by tree listing); spine, bundle-host, and logging live on release branches: `release/rust-bundle-host/v0.1.x` and `v0.2.x` and `release/rust-logging/v0.1.x` (names seen by the author in the local clone), `release/rust-spine/v0.1.x` (RECON). Commit tips are RECON. The local clone is on a stale feature branch and is not a source of truth.
-- Consume them as git dependencies pinned to an immutable full commit SHA (dependency-pinning rule), never a branch. Use `cargo vendor` so builds are hermetic.
-- Risks: a release branch force-push or deletion orphans a SHA; cargo-deny/audit must cover git sources; version skew with Waddles. Options for the owner: promote to `main`, tag, or publish to the public registry (Q4).
-- Elder is pure Python today (VERIFIED: no `Cargo.toml`); this is Elder's first Rust workspace. Layout: AUTHOR'S CALL P.
+**`penguin-spine`, `penguin-bundle-host`, `penguin-logging` are not on penguin-libs' default branch.** `origin/main` has only `rust-licensing` and `rust-rpc` among Rust crates (VERIFIED); the others live on release branches (`release/rust-bundle-host/v0.1.x`, `v0.2.x`, `release/rust-logging/v0.1.x` seen in the local clone; `release/rust-spine/v0.1.x` RECON); the local clone is on a stale feature branch. Consume by full commit SHA, vendored, never a branch. Risks: force-push or deletion orphans a SHA; cargo-deny/audit must cover git sources; skew. Owner options: promote to `main`, tag, or publish (Q5). First Rust workspace in Elder: layout is call P.
 
-### 8.5 Waddles job-bus compatibility
+### 8.5 Job-bus compatibility
 
-| Aspect | Elder JobBus today (`shared/jobbus/core.py`) | Waddles spine |
-|---|---|---|
-| Streams | `elder:jobs:<group>`, `elder:results:<group>`, `…:dead` | Per-ingest-source streams, per-bundle consumer groups |
-| Envelope | One JSON `data` field: `job_id`, `job_type`, `tenant_id`, `payload`, `enqueued_at`, `idempotency_key`, OTel `trace_context` | Waddles envelope incl. binding MAC (D30) |
-| Reliability | Idempotency SET NX 24 h; XAUTOCLAIM sweeper; DLQ at 5 deliveries | Pending-entries list + XAUTOCLAIM; max deliveries → DLQ; MAXLEN trimming |
-| Producer | Python `JobBus.enqueue` | Rust services |
-
-- AUTHOR'S CALL K (revised): `svc-workflows` consumes a new dedicated stream namespace (e.g. `elder:wf:*`) via `penguin-spine`. It does not read `elder:jobs:*`. Legacy `streams` and `flows` groups keep running untouched until cutover. Never two consumers (Python and Rust) on the same stream.
-- Producer: Elder's Python control plane enqueues through the penguin-dal Valkey stream backend (`python-dal/src/penguin_dal/stream/valkey_streams.py`, RECON; Elder pins `penguin-dal==0.3.0`, Waddles uses 0.4.0; which version introduced the backend is UNVERIFIED) or a thin adapter in `JobBus`. Builder decides after reading both.
-- Whether `penguin-spine` is generic over envelope contents, or assumes Waddles' envelope: UNVERIFIED. Builder reads the crate before committing the wire format.
-- Server naming: Elder says Redis, Waddles says Valkey. Streams commands needed (XADD, XREADGROUP, XAUTOCLAIM) are protocol-compatible; confirm the deployed server version supports them — UNVERIFIED.
-- Waddles has its own Python `core/workflow_core_module`; not reviewed, and not reusable anyway under D7.
-
-### 8.6 Waddles shortfalls to avoid
-
-- Fuel, pool, `.cwasm` cache, lazy load, ingress rate limit, no-stub behavior, gVisor, `helm` overrides: requirements in 6.9 (each marked VERIFIED or RECON there).
-- Rust cut-over incomplete (`.py` remnants) — RECON: Phase 5 deletion gate.
-- Signing stub in the Waddles compiler — RECON: no-stubs gate plus a test that an unsigned bundle is refused (6.7).
-- `componentize-py` executes bundle code at build — VERIFIED (spec R2): 6.7.
-- WASI has no threads, so `asyncio.run` fails and needs a shim — VERIFIED (spec R1): Python SDK item in section 10.
-- Precompiled artifacts are tied to the wasmtime version and GC collector — VERIFIED (spec §7.2): cache key in 6.9.
-
-Waddles wasmtime pin for reference: `=49.0.2`, component-model + gc-drc + pooling allocator (VERIFIED in `waddles:core/bundle_executor/Cargo.toml`). Builder re-confirms the current patched release and pins exactly.
+- Elder JobBus (`shared/jobbus/core.py`): `elder:jobs:<group>`, `...:results`, `...:dead`; one JSON `data` field with int `tenant_id`; idempotency SET NX 24 h; XAUTOCLAIM; DLQ at 5 deliveries. Waddles spine / scale design: partition streams + per-app work streams, envelope with binding MAC, pending list + XAUTOCLAIM, max deliveries to DLQ, MAXLEN.
+- AUTHOR'S CALL K (revised): `svc-workflows` consumes a dedicated partitioned namespace (e.g. `elder:wf:*`), not `elder:jobs:*`; legacy groups run untouched until cutover; never two consumers on one stream.
+- Producer: Elder's Python control plane enqueues through the penguin-dal Valkey stream backend (`python-dal/src/penguin_dal/stream/valkey_streams.py`, RECON; Elder pins `penguin-dal==0.3.0`, Waddles 0.4.0; introducing version UNVERIFIED) or a `JobBus` adapter. Whether spine is generic over envelope contents, and the deployed Redis/Valkey version, are UNVERIFIED (read in Phase 0). Waddles' Python `core/workflow_core_module` was not reviewed and is not reusable under D7.
 
 ---
 
 ## 9. Author's calls
 
-Every row: AUTHOR'S CALL — owner to confirm.
+Every row: AUTHOR'S CALL — owner to confirm, unless marked.
 
-| ID | Call | Alternative | Status |
-|---|---|---|---|
-| A | Control plane = Elder API (definitions, run history, authz, tenant/identity); data plane = `svc-workflows`. Data plane fails closed if the control plane is unreachable: grants missing/cache-miss/loader-error = deny; flags and license fall back to last-known cached value; unseen flags OFF | Data plane owns run history | Owner confirmed this framing |
-| B | WASM modules get no direct network or filesystem; they call only host functions that the gateway authorizes per tenant, license tier, and allowlist. Credentials never enter the sandbox; the gateway injects them at egress. This resolves #171 for workflow credentials | Per-module scoped tokens in the sandbox | Owner confirmed |
-| C | Heavy CI steps run as short-lived sandboxed runner jobs that `svc-workflows` launches and the gateway gates; WASM does logic/glue | Everything in WASM (git/test not feasible) | Owner to confirm — Q2 |
-| D | Canvas and flow share one graph model; canvas is the editor; diagrams link to flows/steps via the reference registry | Separate diagram and flow models | Owner has not answered — Q3 |
-| E | Reuse shared `penguin-libs` crates (spine, bundle-host, logging, licensing now; extract executor/gate/egress/service_auth later); no Waddles repo dependency; reimplement only product-specific pieces | Reimplement everything | Owner direction: reuse (D8). Specifics and "connection library" meaning to confirm — Q4 |
-| F | Strangler migration behind `workflows.*` flags, default OFF; delete old code at cutover; plaintext credentials re-encrypted | Big-bang | Owner to confirm |
-| G | Rust (tokio/axum), wasmtime component model + WASI 0.2, exact pins, no PRC-origin deps; SDKs Python/Rust/JS; OTel + penguin logging; Postgres RLS via separate PR (dependency); SPIFFE-ready identity + short-lived machine JWTs; rootless + stateless; Cilium default-deny; enforced Tetragon on engine/gateway/executor (no blanket exemption); licensing gates scale/structure | — | Owner to confirm |
-| H | Licensing: custom-module upload, concurrency, and run limits mapped to tiers is left as an open question; this spec decides nothing | — | Q1 |
-| I | One image, several run modes, separate Deployments (engine, gateway-in, gateway-out, executor, launcher) | Separate images per role | Tradeoff: one artifact to sign/pin vs larger code surface per image |
-| J | Untrusted custom-module upload ships last (Phase 4) after first-party bundles exercise the gateway/gate/executor and a security review passes | Ship with Phase 1 | — |
-| K | Run dispatch over a dedicated stream consumed via `penguin-spine`; sync control calls over gRPC; Elder API is the only writer of domain tables; no Postgres access from the data plane | Reuse `elder:jobs:*` | Section 8.5 |
-| L | Bundle taxonomy: function + flow bundle; `uses:` resolves to a digest at publish, with a lockfile | Single bundle type | — |
-| M | Credential-host binding: a credential is sent only to hosts it is bound to | Allowlist only | Beyond Waddles |
-| N | Structured control-flow/data nodes are native engine built-ins; free-form expressions and all tenant logic run in WASM | Everything in WASM | Tension with D6 stated in 7.4 |
-| O | The Darwin review gate becomes an optional review-gate step provided by an optional connector bundle; fail-closed only when a tenant marks it required; never a platform dependency | Keep `DARWIN_API_URL` in the runner | Today a required Darwin review blocks a promotion if Darwin is absent (VERIFIED `review.py`) |
-| P | Cargo workspace under `apps/svc_workflows/` in the Elder repo, built in a pinned container | Separate repo | Serves Elder only (D7) |
-| Q | Gateway scope: external traffic only. Control-plane gRPC is a separate mutually authenticated channel with its own policy | Route everything incl. control-plane calls through the gateway | Q5 |
+| ID | Call | Note |
+|---|---|---|
+| A | Control plane = Elder API (definitions, authz, identity, summaries); data plane = `svc-workflows`; fails closed. **Revised:** run/step history and hot state live in the data plane's sink (AA) | Owner confirmed original framing; D11 forces the revision |
+| B | Modules get no direct net/fs; gateway authorizes and injects credentials; resolves #171 | Owner confirmed |
+| C | Heavy CI steps run as sandboxed runner jobs; WASM for logic/glue | Q3 |
+| D | Canvas = editor on one graph model | Q4 |
+| E | **Revised (D8):** reuse penguin-libs crates now; extract Waddles-resident crates; reimplement only product-specific | Q5 |
+| F | **Revised (D10):** replace, not strangle; delete old engine before GA; fixture suite; no shims | — |
+| G | Rust (tokio/axum), wasmtime + WASI 0.2, exact pins; OTel + penguin logging; RLS dependency; SPIFFE-ready JWTs; rootless, stateless; Cilium default-deny; enforced Tetragon | — |
+| H | Licensing for custom modules, concurrency, run/scale limits, marketplace sources left open | Q2 |
+| **I** | **Replaced (D16):** one workspace, images split by trust boundary: gateway (`ingress`, `egress`, `scheduler`, `controller` as separate Deployments), engine (`engine` + `executor` containers), builder family (Jobs); runner Jobs | Q6 |
+| J | Untrusted tenant upload ships last | — |
+| K | **Revised:** dedicated partitioned streams via `penguin-spine`; Elder API sole writer of domain tables; no Postgres in the data plane | 8.5 |
+| L | Function + flowbundle taxonomy; `uses:` resolves to a digest | — |
+| M | Credential-host binding | Beyond Waddles |
+| N | Structured control-flow/data nodes native; free-form expressions and tenant logic in WASM | Tension with D6 |
+| O | Darwin review gate becomes an optional connector step; fail closed only when a tenant marks it required | Today blocks when required and absent (VERIFIED) |
+| P | Cargo workspace `apps/svc_workflows/` in the Elder repo | Separate repo alternative |
+| Q | **Revised:** external traffic via gateway; `elder.*` via the gated Elder adapter | Q11 |
+| R | `elder.*` is the only path to Elder data; curated typed surface; `elder_unavailable` fails closed | 5A.1, 5A.3 |
+| S | Address Elder objects by registry `(module, type, village_id)` | Q12 |
+| T | Entity events via transactional outbox → stream → scheduler; loop guard, dedupe, limits, batch mode | 5A.6 |
+| U | Email sent Elder-side; flows pass IDs only; raw addresses refused | Q19 |
+| V | Minimal first-class schedule item recommended; interim via issue `due_date`; time triggers in `scheduler` | Q7, Q14 |
+| W | Diagram → draft flow: one-shot fork, guided review, link back, human approval | Q8 |
+| X | Producer-signed envelopes (roles `api`, `gateway-in`, `scheduler`); engine verifies, never mints; Valkey ACLs | 5.7 |
+| Y | Run-as principal scoped to the owning team; scopes = approval ∩ team grants; initiator audit-only | 5.7 |
+| Z | Assumed-infrastructure table | 7.9 |
+| AA | Durability tiers; control plane out of the hot path; batched sink | Q15 |
+| AB | Shared-nothing cells behind a tenant router | 5B.4 |
+| AC | Partitions + lease + epoch fencing from Waddles' design; Valkey cluster | 5B.3 |
+| AD | Ingress backpressure, bulk intake, per-tenant quotas, weighted fair queuing | 5B.6 |
+| AE | Hot-path requirements: pooling, `.cwasm` cache, lazy load, fuel, batch invocation | 5B.7 |
+| AF | `elder.*` cache + batch with seed/lazy-load and epoch invalidation | 5B.9 |
+| AG | Autoscale on lag; bounded labels; sampling | 5B.8 |
+| AH | Load-test gate; per-language conformance acceptance | 5B.11, 5C.5 |
+| AI | Webhook auth: HMAC + second factor; token-header alternative | 6.5a |
+| **AJ** | **Replaces the old language-sequencing call (now D12):** cold-start order pooling, `.cwasm`, lazy load, language tuning; snapshots only opt-in behind a safety gate | 5C.7; Q10 |
+| AK | Compile pipeline: vendored deps, offline build, publisher validation, quotas | 5C.3 |
+| AL | No prebuilt `.wasm`, even first-party | Resolves the old prebuilt question per D13 |
+| AM | SDKs generated from WIT + idiomatic layer, conformance suite, harness, CLI | 5C.2 |
+| AN | Untrusted builds require the enforced isolation floor; fail closed per environment | Q17 |
+| AO | Go is a user language only; platform stays Rust | Q20 |
+| **AP** | Streams for dispatch, async actions, events, results; direct mTLS gRPC for synchronous host calls | 5.8 |
+| **AQ** | Executor as a separate container in the engine pod over UDS (refines "credential-less") | Q6 |
+| **AR** | Per-role scaling model, horizontal and vertical | 5.9 |
+| **AS** | Marketplace: `bundles/{language}/{name}/` layout, source kinds and trust tiers, signature attestation, pinned-SHA flow, tenant admin vs PenguinTech approval | 5D; Q9 |
 
 ---
 
 ## 10. Left to the builder
 
-| Area | Constraint on the builder |
-|---|---|
-| WIT worlds and host-call wire | Fail loud on unimplemented calls; gate before every import; canonical JSON text for open-ended values (Waddles A2) |
-| Manifest/graph JSON Schemas | Must carry what 5.5/5.6 list; ABI version mandatory |
-| Proto definitions (`workflows.v1`) | Version package + `api_version`; no raw model objects |
-| Scheduler fairness algorithm, executor pool sizing | Per-tenant fairness required; measure, do not guess |
-| Fuel budgets and run-level cap values | Measured on real workloads |
-| Checkpoint granularity and resume semantics | Idempotent steps; at-least-once; document |
-| Expression semantics | Parity corpus against `expression.py` |
-| Loop/cycle semantics in the graph | Read how Streams does it first |
-| Canvas editing model (locks vs collab) | One model |
-| Cron/schedule executor | If Q8 says in scope |
-| SDK layout and naming (Python via componentize-py, Rust via cargo-component, JS via componentize-js) | Build containers have no network; Python needs an async shim |
-| Machine-JWT issuer in Elder | Confirm penguin-aaa vs new; EdDSA; ≤1 h |
-| Staleness bound for cached grants | Choose and document; revocation window must be bounded |
-| Runner log/artifact return path | No credentials; bounded |
-| Git push via gateway credential injection | Prove feasibility early (R4) |
-| Helm chart structure; Cilium and Tetragon policy content | Per-mode; negative tests per policy |
-| Metric names, histograms, usage metering shape | No tenant/run IDs as labels |
-| Test strategy | Parity corpus, flag-on E2E, telemetry counts, negative sandbox tests, independence run (G7), 90%+ coverage |
-| Flag prefix reconciliation | 7.5 |
-| Rust logging conformance | `testing.md` says Rust asserts `tracing` because no penguin Rust logging crate exists; recon says `penguin-logging` 0.1.0 exists on a release branch. If used, assert both; flag the stale rule text to the rules owner |
-| Base image and toolchain pins | Digests; Western-origin |
-| Run-history retention and storage | Q |
+- WIT worlds, host-call wire, manifest/graph schemas (fail loud on unimplemented calls; gate before every import; ABI version mandatory); `workflows.v1` and Elder internal API protos (versioned, explicit DTOs, bulk and cursor ops).
+- Partition count, lease timings, shed thresholds, scheduler fairness, pool sizing, fuel budgets, run caps: from spikes, not guesses. Idempotency window and dedupe structure (60M keys for a 10-min window at 100k eps is large, UNVERIFIED); envelope signing granularity.
+- History sink, retention, summary batching (Q15); expression and loop semantics (fixture suite is the oracle); canvas editing model, conversion palette, schedule-item shape (Q7, Q8); outbox mechanism (must cover the discovery worker); machine-JWT issuer; cached-grant staleness bound.
+- Per-language recipes, signature primitive, sync cadence (5C.3, 5D; check PRC-origin); runner log/artifact return and push via gateway (prove early, R4); Helm chart, Cilium/Tetragon content, KEDA; metric names and usage metering (no tenant/run IDs as labels).
+- Tests: fixture suite, flag-on E2E, telemetry counts, negative sandbox tests, independence run, load gate, 90%+ coverage.
+- Flag prefix reconciliation; Rust logging conformance: `testing.md` says Rust asserts `tracing`, recon says `penguin-logging` exists on a release branch: assert both, flag the stale rule.
 
 ---
 
 ## 11. Open questions for the owner (most important first)
 
-| # | Question | Why it matters / default if unanswered |
+| # | Question | Default if unanswered |
 |---|---|---|
-| Q1 | **Licensing and tier mapping** for custom-module upload, concurrency, and run limits. Candidate dimensions, none decided: custom modules (a premium capability vs a count per tier), concurrent runs per tenant, runs per month, executor memory/time ceilings, runner job size and minutes, run-history retention, bundle count, marketplace publish. Free is one team at full capability, so "feature gating" is off the table; scale/structure/premium-capability is the frame | Blocks enforcement design. Default: build metering and `@enforce_limit` hooks, observe-only (`elder.license-enforcement` pattern), set no numbers |
-| Q2 | **Confirm the heavy-step runner split (call C).** You said "WASM for any logic"; git clone/merge, test subprocesses, and image builds cannot run in WASM. Also: may a short-lived scoped token live in the runner pod if gateway credential injection for git push is not feasible? Tenant-supplied runner images? | Defines the highest-risk surface. Default: runner jobs as designed in 6.8; no token in pod; allowlisted images |
-| Q3 | **Confirm canvas = editor on one graph model (call D).** Merging `stream_nodes/edges` with `dg_shapes/connectors` is a data migration | Default: Phase 4 unification; Phases 1-3 keep both models |
-| Q4 | **Shared libs.** (a) Is "the connection library" `penguin-spine`? (b) Extract the Waddles-resident crates (executor, gate, egress proxy/assertion, `service_auth`) into penguin-libs, and who owns the PRs and Waddles' migration? (c) `penguin-spine`, `penguin-bundle-host`, `penguin-logging` live only on release branches — promote to `main`, tag, or publish? (d) Which commit to pin? | Gates Phase 0/1 dependency setup. Default: consume 8.1 crates by SHA now; extract incrementally |
-| Q5 | **Gateway scope.** Does "only way in or out" cover external traffic only, or also Elder API ↔ `svc-workflows` control traffic and UI → API? | Default (call Q): external only; control-plane gRPC is separately authenticated |
-| Q6 | **Who reviews and approves** tenant-private vs marketplace-shared modules? Waddles' marketplace-sources design uses global-admin-only sources in v1 (no per-tenant private sources), prebuilt external source = Professional, sandbox build = Enterprise (VERIFIED in `waddles:docs/superpowers/specs/2026-10-27-unified-bundle-marketplace-sources-design.md`). Is there a marketplace at all? | Default: tenant-private modules approved by a tenant admin; no marketplace in v1 |
-| Q7 | **Bundle ABI versioning.** WIT world semver; support window (N and N-1?); who migrates user modules on a breaking change; deprecation notice | Default: `abi` field in the manifest; host supports N and N-1; breaking change needs a new world |
-| Q8 | **Is the Streams cron executor gap in scope?** `stream_schedules` has a model and no executor | Author's recommendation: yes, in Phase 2 — a `schedule:` trigger is cheap on the new engine and expensive to build on the old one. Not parity-critical. Default: out of parity scope |
-| Q9 | **Runs (serverless) module.** Absent today; WASM functions are its natural runtime. In or out? | Default: out; design does not preclude |
-| Q10 | **Accept prebuilt WASM components?** Waddles allows them with a permanent "not scanned" badge. Source-only is safer | Default: source-only in v1 |
-| Q11 | **Runner isolation floor.** Is pod hardening + Cilium + Tetragon enough for runner jobs, or require Kata/gVisor (availability on Elder clusters UNVERIFIED; Waddles found gVisor undeliverable on MicroK8s/DOKS)? | Default: hardening stack; Kata evaluated if enforcement proves insufficient |
-| Q12 | **Optional integrations.** Which of the 13 PenguinTech-product connectors ship first-party as optional bundles? Darwin gate per call O? Private-host egress opt-in (6.5)? | Default: ship connectors as optional bundles, none at launch except what Phase 2 parity needs |
-| Q13 | **JobBus transition.** Producer path to the new stream (penguin-dal stream backend vs a JobBus adapter) | Builder proposes after reading both (8.5) |
-| Q14 | **Run-history retention and storage cost** | Default: keep current behavior |
+| Q1 | **Scale definition and SLOs:** is 100k eps per tenant, per deployment/cell, or aggregate across a multi-tenant deployment? Latency/loss SLOs? Which environment hosts load tests? | Aggregate; cells scale out; placeholder SLOs; owner provides a multi-node cluster |
+| Q2 | **Licensing and tier mapping** for custom modules, concurrency, run limits, scale limits (eps, concurrent runs, nodes/cells), compile quotas, marketplace sources, history retention. Frame: scale/structure/premium capability | Metering + `@enforce_limit` hooks, observe-only; no numbers |
+| Q3 | **Confirm the heavy-step runner split (call C)**; a short-lived scoped token in a runner pod if gateway injection for push is infeasible? tenant-supplied runner images? | As designed; no token; allowlisted images |
+| Q4 | **Confirm canvas = editor on one graph model (call D)** | Unify in Phase 4 |
+| Q5 | **Shared libs:** is "the connection library" `penguin-spine`? Extract Waddles-resident crates into penguin-libs (who owns PRs and Waddles' migration)? Promote spine/bundle-host/logging to `main`, tag, or publish? Which SHA? | Consume 8.1 by SHA; extract incrementally |
+| Q6 | **Role split:** confirm split by trust boundary vs fewer images; ingress/egress as separate Deployments of one image or separate images; scheduler and controller as gateway modes or separate; executor as a container in the engine pod or a separate Deployment | Calls I and AQ |
+| Q7 | **Schedule-event model:** build a first-class schedule item, or scope to existing structures (issue `due_date`, on-call)? | Interim `due_date`; recommend a minimal item |
+| Q8 | **Diagram conversion:** one-shot vs live-linked; which node-type mapping/palette is v1? | One-shot fork; palette 5A.7 |
+| Q9 | **Marketplace:** confirm source kinds and trust tiers; who approves (tenant admin for private, PenguinTech review for shared); is there an official repo separate from the built-in; tenant-private sources in v4.0 or later; community sources at all? | 5D table |
+| Q10 | **Snapshot history:** describe the specific Waddles snapshot problems if more than 5C.7 records; confirm snapshots stay opt-in only | Opt-in only, gated |
+| Q11 | **Gateway scope:** external only, or also control-plane and `elder.*` traffic through a gateway mode? | External only; gated Elder adapter |
+| Q12 | **Object addressing:** `village_id`, or add a UUID `public_id` Elder-wide? | `village_id` |
+| Q13 | **ABI versioning:** WIT semver, support window, who migrates user modules | `abi` in manifest; N and N-1 |
+| Q14 | **Streams cron executor** in scope? Now part of melding | In scope, Phase 2, in `scheduler` |
+| Q15 | **History sink and retention:** approve object storage and/or a columnar store (merge design fixed Postgres + Neo4j + Redis); retention for history, source, build logs | Object storage + Postgres index |
+| Q16 | **Runs (serverless) module:** in or out? | Out; not precluded |
+| Q17 | **Isolation floor:** is hardening + Cilium + Tetragon enough for runner jobs and builds, or require Kata/gVisor? | Hardening stack; untrusted builds refused where absent |
+| Q18 | **Optional integrations and private-host egress:** which of the 13 product connectors ship first-party; Darwin per call O; per-tenant private-host egress opt-in? | Optional bundles; opt-in off |
+| Q19 | **Email transport:** none exists (stub). Provider/SMTP and owner? | Build in Elder API, Phase 2 |
+| Q20 | **Go as a user language:** confirm the Go Phase-Out rules do not apply to user flowbundles or the Go builder image | As 5C.6 |
 
 ---
 
 ## 12. Risks
 
-| # | Risk | Impact | Mitigation | Spike |
-|---|---|---|---|---|
-| R1 | Runner jobs execute native code (build/test commands) | Highest: escape reaches the node kernel | 6.8 stack; no creds; gated egress; ephemeral; Kata escalation (Q11) | Negative-test suite for the runner pod before Phase 3 exit |
-| R2 | Python/JS modules compile to large components; build executes module code; cold compile is seconds (Waddles measured a 21.6 MB Python component, 3.3-4.5 s uncached vs ~5 ms precompiled — VERIFIED in spec §7.2) | Slow publish, build-time attack surface | Artifact cache, no-network build, trusted publisher; Rust/JS first | Build a hello-world per Tier 1 language |
-| R3 | Parity: 21 Python node classes reimplemented; expression semantics drift | Silent behavior change for users | Recorded corpus; shadow diff; per-node tests with printed counts | Corpus capture before Phase 2 |
-| R4 | Git clone/push with gateway credential injection may not work through a proxy | Forces a token into the pod | Early spike; fallback needs owner decision (Q2) | Smart-HTTP push through gateway-out |
-| R5 | Shared-executor noisy neighbor; no per-tenant limits exist today | One tenant starves others | Per-tenant fairness + caps; optional dedicated pool | Load test with a hanging module beside healthy ones |
-| R6 | Scope: engine + gateway + executor + canvas unification + SDKs + build pipeline + two migrations | Schedule slip | Phases; each exits on a count-verified gate; untrusted upload last | — |
-| R7 | Fail-closed couples the data plane's availability to the control plane | Elder API outage halts runs | Bounded-staleness grant cache; push-invalidate; HA control plane; documented | Chaos test |
-| R8 | wasmtime CVE or upgrade invalidates the artifact cache and needs fast patching | Thundering recompile; exposure window | Exact pin + patch runbook; rolling recompile; cache key includes ABI | Measure recompile cost |
-| R9 | DB connectors assume an HTTP `database-ops` backend that may not exist in Elder; native DB protocols cannot egress from WASM | 18 connectors non-functional | Treat as out of v1; decide per connector (N7) | Check for a `database-ops` service |
-| R10 | Dual-stack period doubles the test matrix | Drift, cost | Shadow only side-effect-free graphs; time-boxed; deletion gate | — |
-| R11 | Independence erodes: optional connectors creep into core | Violates D7 | CI job with all other products absent; connectors only as optional bundles; no health/startup coupling | Independence E2E in Phase 1 |
-| R12 | Interactive "test run" latency through gateway + executor | Poor canvas UX | Warm pool, artifact cache, native built-ins | Measure p95 on a 10-node graph |
-| R13 | Plaintext credentials sat at rest | Possible prior exposure | Migrate, clear, advise rotation | — |
-| R14 | `penguin-spine` / `penguin-bundle-host` / `penguin-logging` only on release branches, git-pinned | Orphaned SHA; supply-chain and version-skew risk | Immutable SHA + vendoring; promote/tag/publish (Q4); cargo-deny on git sources | — |
-| R15 | Elder's first Rust workspace: toolchain, CI, container, coverage, audit gates are all new | Late CI surprises | Phase 0 builds an empty gated crate first | CI green on an empty crate |
-| R16 | Extraction of Waddles-resident crates is on the critical path and needs another team's coordination | Phase 1 slip | Hybrid option 4; reimplement only if stalled | — |
-| R17 | `penguin-spine` envelope may assume Waddles' format | Rework of dispatch | Read the crate in Phase 0 | Round-trip a job end to end |
-| R18 | No alerts or dashboards exist for either engine today (RECON) | Blind operation during migration | Ship dashboards and alerts with Phase 1; histograms, bounded labels | — |
+| # | Risk | Mitigation |
+|---|---|---|
+| R1 | Runner jobs execute native code: highest-risk surface | 6.8; no creds; gated egress; Kata escalation (Q17) |
+| R2 | Build executes user code; interpreter languages have large components and slow cold start (Python 21.6 MB, 3.3-4.5 s uncached, VERIFIED) | `.cwasm` cache, pooling, no-network build, publisher split; slow start documented (D14) |
+| R3 | Node reimplementation drifts | Fixture suite from existing tests |
+| R4 | Pushing to a remote through gateway credential injection may not work (forces a token into the pod) | Early spike (Q3) |
+| R5 | Noisy neighbor on shared executors | Weighted fair dequeue, per-tenant caps, optional dedicated pool |
+| R6 | Scope: roles + scale + canvas + languages + compile + marketplace + melding | Phases; gated exits; upload last; deletion gate may exclude it |
+| R7 | Fail-closed couples runs to Elder API and the control plane | Bounded-staleness caches; HA; typed errors |
+| R8 | wasmtime CVE/upgrade invalidates the artifact cache | Exact pin + patch runbook; cache key includes ABI |
+| R9 | DB connectors assume an HTTP `database-ops` backend that may not exist; WASM cannot do native DB egress | Out of v1 (N7) |
+| R10 | Independence erodes | CI run with all other products absent |
+| R11 | **Capacity numbers are unverified** | Phase 0/1 spikes; load gate |
+| R12 | Hot-path coupling to Quart/Postgres creeps back | A11; batching only; review each phase |
+| R13 | Lease/fencing is unbuilt (design only in Waddles); Valkey cluster ops are new for Elder | Lua fencing + dedup; chaos tests; Phase 0 provisioning |
+| R14 | History sink cost; possible new datastore | Sampling; object-storage first (Q15) |
+| R15 | Elder API overloaded by `elder.*` lookups; entity-event loops/storms | Caches, bulk APIs, limits, breaker; loop guard, coalescing |
+| R16 | PII leak via free text or external payloads | Structured-only reads; retention off; redaction |
+| R17 | No email transport; diagram prerequisites unbuilt; no schedule-item model | Phase 0 decisions (Q7, Q19); diagram work before Phase 4 |
+| R18 | C# preview/RC, Go and Ruby unproven; PRC-origin provenance unchecked | Per-language gates (D12); provenance review |
+| R19 | `penguin-*` crates only on release branches; extraction needs another team; first Rust workspace | SHA pin + vendoring; hybrid option 4; empty gated crate in Phase 0 |
+| R20 | Cells, router, and many roles add operational complexity | One-cell default; shared chart |
+| R21 | Per-envelope signature verification binds at 100k eps | Per-batch signing |
+| R22 | Engine pod's shared network policy weakens executor isolation vs Waddles' separate Deployments | No secrets in executor; Tetragon; separate Deployment option (Q6) |
+| R23 | Snapshot opt-in reintroduces non-reproducible builds and cross-tenant leak risk | Off by default; 5C.7 gate |
+| R24 | Marketplace sources widen the build attack surface | 5D validator, pinned SHA, compile + consent, quotas |
