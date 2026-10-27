@@ -400,11 +400,20 @@ JIT role mapping applies only to new users and only through an explicit `attribu
 `role_map` (reader/maintainer/admin).
 
 - **Tenant-scoped vs global IdP.** A tenant-scoped IdP (tenant admins control it) can never sign in a user
-  that has a platform `global_role` (403 `saml_tenant_idp_global_role_forbidden`); sessions minted through
-  it keep `global_role` stripped across `/portal-auth/refresh`. A tenant with no IdP of its own is served
-  by the global IdP **only if the tenant opted in** via its settings
-  (`{"saml_allow_global_idp": true}` on the tenant; 403 `saml_global_idp_not_enabled` otherwise), and then
-  for existing users only -- JIT provisioning is always off on that fallback.
+  that has a stored platform `global_role` of any kind (`admin`, `support`, `superadmin`, ...): 403
+  `saml_tenant_idp_global_role_forbidden`. *That refusal at the ACS is the real control.* Sessions minted
+  through such an IdP also carry an `sso_tenant_scoped` marker in the refresh token, so
+  `/portal-auth/refresh` keeps the `global_role` **claim** stripped -- but this protects claims-based
+  endpoints only: `jwt_handler.get_current_user` authorizes portal users from the live database role and
+  does not read the marker. A `global_role` granted to a user *after* a tenant-IdP session started
+  therefore still takes effect for that session through the database path (follow-up: a
+  `tokens_valid_after` / role-version control). A tenant with no IdP of its own is served by the global IdP
+  **only if the tenant opted in** via its settings (`{"saml_allow_global_idp": true}`; 403
+  `saml_global_idp_not_enabled` otherwise), and then for existing users only -- JIT provisioning is always
+  off on that fallback.
+- **`return_to`** must be a same-origin relative path from an ASCII allowlist (no spaces, quotes, `<>`,
+  backslashes, controls or non-ASCII). Percent-encoded controls, slashes (`%2f`) and double-encoding
+  (`%25`) are rejected, so a legitimate encoded slash (`%2F`) in `return_to` is rejected by design.
 - **Redis.** AuthnRequest state and the replay cache live in Redis (`REDIS_URL`; the client is built lazily
   with 2s timeouts and rebuilt after a failure; Redis down or unreachable => SAML fails closed with 503).
   These are security keys: use a Redis/DB with `maxmemory-policy noeviction` (or a dedicated instance/DB).

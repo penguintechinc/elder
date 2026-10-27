@@ -6,19 +6,27 @@ from the in-process IdP, real Redis and Postgres. Each class pins one finding
 so it cannot silently regress.
 """
 
+import asyncio
 import copy
+import os
+import socket
 import time
+from unittest.mock import patch
 
 import jwt
 import pytest
+import redis as redis_lib
 from lxml import etree
 
 from apps.api.api.v1.portal_auth import generate_tokens
+from apps.api.services.sso import saml_service as saml_service_module
 from apps.api.services.sso.saml_service import (
     _RETURN_TO_RE,
+    GLOBAL_IDP_OPT_IN_KEY,
     SAMLError,
     SAMLService,
 )
+from apps.api.utils.async_utils import run_in_threadpool
 from tests.unit import saml_test_idp as idp
 from tests.unit.test_saml_acs_processing import (  # noqa: F401
     SP_BASE,
@@ -65,11 +73,20 @@ def _jwt_secret(env) -> str:
 
 @pytest.mark.asyncio
 class TestF2TenantScopedIdpCannotMintGlobalRole:
-    """A tenant-scoped IdP never yields a session that can carry a global_role."""
+    """A tenant-scoped IdP can never authenticate a user holding a global_role.
 
-    async def test_refresh_keeps_global_role_stripped_for_tenant_idp_sessions(
+    The REAL control is the refusal at the ACS (``jit_provision_user``). The
+    ``sso_tenant_scoped`` refresh marker only keeps the ``global_role`` *claim*
+    stripped for claims-based endpoints; ``jwt_handler.get_current_user``
+    authorizes from the live DB role and ignores it, so a role granted after a
+    tenant-IdP session starts still applies through that path (follow-up:
+    tokens_valid_after / role-version control).
+    """
+
+    async def test_refresh_keeps_global_role_claim_stripped_for_tenant_idp_sessions(
         self, env, keys, async_client, enterprise_tier
     ):
+        """Claims only: the marker survives rotation; DB-based authz is untouched."""
         uid = _user(env, "jane.doe@example.com")
         resp = await _saml_login(env, async_client, "jane.doe@example.com", keys)
         assert resp.status_code == 200
@@ -79,7 +96,8 @@ class TestF2TenantScopedIdpCannotMintGlobalRole:
             "sso_tenant_scoped"
         ]
 
-        # A platform role granted AFTER the SSO login must not leak into refresh.
+        # A platform role granted AFTER the SSO login must not reappear as a
+        # *claim* on refresh (get_current_user's DB lookup is out of scope here).
         env.db(env.db.portal_users.id == uid).update(global_role="admin")
         env.db.commit()
         token = out["refresh_token"]
@@ -134,6 +152,20 @@ class TestF2TenantScopedIdpCannotMintGlobalRole:
             "saml_tenant_idp_global_role_forbidden"
         )
         assert "elder_access_token" not in "\n".join(resp.headers.get_all("Set-Cookie"))
+
+    @pytest.mark.parametrize("role", ["admin", "support", "superadmin", "x"])
+    async def test_any_truthy_stored_global_role_is_refused(
+        self, env, keys, async_client, enterprise_tier, role
+    ):
+        """Not just ``admin``: every non-empty stored global_role is refused."""
+        uid = _user(env, "root@example.com", global_role=role)
+        resp = await _saml_login(env, async_client, "root@example.com", keys)
+        assert resp.status_code == 403
+        assert (await resp.get_json())["error"] == (
+            "saml_tenant_idp_global_role_forbidden"
+        )
+        row = env.db(env.db.portal_users.id == uid).select().first()
+        assert row.last_login_at is None
 
     async def test_global_idp_sessions_carry_no_marker(
         self, env, keys, async_client, enterprise_tier
@@ -214,8 +246,35 @@ class TestF3GlobalIdpNeedsTenantOptIn:
         async with env.app.app_context():
             cfg = SAMLService._load_saml_idp(env.tenant_a)
         assert cfg["tenant_id"] == env.tenant_a
-        assert not cfg.get("global_fallback")
         assert cfg["jit_provisioning_enabled"] is True
+
+    async def test_global_fallback_forces_jit_off_in_the_loaded_config(self, env, keys):
+        _use_global_idp(env, keys, opt_in=True, jit=True)
+        async with env.app.app_context():
+            cfg = SAMLService._load_saml_idp(env.tenant_a)
+        assert cfg["tenant_id"] is None
+        assert cfg["jit_provisioning_enabled"] is False
+
+    async def test_opt_in_key_name_is_part_of_the_contract(self):
+        """Operators set this literal key in tenant settings (docs/USAGE.md)."""
+        assert GLOBAL_IDP_OPT_IN_KEY == "saml_allow_global_idp"
+
+    async def test_jit_provision_user_rechecks_the_jit_switch_itself(self, env, keys):
+        """Defence in depth: no user is created when the config forbids JIT."""
+        cfg = {"tenant_id": env.tenant_a, "jit_provisioning_enabled": False}
+        existing = _user(env, "known@example.com")
+        async with env.app.app_context():
+            created = SAMLService.jit_provision_user(
+                env.tenant_a, "new@example.com", cfg, {"email": ["new@example.com"]}
+            )
+            known = SAMLService.jit_provision_user(
+                env.tenant_a, "known@example.com", cfg, {}
+            )
+        assert created["error"] == "saml_jit_disabled"
+        assert created["status_code"] == 403
+        assert known["id"] == existing  # existing users are unaffected
+        rows = env.db(env.db.portal_users.tenant_id == env.tenant_a).select()
+        assert [r.email for r in rows] == ["known@example.com"]
 
 
 @pytest.mark.asyncio
@@ -407,6 +466,21 @@ class TestF5ReturnToIsASameOriginRelativePath:
             "/%2F/evil.com",
             "/%5c/evil.com",
             "/%5Cevil.com",
+            "/%252f/evil.com",
+            "/%25",
+            "/a%zz",
+            "/a%",
+            "/a%2",
+            "/a b",
+            "/a'b",
+            '/a"b',
+            "/a<b>",
+            "/a`b",
+            "/a{b}",
+            "/a|b",
+            "/a^b",
+            "/\u00e9",
+            "/\u202e/x",
             "/ok%0a",
             "/ok\n",
             "/ok\r\n",
@@ -432,7 +506,8 @@ class TestF5ReturnToIsASameOriginRelativePath:
             "/dashboard",
             "/ok/path?x=1&y=2#frag",
             "/a%20b",
-            "/a b",
+            "/a-b_c.d~e",
+            "/a%E2%82%AC",
             "/" + "a" * 2047,
         ],
     )
@@ -441,10 +516,16 @@ class TestF5ReturnToIsASameOriginRelativePath:
             started = SAMLService.begin_login(env.tenant_a, return_to=value)
         assert started["state_token"]
 
-    async def test_trailing_state_token_newline_is_not_a_valid_token(self, env):
+    async def test_trailing_state_token_newline_is_rejected_before_redis(self, env):
+        """The validator itself must reject it (``$`` would let it reach Redis)."""
         async with env.app.app_context():
-            with pytest.raises(SAMLError) as exc:
-                SAMLService._consume_login_state(env.tenant_a, "T" * 43 + "\n")
+            with patch.object(
+                SAMLService,
+                "_state_store",
+                side_effect=AssertionError("Redis was consulted"),
+            ):
+                with pytest.raises(SAMLError) as exc:
+                    SAMLService._consume_login_state(env.tenant_a, "T" * 43 + "\n")
         assert exc.value.code == "saml_login_state_missing"
 
 
@@ -474,3 +555,109 @@ class TestF9SingleLogoutIsNotAStub:
         assert "SingleLogoutService" not in metadata
         http = await async_client.get(f"/api/v1/sso/saml/metadata/{env.tenant_a}")
         assert "SingleLogoutService" not in (await http.get_data()).decode()
+
+
+class _StubClient:
+    """A minimal Redis client double that records ``close()``."""
+
+    def __init__(self):
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def blackhole():
+    """A TCP listener that completes handshakes but never answers (hung Redis)."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(64)
+    yield listener
+    listener.close()
+
+
+@pytest.mark.asyncio
+class TestN2RedisOutageDoesNotStarveWorkers:
+    """A hung Redis costs one timeout window, not one per request."""
+
+    async def test_blackholed_redis_burst_is_one_timeout_window_then_recovers(
+        self, env, blackhole, monkeypatch
+    ):
+        timeout, burst = 0.5, 12
+        monkeypatch.setattr(saml_service_module, "_REDIS_TIMEOUT_SECONDS", timeout)
+        monkeypatch.setattr(saml_service_module, "_NEGATIVE_CACHE_SECONDS", 1.0)
+        attempts = []
+        real_from_url = saml_service_module.redis_from_url
+
+        def counting_from_url(*args, **kwargs):
+            attempts.append(1)
+            return real_from_url(*args, **kwargs)
+
+        monkeypatch.setattr(saml_service_module, "redis_from_url", counting_from_url)
+
+        async with env.app.app_context():
+            env.app.extensions.pop("saml_redis", None)
+            env.app.config["REDIS_URL"] = (
+                f"redis://127.0.0.1:{blackhole.getsockname()[1]}/0"
+            )
+            started = time.monotonic()
+            results = await asyncio.gather(
+                *[run_in_threadpool(SAMLService._state_store) for _ in range(burst)],
+                return_exceptions=True,
+            )
+            elapsed = time.monotonic() - started
+
+            assert all(isinstance(r, SAMLError) for r in results), results
+            assert {r.status_code for r in results} == {503}
+            assert len(attempts) == 1  # single-flight: one probe, not one per request
+            # ~one timeout window; serial behaviour would be burst * timeout (6s)
+            assert elapsed < burst * timeout / 2, elapsed
+
+            # Inside the negative-cache window: fail fast, no new connect attempt.
+            t0 = time.monotonic()
+            with pytest.raises(SAMLError):
+                SAMLService._state_store()
+            assert time.monotonic() - t0 < 0.1
+            assert len(attempts) == 1
+
+            # Redis comes back; once the window elapses the next call reconnects.
+            env.app.config["REDIS_URL"] = os.environ["REDIS_URL"]
+            await asyncio.sleep(1.1)
+            assert SAMLService._state_store().ping()
+            assert "saml_redis" in env.app.extensions
+
+    async def test_failed_client_is_closed_but_a_healthy_replacement_is_kept(self, env):
+        async with env.app.app_context():
+            old, healthy = _StubClient(), _StubClient()
+            env.app.extensions["saml_redis"] = old
+            error = SAMLService._store_unavailable(old)
+            assert error.status_code == 503
+            assert old.closed
+            assert "saml_redis" not in env.app.extensions
+
+            # Another thread already rebuilt a healthy client: a late failure
+            # report about the OLD client must not evict it.
+            env.app.extensions["saml_redis"] = healthy
+            SAMLService._store_unavailable(_StubClient())
+            assert env.app.extensions["saml_redis"] is healthy
+            assert not healthy.closed
+
+    async def test_operation_failure_starts_the_negative_cache(self, env, monkeypatch):
+        monkeypatch.setattr(saml_service_module, "_NEGATIVE_CACHE_SECONDS", 30.0)
+        dead = redis_dead_client()
+        async with env.app.app_context():
+            env.app.extensions["saml_redis"] = dead
+            with pytest.raises(SAMLError):
+                SAMLService.begin_login(env.tenant_a)
+            assert env.app.extensions["saml_redis_down_until"] > time.monotonic()
+            started = time.monotonic()
+            with pytest.raises(SAMLError) as exc:  # fails fast, no reconnect probe
+                SAMLService.begin_login(env.tenant_a)
+            assert time.monotonic() - started < 0.1
+            assert exc.value.code == "saml_state_store_unavailable"
+
+
+def redis_dead_client():
+    """A real Redis client pointed at a closed port (connection refused)."""
+    return redis_lib.Redis(port=1, socket_connect_timeout=0.2)

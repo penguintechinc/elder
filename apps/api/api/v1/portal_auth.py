@@ -124,8 +124,11 @@ def generate_tokens(user: dict) -> dict:
         "iat": now,
     }
     if user.get("sso_tenant_scoped"):
-        # Session minted via a tenant-scoped SAML IdP: refresh must keep
-        # global_role stripped (see refresh_token).
+        # Session minted via a tenant-scoped SAML IdP: refresh keeps the
+        # `global_role` claim stripped (see refresh_token). Claims-only: the
+        # marker is NOT consulted by jwt_handler.get_current_user, which reads
+        # the live DB role; the real control is the ACS refusal of users with a
+        # stored global_role (saml_service.jit_provision_user).
         refresh_payload["sso_tenant_scoped"] = True
     refresh_token = jwt.encode(refresh_payload, secret_key, algorithm="HS256")
 
@@ -567,8 +570,11 @@ async def refresh_token():
             "global_role": user.global_role,
         }
         if payload.get("sso_tenant_scoped"):
-            # Minted via a tenant-scoped SAML IdP: never restore a global_role
-            # from the stored record, and carry the marker to the rotated token.
+            # Minted via a tenant-scoped SAML IdP: do not restore the
+            # `global_role` claim from the stored record and carry the marker to
+            # the rotated token. This only affects claims-based endpoints;
+            # get_current_user still authorizes from the live DB role (see
+            # saml_service._authenticate for why that is acceptable here).
             user_dict["global_role"] = None
             user_dict["sso_tenant_scoped"] = True
         tokens = generate_tokens(user_dict)

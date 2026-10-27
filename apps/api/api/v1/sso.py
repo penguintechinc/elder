@@ -416,7 +416,8 @@ async def saml_acs(tenant_id):
 
     # Generate tokens through the same helper every portal/SSO login uses. The
     # sso_tenant_scoped marker (not part of the response body) rides in the
-    # refresh token so refresh cannot re-attach a global_role.
+    # refresh token so refresh keeps the global_role *claim* stripped (claims
+    # only; see saml_service._authenticate for the real control).
     tokens = generate_tokens(
         {**user, "sso_tenant_scoped": bool(result.get("sso_tenant_scoped"))}
     )

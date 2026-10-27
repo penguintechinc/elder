@@ -29,6 +29,7 @@ Security model (SP-initiated Web Browser SSO, HTTP-POST ACS binding):
 
 import base64
 import binascii
+import contextlib
 import datetime
 import hashlib
 import html
@@ -36,6 +37,7 @@ import json
 import math
 import re
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -96,15 +98,29 @@ _STATE_KEY_PREFIX = "elder:saml:authnreq"
 GLOBAL_IDP_OPT_IN_KEY = "saml_allow_global_idp"
 _STATE_STORE_EXT = "saml_redis"  # app.extensions key of the lazily built client
 _REDIS_TIMEOUT_SECONDS = 2.0
+# After the state store proves unreachable, every request fails fast (503) for
+# this long instead of each blocking a shared worker thread for the full Redis
+# timeout; only one thread at a time probes (single-flight) once it elapses.
+_NEGATIVE_CACHE_SECONDS = 3.0
+_CONNECT_LOCK_WAIT_SECONDS = 0.25
+_STATE_DOWN_EXT = "saml_redis_down_until"  # monotonic deadline of the negative cache
+_CONNECT_LOCK = threading.Lock()
 _REPLAY_KEY_PREFIX = "elder:saml:assertion"
 _VALID_TENANT_ROLES = ("reader", "maintainer", "admin")  # ascending privilege
-# Same-origin relative path only. Rejects a second leading slash or backslash
-# ("//evil", "/\\evil"), every C0 control char incl. tab/VT/CR/LF (browsers strip
-# tab/newline, turning "/\t/evil.com" into "//evil.com"), DEL, backslashes, and
-# percent-encoded controls/slashes/backslashes a downstream decoder could revive.
-# \Z (not $) so a trailing newline cannot slip through.
+# Same-origin relative path only, from a strict ASCII allowlist (RFC 3986
+# unreserved + sub-delims + ":@/?#" + "%"; no space, quotes, <>, backslash,
+# braces, controls or non-ASCII). No second leading slash/backslash ("//evil",
+# "/\\evil"); browsers strip tab/newline, so "/\t/evil.com" would become
+# "//evil.com" -- controls are simply not in the allowlist. Every "%" must be a
+# well-formed escape that is not a control (%00-%1f, %7f), "/" (%2f), "\" (%5c)
+# or "%" (%25, i.e. double-encoding such as "/%252f/evil.com"), so a downstream
+# decoder can never revive a slash. A legitimate encoded slash (%2F) in
+# return_to is therefore rejected by design. \Z (not $): no trailing newline.
 _RETURN_TO_RE = re.compile(
-    r"/(?![/\\])(?!.*%(?:[01][0-9a-fA-F]|2[fF]|5[cC]|7[fF]))[^\x00-\x1f\x7f\\]{0,2047}\Z"
+    r"/(?![/\\])"
+    r"(?!.*%(?![0-9a-fA-F]{2}))"
+    r"(?!.*%(?:[01][0-9a-fA-F]|2[5fF]|5[cC]|7[fF]))"
+    r"[A-Za-z0-9._~!$&()*+,;=:@/?#%-]{0,2047}\Z"
 )
 
 # python3-saml ValidationError.code -> (stable client-facing error code, HTTP status),
@@ -573,14 +589,28 @@ class SAMLService:
         }
 
     @staticmethod
-    def _store_unavailable() -> SAMLError:
-        """Build the 503 for an unusable state store and drop the cached client.
+    def _store_unavailable(failed: Any = None, *, backoff: bool = True) -> SAMLError:
+        """Build the 503 for an unusable state store.
 
-        Dropping the cached client means the next request reconnects from
-        scratch (e.g. after a Redis restart or failover) instead of reusing a
-        client that was built once at startup and is now permanently broken.
+        Drops (and closes) the client that just failed -- but only if it is still
+        the cached one, so a healthy client another thread has since built is
+        never evicted -- so the next probe reconnects from scratch (Redis restart
+        or failover). With ``backoff`` it also starts the negative cache, so the
+        requests that follow fail fast instead of each paying the Redis timeout.
+
+        Args:
+            failed: The client whose operation/connection just failed, if any
+            backoff: Start the negative-cache window (False for fast-fail paths
+                that must not extend it, and for pure misconfiguration)
         """
-        current_app.extensions.pop(_STATE_STORE_EXT, None)
+        extensions = current_app.extensions
+        if failed is not None:
+            if extensions.get(_STATE_STORE_EXT) is failed:
+                extensions.pop(_STATE_STORE_EXT, None)
+            with contextlib.suppress(RedisError, OSError):
+                failed.close()
+        if backoff:
+            extensions[_STATE_DOWN_EXT] = time.monotonic() + _NEGATIVE_CACHE_SECONDS
         return SAMLError(
             "saml_state_store_unavailable", 503, "SAML is temporarily unavailable"
         )
@@ -590,35 +620,55 @@ class SAMLService:
         """Return the Redis client used for AuthnRequest + replay state.
 
         A dedicated client (separate from the app's startup-time module Redis)
-        is built lazily from ``REDIS_URL`` with short connect/read timeouts, so
-        a hung Redis cannot stall login requests, and is rebuilt after any
-        failure. The keys it holds are security state: Redis must not evict them
-        (``noeviction`` or a dedicated DB/instance; see docs/USAGE.md).
+        is built lazily from ``REDIS_URL`` with short connect/read timeouts and
+        rebuilt after any failure. While Redis is unreachable, requests fail fast
+        with 503 for ``_NEGATIVE_CACHE_SECONDS`` and only one thread at a time
+        (single-flight) pays the connect timeout, so a blackholed Redis cannot
+        pin the shared worker threads that also serve database access. The keys
+        it holds are security state: Redis must not evict them (``noeviction`` or
+        a dedicated DB/instance; see docs/USAGE.md).
 
         Raises:
             SAMLError: 503 if Redis is not configured or reachable -- replay /
                 InResponseTo protection must never silently degrade, so there is
                 no fallback.
         """
-        client = current_app.extensions.get(_STATE_STORE_EXT)
+        extensions = current_app.extensions
+        client = extensions.get(_STATE_STORE_EXT)
         if client is not None:
             return client
+        if time.monotonic() < extensions.get(_STATE_DOWN_EXT, 0.0):
+            raise SAMLService._store_unavailable(backoff=False)
         url = current_app.config.get("REDIS_URL") or ""
         if not url:
-            raise SAMLService._store_unavailable()
+            raise SAMLService._store_unavailable(backoff=False)
+        if not _CONNECT_LOCK.acquire(timeout=_CONNECT_LOCK_WAIT_SECONDS):
+            # Another thread is (re)connecting; do not queue behind its timeout.
+            raise SAMLService._store_unavailable(backoff=False)
         try:
-            client = redis_from_url(
-                url,
-                socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
-                socket_timeout=_REDIS_TIMEOUT_SECONDS,
-                health_check_interval=30,
-            )
-            client.ping()
-        except (RedisError, ValueError) as exc:
-            logger.warning("saml_state_store_connect_failed", error=type(exc).__name__)
-            raise SAMLService._store_unavailable() from exc
-        current_app.extensions[_STATE_STORE_EXT] = client
-        return client
+            client = extensions.get(_STATE_STORE_EXT)
+            if client is not None:  # connected while we waited for the lock
+                return client
+            if time.monotonic() < extensions.get(_STATE_DOWN_EXT, 0.0):
+                raise SAMLService._store_unavailable(backoff=False)
+            new_client = None
+            try:
+                new_client = redis_from_url(
+                    url,
+                    socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
+                    socket_timeout=_REDIS_TIMEOUT_SECONDS,
+                    health_check_interval=30,
+                )
+                new_client.ping()
+            except (RedisError, ValueError) as exc:
+                logger.warning(
+                    "saml_state_store_connect_failed", error=type(exc).__name__
+                )
+                raise SAMLService._store_unavailable(new_client) from exc
+            extensions[_STATE_STORE_EXT] = new_client
+            return new_client
+        finally:
+            _CONNECT_LOCK.release()
 
     @staticmethod
     def _state_key(tenant_id: int, token: str) -> str:
@@ -664,11 +714,7 @@ class SAMLService:
                     403,
                     "The shared identity provider is not enabled for this tenant",
                 )
-            idp_config = {
-                **idp_config,
-                "jit_provisioning_enabled": False,
-                "global_fallback": True,
-            }
+            idp_config = {**idp_config, "jit_provisioning_enabled": False}
         if idp_config.get("idp_type") != "saml":
             raise SAMLError(
                 "saml_idp_misconfigured", 409, "Configured IdP is not a SAML provider"
@@ -748,7 +794,7 @@ class SAMLService:
                 ex=_AUTHN_REQUEST_TTL_SECONDS,
             )
         except RedisError as exc:
-            raise SAMLService._store_unavailable() from exc
+            raise SAMLService._store_unavailable(client) from exc
         return {
             "sso_url": redirect_url,
             "state_token": token,
@@ -782,7 +828,7 @@ class SAMLService:
             pipe.delete(key)
             raw, _deleted = pipe.execute()
         except RedisError as exc:
-            raise SAMLService._store_unavailable() from exc
+            raise SAMLService._store_unavailable(client) from exc
         if not raw:
             raise missing
         try:
@@ -1204,7 +1250,7 @@ class SAMLService:
                 f"{_REPLAY_KEY_PREFIX}:{tenant_id}:{digest}", "1", nx=True, ex=ttl
             )
         except RedisError as exc:
-            raise SAMLService._store_unavailable() from exc
+            raise SAMLService._store_unavailable(client) from exc
         if not first_use:
             raise SAMLError(
                 "saml_assertion_replayed", 401, "This assertion has already been used"
@@ -1400,10 +1446,13 @@ class SAMLService:
                 user["error"], user.get("status_code", 400), user.get("message", "")
             )
 
-        # jit_provision_user already refused any stored global_role for a
-        # tenant-scoped IdP. The marker travels in the refresh token so that
-        # /portal-auth/refresh can never re-attach a global_role (granted later)
-        # to a session that was minted through such an IdP.
+        # The real control is in jit_provision_user: a tenant-scoped IdP is
+        # refused for any user with a stored global_role. The marker only keeps
+        # the `global_role` *claim* stripped across /portal-auth/refresh for
+        # claims-based endpoints; jwt_handler.get_current_user authorizes portal
+        # users from the live DB role and ignores it, so a role granted after
+        # this session starts still applies through that path (follow-up:
+        # tokens_valid_after / role-version control).
         user["sso_tenant_scoped"] = idp_config.get("tenant_id") is not None
 
         logger.info(
@@ -1472,6 +1521,16 @@ class SAMLService:
                 "tenant_id": tenant_id,
                 "tenant_role": existing.tenant_role,
                 "global_role": existing.global_role,
+            }
+
+        if not idp_config.get("jit_provisioning_enabled"):
+            # Defence in depth: _authenticate already checks this before the
+            # admin-seat gate, but this method must never create a user on its own
+            # when the IdP (or the global fallback) forbids provisioning.
+            return {
+                "error": "saml_jit_disabled",
+                "message": "No matching user and just-in-time provisioning is disabled",
+                "status_code": 403,
             }
 
         # Map attributes to user fields

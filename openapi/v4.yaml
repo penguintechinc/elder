@@ -12964,8 +12964,12 @@ paths:
       summary: Get current user info from OIDC userinfo endpoint.
   /api/v1/sso/saml/acs/{tenant_id}:
     post:
-      description: "\nReceives and processes SAML responses from IdP.\n\nArgs:\n    tenant_id: Tenant\
-        \ ID\n\nReturns:\n    JWT tokens on success"
+      description: "\nReceives the IdP's POSTed SAMLResponse (SP-initiated only: requires the state\
+        \ cookie set by the login endpoint). The assertion is trusted only if it carries\
+        \ a valid IdP signature and passes the audience / destination / recipient /\
+        \ InResponseTo / validity-window / replay checks; any failure is a specific\
+        \ 4xx (error code in the body).\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    JWT\
+        \ tokens (and auth cookies) on success"
       operationId: post_saml_acs
       parameters:
       - in: path
@@ -12973,11 +12977,36 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: SAML Assertion Consumer Service endpoint.
+      responses:
+        '200':
+          description: Authenticated; JWT tokens in the body and HttpOnly cookies
+        '400':
+          description: Malformed response, missing or expired login state, invalid email
+        '401':
+          description: Signature, audience, destination, recipient, InResponseTo,
+            validity-window or replay validation failed
+        '402':
+          description: Admin-seat limit reached for a JIT-provisioned admin
+        '403':
+          description: Enterprise tier required, account deactivated, JIT disabled,
+            global IdP not enabled for the tenant, or a platform-privileged account
+            via a tenant-scoped IdP
+        '404':
+          description: Unknown tenant or no IdP configured
+        '409':
+          description: IdP configuration incomplete or invalid
+        '413':
+          description: SAMLResponse too large
+        '503':
+          description: SAML state store or SP base URL unavailable
+      summary: SAML Assertion Consumer Service endpoint (Enterprise).
   /api/v1/sso/saml/login/{tenant_id}:
     get:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Redirect to IdP or error"
+      description: "\nBuilds a real AuthnRequest, records its ID server-side (single use, short\
+        \ TTL) and binds it to this browser with an ACS-scoped HttpOnly cookie.\n\nArgs:\n\
+        \    tenant_id: Tenant ID\n\nQuery params:\n    return_to: Optional same-origin relative\
+        \ path echoed back after login\n\nReturns:\n    JSON with the IdP redirect URL (``sso_url``)\
+        \ and the state cookie"
       operationId: get_saml_login
       parameters:
       - in: path
@@ -12985,8 +13014,25 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: Initiate SAML SSO login.
+      - in: query
+        name: return_to
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: IdP redirect URL (sso_url); state cookie set
+        '400':
+          description: Invalid return_to
+        '403':
+          description: Enterprise tier required, or global IdP not enabled for the tenant
+        '404':
+          description: Unknown tenant or no IdP configured
+        '409':
+          description: IdP configuration incomplete or invalid
+        '503':
+          description: SAML state store or SP base URL unavailable
+      summary: Initiate SP-initiated SAML SSO login (Enterprise).
   /api/v1/sso/saml/metadata:
     get:
       description: "\nArgs:\n    tenant_id: Optional tenant ID\n\nReturns:\n    SAML SP metadata XML"
@@ -13008,7 +13054,10 @@ paths:
       summary: Get SAML Service Provider metadata.
   /api/v1/sso/saml/slo/{tenant_id}:
     get:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Logout confirmation"
+      description: "\nSingle Logout is not supported yet (tracked as a follow-up) and the SP metadata\
+        \ does not advertise a SingleLogoutService. End the Elder session with POST\
+        \ /api/v1/portal-auth/logout.\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    501 with\
+        \ a ``saml_slo_not_implemented`` error"
       operationId: get_saml_slo
       parameters:
       - in: path
@@ -13016,10 +13065,15 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: SAML Single Logout endpoint.
+      responses:
+        '501':
+          description: SAML Single Logout is not implemented (saml_slo_not_implemented)
+      summary: SAML Single Logout endpoint -- not implemented, answers 501.
     post:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Logout confirmation"
+      description: "\nSingle Logout is not supported yet (tracked as a follow-up) and the SP metadata\
+        \ does not advertise a SingleLogoutService. End the Elder session with POST\
+        \ /api/v1/portal-auth/logout.\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    501 with\
+        \ a ``saml_slo_not_implemented`` error"
       operationId: post_saml_slo
       parameters:
       - in: path
@@ -13027,8 +13081,10 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: SAML Single Logout endpoint.
+      responses:
+        '501':
+          description: SAML Single Logout is not implemented (saml_slo_not_implemented)
+      summary: SAML Single Logout endpoint -- not implemented, answers 501.
   /api/v1/sso/scim/config:
     post:
       description: "\nRequest body:\n    tenant_id: int - Tenant ID (admin only)\n\nReturns:\n    SCIM\

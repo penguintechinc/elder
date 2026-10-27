@@ -24,8 +24,8 @@ import redis as redis_lib
 from lxml import etree
 
 from apps.api.auth.portal_cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
+from apps.api.services.sso import saml_service as saml_service_module
 from apps.api.services.sso.saml_service import (
-    GLOBAL_IDP_OPT_IN_KEY,
     SAMLError,
     SAMLService,
 )
@@ -60,7 +60,7 @@ def enterprise_tier():
 
 
 @pytest_asyncio.fixture
-async def env(app, test_database_url, keys):
+async def env(app, test_database_url, keys, monkeypatch):
     """Seed two tenants, a tenant-scoped SAML IdP, and wire config + Redis."""
     if not test_database_url:
         pytest.skip("DATABASE_URL not set")
@@ -73,6 +73,10 @@ async def env(app, test_database_url, keys):
         for k in ("SAML_SP_BASE_URL", "SITE_URL", "DEBUG", "REDIS_URL")
     }
     saved_redis = app.extensions.get("saml_redis")
+    # The negative cache has its own tests; elsewhere an induced outage must not
+    # leak a fail-fast window into the next step of a test.
+    monkeypatch.setattr(saml_service_module, "_NEGATIVE_CACHE_SECONDS", 0.0)
+    app.extensions.pop("saml_redis_down_until", None)
     app.config["SAML_SP_BASE_URL"] = SP_BASE
     app.config["DEBUG"] = False
     app.config["REDIS_URL"] = os.environ["REDIS_URL"]
@@ -130,6 +134,7 @@ async def env(app, test_database_url, keys):
     db(db.idp_configurations.tenant_id == None).delete()  # noqa: E711
     db(db.tenants.id.belongs([tenant_a, tenant_b])).delete()
     db.commit()
+    app.extensions.pop("saml_redis_down_until", None)
     if saved_redis is None:
         app.extensions.pop("saml_redis", None)
     else:
@@ -198,7 +203,7 @@ def _use_global_idp(env, keys, *, opt_in, jit=True, settings=None):
         updated_at=now,
     )
     if settings is None and opt_in:
-        settings = {GLOBAL_IDP_OPT_IN_KEY: True}
+        settings = {"saml_allow_global_idp": True}
     db(db.tenants.id == env.tenant_a).update(settings=settings)
     db.commit()
 
