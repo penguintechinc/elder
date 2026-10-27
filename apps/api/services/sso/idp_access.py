@@ -22,24 +22,8 @@ authenticated admin now goes through this module:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
-
-_SAML_FIELDS: tuple[str, ...] = (
-    "entity_id",
-    "metadata_url",
-    "sso_url",
-    "slo_url",
-    "certificate",
-)
-_OIDC_FIELDS: tuple[str, ...] = (
-    "oidc_client_id",
-    "oidc_issuer_url",
-    "oidc_scopes",
-    "oidc_response_type",
-    "oidc_token_endpoint_auth_method",
-    "has_client_secret",
-)
 
 
 class IdPAccessError(Exception):
@@ -144,19 +128,5 @@ class IdPConfigView:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize, keeping only the fields relevant to this ``idp_type``."""
-        data: dict[str, Any] = {
-            "id": self.id,
-            "tenant_id": self.tenant_id,
-            "idp_type": self.idp_type,
-            "name": self.name,
-            "attribute_mappings": self.attribute_mappings,
-            "jit_provisioning_enabled": self.jit_provisioning_enabled,
-            "default_role": self.default_role,
-            "is_active": self.is_active,
-        }
-        if self.idp_type == "saml":
-            data.update({f: getattr(self, f) for f in _SAML_FIELDS})
-        elif self.idp_type == "oidc":
-            data.update({f: getattr(self, f) for f in _OIDC_FIELDS})
-        return data
+        """Serialize every allowlisted field (never a secret) to a plain dict."""
+        return asdict(self)

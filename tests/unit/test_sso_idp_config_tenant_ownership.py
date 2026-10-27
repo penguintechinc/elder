@@ -18,6 +18,7 @@ faked, because it is not part of the code under test.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -32,6 +33,7 @@ import requests
 from cryptography.hazmat.primitives.asymmetric import rsa
 from quart import current_app
 
+from apps.api.models.pydantic.idp import IdPConfigResponse, UpdateIdPConfigRequest
 from apps.api.services.sso import SAMLService
 from apps.api.services.sso.idp_access import (
     IdPCaller,
@@ -47,7 +49,8 @@ CERT_B = "CERT-B-victim-tenant-cert"
 CERT_G = "CERT-G-global-cert"
 ATTACKER_CERT = "CERT-ATTACKER-forged"
 
-SAML_KEYS = {
+# Every key an IdP config response may contain -- the allowlist. No secret key.
+CONFIG_KEYS = {
     "id",
     "tenant_id",
     "idp_type",
@@ -61,16 +64,6 @@ SAML_KEYS = {
     "sso_url",
     "slo_url",
     "certificate",
-}
-OIDC_KEYS = {
-    "id",
-    "tenant_id",
-    "idp_type",
-    "name",
-    "attribute_mappings",
-    "jit_provisioning_enabled",
-    "default_role",
-    "is_active",
     "oidc_client_id",
     "oidc_issuer_url",
     "oidc_scopes",
@@ -277,6 +270,13 @@ async def _row(app, config_id: int) -> dict[str, Any] | None:
         return _fetch(current_app.db, config_id)
 
 
+async def _count_configs(app, tenant_id: int) -> int:
+    """Count a tenant's IdP config rows in their own app context."""
+    async with app.app_context():
+        db = current_app.db
+        return db(db.idp_configurations.tenant_id == tenant_id).count()
+
+
 def _all_keys(node: Any) -> set[str]:
     """Collect every dict key anywhere in a parsed JSON document."""
     keys: set[str] = set()
@@ -295,11 +295,6 @@ def _assert_no_secrets(raw: str) -> None:
     for secret in (SECRET_B, SECRET_G):
         assert secret not in raw
     assert "oidc_client_secret" not in _all_keys(json.loads(raw))
-
-
-# --------------------------------------------------------------------------
-# list
-# --------------------------------------------------------------------------
 
 
 class TestListIdpConfigs:
@@ -429,13 +424,8 @@ class TestListIdpConfigs:
         """Fails loudly if any column is ever added to the response."""
         resp = await async_client.get("/api/v1/sso/idp", headers=world.auth("b_admin"))
         body = {c["id"]: c for c in await resp.get_json()}
-        assert set(body[world.b_saml]) == SAML_KEYS
-        assert set(body[world.b_oidc]) == OIDC_KEYS
-
-
-# --------------------------------------------------------------------------
-# update
-# --------------------------------------------------------------------------
+        assert set(body[world.b_saml]) == CONFIG_KEYS
+        assert set(body[world.b_oidc]) == CONFIG_KEYS
 
 
 class TestUpdateIdpConfig:
@@ -629,11 +619,6 @@ class TestUpdateIdpConfig:
         assert resp.status_code == 200
 
 
-# --------------------------------------------------------------------------
-# delete
-# --------------------------------------------------------------------------
-
-
 class TestDeleteIdpConfig:
     """DELETE /api/v1/sso/idp/<id> -- regression: idp-config-cross-tenant."""
 
@@ -695,11 +680,6 @@ class TestDeleteIdpConfig:
         assert await _row(app, world.a_saml) is not None
 
 
-# --------------------------------------------------------------------------
-# create
-# --------------------------------------------------------------------------
-
-
 class TestCreateIdpConfig:
     """POST /api/v1/sso/idp -- regression: idp-config-cross-tenant."""
 
@@ -725,7 +705,7 @@ class TestCreateIdpConfig:
         assert body["has_client_secret"] is True
         assert "new-secret-value" not in raw
         assert "oidc_client_secret" not in _all_keys(body)
-        assert set(body) == OIDC_KEYS
+        assert set(body) == CONFIG_KEYS
         assert (await _row(app, body["id"]))["tenant_id"] == world.tenant_a
 
     @pytest.mark.asyncio
@@ -739,11 +719,14 @@ class TestCreateIdpConfig:
         assert (await resp.get_json())["tenant_id"] == world.tenant_a
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("override", ["other_tenant", None, "5"])
+    @pytest.mark.parametrize(
+        "override,expected",
+        [("other_tenant", 403), (None, 403), ("5", 400), (True, 400), (5.5, 400)],
+    )
     async def test_tenant_id_override_rejected_for_tenant_admin(
-        self, app, async_client, world, override
+        self, app, async_client, world, override, expected
     ):
-        """Foreign id, explicit null (= global) and a wrong-typed id all 403."""
+        """Foreign id / explicit null (= global) are 403; wrong-typed ids are 400."""
         tenant_id = world.tenant_b if override == "other_tenant" else override
         name = f"{world.prefix}-override-{override}"
         resp = await async_client.post(
@@ -751,7 +734,7 @@ class TestCreateIdpConfig:
             json={"name": name, "tenant_id": tenant_id},
             headers=world.auth("a_admin"),
         )
-        assert resp.status_code == 403
+        assert resp.status_code == expected, (await resp.get_data()).decode()
         async with app.app_context():
             db = current_app.db
             assert db(db.idp_configurations.name == name).count() == 0
@@ -822,11 +805,6 @@ class TestCreateIdpConfig:
         assert not_object.status_code == 400
 
 
-# --------------------------------------------------------------------------
-# service / data-access layer (independent of the routes)
-# --------------------------------------------------------------------------
-
-
 class TestServiceLayerEnforcesOwnership:
     """The data layer refuses on its own -- a future route cannot bypass it."""
 
@@ -885,7 +863,7 @@ class TestServiceLayerEnforcesOwnership:
                 "deleted": True
             }
 
-    def test_view_omits_secret_and_unknown_types_get_base_fields(self):
+    def test_view_exposes_only_allowlisted_keys_and_never_the_secret(self):
         record = SimpleNamespace(
             id=1,
             tenant_id=2,
@@ -910,18 +888,8 @@ class TestServiceLayerEnforcesOwnership:
         view = IdPConfigView.from_record(record)
         assert view.has_client_secret is True
         assert "TOP-SECRET" not in repr(view)
-        assert set(view.to_dict()) == SAML_KEYS - {
-            "entity_id",
-            "metadata_url",
-            "sso_url",
-            "slo_url",
-            "certificate",
-        }
-
-
-# --------------------------------------------------------------------------
-# OIDC account-takeover chain (the same rows drive /oidc/callback)
-# --------------------------------------------------------------------------
+        assert set(view.to_dict()) == CONFIG_KEYS
+        assert "oidc_client_secret" not in view.to_dict()
 
 
 @dataclass(slots=True)
@@ -1125,3 +1093,541 @@ class TestOidcAccountTakeoverChain:
         assert (await _row(app, world.g_oidc))[
             "oidc_issuer_url"
         ] == "https://idp-g.example.test"
+
+
+def _literal_sql(query) -> str:
+    """Render a penguin-dal Query's WHERE clause with literal values for asserts."""
+    return str(query.clause.compile(compile_kwargs={"literal_binds": True}))
+
+
+class _SpyDb:
+    """Delegating wrapper around the real DAL that can inject races and record SQL.
+
+    The real database still executes everything -- the spy only (a) records the
+    predicate of every ``update``/``delete`` as literal SQL and (b) runs a hook
+    at a chosen point (before an update, after a commit) to simulate a
+    concurrent writer. penguin-dal runs each statement in its own session, so
+    this is exactly the interleaving a real concurrent request can produce.
+    """
+
+    def __init__(self, real) -> None:
+        self._real = real
+        self.mutations: list[tuple[str, str]] = []
+        self.before_update = None
+        self.after_commit = None
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def __call__(self, query):
+        real_set = self._real(query)
+        spy = self
+
+        class _Set:
+            def __getattr__(self, attr):
+                target = getattr(real_set, attr)
+                if attr not in ("update", "delete"):
+                    return target
+
+                def mutate(*args, **kwargs):
+                    spy.mutations.append((attr, _literal_sql(query)))
+                    if attr == "update" and spy.before_update:
+                        hook, spy.before_update = spy.before_update, None
+                        hook(spy._real)
+                    return target(*args, **kwargs)
+
+                return mutate
+
+        return _Set()
+
+    def commit(self):
+        result = self._real.commit()
+        if self.after_commit:
+            hook, self.after_commit = self.after_commit, None
+            hook(self._real)
+        return result
+
+
+def _delete_row(config_id: int):
+    """Hook factory: delete a config row (and commit) as a concurrent admin would."""
+
+    def hook(real_db) -> None:
+        real_db(real_db.idp_configurations.id == config_id).delete()
+        real_db.commit()
+
+    return hook
+
+
+class TestUpdateConcurrencyAndScopedStatements:
+    """A concurrent delete/re-home is a 404, never a 500; mutations stay scoped."""
+
+    @pytest.mark.asyncio
+    async def test_row_deleted_between_commit_and_reload_is_404_not_500(
+        self, app, async_client, world, monkeypatch
+    ):
+        """regression: idp-config-cross-tenant (review) -- PUT-vs-DELETE race."""
+        spy = _SpyDb(app.db)
+        spy.after_commit = _delete_row(world.a_saml)
+        monkeypatch.setattr(app, "db", spy)
+
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.a_saml}",
+            json={"name": f"{world.prefix}-raced"},
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()
+        assert spy.after_commit is None  # the hook really fired
+
+    @pytest.mark.asyncio
+    async def test_row_deleted_between_select_and_update_is_404(
+        self, app, async_client, world, monkeypatch
+    ):
+        spy = _SpyDb(app.db)
+        spy.before_update = _delete_row(world.a_saml)
+        monkeypatch.setattr(app, "db", spy)
+
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.a_saml}",
+            json={"name": f"{world.prefix}-raced-2"},
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 404, (await resp.get_data()).decode()
+        assert spy.before_update is None
+
+    @pytest.mark.asyncio
+    async def test_update_and_delete_statements_carry_the_tenant_predicate(
+        self, app, async_client, world, monkeypatch
+    ):
+        """The UPDATE/DELETE themselves are tenant-scoped, not just the pre-select."""
+        spy = _SpyDb(app.db)
+        monkeypatch.setattr(app, "db", spy)
+
+        put = await async_client.put(
+            f"/api/v1/sso/idp/{world.a_saml}",
+            json={"name": f"{world.prefix}-scoped"},
+            headers=world.auth("a_admin"),
+        )
+        assert put.status_code == 200
+        delete = await async_client.delete(
+            f"/api/v1/sso/idp/{world.a_saml}", headers=world.auth("a_admin")
+        )
+        assert delete.status_code == 200
+
+        verbs = [verb for verb, _ in spy.mutations]
+        assert verbs == ["update", "delete"]
+        for verb, query in spy.mutations:
+            assert "tenant_id" in query, f"{verb} is not tenant-scoped: {query}"
+            assert str(world.tenant_a) in query
+
+    @pytest.mark.asyncio
+    async def test_global_admin_statements_are_not_tenant_filtered(
+        self, app, async_client, world, monkeypatch
+    ):
+        spy = _SpyDb(app.db)
+        monkeypatch.setattr(app, "db", spy)
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_saml}",
+            json={"name": f"{world.prefix}-global-scoped"},
+            headers=world.auth("global_admin"),
+        )
+        assert resp.status_code == 200
+        assert [v for v, _ in spy.mutations] == ["update"]
+        assert "tenant_id" not in spy.mutations[0][1]
+
+
+class TestFailuresNeverLeakSecrets:
+    """No exception text, log line or error body may echo a submitted secret."""
+
+    SECRET = "S3CR3T-DO-NOT-ECHO-7f3a"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"name": None},
+            {"name": {}},
+            {"name": ""},
+            {"name": "x" * 256},
+            {"is_active": "false"},
+            {"is_active": 1},
+            {"jit_provisioning_enabled": "yes"},
+            {"default_role": None},
+            {"default_role": 5},
+            {"attribute_mappings": ["a"]},
+            {"attribute_mappings": {"k": 1}},
+            {"attribute_mappings": {f"k{i}": "v" for i in range(65)}},
+            {"certificate": 12},
+            {"sso_url": "u" * 1025},
+            {"oidc_client_secret": 12345},
+            {"oidc_client_secret": "s" * 513},
+            {"oidc_scopes": ["openid"]},
+        ],
+        ids=lambda bad: next(iter(bad)) + "-" + type(next(iter(bad.values()))).__name__,
+    )
+    async def test_update_wrong_types_are_400_and_never_echo_the_secret(
+        self, app, async_client, world, caplog, bad
+    ):
+        caplog.set_level(logging.DEBUG)
+        before = await _row(app, world.b_oidc)
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={**bad, "oidc_client_secret": self.SECRET, **bad},
+            headers=world.auth("b_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400, raw
+        body = json.loads(raw)
+        assert body["error"] == "Validation failed"
+        assert body["validation_errors"]
+        for err in body["validation_errors"]:
+            assert set(err) == {"field", "type", "message"}
+        assert self.SECRET not in raw
+        assert self.SECRET not in caplog.text
+        # Nothing was written.
+        assert await _row(app, world.b_oidc) == before
+
+    @pytest.mark.asyncio
+    async def test_validation_error_does_not_echo_user_supplied_keys(
+        self, async_client, world
+    ):
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"attribute_mappings": {"leaky-key-xyz": 5}},
+            headers=world.auth("b_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400
+        assert "leaky-key-xyz" not in raw
+        assert json.loads(raw)["validation_errors"][0]["field"] == "attribute_mappings"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            {"name": 5},
+            {"idp_type": "ldap"},
+            {"jit_provisioning_enabled": "true"},
+            {"default_role": ""},
+            {"oidc_client_secret": ["x"]},
+            {"attribute_mappings": "nope"},
+        ],
+        ids=lambda bad: next(iter(bad)),
+    )
+    async def test_create_wrong_types_are_400_and_never_echo_the_secret(
+        self, app, async_client, world, caplog, bad
+    ):
+        caplog.set_level(logging.DEBUG)
+        before = await _count_configs(app, world.tenant_a)
+        payload = {"name": f"{world.prefix}-bad-create", **bad}
+        if "oidc_client_secret" not in bad:
+            payload["oidc_client_secret"] = self.SECRET
+        resp = await async_client.post(
+            "/api/v1/sso/idp", json=payload, headers=world.auth("a_admin")
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400, raw
+        assert self.SECRET not in raw
+        assert self.SECRET not in caplog.text
+        assert await _count_configs(app, world.tenant_a) == before
+
+    @pytest.mark.asyncio
+    async def test_unexpected_failure_is_a_sanitized_500_without_the_secret(
+        self, async_client, world, caplog, mocker
+    ):
+        """A driver error that embeds the failing row must not reach logs/response."""
+        caplog.set_level(logging.DEBUG)
+        mocker.patch.object(
+            SAMLService,
+            "update_idp_config",
+            side_effect=RuntimeError(f"Failing row contains ({self.SECRET})"),
+        )
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"oidc_client_secret": self.SECRET},
+            headers=world.auth("b_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 500
+        assert json.loads(raw) == {"error": "IdP configuration operation failed"}
+        assert self.SECRET not in raw
+        assert self.SECRET not in caplog.text
+        assert "exc_type=RuntimeError" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("action", ["list", "create", "delete"])
+    async def test_unexpected_failure_in_every_route_is_sanitized(
+        self, async_client, world, caplog, mocker, action
+    ):
+        caplog.set_level(logging.DEBUG)
+        boom = RuntimeError(f"driver detail {self.SECRET}")
+        headers = world.auth("a_admin")
+        if action == "list":
+            mocker.patch.object(SAMLService, "list_idp_configs", side_effect=boom)
+            resp = await async_client.get("/api/v1/sso/idp", headers=headers)
+        elif action == "create":
+            mocker.patch.object(SAMLService, "create_idp_config", side_effect=boom)
+            resp = await async_client.post(
+                "/api/v1/sso/idp",
+                json={"name": f"{world.prefix}-boom"},
+                headers=headers,
+            )
+        else:
+            mocker.patch.object(SAMLService, "delete_idp_config", side_effect=boom)
+            resp = await async_client.delete(
+                f"/api/v1/sso/idp/{world.a_saml}", headers=headers
+            )
+        assert resp.status_code == 500
+        assert self.SECRET not in (await resp.get_data()).decode()
+        assert self.SECRET not in caplog.text
+        assert f"action={action}" in caplog.text
+
+
+class TestAccessDenialLogging:
+    """Denials emit one structured, ids-only log line (no secrets, certs, emails)."""
+
+    @pytest.mark.asyncio
+    async def test_cross_tenant_update_logs_structured_denial_without_secrets(
+        self, async_client, world, caplog
+    ):
+        caplog.set_level(logging.DEBUG)
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"oidc_client_secret": "attacker-secret-xyz", "certificate": "ATK"},
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 404
+
+        records = [
+            r for r in caplog.records if "idp_config_access_denied" in r.getMessage()
+        ]
+        assert records
+        # The app's logging setup can attach more than one handler; every
+        # emitted record must be the same single denial event.
+        assert len({r.getMessage() for r in records}) == 1
+        record = records[0]
+        assert record.levelno == logging.WARNING
+        assert record.getMessage() == (
+            f"idp_config_access_denied action=update config_id={world.b_oidc} "
+            f"caller_tenant_id={world.tenant_a} global_admin=False"
+        )
+        assert record.idp_action == "update"
+        assert record.idp_config_id == world.b_oidc
+        assert record.idp_caller_tenant_id == world.tenant_a
+        assert record.idp_global_admin is False
+        for secret in ("attacker-secret-xyz", SECRET_B, CERT_B, world.victim_email):
+            assert secret not in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "method,action",
+        [("put", "update"), ("delete", "delete")],
+    )
+    async def test_each_mutating_denial_names_its_action(
+        self, async_client, world, caplog, method, action
+    ):
+        caplog.set_level(logging.DEBUG)
+        kwargs = {"json": {"name": "x"}} if method == "put" else {}
+        resp = await getattr(async_client, method)(
+            f"/api/v1/sso/idp/{world.g_saml}",
+            headers=world.auth("a_admin"),
+            **kwargs,
+        )
+        assert resp.status_code == 404
+        assert f"action={action} config_id={world.g_saml}" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_list_override_denial_is_logged_as_403(
+        self, async_client, world, caplog
+    ):
+        caplog.set_level(logging.DEBUG)
+        resp = await async_client.get(
+            "/api/v1/sso/idp",
+            query_string={"tenant_id": world.tenant_b},
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 403
+        assert "action=list config_id=None" in caplog.text
+
+
+class TestTenantClaimTypes:
+    """Only a positive int tenant claim counts; anything else fails closed."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("claim", ["5", 5.0, True, 0, -1, [5], {"id": 5}])
+    async def test_tenant_admin_with_malformed_tenant_claim_is_403(
+        self, app, async_client, world, claim
+    ):
+        token = _mint_token(app, user_id=201, tenant_id=claim, tenant_role="admin")
+        for method, path, kwargs in (
+            ("get", "/api/v1/sso/idp", {}),
+            ("put", f"/api/v1/sso/idp/{world.a_saml}", {"json": {"name": "x"}}),
+            ("delete", f"/api/v1/sso/idp/{world.a_saml}", {}),
+            ("post", "/api/v1/sso/idp", {"json": {"name": f"{world.prefix}-claim"}}),
+        ):
+            resp = await getattr(async_client, method)(
+                path, headers={"Authorization": f"Bearer {token}"}, **kwargs
+            )
+            assert resp.status_code == 403, (method, claim, resp.status_code)
+        assert (await _row(app, world.a_saml)) is not None
+
+    @pytest.mark.asyncio
+    async def test_global_admin_with_malformed_tenant_claim_still_works(
+        self, app, async_client, world
+    ):
+        token = _mint_token(
+            app,
+            user_id=202,
+            tenant_id="not-an-int",
+            tenant_role="admin",
+            global_role="admin",
+        )
+        resp = await async_client.get(
+            "/api/v1/sso/idp", headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        assert world.b_saml in {c["id"] for c in await resp.get_json()}
+
+
+class TestUpdatableFieldAllowlist:
+    """Non-updatable columns can never be written through update."""
+
+    EXPECTED = {
+        "name",
+        "entity_id",
+        "metadata_url",
+        "sso_url",
+        "slo_url",
+        "certificate",
+        "attribute_mappings",
+        "jit_provisioning_enabled",
+        "default_role",
+        "is_active",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_issuer_url",
+        "oidc_scopes",
+        "oidc_response_type",
+        "oidc_token_endpoint_auth_method",
+    }
+
+    def test_allowlists_are_pinned_and_agree(self):
+        """Widening any of the three lists (schema, service, constant) fails here."""
+        from apps.api.models.pydantic.idp import UPDATABLE_IDP_FIELDS
+        from apps.api.services.sso import saml_service
+
+        schema_fields = set(UpdateIdPConfigRequest.model_fields) - {"tenant_id"}
+        assert UPDATABLE_IDP_FIELDS == self.EXPECTED
+        assert set(saml_service._UPDATABLE_FIELDS) == self.EXPECTED
+        assert schema_fields == self.EXPECTED
+        assert not {"id", "idp_type", "tenant_id", "created_at"} & self.EXPECTED
+
+    @pytest.mark.asyncio
+    async def test_protected_columns_in_body_are_ignored(
+        self, app, async_client, world
+    ):
+        before = await _row(app, world.a_saml)
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.a_saml}",
+            json={
+                "name": f"{world.prefix}-keep-protected",
+                "idp_type": "oidc",
+                "id": 99999999,
+                "created_at": "2000-01-01T00:00:00+00:00",
+                "tenant_id": world.tenant_a,
+                "is_admin": True,
+            },
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()
+        after = await _row(app, world.a_saml)
+        assert after["idp_type"] == "saml" == before["idp_type"]
+        assert after["id"] == world.a_saml
+        assert after["created_at"] == before["created_at"]
+        assert after["tenant_id"] == world.tenant_a
+        assert after["name"].endswith("keep-protected")
+
+    @pytest.mark.asyncio
+    async def test_service_layer_ignores_non_updatable_keys_too(self, app, world):
+        caller = IdPCaller(tenant_id=world.tenant_a)
+        async with app.app_context():
+            SAMLService.update_idp_config(
+                world.a_saml,
+                caller,
+                {"idp_type": "oidc", "id": 123456, "is_active": False},
+            )
+            row = _fetch(current_app.db, world.a_saml)
+        assert row["idp_type"] == "saml"
+        assert row["id"] == world.a_saml
+        assert row["is_active"] is False
+
+
+class TestResponseSchemaBoundary:
+    """The response model is the allowlist: a stray secret key cannot get out."""
+
+    def test_model_drops_unknown_secret_key(self):
+        dumped = IdPConfigResponse.model_validate(
+            {
+                "id": 1,
+                "tenant_id": 2,
+                "idp_type": "oidc",
+                "name": "n",
+                "attribute_mappings": {},
+                "jit_provisioning_enabled": True,
+                "default_role": "reader",
+                "is_active": True,
+                "oidc_client_secret": SECRET_B,
+                "private_key": "PEM-KEY-MATERIAL-PLACEHOLDER",
+            }
+        ).model_dump()
+        assert "oidc_client_secret" not in dumped
+        assert "private_key" not in dumped
+        assert SECRET_B not in json.dumps(dumped)
+
+    @pytest.mark.asyncio
+    async def test_route_drops_a_secret_even_if_the_service_returned_one(
+        self, async_client, world, mocker
+    ):
+        leaky = {
+            "id": world.b_oidc,
+            "tenant_id": world.tenant_b,
+            "idp_type": "oidc",
+            "name": "leaky",
+            "attribute_mappings": {},
+            "jit_provisioning_enabled": True,
+            "default_role": "reader",
+            "is_active": True,
+            "oidc_client_id": "client-b",
+            "oidc_client_secret": SECRET_B,
+        }
+        mocker.patch.object(SAMLService, "list_idp_configs", return_value=[leaky])
+        resp = await async_client.get("/api/v1/sso/idp", headers=world.auth("b_admin"))
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 200
+        assert SECRET_B not in raw
+        assert "oidc_client_secret" not in raw
+
+    @pytest.mark.asyncio
+    async def test_openapi_documents_idp_responses_and_no_secret_field(self, app):
+        async with app.app_context():
+            spec = app.extensions["QUART_SCHEMA"].openapi_provider.schema()
+        paths = spec["paths"]
+        by_op = {
+            "get": paths["/api/v1/sso/idp"]["get"],
+            "post": paths["/api/v1/sso/idp"]["post"],
+            "put": paths["/api/v1/sso/idp/{config_id}"]["put"],
+            "delete": paths["/api/v1/sso/idp/{config_id}"]["delete"],
+        }
+        assert {200, 400, 403} <= set(by_op["get"]["responses"])
+        assert {201, 400, 403} <= set(by_op["post"]["responses"])
+        assert {200, 400, 403, 404} <= set(by_op["put"]["responses"])
+        assert {200, 403, 404} <= set(by_op["delete"]["responses"])
+        schemas = spec["components"]["schemas"]
+        assert "oidc_client_secret" not in schemas["IdPConfigResponse"]["properties"]
+        assert "has_client_secret" in schemas["IdPConfigResponse"]["properties"]
+        # The write-only secret is documented as such on the request schema.
+        request_schema = by_op["put"]["requestBody"]["content"]["application/json"][
+            "schema"
+        ]
+        secret_prop = request_schema["properties"]["oidc_client_secret"]
+        assert "writeOnly" in json.dumps(secret_prop)
+        assert "password" in json.dumps(secret_prop)

@@ -253,11 +253,17 @@ class SAMLService:
             )
 
         changes = {k: v for k, v in updates.items() if k in _UPDATABLE_FIELDS}
+        # The UPDATE carries the same tenant-scoped predicate as the load, so a
+        # row deleted/moved between the statements simply matches nothing.
         if changes:
             db(owned).update(**changes)
             db.commit()
 
+        # penguin-dal runs each statement in its own session, so a concurrent
+        # DELETE can land before this reload: that is a 404, never a 500.
         fresh = db(owned).select().first()
+        if fresh is None:
+            raise IdPNotFoundError(config_id)
         return {**IdPConfigView.from_record(fresh).to_dict(), "updated": True}
 
     @staticmethod

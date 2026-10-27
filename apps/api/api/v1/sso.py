@@ -8,11 +8,21 @@ and SCIM 2.0 user provisioning.
 
 from functools import wraps
 
+from pydantic import ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
+from quart_schema import document_request, document_response, validate_response
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
+from apps.api.models.pydantic.idp import (
+    CreateIdPConfigRequest,
+    IdPConfigDeleteResponse,
+    IdPConfigResponse,
+    IdPConfigUpdateResponse,
+    IdPErrorResponse,
+    UpdateIdPConfigRequest,
+)
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
 from apps.api.services.sso.idp_access import (
     IdPAccessError,
@@ -98,14 +108,17 @@ def scim_auth_required(f):
 # service layer, which scopes the DAL query itself. A config outside the
 # caller's tenant answers 404 (never 403) so ids cannot be enumerated; only
 # ``global_role == "admin"`` may touch other tenants' or global configs.
-# Responses are ``IdPConfigView`` dicts -- secrets are never returned.
+# Request bodies are validated against strict pydantic schemas and responses go
+# through ``IdPConfigResponse`` (an allowlist with no secret field) via
+# quart-schema ``@validate_response`` -- secrets are never returned, and no
+# request value is ever interpolated into an error message or log line.
 
 
 def _claim_tenant_id(user: dict) -> int | None:
     """Return the caller's tenant id from the validated JWT claims, else None.
 
-    Only a positive integer claim counts; anything else (missing, bool, str)
-    is "no tenant" and non-global callers then fail closed.
+    Only a positive integer claim counts; anything else (missing, bool, str,
+    float) is "no tenant" and non-global callers then fail closed.
     """
     raw = user.get("tenant_id")
     if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
@@ -138,7 +151,7 @@ def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> 
     """Map an IdP access failure to a 404/403 response and log the denial.
 
     Not-found (missing or other-tenant) renders one uniform 404 body; the log
-    line carries ids only -- no secrets, certificates or emails.
+    line carries ids only -- no secrets, certificates, emails or request values.
     """
     config_id = getattr(exc, "config_id", None)
     current_app.logger.warning(
@@ -148,14 +161,60 @@ def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> 
         config_id,
         caller.tenant_id,
         caller.is_global_admin,
+        extra={
+            "idp_action": action,
+            "idp_config_id": config_id,
+            "idp_caller_tenant_id": caller.tenant_id,
+            "idp_global_admin": caller.is_global_admin,
+        },
     )
     if isinstance(exc, IdPNotFoundError):
         return ApiResponse.not_found("IdP configuration", config_id)
     return ApiResponse.forbidden(str(exc))
 
 
+def _idp_failure_response(exc: Exception, action: str, caller: IdPCaller) -> tuple:
+    """Turn an unexpected storage/runtime failure into a sanitized 500.
+
+    Only the exception *type* (and the PostgreSQL SQLSTATE when the driver
+    provides one) is logged -- never ``str(exc)`` or a traceback, because
+    driver errors embed the failing row, which can contain a submitted
+    ``oidc_client_secret``. The response body is a fixed string.
+    """
+    current_app.logger.error(
+        "idp_config_operation_failed action=%s caller_tenant_id=%s exc_type=%s "
+        "sqlstate=%s",
+        action,
+        caller.tenant_id,
+        type(exc).__name__,
+        getattr(exc, "pgcode", None),
+    )
+    return ApiResponse.error("IdP configuration operation failed", 500)
+
+
+def _validation_error_response(exc: ValidationError) -> tuple:
+    """Render a pydantic ValidationError as a 400 that never echoes input values.
+
+    Only the declared top-level field name, pydantic's static error type code
+    and its fixed message are returned -- never ``input``/``ctx`` values and
+    never nested (user-supplied) mapping keys.
+    """
+    errors = [
+        {
+            "field": str(err["loc"][0]) if err["loc"] else "body",
+            "type": err["type"],
+            "message": err["msg"],
+        }
+        for err in exc.errors()
+    ]
+    return jsonify({"error": "Validation failed", "validation_errors": errors}), 400
+
+
 @bp.route("/idp", methods=["GET"])
 @portal_token_required
+@validate_response(list[IdPConfigResponse])
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
 async def list_idp_configs():
     """List IdP configurations the caller is allowed to see.
 
@@ -167,7 +226,9 @@ async def list_idp_configs():
             their own tenant id (anything else is 403)
 
     Returns:
-        List of IdP configurations (secrets redacted)
+        200: List of IdP configurations (secrets redacted)
+        400: tenant_id is not an integer
+        403: Not an admin, or tenant_id of another tenant requested
     """
     caller, error = _resolve_idp_caller()
     if error is not None:
@@ -185,13 +246,19 @@ async def list_idp_configs():
         )
     except IdPAccessError as exc:
         return _idp_error_response(exc, "list", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "list", caller)
 
-    return jsonify(configs), 200
+    return configs, 200
 
 
 @bp.route("/idp", methods=["POST"])
 @login_required
 @portal_token_required
+@document_request(CreateIdPConfigRequest)
+@validate_response(IdPConfigResponse, 201)
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
 async def create_idp_config():
     """Create a new IdP configuration.
 
@@ -225,102 +292,106 @@ async def create_idp_config():
             default_role: str - Default role for new users (default: "reader")
 
     Returns:
-        Created configuration (secrets redacted)
+        201: Created configuration (secrets redacted)
+        400: Request body failed validation (wrong type, missing name, ...)
+        403: Not an admin, or a tenant_id other than the caller's own
     """
     caller, error = _resolve_idp_caller()
     if error is not None:
         return error
 
-    data = await request.get_json()
-    if not data or not isinstance(data, dict):
-        return ApiResponse.bad_request("No data provided")
-
-    name = data.get("name")
-    if not name:
-        return ApiResponse.bad_request("name is required")
+    try:
+        body = CreateIdPConfigRequest.model_validate(await request.get_json())
+    except ValidationError as exc:
+        return _validation_error_response(exc)
 
     # Only a global admin may choose the owning tenant. A tenant admin who
     # sends any tenant_id other than their own (including an explicit null,
     # i.e. "global") is rejected loudly rather than silently re-bound.
-    tenant_id = data.get("tenant_id")
     if (
         not caller.is_global_admin
-        and "tenant_id" in data
-        and tenant_id != caller.tenant_id
+        and "tenant_id" in body.model_fields_set
+        and body.tenant_id != caller.tenant_id
     ):
         return _idp_error_response(
             IdPForbiddenError("Cannot create an IdP configuration for another tenant"),
             "create",
             caller,
         )
-    if tenant_id is not None and (
-        not isinstance(tenant_id, int) or isinstance(tenant_id, bool)
-    ):
-        return ApiResponse.bad_request("tenant_id must be an integer or null")
 
+    secret = body.oidc_client_secret
+    fields = body.model_dump(exclude={"oidc_client_secret", "tenant_id"})
     try:
         result = await run_in_threadpool(
-            SAMLService.create_idp_config,
-            caller,
-            name=name,
-            idp_type=data.get("idp_type", "saml"),
-            tenant_id=tenant_id,
-            entity_id=data.get("entity_id"),
-            metadata_url=data.get("metadata_url"),
-            sso_url=data.get("sso_url"),
-            slo_url=data.get("slo_url"),
-            certificate=data.get("certificate"),
-            oidc_client_id=data.get("oidc_client_id"),
-            oidc_client_secret=data.get("oidc_client_secret"),
-            oidc_issuer_url=data.get("oidc_issuer_url"),
-            oidc_scopes=data.get("oidc_scopes"),
-            oidc_response_type=data.get("oidc_response_type"),
-            oidc_token_endpoint_auth_method=data.get("oidc_token_endpoint_auth_method"),
-            attribute_mappings=data.get("attribute_mappings"),
-            jit_provisioning_enabled=data.get("jit_provisioning_enabled", True),
-            default_role=data.get("default_role", "reader"),
+            lambda: SAMLService.create_idp_config(
+                caller,
+                tenant_id=body.tenant_id,
+                oidc_client_secret=secret.get_secret_value() if secret else None,
+                **fields,
+            )
         )
     except IdPAccessError as exc:
         return _idp_error_response(exc, "create", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "create", caller)
 
-    return jsonify(result), 201
+    return result, 201
 
 
 @bp.route("/idp/<int:config_id>", methods=["PUT"])
 @portal_token_required
+@document_request(UpdateIdPConfigRequest)
+@validate_response(IdPConfigUpdateResponse)
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
 async def update_idp_config(config_id):
     """Update an IdP configuration the caller owns.
 
     Other tenants' (and, for tenant admins, global) configs answer 404.
     ``tenant_id`` in the body must match the config's current tenant (403
-    otherwise) -- a config can never be re-homed.
+    otherwise) -- a config can never be re-homed. Body keys other than the
+    documented updatable fields (e.g. ``idp_type``, ``id``) are ignored.
 
     Args:
         config_id: Configuration ID
 
     Returns:
-        Updated configuration (secrets redacted)
+        200: Updated configuration (secrets redacted) plus ``updated: true``
+        400: Request body failed validation (wrong type, null name, ...)
+        403: Not an admin, or a tenant_id change was requested
+        404: No such configuration in the caller's scope
     """
     caller, error = _resolve_idp_caller()
     if error is not None:
         return error
 
-    data = await request.get_json()
-    if not data or not isinstance(data, dict):
-        return ApiResponse.bad_request("No data provided")
+    try:
+        body = UpdateIdPConfigRequest.model_validate(await request.get_json())
+    except ValidationError as exc:
+        return _validation_error_response(exc)
+
+    updates = body.to_changes()
+    if "tenant_id" in body.model_fields_set:
+        updates["tenant_id"] = body.tenant_id
 
     try:
         result = await run_in_threadpool(
-            SAMLService.update_idp_config, config_id, caller, data
+            SAMLService.update_idp_config, config_id, caller, updates
         )
     except IdPAccessError as exc:
         return _idp_error_response(exc, "update", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "update", caller)
 
-    return jsonify(result), 200
+    return result, 200
 
 
 @bp.route("/idp/<int:config_id>", methods=["DELETE"])
 @portal_token_required
+@validate_response(IdPConfigDeleteResponse)
+@document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
 async def delete_idp_config(config_id):
     """Delete an IdP configuration the caller owns.
 
@@ -330,7 +401,9 @@ async def delete_idp_config(config_id):
         config_id: Configuration ID
 
     Returns:
-        Success status
+        200: ``{"deleted": true}``
+        403: Not an admin
+        404: No such configuration in the caller's scope
     """
     caller, error = _resolve_idp_caller()
     if error is not None:
@@ -342,8 +415,10 @@ async def delete_idp_config(config_id):
         )
     except IdPAccessError as exc:
         return _idp_error_response(exc, "delete", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "delete", caller)
 
-    return jsonify(result), 200
+    return result, 200
 
 
 # =============================================================================

@@ -693,6 +693,120 @@ components:
       - name
       title: DataStoreResponse
       type: object
+    IdPConfigResponse:
+      description: 'Allowlisted IdP configuration as returned by the API (never a secret).
+
+
+        Fields belonging to the other protocol (SAML vs OIDC) are ``null``.
+
+        ``extra="ignore"`` makes this model the allowlist: any key not declared here
+
+        (e.g. a secret column) is dropped, never serialized and never echoed.'
+      properties:
+        attribute_mappings:
+          additionalProperties: true
+          title: Attribute Mappings
+          type: object
+        certificate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Certificate
+        default_role:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Default Role
+        entity_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Entity Id
+        has_client_secret:
+          default: false
+          title: Has Client Secret
+          type: boolean
+        id:
+          title: Id
+          type: integer
+        idp_type:
+          title: Idp Type
+          type: string
+        is_active:
+          title: Is Active
+          type: boolean
+        jit_provisioning_enabled:
+          title: Jit Provisioning Enabled
+          type: boolean
+        metadata_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Metadata Url
+        name:
+          title: Name
+          type: string
+        oidc_client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Oidc Client Id
+        oidc_issuer_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Oidc Issuer Url
+        oidc_response_type:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Oidc Response Type
+        oidc_scopes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Oidc Scopes
+        oidc_token_endpoint_auth_method:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Oidc Token Endpoint Auth Method
+        slo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Slo Url
+        sso_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Sso Url
+        tenant_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Tenant Id
+      required:
+      - id
+      - tenant_id
+      - idp_type
+      - name
+      - attribute_mappings
+      - jit_provisioning_enabled
+      - default_role
+      - is_active
+      title: IdPConfigResponse
+      type: object
     IdentityDTO:
       description: Immutable Identity data transfer object.
       properties:
@@ -12855,10 +12969,72 @@ paths:
       description: "\nRequires global admin or tenant admin. Tenant admins see only their own\ntenant's\
         \ configs; global admins see all (optionally filtered).\n\nQuery params:\n    tenant_id: Optional\
         \ tenant filter -- tenant admins may only pass\n        their own tenant id (anything else is\
-        \ 403)\n\nReturns:\n    List of IdP configurations (secrets redacted)"
+        \ 403)\n\nReturns:\n    200: List of IdP configurations (secrets redacted)\n    400: tenant_id\
+        \ is not an integer\n    403: Not an admin, or tenant_id of another tenant requested"
       operationId: get_list_idp_configs
       parameters: []
-      responses: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/IdPConfigResponse'
+                type: array
+          description: 'Built-in mutable sequence.
+
+
+            If no argument is given, the constructor creates a new empty list.
+
+            The argument must be an iterable if specified.'
+        '400':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '403':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
       summary: List IdP configurations the caller is allowed to see.
     post:
       description: "\nRequires global admin or tenant admin. Tenant admins always create in\ntheir own\
@@ -12875,16 +13051,317 @@ paths:
         \       oidc_token_endpoint_auth_method: str (optional) - Auth method (default: \"client_secret_basic\"\
         )\n\n    Common fields:\n        attribute_mappings: dict (optional) - Attribute mappings\n  \
         \      jit_provisioning_enabled: bool - Enable JIT provisioning (default: true)\n        default_role:\
-        \ str - Default role for new users (default: \"reader\")\n\nReturns:\n    Created configuration\
-        \ (secrets redacted)"
+        \ str - Default role for new users (default: \"reader\")\n\nReturns:\n    201: Created configuration\
+        \ (secrets redacted)\n    400: Request body failed validation (wrong type, missing name, ...)\n\
+        \    403: Not an admin, or a tenant_id other than the caller's own"
       operationId: post_create_idp_config
       parameters: []
-      responses: {}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              description: POST /sso/idp body.
+              properties:
+                attribute_mappings:
+                  anyOf:
+                  - additionalProperties:
+                      type: string
+                    maxProperties: 64
+                    type: object
+                  - type: 'null'
+                  default: null
+                  title: Attribute Mappings
+                certificate:
+                  anyOf:
+                  - maxLength: 65536
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Certificate
+                default_role:
+                  default: reader
+                  maxLength: 50
+                  minLength: 1
+                  title: Default Role
+                  type: string
+                entity_id:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Entity Id
+                idp_type:
+                  default: saml
+                  enum:
+                  - saml
+                  - oidc
+                  title: Idp Type
+                  type: string
+                jit_provisioning_enabled:
+                  default: true
+                  title: Jit Provisioning Enabled
+                  type: boolean
+                metadata_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Metadata Url
+                name:
+                  maxLength: 255
+                  minLength: 1
+                  title: Name
+                  type: string
+                oidc_client_id:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Client Id
+                oidc_client_secret:
+                  anyOf:
+                  - format: password
+                    maxLength: 512
+                    type: string
+                    writeOnly: true
+                  - type: 'null'
+                  default: null
+                  title: Oidc Client Secret
+                oidc_issuer_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Issuer Url
+                oidc_response_type:
+                  anyOf:
+                  - maxLength: 50
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Response Type
+                oidc_scopes:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Scopes
+                oidc_token_endpoint_auth_method:
+                  anyOf:
+                  - maxLength: 100
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Token Endpoint Auth Method
+                slo_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Slo Url
+                sso_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Sso Url
+                tenant_id:
+                  anyOf:
+                  - type: integer
+                  - type: 'null'
+                  default: null
+                  title: Tenant Id
+              required:
+              - name
+              title: CreateIdPConfigRequest
+              type: object
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                description: 'Allowlisted IdP configuration as returned by the API (never a secret).
+
+
+                  Fields belonging to the other protocol (SAML vs OIDC) are ``null``.
+
+                  ``extra="ignore"`` makes this model the allowlist: any key not declared here
+
+                  (e.g. a secret column) is dropped, never serialized and never echoed.'
+                properties:
+                  attribute_mappings:
+                    additionalProperties: true
+                    title: Attribute Mappings
+                    type: object
+                  certificate:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Certificate
+                  default_role:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    title: Default Role
+                  entity_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Entity Id
+                  has_client_secret:
+                    default: false
+                    title: Has Client Secret
+                    type: boolean
+                  id:
+                    title: Id
+                    type: integer
+                  idp_type:
+                    title: Idp Type
+                    type: string
+                  is_active:
+                    title: Is Active
+                    type: boolean
+                  jit_provisioning_enabled:
+                    title: Jit Provisioning Enabled
+                    type: boolean
+                  metadata_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Metadata Url
+                  name:
+                    title: Name
+                    type: string
+                  oidc_client_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Client Id
+                  oidc_issuer_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Issuer Url
+                  oidc_response_type:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Response Type
+                  oidc_scopes:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Scopes
+                  oidc_token_endpoint_auth_method:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Token Endpoint Auth Method
+                  slo_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Slo Url
+                  sso_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Sso Url
+                  tenant_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    title: Tenant Id
+                required:
+                - id
+                - tenant_id
+                - idp_type
+                - name
+                - attribute_mappings
+                - jit_provisioning_enabled
+                - default_role
+                - is_active
+                title: IdPConfigResponse
+                type: object
+          description: 'Allowlisted IdP configuration as returned by the API (never a secret).
+
+
+            Fields belonging to the other protocol (SAML vs OIDC) are ``null``.
+
+            ``extra="ignore"`` makes this model the allowlist: any key not declared here
+
+            (e.g. a secret column) is dropped, never serialized and never echoed.'
+        '400':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '403':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
       summary: Create a new IdP configuration.
   /api/v1/sso/idp/{config_id}:
     delete:
       description: "\nOther tenants' (and, for tenant admins, global) configs answer 404.\n\nArgs:\n \
-        \   config_id: Configuration ID\n\nReturns:\n    Success status"
+        \   config_id: Configuration ID\n\nReturns:\n    200: ``{\"deleted\": true}``\n    403: Not an\
+        \ admin\n    404: No such configuration in the caller's scope"
       operationId: delete_delete_idp_config
       parameters:
       - in: path
@@ -12892,13 +13369,78 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                description: DELETE response.
+                properties:
+                  deleted:
+                    title: Deleted
+                    type: boolean
+                required:
+                - deleted
+                title: IdPConfigDeleteResponse
+                type: object
+          description: DELETE response.
+        '403':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '404':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
       summary: Delete an IdP configuration the caller owns.
     put:
       description: "\nOther tenants' (and, for tenant admins, global) configs answer 404.\n``tenant_id``\
         \ in the body must match the config's current tenant (403\notherwise) -- a config can never be\
-        \ re-homed.\n\nArgs:\n    config_id: Configuration ID\n\nReturns:\n    Updated configuration (secrets\
-        \ redacted)"
+        \ re-homed. Body keys other than the\ndocumented updatable fields (e.g. ``idp_type``, ``id``)\
+        \ are ignored.\n\nArgs:\n    config_id: Configuration ID\n\nReturns:\n    200: Updated configuration\
+        \ (secrets redacted) plus ``updated: true``\n    400: Request body failed validation (wrong type,\
+        \ null name, ...)\n    403: Not an admin, or a tenant_id change was requested\n    404: No such\
+        \ configuration in the caller's scope"
       operationId: put_update_idp_config
       parameters:
       - in: path
@@ -12906,7 +13448,316 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              description: 'PUT /sso/idp/<id> body: every field optional; ``null`` only where nullable.'
+              properties:
+                attribute_mappings:
+                  anyOf:
+                  - additionalProperties:
+                      type: string
+                    maxProperties: 64
+                    type: object
+                  - type: 'null'
+                  default: null
+                  title: Attribute Mappings
+                certificate:
+                  anyOf:
+                  - maxLength: 65536
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Certificate
+                default_role:
+                  default: null
+                  maxLength: 50
+                  minLength: 1
+                  title: Default Role
+                  type: string
+                entity_id:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Entity Id
+                is_active:
+                  default: null
+                  title: Is Active
+                  type: boolean
+                jit_provisioning_enabled:
+                  default: null
+                  title: Jit Provisioning Enabled
+                  type: boolean
+                metadata_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Metadata Url
+                name:
+                  default: null
+                  maxLength: 255
+                  minLength: 1
+                  title: Name
+                  type: string
+                oidc_client_id:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Client Id
+                oidc_client_secret:
+                  anyOf:
+                  - format: password
+                    maxLength: 512
+                    type: string
+                    writeOnly: true
+                  - type: 'null'
+                  default: null
+                  title: Oidc Client Secret
+                oidc_issuer_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Issuer Url
+                oidc_response_type:
+                  anyOf:
+                  - maxLength: 50
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Response Type
+                oidc_scopes:
+                  anyOf:
+                  - maxLength: 512
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Scopes
+                oidc_token_endpoint_auth_method:
+                  anyOf:
+                  - maxLength: 100
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Oidc Token Endpoint Auth Method
+                slo_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Slo Url
+                sso_url:
+                  anyOf:
+                  - maxLength: 1024
+                    type: string
+                  - type: 'null'
+                  default: null
+                  title: Sso Url
+                tenant_id:
+                  anyOf:
+                  - type: integer
+                  - type: 'null'
+                  default: null
+                  title: Tenant Id
+              title: UpdateIdPConfigRequest
+              type: object
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                description: 'PUT response: the updated config plus the legacy ``updated`` marker.'
+                properties:
+                  attribute_mappings:
+                    additionalProperties: true
+                    title: Attribute Mappings
+                    type: object
+                  certificate:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Certificate
+                  default_role:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    title: Default Role
+                  entity_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Entity Id
+                  has_client_secret:
+                    default: false
+                    title: Has Client Secret
+                    type: boolean
+                  id:
+                    title: Id
+                    type: integer
+                  idp_type:
+                    title: Idp Type
+                    type: string
+                  is_active:
+                    title: Is Active
+                    type: boolean
+                  jit_provisioning_enabled:
+                    title: Jit Provisioning Enabled
+                    type: boolean
+                  metadata_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Metadata Url
+                  name:
+                    title: Name
+                    type: string
+                  oidc_client_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Client Id
+                  oidc_issuer_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Issuer Url
+                  oidc_response_type:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Response Type
+                  oidc_scopes:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Scopes
+                  oidc_token_endpoint_auth_method:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Oidc Token Endpoint Auth Method
+                  slo_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Slo Url
+                  sso_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Sso Url
+                  tenant_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    title: Tenant Id
+                  updated:
+                    default: true
+                    title: Updated
+                    type: boolean
+                required:
+                - id
+                - tenant_id
+                - idp_type
+                - name
+                - attribute_mappings
+                - jit_provisioning_enabled
+                - default_role
+                - is_active
+                title: IdPConfigUpdateResponse
+                type: object
+          description: 'PUT response: the updated config plus the legacy ``updated`` marker.'
+        '400':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '403':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '404':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
       summary: Update an IdP configuration the caller owns.
   /api/v1/sso/oidc/authorize/{idp_id}:
     get:
