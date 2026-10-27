@@ -19,6 +19,7 @@ import redis.asyncio
 
 from apps.flows_invoker.executor import execute_promotion_pipeline
 from apps.worker.config.settings import settings
+from shared.database.rls import tenant_context
 from shared.jobbus import JobBus
 
 logger = logging.getLogger(__name__)
@@ -106,14 +107,17 @@ class FlowsInvokerService:
             raise ValueError("flow job payload missing tenant_id/promotion_id")
 
         db = self.db_manager.write
-        return await asyncio.to_thread(
-            execute_promotion_pipeline,
-            db,
-            int(tenant_id),
-            int(promotion_id),
-            started_by,
-            execution_id,
-        )
+        # RLS: pin the transaction-local tenant GUC to the job's tenant for the
+        # whole pipeline; asyncio.to_thread copies the context into the thread.
+        with tenant_context(int(tenant_id)):
+            return await asyncio.to_thread(
+                execute_promotion_pipeline,
+                db,
+                int(tenant_id),
+                int(promotion_id),
+                started_by,
+                execution_id,
+            )
 
     async def _process(self, msg_id: str, envelope) -> None:
         job_id = envelope.job_id

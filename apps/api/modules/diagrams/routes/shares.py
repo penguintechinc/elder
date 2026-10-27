@@ -12,6 +12,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from shared.database.rls import SystemScopeReason, set_tenant, system_scope
 
 from .diagrams import _can_edit_diagram, _can_read_diagram, _get_tenant_id
 
@@ -280,6 +281,12 @@ async def get_shared_diagram(share_token):
     user_agent = request.headers.get("User-Agent", "")
 
     def fetch():
+        # Unauthenticated, token-addressed read: the tenant is unknown until the
+        # share row is found, so run under an explicit, audit-logged scope.
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "diagrams.shared_view"):
+            return _fetch_shared()
+
+    def _fetch_shared():
         now = datetime.now(UTC)
 
         # Find the share by token
@@ -323,6 +330,8 @@ async def get_shared_diagram(share_token):
     def record_analytics():
         now = datetime.now(UTC)
 
+        # Pin the analytics write to the share's own tenant (RLS WITH CHECK).
+        set_tenant(diagram.tenant_id)  # threadpool context copy; discarded on return
         db.dg_share_analytics.insert(
             tenant_id=diagram.tenant_id,
             share_type="diagram",

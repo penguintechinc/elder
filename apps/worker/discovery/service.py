@@ -33,6 +33,7 @@ from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
 from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
 from shared.certificates import calculate_certificate_status
+from shared.database.rls import SystemScopeReason, system_scope, tenant_context
 
 
 class DiscoveryService:
@@ -281,7 +282,14 @@ class DiscoveryService:
             # in both the persisted history row and the job result below.
             edge_counts = {"edges_created": 0, "unresolved_edges": 0}
             if organization_id:
-                edge_counts = self._store_discovered_resources(organization_id, results)
+                # RLS: resolve the org's tenant once under an explicit system
+                # scope (the tenant is unknown until the org is read), then do
+                # every write pinned to that tenant.
+                job_tenant_id = self._resolve_job_tenant(organization_id)
+                with tenant_context(job_tenant_id):
+                    edge_counts = self._store_discovered_resources(
+                        organization_id, results
+                    )
             results_for_storage.update(edge_counts)
 
             # Record discovery history
@@ -1424,6 +1432,18 @@ class DiscoveryService:
         return domain_map.get(resource_type, "entity")
 
     # Main storage orchestrator
+
+    def _resolve_job_tenant(self, organization_id: int) -> int:
+        """Resolve an organization's tenant under an explicit system scope.
+
+        Discovery jobs carry only an organization id, and ``organizations`` is
+        row-level-secured by tenant, so this one-row lookup is the sole place the
+        worker legitimately reads across tenants (audit-logged BACKGROUND_SWEEP).
+        """
+        with system_scope(
+            SystemScopeReason.BACKGROUND_SWEEP, "discovery.resolve_job_tenant"
+        ):
+            return self._tenant_for_org(organization_id)
 
     def _tenant_for_org(self, organization_id: int) -> int:
         """Resolve the tenant owning an organization.

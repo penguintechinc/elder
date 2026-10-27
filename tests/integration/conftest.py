@@ -13,6 +13,11 @@ fixture, every insert against tenant_id=1 fails FK validation
 import os
 
 import pytest
+from rls_support import (  # noqa: F401  (shared RLS fixtures)
+    _reset_rls_state,
+    dal,
+    rls_env,
+)
 
 
 @pytest.fixture(scope="session", autouse=True)

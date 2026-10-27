@@ -8,6 +8,7 @@ import signal
 import socket
 import sys
 import time
+from contextlib import nullcontext
 from typing import List
 
 import aiocron
@@ -26,6 +27,7 @@ from apps.worker.connectors.okta_connector import OktaConnector
 from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
+from shared.database.rls import tenant_context
 from shared.jobbus import JobBus
 from shared.redaction import redact_url
 
@@ -547,7 +549,15 @@ class WorkerService:
                 job_type=envelope.job_type,
             )
 
-            result = await handler(envelope)
+            # Pin RLS to the job's tenant (from the signed envelope, never from
+            # request input). Tenant-less jobs (e.g. the discovery sweep) bind
+            # tenants themselves per organization; unbound = fail closed.
+            with (
+                tenant_context(envelope.tenant_id)
+                if envelope.tenant_id
+                else nullcontext()
+            ):
+                result = await handler(envelope)
 
             # Mark processed (idempotency)
             await self.jobbus.mark_processed(job_id)

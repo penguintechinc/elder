@@ -15,6 +15,7 @@ from quart import Blueprint, current_app, request
 
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from shared.database.rls import SystemScopeReason, set_tenant, system_scope
 
 logger = logging.getLogger(__name__)
 
@@ -123,14 +124,17 @@ async def trigger_webhook(webhook_id: str):
     ):
         # Find webhook by ID
         # Uniform 404 for ALL of: unknown ID, disabled webhook, missing or disabled pipeline.
-        webhook = db(db.iceflows_webhooks.webhook_id == webhook_id).select().first()
-        if not webhook or not webhook.is_active:
-            return None, None, 404, "Not found"
+        # Unauthenticated, id-addressed lookup: the tenant is unknown until the
+        # webhook row is found, so resolve it under an explicit, audit-logged scope.
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "flows.webhook_lookup"):
+            webhook = db(db.iceflows_webhooks.webhook_id == webhook_id).select().first()
+            if not webhook or not webhook.is_active:
+                return None, None, 404, "Not found"
 
-        # Get pipeline and tenant from webhook row
-        pipeline = db(db.iceflows.id == webhook.flow_id).select().first()
-        if not pipeline or not pipeline.is_enabled:
-            return None, None, 404, "Not found"
+            # Get pipeline and tenant from webhook row
+            pipeline = db(db.iceflows.id == webhook.flow_id).select().first()
+            if not pipeline or not pipeline.is_enabled:
+                return None, None, 404, "Not found"
 
         tenant_id = pipeline.tenant_id
 
@@ -152,6 +156,11 @@ async def trigger_webhook(webhook_id: str):
                 request_body, signature_header, webhook.webhook_secret
             ):
                 return None, None, 401, "Invalid signature"
+
+        # Signature verified: from here on every read/write is pinned to the
+        # webhook's own tenant. This runs in the threadpool's copied context, so
+        # the binding is discarded when ``trigger`` returns.
+        set_tenant(tenant_id)
 
         # Add webhook metadata
         input_data["__webhook__"] = {

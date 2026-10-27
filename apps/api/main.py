@@ -23,6 +23,7 @@ from shared.database import (
     init_db,
     init_sqlalchemy_tables,
     log_startup_status,
+    rls,
 )
 from shared.observability import auto_instrument_app, init_telemetry
 
@@ -98,6 +99,12 @@ def create_app(config_name: str = None) -> Quart:
     # NOTE: For schema migrations on existing databases, run: ./scripts/migrate.sh
     init_sqlalchemy_tables(app)
     init_db(app)
+
+    # Durable audit trail for explicit cross-tenant (system scope) access; the
+    # sink is required for SUPER_ADMIN scope (shared/database/rls.py).
+    from apps.api.services.audit.rls_sink import write_system_scope_audit
+
+    rls.register_audit_sink(write_system_scope_audit)
 
     # Initialize license client
     _init_license_client(app)
@@ -188,10 +195,17 @@ def _register_before_request(app: Quart) -> None:
     round-trip — the scopes and roles are embedded in the token itself.
     """
 
+    @app.teardown_request
+    async def clear_rls_tenant(exc=None):
+        """Drop the request's RLS tenant binding so it can never outlive the request."""
+        rls.clear_tenant()
+
     @app.before_request
     async def populate_claims():
         from apps.api.auth.jwt_handler import get_token_from_header, verify_token
 
+        # Start every request fail-closed: no tenant bound until the JWT proves one.
+        rls.clear_tenant()
         token = get_token_from_header()
         if not token:
             return
@@ -217,6 +231,13 @@ def _register_before_request(app: Quart) -> None:
             "identity_id": identity_id,
             "user_identity_id": identity_id,
         }
+        # Feed the verified tenant claim to PostgreSQL RLS (per-transaction GUC,
+        # see shared/database/rls.py). A missing/invalid claim leaves the tenant
+        # unbound, so every RLS-protected table returns zero rows (fail closed).
+        try:
+            rls.set_tenant(g.claims["tenant"])
+        except ValueError:
+            rls.clear_tenant()
 
     @app.before_request
     async def enforce_csrf_protection():

@@ -6,6 +6,14 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
 
 ## [Unreleased]
 
+### Added
+- PostgreSQL row-level security for tenant isolation (migration `042`): 82
+  tenant-scoped tables get `ENABLE` + `FORCE ROW LEVEL SECURITY` policies keyed on
+  a transaction-local tenant GUC set from the verified JWT / job envelope, fail
+  closed, explicit audit-logged system scope for cross-tenant access, and an
+  `elder.disable-rls` kill-switch. The application DB role must not be a
+  superuser/`BYPASSRLS` role. See `docs/architecture/row-level-security.md`.
+
 ### Changed
 - Release-gate hardening: recovered `.github/CODEOWNERS`, added coverage
   gating (`--cov-fail-under=90` / vitest coverage thresholds), hardened

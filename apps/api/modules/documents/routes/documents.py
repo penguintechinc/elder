@@ -20,6 +20,7 @@ from apps.api.modules.documents.common import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
+from shared.database.rls import SystemScopeReason, system_scope
 from shared.utils.village_id import generate_village_id
 
 logger = logging.getLogger(__name__)
@@ -769,6 +770,11 @@ async def list_public_documents():
     q = request.args.get("q", "").strip()
 
     def list_public():
+        # Intentionally cross-tenant: public documents are visible to anyone.
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "documents.public_list"):
+            return _list_public()
+
+    def _list_public():
         query = (db.doc_documents.is_public == True) & (
             db.doc_documents.status == "published"
         )
@@ -833,15 +839,17 @@ async def get_public_document(slug):
     db = current_app.db
 
     def fetch():
-        return (
-            db(
-                (db.doc_documents.slug == slug)
-                & (db.doc_documents.is_public == True)
-                & (db.doc_documents.status == "published")
+        # Intentionally cross-tenant: public documents are visible to anyone.
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "documents.public_get"):
+            return (
+                db(
+                    (db.doc_documents.slug == slug)
+                    & (db.doc_documents.is_public == True)
+                    & (db.doc_documents.status == "published")
+                )
+                .select()
+                .first()
             )
-            .select()
-            .first()
-        )
 
     doc = await run_in_threadpool(fetch)
 

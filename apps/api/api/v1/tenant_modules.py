@@ -23,9 +23,24 @@ from apps.api.common.modules.tenant_toggle import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.rls_scope import cross_tenant_scope
 
 bp = Blueprint("tenant_modules", __name__)
 logger = structlog.get_logger(__name__)
+
+
+def _module_scope(caller_tenant_id: int, tenant_id: int, purpose: str):
+    """RLS scope for managing ``tenant_id``'s modules (superuser cross-tenant case).
+
+    Own-tenant access needs no elevation; a superuser acting on another tenant
+    gets an explicit, audit-logged SUPER_ADMIN system scope.
+    """
+    return cross_tenant_scope(
+        caller_tenant_id,
+        tenant_id,
+        actor=f"identity:{g.current_user.id}",
+        purpose=purpose,
+    )
 
 
 # Pydantic Models for request validation
@@ -82,16 +97,21 @@ async def list_tenant_modules(tenant_id: int):
             for name, manifest in module_manifests.items()
         }
 
-        # Get effective map for this tenant
-        effective_map = await run_in_threadpool(
-            get_tenant_modules, db, redis_client, tenant_id, all_modules_with_defaults
-        )
+        with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.list"):
+            # Get effective map for this tenant
+            effective_map = await run_in_threadpool(
+                get_tenant_modules,
+                db,
+                redis_client,
+                tenant_id,
+                all_modules_with_defaults,
+            )
 
-        # Build response: get actual settings from DB for modules that have overrides
-        response = []
-        rows = await run_in_threadpool(
-            lambda: db(db.tenant_modules.tenant_id == tenant_id).select()
-        )
+            # Build response: get actual settings from DB for modules that have overrides
+            response = []
+            rows = await run_in_threadpool(
+                lambda: db(db.tenant_modules.tenant_id == tenant_id).select()
+            )
         module_settings = {row.module_name: row.settings for row in rows}
 
         for module_name, enabled in effective_map.items():
@@ -171,15 +191,16 @@ async def set_tenant_module(tenant_id: int):
         )
 
         # Set the module state
-        await run_in_threadpool(
-            set_module_enabled,
-            db,
-            redis_client,
-            tenant_id,
-            req.module_name,
-            req.enabled,
-            req.settings,
-        )
+        with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.set"):
+            await run_in_threadpool(
+                set_module_enabled,
+                db,
+                redis_client,
+                tenant_id,
+                req.module_name,
+                req.enabled,
+                req.settings,
+            )
 
         logger.info(
             "set_tenant_module",

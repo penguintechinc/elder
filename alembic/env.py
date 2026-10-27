@@ -89,6 +89,17 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        if connection.dialect.name == "postgresql":
+            # Migrations are the explicit, separate maintenance path for tables
+            # under row-level security (migration 042): this dedicated, discarded
+            # (NullPool) connection runs in system scope so data backfills are not
+            # filtered by the tenant policies. Session-level on purpose — the
+            # connection is never pooled or reused by the application.
+            connection.exec_driver_sql(
+                "SELECT set_config('app.rls_scope', 'system', false)"
+            )
+            connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata,

@@ -10,6 +10,7 @@ from quart import Blueprint, current_app, request
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.validation_helpers import validate_json_body
+from shared.database.rls import SystemScopeReason, system_scope
 
 bp = Blueprint("on_call_webhooks", __name__)
 
@@ -176,7 +177,11 @@ async def handle_alertmanager_webhook():
 
                 await run_in_threadpool(record_notification)
 
-    await process_alerts()
+    # Internal AlertManager caller: no JWT, so no tenant is bound and the service
+    # is matched by name across tenants. Preserve that behaviour under RLS as an
+    # explicit, audit-logged system scope instead of silently matching nothing.
+    with system_scope(SystemScopeReason.PUBLIC_TOKEN, "oncall.alertmanager_webhook"):
+        await process_alerts()
 
     return (
         ApiResponse.success({"status": "accepted", "alerts_processed": len(alerts)}),

@@ -14,6 +14,7 @@ from quart import Blueprint, current_app, request
 
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from shared.database.rls import SystemScopeReason, set_tenant, system_scope
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +90,19 @@ async def trigger_webhook(token: str):
         # disabled playbook. Distinct codes/messages here would let an
         # unauthenticated caller distinguish a real-but-disabled token from a
         # bogus one (a token-enumeration oracle) and learn playbook state.
-        webhook = db(db.stream_webhooks.token == token).select().first()
-        if not webhook or not webhook.is_enabled:
-            return None, None, 404, "Not found"
+        # The tenant is unknown until the webhook row is found, so the lookup runs
+        # under an explicit, audit-logged scope (RLS system scope).
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "streams.webhook_lookup"):
+            webhook = db(db.stream_webhooks.token == token).select().first()
+            if not webhook or not webhook.is_enabled:
+                return None, None, 404, "Not found"
 
-        # Get playbook and tenant from webhook row
-        playbook = db(db.stream_playbooks.id == webhook.playbook_id).select().first()
-        if not playbook or not playbook.is_enabled:
-            return None, None, 404, "Not found"
+            # Get playbook and tenant from webhook row
+            playbook = (
+                db(db.stream_playbooks.id == webhook.playbook_id).select().first()
+            )
+            if not playbook or not playbook.is_enabled:
+                return None, None, 404, "Not found"
 
         tenant_id = playbook.tenant_id
 
@@ -118,6 +124,11 @@ async def trigger_webhook(token: str):
                 request_body, signature_header, webhook.signature_secret
             ):
                 return None, None, 401, "Invalid signature"
+
+        # Authenticated by token/signature: pin every write to the webhook's own
+        # tenant. Runs in the threadpool's copied context, so the binding is
+        # discarded when ``trigger`` returns.
+        set_tenant(tenant_id)
 
         # Add webhook metadata
         input_data["__webhook__"] = {
@@ -187,12 +198,17 @@ async def trigger_webhook(token: str):
                 await jobbus.ensure_group("streams")
 
                 # Get tenant_id from webhook playbook (set in trigger function)
-                webhook_row = db(db.stream_webhooks.id == webhook_id).select().first()
-                playbook_row = (
-                    db(db.stream_playbooks.id == webhook_row.playbook_id)
-                    .select()
-                    .first()
-                )
+                with system_scope(
+                    SystemScopeReason.PUBLIC_TOKEN, "streams.webhook_enqueue_lookup"
+                ):
+                    webhook_row = (
+                        db(db.stream_webhooks.id == webhook_id).select().first()
+                    )
+                    playbook_row = (
+                        db(db.stream_playbooks.id == webhook_row.playbook_id)
+                        .select()
+                        .first()
+                    )
                 tenant_id = playbook_row.tenant_id if playbook_row else None
 
                 if tenant_id:
@@ -249,11 +265,15 @@ async def test_webhook(token: str):
     db = current_app.db
 
     def test(token, method, content_type, request_body, signature_header):
-        webhook = db(db.stream_webhooks.token == token).select().first()
-        if not webhook:
-            return None, None, 404
+        # Unauthenticated, token-addressed read: explicit RLS system scope.
+        with system_scope(SystemScopeReason.PUBLIC_TOKEN, "streams.webhook_test"):
+            webhook = db(db.stream_webhooks.token == token).select().first()
+            if not webhook:
+                return None, None, 404
 
-        playbook = db(db.stream_playbooks.id == webhook.playbook_id).select().first()
+            playbook = (
+                db(db.stream_playbooks.id == webhook.playbook_id).select().first()
+            )
 
         # Validate signature if required — fail closed (missing secret or
         # missing/invalid signature => not valid).

@@ -14,6 +14,8 @@ from datetime import UTC, datetime, timezone
 
 from penguin_dal import DAL
 
+from shared.database import rls
+
 logger = logging.getLogger(__name__)
 
 
@@ -136,6 +138,25 @@ def get_database_url(app, **kwargs) -> str:
     return database_url
 
 
+def _init_rls(db) -> None:
+    """Wire row-level-security tenant context for a freshly built DAL.
+
+    Installs the global per-transaction GUC listener, starts the
+    ``elder.disable-rls`` kill-switch poller and (PostgreSQL only) verifies the
+    connected role can actually enforce RLS. ``ELDER_RLS_STRICT=true`` turns a
+    bypassing role (superuser/BYPASSRLS) into a startup failure.
+    """
+    rls.install_rls_hooks()
+    rls.configure_kill_switch()
+    if db.engine.dialect.name == "postgresql":
+        strict = os.getenv("ELDER_RLS_STRICT", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        rls.check_rls_posture(db.engine, strict=strict)
+
+
 _DEFAULT_DB_POOL_SIZE = 10
 _MIN_DB_POOL_SIZE = 1
 _MAX_DB_POOL_SIZE = 100
@@ -192,6 +213,7 @@ def init_db(app):
     # Create penguin-dal DAL instance for queries only.
     # Schema creation is handled by Alembic migrations (run_migrations).
     db = DAL(database_url, pool_size=pool_size, migrate=False)
+    _init_rls(db)
 
     # Attach to Flask app for use in endpoints
     app.db = db
@@ -365,7 +387,12 @@ db = None
 from shared.database.connection import create_db_connection  # noqa: E402
 from shared.database.manager import DatabaseManager  # noqa: E402
 
+# Importing this package is enough to guarantee tenant context reaches every
+# PostgreSQL transaction — worker/flows-invoker/API all import it.
+rls.install_rls_hooks()
+
 __all__ = [
+    "rls",
     "db",
     "init_db",
     "init_sqlalchemy_tables",

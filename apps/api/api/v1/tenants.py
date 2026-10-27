@@ -18,6 +18,7 @@ from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.common.licensing.enforce import check_limit
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.rls_scope import cross_tenant_scope
 from shared.utils.village_id import generate_village_id
 
 bp = Blueprint("tenants", __name__)
@@ -51,6 +52,23 @@ class UpdateTenantRequest(RequestModel):
     data_retention_days: int | None = Field(default=None, ge=1, le=36500)
     storage_quota_gb: int | None = Field(default=None, ge=1, le=1000000)
     is_active: bool | None = None
+
+
+def _tenant_scope(tenant_id: int, purpose: str):
+    """Return the RLS scope for reading ``tenant_id``'s tenant-owned tables.
+
+    A caller reading its own tenant needs no elevation; a global admin/support
+    user reading another tenant gets an explicit, audit-logged SUPER_ADMIN
+    system scope (never a silent database bypass).
+    """
+    # portal_token_required stashes the verified JWT payload on the request object.
+    caller = getattr(request, "portal_user")
+    return cross_tenant_scope(
+        caller.get("tenant_id"),
+        tenant_id,
+        actor=f"portal_user:{caller.get('sub')}",
+        purpose=purpose,
+    )
 
 
 def global_admin_required(f):
@@ -164,7 +182,8 @@ def get_tenant(tenant_id):
         return ApiResponse.error("Tenant not found", 404)
 
     # Get usage statistics
-    org_count = db(db.organizations.tenant_id == tenant_id).count()
+    with _tenant_scope(tenant_id, "tenants.get_tenant"):
+        org_count = db(db.organizations.tenant_id == tenant_id).count()
     user_count = db(db.portal_users.tenant_id == tenant_id).count()
     identity_count = db(db.identities.tenant_id == tenant_id).count()
 
@@ -539,11 +558,13 @@ def get_tenant_stats(tenant_id):
         return ApiResponse.error("Tenant not found", 404)
 
     # Gather statistics
+    with _tenant_scope(tenant_id, "tenants.get_tenant_stats"):
+        organizations_count = db(db.organizations.tenant_id == tenant_id).count()
     stats = {
         "tenant_id": tenant_id,
         "name": tenant.name,
         "subscription_tier": tenant.subscription_tier,
-        "organizations": db(db.organizations.tenant_id == tenant_id).count(),
+        "organizations": organizations_count,
         "portal_users": {
             "total": db(db.portal_users.tenant_id == tenant_id).count(),
             "active": db(

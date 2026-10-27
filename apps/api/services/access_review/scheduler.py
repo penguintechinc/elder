@@ -11,6 +11,7 @@ import time
 from typing import Optional
 
 from apps.api.services.access_review.service import AccessReviewService
+from shared.database.rls import SystemScopeReason, system_scope, tenant_context
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +92,18 @@ class AccessReviewScheduler:
                     due_days = group.review_due_days or 14
                     due_date = now + datetime.timedelta(days=due_days)
 
-                    # Create review
-                    review = self.service.create_review(
-                        group_id=group.id,
-                        period_start=period_start,
-                        period_end=period_end,
-                        due_date=due_date,
-                        tenant_id=group.tenant_id or 1,
-                        auto_apply=group.review_auto_apply,
-                    )
+                    # Create review, pinned to the group's own tenant so the
+                    # access_reviews/items writes satisfy the RLS policies.
+                    review_tenant_id = group.tenant_id or 1
+                    with tenant_context(review_tenant_id):
+                        review = self.service.create_review(
+                            group_id=group.id,
+                            period_start=period_start,
+                            period_end=period_end,
+                            due_date=due_date,
+                            tenant_id=review_tenant_id,
+                            auto_apply=group.review_auto_apply,
+                        )
 
                     logger.info(
                         f"Created scheduled review {review['id']} for "
@@ -118,7 +122,11 @@ class AccessReviewScheduler:
     def _check_overdue_reviews(self):
         """Check for overdue reviews and update status."""
         try:
-            overdue_ids = self.service.check_overdue_reviews()
+            # Cross-tenant maintenance sweep: explicit, audit-logged system scope.
+            with system_scope(
+                SystemScopeReason.BACKGROUND_SWEEP, "access_review.overdue_sweep"
+            ):
+                overdue_ids = self.service.check_overdue_reviews()
             if overdue_ids:
                 logger.info(f"Marked {len(overdue_ids)} reviews as overdue")
         except Exception as e:
