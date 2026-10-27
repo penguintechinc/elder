@@ -12852,33 +12852,39 @@ paths:
       summary: Export software SBOM in standard format.
   /api/v1/sso/idp:
     get:
-      description: "\nQuery params:\n    tenant_id: Optional tenant filter\n\nReturns:\n    List of IdP\
-        \ configurations"
+      description: "\nRequires global admin or tenant admin. Tenant admins see only their own\ntenant's\
+        \ configs; global admins see all (optionally filtered).\n\nQuery params:\n    tenant_id: Optional\
+        \ tenant filter -- tenant admins may only pass\n        their own tenant id (anything else is\
+        \ 403)\n\nReturns:\n    List of IdP configurations (secrets redacted)"
       operationId: get_list_idp_configs
       parameters: []
       responses: {}
-      summary: List IdP configurations.
+      summary: List IdP configurations the caller is allowed to see.
     post:
-      description: "\nRequires global admin or tenant admin.\n\nRequest body:\n    name: str - Display\
-        \ name\n    idp_type: str - saml or oidc\n    tenant_id: int (optional) - Tenant ID or null for\
+      description: "\nRequires global admin or tenant admin. Tenant admins always create in\ntheir own\
+        \ tenant; supplying a different ``tenant_id`` is 403. Only global\nadmins may pick the owning\
+        \ tenant (omit / null = global config).\n\nRequest body:\n    name: str - Display name\n    idp_type:\
+        \ str - saml or oidc\n    tenant_id: int (optional, global admins only) - Tenant ID or null for\
         \ global\n\n    SAML fields (required if idp_type=saml):\n        entity_id: str - SAML Entity\
         \ ID\n        metadata_url: str - IdP metadata URL\n        sso_url: str - SSO endpoint\n    \
         \    slo_url: str - SLO endpoint\n        certificate: str - X.509 certificate\n\n    OIDC fields\
         \ (required if idp_type=oidc):\n        oidc_client_id: str - OIDC Client ID\n        oidc_client_secret:\
-        \ str - OIDC Client Secret\n        oidc_issuer_url: str - OIDC Issuer URL\n        oidc_scopes:\
-        \ str (optional) - Space-separated scopes (default: \"openid profile email\")\n        oidc_response_type:\
-        \ str (optional) - Response type (default: \"code\")\n        oidc_token_endpoint_auth_method:\
-        \ str (optional) - Auth method (default: \"client_secret_basic\")\n\n    Common fields:\n    \
-        \    attribute_mappings: dict (optional) - Attribute mappings\n        jit_provisioning_enabled:\
-        \ bool - Enable JIT provisioning (default: true)\n        default_role: str - Default role for\
-        \ new users (default: \"reader\")\n\nReturns:\n    Created configuration"
+        \ str - OIDC Client Secret (write-only, never returned)\n        oidc_issuer_url: str - OIDC Issuer\
+        \ URL\n        oidc_scopes: str (optional) - Space-separated scopes (default: \"openid profile\
+        \ email\")\n        oidc_response_type: str (optional) - Response type (default: \"code\")\n \
+        \       oidc_token_endpoint_auth_method: str (optional) - Auth method (default: \"client_secret_basic\"\
+        )\n\n    Common fields:\n        attribute_mappings: dict (optional) - Attribute mappings\n  \
+        \      jit_provisioning_enabled: bool - Enable JIT provisioning (default: true)\n        default_role:\
+        \ str - Default role for new users (default: \"reader\")\n\nReturns:\n    Created configuration\
+        \ (secrets redacted)"
       operationId: post_create_idp_config
       parameters: []
       responses: {}
       summary: Create a new IdP configuration.
   /api/v1/sso/idp/{config_id}:
     delete:
-      description: "\nArgs:\n    config_id: Configuration ID\n\nReturns:\n    Success status"
+      description: "\nOther tenants' (and, for tenant admins, global) configs answer 404.\n\nArgs:\n \
+        \   config_id: Configuration ID\n\nReturns:\n    Success status"
       operationId: delete_delete_idp_config
       parameters:
       - in: path
@@ -12887,9 +12893,12 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Delete an IdP configuration.
+      summary: Delete an IdP configuration the caller owns.
     put:
-      description: "\nArgs:\n    config_id: Configuration ID\n\nReturns:\n    Updated configuration"
+      description: "\nOther tenants' (and, for tenant admins, global) configs answer 404.\n``tenant_id``\
+        \ in the body must match the config's current tenant (403\notherwise) -- a config can never be\
+        \ re-homed.\n\nArgs:\n    config_id: Configuration ID\n\nReturns:\n    Updated configuration (secrets\
+        \ redacted)"
       operationId: put_update_idp_config
       parameters:
       - in: path
@@ -12898,7 +12907,7 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Update an IdP configuration.
+      summary: Update an IdP configuration the caller owns.
   /api/v1/sso/oidc/authorize/{idp_id}:
     get:
       description: "\nArgs:\n    idp_id: IdP configuration ID\n\nQuery params:\n    redirect_uri: Callback\

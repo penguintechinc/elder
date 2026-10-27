@@ -14,6 +14,12 @@ from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
+from apps.api.services.sso.idp_access import (
+    IdPAccessError,
+    IdPCaller,
+    IdPForbiddenError,
+    IdPNotFoundError,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
@@ -86,30 +92,100 @@ def scim_auth_required(f):
 # =============================================================================
 # IdP Configuration Endpoints
 # =============================================================================
+#
+# Tenant ownership (regression: idp-config-cross-tenant): every route below
+# resolves an ``IdPCaller`` from the validated portal JWT and hands it to the
+# service layer, which scopes the DAL query itself. A config outside the
+# caller's tenant answers 404 (never 403) so ids cannot be enumerated; only
+# ``global_role == "admin"`` may touch other tenants' or global configs.
+# Responses are ``IdPConfigView`` dicts -- secrets are never returned.
+
+
+def _claim_tenant_id(user: dict) -> int | None:
+    """Return the caller's tenant id from the validated JWT claims, else None.
+
+    Only a positive integer claim counts; anything else (missing, bool, str)
+    is "no tenant" and non-global callers then fail closed.
+    """
+    raw = user.get("tenant_id")
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+        return raw
+    return None
+
+
+def _resolve_idp_caller() -> tuple[IdPCaller | None, tuple | None]:
+    """Authorize the portal caller for IdP-config admin ops.
+
+    Returns ``(caller, None)`` on success or ``(None, error_response)``:
+    403 unless the caller is a global admin or a tenant admin, and 403 for a
+    tenant admin whose token carries no tenant claim.
+    """
+    # ``portal_user`` is attached by @portal_token_required; a missing attribute
+    # (decorator forgotten) fails closed to "no claims" -> 403, never an admin.
+    user = getattr(request, "portal_user", None) or {}
+    is_global_admin = user.get("global_role") == "admin"
+    if not (is_global_admin or user.get("tenant_role") == "admin"):
+        return None, ApiResponse.forbidden("Admin permission required")
+
+    tenant_id = _claim_tenant_id(user)
+    if tenant_id is None and not is_global_admin:
+        return None, ApiResponse.forbidden("Tenant claim required")
+
+    return IdPCaller(tenant_id=tenant_id, is_global_admin=is_global_admin), None
+
+
+def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> tuple:
+    """Map an IdP access failure to a 404/403 response and log the denial.
+
+    Not-found (missing or other-tenant) renders one uniform 404 body; the log
+    line carries ids only -- no secrets, certificates or emails.
+    """
+    config_id = getattr(exc, "config_id", None)
+    current_app.logger.warning(
+        "idp_config_access_denied action=%s config_id=%s caller_tenant_id=%s "
+        "global_admin=%s",
+        action,
+        config_id,
+        caller.tenant_id,
+        caller.is_global_admin,
+    )
+    if isinstance(exc, IdPNotFoundError):
+        return ApiResponse.not_found("IdP configuration", config_id)
+    return ApiResponse.forbidden(str(exc))
 
 
 @bp.route("/idp", methods=["GET"])
 @portal_token_required
-def list_idp_configs():
-    """List IdP configurations.
+async def list_idp_configs():
+    """List IdP configurations the caller is allowed to see.
+
+    Requires global admin or tenant admin. Tenant admins see only their own
+    tenant's configs; global admins see all (optionally filtered).
 
     Query params:
-        tenant_id: Optional tenant filter
+        tenant_id: Optional tenant filter -- tenant admins may only pass
+            their own tenant id (anything else is 403)
 
     Returns:
-        List of IdP configurations
+        List of IdP configurations (secrets redacted)
     """
-    tenant_id = request.args.get("tenant_id", type=int)
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    # Check permissions - only admins can view IdP configs
-    if (
-        request.portal_user.get("global_role") not in ["admin", "support"]
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        # Non-admins can only see their tenant's config
-        tenant_id = request.portal_user.get("tenant_id")
+    tenant_id = None
+    if "tenant_id" in request.args:
+        tenant_id = request.args.get("tenant_id", type=int)
+        if tenant_id is None:
+            return ApiResponse.bad_request("tenant_id must be an integer")
 
-    configs = SAMLService.list_idp_configs(tenant_id)
+    try:
+        configs = await run_in_threadpool(
+            SAMLService.list_idp_configs, caller, tenant_id
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "list", caller)
+
     return jsonify(configs), 200
 
 
@@ -119,12 +195,14 @@ def list_idp_configs():
 async def create_idp_config():
     """Create a new IdP configuration.
 
-    Requires global admin or tenant admin.
+    Requires global admin or tenant admin. Tenant admins always create in
+    their own tenant; supplying a different ``tenant_id`` is 403. Only global
+    admins may pick the owning tenant (omit / null = global config).
 
     Request body:
         name: str - Display name
         idp_type: str - saml or oidc
-        tenant_id: int (optional) - Tenant ID or null for global
+        tenant_id: int (optional, global admins only) - Tenant ID or null for global
 
         SAML fields (required if idp_type=saml):
             entity_id: str - SAML Entity ID
@@ -135,7 +213,7 @@ async def create_idp_config():
 
         OIDC fields (required if idp_type=oidc):
             oidc_client_id: str - OIDC Client ID
-            oidc_client_secret: str - OIDC Client Secret
+            oidc_client_secret: str - OIDC Client Secret (write-only, never returned)
             oidc_issuer_url: str - OIDC Issuer URL
             oidc_scopes: str (optional) - Space-separated scopes (default: "openid profile email")
             oidc_response_type: str (optional) - Response type (default: "code")
@@ -147,47 +225,63 @@ async def create_idp_config():
             default_role: str - Default role for new users (default: "reader")
 
     Returns:
-        Created configuration
+        Created configuration (secrets redacted)
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return ApiResponse.forbidden("Admin permission required")
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
     data = await request.get_json()
-    if not data:
+    if not data or not isinstance(data, dict):
         return ApiResponse.bad_request("No data provided")
 
     name = data.get("name")
     if not name:
         return ApiResponse.bad_request("name is required")
 
-    # Tenant admins can only create for their tenant
+    # Only a global admin may choose the owning tenant. A tenant admin who
+    # sends any tenant_id other than their own (including an explicit null,
+    # i.e. "global") is rejected loudly rather than silently re-bound.
     tenant_id = data.get("tenant_id")
-    if request.portal_user.get("global_role") != "admin":
-        tenant_id = request.portal_user.get("tenant_id")
+    if (
+        not caller.is_global_admin
+        and "tenant_id" in data
+        and tenant_id != caller.tenant_id
+    ):
+        return _idp_error_response(
+            IdPForbiddenError("Cannot create an IdP configuration for another tenant"),
+            "create",
+            caller,
+        )
+    if tenant_id is not None and (
+        not isinstance(tenant_id, int) or isinstance(tenant_id, bool)
+    ):
+        return ApiResponse.bad_request("tenant_id must be an integer or null")
 
-    result = SAMLService.create_idp_config(
-        name=name,
-        idp_type=data.get("idp_type", "saml"),
-        tenant_id=tenant_id,
-        entity_id=data.get("entity_id"),
-        metadata_url=data.get("metadata_url"),
-        sso_url=data.get("sso_url"),
-        slo_url=data.get("slo_url"),
-        certificate=data.get("certificate"),
-        oidc_client_id=data.get("oidc_client_id"),
-        oidc_client_secret=data.get("oidc_client_secret"),
-        oidc_issuer_url=data.get("oidc_issuer_url"),
-        oidc_scopes=data.get("oidc_scopes"),
-        oidc_response_type=data.get("oidc_response_type"),
-        oidc_token_endpoint_auth_method=data.get("oidc_token_endpoint_auth_method"),
-        attribute_mappings=data.get("attribute_mappings"),
-        jit_provisioning_enabled=data.get("jit_provisioning_enabled", True),
-        default_role=data.get("default_role", "reader"),
-    )
+    try:
+        result = await run_in_threadpool(
+            SAMLService.create_idp_config,
+            caller,
+            name=name,
+            idp_type=data.get("idp_type", "saml"),
+            tenant_id=tenant_id,
+            entity_id=data.get("entity_id"),
+            metadata_url=data.get("metadata_url"),
+            sso_url=data.get("sso_url"),
+            slo_url=data.get("slo_url"),
+            certificate=data.get("certificate"),
+            oidc_client_id=data.get("oidc_client_id"),
+            oidc_client_secret=data.get("oidc_client_secret"),
+            oidc_issuer_url=data.get("oidc_issuer_url"),
+            oidc_scopes=data.get("oidc_scopes"),
+            oidc_response_type=data.get("oidc_response_type"),
+            oidc_token_endpoint_auth_method=data.get("oidc_token_endpoint_auth_method"),
+            attribute_mappings=data.get("attribute_mappings"),
+            jit_provisioning_enabled=data.get("jit_provisioning_enabled", True),
+            default_role=data.get("default_role", "reader"),
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "create", caller)
 
     return jsonify(result), 201
 
@@ -195,37 +289,42 @@ async def create_idp_config():
 @bp.route("/idp/<int:config_id>", methods=["PUT"])
 @portal_token_required
 async def update_idp_config(config_id):
-    """Update an IdP configuration.
+    """Update an IdP configuration the caller owns.
+
+    Other tenants' (and, for tenant admins, global) configs answer 404.
+    ``tenant_id`` in the body must match the config's current tenant (403
+    otherwise) -- a config can never be re-homed.
 
     Args:
         config_id: Configuration ID
 
     Returns:
-        Updated configuration
+        Updated configuration (secrets redacted)
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return ApiResponse.forbidden("Admin permission required")
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
     data = await request.get_json()
-    if not data:
+    if not data or not isinstance(data, dict):
         return ApiResponse.bad_request("No data provided")
 
-    result = SAMLService.update_idp_config(config_id, **data)
-
-    if "error" in result:
-        return jsonify(result), 404
+    try:
+        result = await run_in_threadpool(
+            SAMLService.update_idp_config, config_id, caller, data
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "update", caller)
 
     return jsonify(result), 200
 
 
 @bp.route("/idp/<int:config_id>", methods=["DELETE"])
 @portal_token_required
-def delete_idp_config(config_id):
-    """Delete an IdP configuration.
+async def delete_idp_config(config_id):
+    """Delete an IdP configuration the caller owns.
+
+    Other tenants' (and, for tenant admins, global) configs answer 404.
 
     Args:
         config_id: Configuration ID
@@ -233,17 +332,16 @@ def delete_idp_config(config_id):
     Returns:
         Success status
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return ApiResponse.forbidden("Admin permission required")
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    result = SAMLService.delete_idp_config(config_id)
-
-    if "error" in result:
-        return jsonify(result), 404
+    try:
+        result = await run_in_threadpool(
+            SAMLService.delete_idp_config, config_id, caller
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "delete", caller)
 
     return jsonify(result), 200
 

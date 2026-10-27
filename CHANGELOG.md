@@ -6,6 +6,17 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
 
 ## [Unreleased]
 
+### Security
+- SSO IdP configuration CRUD (`/api/v1/sso/idp*`) now enforces tenant
+  ownership (regression: idp-config-cross-tenant). Previously any tenant
+  admin could list, rewrite (SAML certificate / OIDC issuer+client) or delete
+  another tenant's or the global IdP config, enabling forged SAML assertions
+  and OIDC login takeover. Non-global callers are confined to their own
+  tenant's configs (other-tenant ids answer 404; global configs are
+  global-admin-only; a `tenant_id` override is 403). Responses no longer
+  include `oidc_client_secret` (reported as `has_client_secret`); the list
+  endpoint is now admin-only.
+
 ### Changed
 - Release-gate hardening: recovered `.github/CODEOWNERS`, added coverage
   gating (`--cov-fail-under=90` / vitest coverage thresholds), hardened

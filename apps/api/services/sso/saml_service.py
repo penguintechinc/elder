@@ -7,9 +7,41 @@ at both global and tenant levels.
 # flake8: noqa: E501
 
 import datetime
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
 from quart import current_app
+
+from apps.api.services.sso.idp_access import (
+    IdPCaller,
+    IdPConfigView,
+    IdPForbiddenError,
+    IdPNotFoundError,
+)
+
+# Columns an admin may change through update_idp_config. ``tenant_id`` and
+# ``idp_type`` are deliberately absent: a config can never be re-homed to a
+# different tenant (regression: idp-config-cross-tenant).
+_UPDATABLE_FIELDS = frozenset(
+    {
+        "name",
+        "entity_id",
+        "metadata_url",
+        "sso_url",
+        "slo_url",
+        "certificate",
+        "attribute_mappings",
+        "jit_provisioning_enabled",
+        "default_role",
+        "is_active",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_issuer_url",
+        "oidc_scopes",
+        "oidc_response_type",
+        "oidc_token_endpoint_auth_method",
+    }
+)
 
 
 class SAMLService:
@@ -98,6 +130,7 @@ class SAMLService:
 
     @staticmethod
     def create_idp_config(
+        caller: IdPCaller,
         name: str,
         idp_type: str = "saml",
         tenant_id: int | None = None,
@@ -116,12 +149,18 @@ class SAMLService:
         jit_provisioning_enabled: bool = True,
         default_role: str = "reader",
     ) -> dict:
-        """Create a new IdP configuration.
+        """Create a new IdP configuration bound to the caller's tenant.
+
+        A non-global caller always creates in their own tenant -- passing any
+        other ``tenant_id`` raises ``IdPForbiddenError``. Only a global admin
+        may choose the owning tenant (``None`` = a global config).
 
         Args:
+            caller: Authenticated admin creating the config
             name: Display name for the IdP
             idp_type: Type (saml or oidc)
-            tenant_id: Tenant ID or None for global
+            tenant_id: Requested owning tenant (global admins only; ignored
+                unless it equals the caller's own tenant for everyone else)
             entity_id: SAML Entity ID
             metadata_url: IdP metadata URL
             sso_url: SSO endpoint URL
@@ -138,11 +177,24 @@ class SAMLService:
             default_role: Default role for JIT-provisioned users
 
         Returns:
-            Created configuration dict
+            Created configuration (secret-free ``IdPConfigView`` dict)
         """
         db = current_app.db
+        if caller.is_global_admin:
+            owner_tenant_id = tenant_id
+        else:
+            if caller.tenant_id is None:
+                raise IdPForbiddenError(
+                    "Tenant claim required for IdP configuration access"
+                )
+            if tenant_id is not None and tenant_id != caller.tenant_id:
+                raise IdPForbiddenError(
+                    "Cannot create an IdP configuration for another tenant"
+                )
+            owner_tenant_id = caller.tenant_id
+
         config_id = db.idp_configurations.insert(
-            tenant_id=tenant_id,
+            tenant_id=owner_tenant_id,
             idp_type=idp_type,
             name=name,
             entity_id=entity_id,
@@ -164,66 +216,70 @@ class SAMLService:
         )
         db.commit()
 
-        return {"id": config_id, "name": name, "tenant_id": tenant_id}
+        created = db(db.idp_configurations.id == config_id).select().first()
+        return IdPConfigView.from_record(created).to_dict()
 
     @staticmethod
-    def update_idp_config(config_id: int, **kwargs) -> dict:
-        """Update an IdP configuration.
+    def update_idp_config(
+        config_id: int, caller: IdPCaller, updates: Mapping[str, Any]
+    ) -> dict:
+        """Update an IdP configuration the caller owns.
+
+        The row is loaded through the caller's tenant-scoped query, so another
+        tenant's (or a global) config raises ``IdPNotFoundError`` for non-global
+        callers. ``tenant_id`` in ``updates`` must equal the config's current
+        tenant -- re-homing is never allowed (``IdPForbiddenError``).
 
         Args:
             config_id: Configuration ID
-            **kwargs: Fields to update
+            caller: Authenticated admin performing the update
+            updates: Requested field changes (non-updatable keys are ignored)
 
         Returns:
-            Updated configuration dict or error
+            Updated configuration (secret-free ``IdPConfigView`` dict) plus
+            ``"updated": True``
         """
         db = current_app.db
-        config = db.idp_configurations[config_id]
-        if not config:
-            return {"error": "IdP configuration not found"}
+        table = db.idp_configurations
+        owned = caller.scoped_query(db) & (table.id == config_id)
 
-        # Filter allowed fields
-        allowed_fields = {
-            "name",
-            "entity_id",
-            "metadata_url",
-            "sso_url",
-            "slo_url",
-            "certificate",
-            "attribute_mappings",
-            "jit_provisioning_enabled",
-            "default_role",
-            "is_active",
-            "oidc_client_id",
-            "oidc_client_secret",
-            "oidc_issuer_url",
-            "oidc_scopes",
-            "oidc_response_type",
-            "oidc_token_endpoint_auth_method",
-        }
-        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        config = db(owned).select().first()
+        if config is None:
+            raise IdPNotFoundError(config_id)
 
-        if updates:
-            db(db.idp_configurations.id == config_id).update(**updates)
+        if "tenant_id" in updates and updates["tenant_id"] != config.tenant_id:
+            raise IdPForbiddenError(
+                "tenant_id of an IdP configuration cannot be changed"
+            )
 
-        return {"id": config_id, "updated": True}
+        changes = {k: v for k, v in updates.items() if k in _UPDATABLE_FIELDS}
+        if changes:
+            db(owned).update(**changes)
+            db.commit()
+
+        fresh = db(owned).select().first()
+        return {**IdPConfigView.from_record(fresh).to_dict(), "updated": True}
 
     @staticmethod
-    def delete_idp_config(config_id: int) -> dict:
-        """Delete an IdP configuration.
+    def delete_idp_config(config_id: int, caller: IdPCaller) -> dict:
+        """Delete an IdP configuration the caller owns.
+
+        The delete itself carries the tenant-scoped predicate (one atomic
+        statement, no check-then-act gap); zero rows deleted means the config
+        is missing or not the caller's, reported as ``IdPNotFoundError``.
 
         Args:
             config_id: Configuration ID
+            caller: Authenticated admin performing the delete
 
         Returns:
-            Success dict or error
+            ``{"deleted": True}``
         """
         db = current_app.db
-        config = db.idp_configurations[config_id]
-        if not config:
-            return {"error": "IdP configuration not found"}
+        owned = caller.scoped_query(db) & (db.idp_configurations.id == config_id)
 
-        db(db.idp_configurations.id == config_id).delete()
+        if not db(owned).delete():
+            raise IdPNotFoundError(config_id)
         db.commit()
 
         return {"deleted": True}
@@ -365,22 +421,34 @@ class SAMLService:
         return metadata
 
     @staticmethod
-    def list_idp_configs(tenant_id: int | None = None) -> list:
-        """List all IdP configurations.
+    def list_idp_configs(caller: IdPCaller, tenant_id: int | None = None) -> list:
+        """List the IdP configurations the caller may see (secret-free).
+
+        Non-global callers get exactly their own tenant's configs (global
+        configs are not listed); asking for a different ``tenant_id`` raises
+        ``IdPForbiddenError``. Global admins get every config, or -- with a
+        ``tenant_id`` filter -- that tenant's configs plus global ones.
 
         Args:
-            tenant_id: Filter by tenant or None for all
+            caller: Authenticated admin listing configs
+            tenant_id: Optional tenant filter
 
         Returns:
-            List of IdP configurations
+            List of ``IdPConfigView`` dicts (never includes secrets)
         """
         db = current_app.db
-        if tenant_id:
-            configs = db(
-                (db.idp_configurations.tenant_id == tenant_id)
-                | (db.idp_configurations.tenant_id == None)  # noqa: E711
-            ).select()
-        else:
-            configs = db(db.idp_configurations.id > 0).select()
+        table = db.idp_configurations
+        query = caller.scoped_query(db)
 
-        return [SAMLService._config_to_dict(c) for c in configs]
+        if tenant_id is not None:
+            if caller.is_global_admin:
+                query = query & (
+                    (table.tenant_id == tenant_id) | (table.tenant_id == None)  # noqa: E711
+                )
+            elif tenant_id != caller.tenant_id:
+                raise IdPForbiddenError(
+                    "Cannot list IdP configurations for another tenant"
+                )
+
+        configs = db(query).select(orderby=table.id)
+        return [IdPConfigView.from_record(c).to_dict() for c in configs]
