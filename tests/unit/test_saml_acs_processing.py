@@ -24,7 +24,11 @@ import redis as redis_lib
 from lxml import etree
 
 from apps.api.auth.portal_cookies import ACCESS_COOKIE_NAME, REFRESH_COOKIE_NAME
-from apps.api.services.sso.saml_service import SAMLError, SAMLService
+from apps.api.services.sso.saml_service import (
+    GLOBAL_IDP_OPT_IN_KEY,
+    SAMLError,
+    SAMLService,
+)
 from tests.unit import saml_test_idp as idp
 
 SP_BASE = "https://elder.example.com"
@@ -65,13 +69,15 @@ async def env(app, test_database_url, keys):
     suffix = uuid.uuid4().hex[:8]
     now = datetime.now(UTC)
     saved_config = {
-        k: app.config.get(k) for k in ("SAML_SP_BASE_URL", "SITE_URL", "DEBUG")
+        k: app.config.get(k)
+        for k in ("SAML_SP_BASE_URL", "SITE_URL", "DEBUG", "REDIS_URL")
     }
-    saved_redis = app.extensions.get("module_redis")
+    saved_redis = app.extensions.get("saml_redis")
     app.config["SAML_SP_BASE_URL"] = SP_BASE
     app.config["DEBUG"] = False
+    app.config["REDIS_URL"] = os.environ["REDIS_URL"]
     client = redis_lib.from_url(os.environ["REDIS_URL"])
-    app.extensions["module_redis"] = client
+    app.extensions["saml_redis"] = client
 
     tenant_a = db.tenants.insert(
         name=f"SAML A {suffix}",
@@ -104,7 +110,7 @@ async def env(app, test_database_url, keys):
     )
     db.commit()
 
-    entity, acs, _slo = SAMLService.sp_urls(SP_BASE, tenant_a)
+    entity, acs = SAMLService.sp_urls(SP_BASE, tenant_a)
     yield SimpleNamespace(
         app=app,
         db=db,
@@ -124,7 +130,10 @@ async def env(app, test_database_url, keys):
     db(db.idp_configurations.tenant_id == None).delete()  # noqa: E711
     db(db.tenants.id.belongs([tenant_a, tenant_b])).delete()
     db.commit()
-    app.extensions["module_redis"] = saved_redis
+    if saved_redis is None:
+        app.extensions.pop("saml_redis", None)
+    else:
+        app.extensions["saml_redis"] = saved_redis
     for k, v in saved_config.items():
         if v is None:
             app.config.pop(k, None)
@@ -167,6 +176,31 @@ def _login(env) -> tuple[str, str]:
     """Run begin_login for tenant A; return ``(state_token, request_id)``."""
     started = SAMLService.begin_login(env.tenant_a)
     return started["state_token"], idp.request_id_from_redirect(started["sso_url"])
+
+
+def _use_global_idp(env, keys, *, opt_in, jit=True, settings=None):
+    """Replace tenant A's own IdP with a global one; optionally opt tenant A in."""
+    db = env.db
+    now = datetime.now(UTC)
+    db(db.idp_configurations.id == env.idp_id).update(is_active=False)
+    db.idp_configurations.insert(
+        tenant_id=None,
+        idp_type="saml",
+        name="Global IdP",
+        entity_id=env.idp_entity,
+        sso_url="https://idp.example.com/sso",
+        certificate=keys.cert_b64,
+        attribute_mappings={},
+        jit_provisioning_enabled=jit,
+        default_role="reader",
+        is_active=True,
+        created_at=now,
+        updated_at=now,
+    )
+    if settings is None and opt_in:
+        settings = {GLOBAL_IDP_OPT_IN_KEY: True}
+    db(db.tenants.id == env.tenant_a).update(settings=settings)
+    db.commit()
 
 
 def _user(env, email, *, tenant=None, active=True, role="reader", global_role=None):
@@ -496,7 +530,7 @@ class TestAssertionValidation:
     async def test_forged_host_header_cannot_retarget_response(self, env, keys):
         """Destination/Audience for an attacker host never validate: config wins."""
         async with env.app.app_context():
-            evil_entity, evil_acs, _ = SAMLService.sp_urls(
+            evil_entity, evil_acs = SAMLService.sp_urls(
                 "https://evil.example.com", env.tenant_a
             )
             spec = idp.ResponseSpec(
@@ -600,26 +634,58 @@ class TestStateAndReplay:
         assert second["error"] == "saml_assertion_replayed"
         assert second["status_code"] == 401
 
-    async def test_state_store_outage_fails_closed(self, env, keys):
+    async def test_state_store_outage_fails_closed_then_recovers(self, env, keys):
         dead = redis_lib.Redis(port=1, socket_connect_timeout=0.2)
         async with env.app.app_context():
-            env.app.extensions["module_redis"] = dead
+            assertion = _validate(env, keys, idp.signed_response_b64(_spec(env), keys))
+            env.app.extensions["saml_redis"] = dead
             with pytest.raises(SAMLError) as login_exc:
                 SAMLService.begin_login(env.tenant_a)
+            # the broken client was dropped, so the next call rebuilds from REDIS_URL
+            assert "saml_redis" not in env.app.extensions
+            assert SAMLService.begin_login(env.tenant_a)["state_token"]
+
+            env.app.extensions["saml_redis"] = dead
             with pytest.raises(SAMLError) as consume_exc:
                 SAMLService._consume_login_state(env.tenant_a, "T" * 43)
-            assertion = idp_assertion = None
-            env.app.extensions["module_redis"] = env.client
-            assertion = _validate(env, keys, idp.signed_response_b64(_spec(env), keys))
-            env.app.extensions["module_redis"] = dead
+            env.app.extensions["saml_redis"] = dead
             with pytest.raises(SAMLError) as record_exc:
                 SAMLService._record_assertion(env.tenant_a, env.idp_entity, assertion)
-            env.app.extensions["module_redis"] = None
-            with pytest.raises(SAMLError) as none_exc:
+
+            env.app.extensions.pop("saml_redis", None)
+            env.app.config["REDIS_URL"] = ""
+            with pytest.raises(SAMLError) as unset_exc:
                 SAMLService.begin_login(env.tenant_a)
-        for exc in (login_exc, consume_exc, record_exc, none_exc):
+        for exc in (login_exc, consume_exc, record_exc, unset_exc):
             assert exc.value.code == "saml_state_store_unavailable"
             assert exc.value.status_code == 503
+
+    async def test_state_store_is_built_lazily_with_timeouts_and_cached(self, env):
+        async with env.app.app_context():
+            env.app.extensions.pop("saml_redis", None)
+            client = SAMLService._state_store()
+            assert env.app.extensions["saml_redis"] is client
+            assert SAMLService._state_store() is client
+            kwargs = client.connection_pool.connection_kwargs
+            assert kwargs["socket_timeout"] == 2.0
+            assert kwargs["socket_connect_timeout"] == 2.0
+            assert client.ping()
+
+    @pytest.mark.parametrize(
+        "url", ["redis://localhost:1/0", "not-a-redis-url", "http://localhost:6379"]
+    )
+    async def test_unreachable_or_invalid_redis_url_is_503_and_not_cached(
+        self, env, url
+    ):
+        async with env.app.app_context():
+            env.app.extensions.pop("saml_redis", None)
+            env.app.config["REDIS_URL"] = url
+            with pytest.raises(SAMLError) as exc:
+                SAMLService._state_store()
+            assert exc.value.code == "saml_state_store_unavailable"
+            assert "saml_redis" not in env.app.extensions
+            env.app.config["REDIS_URL"] = os.environ["REDIS_URL"]
+            assert SAMLService._state_store().ping()  # recovers without a restart
 
     @pytest.mark.parametrize(
         "return_to",
@@ -755,6 +821,7 @@ class TestConfiguration:
         async with env.app.app_context():
             xml = SAMLService.get_sp_metadata('https://elder.example.com/"><x', 5)
         assert 'AuthnRequestsSigned="false"' in xml
+        assert "SingleLogoutService" not in xml
         assert '"><x' not in xml
         assert "&quot;&gt;&lt;x" in xml
         root = SAMLService.get_sp_metadata("https://elder.example.com/")
@@ -782,35 +849,33 @@ class TestProcessSamlResponse:
         assert out["global_role"] is None
         assert not out.get("jit_provisioned")
 
-    async def test_tenant_scoped_idp_strips_global_role(self, env, keys):
+    async def test_tenant_scoped_idp_refuses_user_with_stored_global_role(
+        self, env, keys
+    ):
         async with env.app.app_context():
-            _user(env, "jane.doe@example.com", global_role="admin")
+            uid = _user(env, "jane.doe@example.com", global_role="admin")
+            out = await self._run(env, keys)
+            row = env.db(env.db.portal_users.id == uid).select().first()
+        assert out["error"] == "saml_tenant_idp_global_role_forbidden"
+        assert out["status_code"] == 403
+        assert row.last_login_at is None  # refused before any login bookkeeping
+
+    async def test_tenant_scoped_idp_marks_session_for_refresh(self, env, keys):
+        async with env.app.app_context():
+            _user(env, "jane.doe@example.com")
             out = await self._run(env, keys)
         assert out["global_role"] is None
+        assert out["sso_tenant_scoped"] is True
 
-    async def test_global_idp_preserves_global_role(self, env, keys):
-        db = env.db
-        db(db.idp_configurations.id == env.idp_id).update(is_active=False)
-        now = datetime.now(UTC)
-        db.idp_configurations.insert(
-            tenant_id=None,
-            idp_type="saml",
-            name="Global IdP",
-            entity_id=env.idp_entity,
-            sso_url="https://idp.example.com/sso",
-            certificate=keys.cert_b64,
-            attribute_mappings={},
-            jit_provisioning_enabled=False,
-            default_role="reader",
-            is_active=True,
-            created_at=now,
-            updated_at=now,
-        )
-        db.commit()
+    async def test_global_idp_preserves_global_role_when_tenant_opted_in(
+        self, env, keys
+    ):
+        _use_global_idp(env, keys, opt_in=True)
         async with env.app.app_context():
             _user(env, "jane.doe@example.com", global_role="admin")
             out = await self._run(env, keys)
         assert out["global_role"] == "admin"
+        assert out["sso_tenant_scoped"] is False
 
     async def test_email_matched_per_tenant_never_across_tenants(self, env, keys):
         async with env.app.app_context():
@@ -1127,7 +1192,7 @@ class TestHttpEndpoints:
         login = await self._start(env, async_client)
         token = _cookie_value(_set_cookies(login)[STATE_COOKIE])
         request_id = idp.request_id_from_redirect((await login.get_json())["sso_url"])
-        evil_entity, evil_acs, _ = SAMLService.sp_urls(
+        evil_entity, evil_acs = SAMLService.sp_urls(
             "https://evil.example.com", env.tenant_a
         )
         spec = idp.ResponseSpec(
@@ -1162,7 +1227,8 @@ class TestHttpEndpoints:
         assert (await bad.get_json())["error"] == "saml_return_to_invalid"
         missing = await async_client.get("/api/v1/sso/saml/login/99999999")
         assert missing.status_code == 404
-        env.app.extensions["module_redis"] = None
+        env.app.extensions.pop("saml_redis", None)
+        env.app.config["REDIS_URL"] = ""
         down = await self._start(env, async_client)
         assert down.status_code == 503
         assert (await down.get_json())["error"] == "saml_state_store_unavailable"

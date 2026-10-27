@@ -52,6 +52,7 @@ from onelogin.saml2.response import OneLogin_Saml2_Response
 from onelogin.saml2.settings import OneLogin_Saml2_Settings
 from onelogin.saml2.utils import OneLogin_Saml2_Utils
 from quart import current_app
+from redis import from_url as redis_from_url
 from redis.exceptions import RedisError
 
 from apps.api.common.licensing.enforce import check_limit
@@ -88,11 +89,23 @@ _MAX_NAME_ID_CHARS = 1024
 _MAX_ASSERTION_ID_CHARS = 256
 _MAX_EMAIL_CHARS = 255
 _MAX_FULL_NAME_CHARS = 255
-_STATE_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
+_STATE_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{32,128}")
 _STATE_KEY_PREFIX = "elder:saml:authnreq"
+# tenants.settings key a tenant must set to True before the platform-wide (global)
+# IdP may authenticate its users; without it the global fallback fails closed.
+GLOBAL_IDP_OPT_IN_KEY = "saml_allow_global_idp"
+_STATE_STORE_EXT = "saml_redis"  # app.extensions key of the lazily built client
+_REDIS_TIMEOUT_SECONDS = 2.0
 _REPLAY_KEY_PREFIX = "elder:saml:assertion"
 _VALID_TENANT_ROLES = ("reader", "maintainer", "admin")  # ascending privilege
-_RETURN_TO_RE = re.compile(r"^/(?!/)[^\\\r\n\x00]{0,2047}$")
+# Same-origin relative path only. Rejects a second leading slash or backslash
+# ("//evil", "/\\evil"), every C0 control char incl. tab/VT/CR/LF (browsers strip
+# tab/newline, turning "/\t/evil.com" into "//evil.com"), DEL, backslashes, and
+# percent-encoded controls/slashes/backslashes a downstream decoder could revive.
+# \Z (not $) so a trailing newline cannot slip through.
+_RETURN_TO_RE = re.compile(
+    r"/(?![/\\])(?!.*%(?:[01][0-9a-fA-F]|2[fF]|5[cC]|7[fF]))[^\x00-\x1f\x7f\\]{0,2047}\Z"
+)
 
 # python3-saml ValidationError.code -> (stable client-facing error code, HTTP status),
 # declared as outcome -> codes so each client-facing code is stated once.
@@ -470,21 +483,24 @@ class SAMLService:
         return raw
 
     @staticmethod
-    def sp_urls(base_url: str, tenant_id: int | None = None) -> tuple[str, str, str]:
-        """Return the SP ``(entity_id, acs_url, slo_url)`` for a tenant.
+    def sp_urls(base_url: str, tenant_id: int | None = None) -> tuple[str, str]:
+        """Return the SP ``(entity_id, acs_url)`` for a tenant.
+
+        Single Logout is deliberately not advertised: the SLO endpoint is not
+        implemented (it answers 501), so neither the settings nor the metadata
+        may claim a SingleLogoutService.
 
         Args:
             base_url: Base URL of the Elder instance (no trailing slash)
             tenant_id: Tenant ID, or None for the global (tenant-less) endpoints
 
         Returns:
-            Tuple of entityId, Assertion Consumer Service URL, SLO URL
+            Tuple of entityId and Assertion Consumer Service URL
         """
         suffix = f"/{tenant_id}" if tenant_id else ""
         return (
             f"{base_url}/saml/metadata{suffix}",
             f"{base_url}/api/v1/sso/saml/acs{suffix}",
-            f"{base_url}/api/v1/sso/saml/slo{suffix}",
         )
 
     @staticmethod
@@ -500,9 +516,7 @@ class SAMLService:
             strict-mode and requires a signed Assertion; ``acs_url`` is the
             exact URL a response must be addressed to.
         """
-        entity_id, acs_url, slo_url = SAMLService.sp_urls(
-            SAMLService.sp_base_url(), tenant_id
-        )
+        entity_id, acs_url = SAMLService.sp_urls(SAMLService.sp_base_url(), tenant_id)
         idp: dict[str, Any] = {
             "entityId": idp_config.get("entity_id") or "",
             "singleSignOnService": {
@@ -511,11 +525,6 @@ class SAMLService:
             },
             "x509cert": idp_config.get("certificate") or "",
         }
-        if idp_config.get("slo_url"):
-            idp["singleLogoutService"] = {
-                "url": idp_config["slo_url"],
-                "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
-            }
         settings = {
             # strict=True enforces schema, audience, destination, conditions,
             # InResponseTo and signature checks -- never relax for production.
@@ -526,10 +535,6 @@ class SAMLService:
                 "assertionConsumerService": {
                     "url": acs_url,
                     "binding": OneLogin_Saml2_Constants.BINDING_HTTP_POST,
-                },
-                "singleLogoutService": {
-                    "url": slo_url,
-                    "binding": OneLogin_Saml2_Constants.BINDING_HTTP_REDIRECT,
                 },
                 "NameIDFormat": OneLogin_Saml2_Constants.NAMEID_EMAIL_ADDRESS,
                 "x509cert": "",
@@ -568,20 +573,51 @@ class SAMLService:
         }
 
     @staticmethod
+    def _store_unavailable() -> SAMLError:
+        """Build the 503 for an unusable state store and drop the cached client.
+
+        Dropping the cached client means the next request reconnects from
+        scratch (e.g. after a Redis restart or failover) instead of reusing a
+        client that was built once at startup and is now permanently broken.
+        """
+        current_app.extensions.pop(_STATE_STORE_EXT, None)
+        return SAMLError(
+            "saml_state_store_unavailable", 503, "SAML is temporarily unavailable"
+        )
+
+    @staticmethod
     def _state_store() -> Any:
-        """Return the shared Redis client used for AuthnRequest + replay state.
+        """Return the Redis client used for AuthnRequest + replay state.
+
+        A dedicated client (separate from the app's startup-time module Redis)
+        is built lazily from ``REDIS_URL`` with short connect/read timeouts, so
+        a hung Redis cannot stall login requests, and is rebuilt after any
+        failure. The keys it holds are security state: Redis must not evict them
+        (``noeviction`` or a dedicated DB/instance; see docs/USAGE.md).
 
         Raises:
-            SAMLError: 503 if Redis is not available -- SAML replay/InResponseTo
-                protection must never silently degrade, so there is no fallback.
+            SAMLError: 503 if Redis is not configured or reachable -- replay /
+                InResponseTo protection must never silently degrade, so there is
+                no fallback.
         """
-        client = current_app.extensions.get("module_redis")
-        if client is None:
-            raise SAMLError(
-                "saml_state_store_unavailable",
-                503,
-                "SAML is temporarily unavailable",
+        client = current_app.extensions.get(_STATE_STORE_EXT)
+        if client is not None:
+            return client
+        url = current_app.config.get("REDIS_URL") or ""
+        if not url:
+            raise SAMLService._store_unavailable()
+        try:
+            client = redis_from_url(
+                url,
+                socket_connect_timeout=_REDIS_TIMEOUT_SECONDS,
+                socket_timeout=_REDIS_TIMEOUT_SECONDS,
+                health_check_interval=30,
             )
+            client.ping()
+        except (RedisError, ValueError) as exc:
+            logger.warning("saml_state_store_connect_failed", error=type(exc).__name__)
+            raise SAMLService._store_unavailable() from exc
+        current_app.extensions[_STATE_STORE_EXT] = client
         return client
 
     @staticmethod
@@ -614,6 +650,25 @@ class SAMLService:
             raise SAMLError(
                 "saml_idp_not_configured", 404, "No IdP configured for this tenant"
             )
+        if idp_config.get("tenant_id") is None:
+            # get_idp_config falls back to the GLOBAL IdP for any tenant lacking
+            # its own. That must never silently extend a platform IdP over a
+            # tenant that did not ask for it: require an explicit opt-in in the
+            # tenant's own settings, and serve existing users only (no JIT).
+            tenant_settings = (
+                tenant.settings if isinstance(tenant.settings, dict) else {}
+            )
+            if tenant_settings.get(GLOBAL_IDP_OPT_IN_KEY) is not True:
+                raise SAMLError(
+                    "saml_global_idp_not_enabled",
+                    403,
+                    "The shared identity provider is not enabled for this tenant",
+                )
+            idp_config = {
+                **idp_config,
+                "jit_provisioning_enabled": False,
+                "global_fallback": True,
+            }
         if idp_config.get("idp_type") != "saml":
             raise SAMLError(
                 "saml_idp_misconfigured", 409, "Configured IdP is not a SAML provider"
@@ -660,7 +715,7 @@ class SAMLService:
             SAMLError: on bad return_to, missing/invalid IdP or SP config, or
                 an unavailable state store
         """
-        if return_to is not None and not _RETURN_TO_RE.match(return_to):
+        if return_to is not None and not _RETURN_TO_RE.fullmatch(return_to):
             raise SAMLError(
                 "saml_return_to_invalid",
                 400,
@@ -693,9 +748,7 @@ class SAMLService:
                 ex=_AUTHN_REQUEST_TTL_SECONDS,
             )
         except RedisError as exc:
-            raise SAMLError(
-                "saml_state_store_unavailable", 503, "SAML is temporarily unavailable"
-            ) from exc
+            raise SAMLService._store_unavailable() from exc
         return {
             "sso_url": redirect_url,
             "state_token": token,
@@ -719,7 +772,7 @@ class SAMLService:
             400,
             "SAML login state is missing or expired; start the login again",
         )
-        if not token or not _STATE_TOKEN_RE.match(token):
+        if not token or not _STATE_TOKEN_RE.fullmatch(token):
             raise missing
         client = SAMLService._state_store()
         key = SAMLService._state_key(tenant_id, token)
@@ -729,9 +782,7 @@ class SAMLService:
             pipe.delete(key)
             raw, _deleted = pipe.execute()
         except RedisError as exc:
-            raise SAMLError(
-                "saml_state_store_unavailable", 503, "SAML is temporarily unavailable"
-            ) from exc
+            raise SAMLService._store_unavailable() from exc
         if not raw:
             raise missing
         try:
@@ -793,6 +844,184 @@ class SAMLService:
             ) from exc
 
     @staticmethod
+    def _check_audiences(document: Any, sp_entity_id: str) -> None:
+        """Require every AudienceRestriction to name this SP (SAML: restrictions AND).
+
+        python3-saml unions all restrictions, so a second restriction naming
+        another SP would let the union contain us. A missing restriction is
+        rejected too: the Web SSO profile requires one.
+
+        Raises:
+            SAMLError: ``saml_audience_mismatch`` (401)
+        """
+        ns = OneLogin_Saml2_Constants.NSMAP
+        restrictions = document.xpath(
+            "/samlp:Response/saml:Assertion/saml:Conditions/saml:AudienceRestriction",
+            namespaces=ns,
+        )
+        for restriction in restrictions or [None]:
+            audiences = (
+                []
+                if restriction is None
+                else [
+                    "".join(a.itertext()).strip()
+                    for a in restriction.xpath("saml:Audience", namespaces=ns)
+                ]
+            )
+            if sp_entity_id not in audiences:
+                raise SAMLError(
+                    "saml_audience_mismatch",
+                    401,
+                    "The assertion is not addressed to this service",
+                )
+
+    @staticmethod
+    def _check_conditions(document: Any, now: float) -> float:
+        """Require a bounded Conditions window valid at ``now`` (120s skew).
+
+        Returns:
+            The Conditions ``NotOnOrAfter`` as epoch seconds
+
+        Raises:
+            SAMLError: unbounded / expired / not yet valid (401)
+        """
+        conditions = document.xpath(
+            "/samlp:Response/saml:Assertion/saml:Conditions",
+            namespaces=OneLogin_Saml2_Constants.NSMAP,
+        )
+        if len(conditions) != 1 or not conditions[0].get("NotOnOrAfter"):
+            raise SAMLError(
+                "saml_assertion_unbounded",
+                401,
+                "The assertion has no bounded validity window",
+            )
+        not_on_or_after = SAMLService._parse_time(conditions[0].get("NotOnOrAfter"))
+        not_before = conditions[0].get("NotBefore")
+        if not_on_or_after + _CLOCK_SKEW_SECONDS <= now:
+            raise SAMLError("saml_assertion_expired", 401, "The assertion has expired")
+        if (
+            not_before
+            and SAMLService._parse_time(not_before) - _CLOCK_SKEW_SECONDS > now
+        ):
+            raise SAMLError(
+                "saml_assertion_not_yet_valid", 401, "The assertion is not yet valid"
+            )
+        return not_on_or_after
+
+    @staticmethod
+    def _check_subject_confirmation_data(
+        scd: Any, acs_url: str, expected_request_id: str, now: float
+    ) -> tuple[int, SAMLError | None, float]:
+        """Run every bearer check on ONE SubjectConfirmationData element.
+
+        Order (and the returned stage, 0-2, of the first failure): exact
+        Recipient, then InResponseTo present *inside the signed assertion* and
+        equal to the AuthnRequest we issued, then NotOnOrAfter present and the
+        NotOnOrAfter/NotBefore window valid at ``now`` (120s skew).
+
+        Returns:
+            ``(stage, error_or_None, not_on_or_after)``; ``error`` is None only
+            when this element passes all checks
+        """
+        if scd.get("Recipient") != acs_url:
+            return (
+                0,
+                SAMLError(
+                    "saml_recipient_mismatch",
+                    401,
+                    "The assertion was not issued for this endpoint",
+                ),
+                0.0,
+            )
+        if scd.get("InResponseTo") != expected_request_id:
+            return (
+                1,
+                SAMLError(
+                    "saml_in_response_to_mismatch",
+                    401,
+                    "The response does not answer this login request",
+                ),
+                0.0,
+            )
+        raw_not_on_or_after = scd.get("NotOnOrAfter")
+        if not raw_not_on_or_after:
+            return (
+                2,
+                SAMLError(
+                    "saml_assertion_unbounded",
+                    401,
+                    "The assertion has no bounded validity window",
+                ),
+                0.0,
+            )
+        not_on_or_after = SAMLService._parse_time(raw_not_on_or_after)
+        if not_on_or_after + _CLOCK_SKEW_SECONDS <= now:
+            return (
+                2,
+                SAMLError("saml_assertion_expired", 401, "The assertion has expired"),
+                0.0,
+            )
+        not_before = scd.get("NotBefore")
+        if (
+            not_before
+            and SAMLService._parse_time(not_before) - _CLOCK_SKEW_SECONDS > now
+        ):
+            return (
+                2,
+                SAMLError(
+                    "saml_assertion_not_yet_valid",
+                    401,
+                    "The assertion is not yet valid",
+                ),
+                0.0,
+            )
+        return 3, None, not_on_or_after
+
+    @staticmethod
+    def _check_subject_confirmations(
+        document: Any, acs_url: str, expected_request_id: str, now: float
+    ) -> float:
+        """Require one bearer SubjectConfirmationData that passes ALL checks.
+
+        python3-saml accepts the assertion if *some* confirmation passes its own
+        looser checks (substring Recipient, optional InResponseTo), which need
+        not be the confirmation that passes ours. Every check here runs on the
+        same element, and only ``Method=bearer`` confirmations count. When none
+        qualifies, the failure from the element that got furthest is reported.
+
+        Returns:
+            ``NotOnOrAfter`` (epoch) of the qualifying confirmation
+
+        Raises:
+            SAMLError: the most specific failure (401)
+        """
+        scd_xpath = (
+            "/samlp:Response/saml:Assertion/saml:Subject/"
+            f"saml:SubjectConfirmation[@Method='{OneLogin_Saml2_Constants.CM_BEARER}']/"
+            "saml:SubjectConfirmationData"
+        )
+        # With no bearer confirmation at all, the failure is a recipient mismatch.
+        best: tuple[int, SAMLError] = (
+            -1,
+            SAMLError(
+                "saml_recipient_mismatch",
+                401,
+                "The assertion was not issued for this endpoint",
+            ),
+        )
+        for scd in document.xpath(scd_xpath, namespaces=OneLogin_Saml2_Constants.NSMAP):
+            stage, error, not_on_or_after = (
+                SAMLService._check_subject_confirmation_data(
+                    scd, acs_url, expected_request_id, now
+                )
+            )
+            if error is None:
+                return not_on_or_after
+            if stage > best[0]:
+                best = (stage, error)
+        raise best[1]
+
+    @staticmethod
     def _enforce_strict_bindings(
         response: OneLogin_Saml2_Response,
         *,
@@ -804,26 +1033,19 @@ class SAMLService:
         """Run the exact-match checks python3-saml does only loosely or optionally.
 
         Must be called only after ``is_valid`` succeeded (signature verified),
-        so the XML it reads is the signed assertion. Enforces: an Audience that
-        exactly contains our entityId (a missing AudienceRestriction is
-        rejected); an exact Destination when present; an exact Response
-        InResponseTo (a missing one -- an unsolicited response -- is rejected);
-        a bearer SubjectConfirmationData with an exact Recipient and a
-        NotOnOrAfter; and a bounded Conditions window with a 120s skew allowance
-        (tighter than python3-saml's 300s).
+        so the XML it reads is the signed assertion. Enforces: every
+        AudienceRestriction names our entityId; an exact Destination when
+        present; an exact Response InResponseTo; a bounded Conditions window;
+        and a single bearer SubjectConfirmationData that has an exact
+        Recipient, an InResponseTo (inside the signed assertion -- the Response
+        attribute is unsigned) equal to our AuthnRequest id, and a valid window.
 
         Returns:
             The latest NotOnOrAfter (epoch) of the assertion, for replay-TTL sizing
         """
         document = response.document
-        ns = OneLogin_Saml2_Constants.NSMAP
 
-        if sp_entity_id not in response.get_audiences():
-            raise SAMLError(
-                "saml_audience_mismatch",
-                401,
-                "The assertion is not addressed to this service",
-            )
+        SAMLService._check_audiences(document, sp_entity_id)
 
         destination = document.get("Destination")
         if destination is not None and destination != acs_url:
@@ -840,58 +1062,10 @@ class SAMLService:
                 "The response does not answer this login request",
             )
 
-        conditions = document.xpath(
-            "/samlp:Response/saml:Assertion/saml:Conditions", namespaces=ns
+        cond_not_on_or_after = SAMLService._check_conditions(document, now)
+        scd_not_on_or_after = SAMLService._check_subject_confirmations(
+            document, acs_url, expected_request_id, now
         )
-        if len(conditions) != 1 or not conditions[0].get("NotOnOrAfter"):
-            raise SAMLError(
-                "saml_assertion_unbounded",
-                401,
-                "The assertion has no bounded validity window",
-            )
-        cond_not_on_or_after = SAMLService._parse_time(
-            conditions[0].get("NotOnOrAfter")
-        )
-        cond_not_before = conditions[0].get("NotBefore")
-        if cond_not_on_or_after + _CLOCK_SKEW_SECONDS <= now:
-            raise SAMLError("saml_assertion_expired", 401, "The assertion has expired")
-        if (
-            cond_not_before
-            and SAMLService._parse_time(cond_not_before) - _CLOCK_SKEW_SECONDS > now
-        ):
-            raise SAMLError(
-                "saml_assertion_not_yet_valid", 401, "The assertion is not yet valid"
-            )
-
-        scd_xpath = (
-            "/samlp:Response/saml:Assertion/saml:Subject/"
-            f"saml:SubjectConfirmation[@Method='{OneLogin_Saml2_Constants.CM_BEARER}']/"
-            "saml:SubjectConfirmationData"
-        )
-        # python3-saml already enforces each bearer confirmation's InResponseTo
-        # and (zero-skew) NotBefore/NotOnOrAfter; what it does NOT enforce is an
-        # exact Recipient (substring match) or that NotOnOrAfter exists at all.
-        recipient_seen = False
-        scd_not_on_or_after: float | None = None
-        for scd in document.xpath(scd_xpath, namespaces=ns):
-            if scd.get("Recipient") != acs_url:
-                continue
-            recipient_seen = True
-            if scd.get("NotOnOrAfter"):
-                scd_not_on_or_after = SAMLService._parse_time(scd.get("NotOnOrAfter"))
-                break
-        if scd_not_on_or_after is None:
-            if recipient_seen:
-                raise SAMLError(
-                    "saml_assertion_unbounded",
-                    401,
-                    "The assertion has no bounded validity window",
-                )
-            raise SAMLError(
-                "saml_recipient_mismatch",
-                401,
-                "The assertion was not issued for this endpoint",
-            )
 
         not_after = max(cond_not_on_or_after, scd_not_on_or_after)
         if not_after + _CLOCK_SKEW_SECONDS - now > _MAX_ASSERTION_LIFETIME_SECONDS:
@@ -1030,9 +1204,7 @@ class SAMLService:
                 f"{_REPLAY_KEY_PREFIX}:{tenant_id}:{digest}", "1", nx=True, ex=ttl
             )
         except RedisError as exc:
-            raise SAMLError(
-                "saml_state_store_unavailable", 503, "SAML is temporarily unavailable"
-            ) from exc
+            raise SAMLService._store_unavailable() from exc
         if not first_use:
             raise SAMLError(
                 "saml_assertion_replayed", 401, "This assertion has already been used"
@@ -1118,11 +1290,8 @@ class SAMLService:
         role_map = mappings.get("role_map")
         if not role_attr or not isinstance(role_map, dict) or not role_map:
             return default
-        values = attributes.get(role_attr) or []
-        if not isinstance(values, (list, tuple)):
-            values = [values]
         best = None
-        for value in values:
+        for value in attributes.get(role_attr) or []:
             mapped = role_map.get(str(value))
             if mapped in _VALID_TENANT_ROLES and (
                 best is None
@@ -1231,10 +1400,11 @@ class SAMLService:
                 user["error"], user.get("status_code", 400), user.get("message", "")
             )
 
-        # A tenant-scoped IdP is controlled by that tenant's admins, so it must
-        # not be able to mint a session carrying platform-wide privileges.
-        if idp_config.get("tenant_id") is not None:
-            user["global_role"] = None
+        # jit_provision_user already refused any stored global_role for a
+        # tenant-scoped IdP. The marker travels in the refresh token so that
+        # /portal-auth/refresh can never re-attach a global_role (granted later)
+        # to a session that was minted through such an IdP.
+        user["sso_tenant_scoped"] = idp_config.get("tenant_id") is not None
 
         logger.info(
             "saml_acs_authenticated",
@@ -1281,6 +1451,14 @@ class SAMLService:
                 return {
                     "error": "saml_account_deactivated",
                     "message": "Account is deactivated",
+                    "status_code": 403,
+                }
+            if idp_config.get("tenant_id") is not None and existing.global_role:
+                # A tenant-scoped IdP is controlled by that tenant's admins; it
+                # must not be able to authenticate a platform-privileged user.
+                return {
+                    "error": "saml_tenant_idp_global_role_forbidden",
+                    "message": "Platform-privileged accounts cannot sign in through a tenant-scoped IdP",
                     "status_code": 403,
                 }
             # Update last login
@@ -1338,14 +1516,15 @@ class SAMLService:
         Returns:
             SAML SP metadata XML string
         """
-        entity_id, acs_url, slo_url = (
+        entity_id, acs_url = (
             html.escape(u, quote=True)
             for u in SAMLService.sp_urls(base_url.rstrip("/"), tenant_id)
         )
 
         # Basic SP metadata template. AuthnRequestsSigned is "false": this SP
         # holds no signing key, so advertising "true" would make IdPs that
-        # honour it reject every AuthnRequest we send.
+        # honour it reject every AuthnRequest we send. No SingleLogoutService:
+        # SLO is not implemented (the endpoint answers 501).
         metadata = f"""<?xml version="1.0"?>
 <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
                      entityID="{entity_id}">
@@ -1356,8 +1535,6 @@ class SAMLService:
     <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
                                  Location="{acs_url}"
                                  index="1"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-                            Location="{slo_url}"/>
   </md:SPSSODescriptor>
 </md:EntityDescriptor>"""
 

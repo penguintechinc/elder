@@ -41,7 +41,7 @@ def _saml_cookie_flags() -> dict:
 
 def _saml_acs_path(tenant_id: int) -> str:
     """Return the URL path of the tenant's ACS (the state cookie's Path scope)."""
-    _entity, acs_url, _slo = SAMLService.sp_urls(SAMLService.sp_base_url(), tenant_id)
+    _entity, acs_url = SAMLService.sp_urls(SAMLService.sp_base_url(), tenant_id)
     return urlsplit(acs_url).path
 
 
@@ -414,8 +414,12 @@ async def saml_acs(tenant_id):
         "global_role": result.get("global_role"),
     }
 
-    # Generate tokens through the same helper every portal/SSO login uses
-    tokens = generate_tokens(user)
+    # Generate tokens through the same helper every portal/SSO login uses. The
+    # sso_tenant_scoped marker (not part of the response body) rides in the
+    # refresh token so refresh cannot re-attach a global_role.
+    tokens = generate_tokens(
+        {**user, "sso_tenant_scoped": bool(result.get("sso_tenant_scoped"))}
+    )
 
     # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the body
     # keeps them only for non-browser callers, mirroring portal-auth.
@@ -433,16 +437,30 @@ async def saml_acs(tenant_id):
 
 @bp.route("/saml/slo/<int:tenant_id>", methods=["GET", "POST"])
 def saml_slo(tenant_id):
-    """SAML Single Logout endpoint.
+    """SAML Single Logout endpoint -- not implemented, answers 501.
+
+    Single Logout is not supported yet (tracked as a follow-up). It used to be
+    an unauthenticated stub that claimed "Logged out successfully" without
+    processing anything; failing loudly is correct, and the SP metadata no
+    longer advertises a SingleLogoutService. Users end their Elder session
+    with ``POST /api/v1/portal-auth/logout``.
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        Logout confirmation
+        501 with a ``saml_slo_not_implemented`` error
     """
-    # In production, process SLO request/response
-    return jsonify({"message": "Logged out successfully", "tenant_id": tenant_id}), 200
+    return (
+        jsonify(
+            {
+                "error": "saml_slo_not_implemented",
+                "message": "SAML Single Logout is not supported; "
+                "end the session with POST /api/v1/portal-auth/logout",
+            }
+        ),
+        501,
+    )
 
 
 # =============================================================================

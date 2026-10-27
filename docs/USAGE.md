@@ -393,10 +393,25 @@ Elder is a SP-initiated, HTTP-POST-binding Service Provider. Register this per-t
 | NameID | Email address (or map an email attribute via `attribute_mappings.email`) |
 
 The ACS accepts only responses to an AuthnRequest Elder issued (`GET /api/v1/sso/saml/login/<tenant_id>`
-sets a short-lived, ACS-scoped state cookie); IdP-initiated (unsolicited) responses are rejected. Replay
-state needs Redis; if Redis is unavailable SAML fails closed (503). JIT role mapping applies only to new
-users and only through an explicit `attribute_mappings.role` + `role_map` (reader/maintainer/admin).
-Sessions minted through a tenant-scoped IdP never carry a `global_role`.
+sets a short-lived, ACS-scoped state cookie); IdP-initiated (unsolicited) responses are rejected. The
+assertion's own `SubjectConfirmationData` must carry `Recipient` = the ACS URL, `InResponseTo` = the
+AuthnRequest id and a `NotOnOrAfter`, and every `AudienceRestriction` must name the SP entityId.
+JIT role mapping applies only to new users and only through an explicit `attribute_mappings.role` +
+`role_map` (reader/maintainer/admin).
+
+- **Tenant-scoped vs global IdP.** A tenant-scoped IdP (tenant admins control it) can never sign in a user
+  that has a platform `global_role` (403 `saml_tenant_idp_global_role_forbidden`); sessions minted through
+  it keep `global_role` stripped across `/portal-auth/refresh`. A tenant with no IdP of its own is served
+  by the global IdP **only if the tenant opted in** via its settings
+  (`{"saml_allow_global_idp": true}` on the tenant; 403 `saml_global_idp_not_enabled` otherwise), and then
+  for existing users only -- JIT provisioning is always off on that fallback.
+- **Redis.** AuthnRequest state and the replay cache live in Redis (`REDIS_URL`; the client is built lazily
+  with 2s timeouts and rebuilt after a failure; Redis down or unreachable => SAML fails closed with 503).
+  These are security keys: use a Redis/DB with `maxmemory-policy noeviction` (or a dedicated instance/DB).
+  An eviction policy that can drop them (`allkeys-*`, `volatile-*`) reopens the replay window.
+  The Helm chart does not configure this yet.
+- **Single Logout is not implemented**: `/saml/slo/<tenant_id>` answers `501` and the SP metadata does not
+  advertise a `SingleLogoutService`. End the Elder session with `POST /api/v1/portal-auth/logout`.
 
 ### License Configuration
 

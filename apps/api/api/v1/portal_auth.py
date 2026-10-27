@@ -123,6 +123,10 @@ def generate_tokens(user: dict) -> dict:
         "exp": now + refresh_token_expires,
         "iat": now,
     }
+    if user.get("sso_tenant_scoped"):
+        # Session minted via a tenant-scoped SAML IdP: refresh must keep
+        # global_role stripped (see refresh_token).
+        refresh_payload["sso_tenant_scoped"] = True
     refresh_token = jwt.encode(refresh_payload, secret_key, algorithm="HS256")
 
     return {
@@ -562,6 +566,11 @@ async def refresh_token():
             "tenant_role": user.tenant_role,
             "global_role": user.global_role,
         }
+        if payload.get("sso_tenant_scoped"):
+            # Minted via a tenant-scoped SAML IdP: never restore a global_role
+            # from the stored record, and carry the marker to the rotated token.
+            user_dict["global_role"] = None
+            user_dict["sso_tenant_scoped"] = True
         tokens = generate_tokens(user_dict)
 
         response = await make_response(jsonify(tokens), 200)
