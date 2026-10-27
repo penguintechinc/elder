@@ -238,6 +238,14 @@ def _register_before_request(app: Quart) -> None:
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
             return
 
+        if request.endpoint == "sso.saml_acs":
+            # The SAML ACS is a cross-site POST *from the IdP* by design, so it
+            # can never carry the double-submit header (a user who still holds
+            # auth cookies would otherwise be refused mid-login). It is
+            # protected by its own browser-bound, single-use AuthnRequest state
+            # + InResponseTo + signature checks instead.
+            return
+
         if request.headers.get("Authorization"):
             return  # Bearer-token caller: browsers don't auto-send this cross-site
 

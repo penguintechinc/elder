@@ -125,6 +125,12 @@ class Config:
     SAML_ACS_URL = config(
         "SAML_ACS_URL", default="http://localhost:5000/api/v1/auth/saml/acs"
     )
+    # Externally visible base URL of this SP (scheme + host [+ path], no
+    # trailing slash). Drives the SAML entityId, ACS URL, and the Audience /
+    # Destination / Recipient the ACS enforces -- never taken from the request
+    # Host header. Empty -> falls back to SITE_URL. Must be https outside
+    # DEBUG/TESTING.
+    SAML_SP_BASE_URL = config("SAML_SP_BASE_URL", default="")
 
     # OAuth2 Authentication
     OAUTH2_ENABLED = config("OAUTH2_ENABLED", default=False, cast=bool)

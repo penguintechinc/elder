@@ -61,12 +61,32 @@ def _assert_portal_auth_cookies(response) -> None:
             assert "SameSite=Strict" in header, header
 
 
+_ENTERPRISE = patch(
+    "apps.api.common.licensing.tier_gate.resolve_limits",
+    return_value=("enterprise", None),
+)
+
+
+@pytest.fixture
+def enterprise_tier():
+    """SAML ACS is Enterprise-gated -- these tests are about cookies, not the gate."""
+    with _ENTERPRISE:
+        yield
+
+
 class TestSamlAcsSetsHttpOnlyCookies:
+    """Cookie contract with ``process_saml_response`` stubbed out.
+
+    The assertion-validation behaviour itself (real signed assertions, real
+    Redis/DB) is covered in ``test_saml_acs_processing.py``; here only the
+    response-cookie plumbing is under test.
+    """
+
     @pytest.mark.asyncio
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.SAMLService.process_saml_response")
     async def test_saml_acs_carries_auth_cookies(
-        self, mock_process, _mock_tokens, async_client
+        self, mock_process, _mock_tokens, async_client, enterprise_tier
     ):
         mock_process.return_value = {"id": 7, "tenant_id": 1, "email": "a@b.co"}
 
@@ -83,14 +103,20 @@ class TestSamlAcsSetsHttpOnlyCookies:
 
     @pytest.mark.asyncio
     @patch("apps.api.api.v1.sso.SAMLService.process_saml_response")
-    async def test_saml_acs_error_sets_no_cookies(self, mock_process, async_client):
-        mock_process.return_value = {"error": "bad assertion"}
+    async def test_saml_acs_error_sets_no_cookies(
+        self, mock_process, async_client, enterprise_tier
+    ):
+        mock_process.return_value = {
+            "error": "saml_unsigned",
+            "message": "bad assertion",
+            "status_code": 401,
+        }
 
         resp = await async_client.post(
             "/api/v1/sso/saml/acs/1", form={"SAMLResponse": "fake-saml"}
         )
 
-        assert resp.status_code == 400
+        assert resp.status_code == 401
         joined = "\n".join(_set_cookie_headers(resp))
         assert ACCESS_COOKIE_NAME not in joined
         assert REFRESH_COOKIE_NAME not in joined

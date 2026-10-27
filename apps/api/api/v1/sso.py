@@ -7,17 +7,60 @@ and SCIM 2.0 user provisioning.
 # flake8: noqa: E501
 
 from functools import wraps
+from urllib.parse import urlsplit
 
 from quart import Blueprint, Response, current_app, jsonify, request
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
 from apps.api.auth.portal_cookies import set_portal_auth_cookies
+from apps.api.common.licensing.tier_gate import require_tier
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
+from apps.api.services.sso.saml_service import SAMLError
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
 bp = Blueprint("sso", __name__)
+
+# Browser-binding cookie for the SP-initiated SAML flow: carries the random
+# token that keys the server-side AuthnRequest state. Scoped to the ACS path
+# only, HttpOnly, and SameSite=None;Secure because the IdP's POST to the ACS
+# is cross-site (SameSite=Lax/Strict cookies would not be sent on it).
+_SAML_STATE_COOKIE = "elder_saml_state"
+
+
+def _saml_cookie_flags() -> dict:
+    """Return the Secure/SameSite flags for the SAML state cookie.
+
+    Secure unless the app runs in DEBUG (plain-http local dev), where browsers
+    would refuse SameSite=None without Secure and Lax is used instead.
+    """
+    secure = not current_app.config.get("DEBUG", False)
+    return {"secure": secure, "samesite": "None" if secure else "Lax"}
+
+
+def _saml_acs_path(tenant_id: int) -> str:
+    """Return the URL path of the tenant's ACS (the state cookie's Path scope)."""
+    _entity, acs_url, _slo = SAMLService.sp_urls(SAMLService.sp_base_url(), tenant_id)
+    return urlsplit(acs_url).path
+
+
+def _saml_error_response(error: SAMLError):
+    """Render a SAMLError as a specific-status JSON error (never a silent fallback)."""
+    return jsonify({"error": error.code, "message": error.message}), error.status_code
+
+
+def _clear_saml_state_cookie(response, tenant_id: int) -> None:
+    """Expire the SAML state cookie on an ACS response (the state is single use).
+
+    Skipped silently if the SP base URL is unusable -- in that case no cookie
+    could have been issued for this path either.
+    """
+    try:
+        path = _saml_acs_path(tenant_id)
+    except SAMLError:
+        return
+    response.delete_cookie(_SAML_STATE_COOKIE, path=path, **_saml_cookie_flags())
 
 
 def _attach_auth_cookies(response, tokens: dict) -> None:
@@ -264,7 +307,12 @@ def get_sp_metadata(tenant_id=None):
     Returns:
         SAML SP metadata XML
     """
-    base_url = request.host_url.rstrip("/")
+    # The metadata (entityID/ACS URL) must match what the ACS enforces, so it
+    # comes from server configuration, never the request Host header.
+    try:
+        base_url = SAMLService.sp_base_url()
+    except SAMLError as exc:
+        return _saml_error_response(exc)
     metadata = SAMLService.get_sp_metadata(base_url, tenant_id)
 
     return Response(
@@ -275,75 +323,111 @@ def get_sp_metadata(tenant_id=None):
 
 
 @bp.route("/saml/login/<int:tenant_id>", methods=["GET"])
-def saml_login(tenant_id):
-    """Initiate SAML SSO login.
+@require_tier("enterprise")
+async def saml_login(tenant_id):
+    """Initiate SP-initiated SAML SSO login (Enterprise).
+
+    Builds a real AuthnRequest, records its ID server-side (single use, short
+    TTL) and binds it to this browser with an ACS-scoped HttpOnly cookie, so
+    the ACS can enforce InResponseTo and reject unsolicited/cross-browser
+    responses.
 
     Args:
         tenant_id: Tenant ID
 
+    Query params:
+        return_to: Optional same-origin relative path echoed back after login
+
     Returns:
-        Redirect to IdP or error
+        JSON with the IdP redirect URL (``sso_url``) and the state cookie
     """
-    idp_config = SAMLService.get_idp_config(tenant_id)
+    try:
+        started = await run_in_threadpool(
+            SAMLService.begin_login, tenant_id, request.args.get("return_to")
+        )
+        cookie_path = _saml_acs_path(tenant_id)
+    except SAMLError as exc:
+        return _saml_error_response(exc)
 
-    if not idp_config:
-        return ApiResponse.error("No IdP configured for this tenant", 404)
-
-    if not idp_config.get("sso_url"):
-        return ApiResponse.bad_request("IdP SSO URL not configured")
-
-    # In production, generate SAML AuthnRequest and redirect
-    # For now, return the SSO URL for manual redirect
-    return (
-        jsonify(
-            {
-                "sso_url": idp_config["sso_url"],
-                "message": "Redirect to SSO URL to initiate login",
-            }
-        ),
-        200,
+    response = jsonify(
+        {
+            "sso_url": started["sso_url"],
+            "message": "Redirect to SSO URL to initiate login",
+        }
     )
+    response.set_cookie(
+        _SAML_STATE_COOKIE,
+        started["state_token"],
+        max_age=started["expires_in"],
+        path=cookie_path,
+        httponly=True,
+        **_saml_cookie_flags(),
+    )
+    return response, 200
 
 
 @bp.route("/saml/acs/<int:tenant_id>", methods=["POST"])
+@require_tier("enterprise")
 async def saml_acs(tenant_id):
-    """SAML Assertion Consumer Service endpoint.
+    """SAML Assertion Consumer Service endpoint (Enterprise).
 
-    Receives and processes SAML responses from IdP.
+    Receives the IdP's POSTed SAMLResponse. The assertion is only trusted if it
+    carries a valid IdP signature and passes the audience / destination /
+    recipient / InResponseTo / validity-window / replay checks; any failure is
+    a specific 4xx. The tenant comes from the ACS URL path and is bound by the
+    signed Audience/Recipient, never from the request body. The posted
+    ``RelayState`` is deliberately ignored -- the return target is the value
+    stored server-side when the login started.
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        JWT tokens on success
+        JWT tokens (and auth cookies) on success
     """
     # Quart's `request.form` is a coroutine -- it must be awaited (the route
     # was previously a sync `def` and called `.get` on the coroutine, raising
     # AttributeError on every real POST).
     form = await request.form
     saml_response = form.get("SAMLResponse")
-    relay_state = form.get("RelayState")
 
     if not saml_response:
         return ApiResponse.bad_request("SAMLResponse is required")
 
-    result = SAMLService.process_saml_response(tenant_id, saml_response, relay_state)
+    result = await SAMLService.process_saml_response(
+        tenant_id, saml_response, request.cookies.get(_SAML_STATE_COOKIE)
+    )
 
     if "error" in result:
-        return jsonify(result), 400
+        status = result.pop("status_code", 400)
+        response = jsonify(result)
+        _clear_saml_state_cookie(response, tenant_id)
+        return response, status
 
-    # Generate tokens
-    tokens = generate_tokens(result)
+    # Explicit response DTO: only these identity fields ever leave the ACS
+    # (never the raw assertion, attributes, NameID or SAML session data).
+    user = {
+        "id": result["id"],
+        "email": result["email"],
+        "tenant_id": result["tenant_id"],
+        "tenant_role": result.get("tenant_role"),
+        "global_role": result.get("global_role"),
+    }
+
+    # Generate tokens through the same helper every portal/SSO login uses
+    tokens = generate_tokens(user)
 
     # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the body
     # keeps them only for non-browser callers, mirroring portal-auth.
     response = jsonify(
         {
-            "user": result,
+            "user": user,
+            "return_to": result.get("return_to"),
             **tokens,
         }
     )
     _attach_auth_cookies(response, tokens)
+    _clear_saml_state_cookie(response, tenant_id)
     return response, 200
 
 

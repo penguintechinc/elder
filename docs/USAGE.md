@@ -373,11 +373,30 @@ ADMIN_EMAIL=admin@example.com
 ```bash
 SAML_ENABLED=true
 SAML_METADATA_URL=https://your-idp.com/metadata
+SAML_SP_BASE_URL=https://elder.example.com   # falls back to SITE_URL; https required outside DEBUG
 OAUTH2_ENABLED=true
 OAUTH2_CLIENT_ID=<client-id>
 LDAP_ENABLED=true
 LDAP_SERVER=ldap.example.com
 ```
+
+#### SAML 2.0 (Enterprise)
+
+Elder is a SP-initiated, HTTP-POST-binding Service Provider. Register this per-tenant SP at the IdP
+(`<tenant_id>` is the Elder tenant id; the values come from `SAML_SP_BASE_URL`, never the request Host header):
+
+| IdP field | Value |
+|---|---|
+| SP entityId / Audience | `<SAML_SP_BASE_URL>/saml/metadata/<tenant_id>` |
+| ACS URL / Destination / Recipient | `<SAML_SP_BASE_URL>/api/v1/sso/saml/acs/<tenant_id>` |
+| Signing | Sign the **Assertion** (RSA-SHA256+; SHA-1 is rejected). Response-only signing is rejected |
+| NameID | Email address (or map an email attribute via `attribute_mappings.email`) |
+
+The ACS accepts only responses to an AuthnRequest Elder issued (`GET /api/v1/sso/saml/login/<tenant_id>`
+sets a short-lived, ACS-scoped state cookie); IdP-initiated (unsolicited) responses are rejected. Replay
+state needs Redis; if Redis is unavailable SAML fails closed (503). JIT role mapping applies only to new
+users and only through an explicit `attribute_mappings.role` + `role_map` (reader/maintainer/admin).
+Sessions minted through a tenant-scoped IdP never carry a `global_role`.
 
 ### License Configuration
 
