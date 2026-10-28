@@ -14,59 +14,12 @@ updates:
         patterns:
           - "*"
   - package-ecosystem: "pip"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "pip"
-    directory: "/apps/flows_invoker"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "pip"
-    directory: "/apps/mcp"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "pip"
-    directory: "/apps/scanner"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "pip"
-    directory: "/apps/worker"
+    directories:
+      - "/"
+      - "/apps/flows_invoker"
+      - "/apps/mcp"
+      - "/apps/scanner"
+      - "/apps/worker"
     schedule:
       interval: "weekly"
     groups:
@@ -79,33 +32,9 @@ updates:
         patterns:
           - "*"
   - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "npm"
-    directory: "/web"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/apps/api"
+    directories:
+      - "/"
+      - "/web"
     schedule:
       interval: "weekly"
     groups:
@@ -118,72 +47,14 @@ updates:
         patterns:
           - "*"
   - package-ecosystem: "docker"
-    directory: "/apps/flows_invoker"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/apps/mcp"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/apps/scanner"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/apps/worker"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/tests"
-    schedule:
-      interval: "weekly"
-    groups:
-      all-dependencies:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      security:
-        applies-to: security-updates
-        patterns:
-          - "*"
-  - package-ecosystem: "docker"
-    directory: "/web"
+    directories:
+      - "/apps/api"
+      - "/apps/flows_invoker"
+      - "/apps/mcp"
+      - "/apps/scanner"
+      - "/apps/worker"
+      - "/tests"
+      - "/web"
     schedule:
       interval: "weekly"
     groups:
