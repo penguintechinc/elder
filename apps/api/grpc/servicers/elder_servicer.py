@@ -34,6 +34,7 @@ from apps.api.grpc.generated import (
     graph_pb2,
     organization_pb2,
 )
+from apps.api.grpc.rls_guard import guard_servicer
 from apps.api.models import DependencyDTO, EntityDTO, IdentityDTO, OrganizationDTO
 from apps.api.models.dataclasses import from_pydal_row
 
@@ -1885,3 +1886,8 @@ class ElderServicer(elder_pb2_grpc.ElderServiceServicer):
             current_level = next_level
 
         return all_entities
+
+
+# Fail closed (clear UNAUTHENTICATED + log + counter) instead of silently returning
+# zero rows once RLS is enforced; see apps/api/grpc/rls_guard.py.
+guard_servicer(ElderServicer)

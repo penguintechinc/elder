@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 from apps.api.main import create_app  # noqa: E402
+from shared.database.rls import SystemScopeReason, system_scope  # noqa: E402
 from shared.utils.village_id import generate_village_id  # noqa: E402
 
 # Demo tenant/org/admin identity — shared with seed_cloud_discovery.py
@@ -760,7 +761,9 @@ def seed_demo_unified() -> None:
 
 if __name__ == "__main__":
     try:
-        seed_demo_unified()
+        # Operator script: runs across tenants out-of-band, so say so explicitly (RLS).
+        with system_scope(SystemScopeReason.MAINTENANCE, "scripts.seed_demo_unified"):
+            seed_demo_unified()
     except Exception as e:  # noqa: BLE001 - top-level script error boundary
         print(f"Error seeding demo unified data: {e}")
         import traceback

@@ -179,7 +179,8 @@ async def handle_alertmanager_webhook():
 
     # Internal AlertManager caller: no JWT, so no tenant is bound and the service
     # is matched by name across tenants. Preserve that behaviour under RLS as an
-    # explicit, audit-logged system scope instead of silently matching nothing.
+    # explicit (logged + counted, not written to audit_logs) system scope
+    # instead of silently matching nothing.
     with system_scope(SystemScopeReason.PUBLIC_TOKEN, "oncall.alertmanager_webhook"):
         await process_alerts()
 

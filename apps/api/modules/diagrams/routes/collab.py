@@ -23,6 +23,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.flags.posthog_client import flag_enabled
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from shared.database import rls
 
 from .diagrams import _can_edit_diagram, _can_read_diagram, _get_tenant_id
 
@@ -195,7 +196,10 @@ async def collab_ws(diagram_id: int):
 
     try:
         # Validate ticket from query params
-        ticket = request.args.get("ticket")
+        # ``request`` does not exist in a websocket context (RuntimeError "no request
+        # in this context", which made every connection fail); the query string
+        # lives on the ``websocket`` proxy.
+        ticket = websocket.args.get("ticket")
         if not ticket:
             log.warning("ws_connect_no_ticket", diagram_id=diagram_id)
             await websocket.close(1008)
@@ -239,6 +243,19 @@ async def collab_ws(diagram_id: int):
 
         identity_id = ticket_data.get("identity_id")
         tenant_id = ticket_data.get("tenant_id")
+
+        # Quart skips before_request hooks for websockets, so populate_claims never
+        # bound a tenant for RLS. The ticket was minted from a verified JWT (see
+        # issue_collab_ticket); bind its tenant for every DB call this connection
+        # makes (child tasks and run_in_threadpool copy the context). An unusable
+        # tenant refuses the connection rather than running unbound.
+        try:
+            rls.set_tenant(tenant_id)
+        except ValueError:
+            log.warning("ws_ticket_invalid_tenant", diagram_id=diagram_id)
+            await websocket.close(1008)
+            return
+
         permission = ticket_data.get("permission", "viewer")
         can_edit = permission == "editor"
         session_id = secrets.token_hex(16)
@@ -494,3 +511,7 @@ async def collab_ws(diagram_id: int):
 
             except Exception as e:
                 log.error("session_cleanup_failed", error=str(e))
+
+        # The binding above lives only in this connection's task context; drop it
+        # explicitly anyway so nothing after cleanup can ride on it.
+        rls.clear_tenant()

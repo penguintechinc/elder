@@ -1,4 +1,4 @@
-"""Real-PostgreSQL tests for every code path wired into RLS (migration 042).
+"""Real-PostgreSQL tests for every code path wired into RLS (migration 043).
 
 Each test drives a real route / service through the real penguin-dal under the
 NOSUPERUSER application role, so a path that forgot to bind a tenant or enter an
@@ -23,6 +23,17 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.usefixtures("_reset_rls_state"),
 ]
+
+
+class _Counter:
+    """OTel counter stand-in recording (amount, attributes) calls."""
+
+    def __init__(self):
+        self.calls = []
+
+    def add(self, amount, attributes):
+        self.calls.append((amount, attributes))
+
 
 FLOW_SECRET = secrets.token_hex(16)  # per-run, never a committed literal
 PAST = datetime.now(UTC) - timedelta(days=3)
@@ -287,10 +298,10 @@ class TestPublicRoutes:
         assert [r[0] for r in rows] == [T2]
 
     @pytest.mark.asyncio
-    async def test_alertmanager_webhook_runs_under_explicit_audited_scope(
+    async def test_alertmanager_webhook_runs_under_explicit_counted_scope(
         self, wired, quart_app, monkeypatch
     ):
-        """The unauthenticated webhook enters PUBLIC_TOKEN scope (and is audited).
+        """The unauthenticated webhook enters PUBLIC_TOKEN scope (counted, not audited).
 
         ``ApiResponse.success`` already returns ``(response, status)`` so the route's
         ``(ApiResponse.success(...), 202)`` is a nested tuple Quart rejects — a
@@ -305,16 +316,93 @@ class TestPublicRoutes:
             "success",
             staticmethod(lambda data, status_code=200: jsonify(data)),
         )
-        audited = []
+        audited, counter = [], _Counter()
         rls.register_audit_sink(audited.append)
+        monkeypatch.setitem(rls._counters, "elder.rls.system_scope.entered", counter)
         payload = {"alerts": [{"status": "firing", "labels": {"service": "nope"}}]}
         response = await quart_app.test_client().post(
             "/oncall/alertmanager/webhook", json=payload
         )
         assert response.status_code == 202
-        assert [(s.reason, s.purpose) for s in audited] == [
-            (SystemScopeReason.PUBLIC_TOKEN, "oncall.alertmanager_webhook")
-        ]
+        assert audited == []  # anonymous scopes are never durably audited
+        assert counter.calls == [(1, {"reason": "PUBLIC_TOKEN"})]
+
+    @pytest.mark.asyncio
+    async def test_public_token_flood_writes_no_audit_rows_but_is_counted(
+        self, wired, quart_app, rls_env, monkeypatch
+    ):
+        """25 anonymous hits (bogus + real tokens) -> 0 audit_logs rows, 25 counted entries."""
+        from apps.api.services.audit.rls_sink import write_system_scope_audit
+
+        before = _admin_count(rls_env, "SELECT count(*) FROM audit_logs")
+        counter = _Counter()
+        rls.register_audit_sink(write_system_scope_audit)  # the real durable sink
+        monkeypatch.setitem(rls._counters, "elder.rls.system_scope.entered", counter)
+        client = quart_app.test_client()
+        for i in range(25):
+            token = "tok-t1" if i % 5 == 0 else f"bogus-{i}"
+            await client.get(f"/stream-hooks/{token}/test")
+        assert _admin_count(rls_env, "SELECT count(*) FROM audit_logs") == before
+        assert len(counter.calls) == 25
+        assert {attrs["reason"] for _, attrs in counter.calls} == {"PUBLIC_TOKEN"}
+
+    @pytest.mark.asyncio
+    async def test_privileged_scope_is_still_durably_audited_off_the_event_loop(
+        self, wired, quart_app, rls_env
+    ):
+        from apps.api.api.v1.tenant_modules import _module_scope
+        from apps.api.services.audit.rls_sink import write_system_scope_audit
+
+        before = _admin_count(
+            rls_env,
+            "SELECT count(*) FROM audit_logs WHERE action_name = 'rls_system_scope'",
+        )
+        rls.register_audit_sink(write_system_scope_audit)
+        async with quart_app.app_context():
+            from quart import g
+
+            g.current_user = SimpleNamespace(id=9)
+            with tenant_context(T1):
+                async with _module_scope(T1, T2, "tenant_modules.list"):
+                    pass
+        after = _admin_count(
+            rls_env,
+            "SELECT count(*) FROM audit_logs WHERE action_name = 'rls_system_scope'",
+        )
+        assert after == before + 1
+
+    @pytest.mark.asyncio
+    async def test_flow_webhook_binds_the_webhooks_tenant_only_after_the_signature_passes(
+        self, wired, quart_app, monkeypatch
+    ):
+        """Pins hooks.set_tenant independently of the route's pre-existing later bug."""
+        from apps.api.modules.flows.routes import hooks
+
+        bound = []
+        real = hooks.set_tenant
+        monkeypatch.setattr(
+            hooks,
+            "set_tenant",
+            lambda tenant_id: bound.append(tenant_id) or real(tenant_id),
+        )
+        body = json.dumps({"commit_sha": "abc"}).encode()
+        good = (
+            "sha256=" + hmac.new(FLOW_SECRET.encode(), body, hashlib.sha256).hexdigest()
+        )
+        headers = {"Content-Type": "application/json"}
+        client = quart_app.test_client()
+        await client.post(
+            "/flow-hooks/wh-t2",
+            data=body,
+            headers={**headers, "X-Hub-Signature-256": "sha256=00"},
+        )
+        assert bound == []
+        await client.post(
+            "/flow-hooks/wh-t2",
+            data=body,
+            headers={**headers, "X-Hub-Signature-256": good},
+        )
+        assert bound == [T2]
 
 
 class TestCrossTenantAdminScope:
@@ -357,9 +445,9 @@ class TestCrossTenantAdminScope:
         async with quart_app.app_context():
             g.current_user = SimpleNamespace(id=7)
             with tenant_context(T1):
-                with _module_scope(T1, T1, "tenant_modules.list"):
+                async with _module_scope(T1, T1, "tenant_modules.list"):
                     assert audited == []
-                with _module_scope(T1, T2, "tenant_modules.set"):
+                async with _module_scope(T1, T2, "tenant_modules.set"):
                     assert dal(dal.organizations.tenant_id == T2).count() == 2
         assert [(s.purpose, s.actor) for s in audited] == [
             ("tenant_modules.set", "identity:7")

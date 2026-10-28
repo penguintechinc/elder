@@ -33,6 +33,7 @@ from werkzeug.security import generate_password_hash  # noqa: E402
 
 from apps.api.main import create_app  # noqa: E402
 from apps.worker.discovery.service import DiscoveryService  # noqa: E402
+from shared.database.rls import SystemScopeReason, system_scope  # noqa: E402
 
 # Demo tenant/org/admin identity — overridable via env (committed defaults are
 # not secrets). Lets the seed target a differently-named tenant/admin without
@@ -624,7 +625,11 @@ def seed_cloud_discovery() -> None:
 
 if __name__ == "__main__":
     try:
-        seed_cloud_discovery()
+        # Operator script: runs across tenants out-of-band, so say so explicitly (RLS).
+        with system_scope(
+            SystemScopeReason.MAINTENANCE, "scripts.seed_cloud_discovery"
+        ):
+            seed_cloud_discovery()
     except Exception as e:  # noqa: BLE001 - top-level script error boundary
         print(f"Error seeding cloud discovery demo data: {e}")
         import traceback

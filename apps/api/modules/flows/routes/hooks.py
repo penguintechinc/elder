@@ -125,7 +125,7 @@ async def trigger_webhook(webhook_id: str):
         # Find webhook by ID
         # Uniform 404 for ALL of: unknown ID, disabled webhook, missing or disabled pipeline.
         # Unauthenticated, id-addressed lookup: the tenant is unknown until the
-        # webhook row is found, so resolve it under an explicit, audit-logged scope.
+        # webhook row is found, so resolve it under an explicit (logged + counted) scope.
         with system_scope(SystemScopeReason.PUBLIC_TOKEN, "flows.webhook_lookup"):
             webhook = db(db.iceflows_webhooks.webhook_id == webhook_id).select().first()
             if not webhook or not webhook.is_active:

@@ -141,20 +141,13 @@ def get_database_url(app, **kwargs) -> str:
 def _init_rls(db) -> None:
     """Wire row-level-security tenant context for a freshly built DAL.
 
-    Installs the global per-transaction GUC listener, starts the
-    ``elder.disable-rls`` kill-switch poller and (PostgreSQL only) verifies the
-    connected role can actually enforce RLS. ``ELDER_RLS_STRICT=true`` turns a
-    bypassing role (superuser/BYPASSRLS) into a startup failure.
+    Delegates to ``rls.init_rls``: installs the global per-transaction GUC
+    listener, evaluates the ``elder.disable-rls`` kill-switch and (PostgreSQL
+    only) checks RLS is really enforced. ``ELDER_RLS_STRICT=true`` makes an
+    unmet check (migration not applied, superuser/BYPASSRLS role, unprotected
+    tables) a startup failure.
     """
-    rls.install_rls_hooks()
-    rls.configure_kill_switch()
-    if db.engine.dialect.name == "postgresql":
-        strict = os.getenv("ELDER_RLS_STRICT", "").strip().lower() in (
-            "1",
-            "true",
-            "yes",
-        )
-        rls.check_rls_posture(db.engine, strict=strict)
+    rls.init_rls(db.engine)
 
 
 _DEFAULT_DB_POOL_SIZE = 10

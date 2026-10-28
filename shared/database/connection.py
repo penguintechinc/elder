@@ -11,6 +11,8 @@ import time
 
 from penguin_dal import DAL
 
+from shared.database import rls
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,7 @@ def create_db_connection(
         try:
             db = DAL(database_url, pool_size=pool_size, migrate=migrate)
             logger.info("Database connection established successfully")
-            return db
+            break
 
         except Exception as e:
             if attempt < max_retries - 1:
@@ -57,3 +59,8 @@ def create_db_connection(
                     f"Failed to connect to database after {max_retries} attempts"
                 )
                 raise
+
+    # Outside the retry loop on purpose: with ELDER_RLS_STRICT=true an unenforced
+    # database must fail startup once, loudly — never be retried 30 times.
+    rls.init_rls(db.engine)
+    return db

@@ -7,12 +7,16 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
 ## [Unreleased]
 
 ### Added
-- PostgreSQL row-level security for tenant isolation (migration `042`): 82
-  tenant-scoped tables get `ENABLE` + `FORCE ROW LEVEL SECURITY` policies keyed on
-  a transaction-local tenant GUC set from the verified JWT / job envelope, fail
-  closed, explicit audit-logged system scope for cross-tenant access, and an
-  `elder.disable-rls` kill-switch. The application DB role must not be a
-  superuser/`BYPASSRLS` role. See `docs/architecture/row-level-security.md`.
+- PostgreSQL row-level security groundwork for tenant isolation (migrations `042`
+  drift repair + `043` policies): 82 tenant-scoped tables get `ENABLE` + `FORCE
+  ROW LEVEL SECURITY` policies keyed on a transaction-local tenant GUC set from
+  the verified JWT / websocket ticket / job envelope, fail closed, explicit
+  system scopes for cross-tenant access (privileged ones audited), an
+  `elder.disable-rls` kill-switch and a startup gate (`ELDER_RLS_STRICT`).
+  **Not enforced anywhere yet**: enforcement needs migration 043 applied (no
+  environment runs it today) AND a NOSUPERUSER/NOBYPASSRLS application role (every
+  environment connects as a superuser today) — provisioning is a separate PR. See
+  `docs/architecture/row-level-security.md` for the per-environment status.
 
 ### Changed
 - Release-gate hardening: recovered `.github/CODEOWNERS`, added coverage

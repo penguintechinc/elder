@@ -1,6 +1,6 @@
 """Shared fixtures/helpers for the real-PostgreSQL RLS integration tests.
 
-Builds a throwaway database from the models, applies migration 042 through the
+Builds a throwaway database from the models, applies migrations 042/043 through the
 real alembic CLI and connects the application as a NOSUPERUSER / NOBYPASSRLS
 role — the only kind of role RLS actually constrains. Nothing is mocked.
 Imported (not collected) by ``test_rls_*.py`` in this directory.
@@ -62,20 +62,59 @@ def _import_all_models() -> None:
         importlib.import_module(path)
 
 
-def _alembic(db_url: str, *args: str) -> subprocess.CompletedProcess:
-    """Run the real alembic CLI against ``db_url`` and fail loudly on error."""
-    env = {**os.environ, "DATABASE_URL": db_url}
+def _alembic(
+    db_url: str,
+    *args: str,
+    env: dict[str, str] | None = None,
+    check: bool = True,
+) -> subprocess.CompletedProcess:
+    """Run the real alembic CLI against ``db_url``; fail loudly unless ``check`` is False.
+
+    ``env`` adds environment variables (e.g. the ELDER_RLS_* migration tunables).
+    """
+    full_env = {**os.environ, "DATABASE_URL": db_url, **(env or {})}
     result = subprocess.run(  # nosec B603 - fixed argv, test-owned DB URL
         [sys.executable, "-m", "alembic", "-c", str(ROOT / "alembic.ini"), *args],
         cwd=ROOT,
-        env=env,
+        env=full_env,
         capture_output=True,
         text=True,
         check=False,
         timeout=600,
     )
-    assert result.returncode == 0, f"alembic {args} failed:\n{result.stderr[-2000:]}"
+    if check:
+        assert (
+            result.returncode == 0
+        ), f"alembic {args} failed:\n{result.stderr[-2000:]}"
     return result
+
+
+def _rls_state(url: str) -> tuple[int, int, int, int]:
+    """Return (policies, rls-enabled tables, forced tables, helper functions) in ``url``."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as conn:
+            return (
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_policy WHERE polname = 'elder_tenant_isolation'"
+                    )
+                ).scalar(),
+                conn.execute(
+                    text("SELECT count(*) FROM pg_class WHERE relrowsecurity")
+                ).scalar(),
+                conn.execute(
+                    text("SELECT count(*) FROM pg_class WHERE relforcerowsecurity")
+                ).scalar(),
+                conn.execute(
+                    text(
+                        "SELECT count(*) FROM pg_proc WHERE proname IN "
+                        "('elder_current_tenant_id','elder_rls_system_scope')"
+                    )
+                ).scalar(),
+            )
+    finally:
+        engine.dispose()
 
 
 def _create_database(admin_url: str, name: str) -> str:
@@ -93,6 +132,24 @@ def _create_database(admin_url: str, name: str) -> str:
 
     _import_all_models()
     Base.metadata.create_all(engine)
+    engine.dispose()
+    return url
+
+
+def _create_empty_database(admin_url: str, name: str) -> str:
+    """CREATE DATABASE + pgvector only (no tables); return its superuser URL.
+
+    For tests that build the schema through the alembic history itself.
+    """
+    base = make_url(admin_url)
+    server = create_engine(base, isolation_level="AUTOCOMMIT")
+    with server.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    server.dispose()
+    url = base.set(database=name).render_as_string(hide_password=False)
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     engine.dispose()
     return url
 
@@ -122,7 +179,7 @@ def _require_postgres() -> str:
 
 @pytest.fixture(scope="module")
 def rls_env():
-    """Throwaway DB: models schema + migration 042 + NOSUPERUSER app role + seed rows."""
+    """Throwaway DB: models schema + migrations 042/043 + NOSUPERUSER app role + seed rows."""
     admin_url = _require_postgres()
     suffix = uuid.uuid4().hex[:10]
     db_name, role, password = (
@@ -132,7 +189,7 @@ def rls_env():
     )
     db_url = _create_database(admin_url, db_name)
     _alembic(db_url, "stamp", "041")
-    _alembic(db_url, "upgrade", "042")
+    _alembic(db_url, "upgrade", "043")
 
     admin = create_engine(db_url)
     with admin.begin() as conn:
@@ -204,12 +261,15 @@ def _reset_rls_state():
     other tests rely on it for SUPER_ADMIN scope.
     """
     previous_sink, previous_switch = rls._audit_sink, rls._switch
+    previous_enforcing = rls._enforcement_active
     rls.clear_tenant()
     rls._switch = None
+    rls._enforcement_active = False
     rls.register_audit_sink(None)
     yield
     rls.clear_tenant()
     rls._switch = previous_switch
+    rls._enforcement_active = previous_enforcing
     rls.register_audit_sink(previous_sink)
 
 
@@ -243,18 +303,18 @@ def _admin_names(env: RlsEnv, table: str) -> set[str]:
 
 
 def _load_migration():
-    """Import migration 042 by path (alembic version dirs are not packages)."""
+    """Import migration 043 by path (alembic version dirs are not packages)."""
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
-        "rls_migration_042", ROOT / "alembic/versions/042_rls_tenant_isolation.py"
+        "rls_migration_043", ROOT / "alembic/versions/043_rls_tenant_isolation.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def _dummy_value(column):
+def _dummy_value(column, int_value: int = 1):
     """Return a harmless value for a NOT NULL column based on its SQL type."""
     import json
     from datetime import UTC, datetime
@@ -270,12 +330,20 @@ def _dummy_value(column):
         return False
     if isinstance(ctype, sa.DateTime):
         return datetime.now(UTC)
-    if isinstance(ctype, sa.Integer):
-        return 1
+    if isinstance(ctype, sa.Date):
+        return datetime.now(UTC).date()
+    if isinstance(ctype, sa.Time):
+        return datetime.now(UTC).time()
+    if isinstance(ctype, sa.Integer | sa.Float | sa.Numeric):
+        return int_value
+    if isinstance(ctype, sa.LargeBinary):
+        return b"x"
+    if isinstance(ctype, sa.ARRAY):
+        return "{}"
     return f"x-{uuid.uuid4().hex[:12]}"
 
 
-def _seed(conn, table: str, **values) -> int:
+def _seed(conn, table: str, int_value: int = 1, **values) -> int:
     """INSERT one row into ``table`` (admin connection) and return its id.
 
     Fills every NOT NULL column without a server default using a type-based
@@ -296,7 +364,7 @@ def _seed(conn, table: str, **values) -> int:
         if column.name in ("created_at", "updated_at"):
             row[column.name] = datetime.now(UTC)
         elif not column.nullable and column.server_default is None:
-            row[column.name] = _dummy_value(column)
+            row[column.name] = _dummy_value(column, int_value)
     names = ", ".join(f'"{name}"' for name in row)
     binds = ", ".join(f":{name}" for name in row)
     return conn.execute(

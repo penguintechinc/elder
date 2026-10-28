@@ -23,7 +23,7 @@ from apps.api.common.modules.tenant_toggle import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
-from apps.api.utils.rls_scope import cross_tenant_scope
+from apps.api.utils.rls_scope import cross_tenant_scope_async
 
 bp = Blueprint("tenant_modules", __name__)
 logger = structlog.get_logger(__name__)
@@ -35,7 +35,7 @@ def _module_scope(caller_tenant_id: int, tenant_id: int, purpose: str):
     Own-tenant access needs no elevation; a superuser acting on another tenant
     gets an explicit, audit-logged SUPER_ADMIN system scope.
     """
-    return cross_tenant_scope(
+    return cross_tenant_scope_async(
         caller_tenant_id,
         tenant_id,
         actor=f"identity:{g.current_user.id}",
@@ -97,7 +97,7 @@ async def list_tenant_modules(tenant_id: int):
             for name, manifest in module_manifests.items()
         }
 
-        with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.list"):
+        async with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.list"):
             # Get effective map for this tenant
             effective_map = await run_in_threadpool(
                 get_tenant_modules,
@@ -191,7 +191,7 @@ async def set_tenant_module(tenant_id: int):
         )
 
         # Set the module state
-        with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.set"):
+        async with _module_scope(caller_tenant_id, tenant_id, "tenant_modules.set"):
             await run_in_threadpool(
                 set_module_enabled,
                 db,

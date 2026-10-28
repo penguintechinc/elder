@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from apps.api.main import create_app
 from apps.api.services.access_review.service import AccessReviewService
+from shared.database.rls import SystemScopeReason, system_scope
 
 
 def seed_access_reviews():
@@ -166,7 +167,9 @@ def seed_access_reviews():
 
 if __name__ == "__main__":
     try:
-        seed_access_reviews()
+        # Operator script: runs across tenants out-of-band, so say so explicitly (RLS).
+        with system_scope(SystemScopeReason.MAINTENANCE, "scripts.seed_access_reviews"):
+            seed_access_reviews()
     except Exception as e:
         print(f"Error seeding access reviews: {e}")
         import traceback

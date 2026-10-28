@@ -122,7 +122,7 @@ class AccessReviewScheduler:
     def _check_overdue_reviews(self):
         """Check for overdue reviews and update status."""
         try:
-            # Cross-tenant maintenance sweep: explicit, audit-logged system scope.
+            # Cross-tenant maintenance sweep: explicit (logged + counted) system scope.
             with system_scope(
                 SystemScopeReason.BACKGROUND_SWEEP, "access_review.overdue_sweep"
             ):

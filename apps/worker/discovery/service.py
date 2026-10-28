@@ -1438,7 +1438,7 @@ class DiscoveryService:
 
         Discovery jobs carry only an organization id, and ``organizations`` is
         row-level-secured by tenant, so this one-row lookup is the sole place the
-        worker legitimately reads across tenants (audit-logged BACKGROUND_SWEEP).
+        worker legitimately reads across tenants (logged + counted BACKGROUND_SWEEP).
         """
         with system_scope(
             SystemScopeReason.BACKGROUND_SWEEP, "discovery.resolve_job_tenant"

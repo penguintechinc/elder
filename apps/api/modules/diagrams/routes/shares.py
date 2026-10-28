@@ -282,7 +282,7 @@ async def get_shared_diagram(share_token):
 
     def fetch():
         # Unauthenticated, token-addressed read: the tenant is unknown until the
-        # share row is found, so run under an explicit, audit-logged scope.
+        # share row is found, so run under an explicit (logged + counted) scope.
         with system_scope(SystemScopeReason.PUBLIC_TOKEN, "diagrams.shared_view"):
             return _fetch_shared()
 

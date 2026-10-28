@@ -27,7 +27,7 @@ from apps.worker.connectors.okta_connector import OktaConnector
 from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
-from shared.database.rls import tenant_context
+from shared.database.rls import RlsConfigurationError, tenant_context
 from shared.jobbus import JobBus
 from shared.redaction import redact_url
 
@@ -131,6 +131,9 @@ class WorkerService:
                 pool_size=settings.db_pool_size,
             )
             logger.info("Database connection established (direct DB access enabled)")
+        except RlsConfigurationError:
+            # ELDER_RLS_STRICT=true and RLS is not enforced: fatal, never degrade.
+            raise
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}", exc_info=True)
             logger.warning("Worker will continue without direct DB access")
@@ -549,9 +552,12 @@ class WorkerService:
                 job_type=envelope.job_type,
             )
 
-            # Pin RLS to the job's tenant (from the signed envelope, never from
-            # request input). Tenant-less jobs (e.g. the discovery sweep) bind
-            # tenants themselves per organization; unbound = fail closed.
+            # Pin RLS to the job's tenant from the job envelope. NOTE: the envelope
+            # is unsigned JSON in Redis (shared/jobbus/core.py), so whoever can
+            # write to the job stream chooses the tenant — Redis access is part of
+            # the trust boundary (signing envelopes is a separate follow-up).
+            # Tenant-less jobs (e.g. the discovery sweep) bind tenants themselves
+            # per organization; unbound = fail closed.
             with (
                 tenant_context(envelope.tenant_id)
                 if envelope.tenant_id

@@ -91,7 +91,7 @@ async def trigger_webhook(token: str):
         # unauthenticated caller distinguish a real-but-disabled token from a
         # bogus one (a token-enumeration oracle) and learn playbook state.
         # The tenant is unknown until the webhook row is found, so the lookup runs
-        # under an explicit, audit-logged scope (RLS system scope).
+        # under an explicit (logged + counted) scope (RLS system scope).
         with system_scope(SystemScopeReason.PUBLIC_TOKEN, "streams.webhook_lookup"):
             webhook = db(db.stream_webhooks.token == token).select().first()
             if not webhook or not webhook.is_enabled:

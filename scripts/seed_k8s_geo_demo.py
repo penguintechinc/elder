@@ -53,6 +53,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from apps.api.main import create_app  # noqa: E402
 from apps.worker.discovery.service import DiscoveryService  # noqa: E402
+from shared.database.rls import SystemScopeReason, system_scope  # noqa: E402
 
 _SEED_CLOUD_DISCOVERY_PATH = Path(__file__).resolve().parent / "seed_cloud_discovery.py"
 
@@ -727,7 +728,9 @@ def seed_k8s_geo_demo() -> None:
 
 if __name__ == "__main__":
     try:
-        seed_k8s_geo_demo()
+        # Operator script: runs across tenants out-of-band, so say so explicitly (RLS).
+        with system_scope(SystemScopeReason.MAINTENANCE, "scripts.seed_k8s_geo_demo"):
+            seed_k8s_geo_demo()
     except Exception as e:  # noqa: BLE001 - top-level script error boundary
         print(f"Error seeding k8s/geo demo data: {e}")
         import traceback
