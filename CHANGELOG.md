@@ -33,6 +33,35 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
   - `POST` rejects `idp_type` other than `saml`/`oidc`; `tenant_id` on create
     and update is accepted only as the caller's own tenant (global admins may
     choose on create) and a config can never be re-homed.
+- SCIM and OIDC tenant hardening (regressions: scim-cross-tenant,
+  scim-async-decorator, oidc-global-role-carry, oidc-null-tenant,
+  oidc-refresh-userinfo-logout-ownership, oidc-login-csrf,
+  oidc-email-unverified):
+  - SCIM config/token routes (`/sso/scim/config*`) require the path tenant to be
+    the caller's own tenant (global admins excepted); another tenant answers
+    the same 404 as "SCIM not configured". A tenant admin could previously
+    rotate another tenant's SCIM bearer token and then read/deactivate its
+    users. SCIM create/update (which 500'd on every call) now work, and SCIM
+    never modifies platform-privileged (`global_role`) accounts. Bearer tokens
+    are still stored in plaintext (follow-up: store a hash).
+  - OIDC logins never produce a session carrying a stored `global_role`; a
+    tenant-scoped IdP refuses accounts that have one (403
+    `oidc_tenant_idp_global_role_forbidden`). A GLOBAL OIDC IdP only serves a
+    tenant whose `settings.oidc_allow_global_idp` is the boolean `true`, for
+    existing users only (no JIT); users are never created without a tenant.
+  - `/oidc/refresh|userinfo|logout/<idp_id>` only accept configs the caller
+    may use (other tenants' and, for non-global admins, global configs: 404).
+  - **Behavior change:** `/oidc/authorize` now generates `state`, `nonce` and a
+    PKCE challenge server-side (Redis, single use, 10 min) and sets an HttpOnly
+    `elder_oidc_binding` cookie the callback requires; a client-supplied
+    `state` is ignored, a global IdP needs `tenant_id`, and `idp_id`/
+    `redirect_uri` on the callback are optional (must match if sent). A
+    tenant-scoped IdP with JIT disabled now still signs in existing users.
+  - **Behavior change:** an OIDC login requires `email_verified` to be the
+    boolean `true` in the ID token (userinfo is not consulted for it or for the
+    email). IdPs that omit the claim (e.g. default Azure AD) are refused with
+    403 `oidc_email_not_verified` until a per-IdP opt-out ships (follow-up).
+  - Upstream error text is never returned or logged by the OIDC routes.
 
 ### Changed
 - Release-gate hardening: recovered `.github/CODEOWNERS`, added coverage

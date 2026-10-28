@@ -6,6 +6,11 @@ both make blocking `requests`/authlib HTTP calls (OIDC discovery document
 fetch + token endpoint exchange), so a slow/unresponsive IdP would stall
 every other concurrent request on the same worker. Fixed by routing both
 through `apps.api.utils.async_utils.run_in_threadpool`.
+
+Ownership of the IdP config (the tenant-scoped gate that now runs first, also
+via the thread pool) is covered with real rows in
+``test_sso_oidc_login_hardening.py``; here it is stubbed so these tests stay
+about *where the blocking IdP call runs*.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -25,6 +30,20 @@ def _threadpool_passthrough():
     synchronously -- proves the call site awaits run_in_threadpool without
     needing a real thread pool in the test."""
     return AsyncMock(side_effect=lambda func, *args, **kwargs: func(*args, **kwargs))
+
+
+def _pooled_functions(mock_pool) -> list:
+    """The callables handed to run_in_threadpool, in call order."""
+    return [call.args[0] for call in mock_pool.await_args_list]
+
+
+@pytest.fixture(autouse=True)
+def _scoped_gate_allows(mocker):
+    """Stub the tenant-scoped ownership gate (tested with real rows elsewhere)."""
+    return mocker.patch(
+        "apps.api.api.v1.sso.OIDCService.get_idp_config_scoped",
+        return_value={"id": 1},
+    )
 
 
 class TestOidcLogoutOffloadsToThreadpool:
@@ -47,14 +66,13 @@ class TestOidcLogoutOffloadsToThreadpool:
             )
 
         assert resp.status_code == 200, (await resp.get_data()).decode()[:200]
-        mock_pool.assert_awaited_once()
-        assert mock_pool.call_args.args[0] is mock_logout
+        assert _pooled_functions(mock_pool).count(mock_logout) == 1
         mock_logout.assert_called_once_with(1, "hint", None)
 
     @pytest.mark.asyncio
     @patch("apps.api.api.v1.sso.OIDCService.logout")
     async def test_logout_error_still_returns_400(self, mock_logout, async_client, app):
-        mock_logout.return_value = {"error": "IdP configuration not found"}
+        mock_logout.return_value = {"error": "oidc_idp_not_found"}
         token = _portal_token(app)
 
         with patch(
@@ -89,13 +107,13 @@ class TestOidcRefreshOffloadsToThreadpool:
             )
 
         assert resp.status_code == 200, (await resp.get_data()).decode()[:200]
-        mock_pool.assert_awaited_once()
-        assert mock_pool.call_args.args[0] is mock_refresh
+        assert _pooled_functions(mock_pool).count(mock_refresh) == 1
         mock_refresh.assert_called_once_with(1, "old-refresh-token")
 
     @pytest.mark.asyncio
+    @patch("apps.api.api.v1.sso.OIDCService.refresh_tokens")
     async def test_refresh_missing_token_rejected_before_threadpool(
-        self, async_client, app
+        self, mock_refresh, async_client, app
     ):
         """Validation errors must short-circuit before touching the IdP --
         never spend a threadpool slot on a request that's already invalid."""
@@ -110,4 +128,6 @@ class TestOidcRefreshOffloadsToThreadpool:
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert resp.status_code == 400
-        mock_pool.assert_not_awaited()
+        # Only the ownership gate used the pool; the IdP call never ran.
+        assert mock_refresh not in _pooled_functions(mock_pool)
+        mock_refresh.assert_not_called()

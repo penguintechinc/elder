@@ -7,6 +7,8 @@ and SCIM 2.0 user provisioning.
 # flake8: noqa: E501
 
 from functools import wraps
+from inspect import iscoroutinefunction
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
@@ -23,13 +25,14 @@ from apps.api.models.pydantic.idp import (
     IdPErrorResponse,
     UpdateIdPConfigRequest,
 )
-from apps.api.services.sso import OIDCService, SAMLService, SCIMService
+from apps.api.services.sso import OIDCService, SAMLService, SCIMService, oidc_state
 from apps.api.services.sso.idp_access import (
     IdPAccessError,
     IdPCaller,
     IdPForbiddenError,
     IdPNotFoundError,
 )
+from apps.api.services.sso.oidc_state import OIDCLoginError
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
@@ -60,41 +63,71 @@ def _attach_auth_cookies(response, tokens: dict) -> None:
     )
 
 
+def _scim_error(detail: str, status: int) -> tuple:
+    """Render a SCIM 2.0 error message (RFC 7644 section 3.12) with ``status``."""
+    return (
+        jsonify(
+            {
+                "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+                "detail": detail,
+                "status": status,
+            }
+        ),
+        status,
+    )
+
+
+def _scim_authenticate(tenant_id: int) -> tuple | None:
+    """Check the SCIM bearer token against the tenant in the URL path.
+
+    The token is validated for exactly ``tenant_id`` (token and tenant must
+    match on one active config), so a token for tenant X never authorizes a
+    request addressed to tenant Y. Returns an error response tuple, or None
+    when the request is authenticated.
+    """
+    auth_header = request.headers.get("Authorization")
+
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return _scim_error("Authorization required", 401)
+
+    token = auth_header[len("Bearer ") :].strip()
+    if not token:
+        return _scim_error("Authorization required", 401)
+
+    if not SCIMService.validate_bearer_token(tenant_id, token):
+        return _scim_error("Invalid bearer token", 401)
+
+    return None
+
+
 # SCIM authentication decorator
 def scim_auth_required(f):
-    """Decorator to require SCIM bearer token authentication."""
+    """Decorator to require SCIM bearer token authentication.
 
-    @wraps(f)
-    def decorated(tenant_id, *args, **kwargs):
-        auth_header = request.headers.get("Authorization")
+    Sync/async-aware (regression: scim-async-decorator): the wrapper has the
+    same flavor as the view it wraps. A plain ``def`` wrapper around an
+    ``async def`` view returned the un-awaited coroutine as the "response",
+    which Quart rejects -- every SCIM create/update 500'd. The async flavor
+    runs the blocking token lookup off the event loop.
+    """
 
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return (
-                jsonify(
-                    {
-                        "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
-                        "detail": "Authorization required",
-                        "status": 401,
-                    }
-                ),
-                401,
-            )
+    if iscoroutinefunction(f):
 
-        token = auth_header.split(" ")[1]
+        @wraps(f)
+        async def decorated(tenant_id, *args, **kwargs):
+            denied = await run_in_threadpool(_scim_authenticate, tenant_id)
+            if denied is not None:
+                return denied
+            return await f(tenant_id, *args, **kwargs)
 
-        if not SCIMService.validate_bearer_token(tenant_id, token):
-            return (
-                jsonify(
-                    {
-                        "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
-                        "detail": "Invalid bearer token",
-                        "status": 401,
-                    }
-                ),
-                401,
-            )
+    else:
 
-        return f(tenant_id, *args, **kwargs)
+        @wraps(f)
+        def decorated(tenant_id, *args, **kwargs):
+            denied = _scim_authenticate(tenant_id)
+            if denied is not None:
+                return denied
+            return f(tenant_id, *args, **kwargs)
 
     return decorated
 
@@ -126,18 +159,21 @@ def _claim_tenant_id(user: dict) -> int | None:
     return None
 
 
-def _resolve_idp_caller() -> tuple[IdPCaller | None, tuple | None]:
-    """Authorize the portal caller for IdP-config admin ops.
+def _resolve_idp_caller(
+    require_admin: bool = True,
+) -> tuple[IdPCaller | None, tuple | None]:
+    """Authorize the portal caller for IdP-config / SCIM-config tenant ops.
 
     Returns ``(caller, None)`` on success or ``(None, error_response)``:
-    403 unless the caller is a global admin or a tenant admin, and 403 for a
-    tenant admin whose token carries no tenant claim.
+    403 unless the caller is a global admin or a tenant admin (skipped with
+    ``require_admin=False``, for end-user OIDC session routes), and 403 for a
+    caller whose token carries no tenant claim (unless a global admin).
     """
     # ``portal_user`` is attached by @portal_token_required; a missing attribute
     # (decorator forgotten) fails closed to "no claims" -> 403, never an admin.
     user = getattr(request, "portal_user", None) or {}
     is_global_admin = user.get("global_role") == "admin"
-    if not (is_global_admin or user.get("tenant_role") == "admin"):
+    if require_admin and not (is_global_admin or user.get("tenant_role") == "admin"):
         return None, ApiResponse.forbidden("Admin permission required")
 
     tenant_id = _claim_tenant_id(user)
@@ -539,117 +575,285 @@ def saml_slo(tenant_id):
 # =============================================================================
 
 
+def _oidc_json(payload: dict, status: int):
+    """Build a no-store JSON response for the OIDC login endpoints.
+
+    Login responses carry or relate to one-time secrets (state, cookies,
+    tokens), so intermediaries and the browser must never cache them.
+    """
+    response = jsonify(payload)
+    response.headers["Cache-Control"] = "no-store"
+    return response, status
+
+
+def _oidc_login_error(exc: OIDCLoginError, *, clear_binding: bool = False):
+    """Render an ``OIDCLoginError`` as ``{"error": <code>, "message": <safe text>}``.
+
+    Only the stable code and a fixed sentence leave the server (never request
+    values, upstream text or secrets). ``clear_binding`` also expires the
+    login binding cookie once its state has been consumed.
+    """
+    current_app.logger.warning(
+        "oidc_login_denied code=%s status=%s", exc.code, exc.status
+    )
+    response, status = _oidc_json(
+        {"error": exc.code, "message": exc.message}, exc.status
+    )
+    if clear_binding:
+        response.delete_cookie(
+            oidc_state.BINDING_COOKIE_NAME, path=oidc_state.BINDING_COOKIE_PATH
+        )
+    return response, status
+
+
+def _oidc_upstream_error(result: dict, *, clear_binding: bool = True):
+    """Render a service-layer ``{"error": <code>}`` result (stable codes only).
+
+    ``oidc_idp_not_found`` is a 404; every other service failure is a 400.
+    """
+    code = str(result.get("error", "oidc_login_failed"))
+    status = 404 if code == "oidc_idp_not_found" else 400
+    return _oidc_login_error(
+        OIDCLoginError(code, status, "The identity provider request failed"),
+        clear_binding=clear_binding,
+    )
+
+
+def _positive_int(raw: str | None) -> int | None:
+    """Parse a plain positive decimal integer (no sign, no float) or return None."""
+    if raw is None or not raw.isascii() or not raw.isdigit():
+        return None
+    value = int(raw)
+    return value if value > 0 else None
+
+
+def _is_safe_redirect_uri(uri: str) -> bool:
+    """Accept only absolute ``http(s)`` redirect URIs with a host, no control chars."""
+    if len(uri) > 2048 or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in uri):
+        return False
+    try:
+        parts = urlsplit(uri)
+    except ValueError:
+        return False
+    return parts.scheme in ("http", "https") and bool(parts.hostname)
+
+
+async def _require_scoped_oidc_idp(idp_id: int, action: str) -> tuple | None:
+    """Gate an authenticated OIDC route on the caller's right to use ``idp_id``.
+
+    Regression: oidc-refresh-userinfo-logout-ownership -- these routes used to
+    take any ``idp_id`` and call the IdP with that config's client secret.
+    Another tenant's config (and, for non-global admins, a global one) answers
+    the same 404 as a missing config, so nothing is learned and nothing is
+    called upstream. Returns an error response, or None if allowed.
+    """
+    caller, error = _resolve_idp_caller(require_admin=False)
+    if caller is None or error is not None:
+        return error or ApiResponse.forbidden("Access denied")
+    try:
+        await run_in_threadpool(OIDCService.get_idp_config_scoped, idp_id, caller)
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, action, caller)
+    return None
+
+
 @bp.route("/oidc/authorize/<int:idp_id>", methods=["GET"])
 def oidc_authorize(idp_id):
     """Initiate OIDC authorization flow.
+
+    Generates the ``state``, ``nonce`` and PKCE challenge server-side, records
+    them (single use, 10 minute TTL) in Redis and binds them to this browser
+    with an HttpOnly ``elder_oidc_binding`` cookie that the callback requires.
+    A client-supplied ``state`` is ignored. A GLOBAL IdP needs ``tenant_id`` and
+    only serves a tenant that opted in (``tenants.settings.oidc_allow_global_idp
+    is True``); a tenant-scoped IdP only serves its own tenant.
 
     Args:
         idp_id: IdP configuration ID
 
     Query params:
-        redirect_uri: Callback redirect URI
-        state: Optional state parameter
+        redirect_uri: Callback redirect URI (absolute http/https URL)
+        tenant_id: Target tenant (required for a global IdP)
 
     Returns:
-        Redirect to IdP authorization endpoint
+        JSON with the IdP authorization URL and state (+ binding cookie)
     """
     redirect_uri = request.args.get("redirect_uri")
     if not redirect_uri:
         return ApiResponse.bad_request("redirect_uri is required")
+    if not _is_safe_redirect_uri(redirect_uri):
+        return ApiResponse.bad_request("redirect_uri must be an absolute http(s) URL")
 
-    state = request.args.get("state")
+    requested_tenant_id = None
+    if "tenant_id" in request.args:
+        requested_tenant_id = _positive_int(request.args.get("tenant_id"))
+        if requested_tenant_id is None:
+            return ApiResponse.bad_request("tenant_id must be a positive integer")
 
-    result = OIDCService.get_authorization_url(idp_id, redirect_uri, state)
+    idp_config = OIDCService.get_idp_config(idp_id)
+    if not idp_config:
+        return _oidc_upstream_error(
+            {"error": "oidc_idp_not_found"}, clear_binding=False
+        )
 
+    try:
+        tenant_id = OIDCService.resolve_login_tenant(idp_config, requested_tenant_id)
+        login = oidc_state.begin_login(idp_id, tenant_id, redirect_uri)
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc)
+
+    result = OIDCService.get_authorization_url(
+        idp_config,
+        redirect_uri,
+        state=login.state,
+        nonce=login.nonce,
+        code_challenge=login.code_challenge,
+    )
     if "error" in result:
-        return jsonify(result), 400
+        return _oidc_upstream_error(result, clear_binding=False)
 
-    return jsonify(result), 200
+    response, status = _oidc_json(result, 200)
+    response.set_cookie(
+        oidc_state.BINDING_COOKIE_NAME,
+        login.binding,
+        max_age=oidc_state.STATE_TTL_SECONDS,
+        httponly=True,
+        secure=not current_app.config.get("DEBUG", False),
+        # Lax (not Strict): the IdP redirects back with a cross-site top-level GET.
+        samesite="Lax",
+        path=oidc_state.BINDING_COOKIE_PATH,
+    )
+    return response, status
 
 
 @bp.route("/oidc/callback", methods=["GET"])
 def oidc_callback():
     """Handle OIDC callback with authorization code.
 
+    Fail-closed order: ``code`` present -> ``state`` + binding cookie consumed
+    (single use) -> ``idp_id``/``redirect_uri`` (optional) must equal what the
+    login was bound to -> tenant resolved from the bound state (never from this
+    request) -> code exchanged with the PKCE verifier -> ID token validated
+    including its ``nonce`` -> user resolved. The session never carries a
+    stored ``global_role``.
+
     Query params:
         code: Authorization code from IdP
-        state: State parameter for CSRF protection
-        idp_id: IdP configuration ID
-        redirect_uri: Original redirect URI
+        state: Server-issued state (required)
+        idp_id: Optional; must match the login's IdP
+        redirect_uri: Optional; must match the login's redirect URI
 
     Returns:
         JWT tokens on success
     """
     code = request.args.get("code")
-    # TODO: Validate state parameter for CSRF protection
-    request.args.get("state")
-    idp_id = request.args.get("idp_id", type=int)
-    redirect_uri = request.args.get("redirect_uri")
 
     if not code:
+        if request.args.get("error"):
+            return _oidc_login_error(
+                OIDCLoginError(
+                    "oidc_idp_error", 400, "The identity provider reported an error"
+                )
+            )
         return ApiResponse.bad_request("code is required")
-    if not idp_id:
-        return ApiResponse.bad_request("idp_id is required")
-    if not redirect_uri:
-        return ApiResponse.bad_request("redirect_uri is required")
 
-    # Exchange code for tokens
-    tokens = OIDCService.exchange_code_for_tokens(idp_id, code, redirect_uri)
+    try:
+        login = oidc_state.consume_login(
+            request.args.get("state"),
+            request.cookies.get(oidc_state.BINDING_COOKIE_NAME),
+        )
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc)
 
-    if "error" in tokens:
-        return jsonify(tokens), 400
+    # From here the state is burned: every outcome also clears the binding cookie.
+    query_idp_id = request.args.get("idp_id")
+    if query_idp_id is not None and query_idp_id != str(login.idp_id):
+        return _oidc_login_error(
+            OIDCLoginError(
+                "oidc_idp_mismatch", 400, "Login was started for a different provider"
+            ),
+            clear_binding=True,
+        )
+    query_redirect_uri = request.args.get("redirect_uri")
+    if query_redirect_uri is not None and query_redirect_uri != login.redirect_uri:
+        return _oidc_login_error(
+            OIDCLoginError(
+                "oidc_redirect_uri_mismatch",
+                400,
+                "redirect_uri does not match the one used to start the login",
+            ),
+            clear_binding=True,
+        )
+    idp_id = login.idp_id
 
-    # Validate ID token
-    id_token_claims = OIDCService.validate_id_token(idp_id, tokens["id_token"])
-
-    if "error" in id_token_claims:
-        return jsonify(id_token_claims), 400
-
-    # Get additional userinfo (optional)
-    userinfo = OIDCService.get_userinfo(idp_id, tokens["access_token"])
-    if "error" in userinfo:
-        userinfo = None
-
-    # Get IdP config for JIT provisioning
     idp_config = OIDCService.get_idp_config(idp_id)
     if not idp_config:
-        return ApiResponse.error("IdP configuration not found", 404)
+        return _oidc_upstream_error({"error": "oidc_idp_not_found"})
 
-    tenant_id = idp_config.get("tenant_id", 1)  # Default to tenant 1 if global
+    try:
+        tenant_id = OIDCService.resolve_login_tenant(idp_config, login.tenant_id)
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc, clear_binding=True)
 
-    # JIT provision user if enabled
-    if idp_config.get("jit_provisioning_enabled"):
+    # Exchange code for tokens (PKCE verifier proves we started this login)
+    tokens = OIDCService.exchange_code_for_tokens(
+        idp_id, code, login.redirect_uri, code_verifier=login.code_verifier
+    )
+    if "error" in tokens:
+        return _oidc_upstream_error(tokens)
+    if not tokens.get("id_token"):
+        return _oidc_upstream_error({"error": "oidc_id_token_missing"})
+
+    # Validate ID token (signature, iss/aud/exp, and the login's nonce)
+    id_token_claims = OIDCService.validate_id_token(
+        idp_id, tokens["id_token"], expected_nonce=login.nonce
+    )
+    if "error" in id_token_claims:
+        return _oidc_upstream_error(id_token_claims)
+
+    # Get additional userinfo (optional); per OIDC Core 5.3.2 a userinfo
+    # response whose ``sub`` differs from the ID token's must not be used.
+    userinfo = None
+    if tokens.get("access_token"):
+        fetched = OIDCService.get_userinfo(idp_id, tokens["access_token"])
+        if "error" not in fetched:
+            if fetched.get("sub") == id_token_claims.get("sub"):
+                userinfo = fetched
+            else:
+                current_app.logger.warning(
+                    "oidc_userinfo_sub_mismatch idp_id=%s", idp_id
+                )
+
+    try:
         user = OIDCService.jit_provision_user(
             tenant_id=tenant_id,
             idp_config=idp_config,
             id_token_claims=id_token_claims,
             userinfo=userinfo,
         )
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc, clear_binding=True)
 
-        if "error" in user:
-            return jsonify(user), 400
+    # Generate Elder JWT tokens
+    elder_tokens = generate_tokens(user)
 
-        # Generate Elder JWT tokens
-        elder_tokens = generate_tokens(user)
-
-        # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the
-        # body keeps them only for non-browser callers, mirroring portal-auth.
-        response = jsonify(
-            {
-                "user": user,
-                **elder_tokens,
-            }
-        )
-        _attach_auth_cookies(response, elder_tokens)
-        return response, 200
-
-    return ApiResponse.forbidden("JIT provisioning is disabled for this IdP")
+    # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the
+    # body keeps them only for non-browser callers, mirroring portal-auth.
+    response, status = _oidc_json({"user": user, **elder_tokens}, 200)
+    _attach_auth_cookies(response, elder_tokens)
+    response.delete_cookie(
+        oidc_state.BINDING_COOKIE_NAME, path=oidc_state.BINDING_COOKIE_PATH
+    )
+    return response, status
 
 
 @bp.route("/oidc/logout/<int:idp_id>", methods=["POST"])
 @portal_token_required
 async def oidc_logout(idp_id):
     """Initiate OIDC logout (RP-Initiated Logout).
+
+    The IdP config must be one the caller may use (own tenant, or any for a
+    global admin); anything else is a 404 and the IdP is never contacted.
 
     Args:
         idp_id: IdP configuration ID
@@ -661,6 +865,10 @@ async def oidc_logout(idp_id):
     Returns:
         End session endpoint URL
     """
+    denied = await _require_scoped_oidc_idp(idp_id, "oidc_logout")
+    if denied is not None:
+        return denied
+
     data = await request.get_json() or {}
     id_token_hint = data.get("id_token_hint")
     post_logout_redirect_uri = data.get("post_logout_redirect_uri")
@@ -680,8 +888,11 @@ async def oidc_logout(idp_id):
 
 @bp.route("/oidc/userinfo/<int:idp_id>", methods=["GET"])
 @portal_token_required
-def oidc_userinfo(idp_id):
+async def oidc_userinfo(idp_id):
     """Get current user info from OIDC userinfo endpoint.
+
+    The IdP config must be one the caller may use; anything else is a 404 and
+    the IdP is never contacted.
 
     Args:
         idp_id: IdP configuration ID
@@ -692,12 +903,17 @@ def oidc_userinfo(idp_id):
     Returns:
         User info claims
     """
+    denied = await _require_scoped_oidc_idp(idp_id, "oidc_userinfo")
+    if denied is not None:
+        return denied
+
     access_token = request.headers.get("X-OIDC-Access-Token")
 
     if not access_token:
         return ApiResponse.bad_request("X-OIDC-Access-Token header is required")
 
-    result = OIDCService.get_userinfo(idp_id, access_token)
+    # Blocking `requests` calls (discovery + userinfo) -- off the event loop.
+    result = await run_in_threadpool(OIDCService.get_userinfo, idp_id, access_token)
 
     if "error" in result:
         return jsonify(result), 400
@@ -710,6 +926,10 @@ def oidc_userinfo(idp_id):
 async def oidc_refresh(idp_id):
     """Refresh OIDC access token.
 
+    The IdP config must be one the caller may use; anything else is a 404 and
+    the IdP's token endpoint (which would receive that config's client secret)
+    is never contacted.
+
     Args:
         idp_id: IdP configuration ID
 
@@ -719,6 +939,10 @@ async def oidc_refresh(idp_id):
     Returns:
         New tokens
     """
+    denied = await _require_scoped_oidc_idp(idp_id, "oidc_refresh")
+    if denied is not None:
+        return denied
+
     data = await request.get_json()
     if not data:
         return ApiResponse.bad_request("No data provided")
@@ -744,44 +968,74 @@ async def oidc_refresh(idp_id):
 # =============================================================================
 
 
+def _resolve_scim_admin(tenant_id: int, action: str) -> tuple | None:
+    """Authorize a SCIM config/token operation on ``tenant_id``.
+
+    Regression: scim-cross-tenant -- these routes checked only the caller's
+    role, so a tenant-A admin could read tenant B's SCIM config and rotate its
+    bearer token. The caller must be a global admin or a tenant admin whose
+    token tenant IS ``tenant_id``; any other tenant answers the same 404 as a
+    tenant with no SCIM config, so neither existence nor config ids leak.
+    Returns an error response, or None if allowed.
+    """
+    caller, error = _resolve_idp_caller()
+    if caller is None or error is not None:
+        return error or ApiResponse.forbidden("Access denied")
+    if not caller.is_global_admin and caller.tenant_id != tenant_id:
+        current_app.logger.warning(
+            "scim_config_access_denied action=%s tenant_id=%s caller_tenant_id=%s",
+            action,
+            tenant_id,
+            caller.tenant_id,
+        )
+        return ApiResponse.error("SCIM not configured", 404)
+    return None
+
+
 @bp.route("/scim/config", methods=["POST"])
 @login_required
 @portal_token_required
 async def create_scim_config():
     """Create SCIM configuration for a tenant.
 
+    Tenant admins always create for their own tenant (a body ``tenant_id`` is
+    ignored); only global admins choose the tenant, which must exist. The
+    bearer token in the response is shown once and never readable again.
+
     Request body:
-        tenant_id: int - Tenant ID (admin only)
+        tenant_id: int - Tenant ID (global admins only)
 
     Returns:
         SCIM configuration with bearer token
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return ApiResponse.forbidden("Admin permission required")
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    data = await request.get_json() or {}
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
 
     # Tenant admins can only configure their tenant
-    tenant_id = data.get("tenant_id")
-    if request.portal_user.get("global_role") != "admin":
-        tenant_id = request.portal_user.get("tenant_id")
+    tenant_id = data.get("tenant_id") if caller.is_global_admin else caller.tenant_id
 
-    if not tenant_id:
+    if tenant_id is None:
         return ApiResponse.bad_request("tenant_id is required")
+    if not isinstance(tenant_id, int) or isinstance(tenant_id, bool) or tenant_id <= 0:
+        return ApiResponse.bad_request("tenant_id must be a positive integer")
 
-    result = SCIMService.create_scim_config(tenant_id)
+    if not await run_in_threadpool(SCIMService.tenant_exists, tenant_id):
+        return ApiResponse.not_found("Tenant", tenant_id)
+
+    result = await run_in_threadpool(SCIMService.create_scim_config, tenant_id)
 
     return jsonify(result), 201
 
 
 @bp.route("/scim/config/<int:tenant_id>", methods=["GET"])
 @portal_token_required
-def get_scim_config(tenant_id):
-    """Get SCIM configuration for a tenant.
+async def get_scim_config(tenant_id):
+    """Get SCIM configuration for a tenant (tenant admin of that tenant, or global admin).
 
     Args:
         tenant_id: Tenant ID
@@ -789,7 +1043,11 @@ def get_scim_config(tenant_id):
     Returns:
         SCIM configuration (without bearer token)
     """
-    config = SCIMService.get_scim_config(tenant_id)
+    denied = _resolve_scim_admin(tenant_id, "get")
+    if denied is not None:
+        return denied
+
+    config = await run_in_threadpool(SCIMService.get_scim_config, tenant_id)
 
     if not config:
         return ApiResponse.error("SCIM not configured", 404)
@@ -799,8 +1057,11 @@ def get_scim_config(tenant_id):
 
 @bp.route("/scim/config/<int:tenant_id>/regenerate-token", methods=["POST"])
 @portal_token_required
-def regenerate_scim_token(tenant_id):
-    """Regenerate SCIM bearer token.
+async def regenerate_scim_token(tenant_id):
+    """Regenerate SCIM bearer token (tenant admin of that tenant, or global admin).
+
+    The previous token stops working immediately; the new one is returned
+    once and is never readable again.
 
     Args:
         tenant_id: Tenant ID
@@ -808,17 +1069,14 @@ def regenerate_scim_token(tenant_id):
     Returns:
         New bearer token
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return ApiResponse.forbidden("Admin permission required")
+    denied = _resolve_scim_admin(tenant_id, "regenerate")
+    if denied is not None:
+        return denied
 
-    result = SCIMService.regenerate_token(tenant_id)
+    result = await run_in_threadpool(SCIMService.regenerate_token, tenant_id)
 
     if "error" in result:
-        return jsonify(result), 404
+        return ApiResponse.error("SCIM not configured", 404)
 
     return jsonify(result), 200
 
@@ -874,7 +1132,7 @@ async def scim_create_user(tenant_id):
             400,
         )
 
-    result = SCIMService.create_user(tenant_id, scim_user)
+    result = await run_in_threadpool(SCIMService.create_user, tenant_id, scim_user)
 
     if "error" in result:
         status = result.pop("status", 400)
@@ -950,7 +1208,9 @@ async def scim_update_user(tenant_id, user_id):
             400,
         )
 
-    result = SCIMService.update_user(tenant_id, user_id, scim_user)
+    result = await run_in_threadpool(
+        SCIMService.update_user, tenant_id, user_id, scim_user
+    )
 
     if "error" in result:
         status = result.pop("status", 400)

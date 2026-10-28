@@ -29,9 +29,8 @@ from uuid import uuid4
 import jwt
 import pytest
 import pytest_asyncio
-import requests
-from cryptography.hazmat.primitives.asymmetric import rsa
 from quart import current_app
+from sso_testkit import FakeOidcProvider, begin, finish, install_fake_providers
 
 from apps.api.models.pydantic.idp import IdPConfigResponse, UpdateIdPConfigRequest
 from apps.api.services.sso import SAMLService
@@ -892,109 +891,6 @@ class TestServiceLayerEnforcesOwnership:
         assert "oidc_client_secret" not in view.to_dict()
 
 
-@dataclass(slots=True)
-class FakeIdp:
-    """Stand-in for an *external* OIDC provider (discovery, JWKS, token)."""
-
-    issuer: str
-    client_id: str
-    client_secret: str
-    kid: str
-    codes: dict[str, str]
-    key: Any = field(default_factory=lambda: rsa.generate_private_key(65537, 2048))
-
-    @property
-    def token_endpoint(self) -> str:
-        """Token endpoint URL advertised in discovery."""
-        return f"{self.issuer}/token"
-
-    @property
-    def jwks_uri(self) -> str:
-        """JWKS URL advertised in discovery."""
-        return f"{self.issuer}/jwks"
-
-    def discovery(self) -> dict[str, str]:
-        """OIDC discovery document."""
-        return {
-            "issuer": self.issuer,
-            "token_endpoint": self.token_endpoint,
-            "jwks_uri": self.jwks_uri,
-        }
-
-    def jwks(self) -> dict[str, Any]:
-        """JWKS with this provider's single signing key."""
-        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(self.key.public_key()))
-        jwk.update({"kid": self.kid, "alg": "RS256", "use": "sig"})
-        return {"keys": [jwk]}
-
-    def issue_id_token(self, code: str) -> str:
-        """Mint an ID token for ``code`` (raises like a real IdP if unknown)."""
-        if code not in self.codes:
-            raise ValueError("invalid_grant")
-        now = datetime.now(UTC)
-        claims = {
-            "iss": self.issuer,
-            "aud": self.client_id,
-            "sub": f"sub-{code}",
-            "email": self.codes[code],
-            "iat": now,
-            "exp": now + timedelta(minutes=5),
-        }
-        return jwt.encode(
-            claims, self.key, algorithm="RS256", headers={"kid": self.kid}
-        )
-
-
-class _Resp:
-    """Minimal ``requests.Response`` stand-in."""
-
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self._payload = payload
-
-    def raise_for_status(self) -> None:
-        """Always 200."""
-
-    def json(self) -> dict[str, Any]:
-        """Return the canned JSON document."""
-        return self._payload
-
-
-def _install_fake_idps(monkeypatch, idps: list[FakeIdp]) -> None:
-    """Route OIDCService's outbound HTTP/OAuth calls to the fake providers."""
-    documents: dict[str, Any] = {}
-    by_token_endpoint: dict[str, FakeIdp] = {}
-    for idp in idps:
-        documents[f"{idp.issuer}/.well-known/openid-configuration"] = idp.discovery
-        documents[idp.jwks_uri] = idp.jwks
-        by_token_endpoint[idp.token_endpoint] = idp
-
-    def fake_get(url: str, **_kwargs):
-        if url not in documents:
-            raise requests.ConnectionError(f"unreachable: {url}")
-        return _Resp(documents[url]())
-
-    class FakeSession:
-        def __init__(self, client_id, client_secret, token_endpoint_auth_method=None):
-            self.client_id = client_id
-            self.client_secret = client_secret
-
-        def fetch_token(self, url, grant_type, code, redirect_uri):
-            idp = by_token_endpoint[url]
-            if (self.client_id, self.client_secret) != (
-                idp.client_id,
-                idp.client_secret,
-            ):
-                raise ValueError("invalid_client")
-            return {
-                "id_token": idp.issue_id_token(code),
-                "access_token": "idp-access-token",
-                "token_type": "Bearer",
-            }
-
-    monkeypatch.setattr("apps.api.services.sso.oidc_service.requests.get", fake_get)
-    monkeypatch.setattr("apps.api.services.sso.oidc_service.OAuth2Session", FakeSession)
-
-
 class TestOidcAccountTakeoverChain:
     """regression: idp-config-cross-tenant -- OIDC angle (CONFIRMED pre-fix).
 
@@ -1002,46 +898,43 @@ class TestOidcAccountTakeoverChain:
     -> attacker-controlled IdP), then ``/oidc/callback?idp_id=<B's config>``
     validates the attacker's ID token against the attacker's JWKS and JIT
     returns tenant B's existing admin user -> Elder JWTs for that user.
+
+    The browser flow is real (authorize -> IdP login -> callback with the
+    state/nonce/PKCE binding); only the external IdPs are faked.
     """
 
     @staticmethod
-    def _idps(world: World) -> tuple[FakeIdp, FakeIdp]:
-        real_b = FakeIdp(
+    def _providers() -> tuple[FakeOidcProvider, FakeOidcProvider]:
+        real_b = FakeOidcProvider(
             issuer="https://idp-b.example.test",
             client_id="client-b",
             client_secret=SECRET_B,
             kid="b-key",
-            codes={"b-code": world.victim_email},
         )
-        attacker = FakeIdp(
+        attacker = FakeOidcProvider(
             issuer="https://attacker.example.test",
             client_id="attacker-client",
             client_secret="attacker-secret",
             kid="attacker-key",
-            codes={"evil-code": world.victim_email},
         )
         return real_b, attacker
 
     @staticmethod
-    async def _callback(async_client, idp_id: int, code: str):
-        return await async_client.get(
-            "/api/v1/sso/oidc/callback",
-            query_string={
-                "code": code,
-                "idp_id": idp_id,
-                "redirect_uri": "https://elder.example.test/cb",
-            },
-        )
+    async def _login(app, idp_id: int, authenticate_at: FakeOidcProvider, email: str):
+        """Authorize on Elder, log in at ``authenticate_at``, deliver the callback."""
+        async with app.test_client(use_cookies=False) as browser:
+            begun = await begin(browser, idp_id)
+            assert begun.status == 200, begun.body
+            code = authenticate_at.authenticate(begun.authorization_url, email)
+            return await finish(browser, begun, code, idp_id=idp_id)
 
     @pytest.mark.asyncio
-    async def test_positive_control_real_idp_login_works(
-        self, async_client, world, monkeypatch
-    ):
+    async def test_positive_control_real_idp_login_works(self, app, world, monkeypatch):
         """Harness sanity: B's genuine IdP logs B's admin in (so the negative
         tests below fail for the right reason, not a broken fake)."""
-        real_b, attacker = self._idps(world)
-        _install_fake_idps(monkeypatch, [real_b, attacker])
-        resp = await self._callback(async_client, world.b_oidc, "b-code")
+        real_b, attacker = self._providers()
+        install_fake_providers(monkeypatch, [real_b, attacker])
+        resp = await self._login(app, world.b_oidc, real_b, world.victim_email)
         assert resp.status_code == 200, (await resp.get_data()).decode()
         user = (await resp.get_json())["user"]
         assert user["tenant_id"] == world.tenant_b
@@ -1051,8 +944,8 @@ class TestOidcAccountTakeoverChain:
     async def test_attacker_idp_cannot_be_planted_into_other_tenants_config(
         self, app, async_client, world, monkeypatch
     ):
-        real_b, attacker = self._idps(world)
-        _install_fake_idps(monkeypatch, [real_b, attacker])
+        real_b, attacker = self._providers()
+        install_fake_providers(monkeypatch, [real_b, attacker])
 
         # Step 1: tenant-A admin tries to repoint B's OIDC config at their IdP.
         put = await async_client.put(
@@ -1067,7 +960,7 @@ class TestOidcAccountTakeoverChain:
         assert put.status_code == 404, (await put.get_data()).decode()
 
         # Step 2: log in as B's admin using the attacker IdP's code.
-        resp = await self._callback(async_client, world.b_oidc, "evil-code")
+        resp = await self._login(app, world.b_oidc, attacker, world.victim_email)
         assert resp.status_code == 400, (await resp.get_data()).decode()
         body = await resp.get_json()
         assert "access_token" not in body and "user" not in body
@@ -1077,7 +970,7 @@ class TestOidcAccountTakeoverChain:
         assert row["oidc_issuer_url"] == real_b.issuer
         assert row["oidc_client_id"] == "client-b"
         assert row["oidc_client_secret"] == SECRET_B
-        ok = await self._callback(async_client, world.b_oidc, "b-code")
+        ok = await self._login(app, world.b_oidc, real_b, world.victim_email)
         assert ok.status_code == 200
 
     @pytest.mark.asyncio

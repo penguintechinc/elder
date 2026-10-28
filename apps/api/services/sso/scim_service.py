@@ -2,15 +2,31 @@
 
 Implements SCIM 2.0 endpoints for user and group provisioning
 from identity providers like Okta, Azure AD, etc.
+
+Tenant isolation (regression: scim-cross-tenant): every read and every write
+below carries the tenant predicate, including the ``UPDATE`` itself (not just
+the preceding existence check), so a SCIM bearer token -- which is bound to one
+tenant by ``validate_bearer_token`` -- can never touch another tenant's rows.
+SCIM also never manages platform-privileged (``global_role``) accounts.
 """
 
 # flake8: noqa: E501
 
 import datetime
 import secrets
-from typing import Optional
+from typing import Any
 
 from quart import current_app
+
+# Upper bound on one SCIM page; larger ``count`` values are clamped.
+MAX_PAGE_SIZE = 200
+_MAX_FULL_NAME_CHARS = 255
+_MAX_EMAIL_CHARS = 255
+
+
+def _error(message: str, status: int) -> dict[str, Any]:
+    """Build the service-level error dict the SCIM routes render as SCIM errors."""
+    return {"error": message, "status": status}
 
 
 class SCIMService:
@@ -21,11 +37,27 @@ class SCIMService:
     GROUP_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:Group"
 
     @staticmethod
+    def tenant_exists(tenant_id: int) -> bool:
+        """Return True if ``tenant_id`` is an existing tenant (used before creating a config).
+
+        Args:
+            tenant_id: Tenant ID
+
+        Returns:
+            True if a tenants row with that id exists
+        """
+        db = current_app.db
+        return db(db.tenants.id == tenant_id).count() > 0
+
+    @staticmethod
     def create_scim_config(
         tenant_id: int,
         endpoint_url: str | None = None,
     ) -> dict:
         """Create SCIM configuration for a tenant.
+
+        The bearer token in the return value is the only time it is ever
+        disclosed; ``get_scim_config`` never returns it.
 
         Args:
             tenant_id: Tenant ID
@@ -56,7 +88,7 @@ class SCIMService:
 
     @staticmethod
     def get_scim_config(tenant_id: int) -> dict | None:
-        """Get SCIM configuration for a tenant.
+        """Get SCIM configuration for a tenant (never includes the bearer token).
 
         Args:
             tenant_id: Tenant ID
@@ -89,15 +121,20 @@ class SCIMService:
 
     @staticmethod
     def validate_bearer_token(tenant_id: int, token: str) -> bool:
-        """Validate SCIM bearer token.
+        """Validate a SCIM bearer token for exactly one tenant.
+
+        The lookup matches on tenant AND token, so a token issued for tenant X
+        is never valid for tenant Y.
 
         Args:
-            tenant_id: Tenant ID
+            tenant_id: Tenant ID the request is addressed to
             token: Bearer token to validate
 
         Returns:
             True if valid, False otherwise
         """
+        if not isinstance(token, str) or not token:
+            return False
         db = current_app.db
         config = (
             db(
@@ -112,6 +149,34 @@ class SCIMService:
         return config is not None
 
     @staticmethod
+    def _emails(scim_user: dict) -> list[dict] | None:
+        """Return the ``emails`` list if it is a list of objects, else None."""
+        emails = scim_user.get("emails", [])
+        if emails is None:
+            return []
+        if not isinstance(emails, list) or not all(isinstance(e, dict) for e in emails):
+            return None
+        return emails
+
+    @staticmethod
+    def _full_name(scim_user: dict) -> tuple[bool, str | None]:
+        """Extract the display name; returns ``(present, name)``; raises ValueError if malformed."""
+        name_obj = scim_user.get("name")
+        if name_obj is None:
+            name_obj = {}
+        if not isinstance(name_obj, dict):
+            raise ValueError("name must be an object")
+        display = scim_user.get("displayName")
+        if display is not None and not isinstance(display, str):
+            raise ValueError("displayName must be a string")
+        given, family = name_obj.get("givenName", ""), name_obj.get("familyName", "")
+        if not isinstance(given, str) or not isinstance(family, str):
+            raise ValueError("name parts must be strings")
+        present = "displayName" in scim_user or bool(name_obj)
+        full_name = display or f"{given} {family}".strip()
+        return present, full_name[:_MAX_FULL_NAME_CHARS]
+
+    @staticmethod
     def create_user(tenant_id: int, scim_user: dict) -> dict:
         """Create a user from SCIM request.
 
@@ -122,15 +187,32 @@ class SCIMService:
         Returns:
             SCIM user response
         """
+        if not isinstance(scim_user, dict):
+            return _error("SCIM User resource must be an object", 400)
+        emails = SCIMService._emails(scim_user)
+        if emails is None:
+            return _error("emails must be a list of objects", 400)
+        if not isinstance(scim_user.get("active", True), bool):
+            return _error("active must be a boolean", 400)
+        try:
+            _present, full_name = SCIMService._full_name(scim_user)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+
         db = current_app.db
         # Extract user attributes from SCIM format
         email = None
-        for email_obj in scim_user.get("emails", []):
+        for email_obj in emails:
+            value = email_obj.get("value")
+            if not isinstance(value, str) or not value.strip():
+                continue
             if email_obj.get("primary", False) or not email:
-                email = email_obj.get("value")
+                email = value.strip()
 
         if not email:
-            return {"error": "Email is required", "status": 400}
+            return _error("Email is required", 400)
+        if len(email) > _MAX_EMAIL_CHARS:
+            return _error("Email is too long", 400)
 
         # Check if user already exists
         existing = (
@@ -143,14 +225,7 @@ class SCIMService:
         )
 
         if existing:
-            return {"error": "User already exists", "status": 409}
-
-        # Build name
-        name_obj = scim_user.get("name", {})
-        full_name = (
-            scim_user.get("displayName")
-            or f"{name_obj.get('givenName', '')} {name_obj.get('familyName', '')}".strip()
-        )
+            return _error("User already exists", 409)
 
         # Create portal user
         user_id = db.portal_users.insert(
@@ -170,7 +245,9 @@ class SCIMService:
         )
         db.commit()
 
-        return SCIMService._user_to_scim(user_id, email.lower(), full_name, True)
+        return SCIMService._user_to_scim(
+            user_id, email.lower(), full_name, scim_user.get("active", True)
+        )
 
     @staticmethod
     def get_user(tenant_id: int, user_id: int) -> dict:
@@ -194,7 +271,7 @@ class SCIMService:
         )
 
         if not user:
-            return {"error": "User not found", "status": 404}
+            return _error("User not found", 404)
 
         return SCIMService._user_to_scim(
             user.id, user.email, user.full_name, user.is_active
@@ -204,6 +281,10 @@ class SCIMService:
     def update_user(tenant_id: int, user_id: int, scim_user: dict) -> dict:
         """Update a user from SCIM request.
 
+        The write is scoped to ``(id, tenant_id)`` itself, and platform-
+        privileged accounts (a stored ``global_role``) are refused (403) -- a
+        tenant's SCIM token must not rewrite or deactivate a platform admin.
+
         Args:
             tenant_id: Tenant ID
             user_id: Portal user ID
@@ -212,45 +293,68 @@ class SCIMService:
         Returns:
             Updated SCIM user response
         """
+        if not isinstance(scim_user, dict):
+            return _error("SCIM User resource must be an object", 400)
+
         db = current_app.db
-        user = (
-            db(
-                (db.portal_users.id == user_id)
-                & (db.portal_users.tenant_id == tenant_id)
-            )
-            .select()
-            .first()
+        scoped = (db.portal_users.id == user_id) & (
+            db.portal_users.tenant_id == tenant_id
         )
+        user = db(scoped).select().first()
 
         if not user:
-            return {"error": "User not found", "status": 404}
+            return _error("User not found", 404)
+        if user.global_role:
+            return _error(
+                "Platform-privileged accounts cannot be managed through SCIM", 403
+            )
 
         # Extract updates
-        updates = {}
+        updates: dict[str, Any] = {}
 
         # Email
-        for email_obj in scim_user.get("emails", []):
+        emails = SCIMService._emails(scim_user)
+        if emails is None:
+            return _error("emails must be a list of objects", 400)
+        for email_obj in emails:
             if email_obj.get("primary", False):
-                updates["email"] = email_obj.get("value", "").lower()
+                value = email_obj.get("value")
+                if not isinstance(value, str) or not value.strip():
+                    return _error("email value must be a non-empty string", 400)
+                if len(value.strip()) > _MAX_EMAIL_CHARS:
+                    return _error("Email is too long", 400)
+                updates["email"] = value.strip().lower()
                 break
 
         # Name
-        name_obj = scim_user.get("name", {})
-        if "displayName" in scim_user or name_obj:
-            updates["full_name"] = (
-                scim_user.get("displayName")
-                or f"{name_obj.get('givenName', '')} {name_obj.get('familyName', '')}".strip()
-            )
+        try:
+            name_present, full_name = SCIMService._full_name(scim_user)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        if name_present:
+            updates["full_name"] = full_name
 
         # Active status
         if "active" in scim_user:
+            if not isinstance(scim_user["active"], bool):
+                return _error("active must be a boolean", 400)
             updates["is_active"] = scim_user["active"]
 
-        if updates:
-            db(db.portal_users.id == user_id).update(**updates)
+        if "email" in updates and updates["email"] != user.email:
+            clash = db(
+                (db.portal_users.email == updates["email"])
+                & (db.portal_users.tenant_id == tenant_id)
+                & (db.portal_users.id != user_id)
+            ).count()
+            if clash:
+                return _error("User already exists", 409)
 
-        # Refresh user data
-        user = db.portal_users[user_id]
+        if updates:
+            db(scoped).update(**updates)
+            db.commit()
+
+        # Refresh user data (same tenant-scoped predicate as the write)
+        user = db(scoped).select().first()
 
         return SCIMService._user_to_scim(
             user.id, user.email, user.full_name, user.is_active
@@ -260,6 +364,9 @@ class SCIMService:
     def delete_user(tenant_id: int, user_id: int) -> dict:
         """Delete a user (SCIM deprovision).
 
+        Soft delete only, scoped to ``(id, tenant_id)``; platform-privileged
+        accounts are refused (403).
+
         Args:
             tenant_id: Tenant ID
             user_id: Portal user ID
@@ -268,20 +375,21 @@ class SCIMService:
             Success status
         """
         db = current_app.db
-        user = (
-            db(
-                (db.portal_users.id == user_id)
-                & (db.portal_users.tenant_id == tenant_id)
-            )
-            .select()
-            .first()
+        scoped = (db.portal_users.id == user_id) & (
+            db.portal_users.tenant_id == tenant_id
         )
+        user = db(scoped).select().first()
 
         if not user:
-            return {"error": "User not found", "status": 404}
+            return _error("User not found", 404)
+        if user.global_role:
+            return _error(
+                "Platform-privileged accounts cannot be managed through SCIM", 403
+            )
 
         # Soft delete - deactivate instead of delete
-        db(db.portal_users.id == user_id).update(is_active=False)
+        db(scoped).update(is_active=False)
+        db.commit()
 
         return {"status": 204}
 
@@ -294,6 +402,9 @@ class SCIMService:
     ) -> dict:
         """List users in SCIM format.
 
+        ``startIndex`` is clamped to >= 1 and ``count`` to ``0..MAX_PAGE_SIZE``
+        (a negative offset used to 500, an unbounded count to a full-table read).
+
         Args:
             tenant_id: Tenant ID
             start_index: Starting index (1-based)
@@ -303,6 +414,8 @@ class SCIMService:
         Returns:
             SCIM ListResponse
         """
+        start_index = max(1, start_index)
+        count = min(max(0, count), MAX_PAGE_SIZE)
         db = current_app.db
         query = db.portal_users.tenant_id == tenant_id
 
@@ -313,7 +426,10 @@ class SCIMService:
                 email = filter_str.split('"')[1] if '"' in filter_str else ""
                 query &= db.portal_users.email == email.lower()
 
-        users = db(query).select(limitby=(start_index - 1, start_index - 1 + count))
+        users = db(query).select(
+            orderby=db.portal_users.id,
+            limitby=(start_index - 1, start_index - 1 + count),
+        )
         total = db(query).count()
 
         resources = [
@@ -376,19 +492,24 @@ class SCIMService:
     def regenerate_token(tenant_id: int) -> dict:
         """Regenerate SCIM bearer token.
 
+        The caller (route) must already have verified that ``tenant_id`` is the
+        authenticated admin's own tenant (or that they are a global admin).
+        The new token is returned once and never readable again.
+
         Args:
             tenant_id: Tenant ID
 
         Returns:
-            New bearer token
+            New bearer token, or ``{"error": ...}`` if SCIM is not configured
         """
         db = current_app.db
         config = db(db.scim_configurations.tenant_id == tenant_id).select().first()
 
         if not config:
-            return {"error": "SCIM not configured for this tenant"}
+            return {"error": "SCIM not configured"}
 
         new_token = f"scim_{secrets.token_urlsafe(32)}"
         db(db.scim_configurations.tenant_id == tenant_id).update(bearer_token=new_token)
+        db.commit()
 
         return {"bearer_token": new_token}

@@ -20,6 +20,7 @@ from apps.api.auth.portal_cookies import (
     REFRESH_COOKIE_NAME,
     REFRESH_COOKIE_PATH,
 )
+from apps.api.services.sso.oidc_state import OIDCLoginRecord
 
 _TOKENS = {
     "access_token": "acc-jwt",
@@ -97,7 +98,21 @@ class TestSamlAcsSetsHttpOnlyCookies:
 
 
 class TestOidcCallbackSetsHttpOnlyCookies:
+    """The callback's cookie contract; the state/nonce binding that gates it is
+    covered end-to-end (real Redis) in ``test_sso_oidc_login_hardening.py``, so
+    the login-state lookup is stubbed here."""
+
     @pytest.mark.asyncio
+    @patch(
+        "apps.api.api.v1.sso.oidc_state.consume_login",
+        return_value=OIDCLoginRecord(
+            idp_id=1,
+            tenant_id=1,
+            redirect_uri="https://app.example/cb",
+            nonce="n",
+            code_verifier="v",
+        ),
+    )
     @patch("apps.api.api.v1.sso.generate_tokens", return_value=dict(_TOKENS))
     @patch("apps.api.api.v1.sso.OIDCService.jit_provision_user")
     @patch("apps.api.api.v1.sso.OIDCService.get_idp_config")
@@ -112,6 +127,7 @@ class TestOidcCallbackSetsHttpOnlyCookies:
         mock_idp,
         mock_jit,
         _mock_tokens,
+        _mock_consume,
         async_client,
     ):
         mock_exchange.return_value = {
@@ -127,9 +143,11 @@ class TestOidcCallbackSetsHttpOnlyCookies:
             "/api/v1/sso/oidc/callback",
             query_string={
                 "code": "authz-code",
+                "state": "stubbed-state",
                 "idp_id": 1,
                 "redirect_uri": "https://app.example/cb",
             },
+            headers={"Cookie": "elder_oidc_binding=stubbed-binding"},
         )
 
         assert resp.status_code == 200, (await resp.get_data()).decode()[:200]
