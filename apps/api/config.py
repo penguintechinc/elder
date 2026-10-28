@@ -40,6 +40,12 @@ class Config:
     REDIS_PASSWORD = config("REDIS_PASSWORD", default=None)
     REDIS_SSL = config("REDIS_SSL", default=False, cast=bool)
 
+    # OIDC login redirect URIs the server will ever send to an IdP. Comma
+    # separated or a JSON list; each entry is compared by exact string equality.
+    # Unset/empty = OIDC login is refused (fail closed, 503): an operator must
+    # list the callback URL(s) -- see docs/USAGE.md "OIDC redirect URIs".
+    OIDC_ALLOWED_REDIRECT_URIS = config("OIDC_ALLOWED_REDIRECT_URIS", default="")
+
     # Session
     SESSION_TYPE = "redis"
     SESSION_PERMANENT = False

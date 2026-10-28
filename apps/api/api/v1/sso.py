@@ -8,7 +8,6 @@ and SCIM 2.0 user provisioning.
 
 from functools import wraps
 from inspect import iscoroutinefunction
-from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 from quart import Blueprint, Response, current_app, jsonify, request
@@ -627,17 +626,6 @@ def _positive_int(raw: str | None) -> int | None:
     return value if value > 0 else None
 
 
-def _is_safe_redirect_uri(uri: str) -> bool:
-    """Accept only absolute ``http(s)`` redirect URIs with a host, no control chars."""
-    if len(uri) > 2048 or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in uri):
-        return False
-    try:
-        parts = urlsplit(uri)
-    except ValueError:
-        return False
-    return parts.scheme in ("http", "https") and bool(parts.hostname)
-
-
 async def _require_scoped_oidc_idp(idp_id: int, action: str) -> tuple | None:
     """Gate an authenticated OIDC route on the caller's right to use ``idp_id``.
 
@@ -672,7 +660,8 @@ def oidc_authorize(idp_id):
         idp_id: IdP configuration ID
 
     Query params:
-        redirect_uri: Callback redirect URI (absolute http/https URL)
+        redirect_uri: Callback URL; must exactly equal an entry of the
+            ``OIDC_ALLOWED_REDIRECT_URIS`` allowlist (unset = 503, fail closed)
         tenant_id: Target tenant (required for a global IdP)
 
     Returns:
@@ -681,8 +670,12 @@ def oidc_authorize(idp_id):
     redirect_uri = request.args.get("redirect_uri")
     if not redirect_uri:
         return ApiResponse.bad_request("redirect_uri is required")
-    if not _is_safe_redirect_uri(redirect_uri):
-        return ApiResponse.bad_request("redirect_uri must be an absolute http(s) URL")
+    # Exact-match against the operator's allowlist BEFORE any login state is
+    # recorded (regression: oidc-redirect-uri); unset allowlist fails closed.
+    try:
+        OIDCService.require_allowed_redirect_uri(redirect_uri)
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc)
 
     requested_tenant_id = None
     if "tenant_id" in request.args:
@@ -785,6 +778,13 @@ def oidc_callback():
             clear_binding=True,
         )
     idp_id = login.idp_id
+
+    # The stored redirect URI must still be allowlisted (an operator may have
+    # tightened the list since this login began).
+    try:
+        OIDCService.require_allowed_redirect_uri(login.redirect_uri)
+    except OIDCLoginError as exc:
+        return _oidc_login_error(exc, clear_binding=True)
 
     idp_config = OIDCService.get_idp_config(idp_id)
     if not idp_config:

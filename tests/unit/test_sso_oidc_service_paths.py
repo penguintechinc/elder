@@ -20,6 +20,7 @@ from sso_testkit import (
     AUTHORIZE,
     CALLBACK_REDIRECT_URI,
     FakeOidcProvider,
+    allow_redirect_uris,
     begin,
     build_world,
     finish,
@@ -30,6 +31,12 @@ from sso_testkit import (
 
 from apps.api.services.sso import OIDCService
 from apps.api.services.sso.oidc_state import OIDCLoginError
+
+
+@pytest.fixture(autouse=True)
+def _allowed_redirect_uris(app, monkeypatch):
+    """The operator's OIDC redirect allowlist (unset would fail login closed)."""
+    allow_redirect_uris(monkeypatch, app)
 
 
 @pytest_asyncio.fixture
@@ -364,10 +371,10 @@ class TestResolveLoginTenantAndJit:
                     "tenant_id": world.tenant_b,
                     "jit_provisioning_enabled": True,
                     "default_role": "maintainer",
-                    "attribute_mappings": {"email": "mail", "full_name": "cn"},
+                    "attribute_mappings": {"full_name": "cn"},
                 },
                 id_token_claims={
-                    "mail": f"  {email}  ",
+                    "email": f"  {email}  ",
                     "email_verified": True,
                     "cn": "N" * 400,
                 },
@@ -379,6 +386,31 @@ class TestResolveLoginTenantAndJit:
         assert user["global_role"] is None and user["jit_provisioned"] is True
         assert row.tenant_id == world.tenant_b
         assert len(row.full_name) == 255
+
+    @pytest.mark.asyncio
+    async def test_jit_refuses_a_mapped_email_claim_even_when_verified(
+        self, app, world
+    ):
+        """``email_verified`` only vouches for ``email``: a mapped claim is refused."""
+        async with app.app_context():
+            before = current_app.db(current_app.db.portal_users.id > 0).count()
+            with pytest.raises(OIDCLoginError) as exc:
+                OIDCService.jit_provision_user(
+                    tenant_id=world.tenant_b,
+                    idp_config={
+                        "tenant_id": world.tenant_b,
+                        "jit_provisioning_enabled": True,
+                        "attribute_mappings": {"email": "preferred_username"},
+                    },
+                    id_token_claims={
+                        "email": "attacker@example.test",
+                        "email_verified": True,
+                        "preferred_username": world.b_admin_email,
+                    },
+                )
+            assert current_app.db(current_app.db.portal_users.id > 0).count() == before
+        assert exc.value.code == "oidc_email_claim_mapping_unsupported"
+        assert exc.value.status == 403
 
     @pytest.mark.asyncio
     async def test_jit_ignores_a_non_string_name_claim(self, app, world):

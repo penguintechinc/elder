@@ -129,7 +129,7 @@ def _client() -> redis.Redis:
             health_check_interval=30,
         )
         client.ping()
-    except (RedisError, ValueError) as exc:
+    except (RedisError, OSError, ValueError) as exc:
         current_app.logger.warning(
             "oidc_state_store_connect_failed error=%s", type(exc).__name__
         )
@@ -177,7 +177,7 @@ def begin_login(idp_id: int, tenant_id: int, redirect_uri: str) -> OIDCLoginStar
     client = _client()
     try:
         client.set(_key(state), record, ex=STATE_TTL_SECONDS, nx=True)
-    except RedisError as exc:
+    except (RedisError, OSError) as exc:
         _drop_client(exc)
         raise _unavailable() from exc
     return OIDCLoginStart(
@@ -224,7 +224,9 @@ def consume_login(state: str | None, binding: str | None) -> OIDCLoginRecord:
         pipe.get(key)
         pipe.delete(key)
         raw, _deleted = pipe.execute()
-    except RedisError as exc:
+    except (RedisError, OSError) as exc:
+        # Any store failure mid-consume is "unavailable" (503), never a 400 that
+        # would tell the user their (still valid) login state was bad.
         _drop_client(exc)
         raise _unavailable() from exc
     if raw is None:

@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from sso_testkit import allow_redirect_uris
 
 from apps.api.auth.portal_cookies import (
     ACCESS_COOKIE_NAME,
@@ -101,6 +102,11 @@ class TestOidcCallbackSetsHttpOnlyCookies:
     """The callback's cookie contract; the state/nonce binding that gates it is
     covered end-to-end (real Redis) in ``test_sso_oidc_login_hardening.py``, so
     the login-state lookup is stubbed here."""
+
+    @pytest.fixture(autouse=True)
+    def _allowed_redirect_uris(self, app, monkeypatch):
+        """The callback re-checks the stored redirect URI against the allowlist."""
+        allow_redirect_uris(monkeypatch, app, "https://app.example/cb")
 
     @pytest.mark.asyncio
     @patch(

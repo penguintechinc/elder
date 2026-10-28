@@ -30,7 +30,13 @@ import jwt
 import pytest
 import pytest_asyncio
 from quart import current_app
-from sso_testkit import FakeOidcProvider, begin, finish, install_fake_providers
+from sso_testkit import (
+    FakeOidcProvider,
+    allow_redirect_uris,
+    begin,
+    finish,
+    install_fake_providers,
+)
 
 from apps.api.models.pydantic.idp import IdPConfigResponse, UpdateIdPConfigRequest
 from apps.api.services.sso import SAMLService
@@ -137,6 +143,12 @@ def _fetch(db, config_id: int) -> dict[str, Any] | None:
     """Read an IdP config row straight from the DB as a plain dict."""
     row = db(db.idp_configurations.id == config_id).select().first()
     return row.as_dict() if row else None
+
+
+@pytest.fixture(autouse=True)
+def _allowed_redirect_uris(app, monkeypatch):
+    """The OIDC takeover-chain tests drive the real /authorize, which needs the allowlist."""
+    allow_redirect_uris(monkeypatch, app)
 
 
 @pytest.fixture(autouse=True)

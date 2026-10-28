@@ -136,6 +136,18 @@ class World:
         return {"Authorization": f"Bearer {self.tokens[who]}"}
 
 
+def allow_redirect_uris(monkeypatch: Any, app: Any, *uris: str) -> None:
+    """Set the operator's ``OIDC_ALLOWED_REDIRECT_URIS`` for one test.
+
+    Defaults to the testkit's callback URL; pass others to widen the list.
+    """
+    monkeypatch.setitem(
+        app.config,
+        "OIDC_ALLOWED_REDIRECT_URIS",
+        ",".join(uris or (CALLBACK_REDIRECT_URI,)),
+    )
+
+
 def mint_token(
     app: Any,
     *,

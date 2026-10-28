@@ -6,14 +6,17 @@ at both global and tenant levels using Authlib.
 Hardening (regressions: oidc-global-role-carry, oidc-null-tenant,
 oidc-refresh-userinfo-logout-ownership, oidc-login-csrf):
 
-* an IdP-asserted login never produces a session carrying a stored
-  ``global_role``, and a tenant-scoped IdP refuses accounts that have one;
+* an account holding a stored ``global_role`` can never sign in through OIDC
+  (tenant-scoped or global IdP): it must use password + MFA;
 * a GLOBAL IdP only serves a tenant that explicitly opted in via
   ``tenants.settings.oidc_allow_global_idp is True``, for existing users only,
   and never creates a user without a concrete target tenant;
 * state/nonce/PKCE are enforced (see ``oidc_state``);
 * an account is only matched/created when the ID token asserts
-  ``email_verified is True`` (regression: oidc-email-unverified);
+  ``email_verified is True`` for its ``email`` claim (regressions:
+  oidc-email-unverified, oidc-email-claim-mapping);
+* the redirect URI sent to an IdP must exactly match the operator's
+  ``OIDC_ALLOWED_REDIRECT_URIS`` allowlist (regression: oidc-redirect-uri);
 * upstream error text is never returned or logged -- only stable error codes.
 """
 
@@ -21,8 +24,9 @@ oidc-refresh-userinfo-logout-ownership, oidc-login-csrf):
 
 import datetime
 import hmac
+import json
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import jwt
 import requests
@@ -39,6 +43,36 @@ GLOBAL_IDP_OPT_IN_KEY = "oidc_allow_global_idp"
 
 _MAX_EMAIL_CHARS = 255
 _MAX_FULL_NAME_CHARS = 255
+
+# App-config key (env var of the same name) listing the only redirect URIs the
+# server will ever send to an IdP; unset/empty fails OIDC login closed.
+REDIRECT_URIS_CONFIG_KEY = "OIDC_ALLOWED_REDIRECT_URIS"
+
+
+def _is_plain_http_url(uri: str) -> bool:
+    """True for an absolute ``http(s)`` URL with a host and nothing smuggled in.
+
+    Rejects userinfo, fragments, wildcards, whitespace/control characters and
+    anything over 2048 characters -- used to vet allowlist entries.
+    """
+    if len(uri) > 2048 or "*" in uri:
+        return False
+    if any(ord(ch) <= 0x20 or ord(ch) == 0x7F for ch in uri):
+        return False
+    try:
+        parts = urlsplit(uri)
+        _ = parts.port  # raises ValueError on a malformed port
+    except ValueError:
+        return False
+    return (
+        parts.scheme in ("http", "https")
+        and bool(parts.hostname)
+        and parts.username is None
+        and parts.password is None
+        and not parts.fragment
+        and "@" not in parts.netloc
+        and "#" not in uri
+    )
 
 
 class OIDCService:
@@ -169,6 +203,80 @@ class OIDCService:
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }
+
+    @staticmethod
+    def allowed_redirect_uris() -> frozenset[str]:
+        """Return the operator's allowlist of OIDC redirect URIs (may be empty).
+
+        Read from ``OIDC_ALLOWED_REDIRECT_URIS`` (comma separated or a JSON
+        list). Entries that are not plain absolute ``http(s)`` URLs (userinfo,
+        fragment, wildcard, control characters, relative) are dropped, so a
+        typo can only shrink the allowlist, never widen it.
+
+        Returns:
+            The valid entries as an immutable set; empty means "not configured"
+        """
+        raw = current_app.config.get(REDIRECT_URIS_CONFIG_KEY)
+        entries: list[Any]
+        if isinstance(raw, str):
+            text = raw.strip()
+            if text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                except ValueError:
+                    parsed = []
+                entries = parsed if isinstance(parsed, list) else []
+            else:
+                entries = text.split(",")
+        elif isinstance(raw, (list, tuple, set, frozenset)):
+            entries = list(raw)
+        else:
+            entries = []
+        cleaned = [e.strip() for e in entries if isinstance(e, str) and e.strip()]
+        valid = frozenset(e for e in cleaned if _is_plain_http_url(e))
+        if len(valid) != len(set(cleaned)):
+            current_app.logger.warning(
+                "oidc_redirect_uri_entries_ignored count=%s",
+                len(set(cleaned)) - len(valid),
+            )
+        return valid
+
+    @staticmethod
+    def require_allowed_redirect_uri(uri: str) -> str:
+        """Return ``uri`` iff it exactly equals an allowlisted redirect URI.
+
+        regression: oidc-redirect-uri -- ``/oidc/authorize`` used to accept any
+        ``http(s)`` URL, so an attacker could start a login with their own
+        ``redirect_uri`` (holding the state/cookie/PKCE verifier) and, against an
+        IdP with loose redirect registration, receive a victim's authorization
+        code. Comparison is exact string equality (scheme, host, port, path and
+        case all significant); nothing about ``uri`` is echoed on failure.
+
+        Args:
+            uri: The caller-supplied (or previously stored) redirect URI
+
+        Returns:
+            ``uri`` unchanged
+
+        Raises:
+            OIDCLoginError: ``oidc_redirect_uris_not_configured`` (503, fail
+                closed when the operator has not set the allowlist) or
+                ``oidc_redirect_uri_not_allowed`` (400)
+        """
+        allowed = OIDCService.allowed_redirect_uris()
+        if not allowed:
+            raise OIDCLoginError(
+                "oidc_redirect_uris_not_configured",
+                503,
+                "OIDC login is unavailable: the operator has not set OIDC_ALLOWED_REDIRECT_URIS",
+            )
+        if uri not in allowed:
+            raise OIDCLoginError(
+                "oidc_redirect_uri_not_allowed",
+                400,
+                "redirect_uri is not an allowed callback URL",
+            )
+        return uri
 
     @staticmethod
     def resolve_login_tenant(
@@ -570,17 +678,21 @@ class OIDCService:
     ) -> dict[str, Any]:
         """Resolve (and, where allowed, just-in-time create) the user for an OIDC login.
 
-        The returned session user ALWAYS has ``global_role`` ``None`` -- an
-        IdP-asserted login is tenant-scoped, never platform-privileged. A
-        tenant-scoped IdP is controlled by that tenant's admins, so it refuses
-        any account with a stored ``global_role`` outright. A GLOBAL IdP (the
-        shared fallback) serves existing users only and never creates one.
-        A user is never created without a concrete positive ``tenant_id``.
+        An account holding a stored ``global_role`` can NEVER sign in through
+        OIDC -- on a tenant-scoped IdP (controlled by that tenant's admins) or
+        on the global one: such accounts use password + MFA. (Stripping the role
+        from the session is not enough: ``/portal-auth/refresh`` re-reads it.)
+        The returned session user therefore always has ``global_role`` ``None``.
+        A GLOBAL IdP (the shared fallback) serves existing users only and never
+        creates one. A user is never created without a concrete positive
+        ``tenant_id``.
 
-        The account is matched on the email in the validated ID token, and only
-        if that token carries ``email_verified`` as the strict boolean ``True``
-        (userinfo can supply a display name but never the email or the
-        verified flag). There is no per-IdP opt-out yet -- see CHANGELOG.
+        The account is matched on the ``email`` claim of the validated ID token
+        (any other ``attribute_mappings.email`` is refused: ``email_verified``
+        only vouches for ``email``), and only if that token carries
+        ``email_verified`` as the strict boolean ``True`` (userinfo can supply a
+        display name but never the email or the verified flag). There is no
+        per-IdP opt-out yet -- see CHANGELOG.
 
         Args:
             tenant_id: Concrete target tenant (see ``resolve_login_tenant``)
@@ -619,6 +731,18 @@ class OIDCService:
         mappings = idp_config.get("attribute_mappings") or {}
         email_claim = mappings.get("email", "email")
         name_claim = mappings.get("full_name", "name")
+
+        # regression: oidc-email-claim-mapping. ``email_verified`` vouches for
+        # the standard ``email`` claim and nothing else; matching on a mapped
+        # claim (preferred_username, upn, ...) would let an attacker with a
+        # verified email of their own choose the claim that is matched. Until a
+        # verified-claim mapping exists, any other mapping is refused.
+        if email_claim != "email":
+            raise OIDCLoginError(
+                "oidc_email_claim_mapping_unsupported",
+                403,
+                "This identity provider's email attribute mapping is not supported for OIDC login",
+            )
 
         # Identity (the email an account is matched on) comes ONLY from the
         # signature-validated ID token, never from userinfo: ``email_verified``
@@ -675,9 +799,19 @@ class OIDCService:
                 raise OIDCLoginError(
                     "oidc_account_deactivated", 403, "Account is deactivated"
                 )
-            if not is_global_idp and existing.global_role:
-                # A tenant-scoped IdP is controlled by that tenant's admins; it
-                # must not be able to authenticate a platform-privileged user.
+            if existing.global_role:
+                # regression: oidc-global-role-carry. A platform-privileged
+                # account never signs in through OIDC at all: a tenant-scoped
+                # IdP is controlled by that tenant's admins, and a stripped
+                # session would just get its global_role back on
+                # /portal-auth/refresh (which re-reads the stored role). These
+                # accounts use password + MFA.
+                if is_global_idp:
+                    raise OIDCLoginError(
+                        "oidc_global_role_account_forbidden",
+                        403,
+                        "Platform-privileged accounts must sign in with a password and MFA, not OIDC",
+                    )
                 raise OIDCLoginError(
                     "oidc_tenant_idp_global_role_forbidden",
                     403,

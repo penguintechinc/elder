@@ -557,7 +557,68 @@ class TestScimResourceRoutesWork:
         assert resp.status_code == 200
         body = await resp.get_json()
         assert body["startIndex"] == 1
-        assert body["itemsPerPage"] <= 200
+
+    @pytest.mark.asyncio
+    async def test_list_count_is_capped_at_the_page_size_limit(
+        self, async_client, world, monkeypatch
+    ):
+        """The cap is real: tenant A has 2 users, the limit is 1, count asks for 10M."""
+        monkeypatch.setattr("apps.api.services.sso.scim_service.MAX_PAGE_SIZE", 1)
+        resp = await async_client.get(
+            f"/api/v1/sso/scim/{world.tenant_a}/Users",
+            query_string={"count": 10_000_000},
+            headers=scim_auth(world.scim_token_a),
+        )
+        body = await resp.get_json()
+        assert body["itemsPerPage"] == len(body["Resources"]) == 1
+        assert body["totalResults"] == 2
+
+    @pytest.mark.asyncio
+    async def test_negative_count_returns_an_empty_page(self, async_client, world):
+        resp = await async_client.get(
+            f"/api/v1/sso/scim/{world.tenant_a}/Users",
+            query_string={"count": -7},
+            headers=scim_auth(world.scim_token_a),
+        )
+        body = await resp.get_json()
+        assert resp.status_code == 200
+        assert body["itemsPerPage"] == 0
+        assert body["totalResults"] == 2
+
+    @pytest.mark.asyncio
+    async def test_create_duplicate_check_is_tenant_scoped(
+        self, app, async_client, world
+    ):
+        """No cross-tenant 409 oracle: an email that exists only in tenant B can be
+        created in tenant A, and A's duplicate still 409s."""
+        resp = await async_client.post(
+            f"/api/v1/sso/scim/{world.tenant_a}/Users",
+            json=_scim_user(world.b_member_email),
+            headers=scim_auth(world.scim_token_a),
+        )
+        assert resp.status_code == 201, (await resp.get_data()).decode()
+        async with app.app_context():
+            db = current_app.db
+            rows = db(db.portal_users.email == world.b_member_email.lower()).select()
+            assert sorted(r.tenant_id for r in rows) == sorted(
+                [world.tenant_a, world.tenant_b]
+            )
+        again = await async_client.post(
+            f"/api/v1/sso/scim/{world.tenant_a}/Users",
+            json=_scim_user(world.b_member_email),
+            headers=scim_auth(world.scim_token_a),
+        )
+        assert again.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_update_email_clash_check_is_tenant_scoped(self, async_client, world):
+        """Renaming A's user to an email only B has is fine (no cross-tenant clash)."""
+        resp = await async_client.put(
+            f"/api/v1/sso/scim/{world.tenant_a}/Users/{world.a_user_id}",
+            json=_scim_user(world.b_member_email),
+            headers=scim_auth(world.scim_token_a),
+        )
+        assert resp.status_code == 200, (await resp.get_data()).decode()
 
     @pytest.mark.asyncio
     async def test_list_filter_by_username(self, async_client, world):

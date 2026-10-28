@@ -379,6 +379,30 @@ LDAP_ENABLED=true
 LDAP_SERVER=ldap.example.com
 ```
 
+### OIDC redirect URIs
+
+OIDC login (`/api/v1/sso/oidc/authorize`) only ever sends an IdP a redirect URI
+that exactly equals an entry of `OIDC_ALLOWED_REDIRECT_URIS` (comma separated or
+a JSON list). **It is unset by default and OIDC login then fails closed**
+(`503 oidc_redirect_uris_not_configured`): operators must set it, and register
+the same URL(s) with the IdP.
+
+```bash
+OIDC_ALLOWED_REDIRECT_URIS=https://elder.example.com/api/v1/sso/oidc/callback
+# or several: a JSON list works too
+OIDC_ALLOWED_REDIRECT_URIS=["https://elder.example.com/api/v1/sso/oidc/callback","https://spa.example.com/auth/callback"]
+```
+
+Matching is exact string equality: scheme, host, port, path, query and case all
+count (no wildcards, no trailing-slash or default-port tolerance). Entries with
+userinfo, a fragment, a wildcard or a non-`http(s)` scheme are ignored. A
+different `redirect_uri` on `/authorize` is a `400 oidc_redirect_uri_not_allowed`.
+
+OIDC sign-in also requires the IdP to send `email_verified: true` in the ID
+token and to carry the address in the standard `email` claim (a different
+`attribute_mappings.email` is refused). Accounts that hold a platform
+`global_role` cannot use OIDC at all: they sign in with password and MFA.
+
 ### License Configuration
 
 ```bash

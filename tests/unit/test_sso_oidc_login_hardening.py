@@ -33,6 +33,7 @@ from sso_testkit import (
     CALLBACK_REDIRECT_URI,
     Begun,
     FakeOidcProvider,
+    allow_redirect_uris,
     begin,
     build_world,
     finish,
@@ -50,6 +51,12 @@ class Providers:
     a: FakeOidcProvider
     b: FakeOidcProvider
     g: FakeOidcProvider
+
+
+@pytest.fixture(autouse=True)
+def _allowed_redirect_uris(app, monkeypatch):
+    """The operator's OIDC redirect allowlist (unset would fail login closed)."""
+    allow_redirect_uris(monkeypatch, app)
 
 
 @pytest.fixture(autouse=True)
@@ -266,24 +273,35 @@ class TestLoginHappyPath:
         assert (await resp.get_json())["error"] == "oidc_email_claim_missing"
 
     @pytest.mark.asyncio
-    async def test_userinfo_sub_mismatch_is_ignored(self, browser, world, providers):
-        """A userinfo document for a different subject must not override the ID token."""
+    async def test_userinfo_sub_mismatch_is_ignored(
+        self, app, browser, world, providers
+    ):
+        """A userinfo document for a different subject must contribute nothing.
+
+        Asserted on ``name`` (the one field userinfo may supply): removing the
+        ``sub`` comparison in the callback makes the injected name land in the
+        JIT-created row.
+        """
+        email = f"sub-mismatch@{world.prefix}.test"
         providers.b.userinfo_claims = {
             "sub": "someone-else",
-            "email": world.a_global_admin_email,
+            "name": "Injected By Userinfo",
         }
-        resp = await login(browser, providers.b, world.b_oidc, world.b_admin_email)
-        assert resp.status_code == 200
-        assert (await resp.get_json())["user"]["email"] == world.b_admin_email
+        resp = await login(browser, providers.b, world.b_oidc, email)
+        assert resp.status_code == 200, (await resp.get_data()).decode()
+        row = await _user_by_email(app, world.tenant_b, email)
+        assert row["full_name"] is None
 
     @pytest.mark.asyncio
-    async def test_userinfo_for_same_sub_is_merged(self, browser, world, providers):
-        providers.b.userinfo_claims = {
-            "sub": f"sub-{world.b_admin_email}",
-            "name": "Admin B",
-        }
-        resp = await login(browser, providers.b, world.b_oidc, world.b_admin_email)
+    async def test_userinfo_for_same_sub_is_merged(
+        self, app, browser, world, providers
+    ):
+        email = f"sub-match@{world.prefix}.test"
+        providers.b.userinfo_claims = {"sub": f"sub-{email}", "name": "Matching Sub"}
+        resp = await login(browser, providers.b, world.b_oidc, email)
         assert resp.status_code == 200
+        row = await _user_by_email(app, world.tenant_b, email)
+        assert row["full_name"] == "Matching Sub"
 
 
 class TestCallbackStateNonceBinding:
@@ -506,6 +524,7 @@ class TestCallbackStateNonceBinding:
             f"{AUTHORIZE}/{world.b_oidc}", query_string={"redirect_uri": redirect_uri}
         )
         assert resp.status_code == 400
+        assert (await resp.get_json())["error"] == "oidc_redirect_uri_not_allowed"
 
     @pytest.mark.asyncio
     async def test_authorize_requires_redirect_uri_and_known_idp(
@@ -751,9 +770,16 @@ class TestTenantIdpCannotCarryGlobalRole:
         assert _claims(app, body["access_token"])["global_role"] is None
 
     @pytest.mark.asyncio
-    async def test_global_idp_session_never_carries_stored_global_role(
+    async def test_global_idp_refuses_a_global_role_account_too(
         self, app, browser, world, providers
     ):
+        """regression: oidc-global-role-refresh.
+
+        Stripping global_role from the login session was not enough:
+        ``/portal-auth/refresh`` re-reads the stored role, so the refresh token
+        of an opted-in global-IdP login restored 'admin'. The account is now
+        refused outright on the global IdP as well -- no session, no refresh token.
+        """
         async with app.app_context():
             set_tenant_settings(world.tenant_a, {"oidc_allow_global_idp": True})
         resp = await login(
@@ -763,13 +789,66 @@ class TestTenantIdpCannotCarryGlobalRole:
             world.a_global_admin_email,
             tenant_id=world.tenant_a,
         )
-        assert resp.status_code == 200, (await resp.get_data()).decode()
+        assert resp.status_code == 403, (await resp.get_data()).decode()
         body = await resp.get_json()
-        assert body["user"]["tenant_id"] == world.tenant_a
-        assert body["user"]["global_role"] is None
-        claims = _claims(app, body["access_token"])
+        assert body["error"] == "oidc_global_role_account_forbidden"
+        assert "refresh_token" not in body
+        _assert_no_session(resp, body)
+        row = await _user_by_email(app, world.tenant_a, world.a_global_admin_email)
+        assert row["last_login_at"] is None
+
+    @pytest.mark.asyncio
+    async def test_refresh_after_a_global_idp_login_never_gains_global_role(
+        self, app, async_client, browser, world, providers
+    ):
+        """An ordinary user's global-IdP session keeps global_role None across refresh."""
+        async with app.app_context():
+            set_tenant_settings(world.tenant_a, {"oidc_allow_global_idp": True})
+        resp = await login(
+            browser,
+            providers.g,
+            world.g_oidc,
+            world.a_user_email,
+            tenant_id=world.tenant_a,
+        )
+        assert resp.status_code == 200
+        refresh_token = (await resp.get_json())["refresh_token"]
+        refreshed = await async_client.post(
+            "/api/v1/portal-auth/refresh", json={"refresh_token": refresh_token}
+        )
+        assert refreshed.status_code == 200
+        claims = _claims(app, (await refreshed.get_json())["access_token"])
         assert claims["global_role"] is None
         assert claims["tenant_id"] == world.tenant_a
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("stored_role", ["admin", "support", "maintainer"])
+    async def test_no_oidc_path_signs_in_a_global_role_account(
+        self, app, browser, world, providers, stored_role
+    ):
+        """Tenant-scoped and global IdP, every role: refused with no session."""
+        async with app.app_context():
+            db = current_app.db
+            db(db.portal_users.id == world.a_user_id).update(global_role=stored_role)
+            db.commit()
+            set_tenant_settings(world.tenant_a, {"oidc_allow_global_idp": True})
+        scoped = await login(browser, providers.a, world.a_oidc, world.a_user_email)
+        via_global = await login(
+            browser,
+            providers.g,
+            world.g_oidc,
+            world.a_user_email,
+            tenant_id=world.tenant_a,
+        )
+        assert scoped.status_code == via_global.status_code == 403
+        assert (await scoped.get_json())["error"] == (
+            "oidc_tenant_idp_global_role_forbidden"
+        )
+        assert (await via_global.get_json())["error"] == (
+            "oidc_global_role_account_forbidden"
+        )
+        for resp in (scoped, via_global):
+            _assert_no_session(resp, await resp.get_json())
 
 
 class TestGlobalIdpRequiresTenantOptIn:

@@ -36,7 +36,8 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
 - SCIM and OIDC tenant hardening (regressions: scim-cross-tenant,
   scim-async-decorator, oidc-global-role-carry, oidc-null-tenant,
   oidc-refresh-userinfo-logout-ownership, oidc-login-csrf,
-  oidc-email-unverified):
+  oidc-email-unverified, oidc-email-claim-mapping, oidc-redirect-uri,
+  oidc-global-role-refresh):
   - SCIM config/token routes (`/sso/scim/config*`) require the path tenant to be
     the caller's own tenant (global admins excepted); another tenant answers
     the same 404 as "SCIM not configured". A tenant admin could previously
@@ -44,11 +45,23 @@ uses `vMajor.Minor.Patch` version tags (see `scripts/version/update-version.sh`)
     users. SCIM create/update (which 500'd on every call) now work, and SCIM
     never modifies platform-privileged (`global_role`) accounts. Bearer tokens
     are still stored in plaintext (follow-up: store a hash).
-  - OIDC logins never produce a session carrying a stored `global_role`; a
-    tenant-scoped IdP refuses accounts that have one (403
-    `oidc_tenant_idp_global_role_forbidden`). A GLOBAL OIDC IdP only serves a
-    tenant whose `settings.oidc_allow_global_idp` is the boolean `true`, for
-    existing users only (no JIT); users are never created without a tenant.
+  - **Behavior change:** an account holding a stored `global_role` can no longer
+    sign in through OIDC at all (403 `oidc_tenant_idp_global_role_forbidden` on a
+    tenant-scoped IdP, 403 `oidc_global_role_account_forbidden` on the global
+    IdP); these accounts must use password + MFA. (Stripping the role from the
+    login session was not enough: `/portal-auth/refresh` re-reads it.) A GLOBAL
+    OIDC IdP only serves a tenant whose `settings.oidc_allow_global_idp` is the
+    boolean `true`, for existing users only (no JIT); users are never created
+    without a tenant.
+  - **Operator action required:** OIDC login now fails closed (503
+    `oidc_redirect_uris_not_configured`) until `OIDC_ALLOWED_REDIRECT_URIS` lists
+    the callback URL(s); `/oidc/authorize` only accepts a `redirect_uri` that
+    exactly equals an entry (an attacker could otherwise start a login with their
+    own redirect URI and capture a victim's authorization code). See
+    `docs/USAGE.md`. Helm chart value for the env var is a follow-up.
+  - **Behavior change:** an IdP whose `attribute_mappings.email` is anything but
+    `email` is refused at login (403 `oidc_email_claim_mapping_unsupported`);
+    `email_verified` only vouches for the `email` claim.
   - `/oidc/refresh|userinfo|logout/<idp_id>` only accept configs the caller
     may use (other tenants' and, for non-global admins, global configs: 404).
   - **Behavior change:** `/oidc/authorize` now generates `state`, `nonce` and a
