@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import {
@@ -23,9 +23,16 @@ import {
   MarkerType,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Save, Trash2, ArrowLeft, Users } from 'lucide-react'
+import { Save, Trash2, ArrowLeft, Users, Search, X } from 'lucide-react'
 import api from '@/lib/api'
 import { useDiagramCollaboration } from '@/hooks/useDiagramCollaboration'
+import {
+  IconSearch,
+  iconMap,
+  getAllIcons,
+  getIcon,
+  type IconDefinition,
+} from '@/components/diagram/icons/index'
 
 const handleStyle = '!w-3 !h-3 !bg-amber-500 !border-2 !border-amber-600'
 
@@ -33,9 +40,12 @@ interface CloudProviderNodeData extends Record<string, unknown> {
   label: string
   provider: string
   color: string
+  iconId?: string
+  iconColor?: string
 }
 
 function CloudProviderNode({ data, selected }: NodeProps<Node<CloudProviderNodeData>>) {
+  const IconComp = getIcon(data.iconId || data.provider)
   return (
     <div
       className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}
@@ -49,7 +59,14 @@ function CloudProviderNode({ data, selected }: NodeProps<Node<CloudProviderNodeD
       <Handle type="source" position={Position.Left} id="left-source" className={handleStyle} style={{ left: -6 }} />
       <Handle type="target" position={Position.Right} id="right-target" className={handleStyle} />
       <Handle type="source" position={Position.Right} id="right-source" className={handleStyle} style={{ right: -6 }} />
-      <div className="flex flex-col items-center gap-2 text-white text-sm font-medium">{data.label}</div>
+      <div className="flex flex-col items-center gap-2 text-white text-sm font-medium">
+        {IconComp && (
+          <div style={data.iconColor ? { color: data.iconColor } : undefined}>
+            <IconComp className="w-8 h-8" />
+          </div>
+        )}
+        <span>{data.label}</span>
+      </div>
     </div>
   )
 }
@@ -58,9 +75,12 @@ interface InfrastructureNodeData extends Record<string, unknown> {
   label: string
   type: string
   color: string
+  iconId?: string
+  iconColor?: string
 }
 
 function InfrastructureNode({ data, selected }: NodeProps<Node<InfrastructureNodeData>>) {
+  const IconComp = getIcon(data.iconId || data.type)
   return (
     <div
       className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}
@@ -74,7 +94,14 @@ function InfrastructureNode({ data, selected }: NodeProps<Node<InfrastructureNod
       <Handle type="source" position={Position.Left} id="left-source" className={handleStyle} style={{ left: -6 }} />
       <Handle type="target" position={Position.Right} id="right-target" className={handleStyle} />
       <Handle type="source" position={Position.Right} id="right-source" className={handleStyle} style={{ right: -6 }} />
-      <div className="flex flex-col items-center gap-2 text-white text-sm font-medium">{data.label}</div>
+      <div className="flex flex-col items-center gap-2 text-white text-sm font-medium">
+        {IconComp && (
+          <div style={data.iconColor ? { color: data.iconColor } : undefined}>
+            <IconComp className="w-8 h-8" />
+          </div>
+        )}
+        <span>{data.label}</span>
+      </div>
     </div>
   )
 }
@@ -287,15 +314,36 @@ function DiagramEditorContent() {
     []
   )
 
-  const addIconNode = useCallback((label: string, type: string) => {
-    const newNode: Node = {
-      id: String(nodeIdCounter.current++),
-      type: 'infrastructure',
-      position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 50 },
-      data: { label, type, color: selectedColor },
-    }
-    setNodes((nds) => [...nds, newNode])
-  }, [selectedColor])
+  const addIconNode = useCallback(
+    (label: string, type: string, iconId?: string, iconColor?: string, isCloud = false) => {
+      const newNode: Node = {
+        id: String(nodeIdCounter.current++),
+        type: isCloud ? 'cloudProvider' : 'infrastructure',
+        position: { x: Math.random() * 400 + 100, y: Math.random() * 300 + 50 },
+        data: isCloud
+          ? { label, provider: type, iconId: iconId || type, iconColor, color: selectedColor }
+          : { label, type, iconId: iconId || type, iconColor, color: selectedColor },
+      }
+      setNodes((nds) => [...nds, newNode])
+    },
+    [selectedColor]
+  )
+
+  const [showIconSearch, setShowIconSearch] = useState(false)
+  const allIcons = useMemo(() => getAllIcons(), [])
+
+  const handleIconSelect = useCallback(
+    (icon: IconDefinition) => {
+      const isCloud =
+        icon.source === 'aws' ||
+        icon.source === 'azure' ||
+        icon.source === 'ibm' ||
+        icon.source === 'gcp'
+      addIconNode(icon.label, icon.id, icon.id, icon.color, isCloud)
+      setShowIconSearch(false)
+    },
+    [addIconNode]
+  )
 
   const addShapeNode = useCallback((shape: string) => {
     const newNode: Node = {
@@ -364,6 +412,13 @@ function DiagramEditorContent() {
               className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-1 rounded text-sm transition-colors"
             >
               DB
+            </button>
+            <button
+              onClick={() => setShowIconSearch(true)}
+              className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-amber-300 px-3 py-1 rounded text-sm transition-colors"
+            >
+              <Search className="w-3.5 h-3.5" />
+              Icons
             </button>
           </div>
 
@@ -438,6 +493,34 @@ function DiagramEditorContent() {
           </Panel>
         </ReactFlow>
       </div>
+
+      {showIconSearch && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Select diagram icon"
+        >
+          <div className="w-full max-w-md bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-semibold text-amber-400">Select Diagram Icon</h2>
+              <button
+                onClick={() => setShowIconSearch(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+                aria-label="Close icon search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <IconSearch
+              onSelect={handleIconSelect}
+              allIcons={allIcons}
+              iconMap={iconMap}
+              placeholder="Search AWS, Azure, IBM, Iconoir, Infra icons..."
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
