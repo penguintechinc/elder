@@ -110,7 +110,11 @@ class IdPConfigView:
             tenant_id=record.tenant_id,
             idp_type=record.idp_type,
             name=record.name,
-            attribute_mappings=record.attribute_mappings or {},
+            attribute_mappings=(
+                record.attribute_mappings
+                if isinstance(record.attribute_mappings, dict)
+                else {}
+            ),
             jit_provisioning_enabled=bool(record.jit_provisioning_enabled),
             default_role=record.default_role,
             is_active=bool(record.is_active),
