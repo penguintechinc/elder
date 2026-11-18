@@ -24,7 +24,7 @@ env:
 jobs:
   build-platform:
     name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
       matrix:
         service:
@@ -112,7 +112,7 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     needs: build-platform
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
       matrix:
         service: [api, web, scanner, worker, flows-invoker]
