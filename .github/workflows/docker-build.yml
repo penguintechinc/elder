@@ -2,10 +2,10 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ '**' ]  # All branches
+    branches: [ main, 'release/**' ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
 
 # Required permissions for GHCR push, security scanning, and integration tests
 permissions:
@@ -24,8 +24,9 @@ env:
 jobs:
   build-platform:
     name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
         service:
           - name: api
@@ -45,16 +46,26 @@ jobs:
             context: .
         platform:
           - linux/amd64
-          - linux/arm64
+          # Temporarily disabled until release-ready amd64 image is validated
+          # - linux/arm64
 
     steps:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up QEMU (for arm64 emulation)
-      uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+    # Temporarily disabled while linux/arm64 builds are paused
+    # - name: Set up QEMU (for arm64 emulation)
+    #   uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
@@ -110,8 +121,9 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     needs: build-platform
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
         service: [api, web, scanner, worker, flows-invoker]
 
@@ -119,7 +131,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
@@ -148,7 +168,7 @@ jobs:
       run: |
         IMAGE="${REGISTRY}/${ORG}/elder-${SERVICE}"
         SRC_AMD64="${IMAGE}:${VERSION}-amd64"
-        SRC_ARM64="${IMAGE}:${VERSION}-arm64"
+        # SRC_ARM64="${IMAGE}:${VERSION}-arm64"  # Temporarily disabled
 
         # Determine which named tags to create for this ref
         TAGS=()
@@ -168,7 +188,7 @@ jobs:
           TAG_ARGS+=(--tag "$tag")
         done
 
-        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64" "$SRC_ARM64"
+        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64"
 
         echo "Merged multi-arch manifest for elder-${SERVICE} → ${TAGS[*]}"
         docker buildx imagetools inspect "${TAGS[0]}"
@@ -226,6 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     if: false
     strategy:
+      max-parallel: 3
       matrix:
         service: [api, web, scanner, worker, flows-invoker]
     steps:
