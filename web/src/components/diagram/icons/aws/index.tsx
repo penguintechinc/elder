@@ -1,8 +1,8 @@
 // AWS Icon Adapter
 // Wraps aws-react-icons components to conform to IconProps interface
 
-import { createElement } from 'react';
-import type { CSSProperties } from 'react';
+import { createElement } from "react";
+import type { CSSProperties } from "react";
 import {
   ArchitectureServiceAmazonEC2,
   ArchitectureServiceAmazonSimpleStorageService,
@@ -24,16 +24,20 @@ import {
   ArchitectureServiceAmazonCognito,
   ArchitectureServiceAWSSecretsManager,
   ArchitectureServiceAWSKeyManagementService,
-} from 'aws-react-icons';
+} from "aws-react-icons";
 
-import type { IconProps, IconComponent } from '../types';
+import type { IconProps, IconComponent } from "../types";
 
 /**
  * Wrapper function to normalize AWS icon components to IconProps interface
  * Handles className, size (as number or string), and color props
  */
 const createAwsIconWrapper = (
-  AwsIconComponent: any
+  AwsIconComponent: React.ComponentType<{
+    className?: string;
+    size?: string | number;
+    style?: CSSProperties;
+  }>,
 ): IconComponent => {
   return ({ className, size, color }: IconProps) => {
     // Build style object from props
@@ -46,7 +50,7 @@ const createAwsIconWrapper = (
 
     // Handle size - convert to CSS units if needed
     if (size) {
-      const sizeStr = typeof size === 'number' ? `${size}px` : size;
+      const sizeStr = typeof size === "number" ? `${size}px` : size;
       style.width = sizeStr;
       style.height = sizeStr;
     }
@@ -64,36 +68,46 @@ const createAwsIconWrapper = (
 
 export const awsIconMap: Record<string, IconComponent> = {
   // Compute Icons
-  'aws-ec2': createAwsIconWrapper(ArchitectureServiceAmazonEC2),
-  'aws-lambda': createAwsIconWrapper(ArchitectureServiceAWSLambda),
-  'aws-ecs': createAwsIconWrapper(ArchitectureServiceAmazonElasticContainerService),
-  'aws-eks': createAwsIconWrapper(ArchitectureServiceAmazonElasticKubernetesService),
-  'aws-fargate': createAwsIconWrapper(ArchitectureServiceAWSFargate),
+  "aws-ec2": createAwsIconWrapper(ArchitectureServiceAmazonEC2),
+  "aws-lambda": createAwsIconWrapper(ArchitectureServiceAWSLambda),
+  "aws-ecs": createAwsIconWrapper(
+    ArchitectureServiceAmazonElasticContainerService,
+  ),
+  "aws-eks": createAwsIconWrapper(
+    ArchitectureServiceAmazonElasticKubernetesService,
+  ),
+  "aws-fargate": createAwsIconWrapper(ArchitectureServiceAWSFargate),
 
   // Storage Icons
-  'aws-s3': createAwsIconWrapper(ArchitectureServiceAmazonSimpleStorageService),
-  'aws-cloudfront': createAwsIconWrapper(ArchitectureServiceAmazonCloudFront),
+  "aws-s3": createAwsIconWrapper(ArchitectureServiceAmazonSimpleStorageService),
+  "aws-cloudfront": createAwsIconWrapper(ArchitectureServiceAmazonCloudFront),
 
   // Database Icons
-  'aws-rds': createAwsIconWrapper(ArchitectureServiceAmazonRDS),
-  'aws-dynamodb': createAwsIconWrapper(ArchitectureServiceAmazonDynamoDB),
+  "aws-rds": createAwsIconWrapper(ArchitectureServiceAmazonRDS),
+  "aws-dynamodb": createAwsIconWrapper(ArchitectureServiceAmazonDynamoDB),
 
   // Networking Icons
-  'aws-vpc': createAwsIconWrapper(ArchitectureServiceAmazonVirtualPrivateCloud),
-  'aws-elb': createAwsIconWrapper(ArchitectureServiceElasticLoadBalancing),
-  'aws-route53': createAwsIconWrapper(ArchitectureServiceAmazonRoute53),
-  'aws-api-gateway': createAwsIconWrapper(ArchitectureServiceAmazonAPIGateway),
+  "aws-vpc": createAwsIconWrapper(ArchitectureServiceAmazonVirtualPrivateCloud),
+  "aws-elb": createAwsIconWrapper(ArchitectureServiceElasticLoadBalancing),
+  "aws-route53": createAwsIconWrapper(ArchitectureServiceAmazonRoute53),
+  "aws-api-gateway": createAwsIconWrapper(ArchitectureServiceAmazonAPIGateway),
 
   // Security Icons
-  'aws-iam': createAwsIconWrapper(ArchitectureServiceAWSIdentityandAccessManagement),
-  'aws-cognito': createAwsIconWrapper(ArchitectureServiceAmazonCognito),
-  'aws-secrets-manager': createAwsIconWrapper(ArchitectureServiceAWSSecretsManager),
-  'aws-kms': createAwsIconWrapper(ArchitectureServiceAWSKeyManagementService),
+  "aws-iam": createAwsIconWrapper(
+    ArchitectureServiceAWSIdentityandAccessManagement,
+  ),
+  "aws-cognito": createAwsIconWrapper(ArchitectureServiceAmazonCognito),
+  "aws-secrets-manager": createAwsIconWrapper(
+    ArchitectureServiceAWSSecretsManager,
+  ),
+  "aws-kms": createAwsIconWrapper(ArchitectureServiceAWSKeyManagementService),
 
   // Integration & Monitoring Icons
-  'aws-sns': createAwsIconWrapper(ArchitectureServiceAmazonSimpleNotificationService),
-  'aws-sqs': createAwsIconWrapper(ArchitectureServiceAmazonSimpleQueueService),
-  'aws-cloudwatch': createAwsIconWrapper(ArchitectureServiceAmazonCloudWatch),
+  "aws-sns": createAwsIconWrapper(
+    ArchitectureServiceAmazonSimpleNotificationService,
+  ),
+  "aws-sqs": createAwsIconWrapper(ArchitectureServiceAmazonSimpleQueueService),
+  "aws-cloudwatch": createAwsIconWrapper(ArchitectureServiceAmazonCloudWatch),
 };
 
 // Export icon map for easy access

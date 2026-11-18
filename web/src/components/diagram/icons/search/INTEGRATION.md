@@ -118,11 +118,11 @@ Ensure all icons have proper metadata:
 
 ```typescript
 const iconDef: IconDefinition = {
-  id: 'unique-id',           // Unique identifier
-  label: 'Display Name',     // User-friendly label
-  source: 'aws',            // Icon source (required for styling)
-  color: '#FF9900',         // Default color
-  tags: ['tag1', 'tag2'],   // Searchable tags (optional)
+  id: "unique-id", // Unique identifier
+  label: "Display Name", // User-friendly label
+  source: "aws", // Icon source (required for styling)
+  color: "#FF9900", // Default color
+  tags: ["tag1", "tag2"], // Searchable tags (optional)
 };
 ```
 
@@ -131,18 +131,21 @@ const iconDef: IconDefinition = {
 You can either:
 
 **Option A: Use existing categories**
-```typescript
-import { iconCategories } from '@/components/diagram/icons';
 
-const allIcons = Object.values(iconCategories)
-  .flatMap(category => category.icons);
+```typescript
+import { iconCategories } from "@/components/diagram/icons";
+
+const allIcons = Object.values(iconCategories).flatMap(
+  (category) => category.icons,
+);
 ```
 
 **Option B: Create custom list**
+
 ```typescript
 const allIcons: IconDefinition[] = [
-  { id: 'aws', label: 'AWS', source: 'aws', color: '#FF9900' },
-  { id: 'database', label: 'Database', source: 'internal', color: '#6B7280' },
+  { id: "aws", label: "AWS", source: "aws", color: "#FF9900" },
+  { id: "database", label: "Database", source: "internal", color: "#6B7280" },
   // ... more icons
 ];
 ```
@@ -234,24 +237,25 @@ The component uses Tailwind CSS dark mode colors. To customize:
 
 ```typescript
 // Input field colors
-bg-dark-800      // Background
-border-dark-600  // Border
-text-white       // Text
-focus:ring-blue-500  // Focus ring
+bg - dark - 800; // Background
+border - dark - 600; // Border
+text - white; // Text
+focus: ring - blue - 500; // Focus ring
 
 // Dropdown colors
-bg-dark-900      // Background
-border-dark-700  // Border
-bg-dark-700      // Selected item
+bg - dark - 900; // Background
+border - dark - 700; // Border
+bg - dark - 700; // Selected item
 
 // Badge colors (source indicators)
-bg-orange-500/20  // AWS
-bg-blue-500/20    // Azure
+bg - orange - 500 / 20; // AWS
+bg - blue - 500 / 20; // Azure
 ```
 
 ### Size Customization
 
 Edit the component's JSX to adjust:
+
 - Input height: `py-2` (padding)
 - Icon size: `w-6 h-6` (width/height)
 - Dropdown max-height: `max-h-96` (max height)
@@ -283,6 +287,7 @@ Use the example component:
 For large icon sets (1000+), consider:
 
 1. **Virtual Scrolling**
+
 ```typescript
 import { FixedSizeList } from 'react-window';
 
@@ -298,6 +303,7 @@ import { FixedSizeList } from 'react-window';
 ```
 
 2. **Increase Debounce**
+
 ```typescript
 // In IconSearch component, increase setTimeout delay
 setTimeout(() => {
@@ -306,36 +312,45 @@ setTimeout(() => {
 ```
 
 3. **Lazy Load Icons**
+
 ```typescript
 // Load icon components on demand
-const IconComponent = lazy(() =>
-  import(`@/components/diagram/icons/${icon.source}/${icon.id}`)
+const IconComponent = lazy(
+  () => import(`@/components/diagram/icons/${icon.source}/${icon.id}`),
 );
 ```
 
 ## Troubleshooting
 
 ### Issue: No results showing
+
 **Solution**:
+
 - Verify `allIcons` array is populated
 - Check icon IDs match `iconMap` keys
 - Ensure search query matches labels or tags
 
 ### Issue: Icon not rendering
+
 **Solution**:
+
 - Confirm `iconMap` has the icon ID
 - Check icon component accepts `className` prop
 - Verify icon files exist in source directory
 
 ### Issue: Search is slow
+
 **Solution**:
+
 - Reduce number of icons
 - Increase debounce delay
 - Implement virtual scrolling
 - Use search index for 1000+ icons
 
 ### Issue: Dropdown overlapping content
+
 **Solution**:
+
 - Increase z-index: `z-50` → `z-[9999]`
 - Use a modal wrapper for full-screen search
 - Adjust dropdown max-height
@@ -383,6 +398,7 @@ See `/src/client/components/diagram/icons/search/README.md` for complete API doc
 ## Support
 
 For issues or questions:
+
 1. Check the README.md for detailed documentation
 2. Review IconSearch.example.tsx for usage patterns
 3. Check test files for expected behavior

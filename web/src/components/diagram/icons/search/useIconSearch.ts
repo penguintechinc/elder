@@ -3,9 +3,9 @@
  * Provides search functionality with debouncing and keyboard navigation
  */
 
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { IconDefinition } from '../types';
-import { buildSearchIndex, searchIcons } from './searchIndex';
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import type { IconDefinition } from "../types";
+import { buildSearchIndex, searchIcons } from "./searchIndex";
 
 /**
  * Options for the useIconSearch hook
@@ -35,13 +35,13 @@ export interface UseIconSearchReturn {
  */
 export function useIconSearch(
   allIcons: IconDefinition[],
-  options?: UseIconSearchOptions
+  options?: UseIconSearchOptions,
 ): UseIconSearchReturn {
   const debounceMs = options?.debounceMs || 150;
   const maxResults = options?.maxResults || 50;
 
   // State
-  const [query, setQueryState] = useState('');
+  const [query, setQueryState] = useState("");
   const [results, setResults] = useState<IconDefinition[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -66,14 +66,14 @@ export function useIconSearch(
         setResults(searchResults);
         setSelectedIndex(-1); // Reset selection when results change
       } catch (error) {
-        console.error('Search error:', error);
+        console.error("Search error:", error);
         setResults([]);
         setSelectedIndex(-1);
       } finally {
         setIsLoading(false);
       }
     },
-    [searchIndex, maxResults]
+    [searchIndex, maxResults],
   );
 
   // Handle query changes with debouncing
@@ -92,12 +92,12 @@ export function useIconSearch(
         performSearch(newQuery);
       }, debounceMs);
     },
-    [debounceMs, performSearch]
+    [debounceMs, performSearch],
   );
 
   // Clear search
   const clearSearch = useCallback(() => {
-    setQuery('');
+    setQuery("");
     setResults([]);
     setSelectedIndex(-1);
   }, [setQuery]);
@@ -106,35 +106,37 @@ export function useIconSearch(
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       switch (e.key) {
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
           setSelectedIndex((prevIndex) => {
-            const newIndex = prevIndex <= 0 ? results.length - 1 : prevIndex - 1;
+            const newIndex =
+              prevIndex <= 0 ? results.length - 1 : prevIndex - 1;
             return newIndex;
           });
           break;
 
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
           setSelectedIndex((prevIndex) => {
-            const newIndex = prevIndex >= results.length - 1 ? 0 : prevIndex + 1;
+            const newIndex =
+              prevIndex >= results.length - 1 ? 0 : prevIndex + 1;
             return newIndex;
           });
           break;
 
-        case 'Enter':
+        case "Enter":
           e.preventDefault();
           if (selectedIndex >= 0 && selectedIndex < results.length) {
             const selectedIcon = results[selectedIndex];
             // Dispatch custom event that can be handled by parent components
-            const event = new CustomEvent('iconSelected', {
+            const event = new CustomEvent("iconSelected", {
               detail: selectedIcon,
             });
             document.dispatchEvent(event);
           }
           break;
 
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           clearSearch();
           break;
@@ -143,7 +145,7 @@ export function useIconSearch(
           break;
       }
     },
-    [results, selectedIndex, clearSearch]
+    [results, selectedIndex, clearSearch],
   );
 
   // Cleanup timer on unmount

@@ -18,7 +18,7 @@ A powerful, accessible icon search component for IceCharts that enables users to
 The component is part of the IceCharts diagram icons system. Import it from:
 
 ```typescript
-import { IconSearch, useIconSearch } from '@/components/diagram/icons/search';
+import { IconSearch, useIconSearch } from "@/components/diagram/icons/search";
 ```
 
 ## Usage
@@ -57,12 +57,12 @@ function MyComponent() {
 
 #### `IconSearch` Component
 
-| Prop | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `onSelect` | `(icon: IconDefinition) => void` | Yes | - | Callback function when an icon is selected |
-| `allIcons` | `IconDefinition[]` | Yes | - | Array of all available icons to search through |
-| `placeholder` | `string` | No | `'Search icons...'` | Placeholder text for the search input |
-| `iconMap` | `IconMap` | Yes | - | Map of icon IDs to React components for rendering previews |
+| Prop          | Type                             | Required | Default             | Description                                                |
+| ------------- | -------------------------------- | -------- | ------------------- | ---------------------------------------------------------- |
+| `onSelect`    | `(icon: IconDefinition) => void` | Yes      | -                   | Callback function when an icon is selected                 |
+| `allIcons`    | `IconDefinition[]`               | Yes      | -                   | Array of all available icons to search through             |
+| `placeholder` | `string`                         | No       | `'Search icons...'` | Placeholder text for the search input                      |
+| `iconMap`     | `IconMap`                        | Yes      | -                   | Map of icon IDs to React components for rendering previews |
 
 ### Types
 
@@ -71,7 +71,7 @@ interface IconDefinition {
   id: string;
   label: string;
   color: string;
-  source: 'internal' | 'aws' | 'azure' | 'gcp' | 'ibm' | 'iconoir';
+  source: "internal" | "aws" | "azure" | "gcp" | "ibm" | "iconoir";
   tags?: string[];
 }
 
@@ -88,12 +88,12 @@ interface IconProps {
 
 The component supports full keyboard navigation:
 
-| Key | Action |
-|-----|--------|
-| `↑` / `↓` | Navigate through results |
-| `Enter` | Select highlighted result |
-| `Escape` | Close dropdown |
-| `Type` | Search for icons |
+| Key       | Action                    |
+| --------- | ------------------------- |
+| `↑` / `↓` | Navigate through results  |
+| `Enter`   | Select highlighted result |
+| `Escape`  | Close dropdown            |
+| `Type`    | Search for icons          |
 
 ## Search Behavior
 
@@ -129,14 +129,14 @@ Query: "db"
 
 Icons from different sources are color-coded for easy identification:
 
-| Source | Color | Badge Style |
-|--------|-------|------------|
-| AWS | Orange | `bg-orange-500/20 text-orange-300` |
-| Azure | Blue | `bg-blue-500/20 text-blue-300` |
-| GCP | Red | `bg-red-500/20 text-red-300` |
-| IBM | Blue | `bg-blue-500/20 text-blue-300` |
-| Iconoir | Purple | `bg-purple-500/20 text-purple-300` |
-| Internal | Gray | `bg-gray-500/20 text-gray-300` |
+| Source   | Color  | Badge Style                        |
+| -------- | ------ | ---------------------------------- |
+| AWS      | Orange | `bg-orange-500/20 text-orange-300` |
+| Azure    | Blue   | `bg-blue-500/20 text-blue-300`     |
+| GCP      | Red    | `bg-red-500/20 text-red-300`       |
+| IBM      | Blue   | `bg-blue-500/20 text-blue-300`     |
+| Iconoir  | Purple | `bg-purple-500/20 text-purple-300` |
+| Internal | Gray   | `bg-gray-500/20 text-gray-300`     |
 
 ## Styling
 
@@ -144,16 +144,16 @@ The component uses Tailwind CSS with dark mode colors:
 
 ```typescript
 // Input
-'bg-dark-800 border-dark-600 text-white rounded-lg'
+"bg-dark-800 border-dark-600 text-white rounded-lg";
 
 // Dropdown
-'bg-dark-900 border-dark-700 rounded-lg shadow-xl'
+"bg-dark-900 border-dark-700 rounded-lg shadow-xl";
 
 // Selected Item
-'bg-dark-700'
+"bg-dark-700";
 
 // Source Badges
-'bg-{color}-500/20 text-{color}-300 border-{color}-500/30'
+"bg-{color}-500/20 text-{color}-300 border-{color}-500/30";
 ```
 
 ### Customization
@@ -171,7 +171,7 @@ const customBadgeColor = (source: string): string => {
 The underlying `useIconSearch` hook provides the search logic and can be used independently:
 
 ```typescript
-import { useIconSearch } from '@/components/diagram/icons/search';
+import { useIconSearch } from "@/components/diagram/icons/search";
 
 function MyComponent() {
   const { results, isLoading, search, clear } = useIconSearch({
@@ -190,14 +190,14 @@ function MyComponent() {
 
 ```typescript
 interface UseIconSearchReturn {
-  results: SearchResult[];           // Current search results with scores
-  isLoading: boolean;                 // Whether search is in progress
-  search: (query: string, allIcons: IconDefinition[]) => void;  // Perform search
-  clear: () => void;                  // Clear results
+  results: SearchResult[]; // Current search results with scores
+  isLoading: boolean; // Whether search is in progress
+  search: (query: string, allIcons: IconDefinition[]) => void; // Perform search
+  clear: () => void; // Clear results
 }
 
 interface SearchResult extends IconDefinition {
-  score: number;  // Relevance score
+  score: number; // Relevance score
 }
 ```
 
@@ -221,6 +221,7 @@ interface SearchResult extends IconDefinition {
 ## Example Implementation
 
 See `IconSearch.example.tsx` for a complete working example with:
+
 - Sample icon definitions
 - Icon selection handling
 - Details display

@@ -4,7 +4,7 @@
  * Supports tokenization, prefix matching, and relevance scoring
  */
 
-import type { IconDefinition, SearchOptions, SearchResult } from '../types';
+import type { IconDefinition, SearchOptions, SearchResult } from "../types";
 
 /**
  * Internal token index structure for fast lookups
@@ -34,9 +34,9 @@ function tokenize(text: string): string[] {
       // Convert to lowercase
       .toLowerCase()
       // Split on transitions (camelCase, PascalCase)
-      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
       // Split on non-alphanumeric characters
-      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/[^a-z0-9]+/g, " ")
       // Split into individual tokens
       .split(/\s+/)
       // Remove empty tokens
@@ -106,7 +106,7 @@ export function buildSearchIndex(icons: IconDefinition[]): SearchIndex {
 function calculateRelevanceScore(
   icon: IconDefinition,
   queryTokens: string[],
-  _index: SearchIndex
+  _index: SearchIndex,
 ): number {
   let score = 0;
   const labelLower = icon.label.toLowerCase();
@@ -162,7 +162,7 @@ function calculateRelevanceScore(
 export function searchIcons(
   query: string,
   index: SearchIndex,
-  options?: SearchOptions
+  options?: SearchOptions,
 ): IconDefinition[] {
   const maxResults = options?.maxResults || 50;
   const allowedSources = new Set(options?.sources);

@@ -3,9 +3,9 @@
 ## Import
 
 ```typescript
-import { IconSearch, useIconSearch } from '@/components/diagram/icons/search';
-import { iconMap, iconCategories } from '@/components/diagram/icons';
-import type { IconDefinition } from '@/components/diagram/icons/types';
+import { IconSearch, useIconSearch } from "@/components/diagram/icons/search";
+import { iconMap, iconCategories } from "@/components/diagram/icons";
+import type { IconDefinition } from "@/components/diagram/icons/types";
 ```
 
 ## Basic Usage (3 lines)
@@ -17,33 +17,33 @@ const allIcons = Object.values(iconCategories).flatMap(c => c.icons);
 
 ## Component Props
 
-| Prop | Type | Required | Example |
-|------|------|----------|---------|
-| `onSelect` | `(icon: IconDefinition) => void` | ✓ | `(icon) => addNode(icon)` |
-| `allIcons` | `IconDefinition[]` | ✓ | `iconCategories.cloud.icons` |
-| `iconMap` | `IconMap` | ✓ | `{ aws: AwsIcon, ... }` |
-| `placeholder` | `string` | | `"Find an icon..."` |
+| Prop          | Type                             | Required | Example                      |
+| ------------- | -------------------------------- | -------- | ---------------------------- |
+| `onSelect`    | `(icon: IconDefinition) => void` | ✓        | `(icon) => addNode(icon)`    |
+| `allIcons`    | `IconDefinition[]`               | ✓        | `iconCategories.cloud.icons` |
+| `iconMap`     | `IconMap`                        | ✓        | `{ aws: AwsIcon, ... }`      |
+| `placeholder` | `string`                         |          | `"Find an icon..."`          |
 
 ## Icon Definition
 
 ```typescript
 interface IconDefinition {
-  id: string;              // 'aws'
-  label: string;           // 'AWS'
-  color: string;           // '#FF9900'
-  source: IconSource;      // 'aws' | 'azure' | 'gcp' | 'ibm' | 'iconoir' | 'internal'
-  tags?: string[];         // ['cloud', 'provider']
+  id: string; // 'aws'
+  label: string; // 'AWS'
+  color: string; // '#FF9900'
+  source: IconSource; // 'aws' | 'azure' | 'gcp' | 'ibm' | 'iconoir' | 'internal'
+  tags?: string[]; // ['cloud', 'provider']
 }
 ```
 
 ## Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
+| Key       | Action           |
+| --------- | ---------------- |
 | `↑` / `↓` | Navigate results |
-| `Enter` | Select result |
-| `Escape` | Close dropdown |
-| Type | Search |
+| `Enter`   | Select result    |
+| `Escape`  | Close dropdown   |
+| Type      | Search           |
 
 ## Complete Example
 
@@ -167,19 +167,19 @@ Query: "ser"         → Finds: Server, User, PostgreSQL (fuzzy)
 
 ```typescript
 // Input
-'bg-dark-800 border-dark-600 text-white rounded-lg'
+"bg-dark-800 border-dark-600 text-white rounded-lg";
 
 // Dropdown
-'bg-dark-900 border-dark-700 rounded-lg shadow-xl'
+"bg-dark-900 border-dark-700 rounded-lg shadow-xl";
 
 // Selected item
-'bg-dark-700'
+"bg-dark-700";
 
 // Spinner (loading)
-'animate-spin text-blue-500'
+"animate-spin text-blue-500";
 
 // No results
-'text-dark-400'
+"text-dark-400";
 ```
 
 ## TypeScript Types
@@ -193,8 +193,8 @@ import type {
   IconMap,
   IconProps,
   SearchResult,
-  SearchOptions
-} from '@/components/diagram/icons/types';
+  SearchOptions,
+} from "@/components/diagram/icons/types";
 
 // Use in function
 function handleIcon(icon: IconDefinition) {
@@ -205,12 +205,14 @@ function handleIcon(icon: IconDefinition) {
 ## Common Patterns
 
 ### Filter by Source
+
 ```typescript
 const awsIcons = allIcons.filter(i => i.source === 'aws');
 <IconSearch onSelect={handleSelect} allIcons={awsIcons} iconMap={iconMap} />
 ```
 
 ### Filter by Tags
+
 ```typescript
 const cloudIcons = allIcons.filter(i =>
   i.tags?.includes('cloud')
@@ -219,6 +221,7 @@ const cloudIcons = allIcons.filter(i =>
 ```
 
 ### With Loading State
+
 ```typescript
 const [selectedIcon, setSelectedIcon] = useState<IconDefinition | null>(null);
 const [isAdding, setIsAdding] = useState(false);
@@ -235,6 +238,7 @@ const handleSelect = async (icon: IconDefinition) => {
 ```
 
 ### With Validation
+
 ```typescript
 const handleSelect = (icon: IconDefinition) => {
   if (!iconMap[icon.id]) {
@@ -248,12 +252,14 @@ const handleSelect = (icon: IconDefinition) => {
 ## Tailwind Config (Dark Mode)
 
 The component uses these Tailwind colors:
+
 - `dark-800`, `dark-900`: Background
 - `dark-600`, `dark-700`: Borders
 - `dark-400`, `dark-500`: Text
 - `blue-500`: Focus ring
 
 Already configured in `tailwind.config.ts`:
+
 ```typescript
 extend: {
   colors: {
@@ -266,14 +272,16 @@ extend: {
 ## Performance Tips
 
 1. **Memoize props** if passing new arrays
+
 ```typescript
 const allIcons = useMemo(
-  () => Object.values(iconCategories).flatMap(c => c.icons),
-  []
+  () => Object.values(iconCategories).flatMap((c) => c.icons),
+  [],
 );
 ```
 
 2. **Lazy load large icon sets**
+
 ```typescript
 const [icons, setIcons] = useState<IconDefinition[]>([]);
 useEffect(() => {
@@ -282,8 +290,12 @@ useEffect(() => {
 ```
 
 3. **Use searchIndex for 1000+ icons**
+
 ```typescript
-import { buildSearchIndex, searchIcons } from '@/components/diagram/icons/search';
+import {
+  buildSearchIndex,
+  searchIcons,
+} from "@/components/diagram/icons/search";
 const index = useMemo(() => buildSearchIndex(allIcons), [allIcons]);
 ```
 
@@ -292,15 +304,15 @@ const index = useMemo(() => buildSearchIndex(allIcons), [allIcons]);
 ```typescript
 // Log search results
 const handleSelect = (icon: IconDefinition) => {
-  console.log('Selected:', icon);
-  console.log('Has component:', !!iconMap[icon.id]);
+  console.log("Selected:", icon);
+  console.log("Has component:", !!iconMap[icon.id]);
 };
 
 // Check available icons
-console.log('Total icons:', allIcons.length);
-console.log('By source:', {
-  aws: allIcons.filter(i => i.source === 'aws').length,
-  azure: allIcons.filter(i => i.source === 'azure').length,
+console.log("Total icons:", allIcons.length);
+console.log("By source:", {
+  aws: allIcons.filter((i) => i.source === "aws").length,
+  azure: allIcons.filter((i) => i.source === "azure").length,
   // ...
 });
 ```
@@ -309,17 +321,17 @@ console.log('By source:', {
 
 ```typescript
 // Unit test example
-import { renderHook, act } from '@testing-library/react';
-import { useIconSearch } from '@/components/diagram/icons/search';
+import { renderHook, act } from "@testing-library/react";
+import { useIconSearch } from "@/components/diagram/icons/search";
 
-test('should search for icons', async () => {
+test("should search for icons", async () => {
   const { result } = renderHook(() => useIconSearch());
 
   act(() => {
-    result.current.search('aws', mockIcons);
+    result.current.search("aws", mockIcons);
   });
 
-  await new Promise(r => setTimeout(r, 100));
+  await new Promise((r) => setTimeout(r, 100));
   expect(result.current.results).toHaveLength(1);
 });
 ```
@@ -336,13 +348,13 @@ test('should search for icons', async () => {
 
 ## Common Issues & Solutions
 
-| Issue | Solution |
-|-------|----------|
-| No results | Check `allIcons` is populated |
-| Icons not showing | Verify `iconMap` has icon ID |
-| Dropdown overlapping | Increase z-index to `z-[9999]` |
-| Slow search | Reduce icons or increase debounce |
-| Styling off | Check Tailwind dark mode enabled |
+| Issue                | Solution                          |
+| -------------------- | --------------------------------- |
+| No results           | Check `allIcons` is populated     |
+| Icons not showing    | Verify `iconMap` has icon ID      |
+| Dropdown overlapping | Increase z-index to `z-[9999]`    |
+| Slow search          | Reduce icons or increase debounce |
+| Styling off          | Check Tailwind dark mode enabled  |
 
 ## Version Info
 

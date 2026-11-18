@@ -3,7 +3,7 @@
  * Provides wrapper components for @carbon/icons-react icons normalized to IconProps interface
  */
 
-import { createElement } from 'react';
+import { createElement } from "react";
 import {
   Cloud,
   DataBase,
@@ -32,19 +32,24 @@ import {
   IbmDb2,
   IbmCloudSecurityGroups,
   IbmCloudKubernetesService,
-} from '@carbon/icons-react';
+} from "@carbon/icons-react";
+import type { CarbonIconType } from "@carbon/icons-react";
 
-import type { IconProps, IconComponent, IconMap } from '../types';
+import type { IconProps, IconComponent, IconMap } from "../types";
 
 /**
  * Create a wrapper component that normalizes Carbon icons to IconProps interface
  */
 const createIconWrapper = (
-  CarbonIcon: React.ComponentType<any>,
-  defaultSize: number = 20
+  CarbonIcon: CarbonIconType,
+  defaultSize: number = 20,
 ): IconComponent => {
-  return function WrappedIcon({ className = '', size = defaultSize, color }: IconProps) {
-    const sizeNum = typeof size === 'string' ? parseInt(size, 10) : size;
+  return function WrappedIcon({
+    className = "",
+    size = defaultSize,
+    color,
+  }: IconProps) {
+    const sizeNum = typeof size === "string" ? parseInt(size, 10) : size;
 
     // Normalize size to Carbon's supported sizes
     let carbonSize: 16 | 20 | 24 | 32 = 20;
@@ -65,35 +70,35 @@ const createIconWrapper = (
  * Icon map with 30+ useful IBM Carbon icons
  */
 export const ibmIconMap: IconMap = {
-  'ibm-cloud': createIconWrapper(IbmCloud),
-  'ibm-database': createIconWrapper(DataBase),
-  'ibm-security': createIconWrapper(IbmSecurity),
-  'ibm-network': createIconWrapper(Network_1),
-  'ibm-analytics': createIconWrapper(Analytics),
-  'ibm-dataset': createIconWrapper(DataSet),
-  'ibm-ai': createIconWrapper(Ai),
-  'ibm-code': createIconWrapper(Code),
-  'ibm-locked': createIconWrapper(Locked),
-  'ibm-deploy': createIconWrapper(Deploy),
-  'ibm-container-services': createIconWrapper(ContainerServices),
-  'ibm-container-registry': createIconWrapper(ContainerRegistry),
-  'ibm-kubernetes': createIconWrapper(IbmCloudKubernetesService),
-  'ibm-security-groups': createIconWrapper(IbmCloudSecurityGroups),
-  'ibm-document': createIconWrapper(Document),
-  'ibm-chart-bar': createIconWrapper(ChartBar),
-  'ibm-chart-line': createIconWrapper(ChartLine),
-  'ibm-monitor': createIconWrapper(CloudMonitoring),
-  'ibm-time': createIconWrapper(Time),
-  'ibm-calculate': createIconWrapper(Calculator),
-  'ibm-decision-tree': createIconWrapper(DecisionTree),
-  'ibm-model': createIconWrapper(Model),
-  'ibm-cloud-monitoring': createIconWrapper(CloudMonitoring),
-  'ibm-data-analytics': createIconWrapper(DataAnalytics),
-  'ibm-cloud-data-ops': createIconWrapper(CloudDataOps),
-  'ibm-db2': createIconWrapper(IbmDb2),
-  'ibm-security-icon': createIconWrapper(Security),
-  'ibm-cloud-security': createIconWrapper(IbmSecurity),
-  'ibm-generic-cloud': createIconWrapper(Cloud),
+  "ibm-cloud": createIconWrapper(IbmCloud),
+  "ibm-database": createIconWrapper(DataBase),
+  "ibm-security": createIconWrapper(IbmSecurity),
+  "ibm-network": createIconWrapper(Network_1),
+  "ibm-analytics": createIconWrapper(Analytics),
+  "ibm-dataset": createIconWrapper(DataSet),
+  "ibm-ai": createIconWrapper(Ai),
+  "ibm-code": createIconWrapper(Code),
+  "ibm-locked": createIconWrapper(Locked),
+  "ibm-deploy": createIconWrapper(Deploy),
+  "ibm-container-services": createIconWrapper(ContainerServices),
+  "ibm-container-registry": createIconWrapper(ContainerRegistry),
+  "ibm-kubernetes": createIconWrapper(IbmCloudKubernetesService),
+  "ibm-security-groups": createIconWrapper(IbmCloudSecurityGroups),
+  "ibm-document": createIconWrapper(Document),
+  "ibm-chart-bar": createIconWrapper(ChartBar),
+  "ibm-chart-line": createIconWrapper(ChartLine),
+  "ibm-monitor": createIconWrapper(CloudMonitoring),
+  "ibm-time": createIconWrapper(Time),
+  "ibm-calculate": createIconWrapper(Calculator),
+  "ibm-decision-tree": createIconWrapper(DecisionTree),
+  "ibm-model": createIconWrapper(Model),
+  "ibm-cloud-monitoring": createIconWrapper(CloudMonitoring),
+  "ibm-data-analytics": createIconWrapper(DataAnalytics),
+  "ibm-cloud-data-ops": createIconWrapper(CloudDataOps),
+  "ibm-db2": createIconWrapper(IbmDb2),
+  "ibm-security-icon": createIconWrapper(Security),
+  "ibm-cloud-security": createIconWrapper(IbmSecurity),
+  "ibm-generic-cloud": createIconWrapper(Cloud),
 };
 
-export type { IconComponent, IconProps } from '../types';
+export type { IconComponent, IconProps } from "../types";

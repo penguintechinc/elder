@@ -2,7 +2,7 @@
  * Icon system TypeScript types
  */
 
-import type { FC } from 'react';
+import type { FC } from "react";
 
 /**
  * Standard props for all icon components
@@ -21,7 +21,13 @@ export type IconComponent = FC<IconProps>;
 /**
  * Icon sources for filtering and display
  */
-export type IconSource = 'internal' | 'aws' | 'azure' | 'gcp' | 'ibm' | 'iconoir';
+export type IconSource =
+  | "internal"
+  | "aws"
+  | "azure"
+  | "gcp"
+  | "ibm"
+  | "iconoir";
 
 /**
  * Metadata for each icon (used in categories and search)
@@ -31,7 +37,7 @@ export interface IconDefinition {
   label: string;
   color: string;
   source: IconSource;
-  tags?: string[];  // For search
+  tags?: string[]; // For search
 }
 
 /**

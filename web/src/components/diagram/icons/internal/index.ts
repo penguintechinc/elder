@@ -7,7 +7,7 @@ export {
   DockerIcon,
   DigitalOceanIcon,
   OracleCloudIcon,
-} from './cloud-providers';
+} from "./cloud-providers";
 
 // Re-export all infrastructure icons
 export {
@@ -15,7 +15,7 @@ export {
   VirtualMachineIcon,
   ContainerIcon,
   LambdaIcon,
-} from './infrastructure';
+} from "./infrastructure";
 
 // Re-export all database icons
 export {
@@ -24,7 +24,7 @@ export {
   MongoDbIcon,
   PostgresIcon,
   MySqlIcon,
-} from './database';
+} from "./database";
 
 // Re-export all networking icons
 export {
@@ -36,10 +36,10 @@ export {
   VpnIcon,
   DnsIcon,
   CdnIcon,
-} from './networking';
+} from "./networking";
 
 // Re-export categories
-export { internalCategories } from './categories';
+export { internalCategories } from "./categories";
 
 // Create combined icon map for internal icons
 import {
@@ -50,20 +50,20 @@ import {
   DockerIcon,
   DigitalOceanIcon,
   OracleCloudIcon,
-} from './cloud-providers';
+} from "./cloud-providers";
 import {
   ServerIcon,
   VirtualMachineIcon,
   ContainerIcon,
   LambdaIcon,
-} from './infrastructure';
+} from "./infrastructure";
 import {
   DatabaseIcon,
   RedisIcon,
   MongoDbIcon,
   PostgresIcon,
   MySqlIcon,
-} from './database';
+} from "./database";
 import {
   NetworkIcon,
   RouterIcon,
@@ -73,7 +73,7 @@ import {
   VpnIcon,
   DnsIcon,
   CdnIcon,
-} from './networking';
+} from "./networking";
 
 export const internalIconMap = {
   // Cloud providers

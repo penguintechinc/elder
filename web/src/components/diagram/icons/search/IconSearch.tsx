@@ -1,6 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import type { IconDefinition, IconMap } from '../types';
-import { useIconSearch } from './useIconSearch';
+import React, { useState, useCallback, useEffect, useRef } from "react";
+import type { IconDefinition, IconMap } from "../types";
+import { useIconSearch } from "./useIconSearch";
 
 interface IconSearchProps {
   onSelect: (icon: IconDefinition) => void;
@@ -23,17 +23,19 @@ interface IconSearchProps {
 function IconSearch({
   onSelect,
   allIcons,
-  placeholder = 'Search icons...',
+  placeholder = "Search icons...",
   iconMap,
 }: IconSearchProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const selectedItemRef = useRef<HTMLLIElement>(null);
 
-  const { results, isLoading, setQuery } = useIconSearch(allIcons, { maxResults: 30 });
+  const { results, isLoading, setQuery } = useIconSearch(allIcons, {
+    maxResults: 30,
+  });
 
   // Handle search query changes
   useEffect(() => {
@@ -50,41 +52,52 @@ function IconSearch({
   useEffect(() => {
     if (selectedItemRef.current && dropdownRef.current) {
       selectedItemRef.current.scrollIntoView({
-        block: 'nearest',
-        behavior: 'smooth',
+        block: "nearest",
+        behavior: "smooth",
       });
     }
   }, [selectedIndex]);
 
+  const handleSelectIcon = useCallback(
+    (icon: IconDefinition) => {
+      onSelect(icon);
+      setSearchQuery("");
+      setIsOpen(false);
+      setSelectedIndex(-1);
+      inputRef.current?.blur();
+    },
+    [onSelect],
+  );
+
   // Handle keyboard navigation
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!isOpen && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') {
+      if (!isOpen && e.key !== "ArrowUp" && e.key !== "ArrowDown") {
         return;
       }
 
       switch (e.key) {
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex(prev =>
-            prev < results.length - 1 ? prev + 1 : prev
+          setSelectedIndex((prev) =>
+            prev < results.length - 1 ? prev + 1 : prev,
           );
           setIsOpen(true);
           break;
 
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
-          setSelectedIndex(prev => (prev > 0 ? prev - 1 : -1));
+          setSelectedIndex((prev) => (prev > 0 ? prev - 1 : -1));
           break;
 
-        case 'Enter':
+        case "Enter":
           e.preventDefault();
           if (selectedIndex >= 0 && results[selectedIndex]) {
             handleSelectIcon(results[selectedIndex]);
           }
           break;
 
-        case 'Escape':
+        case "Escape":
           e.preventDefault();
           setIsOpen(false);
           setSelectedIndex(-1);
@@ -94,18 +107,7 @@ function IconSearch({
           break;
       }
     },
-    [isOpen, results, selectedIndex]
-  );
-
-  const handleSelectIcon = useCallback(
-    (icon: IconDefinition) => {
-      onSelect(icon);
-      setSearchQuery('');
-      setIsOpen(false);
-      setSelectedIndex(-1);
-      inputRef.current?.blur();
-    },
-    [onSelect]
+    [isOpen, results, selectedIndex, handleSelectIcon],
   );
 
   // Close dropdown when clicking outside
@@ -122,8 +124,8 @@ function IconSearch({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   /**
@@ -131,19 +133,19 @@ function IconSearch({
    */
   const getSourceBadgeColor = (source: string): string => {
     switch (source) {
-      case 'aws':
-        return 'bg-orange-500/20 text-orange-300 border-orange-500/30';
-      case 'azure':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'ibm':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
-      case 'iconoir':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/30';
-      case 'gcp':
-        return 'bg-red-500/20 text-red-300 border-red-500/30';
-      case 'internal':
+      case "aws":
+        return "bg-orange-500/20 text-orange-300 border-orange-500/30";
+      case "azure":
+        return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+      case "ibm":
+        return "bg-blue-500/20 text-blue-300 border-blue-500/30";
+      case "iconoir":
+        return "bg-purple-500/20 text-purple-300 border-purple-500/30";
+      case "gcp":
+        return "bg-red-500/20 text-red-300 border-red-500/30";
+      case "internal":
       default:
-        return 'bg-gray-500/20 text-gray-300 border-gray-500/30';
+        return "bg-gray-500/20 text-gray-300 border-gray-500/30";
     }
   };
 
@@ -248,7 +250,9 @@ function IconSearch({
 
           {!isLoading && results.length === 0 && searchQuery.trim() && (
             <div className="px-4 py-8 text-center">
-              <p className="text-dark-400">No icons found for "{searchQuery}"</p>
+              <p className="text-dark-400">
+                No icons found for "{searchQuery}"
+              </p>
             </div>
           )}
 
@@ -259,45 +263,44 @@ function IconSearch({
                 const isSelected = index === selectedIndex;
 
                 return (
-                  <li
-                    key={icon.id}
-                    ref={isSelected ? selectedItemRef : null}
-                    onClick={() => handleSelectIcon(icon)}
-                    className={`px-3 py-3 cursor-pointer transition-colors ${
-                      isSelected
-                        ? 'bg-dark-700'
-                        : 'hover:bg-dark-800'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Icon Preview */}
-                      <div className="flex-shrink-0">
-                        {IconComponent ? (
-                          <IconComponent className="w-6 h-6 text-gray-300" />
-                        ) : (
-                          <div className="w-6 h-6 bg-dark-600 rounded flex items-center justify-center">
-                            <span className="text-xs text-dark-400">?</span>
-                          </div>
-                        )}
-                      </div>
+                  <li key={icon.id} ref={isSelected ? selectedItemRef : null}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectIcon(icon)}
+                      className={`w-full text-left px-3 py-3 cursor-pointer transition-colors ${
+                        isSelected ? "bg-dark-700" : "hover:bg-dark-800"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {/* Icon Preview */}
+                        <div className="flex-shrink-0">
+                          {IconComponent ? (
+                            <IconComponent className="w-6 h-6 text-gray-300" />
+                          ) : (
+                            <div className="w-6 h-6 bg-dark-600 rounded flex items-center justify-center">
+                              <span className="text-xs text-dark-400">?</span>
+                            </div>
+                          )}
+                        </div>
 
-                      {/* Icon Label */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {icon.label}
-                        </p>
-                      </div>
+                        {/* Icon Label */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">
+                            {icon.label}
+                          </p>
+                        </div>
 
-                      {/* Source Badge */}
-                      <div className="flex-shrink-0">
-                        <span
-                          className={`inline-block px-2 py-1 text-xs font-medium rounded border
-                            ${getSourceBadgeColor(icon.source)}`}
-                        >
-                          {getSourceLabel(icon.source)}
-                        </span>
+                        {/* Source Badge */}
+                        <div className="flex-shrink-0">
+                          <span
+                            className={`inline-block px-2 py-1 text-xs font-medium rounded border
+                              ${getSourceBadgeColor(icon.source)}`}
+                          >
+                            {getSourceLabel(icon.source)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
+                    </button>
                   </li>
                 );
               })}
@@ -306,7 +309,8 @@ function IconSearch({
 
           {!isLoading && results.length > 0 && (
             <div className="px-4 py-2 bg-dark-900/50 border-t border-dark-700 text-xs text-dark-500 text-center">
-              {results.length} result{results.length !== 1 ? 's' : ''} • Use ↑↓ to navigate, Enter to select
+              {results.length} result{results.length !== 1 ? "s" : ""} • Use ↑↓
+              to navigate, Enter to select
             </div>
           )}
         </div>

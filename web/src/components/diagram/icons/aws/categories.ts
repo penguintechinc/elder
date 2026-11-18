@@ -1,10 +1,10 @@
 // AWS Icon Categories and Metadata
 // Defines categories, icon definitions, and metadata for AWS icons
 
-import type { IconCategory, IconDefinition } from '../types';
+import type { IconCategory, IconDefinition } from "../types";
 
 // AWS Brand Color
-const AWS_ORANGE = '#FF9900';
+const AWS_ORANGE = "#FF9900";
 
 // ============================================
 // ICON DEFINITIONS
@@ -12,162 +12,210 @@ const AWS_ORANGE = '#FF9900';
 
 const computeIcons: IconDefinition[] = [
   {
-    id: 'aws-ec2',
-    label: 'EC2',
+    id: "aws-ec2",
+    label: "EC2",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['compute', 'instance', 'server', 'virtual machine', 'vm'],
+    source: "aws",
+    tags: ["compute", "instance", "server", "virtual machine", "vm"],
   },
   {
-    id: 'aws-lambda',
-    label: 'Lambda',
+    id: "aws-lambda",
+    label: "Lambda",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['compute', 'serverless', 'functions', 'function', 'event-driven'],
+    source: "aws",
+    tags: ["compute", "serverless", "functions", "function", "event-driven"],
   },
   {
-    id: 'aws-ecs',
-    label: 'ECS',
+    id: "aws-ecs",
+    label: "ECS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['compute', 'container', 'docker', 'orchestration', 'elastic container service'],
+    source: "aws",
+    tags: [
+      "compute",
+      "container",
+      "docker",
+      "orchestration",
+      "elastic container service",
+    ],
   },
   {
-    id: 'aws-eks',
-    label: 'EKS',
+    id: "aws-eks",
+    label: "EKS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['compute', 'kubernetes', 'container', 'orchestration', 'elastic kubernetes service'],
+    source: "aws",
+    tags: [
+      "compute",
+      "kubernetes",
+      "container",
+      "orchestration",
+      "elastic kubernetes service",
+    ],
   },
   {
-    id: 'aws-fargate',
-    label: 'Fargate',
+    id: "aws-fargate",
+    label: "Fargate",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['compute', 'serverless', 'container', 'docker', 'ecs'],
+    source: "aws",
+    tags: ["compute", "serverless", "container", "docker", "ecs"],
   },
 ];
 
 const storageIcons: IconDefinition[] = [
   {
-    id: 'aws-s3',
-    label: 'S3',
+    id: "aws-s3",
+    label: "S3",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['storage', 'object', 'bucket', 'simple storage service', 'data'],
+    source: "aws",
+    tags: ["storage", "object", "bucket", "simple storage service", "data"],
   },
   {
-    id: 'aws-cloudfront',
-    label: 'CloudFront',
+    id: "aws-cloudfront",
+    label: "CloudFront",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['storage', 'cdn', 'distribution', 'content delivery', 'cache'],
+    source: "aws",
+    tags: ["storage", "cdn", "distribution", "content delivery", "cache"],
   },
 ];
 
 const databaseIcons: IconDefinition[] = [
   {
-    id: 'aws-rds',
-    label: 'RDS',
+    id: "aws-rds",
+    label: "RDS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['database', 'relational', 'sql', 'mysql', 'postgres', 'aurora'],
+    source: "aws",
+    tags: ["database", "relational", "sql", "mysql", "postgres", "aurora"],
   },
   {
-    id: 'aws-dynamodb',
-    label: 'DynamoDB',
+    id: "aws-dynamodb",
+    label: "DynamoDB",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['database', 'nosql', 'table', 'key-value', 'document'],
+    source: "aws",
+    tags: ["database", "nosql", "table", "key-value", "document"],
   },
 ];
 
 const networkingIcons: IconDefinition[] = [
   {
-    id: 'aws-vpc',
-    label: 'VPC',
+    id: "aws-vpc",
+    label: "VPC",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['networking', 'network', 'virtual private cloud', 'vpc', 'subnet'],
+    source: "aws",
+    tags: ["networking", "network", "virtual private cloud", "vpc", "subnet"],
   },
   {
-    id: 'aws-elb',
-    label: 'Load Balancer',
+    id: "aws-elb",
+    label: "Load Balancer",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['networking', 'load balancing', 'alb', 'nlb', 'elb', 'traffic', 'distribution'],
+    source: "aws",
+    tags: [
+      "networking",
+      "load balancing",
+      "alb",
+      "nlb",
+      "elb",
+      "traffic",
+      "distribution",
+    ],
   },
   {
-    id: 'aws-route53',
-    label: 'Route 53',
+    id: "aws-route53",
+    label: "Route 53",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['networking', 'dns', 'domain', 'routing', 'health check'],
+    source: "aws",
+    tags: ["networking", "dns", "domain", "routing", "health check"],
   },
   {
-    id: 'aws-api-gateway',
-    label: 'API Gateway',
+    id: "aws-api-gateway",
+    label: "API Gateway",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['networking', 'api', 'gateway', 'rest', 'websocket', 'integration'],
+    source: "aws",
+    tags: ["networking", "api", "gateway", "rest", "websocket", "integration"],
   },
 ];
 
 const securityIcons: IconDefinition[] = [
   {
-    id: 'aws-iam',
-    label: 'IAM',
+    id: "aws-iam",
+    label: "IAM",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['security', 'access', 'identity', 'permission', 'role', 'user', 'policy'],
+    source: "aws",
+    tags: [
+      "security",
+      "access",
+      "identity",
+      "permission",
+      "role",
+      "user",
+      "policy",
+    ],
   },
   {
-    id: 'aws-cognito',
-    label: 'Cognito',
+    id: "aws-cognito",
+    label: "Cognito",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['security', 'authentication', 'authorization', 'user pool', 'identity pool', 'mfa'],
+    source: "aws",
+    tags: [
+      "security",
+      "authentication",
+      "authorization",
+      "user pool",
+      "identity pool",
+      "mfa",
+    ],
   },
   {
-    id: 'aws-secrets-manager',
-    label: 'Secrets Manager',
+    id: "aws-secrets-manager",
+    label: "Secrets Manager",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['security', 'secret', 'credential', 'password', 'key', 'encryption'],
+    source: "aws",
+    tags: ["security", "secret", "credential", "password", "key", "encryption"],
   },
   {
-    id: 'aws-kms',
-    label: 'KMS',
+    id: "aws-kms",
+    label: "KMS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['security', 'encryption', 'key', 'key management', 'cryptography'],
+    source: "aws",
+    tags: ["security", "encryption", "key", "key management", "cryptography"],
   },
 ];
 
 const integrationIcons: IconDefinition[] = [
   {
-    id: 'aws-sns',
-    label: 'SNS',
+    id: "aws-sns",
+    label: "SNS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['integration', 'messaging', 'notification', 'pubsub', 'topic', 'simple notification service'],
+    source: "aws",
+    tags: [
+      "integration",
+      "messaging",
+      "notification",
+      "pubsub",
+      "topic",
+      "simple notification service",
+    ],
   },
   {
-    id: 'aws-sqs',
-    label: 'SQS',
+    id: "aws-sqs",
+    label: "SQS",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['integration', 'messaging', 'queue', 'async', 'simple queue service'],
+    source: "aws",
+    tags: [
+      "integration",
+      "messaging",
+      "queue",
+      "async",
+      "simple queue service",
+    ],
   },
 ];
 
 const monitoringIcons: IconDefinition[] = [
   {
-    id: 'aws-cloudwatch',
-    label: 'CloudWatch',
+    id: "aws-cloudwatch",
+    label: "CloudWatch",
     color: AWS_ORANGE,
-    source: 'aws',
-    tags: ['monitoring', 'logging', 'metrics', 'logs', 'dashboard', 'alerts'],
+    source: "aws",
+    tags: ["monitoring", "logging", "metrics", "logs", "dashboard", "alerts"],
   },
 ];
 
@@ -177,38 +225,38 @@ const monitoringIcons: IconDefinition[] = [
 
 export const awsCategories: Record<string, IconCategory> = {
   compute: {
-    label: 'Compute',
-    source: 'aws',
+    label: "Compute",
+    source: "aws",
     icons: computeIcons,
   },
   storage: {
-    label: 'Storage',
-    source: 'aws',
+    label: "Storage",
+    source: "aws",
     icons: storageIcons,
   },
   database: {
-    label: 'Database',
-    source: 'aws',
+    label: "Database",
+    source: "aws",
     icons: databaseIcons,
   },
   networking: {
-    label: 'Networking',
-    source: 'aws',
+    label: "Networking",
+    source: "aws",
     icons: networkingIcons,
   },
   security: {
-    label: 'Security',
-    source: 'aws',
+    label: "Security",
+    source: "aws",
     icons: securityIcons,
   },
   integration: {
-    label: 'Integration',
-    source: 'aws',
+    label: "Integration",
+    source: "aws",
     icons: integrationIcons,
   },
   monitoring: {
-    label: 'Monitoring',
-    source: 'aws',
+    label: "Monitoring",
+    source: "aws",
     icons: monitoringIcons,
   },
 };
@@ -223,7 +271,9 @@ export const getAllAwsIcons = (): IconDefinition[] => {
 /**
  * Get AWS icon definition by ID
  */
-export const getAwsIconDefinition = (id: string): IconDefinition | undefined => {
+export const getAwsIconDefinition = (
+  id: string,
+): IconDefinition | undefined => {
   return getAllAwsIcons().find((icon) => icon.id === id);
 };
 
@@ -244,6 +294,8 @@ export const getAwsCategoryNames = (): string[] => {
 /**
  * Get AWS icons by category key
  */
-export const getAwsIconsByCategory = (categoryKey: string): IconDefinition[] => {
+export const getAwsIconsByCategory = (
+  categoryKey: string,
+): IconDefinition[] => {
   return awsCategories[categoryKey]?.icons || [];
 };
