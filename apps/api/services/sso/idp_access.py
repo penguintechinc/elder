@@ -104,6 +104,7 @@ class IdPConfigView:
     @classmethod
     def from_record(cls, record: Any) -> IdPConfigView:
         """Build the view from a DAL row, copying only allowlisted columns."""
+        is_saml = record.idp_type == "saml"
         is_oidc = record.idp_type == "oidc"
         return cls(
             id=record.id,
@@ -118,13 +119,13 @@ class IdPConfigView:
             jit_provisioning_enabled=bool(record.jit_provisioning_enabled),
             default_role=record.default_role,
             is_active=bool(record.is_active),
-            entity_id=record.entity_id,
-            metadata_url=record.metadata_url,
-            sso_url=record.sso_url,
-            slo_url=record.slo_url,
-            certificate=record.certificate,
-            oidc_client_id=record.oidc_client_id,
-            oidc_issuer_url=record.oidc_issuer_url,
+            entity_id=record.entity_id if is_saml else None,
+            metadata_url=record.metadata_url if is_saml else None,
+            sso_url=record.sso_url if is_saml else None,
+            slo_url=record.slo_url if is_saml else None,
+            certificate=record.certificate if is_saml else None,
+            oidc_client_id=record.oidc_client_id if is_oidc else None,
+            oidc_issuer_url=record.oidc_issuer_url if is_oidc else None,
             oidc_scopes=(record.oidc_scopes or "openid profile email")
             if is_oidc
             else None,
@@ -136,7 +137,7 @@ class IdPConfigView:
             )
             if is_oidc
             else None,
-            has_client_secret=bool(record.oidc_client_secret),
+            has_client_secret=bool(record.oidc_client_secret) if is_oidc else False,
         )
 
     def to_dict(self) -> dict[str, Any]:
