@@ -45,14 +45,16 @@ jobs:
             context: .
         platform:
           - linux/amd64
-          - linux/arm64
+          # Temporarily disabled until release-ready amd64 image is validated
+          # - linux/arm64
 
     steps:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up QEMU (for arm64 emulation)
-      uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+    # Temporarily disabled while linux/arm64 builds are paused
+    # - name: Set up QEMU (for arm64 emulation)
+    #   uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
@@ -148,7 +150,7 @@ jobs:
       run: |
         IMAGE="${REGISTRY}/${ORG}/elder-${SERVICE}"
         SRC_AMD64="${IMAGE}:${VERSION}-amd64"
-        SRC_ARM64="${IMAGE}:${VERSION}-arm64"
+        # SRC_ARM64="${IMAGE}:${VERSION}-arm64"  # Temporarily disabled
 
         # Determine which named tags to create for this ref
         TAGS=()
@@ -168,7 +170,7 @@ jobs:
           TAG_ARGS+=(--tag "$tag")
         done
 
-        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64" "$SRC_ARM64"
+        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64"
 
         echo "Merged multi-arch manifest for elder-${SERVICE} → ${TAGS[*]}"
         docker buildx imagetools inspect "${TAGS[0]}"
