@@ -56,7 +56,15 @@ jobs:
     # - name: Set up QEMU (for arm64 emulation)
     #   uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
@@ -121,7 +129,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
