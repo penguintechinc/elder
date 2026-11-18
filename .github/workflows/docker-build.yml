@@ -2,10 +2,10 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ '**' ]  # All branches
+    branches: [ main, 'release/**' ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
 
 # Required permissions for GHCR push, security scanning, and integration tests
 permissions:
@@ -26,6 +26,7 @@ jobs:
     name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
     runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
         service:
           - name: api
@@ -122,6 +123,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
         service: [api, web, scanner, worker, flows-invoker]
 
@@ -244,6 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     if: false
     strategy:
+      max-parallel: 3
       matrix:
         service: [api, web, scanner, worker, flows-invoker]
     steps:
