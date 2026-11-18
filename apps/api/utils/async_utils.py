@@ -112,6 +112,20 @@ async def run_in_threadpool(
     return await loop.run_in_executor(_executor, lambda: ctx.run(safe_wrapper))
 
 
+async def run_in_threadpool_no_retry(
+    func: Callable[P, T], *args: P.args, **kwargs: P.kwargs
+) -> T:
+    """Run a blocking function in the thread pool once without connection retries.
+
+    Use for non-idempotent mutations (e.g. ``INSERT``s without a uniqueness
+    guard) where retrying after a post-commit connection error would create
+    duplicate rows.
+    """
+    loop = asyncio.get_event_loop()
+    ctx = contextvars.copy_context()
+    return await loop.run_in_executor(_executor, lambda: ctx.run(func, *args, **kwargs))
+
+
 def to_thread(func: Callable[P, T]) -> Callable[P, asyncio.Task[T]]:
     """
     Decorator to automatically run a sync function in a thread pool.
