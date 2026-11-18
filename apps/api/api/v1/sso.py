@@ -410,7 +410,7 @@ async def delete_idp_config(config_id):
         return error
 
     try:
-        result = await run_in_threadpool(
+        result = await run_in_threadpool_no_retry(
             SAMLService.delete_idp_config, config_id, caller
         )
     except IdPAccessError as exc:
