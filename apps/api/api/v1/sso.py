@@ -31,7 +31,7 @@ from apps.api.services.sso.idp_access import (
     IdPNotFoundError,
 )
 from apps.api.utils.api_responses import ApiResponse
-from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.async_utils import run_in_threadpool, run_in_threadpool_no_retry
 
 bp = Blueprint("sso", __name__)
 
@@ -322,7 +322,7 @@ async def create_idp_config():
     secret = body.oidc_client_secret
     fields = body.model_dump(exclude={"oidc_client_secret", "tenant_id"})
     try:
-        result = await run_in_threadpool(
+        result = await run_in_threadpool_no_retry(
             lambda: SAMLService.create_idp_config(
                 caller,
                 tenant_id=body.tenant_id,

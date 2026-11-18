@@ -104,6 +104,7 @@ class IdPConfigView:
     @classmethod
     def from_record(cls, record: Any) -> IdPConfigView:
         """Build the view from a DAL row, copying only allowlisted columns."""
+        is_oidc = record.idp_type == "oidc"
         return cls(
             id=record.id,
             tenant_id=record.tenant_id,
@@ -120,10 +121,17 @@ class IdPConfigView:
             certificate=record.certificate,
             oidc_client_id=record.oidc_client_id,
             oidc_issuer_url=record.oidc_issuer_url,
-            oidc_scopes=record.oidc_scopes or "openid profile email",
-            oidc_response_type=record.oidc_response_type or "code",
-            oidc_token_endpoint_auth_method=record.oidc_token_endpoint_auth_method
-            or "client_secret_basic",
+            oidc_scopes=(record.oidc_scopes or "openid profile email")
+            if is_oidc
+            else None,
+            oidc_response_type=(record.oidc_response_type or "code")
+            if is_oidc
+            else None,
+            oidc_token_endpoint_auth_method=(
+                record.oidc_token_endpoint_auth_method or "client_secret_basic"
+            )
+            if is_oidc
+            else None,
             has_client_secret=bool(record.oidc_client_secret),
         )
 
