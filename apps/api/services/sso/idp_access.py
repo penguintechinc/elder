@@ -137,7 +137,7 @@ class IdPConfigView:
             )
             if is_oidc
             else None,
-            has_client_secret=bool(record.oidc_client_secret) if is_oidc else False,
+            has_client_secret=bool(record.oidc_client_secret),
         )
 
     def to_dict(self) -> dict[str, Any]:
