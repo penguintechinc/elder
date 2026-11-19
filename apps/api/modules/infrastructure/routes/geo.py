@@ -584,19 +584,21 @@ async def create_location():
         db = current_app.db
         tenant_id = _get_tenant_id()
         overwrite = bool(data.get("overwrite", False))
-        existing = (
-            db(
-                (db.geo_locations.name == name)
-                & (db.geo_locations.tenant_id == tenant_id)
-            )
-            .select()
-            .first()
+        org_id = data.get("organization_id")
+        dup_query = (db.geo_locations.name == name) & (
+            db.geo_locations.tenant_id == tenant_id
         )
+        if org_id is not None:
+            dup_query &= db.geo_locations.organization_id == org_id
+        else:
+            dup_query &= db.geo_locations.organization_id == None  # noqa: E711
+        existing = db(dup_query).select().first()
         if existing and not overwrite:
+            scope_label = "organization" if org_id is not None else "tenant"
             return (
                 jsonify(
                     {
-                        "error": f"Geo location '{name}' already exists in this tenant",
+                        "error": f"Geo location '{name}' already exists in this {scope_label}",
                         "code": "DUPLICATE_RESOURCE",
                         "existing_id": existing.id,
                     }
