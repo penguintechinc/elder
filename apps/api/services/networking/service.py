@@ -75,7 +75,6 @@ class NetworkingService:
             return self.get_network(network_id)
 
         except Exception as e:
-            self.db.rollback()
             logger.error(f"Failed to create networking resource: {str(e)}")
             raise Exception(f"Failed to create networking resource: {str(e)}")
 
@@ -192,7 +191,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to update networking resource: {str(e)}")
             raise Exception(f"Failed to update networking resource: {str(e)}")
 
@@ -241,7 +240,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to delete networking resource: {str(e)}")
             raise Exception(f"Failed to delete networking resource: {str(e)}")
 
@@ -285,7 +284,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to create topology connection: {str(e)}")
             raise Exception(f"Failed to create topology connection: {str(e)}")
 
@@ -348,7 +347,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to delete topology connection: {str(e)}")
             raise Exception(f"Failed to delete topology connection: {str(e)}")
 
@@ -388,7 +387,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to map entity to network: {str(e)}")
             raise Exception(f"Failed to map entity to network: {str(e)}")
 
@@ -456,7 +455,7 @@ class NetworkingService:
         except ValueError:
             raise
         except Exception as e:
-            self.db.rollback()
+            # penguin_dal Database does not expose .rollback(); log and re-raise
             logger.error(f"Failed to delete entity mapping: {str(e)}")
             raise Exception(f"Failed to delete entity mapping: {str(e)}")
 
@@ -542,6 +541,7 @@ class NetworkingService:
     def _serialize_network(self, network: Any) -> dict[str, Any]:
         """Serialize networking resource to dict."""
         attrs = network.attributes or {}
+        status_meta = network.status_metadata or {}
         return {
             "id": network.id,
             "name": network.name,
@@ -557,8 +557,9 @@ class NetworkingService:
             "attributes": network.attributes,
             "status_metadata": network.status_metadata,
             "tags": network.tags,
-            "is_public": network.is_public,
-            "status": network.status,
+            "is_active": network.get("is_active", True),
+            "is_public": attrs.get("is_public", False),
+            "status": status_meta.get("status"),
             "created_at": (
                 network.created_at.isoformat() if network.created_at else None
             ),

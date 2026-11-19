@@ -8,6 +8,7 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -114,3 +115,37 @@ class DataStoreLabel(Base, IDMixin):
     data_store_id = Column(Integer, ForeignKey("data_stores.id"), nullable=False)
     label_id = Column(Integer, ForeignKey("labels.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class GeoRegion(Base, IDMixin, TimestampMixin):
+    """Geographic cloud/infrastructure regions."""
+
+    __tablename__ = "geo_regions"
+
+    tenant_id = Column(String(64), nullable=False, default="default", index=True)
+    code = Column(String(100), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    provider = Column(String(50), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+
+class GeoLocation(Base, IDMixin, TimestampMixin):
+    """Physical and logical geographic locations."""
+
+    __tablename__ = "geo_locations"
+
+    tenant_id = Column(String(64), nullable=False, default="default", index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=True)
+    region_code = Column(String(100), nullable=True, index=True)
+    name = Column(String(255), nullable=False)
+    city = Column(String(120), nullable=True)
+    state = Column(String(120), nullable=True)
+    country = Column(String(120), nullable=True)
+    address = Column(String(255), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)

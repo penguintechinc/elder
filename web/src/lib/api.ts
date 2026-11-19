@@ -3443,6 +3443,92 @@ class ApiClient {
     );
     return response.data;
   }
+
+  // Geo Regions & Locations
+  async getGeoRegions(params?: { provider?: string }) {
+    const response = await this.client.get("/geo/regions", { params });
+    return response.data;
+  }
+
+  async createGeoRegion(data: {
+    code: string;
+    name: string;
+    provider?: string;
+    latitude?: number;
+    longitude?: number;
+    description?: string;
+  }) {
+    const response = await this.client.post("/geo/regions", data);
+    return response.data;
+  }
+
+  async updateGeoRegion(
+    id: number,
+    data: Partial<{
+      code: string;
+      name: string;
+      provider: string;
+      latitude: number;
+      longitude: number;
+      description: string;
+    }>,
+  ) {
+    const response = await this.client.put(`/geo/regions/${id}`, data);
+    return response.data;
+  }
+
+  async deleteGeoRegion(id: number) {
+    const response = await this.client.delete(`/geo/regions/${id}`);
+    return response.data;
+  }
+
+  async getGeoLocations(params?: { region_code?: string }) {
+    const response = await this.client.get("/geo/locations", { params });
+    return response.data;
+  }
+
+  async createGeoLocation(data: {
+    name: string;
+    region_code?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+    description?: string;
+  }) {
+    const response = await this.client.post("/geo/locations", data);
+    return response.data;
+  }
+
+  async updateGeoLocation(
+    id: number,
+    data: Partial<{
+      name: string;
+      region_code: string;
+      city: string;
+      state: string;
+      country: string;
+      address: string;
+      latitude: number;
+      longitude: number;
+      description: string;
+    }>,
+  ) {
+    const response = await this.client.put(`/geo/locations/${id}`, data);
+    return response.data;
+  }
+
+  async deleteGeoLocation(id: number) {
+    const response = await this.client.delete(`/geo/locations/${id}`);
+    return response.data;
+  }
+
+  async geocodeLocation(query: string) {
+    const response = await this.client.post("/geo/geocode", { query });
+    return response.data;
+  }
 }
 
 export const api = new ApiClient();

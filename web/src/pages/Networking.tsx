@@ -202,6 +202,18 @@ export default function Networking() {
     enabled: showCreateModal,
   });
 
+  const { data: geoRegionsData } = useQuery({
+    queryKey: ["geo-regions"],
+    queryFn: () => api.getGeoRegions(),
+    enabled: showCreateModal,
+  });
+
+  const { data: geoLocationsData } = useQuery({
+    queryKey: ["geo-locations"],
+    queryFn: () => api.getGeoLocations(),
+    enabled: showCreateModal,
+  });
+
   const ipamPrefixList = useMemo(
     () =>
       (ipamPrefixesData?.prefixes || ipamPrefixesData?.items || []) as Array<{
@@ -251,24 +263,58 @@ export default function Networking() {
   }, [allNetworks?.networks, createOrgId]);
 
   const regionOptions = useMemo(() => {
-    const regions = new Set<string>();
-    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
-      if (n.region) regions.add(n.region);
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    for (const r of geoRegionsData?.regions || []) {
+      if (!r.code || seen.has(r.code)) continue;
+      seen.add(r.code);
+      opts.push({
+        value: r.code,
+        label: r.name
+          ? `${r.code} — ${r.name} [Defined]`
+          : `${r.code} [Defined]`,
+      });
     }
-    return Array.from(regions)
-      .sort()
-      .map((r) => ({ value: r, label: r }));
-  }, [allNetworks?.networks]);
+    const existing: string[] = [];
+    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
+      if (n.region && !seen.has(n.region)) {
+        seen.add(n.region);
+        existing.push(n.region);
+      }
+    }
+    existing.sort();
+    for (const r of existing) {
+      opts.push({ value: r, label: r });
+    }
+    return opts;
+  }, [geoRegionsData?.regions, allNetworks?.networks]);
 
   const locationOptions = useMemo(() => {
-    const locations = new Set<string>();
-    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
-      if (n.location) locations.add(n.location);
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    for (const loc of geoLocationsData?.locations || []) {
+      if (!loc.name || seen.has(loc.name)) continue;
+      seen.add(loc.name);
+      const detail =
+        loc.city || loc.country || `${loc.latitude}, ${loc.longitude}`;
+      opts.push({
+        value: loc.name,
+        label: `${loc.name} (${detail}) [Map]`,
+      });
     }
-    return Array.from(locations)
-      .sort()
-      .map((loc) => ({ value: loc, label: loc }));
-  }, [allNetworks?.networks]);
+    const existing: string[] = [];
+    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
+      if (n.location && !seen.has(n.location)) {
+        seen.add(n.location);
+        existing.push(n.location);
+      }
+    }
+    existing.sort();
+    for (const loc of existing) {
+      opts.push({ value: loc, label: loc });
+    }
+    return opts;
+  }, [geoLocationsData?.locations, allNetworks?.networks]);
 
   const gatewayOptions = useMemo(() => {
     const list = (ipamAddressesData?.addresses ||
