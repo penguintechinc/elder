@@ -106,6 +106,38 @@ const CONNECTION_TYPES = [
   { value: "other", label: "Other" },
 ];
 
+const COMMON_REGIONS = [
+  "ap-northeast-1",
+  "ap-southeast-1",
+  "eastus",
+  "eu-central-1",
+  "eu-west-1",
+  "global",
+  "us-central1",
+  "us-east-1",
+  "us-east-2",
+  "us-east1",
+  "us-west-1",
+  "us-west-2",
+  "us-west1",
+  "westus2",
+];
+
+const COMMON_LOCATIONS = [
+  "AT&T",
+  "AWS",
+  "Azure",
+  "CenturyLink / Lumen",
+  "Cloudflare",
+  "DigitalOcean",
+  "GCP",
+  "On-Prem",
+  "Proxmox",
+  "Verizon",
+  "VMware",
+  "Zayo",
+];
+
 const TABS = ["Networks", "Topology", "Connections"] as const;
 type Tab = (typeof TABS)[number];
 
@@ -283,13 +315,19 @@ export default function Networking() {
       });
     }
     const existing: string[] = [];
+    for (const r of COMMON_REGIONS) {
+      if (!seen.has(r)) {
+        seen.add(r);
+        existing.push(r);
+      }
+    }
     for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
       if (n.region && !seen.has(n.region)) {
         seen.add(n.region);
         existing.push(n.region);
       }
     }
-    existing.sort();
+    existing.sort((a, b) => a.localeCompare(b));
     for (const r of existing) {
       opts.push({ value: r, label: r });
     }
@@ -310,13 +348,19 @@ export default function Networking() {
       });
     }
     const existing: string[] = [];
+    for (const loc of COMMON_LOCATIONS) {
+      if (!seen.has(loc)) {
+        seen.add(loc);
+        existing.push(loc);
+      }
+    }
     for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
       if (n.location && !seen.has(n.location)) {
         seen.add(n.location);
         existing.push(n.location);
       }
     }
-    existing.sort();
+    existing.sort((a, b) => a.localeCompare(b));
     for (const loc of existing) {
       opts.push({ value: loc, label: loc });
     }

@@ -103,6 +103,23 @@ const ENDPOINT_METHODS = [
   "HEAD",
 ] as const;
 
+const COMMON_ENDPOINT_PATHS = [
+  "/",
+  "/.well-known/openid-configuration",
+  "/api/v1",
+  "/api/v1/health",
+  "/api/v1/status",
+  "/docs",
+  "/graphql",
+  "/health",
+  "/healthz",
+  "/metrics",
+  "/openapi.json",
+  "/ready",
+  "/readyz",
+  "/swagger",
+];
+
 type EndpointMethod = (typeof ENDPOINT_METHODS)[number];
 
 interface EndpointRow {
@@ -273,7 +290,7 @@ export default function Services() {
 
   // Collect unique existing endpoint paths across all services for lookup/autocomplete
   const endpointPathOptions = useMemo(() => {
-    const pathSet = new Set<string>();
+    const pathSet = new Set<string>(COMMON_ENDPOINT_PATHS);
     const items: Service[] = allServicesData?.items || data?.items || [];
     items.forEach((svc) => {
       svc.paths?.forEach((rawPath, idx) => {
