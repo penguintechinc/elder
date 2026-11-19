@@ -22,7 +22,8 @@ export type FieldType =
   | "date" // no processing
   | "color" // strip all spaces
   | "multiline" // split by newline, strip each
-  | "cron"; // cron expression (allows * / - ,)
+  | "cron" // cron expression (allows * / - ,)
+  | "radio"; // radio button group
 
 export interface SelectOption {
   value: string | number;
@@ -43,12 +44,14 @@ export interface FormField {
   defaultValue?: unknown;
   hidden?: boolean;
   disabled?: boolean;
+  description?: string;
   helpText?: string;
   // For conditional visibility
   triggerField?: string; // Simple: show when this field is truthy
   showWhen?: (values: Record<string, unknown>) => boolean; // Complex: custom condition
   // Custom validation (in addition to type-based validation)
   validate?: (value: unknown) => string | undefined; // Return error message or undefined
+  validation?: (value: unknown) => string | null; // Alias for react-libs FormModalBuilder compatibility
 }
 
 /**
@@ -260,6 +263,9 @@ export function validateFieldValue(
   // Custom validation
   if (field.validate) {
     return field.validate(value);
+  }
+  if (field.validation) {
+    return field.validation(value) ?? undefined;
   }
 
   return undefined;

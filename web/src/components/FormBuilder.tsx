@@ -160,6 +160,35 @@ export default function FormBuilder({
           </Select>,
         );
 
+      case "radio":
+        return withError(
+          <div className="space-y-2">
+            <span className="block text-sm font-medium text-yellow-500">
+              {field.label}
+              {field.required && <span className="text-red-400 ml-1">*</span>}
+            </span>
+            <div className="flex flex-wrap gap-4">
+              {field.options?.map((opt) => (
+                <label
+                  key={opt.value}
+                  className="flex items-center gap-2 text-sm text-slate-200 cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name={field.name}
+                    value={String(opt.value)}
+                    checked={String(value ?? "") === String(opt.value)}
+                    onChange={(e) => handleChange(field.name, e.target.value)}
+                    disabled={field.disabled}
+                    className="border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500"
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>,
+        );
+
       case "checkbox":
         return (
           <div key={field.name} className="space-y-2">
@@ -313,6 +342,30 @@ export default function FormBuilder({
 
       // Default: text, username, url, domain, ip, path, slug
       default:
+        if (field.searchable) {
+          return withError(
+            <div className="space-y-1">
+              <span className="block text-sm font-medium text-yellow-500">
+                {field.label}
+                {field.required && <span className="text-red-400 ml-1">*</span>}
+              </span>
+              <SearchableSelect
+                options={field.options || []}
+                value={stringValue}
+                onChange={(val) => handleChange(field.name, val)}
+                placeholder={
+                  field.placeholder ||
+                  `Search or enter ${field.label.toLowerCase()}...`
+                }
+                disabled={field.disabled}
+                isLoading={field.isLoading}
+                allowCustom={field.allowCustom ?? true}
+                allowClear={!field.required}
+                ariaLabel={field.label}
+              />
+            </div>,
+          );
+        }
         return withError(
           <Input
             label={field.label}

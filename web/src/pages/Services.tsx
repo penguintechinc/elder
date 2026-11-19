@@ -1,338 +1,369 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, Server, Globe, Lock, ExternalLink, Clock, Play } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { queryKeys } from '@/lib/queryKeys'
-import { invalidateCache } from '@/lib/invalidateCache'
-import { getStatusColor } from '@/lib/colorHelpers'
-import { confirmDelete } from '@/lib/confirmActions'
-import Button from '@/components/Button'
-import Card, { CardHeader, CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
-import OnCallBadge from '@/components/OnCallBadge'
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Server,
+  Globe,
+  Lock,
+  ExternalLink,
+  Clock,
+  Play,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import { invalidateCache } from "@/lib/invalidateCache";
+import { getStatusColor } from "@/lib/colorHelpers";
+import { confirmDelete } from "@/lib/confirmActions";
+import Button from "@/components/Button";
+import Card, { CardHeader, CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import Select from "@/components/Select";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import { FormField } from "@/types/form";
+import OnCallBadge from "@/components/OnCallBadge";
 
 interface Organization {
-  id: number
-  name: string
+  id: number;
+  name: string;
 }
 
 interface Service {
-  id: number
-  name: string
-  description?: string
-  organization_id: number
-  language?: string
-  deployment_method?: string
-  status?: string
-  port?: number
-  is_public?: boolean
-  domains?: string[]
-  paths?: string[]
+  id: number;
+  name: string;
+  description?: string;
+  organization_id: number;
+  language?: string;
+  deployment_method?: string;
+  status?: string;
+  port?: number;
+  is_public?: boolean;
+  domains?: string[];
+  paths?: string[];
 }
 
 interface SBOMSchedule {
-  id: number
-  schedule_cron: string
-  is_active: boolean
-  next_run_at?: string
-  last_run_at?: string
+  id: number;
+  schedule_cron: string;
+  is_active: boolean;
+  next_run_at?: string;
+  last_run_at?: string;
 }
 
 interface SBOMScan {
-  id: number
-  status: string
-  components_found?: number
-  created_at: string
+  id: number;
+  status: string;
+  components_found?: number;
+  created_at: string;
 }
 
-
 const SERVICE_STATUSES = [
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-  { value: 'maintenance', label: 'Maintenance' },
-  { value: 'deprecated', label: 'Deprecated' },
-]
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Inactive" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "deprecated", label: "Deprecated" },
+];
 
 const LANGUAGES = [
-  { value: 'python', label: 'Python' },
-  { value: 'go', label: 'Go' },
-  { value: 'javascript', label: 'JavaScript' },
-  { value: 'typescript', label: 'TypeScript' },
-  { value: 'java', label: 'Java' },
-  { value: 'rust', label: 'Rust' },
-  { value: 'ruby', label: 'Ruby' },
-  { value: 'php', label: 'PHP' },
-  { value: 'csharp', label: 'C#' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "python", label: "Python" },
+  { value: "go", label: "Go" },
+  { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "java", label: "Java" },
+  { value: "rust", label: "Rust" },
+  { value: "ruby", label: "Ruby" },
+  { value: "php", label: "PHP" },
+  { value: "csharp", label: "C#" },
+  { value: "other", label: "Other" },
+];
 
 const DEPLOYMENT_METHODS = [
-  { value: 'kubernetes', label: 'Kubernetes' },
-  { value: 'docker', label: 'Docker' },
-  { value: 'docker-compose', label: 'Docker Compose' },
-  { value: 'serverless', label: 'Serverless' },
-  { value: 'vm', label: 'Virtual Machine' },
-  { value: 'bare-metal', label: 'Bare Metal' },
-  { value: 'paas', label: 'PaaS' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "kubernetes", label: "Kubernetes" },
+  { value: "docker", label: "Docker" },
+  { value: "docker-compose", label: "Docker Compose" },
+  { value: "serverless", label: "Serverless" },
+  { value: "vm", label: "Virtual Machine" },
+  { value: "bare-metal", label: "Bare Metal" },
+  { value: "paas", label: "PaaS" },
+  { value: "other", label: "Other" },
+];
 
 export default function Services() {
-  const [search, setSearch] = useState('')
-  const [organizationFilter, setOrganizationFilter] = useState<string>('')
-  const [languageFilter, setLanguageFilter] = useState<string>('')
-  const [deploymentFilter, setDeploymentFilter] = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingService, setEditingService] = useState<Service | null>(null)
-  const [viewingService, setViewingService] = useState<Service | null>(null)
-  const queryClient = useQueryClient()
+  const [search, setSearch] = useState("");
+  const [organizationFilter, setOrganizationFilter] = useState<string>("");
+  const [languageFilter, setLanguageFilter] = useState<string>("");
+  const [deploymentFilter, setDeploymentFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingService, setEditingService] = useState<Service | null>(null);
+  const [viewingService, setViewingService] = useState<Service | null>(null);
+  const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
     queryKey: queryKeys.organizations.dropdown,
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
-  })
+  });
 
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.services.list({ search, organization_id: organizationFilter, language: languageFilter, deployment_method: deploymentFilter, status: statusFilter }),
-    queryFn: () => api.getServices({
+    queryKey: queryKeys.services.list({
       search,
-      organization_id: organizationFilter ? parseInt(organizationFilter) : undefined,
-      language: languageFilter || undefined,
-      deployment_method: deploymentFilter || undefined,
-      status: statusFilter || undefined,
+      organization_id: organizationFilter,
+      language: languageFilter,
+      deployment_method: deploymentFilter,
+      status: statusFilter,
     }),
-  })
+    queryFn: () =>
+      api.getServices({
+        search,
+        organization_id: organizationFilter
+          ? parseInt(organizationFilter)
+          : undefined,
+        language: languageFilter || undefined,
+        deployment_method: deploymentFilter || undefined,
+        status: statusFilter || undefined,
+      }),
+  });
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createService(data as Parameters<typeof api.createService>[0]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createService(data as Parameters<typeof api.createService>[0]),
     onSuccess: async () => {
-      await invalidateCache.services(queryClient)
-      toast.success('Service created successfully')
-      setShowCreateModal(false)
+      await invalidateCache.services(queryClient);
+      toast.success("Service created successfully");
+      setShowCreateModal(false);
     },
     onError: () => {
-      toast.error('Failed to create service')
+      toast.error("Failed to create service");
     },
-  })
+  });
 
   const updateMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.updateService(editingService!.id, data as Parameters<typeof api.updateService>[1]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.updateService(
+        editingService!.id,
+        data as Parameters<typeof api.updateService>[1],
+      ),
     onSuccess: async () => {
-      await invalidateCache.services(queryClient)
-      toast.success('Service updated successfully')
-      setEditingService(null)
+      await invalidateCache.services(queryClient);
+      toast.success("Service updated successfully");
+      setEditingService(null);
     },
     onError: () => {
-      toast.error('Failed to update service')
+      toast.error("Failed to update service");
     },
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteService(id),
     onSuccess: async () => {
-      await invalidateCache.services(queryClient)
-      toast.success('Service deleted successfully')
+      await invalidateCache.services(queryClient);
+      toast.success("Service deleted successfully");
     },
     onError: () => {
-      toast.error('Failed to delete service')
+      toast.error("Failed to delete service");
     },
-  })
+  });
 
   const handleDelete = (id: number, name: string) => {
     confirmDelete(`service "${name}"`, () => {
-      deleteMutation.mutate(id)
-    })
-  }
+      deleteMutation.mutate(id);
+    });
+  };
 
   const getLanguageColor = (language: string) => {
     switch (language) {
-      case 'python':
-        return 'bg-blue-500/20 text-blue-400'
-      case 'go':
-        return 'bg-cyan-500/20 text-cyan-400'
-      case 'javascript':
-      case 'typescript':
-        return 'bg-yellow-500/20 text-yellow-400'
-      case 'java':
-        return 'bg-orange-500/20 text-orange-400'
-      case 'rust':
-        return 'bg-red-500/20 text-red-400'
+      case "python":
+        return "bg-blue-500/20 text-blue-400";
+      case "go":
+        return "bg-cyan-500/20 text-cyan-400";
+      case "javascript":
+      case "typescript":
+        return "bg-yellow-500/20 text-yellow-400";
+      case "java":
+        return "bg-orange-500/20 text-orange-400";
+      case "rust":
+        return "bg-red-500/20 text-red-400";
       default:
-        return 'bg-purple-500/20 text-purple-400'
+        return "bg-purple-500/20 text-purple-400";
     }
-  }
+  };
 
   // Build organization options for form
   const organizationOptions = useMemo(
-    () => organizations?.items?.map((org: Organization) => ({
-      value: org.id.toString(),
-      label: org.name,
-    })) || [],
-    [organizations?.items]
-  )
+    () =>
+      organizations?.items?.map((org: Organization) => ({
+        value: org.id.toString(),
+        label: org.name,
+      })) || [],
+    [organizations?.items],
+  );
 
   // Form fields for create modal
-  const serviceFields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'api-gateway',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Service description (optional)',
-      rows: 2,
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
-        ...organizationOptions,
-      ],
-    },
-    {
-      name: 'language',
-      label: 'Language',
-      type: 'select',
-      options: LANGUAGES,
-      defaultValue: 'python',
-    },
-    {
-      name: 'deployment_method',
-      label: 'Deployment Method',
-      type: 'select',
-      options: DEPLOYMENT_METHODS,
-      defaultValue: 'kubernetes',
-    },
-    {
-      name: 'status',
-      label: 'Status',
-      type: 'select',
-      options: SERVICE_STATUSES,
-      defaultValue: 'active',
-    },
-    {
-      name: 'port',
-      label: 'Port',
-      type: 'number',
-      placeholder: '8080',
-    },
-    {
-      name: 'is_public',
-      label: 'Public service (accessible from internet)',
-      type: 'checkbox',
-      defaultValue: false,
-    },
-    {
-      name: 'domains',
-      label: 'Domains (one per line)',
-      type: 'multiline',
-      placeholder: 'api.example.com\napi-v2.example.com',
-      rows: 2,
-    },
-    {
-      name: 'paths',
-      label: 'Paths (one per line)',
-      type: 'multiline',
-      placeholder: '/api/v1\n/api/v2',
-      rows: 3,
-    },
-  ], [organizationOptions])
+  const serviceFields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Name",
+        type: "text",
+        required: true,
+        placeholder: "api-gateway",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Service description (optional)",
+        rows: 2,
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        required: true,
+        searchable: true,
+        placeholder: organizationOptions.length
+          ? "Select organization"
+          : "No organizations found",
+        options: organizationOptions,
+      },
+      {
+        name: "language",
+        label: "Language",
+        type: "select",
+        options: LANGUAGES,
+        defaultValue: "python",
+      },
+      {
+        name: "deployment_method",
+        label: "Deployment Method",
+        type: "select",
+        options: DEPLOYMENT_METHODS,
+        defaultValue: "kubernetes",
+      },
+      {
+        name: "status",
+        label: "Status",
+        type: "select",
+        options: SERVICE_STATUSES,
+        defaultValue: "active",
+      },
+      {
+        name: "port",
+        label: "Port",
+        type: "number",
+        placeholder: "8080",
+      },
+      {
+        name: "is_public",
+        label: "Public service (accessible from internet)",
+        type: "checkbox",
+        defaultValue: false,
+      },
+      {
+        name: "domains",
+        label: "Domains (one per line)",
+        type: "multiline",
+        placeholder: "api.example.com\napi-v2.example.com",
+        rows: 2,
+      },
+      {
+        name: "paths",
+        label: "Paths (one per line)",
+        type: "multiline",
+        placeholder: "/api/v1\n/api/v2",
+        rows: 3,
+      },
+    ],
+    [organizationOptions],
+  );
 
   // Form fields for edit modal with defaultValues from editingService
   const editFields: FormField[] = useMemo(() => {
-    if (!editingService) return []
+    if (!editingService) return [];
     return [
       {
-        name: 'name',
-        label: 'Name',
-        type: 'text',
+        name: "name",
+        label: "Name",
+        type: "text",
         required: true,
-        placeholder: 'api-gateway',
-        defaultValue: editingService.name || '',
+        placeholder: "api-gateway",
+        defaultValue: editingService.name || "",
       },
       {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Service description (optional)',
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Service description (optional)",
         rows: 2,
-        defaultValue: editingService.description || '',
+        defaultValue: editingService.description || "",
       },
       {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
         required: true,
-        options: [
-          { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
-          ...organizationOptions,
-        ],
-        defaultValue: editingService.organization_id?.toString() || '',
+        searchable: true,
+        placeholder: organizationOptions.length
+          ? "Select organization"
+          : "No organizations found",
+        options: organizationOptions,
+        defaultValue: editingService.organization_id?.toString() || "",
       },
       {
-        name: 'language',
-        label: 'Language',
-        type: 'select',
+        name: "language",
+        label: "Language",
+        type: "select",
         options: LANGUAGES,
-        defaultValue: editingService.language || 'python',
+        defaultValue: editingService.language || "python",
       },
       {
-        name: 'deployment_method',
-        label: 'Deployment Method',
-        type: 'select',
+        name: "deployment_method",
+        label: "Deployment Method",
+        type: "select",
         options: DEPLOYMENT_METHODS,
-        defaultValue: editingService.deployment_method || 'kubernetes',
+        defaultValue: editingService.deployment_method || "kubernetes",
       },
       {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
+        name: "status",
+        label: "Status",
+        type: "select",
         options: SERVICE_STATUSES,
-        defaultValue: editingService.status || 'active',
+        defaultValue: editingService.status || "active",
       },
       {
-        name: 'port',
-        label: 'Port',
-        type: 'number',
-        placeholder: '8080',
-        defaultValue: editingService.port?.toString() || '',
+        name: "port",
+        label: "Port",
+        type: "number",
+        placeholder: "8080",
+        defaultValue: editingService.port?.toString() || "",
       },
       {
-        name: 'is_public',
-        label: 'Public service (accessible from internet)',
-        type: 'checkbox',
+        name: "is_public",
+        label: "Public service (accessible from internet)",
+        type: "checkbox",
         defaultValue: editingService.is_public || false,
       },
       {
-        name: 'domains',
-        label: 'Domains (one per line)',
-        type: 'multiline',
-        placeholder: 'api.example.com\napi-v2.example.com',
+        name: "domains",
+        label: "Domains (one per line)",
+        type: "multiline",
+        placeholder: "api.example.com\napi-v2.example.com",
         rows: 2,
-        defaultValue: editingService.domains?.join('\n') || '',
+        defaultValue: editingService.domains?.join("\n") || "",
       },
       {
-        name: 'paths',
-        label: 'Paths (one per line)',
-        type: 'multiline',
-        placeholder: '/api/v1\n/api/v2',
+        name: "paths",
+        label: "Paths (one per line)",
+        type: "multiline",
+        placeholder: "/api/v1\n/api/v2",
         rows: 3,
-        defaultValue: editingService.paths?.join('\n') || '',
+        defaultValue: editingService.paths?.join("\n") || "",
       },
-    ]
-  }, [editingService, organizationOptions])
+    ];
+  }, [editingService, organizationOptions]);
 
   const handleCreateSubmit = (data: Record<string, unknown>) => {
     const serviceData: Parameters<typeof api.createService>[0] = {
@@ -346,9 +377,9 @@ export default function Services() {
       paths: data.paths as string[] | undefined,
       port: data.port ? parseInt(data.port as string) : undefined,
       status: data.status as string | undefined,
-    }
-    createMutation.mutate(serviceData)
-  }
+    };
+    createMutation.mutate(serviceData);
+  };
 
   const handleEditSubmit = (data: Record<string, unknown>) => {
     const updateData: Parameters<typeof api.updateService>[1] = {
@@ -361,9 +392,9 @@ export default function Services() {
       paths: data.paths as string[] | undefined,
       port: data.port ? parseInt(data.port as string) : undefined,
       status: data.status as string | undefined,
-    }
-    updateMutation.mutate(updateData)
-  }
+    };
+    updateMutation.mutate(updateData);
+  };
 
   return (
     <div className="p-8">
@@ -476,16 +507,20 @@ export default function Services() {
                       {service.name}
                     </h3>
                     {service.is_public ? (
-                      <span title="Public"><Globe className="w-4 h-4 text-green-400 flex-shrink-0" /></span>
+                      <span title="Public">
+                        <Globe className="w-4 h-4 text-green-400 flex-shrink-0" />
+                      </span>
                     ) : (
-                      <span title="Private"><Lock className="w-4 h-4 text-slate-400 flex-shrink-0" /></span>
+                      <span title="Private">
+                        <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                      </span>
                     )}
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingService(service)
+                        e.stopPropagation();
+                        setEditingService(service);
                       }}
                       className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                     >
@@ -493,8 +528,8 @@ export default function Services() {
                     </button>
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(service.id, service.name)
+                        e.stopPropagation();
+                        handleDelete(service.id, service.name);
                       }}
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                     >
@@ -510,10 +545,14 @@ export default function Services() {
                 )}
 
                 <div className="flex flex-wrap gap-2 mb-3">
-                  <span className={`text-xs px-2 py-1 rounded ${getStatusColor(service.status)}`}>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${getStatusColor(service.status)}`}
+                  >
                     {service.status}
                   </span>
-                  <span className={`text-xs px-2 py-1 rounded ${getLanguageColor(service.language)}`}>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${getLanguageColor(service.language)}`}
+                  >
                     {service.language}
                   </span>
                   <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
@@ -528,16 +567,25 @@ export default function Services() {
                 )}
 
                 <div className="mb-3">
-                  <OnCallBadge scopeType="service" scopeId={service.id} compact />
+                  <OnCallBadge
+                    scopeType="service"
+                    scopeId={service.id}
+                    compact
+                  />
                 </div>
 
                 {service.domains && service.domains.length > 0 && (
                   <div className="flex flex-wrap gap-1">
-                    {service.domains.slice(0, 2).map((domain: string, idx: number) => (
-                      <span key={idx} className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400">
-                        {domain}
-                      </span>
-                    ))}
+                    {service.domains
+                      .slice(0, 2)
+                      .map((domain: string, idx: number) => (
+                        <span
+                          key={idx}
+                          className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400"
+                        >
+                          {domain}
+                        </span>
+                      ))}
                     {service.domains.length > 2 && (
                       <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-400">
                         +{service.domains.length - 2} more
@@ -552,23 +600,23 @@ export default function Services() {
       )}
 
       {/* Create Modal */}
-      <FormModalBuilder
+      <ModalFormBuilder
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         title="Create Service"
         fields={serviceFields}
         onSubmit={handleCreateSubmit}
-        submitButtonText="Create"
+        submitLabel="Create"
       />
 
       {/* Edit Modal */}
-      <FormModalBuilder
+      <ModalFormBuilder
         isOpen={!!editingService}
         onClose={() => setEditingService(null)}
         title="Edit Service"
         fields={editFields}
         onSubmit={handleEditSubmit}
-        submitButtonText="Update"
+        submitLabel="Update"
       />
 
       {/* View Details Modal */}
@@ -577,23 +625,29 @@ export default function Services() {
           service={viewingService}
           onClose={() => setViewingService(null)}
           onEdit={() => {
-            setEditingService(viewingService)
-            setViewingService(null)
+            setEditingService(viewingService);
+            setViewingService(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 interface ServiceDetailsModalProps {
-  service: Service
-  onClose: () => void
-  onEdit: () => void
+  service: Service;
+  onClose: () => void;
+  onEdit: () => void;
 }
 
-function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalProps) {
-  const [activeTab, setActiveTab] = useState<'details' | 'schedules'>('details')
+function ServiceDetailsModal({
+  service,
+  onClose,
+  onEdit,
+}: ServiceDetailsModalProps) {
+  const [activeTab, setActiveTab] = useState<"details" | "schedules">(
+    "details",
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -602,11 +656,17 @@ function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalPr
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Server className="w-5 h-5 text-primary-400" />
-              <h2 className="text-xl font-semibold text-white">{service.name}</h2>
+              <h2 className="text-xl font-semibold text-white">
+                {service.name}
+              </h2>
               {service.is_public ? (
-                <span title="Public"><Globe className="w-4 h-4 text-green-400" /></span>
+                <span title="Public">
+                  <Globe className="w-4 h-4 text-green-400" />
+                </span>
               ) : (
-                <span title="Private"><Lock className="w-4 h-4 text-slate-400" /></span>
+                <span title="Private">
+                  <Lock className="w-4 h-4 text-slate-400" />
+                </span>
               )}
             </div>
             <button
@@ -618,21 +678,21 @@ function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalPr
           </div>
           <div className="flex gap-4 mt-4">
             <button
-              onClick={() => setActiveTab('details')}
+              onClick={() => setActiveTab("details")}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'details'
-                  ? 'border-primary-500 text-primary-400'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                activeTab === "details"
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-slate-400 hover:text-white"
               }`}
             >
               Details
             </button>
             <button
-              onClick={() => setActiveTab('schedules')}
+              onClick={() => setActiveTab("schedules")}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === 'schedules'
-                  ? 'border-primary-500 text-primary-400'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                activeTab === "schedules"
+                  ? "border-primary-500 text-primary-400"
+                  : "border-transparent text-slate-400 hover:text-white"
               }`}
             >
               SBOM Schedules
@@ -640,7 +700,7 @@ function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalPr
           </div>
         </CardHeader>
         <CardContent className="overflow-y-auto flex-1">
-          {activeTab === 'details' ? (
+          {activeTab === "details" ? (
             <ServiceDetailsTab service={service} />
           ) : (
             <ServiceSchedulesTab service={service} />
@@ -653,7 +713,7 @@ function ServiceDetailsModal({ service, onClose, onEdit }: ServiceDetailsModalPr
         </div>
       </Card>
     </div>
-  )
+  );
 }
 
 function ServiceDetailsTab({ service }: { service: Service }) {
@@ -667,7 +727,9 @@ function ServiceDetailsTab({ service }: { service: Service }) {
         <div>
           <label className="text-xs text-slate-500 uppercase">Status</label>
           <div className="mt-1">
-            <span className={`text-sm px-2 py-1 rounded ${getStatusColor(service.status)}`}>
+            <span
+              className={`text-sm px-2 py-1 rounded ${getStatusColor(service.status)}`}
+            >
               {service.status}
             </span>
           </div>
@@ -693,7 +755,10 @@ function ServiceDetailsTab({ service }: { service: Service }) {
           <label className="text-xs text-slate-500 uppercase">Domains</label>
           <div className="flex flex-wrap gap-2 mt-2">
             {service.domains.map((domain: string, idx: number) => (
-              <span key={idx} className="text-sm px-2 py-1 rounded bg-primary-500/20 text-primary-400 flex items-center gap-1">
+              <span
+                key={idx}
+                className="text-sm px-2 py-1 rounded bg-primary-500/20 text-primary-400 flex items-center gap-1"
+              >
                 {domain}
                 <ExternalLink className="w-3 h-3" />
               </span>
@@ -707,7 +772,10 @@ function ServiceDetailsTab({ service }: { service: Service }) {
           <label className="text-xs text-slate-500 uppercase">Paths</label>
           <div className="flex flex-wrap gap-2 mt-2">
             {service.paths.map((path: string, idx: number) => (
-              <span key={idx} className="text-sm px-2 py-1 rounded bg-slate-700 text-slate-300">
+              <span
+                key={idx}
+                className="text-sm px-2 py-1 rounded bg-slate-700 text-slate-300"
+              >
                 {path}
               </span>
             ))}
@@ -715,90 +783,108 @@ function ServiceDetailsTab({ service }: { service: Service }) {
         </div>
       )}
     </div>
-  )
+  );
 }
 
 function ServiceSchedulesTab({ service }: { service: Service }) {
-  const [showCreateSchedule, setShowCreateSchedule] = useState(false)
-  const queryClient = useQueryClient()
+  const [showCreateSchedule, setShowCreateSchedule] = useState(false);
+  const queryClient = useQueryClient();
 
   // Fetch schedules for this service
   const { data: schedules, isLoading } = useQuery({
-    queryKey: ['sbom-schedules', 'service', service.id],
-    queryFn: () => api.getSBOMSchedules({
-      parent_type: 'service',
-      parent_id: service.id
-    }),
-  })
+    queryKey: ["sbom-schedules", "service", service.id],
+    queryFn: () =>
+      api.getSBOMSchedules({
+        parent_type: "service",
+        parent_id: service.id,
+      }),
+  });
 
   // Fetch recent scans for this service
   const { data: scans } = useQuery({
-    queryKey: ['sbom-scans', 'service', service.id],
-    queryFn: () => api.getSBOMScans({
-      parent_type: 'service',
-      parent_id: service.id,
-      per_page: 5
-    }),
-  })
+    queryKey: ["sbom-scans", "service", service.id],
+    queryFn: () =>
+      api.getSBOMScans({
+        parent_type: "service",
+        parent_id: service.id,
+        per_page: 5,
+      }),
+  });
 
   const createScheduleMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createSBOMSchedule({
-      parent_type: 'service',
-      parent_id: service.id,
-      schedule_cron: data.schedule_cron as string,
-      is_active: (data.is_active as boolean) !== false,
-    }),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createSBOMSchedule({
+        parent_type: "service",
+        parent_id: service.id,
+        schedule_cron: data.schedule_cron as string,
+        is_active: (data.is_active as boolean) !== false,
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sbom-schedules', 'service', service.id] })
-      toast.success('Schedule created successfully')
-      setShowCreateSchedule(false)
+      queryClient.invalidateQueries({
+        queryKey: ["sbom-schedules", "service", service.id],
+      });
+      toast.success("Schedule created successfully");
+      setShowCreateSchedule(false);
     },
-    onError: () => toast.error('Failed to create schedule'),
-  })
+    onError: () => toast.error("Failed to create schedule"),
+  });
 
   const deleteScheduleMutation = useMutation({
     mutationFn: (id: number) => api.deleteSBOMSchedule(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sbom-schedules', 'service', service.id] })
-      toast.success('Schedule deleted successfully')
+      queryClient.invalidateQueries({
+        queryKey: ["sbom-schedules", "service", service.id],
+      });
+      toast.success("Schedule deleted successfully");
     },
-    onError: () => toast.error('Failed to delete schedule'),
-  })
+    onError: () => toast.error("Failed to delete schedule"),
+  });
 
   // Trigger an immediate SBOM scan
   const runScanMutation = useMutation({
-    mutationFn: () => api.createSBOMScan({
-      parent_type: 'service',
-      parent_id: service.id,
-      scan_type: 'git_clone',
-    }),
+    mutationFn: () =>
+      api.createSBOMScan({
+        parent_type: "service",
+        parent_id: service.id,
+        scan_type: "git_clone",
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sbom-scans', 'service', service.id] })
-      toast.success('SBOM scan started')
+      queryClient.invalidateQueries({
+        queryKey: ["sbom-scans", "service", service.id],
+      });
+      toast.success("SBOM scan started");
     },
-    onError: () => toast.error('Failed to start SBOM scan'),
-  })
+    onError: () => toast.error("Failed to start SBOM scan"),
+  });
 
   // Schedule form fields using useMemo
-  const scheduleFields: FormField[] = useMemo(() => [
-    {
-      name: 'schedule_cron',
-      label: 'Cron Expression',
-      type: 'text',
-      required: true,
-      placeholder: '0 0 * * *',
-      helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
-    },
-    {
-      name: 'is_active',
-      label: 'Enable schedule',
-      type: 'checkbox',
-      defaultValue: true,
-    },
-  ], [])
+  const scheduleFields: FormField[] = useMemo(
+    () => [
+      {
+        name: "schedule_cron",
+        label: "Cron Expression",
+        type: "text",
+        required: true,
+        placeholder: "0 0 * * *",
+        helpText:
+          'E.g., "0 0 * * *" for daily at midnight, "0 */6 * * *" for every 6 hours',
+      },
+      {
+        name: "is_active",
+        label: "Enable schedule",
+        type: "checkbox",
+        defaultValue: true,
+      },
+    ],
+    [],
+  );
 
   if (isLoading) {
-    return <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" /></div>
+    return (
+      <div className="flex justify-center py-8">
+        <div className="w-6 h-6 border-2 border-primary-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
@@ -807,7 +893,9 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-semibold text-white">SBOM Scans</h3>
-          <p className="text-sm text-slate-400">Scan repository to discover dependencies and vulnerabilities</p>
+          <p className="text-sm text-slate-400">
+            Scan repository to discover dependencies and vulnerabilities
+          </p>
         </div>
         <Button
           size="sm"
@@ -815,7 +903,7 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
           disabled={runScanMutation.isPending}
         >
           <Play className="w-3 h-3 mr-1" />
-          {runScanMutation.isPending ? 'Starting...' : 'Scan Now'}
+          {runScanMutation.isPending ? "Starting..." : "Scan Now"}
         </Button>
       </div>
 
@@ -824,13 +912,22 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
         <div className="space-y-2">
           <h4 className="text-sm font-medium text-slate-400">Recent Scans</h4>
           {scans.items.map((scan: SBOMScan) => (
-            <div key={scan.id} className="flex items-center justify-between p-2 bg-slate-800/30 rounded text-sm">
+            <div
+              key={scan.id}
+              className="flex items-center justify-between p-2 bg-slate-800/30 rounded text-sm"
+            >
               <div className="flex items-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${
-                  scan.status === 'completed' ? 'bg-green-500' :
-                  scan.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                  scan.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'
-                }`} />
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    scan.status === "completed"
+                      ? "bg-green-500"
+                      : scan.status === "running"
+                        ? "bg-blue-500 animate-pulse"
+                        : scan.status === "failed"
+                          ? "bg-red-500"
+                          : "bg-yellow-500"
+                  }`}
+                />
                 <span className="text-slate-300 capitalize">{scan.status}</span>
               </div>
               <div className="flex items-center gap-4 text-slate-500">
@@ -849,9 +946,15 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
         <div className="flex justify-between items-center mb-4">
           <div>
             <h4 className="text-sm font-medium text-white">Scheduled Scans</h4>
-            <p className="text-xs text-slate-500">Automatically scan on a recurring schedule</p>
+            <p className="text-xs text-slate-500">
+              Automatically scan on a recurring schedule
+            </p>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => setShowCreateSchedule(true)}>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowCreateSchedule(true)}
+          >
             <Plus className="w-3 h-3 mr-1" />
             Add Schedule
           </Button>
@@ -865,25 +968,36 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
         ) : (
           <div className="space-y-2">
             {schedules.items.map((schedule: SBOMSchedule) => (
-              <div key={schedule.id} className="flex items-center justify-between p-3 bg-slate-800/50 rounded border border-slate-700">
+              <div
+                key={schedule.id}
+                className="flex items-center justify-between p-3 bg-slate-800/50 rounded border border-slate-700"
+              >
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <Clock className="w-4 h-4 text-primary-400 flex-shrink-0" />
-                    <code className="text-sm font-mono text-white">{schedule.schedule_cron}</code>
+                    <code className="text-sm font-mono text-white">
+                      {schedule.schedule_cron}
+                    </code>
                     {schedule.is_active ? (
-                      <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">Active</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400">
+                        Active
+                      </span>
                     ) : (
-                      <span className="text-xs px-2 py-0.5 rounded bg-slate-500/20 text-slate-400">Inactive</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-slate-500/20 text-slate-400">
+                        Inactive
+                      </span>
                     )}
                   </div>
                   {schedule.next_run_at && (
                     <p className="text-xs text-slate-500">
-                      Next run: {new Date(schedule.next_run_at).toLocaleString()}
+                      Next run:{" "}
+                      {new Date(schedule.next_run_at).toLocaleString()}
                     </p>
                   )}
                   {schedule.last_run_at && (
                     <p className="text-xs text-slate-500">
-                      Last run: {new Date(schedule.last_run_at).toLocaleString()}
+                      Last run:{" "}
+                      {new Date(schedule.last_run_at).toLocaleString()}
                     </p>
                   )}
                 </div>
@@ -900,14 +1014,14 @@ function ServiceSchedulesTab({ service }: { service: Service }) {
         )}
       </div>
 
-      <FormModalBuilder
+      <ModalFormBuilder
         isOpen={showCreateSchedule}
         title="Create SBOM Schedule"
         fields={scheduleFields}
         onSubmit={(data) => createScheduleMutation.mutate(data)}
         onClose={() => setShowCreateSchedule(false)}
-        submitButtonText="Create"
+        submitLabel="Create"
       />
     </div>
-  )
+  );
 }

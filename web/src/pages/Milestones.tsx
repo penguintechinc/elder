@@ -1,122 +1,132 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, Flag, Calendar } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { Organization } from '@/types'
-import Button from '@/components/Button'
-import Card, { CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search, Edit, Trash2, Flag, Calendar } from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import { Organization } from "@/types";
+import Button from "@/components/Button";
+import Card, { CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import Select from "@/components/Select";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import { FormField } from "@/types/form";
 
 const MILESTONE_STATUSES = [
-  { value: 'open', label: 'Open' },
-  { value: 'closed', label: 'Closed' },
-]
+  { value: "open", label: "Open" },
+  { value: "closed", label: "Closed" },
+];
 
 interface Milestone {
-  id: number
-  title: string
-  description?: string
-  status: string
-  organization_id: number
-  project_id?: number
-  due_date?: string
-  created_at: string
+  id: number;
+  title: string;
+  description?: string;
+  status: string;
+  organization_id: number;
+  project_id?: number;
+  due_date?: string;
+  created_at: string;
 }
 
 interface Project {
-  id: number
-  name: string
-  status?: string
+  id: number;
+  name: string;
+  status?: string;
 }
 
 export default function Milestones() {
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [projectFilter, setProjectFilter] = useState<string>('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null)
-  const queryClient = useQueryClient()
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [projectFilter, setProjectFilter] = useState<string>("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
+    null,
+  );
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['milestones', { search, status: statusFilter, project_id: projectFilter }],
-    queryFn: () => api.getMilestones({
-      search,
-      status: statusFilter || undefined,
-      project_id: projectFilter ? parseInt(projectFilter) : undefined,
-    }),
-  })
+    queryKey: [
+      "milestones",
+      { search, status: statusFilter, project_id: projectFilter },
+    ],
+    queryFn: () =>
+      api.getMilestones({
+        search,
+        status: statusFilter || undefined,
+        project_id: projectFilter ? parseInt(projectFilter) : undefined,
+      }),
+  });
 
   const { data: projects } = useQuery({
-    queryKey: ['projects-all'],
+    queryKey: ["projects-all"],
     queryFn: () => api.getProjects({ per_page: 1000 }),
-  })
+  });
 
   const { data: organizations } = useQuery({
-    queryKey: ['organizations-all'],
+    queryKey: ["organizations-all"],
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteMilestone(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['milestones'],
-        refetchType: 'all'
-      })
-      toast.success('Milestone deleted successfully')
+        queryKey: ["milestones"],
+        refetchType: "all",
+      });
+      toast.success("Milestone deleted successfully");
     },
     onError: () => {
-      toast.error('Failed to delete milestone')
+      toast.error("Failed to delete milestone");
     },
-  })
+  });
 
   interface MilestoneData {
-    title: string
-    description?: string
-    status: string
-    organization_id: number
-    project_id?: number
-    due_date?: string
+    title: string;
+    description?: string;
+    status: string;
+    organization_id: number;
+    project_id?: number;
+    due_date?: string;
   }
 
   const createMutation = useMutation({
     mutationFn: (data: MilestoneData) => api.createMilestone(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['milestones'],
-        refetchType: 'all'
-      })
-      toast.success('Milestone created successfully')
-      setShowCreateModal(false)
+        queryKey: ["milestones"],
+        refetchType: "all",
+      });
+      toast.success("Milestone created successfully");
+      setShowCreateModal(false);
     },
     onError: () => {
-      toast.error('Failed to create milestone')
+      toast.error("Failed to create milestone");
     },
-  })
+  });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: MilestoneData }) => api.updateMilestone(id, data),
+    mutationFn: ({ id, data }: { id: number; data: MilestoneData }) =>
+      api.updateMilestone(id, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['milestones'],
-        refetchType: 'all'
-      })
-      toast.success('Milestone updated successfully')
-      setEditingMilestone(null)
+        queryKey: ["milestones"],
+        refetchType: "all",
+      });
+      toast.success("Milestone updated successfully");
+      setEditingMilestone(null);
     },
     onError: () => {
-      toast.error('Failed to update milestone')
+      toast.error("Failed to update milestone");
     },
-  })
+  });
 
   const handleDelete = (id: number, title: string) => {
-    if (window.confirm(`Are you sure you want to delete milestone "${title}"?`)) {
-      deleteMutation.mutate(id)
+    if (
+      window.confirm(`Are you sure you want to delete milestone "${title}"?`)
+    ) {
+      deleteMutation.mutate(id);
     }
-  }
+  };
 
   const handleCreate = (formData: Record<string, unknown>) => {
     createMutation.mutate({
@@ -124,10 +134,12 @@ export default function Milestones() {
       description: (formData.description as string) || undefined,
       status: formData.status as string,
       organization_id: parseInt(formData.organization_id as string),
-      project_id: formData.project_id ? parseInt(formData.project_id as string) : undefined,
+      project_id: formData.project_id
+        ? parseInt(formData.project_id as string)
+        : undefined,
       due_date: (formData.due_date as string) || undefined,
-    })
-  }
+    });
+  };
 
   const handleUpdate = (formData: Record<string, unknown>) => {
     if (editingMilestone) {
@@ -138,116 +150,62 @@ export default function Milestones() {
           description: (formData.description as string) || undefined,
           status: formData.status as string,
           organization_id: parseInt(formData.organization_id as string),
-          project_id: formData.project_id ? parseInt(formData.project_id as string) : undefined,
+          project_id: formData.project_id
+            ? parseInt(formData.project_id as string)
+            : undefined,
           due_date: (formData.due_date as string) || undefined,
         },
-      })
+      });
     }
-  }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open':
-        return 'bg-green-500/20 text-green-400'
-      case 'closed':
-        return 'bg-slate-500/20 text-slate-400'
+      case "open":
+        return "bg-green-500/20 text-green-400";
+      case "closed":
+        return "bg-slate-500/20 text-slate-400";
       default:
-        return 'bg-slate-500/20 text-slate-400'
+        return "bg-slate-500/20 text-slate-400";
     }
-  }
+  };
 
   const isOverdue = (dueDate: string, status: string) => {
-    if (status === 'closed') return false
-    if (!dueDate) return false
-    return new Date(dueDate) < new Date()
-  }
+    if (status === "closed") return false;
+    if (!dueDate) return false;
+    return new Date(dueDate) < new Date();
+  };
 
   // Form fields for milestone creation
-  const milestoneFields: FormField[] = useMemo(() => [
-    {
-      name: 'title',
-      label: 'Title',
-      type: 'text',
-      required: true,
-      placeholder: 'Beta Release',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Milestone description (optional)',
-      rows: 3,
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
-        ...(organizations?.items?.map((org: Organization) => ({
-          value: org.id.toString(),
-          label: org.name,
-        })) || []),
-      ],
-    },
-    {
-      name: 'project_id',
-      label: 'Project (Optional)',
-      type: 'select',
-      options: [
-        { value: '', label: 'No project' },
-        ...(projects?.items?.map((project: Project) => ({
-          value: project.id.toString(),
-          label: project.name,
-        })) || []),
-      ],
-    },
-    {
-      name: 'status',
-      label: 'Status',
-      type: 'select',
-      defaultValue: 'open',
-      options: MILESTONE_STATUSES.map(s => ({
-        value: s.value,
-        label: s.label,
-      })),
-    },
-    {
-      name: 'due_date',
-      label: 'Due Date',
-      type: 'date',
-    },
-  ], [organizations?.items, projects?.items])
-
-  // Edit form fields with current values as defaults
-  const editFields: FormField[] = useMemo(() => {
-    if (!editingMilestone) return milestoneFields
-    return [
+  const milestoneFields: FormField[] = useMemo(
+    () => [
       {
-        name: 'title',
-        label: 'Title',
-        type: 'text',
+        name: "title",
+        label: "Title",
+        type: "text",
         required: true,
-        placeholder: 'Beta Release',
-        defaultValue: editingMilestone.title || '',
+        placeholder: "Beta Release",
       },
       {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea',
-        placeholder: 'Milestone description (optional)',
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Milestone description (optional)",
         rows: 3,
-        defaultValue: editingMilestone.description || '',
       },
       {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select',
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
         required: true,
-        defaultValue: editingMilestone.organization_id?.toString() || '',
+        searchable: true,
         options: [
-          { value: '', label: organizations?.items?.length ? 'Select organization' : 'No organizations found - create one first' },
+          {
+            value: "",
+            label: organizations?.items?.length
+              ? "Select organization"
+              : "No organizations found - create one first",
+          },
           ...(organizations?.items?.map((org: Organization) => ({
             value: org.id.toString(),
             label: org.name,
@@ -255,12 +213,12 @@ export default function Milestones() {
         ],
       },
       {
-        name: 'project_id',
-        label: 'Project (Optional)',
-        type: 'select',
-        defaultValue: editingMilestone.project_id?.toString() || '',
+        name: "project_id",
+        label: "Project (Optional)",
+        type: "select",
+        searchable: true,
         options: [
-          { value: '', label: 'No project' },
+          { value: "", label: "No project" },
           ...(projects?.items?.map((project: Project) => ({
             value: project.id.toString(),
             label: project.name,
@@ -268,23 +226,101 @@ export default function Milestones() {
         ],
       },
       {
-        name: 'status',
-        label: 'Status',
-        type: 'select',
-        defaultValue: editingMilestone.status || 'open',
-        options: MILESTONE_STATUSES.map(s => ({
+        name: "status",
+        label: "Status",
+        type: "select",
+        defaultValue: "open",
+        options: MILESTONE_STATUSES.map((s) => ({
           value: s.value,
           label: s.label,
         })),
       },
       {
-        name: 'due_date',
-        label: 'Due Date',
-        type: 'date',
-        defaultValue: editingMilestone.due_date || '',
+        name: "due_date",
+        label: "Due Date",
+        type: "date",
       },
-    ]
-  }, [editingMilestone, organizations?.items, projects?.items, milestoneFields])
+    ],
+    [organizations?.items, projects?.items],
+  );
+
+  // Edit form fields with current values as defaults
+  const editFields: FormField[] = useMemo(() => {
+    if (!editingMilestone) return milestoneFields;
+    return [
+      {
+        name: "title",
+        label: "Title",
+        type: "text",
+        required: true,
+        placeholder: "Beta Release",
+        defaultValue: editingMilestone.title || "",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Milestone description (optional)",
+        rows: 3,
+        defaultValue: editingMilestone.description || "",
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        required: true,
+        searchable: true,
+        defaultValue: editingMilestone.organization_id?.toString() || "",
+        options: [
+          {
+            value: "",
+            label: organizations?.items?.length
+              ? "Select organization"
+              : "No organizations found - create one first",
+          },
+          ...(organizations?.items?.map((org: Organization) => ({
+            value: org.id.toString(),
+            label: org.name,
+          })) || []),
+        ],
+      },
+      {
+        name: "project_id",
+        label: "Project (Optional)",
+        type: "select",
+        searchable: true,
+        defaultValue: editingMilestone.project_id?.toString() || "",
+        options: [
+          { value: "", label: "No project" },
+          ...(projects?.items?.map((project: Project) => ({
+            value: project.id.toString(),
+            label: project.name,
+          })) || []),
+        ],
+      },
+      {
+        name: "status",
+        label: "Status",
+        type: "select",
+        defaultValue: editingMilestone.status || "open",
+        options: MILESTONE_STATUSES.map((s) => ({
+          value: s.value,
+          label: s.label,
+        })),
+      },
+      {
+        name: "due_date",
+        label: "Due Date",
+        type: "date",
+        defaultValue: editingMilestone.due_date || "",
+      },
+    ];
+  }, [
+    editingMilestone,
+    organizations?.items,
+    projects?.items,
+    milestoneFields,
+  ]);
 
   return (
     <div className="p-8">
@@ -364,11 +400,13 @@ export default function Milestones() {
               <CardContent>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Flag className={`w-5 h-5 flex-shrink-0 ${
-                      isOverdue(milestone.due_date, milestone.status)
-                        ? 'text-red-400'
-                        : 'text-primary-400'
-                    }`} />
+                    <Flag
+                      className={`w-5 h-5 flex-shrink-0 ${
+                        isOverdue(milestone.due_date, milestone.status)
+                          ? "text-red-400"
+                          : "text-primary-400"
+                      }`}
+                    />
                     <h3 className="text-lg font-semibold text-white truncate">
                       {milestone.title}
                     </h3>
@@ -381,7 +419,9 @@ export default function Milestones() {
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDelete(milestone.id, milestone.title)}
+                      onClick={() =>
+                        handleDelete(milestone.id, milestone.title)
+                      }
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -397,25 +437,33 @@ export default function Milestones() {
 
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className={`text-xs px-2 py-1 rounded ${getStatusColor(milestone.status)}`}>
+                    <span
+                      className={`text-xs px-2 py-1 rounded ${getStatusColor(milestone.status)}`}
+                    >
                       {milestone.status}
                     </span>
                     {milestone.due_date && (
-                      <div className={`flex items-center gap-1 text-xs ${
-                        isOverdue(milestone.due_date, milestone.status)
-                          ? 'text-red-400 font-semibold'
-                          : 'text-slate-500'
-                      }`}>
+                      <div
+                        className={`flex items-center gap-1 text-xs ${
+                          isOverdue(milestone.due_date, milestone.status)
+                            ? "text-red-400 font-semibold"
+                            : "text-slate-500"
+                        }`}
+                      >
                         <Calendar className="w-3 h-3" />
                         {new Date(milestone.due_date).toLocaleDateString()}
-                        {isOverdue(milestone.due_date, milestone.status) && ' (Overdue)'}
+                        {isOverdue(milestone.due_date, milestone.status) &&
+                          " (Overdue)"}
                       </div>
                     )}
                   </div>
 
                   {milestone.project_id && (
                     <div className="text-xs text-slate-500">
-                      Project: {projects?.items?.find((p: Project) => p.id === milestone.project_id)?.name || milestone.project_id}
+                      Project:{" "}
+                      {projects?.items?.find(
+                        (p: Project) => p.id === milestone.project_id,
+                      )?.name || milestone.project_id}
                     </div>
                   )}
                 </div>
@@ -427,27 +475,27 @@ export default function Milestones() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <FormModalBuilder
+        <ModalFormBuilder
           title="Create Milestone"
           fields={milestoneFields}
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSubmit={handleCreate}
-          submitButtonText="Create"
+          submitLabel="Create"
         />
       )}
 
       {/* Edit Modal */}
       {editingMilestone && (
-        <FormModalBuilder
+        <ModalFormBuilder
           title="Edit Milestone"
           fields={editFields}
           isOpen={!!editingMilestone}
           onClose={() => setEditingMilestone(null)}
           onSubmit={handleUpdate}
-          submitButtonText="Update"
+          submitLabel="Update"
         />
       )}
     </div>
-  )
+  );
 }
