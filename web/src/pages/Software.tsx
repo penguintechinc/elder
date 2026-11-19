@@ -40,6 +40,8 @@ interface Software {
   cost_monthly?: number | null;
   renewal_date?: string;
   license_url?: string;
+  access_url?: string;
+  parent_system_id?: number;
 }
 
 interface SBOMSchedule {
@@ -86,6 +88,11 @@ export default function Software() {
   const { data: organizations } = useQuery({
     queryKey: queryKeys.organizations.dropdown,
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
+  });
+
+  const { data: entitiesData } = useQuery({
+    queryKey: queryKeys.entities.list({ per_page: 500 }),
+    queryFn: () => api.getEntities({ per_page: 500 }),
   });
 
   const { data, isLoading } = useQuery({
@@ -186,6 +193,29 @@ export default function Software() {
       .map((v) => ({ value: v, label: v }));
   }, [data?.items]);
 
+  const parentSystemOptions = useMemo(
+    () =>
+      (entitiesData?.items || []).map(
+        (e: { id: number; name: string; type?: string }) => ({
+          value: String(e.id),
+          label: e.type ? `${e.name} (${e.type})` : e.name,
+        }),
+      ),
+    [entitiesData?.items],
+  );
+
+  const entityMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const e of (entitiesData?.items || []) as Array<{
+      id: number;
+      name: string;
+      type?: string;
+    }>) {
+      map.set(e.id, e.type ? `${e.name} (${e.type})` : e.name);
+    }
+    return map;
+  }, [entitiesData?.items]);
+
   // Form fields for software creation
   const createFields: FormField[] = useMemo(
     () => [
@@ -258,8 +288,24 @@ export default function Software() {
         type: "url",
         placeholder: "https://portal.vendor.com/license",
       },
+      {
+        name: "access_url",
+        label: "Access URL",
+        type: "url",
+        placeholder: "https://app.example.com",
+      },
+      {
+        name: "parent_system_id",
+        label: "Parent System",
+        type: "select",
+        searchable: true,
+        options: parentSystemOptions,
+        placeholder: parentSystemOptions.length
+          ? "Select parent system"
+          : "No entities found",
+      },
     ],
-    [organizationOptions, vendorOptions, versionOptions],
+    [organizationOptions, vendorOptions, versionOptions, parentSystemOptions],
   );
 
   // Edit form fields with current values as defaults
@@ -343,6 +389,26 @@ export default function Software() {
         placeholder: "https://portal.vendor.com/license",
         defaultValue: editingSoftware.license_url || "",
       },
+      {
+        name: "access_url",
+        label: "Access URL",
+        type: "url",
+        placeholder: "https://app.example.com",
+        defaultValue: editingSoftware.access_url || "",
+      },
+      {
+        name: "parent_system_id",
+        label: "Parent System",
+        type: "select",
+        searchable: true,
+        options: parentSystemOptions,
+        placeholder: parentSystemOptions.length
+          ? "Select parent system"
+          : "No entities found",
+        defaultValue: editingSoftware.parent_system_id
+          ? String(editingSoftware.parent_system_id)
+          : "",
+      },
     ];
   }, [
     editingSoftware,
@@ -350,6 +416,7 @@ export default function Software() {
     createFields,
     vendorOptions,
     versionOptions,
+    parentSystemOptions,
   ]);
 
   const handleCreateSubmit = (data: Record<string, unknown>) => {
@@ -365,6 +432,10 @@ export default function Software() {
       renewal_date: data.renewal_date || undefined,
       license_url:
         (data.license_url as string)?.replace(/\s+/g, "") || undefined,
+      access_url: (data.access_url as string)?.trim() || undefined,
+      parent_system_id: data.parent_system_id
+        ? Number(data.parent_system_id)
+        : undefined,
       organization_id: parseInt(data.organization_id as string),
     } as Parameters<typeof api.createSoftware>[0]);
   };
@@ -382,6 +453,10 @@ export default function Software() {
       renewal_date: data.renewal_date as string | undefined,
       license_url:
         (data.license_url as string)?.replace(/\s+/g, "") || undefined,
+      access_url: (data.access_url as string)?.trim() || undefined,
+      parent_system_id: data.parent_system_id
+        ? Number(data.parent_system_id)
+        : undefined,
     };
     updateMutation.mutate(updateData);
   };
@@ -530,6 +605,25 @@ export default function Software() {
                       {new Date(software.renewal_date).toLocaleDateString()}
                     </div>
                   )}
+                  {software.parent_system_id && (
+                    <div className="truncate">
+                      System:{" "}
+                      {entityMap.get(software.parent_system_id) ||
+                        `Entity #${software.parent_system_id}`}
+                    </div>
+                  )}
+                  {software.access_url && (
+                    <a
+                      href={software.access_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
+                    >
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">{software.access_url}</span>
+                    </a>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -561,6 +655,11 @@ export default function Software() {
       {viewingSoftware && (
         <SoftwareDetailModal
           software={viewingSoftware}
+          parentSystemName={
+            viewingSoftware.parent_system_id
+              ? entityMap.get(viewingSoftware.parent_system_id)
+              : undefined
+          }
           onClose={() => setViewingSoftware(null)}
           onEdit={() => {
             setEditingSoftware(viewingSoftware);
@@ -574,12 +673,14 @@ export default function Software() {
 
 interface SoftwareDetailModalProps {
   software: Software;
+  parentSystemName?: string;
   onClose: () => void;
   onEdit: () => void;
 }
 
 function SoftwareDetailModal({
   software,
+  parentSystemName,
   onClose,
   onEdit,
 }: SoftwareDetailModalProps) {
@@ -625,7 +726,10 @@ function SoftwareDetailModal({
         </CardHeader>
         <CardContent className="overflow-y-auto flex-1">
           {activeTab === "details" ? (
-            <SoftwareDetailsTab software={software} />
+            <SoftwareDetailsTab
+              software={software}
+              parentSystemName={parentSystemName}
+            />
           ) : (
             <SoftwareSchedulesTab software={software} />
           )}
@@ -640,7 +744,13 @@ function SoftwareDetailModal({
   );
 }
 
-function SoftwareDetailsTab({ software }: { software: Software }) {
+function SoftwareDetailsTab({
+  software,
+  parentSystemName,
+}: {
+  software: Software;
+  parentSystemName?: string;
+}) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
@@ -678,7 +788,34 @@ function SoftwareDetailsTab({ software }: { software: Software }) {
               : "-"}
           </p>
         </div>
+        <div>
+          <span className="block text-xs text-slate-500 uppercase">
+            Parent System
+          </span>
+          <p className="text-white">
+            {software.parent_system_id
+              ? parentSystemName || `Entity #${software.parent_system_id}`
+              : "-"}
+          </p>
+        </div>
       </div>
+
+      {software.access_url && (
+        <div>
+          <span className="block text-xs text-slate-500 uppercase">
+            Access URL
+          </span>
+          <a
+            href={software.access_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-primary-400 hover:text-primary-300"
+          >
+            {software.access_url}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
 
       {software.license_url && (
         <div>

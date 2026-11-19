@@ -36,6 +36,46 @@ from apps.api.utils.validation_helpers import (
 
 bp = Blueprint("software", __name__)
 
+_columns_ensured = False
+
+
+def _ensure_software_columns(db) -> None:
+    """Ensure access_url and parent_system_id columns exist on software table."""
+    global _columns_ensured
+    if _columns_ensured:
+        return
+    if not hasattr(db, "executesql"):
+        _columns_ensured = True
+        return
+    statements = [
+        (
+            "ALTER TABLE software ADD COLUMN IF NOT EXISTS access_url VARCHAR(1024)",
+            "ALTER TABLE software ADD COLUMN access_url VARCHAR(1024)",
+        ),
+        (
+            "ALTER TABLE software ADD COLUMN IF NOT EXISTS parent_system_id INTEGER",
+            "ALTER TABLE software ADD COLUMN parent_system_id INTEGER",
+        ),
+    ]
+    for pg_sql, sqlite_sql in statements:
+        try:
+            db.executesql(pg_sql)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            try:
+                db.executesql(sqlite_sql)
+                db.commit()
+            except Exception:
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+    _columns_ensured = True
+
 
 @bp.route("", methods=["GET"])
 @login_required
@@ -47,6 +87,7 @@ async def list_software():
     pagination = PaginationParams.from_request()
 
     def get_software():
+        _ensure_software_columns(db)
         query = db.software.id > 0
 
         if request.args.get("organization_id"):
@@ -110,6 +151,7 @@ async def create_software(body: CreateSoftwareRequest):
             )
 
     def create():
+        _ensure_software_columns(db)
         now = datetime.now(UTC)
         software_id = db.software.insert(
             name=body.name,
@@ -118,6 +160,8 @@ async def create_software(body: CreateSoftwareRequest):
             tenant_id=tenant_id,
             purchasing_poc_id=body.purchasing_poc_id,
             license_url=body.license_url,
+            access_url=body.access_url,
+            parent_system_id=body.parent_system_id,
             version=body.version,
             business_purpose=body.business_purpose,
             software_type=body.software_type,
@@ -148,9 +192,11 @@ async def get_software(id: int):
     db = current_app.db
     tenant_id = get_current_tenant_id()
 
-    software = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
-    )
+    def _fetch():
+        _ensure_software_columns(db)
+        return get_tenant_scoped(db, db.software, id, tenant_id)
+
+    software = await run_in_threadpool(_fetch)
     if not software:
         return ApiResponse.not_found("Software", id)
 
@@ -188,6 +234,7 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
             return error
 
     def update():
+        _ensure_software_columns(db)
         # gh-237: 404 on cross-tenant id guesses instead of leaking existence
         software = get_tenant_scoped(db, db.software, id, tenant_id)
         if not software:
@@ -199,6 +246,8 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
             "description",
             "purchasing_poc_id",
             "license_url",
+            "access_url",
+            "parent_system_id",
             "version",
             "business_purpose",
             "software_type",
@@ -244,9 +293,11 @@ async def delete_software(id: int):
     db = current_app.db
     tenant_id = get_current_tenant_id()
 
-    software = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
-    )
+    def _fetch():
+        _ensure_software_columns(db)
+        return get_tenant_scoped(db, db.software, id, tenant_id)
+
+    software = await run_in_threadpool(_fetch)
     if not software:
         return ApiResponse.not_found("Software", id)
 
@@ -280,9 +331,11 @@ async def get_software_sbom(id: int):
     tenant_id = get_current_tenant_id()
 
     # Validate software exists and belongs to caller's tenant (gh-237)
-    software = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
-    )
+    def _fetch():
+        _ensure_software_columns(db)
+        return get_tenant_scoped(db, db.software, id, tenant_id)
+
+    software = await run_in_threadpool(_fetch)
     if not software:
         return ApiResponse.not_found("Software", id)
 
@@ -328,9 +381,11 @@ async def export_software_sbom(id: int):
     tenant_id = get_current_tenant_id()
 
     # Validate software exists and belongs to caller's tenant (gh-237)
-    software = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.software, id, tenant_id)
-    )
+    def _fetch():
+        _ensure_software_columns(db)
+        return get_tenant_scoped(db, db.software, id, tenant_id)
+
+    software = await run_in_threadpool(_fetch)
     if not software:
         return ApiResponse.not_found("Software", id)
 

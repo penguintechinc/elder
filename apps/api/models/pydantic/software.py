@@ -31,6 +31,8 @@ class SoftwareDTO(ImmutableModel):
         organization_id: Associated organization ID
         purchasing_poc_id: Optional purchasing point of contact identity ID
         license_url: Optional URL to license documentation
+        access_url: Optional URL to access the software
+        parent_system_id: Optional parent system entity ID
         version: Optional software version
         business_purpose: Optional business purpose/justification
         software_type: Type classification (e.g., 'commercial', 'open-source')
@@ -54,6 +56,8 @@ class SoftwareDTO(ImmutableModel):
     organization_id: int
     purchasing_poc_id: int | None = None
     license_url: str | None = None
+    access_url: str | None = None
+    parent_system_id: int | None = None
     version: str | None = None
     business_purpose: str | None = None
     software_type: str
@@ -94,6 +98,8 @@ class CreateSoftwareRequest(RequestModel):
         description: Optional detailed description
         purchasing_poc_id: Optional purchasing point of contact identity ID
         license_url: Optional URL to license documentation
+        access_url: Optional URL to access the software
+        parent_system_id: Optional parent system entity ID
         version: Optional software version
         business_purpose: Optional business purpose/justification
         seats: Optional number of purchased licenses/seats
@@ -130,6 +136,15 @@ class CreateSoftwareRequest(RequestModel):
     license_url: str | None = Field(
         default=None,
         description="Optional URL to license documentation",
+    )
+    access_url: str | None = Field(
+        default=None,
+        description="Optional URL to access the software",
+    )
+    parent_system_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Optional parent system entity ID",
     )
     version: str | None = Field(
         default=None,
@@ -188,6 +203,8 @@ class UpdateSoftwareRequest(RequestModel):
         software_type: Type classification (optional)
         purchasing_poc_id: Purchasing point of contact identity ID (optional)
         license_url: URL to license documentation (optional)
+        access_url: URL to access the software (optional)
+        parent_system_id: Parent system entity ID (optional, must be >= 1)
         version: Software version (optional)
         business_purpose: Business purpose/justification (optional)
         seats: Number of purchased licenses/seats (optional)
@@ -219,6 +236,15 @@ class UpdateSoftwareRequest(RequestModel):
     license_url: str | None = Field(
         default=None,
         description="URL to license documentation",
+    )
+    access_url: str | None = Field(
+        default=None,
+        description="URL to access the software",
+    )
+    parent_system_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Parent system entity ID",
     )
     version: str | None = Field(
         default=None,

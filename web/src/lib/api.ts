@@ -1086,6 +1086,8 @@ class ApiClient {
     cost_monthly?: number;
     renewal_date?: string;
     license_url?: string;
+    access_url?: string;
+    parent_system_id?: number;
     organization_id: number;
   }) {
     const response = await this.client.post("/software", data);
@@ -1103,6 +1105,8 @@ class ApiClient {
       cost_monthly: number;
       renewal_date: string;
       license_url: string;
+      access_url: string;
+      parent_system_id: number;
     }>,
   ) {
     const response = await this.client.put(`/software/${id}`, data);
