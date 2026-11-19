@@ -12,6 +12,21 @@ import {
   validateForm,
 } from "@/types/form";
 
+const PRESET_COLORS = [
+  "#3b82f6", // Blue
+  "#ef4444", // Red
+  "#f97316", // Orange
+  "#f59e0b", // Amber
+  "#10b981", // Emerald
+  "#14b8a6", // Teal
+  "#06b6d4", // Cyan
+  "#6366f1", // Indigo
+  "#a855f7", // Purple
+  "#ec4899", // Pink
+  "#64748b", // Slate
+  "#84cc16", // Lime
+];
+
 // Password generator helper
 const generatePassword = () => {
   const chars =
@@ -158,6 +173,56 @@ export default function FormBuilder({
               </option>
             ))}
           </Select>,
+        );
+
+      case "color":
+        return withError(
+          <div className="space-y-2">
+            <span className="block text-sm font-medium text-yellow-500">
+              {field.label}
+              {field.required && <span className="text-red-400 ml-1">*</span>}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_COLORS.map((hex) => {
+                const selected =
+                  stringValue.toLowerCase() === hex.toLowerCase();
+                return (
+                  <button
+                    key={hex}
+                    type="button"
+                    aria-label={`Select color ${hex}`}
+                    onClick={() => handleChange(field.name, hex)}
+                    disabled={field.disabled}
+                    className={`h-7 w-7 rounded-full border-2 transition-transform ${
+                      selected
+                        ? "scale-110 border-white ring-2 ring-primary-400"
+                        : "border-slate-600 hover:scale-105"
+                    }`}
+                    style={{ backgroundColor: hex }}
+                  />
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                aria-label={`${field.label} picker`}
+                value={
+                  /^#[0-9a-f]{6}$/i.test(stringValue) ? stringValue : "#3b82f6"
+                }
+                onChange={(e) => handleChange(field.name, e.target.value)}
+                disabled={field.disabled}
+                className="h-9 w-12 cursor-pointer rounded border border-slate-600 bg-slate-800 p-0.5"
+              />
+              <Input
+                type="text"
+                value={stringValue}
+                onChange={(e) => handleChange(field.name, e.target.value)}
+                placeholder={field.placeholder || "#3b82f6"}
+                disabled={field.disabled}
+              />
+            </div>
+          </div>,
         );
 
       case "radio":
@@ -314,30 +379,6 @@ export default function FormBuilder({
             onChange={(e) => handleChange(field.name, e.target.value)}
             placeholder={field.placeholder}
           />
-        );
-
-      case "color":
-        return (
-          <div key={field.name} className="space-y-1">
-            <label className="text-sm font-medium text-yellow-500">
-              {field.label}
-            </label>
-            <div className="flex gap-2 items-center">
-              <input
-                type="color"
-                value={typeof value === "string" && value ? value : "#3b82f6"}
-                onChange={(e) => handleChange(field.name, e.target.value)}
-                disabled={field.disabled}
-                className="w-10 h-10 rounded cursor-pointer"
-              />
-              <Input
-                value={stringValue}
-                onChange={(e) => handleChange(field.name, e.target.value)}
-                placeholder="#3b82f6"
-                className="flex-1"
-              />
-            </div>
-          </div>
         );
 
       // Default: text, username, url, domain, ip, path, slug
