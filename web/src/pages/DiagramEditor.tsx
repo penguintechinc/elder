@@ -25,6 +25,11 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Save, Trash2, ArrowLeft, Users, Search, X } from "lucide-react";
 import api from "@/lib/api";
+import {
+  NodePropertyModal,
+  EdgePropertyModal,
+  type ResourceCategory,
+} from "@/components/diagram/FlowPropertyModals";
 import { useDiagramCollaboration } from "@/hooks/useDiagramCollaboration";
 import {
   IconSearch,
@@ -42,6 +47,9 @@ interface CloudProviderNodeData extends Record<string, unknown> {
   color: string;
   iconId?: string;
   iconColor?: string;
+  resourceType?: ResourceCategory;
+  resourceId?: number;
+  resourceName?: string;
 }
 
 function CloudProviderNode({
@@ -49,10 +57,15 @@ function CloudProviderNode({
   selected,
 }: NodeProps<Node<CloudProviderNodeData>>) {
   const IconComp = getIcon(data.iconId || data.provider);
+  const isTransparent = data.color === "transparent";
   return (
     <div
-      className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? "border-amber-400" : "border-slate-600"}`}
-      style={{ backgroundColor: data.color || "#1f2937" }}
+      className={`relative px-4 py-3 rounded-lg border-2 ${isTransparent ? "" : "shadow-lg"} ${selected ? "border-amber-400" : "border-slate-600"}`}
+      style={{
+        backgroundColor: isTransparent
+          ? "transparent"
+          : data.color || "#1f2937",
+      }}
     >
       <Handle
         type="target"
@@ -113,6 +126,11 @@ function CloudProviderNode({
           </div>
         )}
         <span>{data.label}</span>
+        {data.resourceName && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-amber-300 truncate max-w-[150px]">
+            {data.resourceName}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -124,6 +142,9 @@ interface InfrastructureNodeData extends Record<string, unknown> {
   color: string;
   iconId?: string;
   iconColor?: string;
+  resourceType?: ResourceCategory;
+  resourceId?: number;
+  resourceName?: string;
 }
 
 function InfrastructureNode({
@@ -131,10 +152,15 @@ function InfrastructureNode({
   selected,
 }: NodeProps<Node<InfrastructureNodeData>>) {
   const IconComp = getIcon(data.iconId || data.type);
+  const isTransparent = data.color === "transparent";
   return (
     <div
-      className={`relative px-4 py-3 rounded-lg shadow-lg border-2 ${selected ? "border-amber-400" : "border-slate-600"}`}
-      style={{ backgroundColor: data.color || "#1f2937" }}
+      className={`relative px-4 py-3 rounded-lg border-2 ${isTransparent ? "" : "shadow-lg"} ${selected ? "border-amber-400" : "border-slate-600"}`}
+      style={{
+        backgroundColor: isTransparent
+          ? "transparent"
+          : data.color || "#1f2937",
+      }}
     >
       <Handle
         type="target"
@@ -195,6 +221,11 @@ function InfrastructureNode({
           </div>
         )}
         <span>{data.label}</span>
+        {data.resourceName && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-amber-300 truncate max-w-[150px]">
+            {data.resourceName}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -204,6 +235,9 @@ interface ShapeNodeData extends Record<string, unknown> {
   label: string;
   color: string;
   shape: string;
+  resourceType?: ResourceCategory;
+  resourceId?: number;
+  resourceName?: string;
 }
 
 function ShapeNode({ data, selected }: NodeProps<Node<ShapeNodeData>>) {
@@ -271,14 +305,24 @@ function ShapeNode({ data, selected }: NodeProps<Node<ShapeNodeData>>) {
         style={{ right: -6 }}
       />
       <div
-        className={`flex items-center justify-center shadow-lg border-2 ${selected ? "border-amber-400" : "border-transparent"} ${shapeStyles[data.shape] || shapeStyles.rectangle} ${data.shape === "circle" ? "w-full h-full" : "px-4 py-2"}`}
-        style={{ backgroundColor: data.color || "#374151" }}
+        className={`flex flex-col items-center justify-center border-2 ${data.color === "transparent" ? "" : "shadow-lg"} ${selected ? "border-amber-400" : data.color === "transparent" ? "border-slate-500" : "border-transparent"} ${shapeStyles[data.shape] || shapeStyles.rectangle} ${data.shape === "circle" ? "w-full h-full" : "px-4 py-2"}`}
+        style={{
+          backgroundColor:
+            data.color === "transparent"
+              ? "transparent"
+              : data.color || "#374151",
+        }}
       >
         <span
           className={`text-white text-sm font-medium ${data.shape === "diamond" ? "-rotate-45 block" : ""}`}
         >
           {data.label}
         </span>
+        {data.resourceName && data.shape !== "diamond" && (
+          <span className="text-[10px] px-1.5 py-0.5 mt-1 rounded bg-black/40 text-amber-300 truncate max-w-[140px]">
+            {data.resourceName}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -517,6 +561,22 @@ function DiagramEditorContent() {
 
   const [showIconSearch, setShowIconSearch] = useState(false);
   const allIcons = useMemo(() => getAllIcons(), []);
+  const [editingNode, setEditingNode] = useState<Node | null>(null);
+  const [editingEdge, setEditingEdge] = useState<Edge | null>(null);
+
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: Node) => {
+      setEditingNode(node);
+    },
+    [],
+  );
+
+  const handleEdgeDoubleClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      setEditingEdge(edge);
+    },
+    [],
+  );
 
   const handleIconSelect = useCallback(
     (icon: IconDefinition) => {
@@ -671,6 +731,8 @@ function DiagramEditorContent() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeDoubleClick={handleNodeDoubleClick}
+          onEdgeDoubleClick={handleEdgeDoubleClick}
           nodeTypes={nodeTypes}
           fitView
         >
@@ -727,6 +789,32 @@ function DiagramEditorContent() {
           </div>
         </div>
       )}
+
+      <NodePropertyModal
+        node={editingNode}
+        onClose={() => setEditingNode(null)}
+        onSave={(updatedNode) => {
+          const updatedNodes = nodes.map((n) =>
+            n.id === updatedNode.id ? updatedNode : n,
+          );
+          setNodes(updatedNodes);
+          sendDrawingChange(updatedNodes, edges);
+          setEditingNode(null);
+        }}
+      />
+
+      <EdgePropertyModal
+        edge={editingEdge}
+        onClose={() => setEditingEdge(null)}
+        onSave={(updatedEdge) => {
+          const updatedEdges = edges.map((ed) =>
+            ed.id === updatedEdge.id ? updatedEdge : ed,
+          );
+          setEdges(updatedEdges);
+          sendDrawingChange(nodes, updatedEdges);
+          setEditingEdge(null);
+        }}
+      />
     </div>
   );
 }
