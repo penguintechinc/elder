@@ -159,6 +159,46 @@ async def create_prefix():
     if not org.tenant_id:
         return ApiResponse.bad_request("Organization must have a tenant")
 
+    def find_existing():
+        return (
+            db(
+                (db.ipam_prefixes.prefix == data.prefix)
+                & (db.ipam_prefixes.organization_id == data.organization_id)
+            )
+            .select()
+            .first()
+        )
+
+    existing = await run_in_threadpool(find_existing)
+    if existing:
+        if not data.overwrite:
+            return (
+                jsonify(
+                    {
+                        "error": f"IPAM prefix '{data.prefix}' already exists in this organization",
+                        "code": "DUPLICATE_RESOURCE",
+                        "existing_id": existing.id,
+                    }
+                ),
+                409,
+            )
+
+        def overwrite_prefix():
+            now = datetime.now(UTC)
+            db(db.ipam_prefixes.id == existing.id).update(
+                description=data.description,
+                status=data.status,
+                parent_id=data.parent_id,
+                vlan_id=data.vlan_id,
+                is_pool=data.is_pool,
+                updated_at=now,
+            )
+            db.commit()
+            return db.ipam_prefixes[existing.id]
+
+        prefix = await run_in_threadpool(overwrite_prefix)
+        return jsonify(dict(prefix)), 200
+
     blocked = await check_limit("object", org.tenant_id)
     if blocked is not None:
         return blocked
@@ -505,6 +545,44 @@ async def create_address():
     if not prefix:
         return ApiResponse.error("Prefix not found", 404)
 
+    def find_existing():
+        return (
+            db(
+                (db.ipam_addresses.address == data.address)
+                & (db.ipam_addresses.prefix_id == data.prefix_id)
+            )
+            .select()
+            .first()
+        )
+
+    existing = await run_in_threadpool(find_existing)
+    if existing:
+        if not data.overwrite:
+            return (
+                jsonify(
+                    {
+                        "error": f"IPAM address '{data.address}' already exists in this prefix",
+                        "code": "DUPLICATE_RESOURCE",
+                        "existing_id": existing.id,
+                    }
+                ),
+                409,
+            )
+
+        def overwrite_address():
+            now = datetime.now(UTC)
+            db(db.ipam_addresses.id == existing.id).update(
+                description=data.description,
+                status=data.status,
+                dns_name=data.dns_name,
+                updated_at=now,
+            )
+            db.commit()
+            return db.ipam_addresses[existing.id]
+
+        address = await run_in_threadpool(overwrite_address)
+        return jsonify(dict(address)), 200
+
     blocked = await check_limit("object", prefix.tenant_id)
     if blocked is not None:
         return blocked
@@ -796,6 +874,44 @@ async def create_vlan():
         return ApiResponse.error("Organization not found", 404)
     if not org.tenant_id:
         return ApiResponse.bad_request("Organization must have a tenant")
+
+    def find_existing():
+        return (
+            db(
+                (db.ipam_vlans.vid == data.vid)
+                & (db.ipam_vlans.organization_id == data.organization_id)
+            )
+            .select()
+            .first()
+        )
+
+    existing = await run_in_threadpool(find_existing)
+    if existing:
+        if not data.overwrite:
+            return (
+                jsonify(
+                    {
+                        "error": f"IPAM VLAN '{data.vid}' already exists in this organization",
+                        "code": "DUPLICATE_RESOURCE",
+                        "existing_id": existing.id,
+                    }
+                ),
+                409,
+            )
+
+        def overwrite_vlan():
+            now = datetime.now(UTC)
+            db(db.ipam_vlans.id == existing.id).update(
+                name=data.name,
+                description=data.description,
+                status=data.status,
+                updated_at=now,
+            )
+            db.commit()
+            return db.ipam_vlans[existing.id]
+
+        vlan = await run_in_threadpool(overwrite_vlan)
+        return jsonify(dict(vlan)), 200
 
     blocked = await check_limit("object", org.tenant_id)
     if blocked is not None:

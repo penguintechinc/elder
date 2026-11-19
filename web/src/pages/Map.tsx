@@ -609,8 +609,22 @@ export default function MapPage() {
       setLocDescription("");
       setPickTarget(null);
     },
-    onError: (err) =>
-      toast.error(getErrorMessage(err, "Failed to create location")),
+    onError: (err, payload) => {
+      if (
+        (err as { response?: { status?: number } })?.response?.status === 409
+      ) {
+        const msg = getErrorMessage(err, "A matching location already exists.");
+        if (
+          window.confirm(
+            `${msg}\n\nDo you want to overwrite the existing location?`,
+          )
+        ) {
+          createLocationMutation.mutate({ ...payload, overwrite: true });
+        }
+        return;
+      }
+      toast.error(getErrorMessage(err, "Failed to create location"));
+    },
   });
 
   const deleteLocationMutation = useMutation({
@@ -637,8 +651,22 @@ export default function MapPage() {
       setRegDescription("");
       setPickTarget(null);
     },
-    onError: (err) =>
-      toast.error(getErrorMessage(err, "Failed to create region")),
+    onError: (err, payload) => {
+      if (
+        (err as { response?: { status?: number } })?.response?.status === 409
+      ) {
+        const msg = getErrorMessage(err, "A matching region already exists.");
+        if (
+          window.confirm(
+            `${msg}\n\nDo you want to overwrite the existing region?`,
+          )
+        ) {
+          createRegionMutation.mutate({ ...payload, overwrite: true });
+        }
+        return;
+      }
+      toast.error(getErrorMessage(err, "Failed to create region"));
+    },
   });
 
   const deleteRegionMutation = useMutation({

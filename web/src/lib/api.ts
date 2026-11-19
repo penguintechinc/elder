@@ -1712,6 +1712,7 @@ class ApiClient {
     organizational_unit?: string;
     attributes?: Record<string, unknown>;
     tags?: string[];
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/networking/networks", data);
     return response.data;
@@ -2203,6 +2204,7 @@ class ApiClient {
     vlan_id?: number;
     role?: string;
     tenant_id?: number;
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/ipam/prefixes", data);
     return response.data;
@@ -2253,6 +2255,7 @@ class ApiClient {
     status?: string;
     dns_name?: string;
     tenant_id?: number;
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/ipam/addresses", data);
     return response.data;
@@ -2301,6 +2304,7 @@ class ApiClient {
     status?: string;
     group_id?: number;
     tenant_id?: number;
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/ipam/vlans", data);
     return response.data;
@@ -3457,6 +3461,7 @@ class ApiClient {
     latitude?: number;
     longitude?: number;
     description?: string;
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/geo/regions", data);
     return response.data;
@@ -3497,6 +3502,7 @@ class ApiClient {
     latitude?: number;
     longitude?: number;
     description?: string;
+    overwrite?: boolean;
   }) {
     const response = await this.client.post("/geo/locations", data);
     return response.data;

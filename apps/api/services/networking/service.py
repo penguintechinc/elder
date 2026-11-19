@@ -2,6 +2,7 @@
 
 # flake8: noqa: E501
 
+import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,15 @@ from typing import Any, Dict, List, Optional
 from quart import current_app
 
 logger = logging.getLogger(__name__)
+
+
+class DuplicateResourceError(Exception):
+    """Raised when creating a networking resource that already exists."""
+
+    def __init__(self, message: str, existing_id: int):
+        """Initialize with error message and existing resource ID."""
+        super().__init__(message)
+        self.existing_id = existing_id
 
 
 class NetworkingService:
@@ -38,8 +48,51 @@ class NetworkingService:
         attributes: dict[str, Any] | None = None,
         status_metadata: dict[str, Any] | None = None,
         tags: list[str] | None = None,
+        overwrite: bool = False,
     ) -> dict[str, Any]:
-        """Create a new networking resource."""
+        """Create a new networking resource, or overwrite an existing duplicate."""
+        network, _ = self.create_or_update_network(
+            name=name,
+            network_type=network_type,
+            organization_id=organization_id,
+            description=description,
+            parent_id=parent_id,
+            region=region,
+            location=location,
+            cidr=cidr,
+            gateway=gateway,
+            vlan_id=vlan_id,
+            mtu=mtu,
+            poc=poc,
+            organizational_unit=organizational_unit,
+            attributes=attributes,
+            status_metadata=status_metadata,
+            tags=tags,
+            overwrite=overwrite,
+        )
+        return network
+
+    def create_or_update_network(
+        self,
+        name: str,
+        network_type: str,
+        organization_id: int,
+        description: str | None = None,
+        parent_id: int | None = None,
+        region: str | None = None,
+        location: str | None = None,
+        cidr: str | None = None,
+        gateway: str | None = None,
+        vlan_id: int | None = None,
+        mtu: int | None = None,
+        poc: str | None = None,
+        organizational_unit: str | None = None,
+        attributes: dict[str, Any] | None = None,
+        status_metadata: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+        overwrite: bool = False,
+    ) -> tuple[dict[str, Any], bool]:
+        """Create a networking resource or overwrite an existing duplicate; returns (resource, created)."""
         try:
             merged_attributes = dict(attributes or {})
             if cidr is not None:
@@ -50,6 +103,52 @@ class NetworkingService:
                 merged_attributes["vlan_id"] = vlan_id
             if mtu is not None:
                 merged_attributes["mtu"] = mtu
+
+            existing_rows = self.db(
+                self.db.networking_resources.organization_id == organization_id
+            ).select()
+            existing = None
+            for row in existing_rows:
+                if row.name == name:
+                    existing = row
+                    break
+                if cidr is not None:
+                    row_attrs = row.attributes
+                    if isinstance(row_attrs, str):
+                        try:
+                            row_attrs = json.loads(row_attrs)
+                        except ValueError:
+                            row_attrs = {}
+                    if isinstance(row_attrs, dict) and row_attrs.get("cidr") == cidr:
+                        existing = row
+                        break
+
+            if existing is not None:
+                if not overwrite:
+                    raise DuplicateResourceError(
+                        f"Networking resource '{name}' already exists in this organization",
+                        existing_id=existing.id,
+                    )
+
+                self.db(self.db.networking_resources.id == existing.id).update(
+                    name=name,
+                    description=description,
+                    network_type=network_type,
+                    parent_id=parent_id,
+                    region=region,
+                    location=location,
+                    poc=poc,
+                    organizational_unit=organizational_unit,
+                    attributes=merged_attributes,
+                    status_metadata=status_metadata or {},
+                    tags=tags or [],
+                    updated_at=datetime.now(),
+                )
+                self.db.commit()
+                logger.info(
+                    f"Overwrote networking resource '{name}' (ID: {existing.id}, Type: {network_type})"
+                )
+                return self.get_network(existing.id), False
 
             network_id = self.db.networking_resources.insert(
                 name=name,
@@ -72,8 +171,10 @@ class NetworkingService:
                 f"Created networking resource '{name}' (ID: {network_id}, Type: {network_type})"
             )
 
-            return self.get_network(network_id)
+            return self.get_network(network_id), True
 
+        except DuplicateResourceError:
+            raise
         except Exception as e:
             logger.error(f"Failed to create networking resource: {str(e)}")
             raise Exception(f"Failed to create networking resource: {str(e)}")

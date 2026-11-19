@@ -113,6 +113,13 @@ export default function Networking() {
   const [activeTab, setActiveTab] = useState<Tab>("Networks");
   const [selectedNetworkType, setSelectedNetworkType] = useState<string>("all");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [pendingOverwrite, setPendingOverwrite] = useState<{
+    vars: {
+      networkData: Parameters<typeof api.createNetwork>[0] & { cidr?: string };
+      syncIpam: boolean;
+    };
+    message: string;
+  } | null>(null);
   const [showCreateConnectionModal, setShowCreateConnectionModal] =
     useState(false);
   const [showTopologyModal, setShowTopologyModal] = useState(false);
@@ -387,8 +394,12 @@ export default function Networking() {
             refetchType: "all",
           });
         } catch (err) {
-          console.warn("Failed to add CIDR to IPAM:", err);
-          toast.error("Network created, but adding CIDR to IPAM failed");
+          const status = (err as { response?: { status?: number } })?.response
+            ?.status;
+          if (status !== 409) {
+            console.warn("Failed to add CIDR to IPAM:", err);
+            toast.error("Network created, but adding CIDR to IPAM failed");
+          }
         }
       }
       return created;
@@ -402,7 +413,25 @@ export default function Networking() {
       setShowCreateModal(false);
       resetCreateForm();
     },
-    onError: (error: { response?: { data?: { error?: string } } }) => {
+    onError: (
+      error: {
+        response?: {
+          status?: number;
+          data?: { error?: string; message?: string };
+        };
+      },
+      variables,
+    ) => {
+      if (error.response?.status === 409) {
+        setPendingOverwrite({
+          vars: variables,
+          message:
+            error.response?.data?.error ||
+            error.response?.data?.message ||
+            "A matching network resource already exists.",
+        });
+        return;
+      }
       toast.error(error.response?.data?.error || "Failed to create network");
     },
   });
@@ -1065,6 +1094,51 @@ export default function Networking() {
           onSubmit={handleCreateConnection}
           submitLabel="Create"
         />
+      )}
+
+      {pendingOverwrite && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Duplicate Network Resource"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white">
+              Duplicate Entry Detected
+            </h2>
+            <p className="mt-2 text-sm text-slate-300">
+              {pendingOverwrite.message}
+            </p>
+            <p className="mt-2 text-sm text-slate-400">
+              Do you want to overwrite the existing entry?
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setPendingOverwrite(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  createNetworkMutation.mutate({
+                    ...pendingOverwrite.vars,
+                    networkData: {
+                      ...pendingOverwrite.vars.networkData,
+                      overwrite: true,
+                    },
+                  });
+                  setPendingOverwrite(null);
+                }}
+              >
+                Overwrite Existing
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

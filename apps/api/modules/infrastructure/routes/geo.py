@@ -382,6 +382,47 @@ async def create_region():
         db = current_app.db
         tenant_id = _get_tenant_id()
         now = datetime.now(UTC)
+        overwrite = bool(data.get("overwrite", False))
+
+        existing = (
+            db((db.geo_regions.code == code) & (db.geo_regions.tenant_id == tenant_id))
+            .select()
+            .first()
+        )
+        if existing:
+            if not overwrite:
+                return (
+                    jsonify(
+                        {
+                            "error": f"Geo region '{code}' already exists in this tenant",
+                            "code": "DUPLICATE_RESOURCE",
+                            "existing_id": existing.id,
+                        }
+                    ),
+                    409,
+                )
+            db(
+                (db.geo_regions.id == existing.id)
+                & (db.geo_regions.tenant_id == tenant_id)
+            ).update(
+                name=name,
+                provider=data.get("provider"),
+                latitude=lat,
+                longitude=lon,
+                description=data.get("description"),
+                is_active=bool(data["is_active"]) if "is_active" in data else True,
+                updated_at=now,
+            )
+            db.commit()
+            row = (
+                db(
+                    (db.geo_regions.id == existing.id)
+                    & (db.geo_regions.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
+            )
+            return jsonify(_serialize_region(row)), 200
 
         region_id = db.geo_regions.insert(
             tenant_id=tenant_id,
@@ -540,6 +581,29 @@ async def create_location():
         if not name:
             return jsonify({"error": "name is required"}), 400
 
+        db = current_app.db
+        tenant_id = _get_tenant_id()
+        overwrite = bool(data.get("overwrite", False))
+        existing = (
+            db(
+                (db.geo_locations.name == name)
+                & (db.geo_locations.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if existing and not overwrite:
+            return (
+                jsonify(
+                    {
+                        "error": f"Geo location '{name}' already exists in this tenant",
+                        "code": "DUPLICATE_RESOURCE",
+                        "existing_id": existing.id,
+                    }
+                ),
+                409,
+            )
+
         lat = (
             _parse_coord(data["latitude"], "latitude", -90.0, 90.0)
             if data.get("latitude") is not None
@@ -577,9 +641,35 @@ async def create_location():
             state = state or geocoded.get("state")
             country = country or geocoded.get("country")
 
-        db = current_app.db
-        tenant_id = _get_tenant_id()
         now = datetime.now(UTC)
+
+        if existing:
+            db(
+                (db.geo_locations.id == existing.id)
+                & (db.geo_locations.tenant_id == tenant_id)
+            ).update(
+                organization_id=data.get("organization_id"),
+                region_code=data.get("region_code"),
+                city=city,
+                state=state,
+                country=country,
+                address=address,
+                latitude=lat,
+                longitude=lon,
+                description=data.get("description"),
+                is_active=bool(data["is_active"]) if "is_active" in data else True,
+                updated_at=now,
+            )
+            db.commit()
+            row = (
+                db(
+                    (db.geo_locations.id == existing.id)
+                    & (db.geo_locations.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
+            )
+            return jsonify(_serialize_location(row)), 200
 
         location_id = db.geo_locations.insert(
             tenant_id=tenant_id,
