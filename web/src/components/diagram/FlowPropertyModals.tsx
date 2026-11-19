@@ -562,12 +562,9 @@ export function EdgePropertyModal({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label
-                htmlFor="flow-edge-type"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
+              <span className="block text-sm font-medium text-slate-300 mb-1">
                 Line Type
-              </label>
+              </span>
               <SearchableSelect
                 options={LINE_TYPE_OPTIONS}
                 value={lineType}
@@ -580,12 +577,9 @@ export function EdgePropertyModal({
             </div>
 
             <div>
-              <label
-                htmlFor="flow-edge-speed"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
+              <span className="block text-sm font-medium text-slate-300 mb-1">
                 Speed
-              </label>
+              </span>
               <SearchableSelect
                 options={LINE_SPEED_OPTIONS}
                 value={speed}
@@ -598,12 +592,9 @@ export function EdgePropertyModal({
             </div>
 
             <div className="sm:col-span-2">
-              <label
-                htmlFor="flow-edge-provider"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
+              <span className="block text-sm font-medium text-slate-300 mb-1">
                 Provider
-              </label>
+              </span>
               <SearchableSelect
                 options={LINE_PROVIDER_OPTIONS}
                 value={provider}
