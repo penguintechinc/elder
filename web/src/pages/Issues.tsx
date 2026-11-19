@@ -8,6 +8,7 @@ import {
   Tag,
   User,
   AlertTriangle,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
@@ -325,10 +326,18 @@ export function CreateIssueModal({
   const [entityIds, setEntityIds] = useState<number[]>(
     defaultEntityId ? [defaultEntityId] : [],
   );
+  const [projectId, setProjectId] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+  const [selectedParentIssueId, setSelectedParentIssueId] = useState("");
   const [labelIds, setLabelIds] = useState<number[]>([]);
+  const [showCreateLabel, setShowCreateLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState("#3b82f6");
+  const [newLabelDescription, setNewLabelDescription] = useState("");
   const [isIncident, setIsIncident] = useState(false);
   const [channel, setChannel] = useState("");
   const [category, setCategory] = useState("");
+  const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
     queryKey: ["organizations-all"],
@@ -340,9 +349,43 @@ export function CreateIssueModal({
     queryFn: () => api.getEntities({ per_page: 1000 }),
   });
 
+  const { data: projectsData } = useQuery({
+    queryKey: ["projects-all"],
+    queryFn: () => api.getProjects({ per_page: 200 }),
+  });
+
+  const { data: milestonesData } = useQuery({
+    queryKey: ["milestones-all"],
+    queryFn: () => api.getMilestones({ per_page: 200 }),
+  });
+
   const { data: labels } = useQuery({
     queryKey: ["labels-all"],
     queryFn: () => api.getLabels({ per_page: 1000 }),
+  });
+
+  const createLabelMutation = useMutation({
+    mutationFn: (data: {
+      name: string;
+      color?: string;
+      description?: string;
+    }) => api.createLabel(data),
+    onSuccess: async (created: IssueLabel) => {
+      await queryClient.invalidateQueries({ queryKey: ["labels-all"] });
+      await queryClient.invalidateQueries({ queryKey: ["labels"] });
+      if (created?.id) {
+        setLabelIds((prev) =>
+          prev.includes(created.id) ? prev : [...prev, created.id],
+        );
+      }
+      setNewLabelName("");
+      setNewLabelDescription("");
+      setShowCreateLabel(false);
+      toast.success(`Label "${created?.name || "New label"}" created`);
+    },
+    onError: () => {
+      toast.error("Failed to create label");
+    },
   });
 
   const { data: existingIssues } = useQuery({
@@ -429,6 +472,30 @@ export function CreateIssueModal({
         }
       }
 
+      if (projectId) {
+        try {
+          await api.linkIssueToProject(issue.id, parseInt(projectId, 10));
+        } catch (err) {
+          console.warn("[CreateIssueModal] Failed to link project", {
+            projectId,
+            error: err,
+          });
+          failedLinks.push(`project ${projectId}`);
+        }
+      }
+
+      if (milestoneId) {
+        try {
+          await api.linkIssueToMilestone(issue.id, parseInt(milestoneId, 10));
+        } catch (err) {
+          console.warn("[CreateIssueModal] Failed to link milestone", {
+            milestoneId,
+            error: err,
+          });
+          failedLinks.push(`milestone ${milestoneId}`);
+        }
+      }
+
       // Return issue + any failed links for the success handler to decide
       // whether to show a secondary warning.
       return { issue, failedLinks };
@@ -488,7 +555,11 @@ export function CreateIssueModal({
         issueType === SUPPORT_ISSUE_TYPE
           ? category.trim() || undefined
           : undefined,
-      parent_issue_id: parentIssueId,
+      parent_issue_id:
+        parentIssueId ??
+        (selectedParentIssueId
+          ? parseInt(selectedParentIssueId, 10)
+          : undefined),
     });
   };
 
@@ -611,47 +682,204 @@ export function CreateIssueModal({
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
+              <span className="block text-sm font-medium text-slate-300 mb-1.5">
                 Entities
-              </label>
-              <div className="max-h-32 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
-                {entities?.items?.map((entity: Entity) => (
-                  <label
-                    key={entity.id}
-                    className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={entityIds.includes(entity.id)}
-                      onChange={() => toggleEntity(entity.id)}
-                      className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
-                    />
-                    {entity.name}
-                  </label>
-                ))}
+              </span>
+              <SearchableSelect
+                options={((entities?.items || []) as Entity[])
+                  .filter((e) => !entityIds.includes(e.id))
+                  .map((e) => ({
+                    value: String(e.id),
+                    label: e.type ? `${e.name} (${e.type})` : e.name,
+                  }))}
+                value=""
+                onChange={(val) => {
+                  const id = parseInt(String(val), 10);
+                  if (!Number.isNaN(id) && !entityIds.includes(id)) {
+                    setEntityIds((prev) => [...prev, id]);
+                  }
+                }}
+                placeholder="Search and link entities..."
+                ariaLabel="Entities"
+              />
+              {entityIds.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {entityIds.map((id) => {
+                    const ent = ((entities?.items || []) as Entity[]).find(
+                      (e) => e.id === id,
+                    );
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-800 px-2.5 py-0.5 text-xs text-slate-200"
+                      >
+                        {ent ? ent.name : `Entity #${id}`}
+                        <button
+                          type="button"
+                          onClick={() => toggleEntity(id)}
+                          aria-label={`Remove ${ent ? ent.name : id}`}
+                          className="text-slate-400 hover:text-white"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Project (Optional)
+                </span>
+                <SearchableSelect
+                  options={(projectsData?.items || []).map(
+                    (p: { id: number; name: string }) => ({
+                      value: String(p.id),
+                      label: p.name,
+                    }),
+                  )}
+                  value={projectId}
+                  onChange={(val) => setProjectId(String(val))}
+                  placeholder="Link to project..."
+                  allowClear
+                  ariaLabel="Project"
+                />
+              </div>
+              <div>
+                <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Milestone (Optional)
+                </span>
+                <SearchableSelect
+                  options={(milestonesData?.items || []).map(
+                    (m: { id: number; title: string }) => ({
+                      value: String(m.id),
+                      label: m.title,
+                    }),
+                  )}
+                  value={milestoneId}
+                  onChange={(val) => setMilestoneId(String(val))}
+                  placeholder="Link to milestone..."
+                  allowClear
+                  ariaLabel="Milestone"
+                />
               </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Labels
-              </label>
-              <div className="max-h-32 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
-                {labels?.items?.map((label: IssueLabel) => (
-                  <label
-                    key={label.id}
-                    className="flex items-center gap-2 text-sm cursor-pointer"
-                    style={{ color: label.color }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={labelIds.includes(label.id)}
-                      onChange={() => toggleLabel(label.id)}
-                      className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
-                    />
-                    {label.name}
-                  </label>
-                ))}
+
+            {!parentIssueId && (
+              <div>
+                <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Parent Issue (Optional)
+                </span>
+                <SearchableSelect
+                  options={((existingIssues?.items || []) as Issue[]).map(
+                    (iss) => ({
+                      value: String(iss.id),
+                      label: `#${iss.id} ${iss.title}`,
+                    }),
+                  )}
+                  value={selectedParentIssueId}
+                  onChange={(val) => setSelectedParentIssueId(String(val))}
+                  placeholder="Search parent issue..."
+                  allowClear
+                  ariaLabel="Parent Issue"
+                />
               </div>
+            )}
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="block text-sm font-medium text-slate-300">
+                  Labels
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateLabel((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary-400 hover:text-primary-300"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {showCreateLabel ? "Cancel" : "Create Label"}
+                </button>
+              </div>
+              {showCreateLabel && (
+                <div className="mb-2 space-y-2 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={newLabelName}
+                      onChange={(e) => setNewLabelName(e.target.value)}
+                      placeholder="Label name (e.g. bug, urgent)"
+                      aria-label="New label name"
+                    />
+                    <input
+                      type="color"
+                      value={newLabelColor}
+                      onChange={(e) => setNewLabelColor(e.target.value)}
+                      aria-label="New label color"
+                      className="h-9 w-12 cursor-pointer rounded border border-slate-600 bg-slate-800 p-0.5"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={newLabelDescription}
+                      onChange={(e) => setNewLabelDescription(e.target.value)}
+                      placeholder="Description (optional)"
+                      aria-label="New label description"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        !newLabelName.trim() || createLabelMutation.isPending
+                      }
+                      isLoading={createLabelMutation.isPending}
+                      onClick={() => {
+                        if (!newLabelName.trim()) return;
+                        createLabelMutation.mutate({
+                          name: newLabelName.trim(),
+                          color: newLabelColor,
+                          description: newLabelDescription.trim() || undefined,
+                        });
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {(labels?.items || []).length === 0 ? (
+                <div className="flex items-center justify-between rounded-lg border border-dashed border-slate-700 px-3 py-2 text-xs text-slate-400">
+                  <span>No labels available yet.</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateLabel(true)}
+                    className="font-medium text-primary-400 hover:text-primary-300"
+                  >
+                    Create Labels
+                  </button>
+                </div>
+              ) : (
+                <div className="max-h-32 overflow-y-auto space-y-1 border border-slate-700 rounded-lg p-2">
+                  {labels?.items?.map((label: IssueLabel) => (
+                    <label
+                      key={label.id}
+                      className="flex items-center gap-2 text-sm cursor-pointer"
+                      style={{ color: label.color }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={labelIds.includes(label.id)}
+                        onChange={() => toggleLabel(label.id)}
+                        className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
+                      />
+                      {label.name}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
