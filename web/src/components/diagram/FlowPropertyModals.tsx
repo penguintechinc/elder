@@ -6,7 +6,7 @@ import toast from "react-hot-toast";
 import api from "@/lib/api";
 import SearchableSelect from "@/components/SearchableSelect";
 
-export const PRIMARY_12_COLORS = [
+const PRIMARY_12_COLORS = [
   { hex: "#1f2937", name: "Slate" },
   { hex: "#3b82f6", name: "Blue" },
   { hex: "#6366f1", name: "Indigo" },
@@ -30,7 +30,7 @@ export type ResourceCategory =
   | "software"
   | "ai_resource";
 
-export const RESOURCE_CATEGORY_OPTIONS: {
+const RESOURCE_CATEGORY_OPTIONS: {
   value: ResourceCategory;
   label: string;
 }[] = [
@@ -43,7 +43,7 @@ export const RESOURCE_CATEGORY_OPTIONS: {
   { value: "ai_resource", label: "AI Resources" },
 ];
 
-export const LINE_TYPE_OPTIONS = [
+const LINE_TYPE_OPTIONS = [
   { value: "virtual", label: "Virtual" },
   { value: "ethernet", label: "Ethernet" },
   { value: "oc3", label: "OC-3" },
@@ -58,7 +58,7 @@ export const LINE_TYPE_OPTIONS = [
   { value: "wireless", label: "Wireless" },
 ];
 
-export const LINE_SPEED_OPTIONS = [
+const LINE_SPEED_OPTIONS = [
   { value: "10Mbps", label: "10 Mbps" },
   { value: "100Mbps", label: "100 Mbps" },
   { value: "155Mbps", label: "155 Mbps (OC-3)" },
@@ -72,7 +72,7 @@ export const LINE_SPEED_OPTIONS = [
   { value: "400Gbps", label: "400 Gbps" },
 ];
 
-export const LINE_PROVIDER_OPTIONS = [
+const LINE_PROVIDER_OPTIONS = [
   { value: "CenturyLink / Lumen", label: "CenturyLink / Lumen" },
   { value: "AT&T", label: "AT&T" },
   { value: "Verizon", label: "Verizon" },
@@ -86,10 +86,10 @@ export const LINE_PROVIDER_OPTIONS = [
   { value: "Internal", label: "Internal" },
 ];
 
-export type ArrowDirection = "right" | "left" | "both" | "none";
-export type LineStyle = "solid" | "dashed" | "dotted";
+type ArrowDirection = "right" | "left" | "both" | "none";
+type LineStyle = "solid" | "dashed" | "dotted";
 
-export function dashArrayForStyle(style: LineStyle): string | undefined {
+function dashArrayForStyle(style: LineStyle): string | undefined {
   if (style === "dashed") return "6 4";
   if (style === "dotted") return "2 4";
   return undefined;
