@@ -85,6 +85,7 @@ async def create_network():
             name=body.name,
             network_type=body.network_type,
             organization_id=body.organization_id,
+            parent_id=body.parent_id,
             description=body.description,
             gateway=body.gateway,
             vlan_id=body.vlan_id,
@@ -92,6 +93,10 @@ async def create_network():
             cidr=body.cidr,
             region=body.region,
             location=body.location,
+            poc=body.poc,
+            organizational_unit=body.organizational_unit,
+            attributes=body.attributes,
+            tags=body.tags,
         )
 
         return jsonify(network), 201

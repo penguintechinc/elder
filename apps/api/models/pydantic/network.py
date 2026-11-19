@@ -11,7 +11,7 @@ Provides validated Pydantic 2 equivalents of Network and IPAM dataclasses:
 # flake8: noqa: E501
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
 from pydantic import Field
@@ -134,9 +134,14 @@ class CreateNetworkRequest(RequestModel):
         ...,
         description="Type classification (vlan, subnet, physical)",
     )
-    cidr: str = Field(
-        ...,
-        description="CIDR notation (e.g., 192.168.1.0/24)",
+    cidr: str | None = Field(
+        default=None,
+        description="Optional CIDR notation (e.g., 192.168.1.0/24)",
+    )
+    parent_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Optional parent networking resource ID",
     )
     description: str | None = Field(
         default=None,
@@ -161,6 +166,22 @@ class CreateNetworkRequest(RequestModel):
     location: str | None = Field(
         default=None,
         description="Optional physical location (e.g., AWS Virginia, Data Center 1)",
+    )
+    poc: str | None = Field(
+        default=None,
+        description="Optional point of contact",
+    )
+    organizational_unit: str | None = Field(
+        default=None,
+        description="Optional organizational unit",
+    )
+    attributes: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional custom attributes",
+    )
+    tags: list[str] | None = Field(
+        default=None,
+        description="Optional tags",
     )
     is_active: bool = Field(
         default=True,

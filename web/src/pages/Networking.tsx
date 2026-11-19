@@ -120,6 +120,7 @@ export default function Networking() {
   const [showTopologyModal, setShowTopologyModal] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<number | null>(null);
   const [createOrgId, setCreateOrgId] = useState<string>("");
+  const [createParentId, setCreateParentId] = useState<string>("");
   const [createName, setCreateName] = useState("");
   const [createNetworkType, setCreateNetworkType] = useState("vpc");
   const [createCidr, setCreateCidr] = useState("");
@@ -131,6 +132,7 @@ export default function Networking() {
 
   const resetCreateForm = () => {
     setCreateOrgId(selectedOrg ? String(selectedOrg) : "");
+    setCreateParentId("");
     setCreateName("");
     setCreateNetworkType("vpc");
     setCreateCidr("");
@@ -166,7 +168,7 @@ export default function Networking() {
   const { data: allNetworks } = useQuery({
     queryKey: ["allNetworks"],
     queryFn: () => api.listNetworks({}),
-    enabled: showCreateConnectionModal,
+    enabled: showCreateConnectionModal || showCreateModal,
   });
 
   const { data: ipamPrefixesData, isLoading: ipamPrefixesLoading } = useQuery({
@@ -189,14 +191,62 @@ export default function Networking() {
     [ipamPrefixesData],
   );
 
-  const ipamPrefixOptions = useMemo(
-    () =>
-      ipamPrefixList.map((p) => ({
+  const ipamPrefixOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    for (const p of ipamPrefixList) {
+      if (!p.prefix || seen.has(p.prefix)) continue;
+      seen.add(p.prefix);
+      opts.push({
         value: p.prefix,
-        label: p.description ? `${p.prefix} — ${p.description}` : p.prefix,
-      })),
-    [ipamPrefixList],
-  );
+        label: p.description
+          ? `${p.prefix} — ${p.description} [IPAM]`
+          : `${p.prefix} [IPAM]`,
+      });
+    }
+    for (const net of (allNetworks?.networks || []) as NetworkResource[]) {
+      const netCidr = typeof net.cidr === "string" ? net.cidr : "";
+      if (!netCidr || seen.has(netCidr)) continue;
+      seen.add(netCidr);
+      opts.push({
+        value: netCidr,
+        label: `${netCidr} — ${net.name} [Network]`,
+      });
+    }
+    return opts;
+  }, [ipamPrefixList, allNetworks?.networks]);
+
+  const parentNetworkOptions = useMemo(() => {
+    const orgNum = createOrgId ? parseInt(createOrgId, 10) : null;
+    return ((allNetworks?.networks || []) as NetworkResource[])
+      .filter((n) => !orgNum || n.organization_id === orgNum)
+      .map((n) => ({
+        value: String(n.id),
+        label: `${n.name} (${n.network_type}${
+          typeof n.cidr === "string" && n.cidr ? ` · ${n.cidr}` : ""
+        })`,
+      }));
+  }, [allNetworks?.networks, createOrgId]);
+
+  const regionOptions = useMemo(() => {
+    const regions = new Set<string>();
+    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
+      if (n.region) regions.add(n.region);
+    }
+    return Array.from(regions)
+      .sort()
+      .map((r) => ({ value: r, label: r }));
+  }, [allNetworks?.networks]);
+
+  const locationOptions = useMemo(() => {
+    const locations = new Set<string>();
+    for (const n of (allNetworks?.networks || []) as NetworkResource[]) {
+      if (n.location) locations.add(n.location);
+    }
+    return Array.from(locations)
+      .sort()
+      .map((loc) => ({ value: loc, label: loc }));
+  }, [allNetworks?.networks]);
 
   const cidrExistsInIpam = useMemo(() => {
     const normalized = createCidr.trim();
@@ -279,6 +329,7 @@ export default function Networking() {
         name: "source_network_id",
         label: "Source Network",
         type: "select",
+        searchable: true,
         required: true,
         options: (allNetworks?.networks || []).map((n: NetworkResource) => ({
           value: n.id,
@@ -289,6 +340,7 @@ export default function Networking() {
         name: "target_network_id",
         label: "Target Network",
         type: "select",
+        searchable: true,
         required: true,
         options: (allNetworks?.networks || []).map((n: NetworkResource) => ({
           value: n.id,
@@ -350,6 +402,7 @@ export default function Networking() {
       name: createName.trim(),
       network_type: createNetworkType,
       organization_id: parseInt(createOrgId, 10),
+      parent_id: createParentId ? parseInt(createParentId, 10) : undefined,
       cidr: trimmedCidr || undefined,
       description: createDescription.trim() || undefined,
       region: createRegion.trim() || undefined,
@@ -672,23 +725,35 @@ export default function Networking() {
             </div>
             <form onSubmit={handleCreateNetwork} className="space-y-4 p-6">
               <div>
-                <label
-                  htmlFor="create-net-org"
-                  className="mb-1.5 block text-sm font-medium text-slate-300"
-                >
+                <span className="mb-1.5 block text-sm font-medium text-slate-300">
                   Organization Unit <span className="text-red-400">*</span>
-                </label>
-                <Select
-                  id="create-net-org"
+                </span>
+                <SearchableSelect
+                  options={(orgs?.items || []).map((org: Organization) => ({
+                    value: String(org.id),
+                    label: org.name,
+                  }))}
                   value={createOrgId}
-                  onChange={(e) => setCreateOrgId(e.target.value)}
-                  options={[
-                    { value: "", label: "Select organization unit..." },
-                    ...(orgs?.items || []).map((org: Organization) => ({
-                      value: String(org.id),
-                      label: org.name,
-                    })),
-                  ]}
+                  onChange={(val) => {
+                    setCreateOrgId(String(val));
+                    setCreateParentId("");
+                  }}
+                  placeholder="Search organization units..."
+                  ariaLabel="Organization Unit"
+                />
+              </div>
+
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-slate-300">
+                  Parent Network (Optional)
+                </span>
+                <SearchableSelect
+                  options={parentNetworkOptions}
+                  value={createParentId}
+                  onChange={(val) => setCreateParentId(String(val))}
+                  placeholder="Search parent network..."
+                  allowClear
+                  ariaLabel="Parent Network"
                 />
               </div>
 
@@ -728,14 +793,16 @@ export default function Networking() {
                 <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
                   <div>
                     <span className="mb-1.5 block text-sm font-medium text-slate-300">
-                      Select CIDR from IPAM (Optional)
+                      Select CIDR from IPAM / Networks (Optional)
                     </span>
                     <SearchableSelect
                       options={ipamPrefixOptions}
-                      value={cidrExistsInIpam ? createCidr.trim() : ""}
+                      value={createCidr.trim()}
                       onChange={(val) => setCreateCidr(String(val))}
-                      placeholder="Search existing IPAM prefixes..."
+                      placeholder="Search existing IPAM prefixes or network CIDRs..."
                       isLoading={ipamPrefixesLoading}
+                      allowCustom
+                      allowClear
                       ariaLabel="Select CIDR from IPAM"
                     />
                   </div>
@@ -793,33 +860,31 @@ export default function Networking() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label
-                    htmlFor="create-net-region"
-                    className="mb-1.5 block text-sm font-medium text-slate-300"
-                  >
+                  <span className="mb-1.5 block text-sm font-medium text-slate-300">
                     Region
-                  </label>
-                  <Input
-                    id="create-net-region"
-                    type="text"
+                  </span>
+                  <SearchableSelect
+                    options={regionOptions}
                     value={createRegion}
-                    onChange={(e) => setCreateRegion(e.target.value)}
-                    placeholder="us-east-1"
+                    onChange={(val) => setCreateRegion(String(val))}
+                    placeholder="Search or enter region (e.g. us-east-1)..."
+                    allowCustom
+                    allowClear
+                    ariaLabel="Region"
                   />
                 </div>
                 <div>
-                  <label
-                    htmlFor="create-net-location"
-                    className="mb-1.5 block text-sm font-medium text-slate-300"
-                  >
+                  <span className="mb-1.5 block text-sm font-medium text-slate-300">
                     Location
-                  </label>
-                  <Input
-                    id="create-net-location"
-                    type="text"
+                  </span>
+                  <SearchableSelect
+                    options={locationOptions}
                     value={createLocation}
-                    onChange={(e) => setCreateLocation(e.target.value)}
-                    placeholder="AWS Virginia"
+                    onChange={(val) => setCreateLocation(String(val))}
+                    placeholder="Search or enter location (e.g. AWS Virginia)..."
+                    allowCustom
+                    allowClear
+                    ariaLabel="Location"
                   />
                 </div>
               </div>
