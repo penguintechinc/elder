@@ -268,4 +268,5 @@ class TestPhaseZeroModules:
         # Phase 4 (+1): diagrams
         # Phase 4a (+1): flows (CI/CD)
         # Phase 4b (+1): streams
-        assert len(MODULES) == 15
+        # Phase 4c (+1): ai
+        assert len(MODULES) == 16

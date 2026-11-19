@@ -295,6 +295,14 @@ def _helpdesk_blueprints() -> list[tuple[Blueprint, str]]:
     ]
 
 
+def _ai_blueprints() -> list[tuple[Blueprint, str]]:
+    """Load AI Resources module blueprints."""
+    from apps.api.modules.ai import routes as ai_routes
+
+    api_prefix = "/api/v1"
+    return [(ai_routes.bp, f"{api_prefix}/ai/resources")]
+
+
 # Explicit module registry — Phase 0 modules
 MODULES = (
     ModuleManifest(
@@ -561,6 +569,21 @@ MODULES = (
         worker_task_groups=("helpdesk_sla_breach",),
         optional_services=(),
         group="issues",
+        default_enabled=True,
+    ),
+    ModuleManifest(
+        name="ai",
+        title="AI Resources",
+        license_feature=None,
+        depends_on=(),
+        blueprints=_ai_blueprints,
+        models_import=("apps.api.modules.ai.models",),
+        table_prefix="ai_",
+        nav_id="nav_ai",
+        scopes=("ai:read", "ai:write", "ai:admin"),
+        worker_task_groups=(),
+        optional_services=(),
+        group="entities",
         default_enabled=True,
     ),
 )

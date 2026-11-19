@@ -396,6 +396,49 @@ export interface ComplianceReport {
   generated_at: string;
 }
 
+export type AIResourceType = "llm" | "ai_gateway" | "mcp_server";
+export type AIResourceStatus =
+  | "pending_review"
+  | "allowed"
+  | "restricted"
+  | "not_allowed";
+export type AIAgreementLevel = "user" | "team" | "enterprise";
+
+export interface AIResource {
+  id: number;
+  tenant_id: number;
+  name: string;
+  description?: string | null;
+  organization_id: number;
+  resource_type: AIResourceType;
+  provider?: string | null;
+  model_name?: string | null;
+  endpoint_url?: string | null;
+  status: AIResourceStatus;
+  agreement_level?: AIAgreementLevel | null;
+  plan_info?: string | null;
+  budget_monthly?: number | null;
+  cost_per_10m_tokens?: number | null;
+  seats?: number | null;
+  parent_system_id?: number | null;
+  owner_id?: number | null;
+  notes?: string | null;
+  tags?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  village_id?: string | null;
+}
+
+export interface AIResourceListResponse {
+  items: AIResource[];
+  total: number;
+  page: number;
+  per_page: number;
+  pages: number;
+}
+
 export interface Software {
   id: number;
   name: string;
