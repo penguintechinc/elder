@@ -7,6 +7,7 @@ from penguin_aaa.authz.rbac import RBACEnforcer, Role
 # ---------------------------------------------------------------------------
 
 _OBSERVER_SCOPES = [
+    "ai:read",
     "audit:read",
     "certificates:read",
     "data-stores:read",
@@ -27,6 +28,7 @@ _OBSERVER_SCOPES = [
 ]
 
 _EDITOR_SCOPES = _OBSERVER_SCOPES + [
+    "ai:write",
     "certificates:write",
     "data-stores:write",
     "dependencies:write",
@@ -47,6 +49,7 @@ _EDITOR_SCOPES = _OBSERVER_SCOPES + [
 ]
 
 _ADMIN_SCOPES = _EDITOR_SCOPES + [
+    "ai:admin",
     "audit:write",
     "config:write",
     "entities:delete",

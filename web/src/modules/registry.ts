@@ -1,21 +1,25 @@
-import type { RouteObject } from 'react-router-dom'
-import type { MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
-import type { FrontendModule, ModuleCapabilities } from './types'
+import type { RouteObject } from "react-router-dom";
+import type {
+  MenuCategory,
+  MenuItem,
+} from "@penguintechinc/react-libs/components";
+import type { FrontendModule, ModuleCapabilities } from "./types";
 
 // Import module manifests
-import infrastructureModule from './infrastructure'
-import ipamModule from './ipam'
-import sbomModule from './sbom'
-import servicesOncallModule from './services_oncall'
-import issuesModule from './issues'
-import discoveryModule from './discovery'
-import secretsModule from './secrets'
-import webhooksAlertingModule from './webhooks_alerting'
-import accessReviewsModule from './access_reviews'
-import diagramsModule from './diagrams'
-import documentsModule from './documents'
-import pagesModule from './pages'
-import streamsModule from './streams'
+import infrastructureModule from "./infrastructure";
+import ipamModule from "./ipam";
+import sbomModule from "./sbom";
+import servicesOncallModule from "./services_oncall";
+import issuesModule from "./issues";
+import discoveryModule from "./discovery";
+import secretsModule from "./secrets";
+import webhooksAlertingModule from "./webhooks_alerting";
+import accessReviewsModule from "./access_reviews";
+import diagramsModule from "./diagrams";
+import documentsModule from "./documents";
+import pagesModule from "./pages";
+import streamsModule from "./streams";
+import aiModule from "./ai";
 
 /**
  * Module registry: all available feature modules.
@@ -35,7 +39,8 @@ export const MODULES: FrontendModule[] = [
   documentsModule,
   pagesModule,
   streamsModule,
-]
+  aiModule,
+];
 
 /**
  * Get routes for enabled modules.
@@ -43,25 +48,25 @@ export const MODULES: FrontendModule[] = [
  * @returns RouteObject[] ready to pass to <Routes>
  */
 export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
-  const routes: RouteObject[] = []
+  const routes: RouteObject[] = [];
 
   for (const module of MODULES) {
     if (enabledModuleIds.has(module.id)) {
-      routes.push(...module.routes)
+      routes.push(...module.routes);
     }
   }
 
-  return routes
+  return routes;
 }
 
 /** The five WIRED pillars, in acronym order — this is the sidebar's top level. */
 const GROUP_ORDER: [string, string][] = [
-  ['workstreams', 'Workstreams'],
-  ['issues', 'Issues'],
-  ['relationships', 'Relationships'],
-  ['entities', 'Entities'],
-  ['documents', 'Documents'],
-]
+  ["workstreams", "Workstreams"],
+  ["issues", "Issues"],
+  ["relationships", "Relationships"],
+  ["entities", "Entities"],
+  ["documents", "Documents"],
+];
 
 /**
  * Get navigation categories for enabled modules: exactly one collapsible section
@@ -81,30 +86,35 @@ const GROUP_ORDER: [string, string][] = [
  * @returns One MenuCategory per populated pillar; empty pillars are omitted
  */
 export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
-  const out: MenuCategory[] = []
+  const out: MenuCategory[] = [];
 
   for (const [key, label] of GROUP_ORDER) {
-    const items: MenuItem[] = []
-    const seenHrefs = new Set<string>()
+    const items: MenuItem[] = [];
+    const seenHrefs = new Set<string>();
 
     for (const module of MODULES) {
-      if (module.group !== key || !enabledModuleIds.has(module.id)) continue
+      if (module.group !== key || !enabledModuleIds.has(module.id)) continue;
       for (const category of module.nav) {
         for (const item of category.items) {
           // Two modules can surface the same route; keep the first registration.
-          if (seenHrefs.has(item.href)) continue
-          seenHrefs.add(item.href)
-          items.push(item)
+          if (seenHrefs.has(item.href)) continue;
+          seenHrefs.add(item.href);
+          items.push(item);
         }
       }
     }
 
     if (items.length) {
-      out.push({ header: label, key: `group-${key}`, collapsible: true, items })
+      out.push({
+        header: label,
+        key: `group-${key}`,
+        collapsible: true,
+        items,
+      });
     }
   }
 
-  return out
+  return out;
 }
 
 /**
@@ -113,15 +123,15 @@ export function navFor(enabledModuleIds: Set<string>): MenuCategory[] {
  * @returns MenuItem[] with only admin nav from enabled modules
  */
 export function adminNavFor(enabledModuleIds: Set<string>): MenuItem[] {
-  const adminNavItems: MenuItem[] = []
+  const adminNavItems: MenuItem[] = [];
 
   for (const module of MODULES) {
     if (enabledModuleIds.has(module.id) && module.adminNav) {
-      adminNavItems.push(...module.adminNav)
+      adminNavItems.push(...module.adminNav);
     }
   }
 
-  return adminNavItems
+  return adminNavItems;
 }
 
 /**
@@ -132,23 +142,23 @@ export function adminNavFor(enabledModuleIds: Set<string>): MenuItem[] {
  */
 export function capabilitiesFor(
   enabledModuleIds: Set<string>,
-  capabilitiesMap: Map<string, ModuleCapabilities>
+  capabilitiesMap: Map<string, ModuleCapabilities>,
 ): ModuleCapabilities {
-  const merged: ModuleCapabilities = {}
+  const merged: ModuleCapabilities = {};
 
   for (const moduleId of enabledModuleIds) {
-    const caps = capabilitiesMap.get(moduleId)
+    const caps = capabilitiesMap.get(moduleId);
     if (caps) {
-      Object.assign(merged, caps)
+      Object.assign(merged, caps);
     }
   }
 
-  return merged
+  return merged;
 }
 
 /**
  * Find a module by ID.
  */
 export function findModule(id: string): FrontendModule | undefined {
-  return MODULES.find(m => m.id === id)
+  return MODULES.find((m) => m.id === id);
 }

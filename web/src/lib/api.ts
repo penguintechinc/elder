@@ -1114,6 +1114,83 @@ class ApiClient {
     return response.data;
   }
 
+  // AI Resources
+  async getAIResources(params?: {
+    page?: number;
+    per_page?: number;
+    organization_id?: number;
+    resource_type?: string;
+    status?: string;
+    agreement_level?: string;
+    search?: string;
+  }) {
+    const response = await this.client.get("/ai/resources", { params });
+    return response.data;
+  }
+
+  async getAIResourceById(id: number) {
+    const response = await this.client.get(`/ai/resources/${id}`);
+    return response.data;
+  }
+
+  async createAIResource(data: {
+    name: string;
+    description?: string | null;
+    organization_id: number;
+    resource_type: string;
+    provider?: string | null;
+    model_name?: string | null;
+    endpoint_url?: string | null;
+    status?: string;
+    agreement_level?: string | null;
+    plan_info?: string | null;
+    budget_monthly?: number | null;
+    cost_per_10m_tokens?: number | null;
+    seats?: number | null;
+    parent_system_id?: number | null;
+    owner_id?: number | null;
+    notes?: string | null;
+    tags?: string[] | null;
+    metadata?: Record<string, unknown> | null;
+    is_active?: boolean;
+  }) {
+    const response = await this.client.post("/ai/resources", data);
+    return response.data;
+  }
+
+  async updateAIResource(
+    id: number,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      organization_id: number;
+      resource_type: string;
+      provider: string | null;
+      model_name: string | null;
+      endpoint_url: string | null;
+      status: string;
+      agreement_level: string | null;
+      plan_info: string | null;
+      budget_monthly: number | null;
+      cost_per_10m_tokens: number | null;
+      seats: number | null;
+      parent_system_id: number | null;
+      owner_id: number | null;
+      notes: string | null;
+      tags: string[] | null;
+      metadata: Record<string, unknown> | null;
+      is_active: boolean;
+    }>,
+  ) {
+    const response = await this.client.put(`/ai/resources/${id}`, data);
+    return response.data;
+  }
+
+  async deleteAIResource(id: number) {
+    const response = await this.client.delete(`/ai/resources/${id}`);
+    return response.data;
+  }
+
   // Issue-Project Linking
   async linkIssueToProject(issueId: number, projectId: number) {
     const response = await this.client.post(`/issues/${issueId}/projects`, {
