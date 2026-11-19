@@ -19,6 +19,8 @@ class TestSoftwareDTOFieldSet:
             "organization_id",
             "purchasing_poc_id",
             "license_url",
+            "access_url",
+            "parent_system_id",
             "version",
             "business_purpose",
             "software_type",
