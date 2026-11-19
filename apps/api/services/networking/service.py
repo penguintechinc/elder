@@ -41,6 +41,16 @@ class NetworkingService:
     ) -> dict[str, Any]:
         """Create a new networking resource."""
         try:
+            merged_attributes = dict(attributes or {})
+            if cidr is not None:
+                merged_attributes["cidr"] = cidr
+            if gateway is not None:
+                merged_attributes["gateway"] = gateway
+            if vlan_id is not None:
+                merged_attributes["vlan_id"] = vlan_id
+            if mtu is not None:
+                merged_attributes["mtu"] = mtu
+
             network_id = self.db.networking_resources.insert(
                 name=name,
                 description=description,
@@ -49,13 +59,9 @@ class NetworkingService:
                 parent_id=parent_id,
                 region=region,
                 location=location,
-                cidr=cidr,
-                gateway=gateway,
-                vlan_id=vlan_id,
-                mtu=mtu,
                 poc=poc,
                 organizational_unit=organizational_unit,
-                attributes=attributes or {},
+                attributes=merged_attributes,
                 status_metadata=status_metadata or {},
                 tags=tags or [],
             )
@@ -535,6 +541,7 @@ class NetworkingService:
 
     def _serialize_network(self, network: Any) -> dict[str, Any]:
         """Serialize networking resource to dict."""
+        attrs = network.attributes or {}
         return {
             "id": network.id,
             "name": network.name,
@@ -544,6 +551,7 @@ class NetworkingService:
             "parent_id": network.parent_id,
             "region": network.region,
             "location": network.location,
+            "cidr": attrs.get("cidr"),
             "poc": network.poc,
             "organizational_unit": network.organizational_unit,
             "attributes": network.attributes,
