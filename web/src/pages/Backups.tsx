@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Play, Trash2, RotateCcw, Calendar, Cloud } from "lucide-react";
 import toast from "react-hot-toast";
@@ -265,6 +265,27 @@ function CreateJobModal({ onClose, onSuccess }: CreateJobModalProps) {
     queryFn: () => api.getOrganizations(),
   });
 
+  const { data: geoRegionsData } = useQuery({
+    queryKey: ["geo-regions"],
+    queryFn: () => api.getGeoRegions(),
+  });
+
+  const s3RegionOptions = useMemo(() => {
+    const seen = new Set(COMMON_S3_REGIONS);
+    const opts = COMMON_S3_REGIONS.map((r) => ({ value: r, label: r }));
+    for (const r of geoRegionsData?.regions || []) {
+      if (!r.code || seen.has(r.code)) continue;
+      seen.add(r.code);
+      opts.push({
+        value: r.code,
+        label: r.name
+          ? `${r.code} — ${r.name} [Defined]`
+          : `${r.code} [Defined]`,
+      });
+    }
+    return opts;
+  }, [geoRegionsData?.regions]);
+
   const createMutation = useMutation({
     mutationFn: (data: unknown) =>
       api.createBackupJob(data as Parameters<typeof api.createBackupJob>[0]),
@@ -380,10 +401,7 @@ function CreateJobModal({ onClose, onSuccess }: CreateJobModalProps) {
                       Region
                     </span>
                     <SearchableSelect
-                      options={COMMON_S3_REGIONS.map((r) => ({
-                        value: r,
-                        label: r,
-                      }))}
+                      options={s3RegionOptions}
                       value={s3Region}
                       onChange={(val) => setS3Region(String(val))}
                       placeholder="us-east-1"

@@ -35,6 +35,7 @@ def _infrastructure_blueprints() -> list[tuple[Blueprint, str]]:
         dependencies,
         entities,
         entity_types,
+        geo,
         graph,
         networking,
         organization_tree,
@@ -49,6 +50,7 @@ def _infrastructure_blueprints() -> list[tuple[Blueprint, str]]:
         (dependencies.bp, f"{api_prefix}/dependencies"),
         (graph.bp, f"{api_prefix}/graph"),
         (networking.bp, None),  # Already has /api/v1/networking prefix
+        (geo.bp, None),  # Already has /api/v1/geo prefix
         (data_stores.bp, f"{api_prefix}/data-stores"),
         (organization_tree.bp, api_prefix),
     ]

@@ -124,6 +124,11 @@ export default function DataStores() {
     queryFn: () => api.getIdentities({ per_page: 1000 }),
   });
 
+  const { data: geoRegionsData } = useQuery({
+    queryKey: ["geo-regions"],
+    queryFn: () => api.getGeoRegions(),
+  });
+
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.dataStores.list({
       search,
@@ -218,6 +223,17 @@ export default function DataStores() {
   const regionOptions = useMemo(() => {
     const preset = REGIONS.filter((r) => r.value !== "other");
     const seen = new Set(preset.map((r) => r.value));
+    const defined = (geoRegionsData?.regions || [])
+      .filter((r) => r.code && !seen.has(r.code))
+      .map((r) => {
+        seen.add(r.code);
+        return {
+          value: r.code,
+          label: r.name
+            ? `${r.code} — ${r.name} [Defined]`
+            : `${r.code} [Defined]`,
+        };
+      });
     const existing = ((data?.items || []) as DataStore[])
       .map((ds) => ds.location_region)
       .filter((r): r is string => Boolean(r) && !seen.has(r));
@@ -225,8 +241,8 @@ export default function DataStores() {
       value: r,
       label: r,
     }));
-    return [...preset, ...uniqueExisting];
-  }, [data?.items]);
+    return [...preset, ...defined, ...uniqueExisting];
+  }, [geoRegionsData?.regions, data?.items]);
 
   const dataStoreFields: FormField[] = useMemo(
     () => [
