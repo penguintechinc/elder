@@ -896,6 +896,31 @@ class ApiClient {
     return response.data;
   }
 
+  // Issue Resource Links
+  async listIssueResources(issueId: number) {
+    const response = await this.client.get(`/issues/${issueId}/resources`);
+    return response.data;
+  }
+
+  async linkIssueResource(
+    issueId: number,
+    resourceType: string,
+    resourceId: number,
+  ) {
+    const response = await this.client.post(`/issues/${issueId}/resources`, {
+      resource_type: resourceType,
+      resource_id: resourceId,
+    });
+    return response.data;
+  }
+
+  async unlinkIssueResource(issueId: number, linkId: number) {
+    const response = await this.client.delete(
+      `/issues/${issueId}/resources/${linkId}`,
+    );
+    return response.data;
+  }
+
   // Labels
   async getLabels(params?: {
     page?: number;

@@ -377,6 +377,12 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         cascade="all, delete-orphan",
     )
 
+    resource_links: Mapped[list["IssueResourceLink"]] = relationship(
+        "IssueResourceLink",
+        back_populates="issue",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         """String representation of issue."""
         return f"<Issue(id={self.id}, title='{self.title}', type={self.issue_type.value}, status={self.status.value}, priority={self.priority.value})>"
@@ -563,6 +569,52 @@ class IssueEntityLink(Base, IDMixin, TimestampMixin):
     def __repr__(self) -> str:
         """String representation of link."""
         return f"<IssueEntityLink(id={self.id}, issue_id={self.issue_id}, entity_id={self.entity_id}, type={self.link_type.value})>"
+
+
+class IssueResourceLink(Base, IDMixin, TimestampMixin):
+    """
+    Link between an issue and a generic resource.
+
+    Allows tracking which resources are associated with issues without a fixed
+    foreign key to a single table.
+    """
+
+    __tablename__ = "issue_resource_links"
+
+    issue_id = Column(
+        Integer,
+        ForeignKey("issues.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Issue",
+    )
+
+    resource_type = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        comment="Type of linked resource",
+    )
+
+    resource_id = Column(
+        Integer,
+        nullable=False,
+        index=True,
+        comment="ID of linked resource",
+    )
+
+    # Relationships
+    issue: Mapped["Issue"] = relationship(
+        "Issue",
+        back_populates="resource_links",
+    )
+
+    def __repr__(self) -> str:
+        """String representation of resource link."""
+        return (
+            f"<IssueResourceLink(id={self.id}, issue_id={self.issue_id}, "
+            f"resource_type='{self.resource_type}', resource_id={self.resource_id})>"
+        )
 
 
 # Helper functions for recursive issue queries
