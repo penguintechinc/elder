@@ -25,6 +25,7 @@ EXPECTED = {
     "sbom": "entities",
     "services_oncall": "entities",
     "secrets": "entities",
+    "ai": "entities",
     # D — Documents: things you write down
     "documents": "documents",
     "pages": "documents",

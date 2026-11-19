@@ -760,10 +760,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-name"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Name *
                   </label>
                   <Input
+                    id="ai-resource-name"
                     required
                     value={formState.name}
                     onChange={(e) =>
@@ -774,10 +778,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-org"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Organization *
                   </label>
                   <Select
+                    id="ai-resource-org"
                     required
                     value={formState.organization_id}
                     onChange={(e) =>
@@ -797,10 +805,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-type"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Resource Type *
                   </label>
                   <Select
+                    id="ai-resource-type"
                     value={formState.resource_type}
                     onChange={(e) =>
                       setFormState({
@@ -818,10 +830,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-status"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Status *
                   </label>
                   <Select
+                    id="ai-resource-status"
                     value={formState.status}
                     onChange={(e) =>
                       setFormState({
@@ -839,10 +855,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-provider"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Provider
                   </label>
                   <Input
+                    id="ai-resource-provider"
                     value={formState.provider}
                     onChange={(e) =>
                       setFormState({ ...formState, provider: e.target.value })
@@ -852,10 +872,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-model"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Model Name
                   </label>
                   <Input
+                    id="ai-resource-model"
                     value={formState.model_name}
                     onChange={(e) =>
                       setFormState({ ...formState, model_name: e.target.value })
@@ -865,10 +889,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-endpoint"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Endpoint URL
                   </label>
                   <Input
+                    id="ai-resource-endpoint"
                     value={formState.endpoint_url}
                     onChange={(e) =>
                       setFormState({
@@ -881,10 +909,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-agreement"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Agreement Level
                   </label>
                   <Select
+                    id="ai-resource-agreement"
                     value={formState.agreement_level}
                     onChange={(e) =>
                       setFormState({
@@ -905,10 +937,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-plan"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Plan Info
                   </label>
                   <Input
+                    id="ai-resource-plan"
                     value={formState.plan_info}
                     onChange={(e) =>
                       setFormState({ ...formState, plan_info: e.target.value })
@@ -918,10 +954,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-budget"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Monthly Budget (USD)
                   </label>
                   <Input
+                    id="ai-resource-budget"
                     type="number"
                     step="0.01"
                     min="0"
@@ -936,10 +976,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-cost-10m"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Cost / 10M Tokens (USD)
                   </label>
                   <Input
+                    id="ai-resource-cost-10m"
                     type="number"
                     step="0.0001"
                     min="0"
@@ -954,10 +998,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-seats"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Seats
                   </label>
                   <Input
+                    id="ai-resource-seats"
                     type="number"
                     min="0"
                     value={formState.seats}
@@ -968,10 +1016,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label
+                    htmlFor="ai-resource-tags"
+                    className="block text-sm font-medium mb-1"
+                  >
                     Tags (comma-separated)
                   </label>
                   <Input
+                    id="ai-resource-tags"
                     value={formState.tags}
                     onChange={(e) =>
                       setFormState({ ...formState, tags: e.target.value })
@@ -982,10 +1034,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label
+                  htmlFor="ai-resource-description"
+                  className="block text-sm font-medium mb-1"
+                >
                   Description
                 </label>
                 <textarea
+                  id="ai-resource-description"
                   rows={2}
                   value={formState.description}
                   onChange={(e) =>
@@ -996,8 +1052,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Notes</label>
+                <label
+                  htmlFor="ai-resource-notes"
+                  className="block text-sm font-medium mb-1"
+                >
+                  Notes
+                </label>
                 <textarea
+                  id="ai-resource-notes"
                   rows={2}
                   value={formState.notes}
                   onChange={(e) =>
@@ -1008,10 +1070,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">
+                <label
+                  htmlFor="ai-resource-metadata"
+                  className="block text-sm font-medium mb-1"
+                >
                   Metadata (JSON)
                 </label>
                 <textarea
+                  id="ai-resource-metadata"
                   rows={3}
                   value={formState.metadataText}
                   onChange={(e) => {
