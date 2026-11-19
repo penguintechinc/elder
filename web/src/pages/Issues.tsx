@@ -805,6 +805,35 @@ export function CreateIssueModal({
               </div>
               {showCreateLabel && (
                 <div className="mb-2 space-y-2 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      "#3b82f6",
+                      "#ef4444",
+                      "#f97316",
+                      "#f59e0b",
+                      "#10b981",
+                      "#14b8a6",
+                      "#06b6d4",
+                      "#6366f1",
+                      "#a855f7",
+                      "#ec4899",
+                      "#64748b",
+                      "#84cc16",
+                    ].map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        aria-label={`Select label color ${hex}`}
+                        onClick={() => setNewLabelColor(hex)}
+                        className={`h-5 w-5 rounded-full border transition-transform ${
+                          newLabelColor.toLowerCase() === hex.toLowerCase()
+                            ? "scale-110 border-white ring-2 ring-primary-400"
+                            : "border-slate-600 hover:scale-105"
+                        }`}
+                        style={{ backgroundColor: hex }}
+                      />
+                    ))}
+                  </div>
                   <div className="flex gap-2">
                     <Input
                       type="text"
