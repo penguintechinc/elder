@@ -85,9 +85,13 @@ async def get_current_oncall_for_org(org_id: int):
         return error
 
     def get_oncalls():
+        if not tenant_id:
+            return []
+
         rotations = db(
             (db.on_call_rotations.organization_id == org_id)
-            & (db.on_call_rotations.is_active is True)
+            & (db.on_call_rotations.tenant_id == tenant_id)
+            & (db.on_call_rotations.is_active == True)  # noqa: E712
         ).select()
 
         result = []
@@ -131,9 +135,13 @@ async def get_current_oncall_for_service(service_id: int):
         return error
 
     def get_oncalls():
+        if not tenant_id:
+            return []
+
         rotations = db(
             (db.on_call_rotations.service_id == service_id)
-            & (db.on_call_rotations.is_active is True)
+            & (db.on_call_rotations.tenant_id == tenant_id)
+            & (db.on_call_rotations.is_active == True)  # noqa: E712
         ).select()
 
         result = []

@@ -23,6 +23,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import SearchableSelect from "@/components/SearchableSelect";
 import { FormField } from "@/types/form";
 import OnCallBadge from "@/components/OnCallBadge";
 
@@ -90,6 +91,69 @@ const DEPLOYMENT_METHODS = [
   { value: "paas", label: "PaaS" },
   { value: "other", label: "Other" },
 ];
+
+const ENDPOINT_METHODS = [
+  "ALL",
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "PATCH",
+  "OPTIONS",
+  "HEAD",
+] as const;
+
+type EndpointMethod = (typeof ENDPOINT_METHODS)[number];
+
+interface EndpointRow {
+  id: string;
+  method: EndpointMethod;
+  path: string;
+}
+
+function createEmptyEndpointRow(index: number): EndpointRow {
+  return {
+    id: `endpoint-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`,
+    method: "ALL",
+    path: "",
+  };
+}
+
+function parsePathToEndpointRow(rawPath: string, index: number): EndpointRow {
+  const trimmed = rawPath.trim();
+  const parts = trimmed.split(/\s+/);
+  if (
+    parts.length >= 2 &&
+    ENDPOINT_METHODS.includes(parts[0].toUpperCase() as EndpointMethod)
+  ) {
+    return {
+      id: `endpoint-init-${index}`,
+      method: parts[0].toUpperCase() as EndpointMethod,
+      path: parts.slice(1).join(" "),
+    };
+  }
+  return {
+    id: `endpoint-init-${index}`,
+    method: "ALL",
+    path: trimmed,
+  };
+}
+
+function formatEndpointRowsToPaths(rows: EndpointRow[]): string[] {
+  const seen = new Set<string>();
+  const paths: string[] = [];
+  for (const row of rows) {
+    const trimmedPath = row.path.trim();
+    if (!trimmedPath) continue;
+    const formatted =
+      row.method === "ALL" ? trimmedPath : `${row.method} ${trimmedPath}`;
+    if (!seen.has(formatted)) {
+      seen.add(formatted);
+      paths.push(formatted);
+    }
+  }
+  return paths;
+}
 
 export default function Services() {
   const [search, setSearch] = useState("");
@@ -201,197 +265,48 @@ export default function Services() {
     [organizations?.items],
   );
 
-  // Form fields for create modal
-  const serviceFields: FormField[] = useMemo(
-    () => [
-      {
-        name: "name",
-        label: "Name",
-        type: "text",
-        required: true,
-        placeholder: "api-gateway",
-      },
-      {
-        name: "description",
-        label: "Description",
-        type: "textarea",
-        placeholder: "Service description (optional)",
-        rows: 2,
-      },
-      {
-        name: "organization_id",
-        label: "Organization",
-        type: "select",
-        required: true,
-        searchable: true,
-        placeholder: organizationOptions.length
-          ? "Select organization"
-          : "No organizations found",
-        options: organizationOptions,
-      },
-      {
-        name: "language",
-        label: "Language",
-        type: "select",
-        options: LANGUAGES,
-        defaultValue: "python",
-      },
-      {
-        name: "deployment_method",
-        label: "Deployment Method",
-        type: "select",
-        options: DEPLOYMENT_METHODS,
-        defaultValue: "kubernetes",
-      },
-      {
-        name: "status",
-        label: "Status",
-        type: "select",
-        options: SERVICE_STATUSES,
-        defaultValue: "active",
-      },
-      {
-        name: "port",
-        label: "Port",
-        type: "number",
-        placeholder: "8080",
-      },
-      {
-        name: "is_public",
-        label: "Public service (accessible from internet)",
-        type: "checkbox",
-        defaultValue: false,
-      },
-      {
-        name: "domains",
-        label: "Domains (one per line)",
-        type: "multiline",
-        placeholder: "api.example.com\napi-v2.example.com",
-        rows: 2,
-      },
-      {
-        name: "paths",
-        label: "Paths (one per line)",
-        type: "multiline",
-        placeholder: "/api/v1\n/api/v2",
-        rows: 3,
-      },
-    ],
-    [organizationOptions],
-  );
+  const { data: allServicesData } = useQuery({
+    queryKey: queryKeys.services.list({ per_page: 1000 }),
+    queryFn: () => api.getServices({ per_page: 1000 }),
+    enabled: showCreateModal || !!editingService,
+  });
 
-  // Form fields for edit modal with defaultValues from editingService
-  const editFields: FormField[] = useMemo(() => {
-    if (!editingService) return [];
-    return [
-      {
-        name: "name",
-        label: "Name",
-        type: "text",
-        required: true,
-        placeholder: "api-gateway",
-        defaultValue: editingService.name || "",
-      },
-      {
-        name: "description",
-        label: "Description",
-        type: "textarea",
-        placeholder: "Service description (optional)",
-        rows: 2,
-        defaultValue: editingService.description || "",
-      },
-      {
-        name: "organization_id",
-        label: "Organization",
-        type: "select",
-        required: true,
-        searchable: true,
-        placeholder: organizationOptions.length
-          ? "Select organization"
-          : "No organizations found",
-        options: organizationOptions,
-        defaultValue: editingService.organization_id?.toString() || "",
-      },
-      {
-        name: "language",
-        label: "Language",
-        type: "select",
-        options: LANGUAGES,
-        defaultValue: editingService.language || "python",
-      },
-      {
-        name: "deployment_method",
-        label: "Deployment Method",
-        type: "select",
-        options: DEPLOYMENT_METHODS,
-        defaultValue: editingService.deployment_method || "kubernetes",
-      },
-      {
-        name: "status",
-        label: "Status",
-        type: "select",
-        options: SERVICE_STATUSES,
-        defaultValue: editingService.status || "active",
-      },
-      {
-        name: "port",
-        label: "Port",
-        type: "number",
-        placeholder: "8080",
-        defaultValue: editingService.port?.toString() || "",
-      },
-      {
-        name: "is_public",
-        label: "Public service (accessible from internet)",
-        type: "checkbox",
-        defaultValue: editingService.is_public || false,
-      },
-      {
-        name: "domains",
-        label: "Domains (one per line)",
-        type: "multiline",
-        placeholder: "api.example.com\napi-v2.example.com",
-        rows: 2,
-        defaultValue: editingService.domains?.join("\n") || "",
-      },
-      {
-        name: "paths",
-        label: "Paths (one per line)",
-        type: "multiline",
-        placeholder: "/api/v1\n/api/v2",
-        rows: 3,
-        defaultValue: editingService.paths?.join("\n") || "",
-      },
-    ];
-  }, [editingService, organizationOptions]);
+  // Collect unique existing endpoint paths across all services for lookup/autocomplete
+  const endpointPathOptions = useMemo(() => {
+    const pathSet = new Set<string>();
+    const items: Service[] = allServicesData?.items || data?.items || [];
+    items.forEach((svc) => {
+      svc.paths?.forEach((rawPath, idx) => {
+        const parsed = parsePathToEndpointRow(rawPath, idx);
+        if (parsed.path) {
+          pathSet.add(parsed.path);
+        }
+      });
+    });
+    return Array.from(pathSet)
+      .sort((a, b) => a.localeCompare(b))
+      .map((path) => ({ value: path, label: path }));
+  }, [allServicesData?.items, data?.items]);
 
-  const handleCreateSubmit = (data: Record<string, unknown>) => {
-    const serviceData: Parameters<typeof api.createService>[0] = {
-      name: data.name as string,
-      organization_id: parseInt(data.organization_id as string),
-      description: data.description as string | undefined,
-      language: data.language as string | undefined,
-      deployment_method: data.deployment_method as string | undefined,
-      is_public: data.is_public as boolean | undefined,
-      domains: data.domains as string[] | undefined,
-      paths: data.paths as string[] | undefined,
-      port: data.port ? parseInt(data.port as string) : undefined,
-      status: data.status as string | undefined,
-    };
+  const handleCreateSubmit = (
+    serviceData: Parameters<typeof api.createService>[0],
+  ) => {
     createMutation.mutate(serviceData);
   };
 
-  const handleEditSubmit = (data: Record<string, unknown>) => {
+  const handleEditSubmit = (
+    serviceData: Parameters<typeof api.createService>[0],
+  ) => {
     const updateData: Parameters<typeof api.updateService>[1] = {
-      name: data.name as string | undefined,
-      description: data.description as string | undefined,
-      language: data.language as string | undefined,
-      deployment_method: data.deployment_method as string | undefined,
-      is_public: data.is_public as boolean | undefined,
-      domains: data.domains as string[] | undefined,
-      paths: data.paths as string[] | undefined,
-      port: data.port ? parseInt(data.port as string) : undefined,
-      status: data.status as string | undefined,
+      name: serviceData.name,
+      description: serviceData.description,
+      language: serviceData.language,
+      deployment_method: serviceData.deployment_method,
+      is_public: serviceData.is_public,
+      domains: serviceData.domains,
+      paths: serviceData.paths,
+      port: serviceData.port,
+      status: serviceData.status,
     };
     updateMutation.mutate(updateData);
   };
@@ -600,24 +515,32 @@ export default function Services() {
       )}
 
       {/* Create Modal */}
-      <ModalFormBuilder
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        title="Create Service"
-        fields={serviceFields}
-        onSubmit={handleCreateSubmit}
-        submitLabel="Create"
-      />
+      {showCreateModal && (
+        <ServiceFormModal
+          onClose={() => setShowCreateModal(false)}
+          title="Create Service"
+          submitLabel="Create"
+          organizationOptions={organizationOptions}
+          endpointPathOptions={endpointPathOptions}
+          onSubmit={handleCreateSubmit}
+          isLoading={createMutation.isPending}
+        />
+      )}
 
       {/* Edit Modal */}
-      <ModalFormBuilder
-        isOpen={!!editingService}
-        onClose={() => setEditingService(null)}
-        title="Edit Service"
-        fields={editFields}
-        onSubmit={handleEditSubmit}
-        submitLabel="Update"
-      />
+      {editingService && (
+        <ServiceFormModal
+          key={editingService.id}
+          onClose={() => setEditingService(null)}
+          title="Edit Service"
+          submitLabel="Update"
+          initialService={editingService}
+          organizationOptions={organizationOptions}
+          endpointPathOptions={endpointPathOptions}
+          onSubmit={handleEditSubmit}
+          isLoading={updateMutation.isPending}
+        />
+      )}
 
       {/* View Details Modal */}
       {viewingService && (
@@ -630,6 +553,307 @@ export default function Services() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+interface ServiceFormModalProps {
+  onClose: () => void;
+  title: string;
+  submitLabel: string;
+  initialService?: Service | null;
+  organizationOptions: Array<{ value: string; label: string }>;
+  endpointPathOptions: Array<{ value: string; label: string }>;
+  onSubmit: (data: Parameters<typeof api.createService>[0]) => void;
+  isLoading: boolean;
+}
+
+function ServiceFormModal({
+  onClose,
+  title,
+  submitLabel,
+  initialService,
+  organizationOptions,
+  endpointPathOptions,
+  onSubmit,
+  isLoading,
+}: ServiceFormModalProps) {
+  const [name, setName] = useState(initialService?.name || "");
+  const [description, setDescription] = useState(
+    initialService?.description || "",
+  );
+  const [organizationId, setOrganizationId] = useState(
+    initialService?.organization_id?.toString() || "",
+  );
+  const [language, setLanguage] = useState(
+    initialService?.language || "python",
+  );
+  const [deploymentMethod, setDeploymentMethod] = useState(
+    initialService?.deployment_method || "kubernetes",
+  );
+  const [status, setStatus] = useState(initialService?.status || "active");
+  const [port, setPort] = useState(initialService?.port?.toString() || "");
+  const [isPublic, setIsPublic] = useState(initialService?.is_public || false);
+  const [domainsText, setDomainsText] = useState(
+    initialService?.domains?.join("\n") || "",
+  );
+  const [endpointRows, setEndpointRows] = useState<EndpointRow[]>(() => {
+    if (initialService?.paths && initialService.paths.length > 0) {
+      return initialService.paths.map((p, idx) =>
+        parsePathToEndpointRow(p, idx),
+      );
+    }
+    return [createEmptyEndpointRow(0)];
+  });
+
+  const handleAddEndpointRow = () => {
+    setEndpointRows((prev) => [...prev, createEmptyEndpointRow(prev.length)]);
+  };
+
+  const handleRemoveEndpointRow = (id: string) => {
+    setEndpointRows((prev) => prev.filter((row) => row.id !== id));
+  };
+
+  const handleUpdateEndpointRow = (
+    id: string,
+    patch: Partial<Pick<EndpointRow, "method" | "path">>,
+  ) => {
+    setEndpointRows((prev) =>
+      prev.map((row) => (row.id === id ? { ...row, ...patch } : row)),
+    );
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Service name is required");
+      return;
+    }
+    if (!organizationId) {
+      toast.error("Organization is required");
+      return;
+    }
+
+    const parsedDomains = domainsText
+      .split("\n")
+      .map((d) => d.trim())
+      .filter(Boolean);
+
+    const formattedPaths = formatEndpointRowsToPaths(endpointRows);
+
+    onSubmit({
+      name: name.trim(),
+      organization_id: parseInt(organizationId, 10),
+      description: description.trim() || undefined,
+      language: language || undefined,
+      deployment_method: deploymentMethod || undefined,
+      is_public: isPublic,
+      domains: parsedDomains.length > 0 ? parsedDomains : undefined,
+      paths: formattedPaths.length > 0 ? formattedPaths : [],
+      port: port ? parseInt(port, 10) : undefined,
+      status: status || undefined,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <h2 className="text-xl font-semibold text-white">{title}</h2>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
+              label="Name *"
+              required
+              placeholder="api-gateway"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+
+            <div>
+              <label
+                htmlFor="service-description"
+                className="block text-sm font-medium text-yellow-500 mb-1.5"
+              >
+                Description
+              </label>
+              <textarea
+                id="service-description"
+                rows={2}
+                placeholder="Service description (optional)"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+
+            <div>
+              <span className="block text-sm font-medium text-yellow-500 mb-1.5">
+                Organization *
+              </span>
+              <SearchableSelect
+                options={organizationOptions}
+                value={organizationId}
+                onChange={(val) => setOrganizationId(String(val))}
+                placeholder={
+                  organizationOptions.length
+                    ? "Select organization"
+                    : "No organizations found"
+                }
+                ariaLabel="Organization"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Language"
+                options={LANGUAGES}
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+              />
+              <Select
+                label="Deployment Method"
+                options={DEPLOYMENT_METHODS}
+                value={deploymentMethod}
+                onChange={(e) => setDeploymentMethod(e.target.value)}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Select
+                label="Status"
+                options={SERVICE_STATUSES}
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+              />
+              <Input
+                label="Port"
+                type="number"
+                placeholder="8080"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+              />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+                className="rounded border-slate-600 bg-slate-800 text-primary-500 focus:ring-primary-500"
+              />
+              Public service (accessible from internet)
+            </label>
+
+            <div>
+              <label
+                htmlFor="service-domains"
+                className="block text-sm font-medium text-yellow-500 mb-1.5"
+              >
+                Domains (one per line)
+              </label>
+              <textarea
+                id="service-domains"
+                rows={2}
+                placeholder={"api.example.com\napi-v2.example.com"}
+                value={domainsText}
+                onChange={(e) => setDomainsText(e.target.value)}
+                className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+            </div>
+
+            {/* Service Endpoints / Paths Repeater */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="block text-sm font-medium text-yellow-500">
+                  Service Endpoints / Paths
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddEndpointRow}
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Add more
+                </Button>
+              </div>
+
+              {endpointRows.length === 0 ? (
+                <p className="text-xs text-slate-500 py-2">
+                  No endpoints added. Click &ldquo;+ Add more&rdquo; to add an
+                  endpoint path.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {endpointRows.map((row, idx) => (
+                    <div key={row.id} className="flex items-center gap-2">
+                      <select
+                        aria-label={`Endpoint ${idx + 1} method`}
+                        value={row.method}
+                        onChange={(e) =>
+                          handleUpdateEndpointRow(row.id, {
+                            method: e.target.value as EndpointMethod,
+                          })
+                        }
+                        className="w-24 shrink-0 px-2.5 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      >
+                        {ENDPOINT_METHODS.map((m) => (
+                          <option key={m} value={m}>
+                            {m}
+                          </option>
+                        ))}
+                      </select>
+
+                      <SearchableSelect
+                        options={endpointPathOptions}
+                        value={row.path}
+                        onChange={(val) =>
+                          handleUpdateEndpointRow(row.id, { path: String(val) })
+                        }
+                        placeholder="/api/v1/resource"
+                        allowCustom
+                        allowClear
+                        ariaLabel={`Endpoint ${idx + 1} path`}
+                        className="flex-1"
+                      />
+
+                      <button
+                        type="button"
+                        aria-label={`Remove endpoint ${idx + 1}`}
+                        onClick={() => handleRemoveEndpointRow(row.id)}
+                        className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-slate-500 mt-1.5">
+                Pick an existing endpoint path or type a new one and press Enter
+                (or click &ldquo;Use ...&rdquo;).
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2 border-t border-slate-700">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={onClose}
+                disabled={isLoading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isLoading}>
+                {isLoading ? "Saving..." : submitLabel}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -129,9 +129,9 @@ export function validateFieldValue(
         break;
 
       case "text": {
-        // Only allow alphanumeric, spaces, and limited special chars: - ! @ . $
-        if (!/^[a-zA-Z0-9\s\-!@.$]*$/.test(value)) {
-          return "Only letters, numbers, spaces, and - ! @ . $ are allowed";
+        // Only allow alphanumeric, spaces, and limited special chars: - ! @ . $ '
+        if (!/^[a-zA-Z0-9\s\-!@.$']*$/.test(value)) {
+          return "Only letters, numbers, spaces, and - ! @ . $ ' are allowed";
         }
         // Also check for dangerous patterns
         const textDanger = containsDangerousPattern(value);
@@ -140,9 +140,9 @@ export function validateFieldValue(
       }
 
       case "textarea": {
-        // Only allow alphanumeric, spaces, newlines, and limited special chars: - ! @ . $
-        if (!/^[a-zA-Z0-9\s\-!@.$\n\r]*$/.test(value)) {
-          return "Only letters, numbers, spaces, and - ! @ . $ are allowed";
+        // Only allow alphanumeric, spaces, newlines, and limited special chars: - ! @ . $ '
+        if (!/^[a-zA-Z0-9\s\-!@.$\n\r']*$/.test(value)) {
+          return "Only letters, numbers, spaces, and - ! @ . $ ' are allowed";
         }
         // Also check for dangerous patterns
         const textareaDanger = containsDangerousPattern(value);
