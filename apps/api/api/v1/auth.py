@@ -493,23 +493,25 @@ def captcha_challenge():
     """Generate ALTCHA proof-of-work challenge."""
     import hashlib
     import hmac
-    import time
+    import secrets
 
-    salt = os.urandom(16).hex()
-    timestamp = str(int(time.time()))
+    maxnumber = 10000
+    salt = secrets.token_hex(12)
+    number = secrets.randbelow(maxnumber + 1)
     secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
-    challenge = hashlib.sha256(f"{salt}{timestamp}{secret}".encode()).hexdigest()
+    challenge = hashlib.sha256(f"{salt}{number}".encode()).hexdigest()
 
-    # Generate signature for ALTCHA verification
-    signature_data = f"{challenge}{salt}{timestamp}".encode()
-    signature = hmac.new(secret.encode(), signature_data, hashlib.sha256).hexdigest()
+    # ALTCHA verifies HMAC-SHA256(secret, challenge)
+    signature = hmac.new(
+        secret.encode(), challenge.encode(), hashlib.sha256
+    ).hexdigest()
 
     return jsonify(
         {
             "algorithm": "SHA-256",
             "challenge": challenge,
+            "maxnumber": maxnumber,
             "salt": salt,
-            "difficulty": 10000,
             "signature": signature,
         }
     )

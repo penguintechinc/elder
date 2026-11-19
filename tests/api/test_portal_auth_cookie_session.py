@@ -209,3 +209,20 @@ class TestCsrfProtection:
 
         response = await client.get("/api/v1/portal-auth/me")
         assert response.status_code == 200
+
+    async def test_login_succeeds_with_stale_session_cookie_and_no_csrf(
+        self, client, app
+    ):
+        """A stale HttpOnly access/refresh cookie without a matching CSRF
+        cookie must not lock the user out of logging in again."""
+        tenant_id, email = await _make_tenant_and_user(app)
+
+        response = await client.post(
+            "/api/v1/portal-auth/login",
+            json={"email": email, "password": _TEST_PASSWORD, "tenant_id": tenant_id},
+            headers={
+                "Cookie": f"{ACCESS_COOKIE_NAME}=stale-jwt; {REFRESH_COOKIE_NAME}=stale-refresh"
+            },
+        )
+        assert response.status_code == 200
+        assert _cookie_value(response, CSRF_COOKIE_NAME)
