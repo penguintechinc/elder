@@ -218,6 +218,21 @@ def _register_before_request(app: Quart) -> None:
             "user_identity_id": identity_id,
         }
 
+    # Credential-based pre-auth routes establish a new session (and issue a
+    # fresh CSRF cookie) rather than acting on an existing cookie session.
+    # Exempting them prevents a stale HttpOnly access/refresh cookie without a
+    # matching elder_csrf_token cookie from locking a user out of logging in.
+    _csrf_exempt_paths = frozenset(
+        {
+            "/api/v1/portal-auth/login",
+            "/api/v1/portal-auth/register",
+            "/api/v1/portal-auth/forgot-password",
+            "/api/v1/portal-auth/reset-password",
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+        }
+    )
+
     @app.before_request
     async def enforce_csrf_protection():
         """Reject cookie-authenticated state-changing requests missing a
@@ -236,6 +251,9 @@ def _register_before_request(app: Quart) -> None:
         from quart import request
 
         if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return
+
+        if request.path in _csrf_exempt_paths:
             return
 
         if request.headers.get("Authorization"):
