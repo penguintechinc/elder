@@ -62,6 +62,29 @@ interface SBOMScan {
   created_at: string;
 }
 
+const COMMON_VENDORS = [
+  "1Password",
+  "Atlassian",
+  "AWS",
+  "Canonical / Ubuntu",
+  "Cisco",
+  "Cloudflare",
+  "Datadog",
+  "Docker",
+  "GitHub",
+  "GitLab",
+  "Google Cloud (GCP)",
+  "HashiCorp",
+  "JetBrains",
+  "Microsoft",
+  "Okta",
+  "Red Hat",
+  "Slack",
+  "Snowflake",
+  "VMware",
+  "Zoom",
+];
+
 const SOFTWARE_TYPES = [
   { value: "saas", label: "SaaS" },
   { value: "on_premise", label: "On-Premise" },
@@ -182,8 +205,8 @@ export default function Software() {
     const vendors = ((data?.items || []) as Software[])
       .map((s) => s.vendor?.trim())
       .filter((v): v is string => Boolean(v));
-    return Array.from(new Set(vendors))
-      .sort()
+    return Array.from(new Set([...COMMON_VENDORS, ...vendors]))
+      .sort((a, b) => a.localeCompare(b))
       .map((v) => ({ value: v, label: v }));
   }, [data?.items]);
 

@@ -56,33 +56,113 @@ const RESOURCE_TABS: {
 
 const COMMON_PROVIDERS = [
   "Anthropic",
-  "OpenAI",
-  "Google",
+  "OpenAI / ChatGPT",
+  "Google / Gemini",
+  "xAI",
+  "Moonshot AI (Kimi)",
+  "DeepSeek",
+  "Mistral",
+  "Cohere",
+  "Perplexity",
+  "Meta (Llama)",
+  "Alibaba (Qwen)",
+  "Ollama",
   "AWS Bedrock",
   "Azure OpenAI",
   "Vertex AI",
-  "xAI",
-  "Mistral",
-  "Cohere",
   "Groq",
   "Together AI",
-  "Meta / Llama",
-  "Ollama",
-  "LiteLLM",
   "OpenRouter",
+  "LiteLLM",
   "Hugging Face",
 ];
 
+const PROVIDER_CATEGORY: Record<
+  string,
+  "Frontier" | "Open Weight" | "Gateway / Cloud"
+> = {
+  Anthropic: "Frontier",
+  "OpenAI / ChatGPT": "Frontier",
+  "Google / Gemini": "Frontier",
+  xAI: "Frontier",
+  "Moonshot AI (Kimi)": "Frontier",
+  DeepSeek: "Open Weight",
+  Mistral: "Frontier",
+  Cohere: "Frontier",
+  Perplexity: "Frontier",
+  "Meta (Llama)": "Open Weight",
+  "Alibaba (Qwen)": "Open Weight",
+  Ollama: "Open Weight",
+  "AWS Bedrock": "Gateway / Cloud",
+  "Azure OpenAI": "Gateway / Cloud",
+  "Vertex AI": "Gateway / Cloud",
+  Groq: "Gateway / Cloud",
+  "Together AI": "Gateway / Cloud",
+  OpenRouter: "Gateway / Cloud",
+  LiteLLM: "Gateway / Cloud",
+  "Hugging Face": "Open Weight",
+};
+
 const COMMON_MODELS_BY_PROVIDER: Record<string, string[]> = {
   Anthropic: [
+    "claude-opus-4",
+    "claude-sonnet-4",
     "claude-3-7-sonnet",
     "claude-3-5-sonnet",
     "claude-3-5-haiku",
-    "claude-opus-4",
-    "claude-sonnet-4",
   ],
-  OpenAI: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "o3", "o4-mini"],
-  Google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  "OpenAI / ChatGPT": [
+    "gpt-4o",
+    "gpt-4o-mini",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "o3",
+    "o4-mini",
+    "chatgpt-4o-latest",
+  ],
+  "Google / Gemini": [
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemma-4-27b",
+    "gemma-3-27b",
+  ],
+  xAI: ["grok-3", "grok-3-mini", "grok-2"],
+  "Moonshot AI (Kimi)": ["kimi-k2", "moonshot-v1-128k", "moonshot-v1-32k"],
+  DeepSeek: [
+    "deepseek-r1",
+    "deepseek-v3",
+    "deepseek-chat",
+    "deepseek-reasoner",
+  ],
+  Mistral: [
+    "mistral-large-latest",
+    "codestral-latest",
+    "mistral-medium-latest",
+    "pixtral-large-latest",
+  ],
+  Cohere: ["command-a-03-2025", "command-r-plus", "embed-v4.0"],
+  Perplexity: ["sonar-pro", "sonar-reasoning-pro", "sonar"],
+  "Meta (Llama)": [
+    "llama-4-maverick",
+    "llama-4-scout",
+    "llama-3.3-70b-instruct",
+    "llama-3.1-405b-instruct",
+  ],
+  "Alibaba (Qwen)": [
+    "qwen3-235b-a22b",
+    "qwen3-32b",
+    "qwen2.5-coder-32b",
+    "qwq-32b",
+  ],
+  Ollama: [
+    "gemma4:12b",
+    "gemma4:e4b",
+    "llama3.3:70b",
+    "qwen2.5-coder:32b",
+    "deepseek-r1:32b",
+    "mistral:7b",
+  ],
   "Vertex AI": ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-7-sonnet"],
   "AWS Bedrock": [
     "anthropic.claude-3-7-sonnet",
@@ -90,11 +170,28 @@ const COMMON_MODELS_BY_PROVIDER: Record<string, string[]> = {
     "meta.llama3-3-70b",
   ],
   "Azure OpenAI": ["gpt-4o", "gpt-4o-mini", "o3-mini"],
-  xAI: ["grok-3", "grok-3-mini"],
-  Mistral: ["mistral-large-latest", "codestral-latest", "mistral-small-latest"],
-  Cohere: ["command-a-03-2025", "command-r-plus", "embed-v4.0"],
-  Groq: ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
-  Ollama: ["gemma4:12b", "llama3.3:70b", "qwen2.5-coder:32b"],
+  Groq: [
+    "llama-3.3-70b-versatile",
+    "deepseek-r1-distill-llama-70b",
+    "mixtral-8x7b-32768",
+  ],
+  "Together AI": [
+    "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+    "Qwen/Qwen2.5-72B-Instruct-Turbo",
+    "deepseek-ai/DeepSeek-R1",
+  ],
+  OpenRouter: [
+    "anthropic/claude-sonnet-4",
+    "openai/gpt-4o",
+    "google/gemini-2.5-pro",
+    "deepseek/deepseek-r1",
+  ],
+  LiteLLM: ["litellm-proxy"],
+  "Hugging Face": [
+    "meta-llama/Llama-3.3-70B-Instruct",
+    "google/gemma-3-27b-it",
+    "Qwen/Qwen2.5-72B-Instruct",
+  ],
 };
 
 const RESOURCE_TYPES: { value: AIResourceType; label: string }[] = [
@@ -380,31 +477,41 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
       string,
       {
         provider: string;
+        category: string;
         items: AIResource[];
         models: Set<string>;
+        catalogModels: string[];
         allowedCount: number;
         pendingCount: number;
         monthlyBudget: number;
         seats: number;
       }
     >();
-    const q = search.trim().toLowerCase();
+
+    for (const providerName of COMMON_PROVIDERS) {
+      groups.set(providerName, {
+        provider: providerName,
+        category: PROVIDER_CATEGORY[providerName] || "Custom",
+        items: [],
+        models: new Set<string>(),
+        catalogModels: COMMON_MODELS_BY_PROVIDER[providerName] || [],
+        allowedCount: 0,
+        pendingCount: 0,
+        monthlyBudget: 0,
+        seats: 0,
+      });
+    }
+
     for (const r of resources) {
       const providerName = r.provider?.trim() || "Unassigned";
-      if (
-        q &&
-        !providerName.toLowerCase().includes(q) &&
-        !(r.model_name || "").toLowerCase().includes(q) &&
-        !r.name.toLowerCase().includes(q)
-      ) {
-        continue;
-      }
       let entry = groups.get(providerName);
       if (!entry) {
         entry = {
           provider: providerName,
+          category: PROVIDER_CATEGORY[providerName] || "Custom",
           items: [],
           models: new Set<string>(),
+          catalogModels: COMMON_MODELS_BY_PROVIDER[providerName] || [],
           allowedCount: 0,
           pendingCount: 0,
           monthlyBudget: 0,
@@ -419,9 +526,24 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
       entry.monthlyBudget += r.budget_monthly || 0;
       entry.seats += r.seats || 0;
     }
-    return Array.from(groups.values()).sort((a, b) =>
-      a.provider.localeCompare(b.provider),
-    );
+
+    const q = search.trim().toLowerCase();
+    return Array.from(groups.values())
+      .filter((g) => {
+        if (!q) return true;
+        return (
+          g.provider.toLowerCase().includes(q) ||
+          g.category.toLowerCase().includes(q) ||
+          g.catalogModels.some((m) => m.toLowerCase().includes(q)) ||
+          Array.from(g.models).some((m) => m.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => {
+        if (a.items.length !== b.items.length) {
+          return b.items.length - a.items.length;
+        }
+        return a.provider.localeCompare(b.provider);
+      });
   }, [resources, search]);
 
   const stats = useMemo(() => {
@@ -481,7 +603,9 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
   });
 
   const openCreateModal = (preset?: {
+    name?: string;
     provider?: string;
+    model_name?: string;
     resource_type?: AIResourceType;
   }) => {
     setEditingResource(null);
@@ -496,7 +620,9 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
         baseType,
         organizations[0] ? String(organizations[0].id) : "",
       ),
+      name: preset?.name || "",
       provider: preset?.provider || "",
+      model_name: preset?.model_name || "",
     });
     setShowFormModal(true);
   };
@@ -763,12 +889,16 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                     <div>
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                            {group.provider}
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                              {group.provider}
+                            </h3>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300">
+                              {group.category}
+                            </span>
+                          </div>
                           <p className="text-xs text-slate-500 mt-0.5">
-                            {group.items.length} resource
-                            {group.items.length === 1 ? "" : "s"} &middot;{" "}
+                            {group.items.length} configured &middot;{" "}
                             {group.allowedCount} allowed &middot;{" "}
                             {group.pendingCount} pending
                           </p>
@@ -794,7 +924,7 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                       {group.models.size > 0 && (
                         <div className="mt-3">
                           <p className="text-[11px] font-medium uppercase text-slate-500 mb-1">
-                            Models in use
+                            Configured Models
                           </p>
                           <div className="flex flex-wrap gap-1.5">
                             {Array.from(group.models)
@@ -802,11 +932,38 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                               .map((model) => (
                                 <span
                                   key={model}
-                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
                                 >
                                   {model}
                                 </span>
                               ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {group.catalogModels.length > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-medium uppercase text-slate-500 mb-1">
+                            Popular Models (click to add)
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.catalogModels.map((model) => (
+                              <button
+                                key={model}
+                                type="button"
+                                onClick={() =>
+                                  openCreateModal({
+                                    name: `${group.provider} ${model}`,
+                                    provider: group.provider,
+                                    model_name: model,
+                                    resource_type: "llm",
+                                  })
+                                }
+                                className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-800 hover:bg-blue-100 hover:text-blue-800 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-blue-900/40 dark:hover:text-blue-300 transition-colors"
+                              >
+                                + {model}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       )}
