@@ -116,72 +116,6 @@ export default function Vulnerabilities() {
     },
   });
 
-  // Mock data - replace with actual API calls when backend is ready
-  const mockVulnerabilities = [
-    {
-      id: 1,
-      cve_id: "CVE-2024-1234",
-      severity: "critical",
-      component: "OpenSSL",
-      status: "open",
-      published_date: "2024-01-15",
-      description: "Critical vulnerability in cryptographic operations",
-      affected_versions: ["1.1.1", "3.0.0"],
-      affected_entities: [
-        {
-          parent_type: "service",
-          parent_name: "Auth Service",
-          source_file: "requirements.txt",
-        },
-      ],
-    },
-    {
-      id: 2,
-      cve_id: "CVE-2024-5678",
-      severity: "high",
-      component: "Log4j",
-      status: "in_progress",
-      published_date: "2024-02-10",
-      description: "Remote code execution in logging library",
-      affected_versions: ["2.14.0", "2.15.0"],
-      affected_entities: [
-        {
-          parent_type: "software",
-          parent_name: "Logging Platform",
-          source_file: "pom.xml",
-        },
-      ],
-    },
-    {
-      id: 3,
-      cve_id: "CVE-2024-9012",
-      severity: "medium",
-      component: "Django",
-      status: "resolved",
-      published_date: "2024-03-05",
-      description: "SQL injection in query processing",
-      affected_versions: ["3.2.0", "4.0.0"],
-      affected_entities: [
-        {
-          parent_type: "service",
-          parent_name: "Web API",
-          source_file: "requirements.txt",
-        },
-      ],
-    },
-    {
-      id: 4,
-      cve_id: "CVE-2024-3456",
-      severity: "low",
-      component: "Python",
-      status: "open",
-      published_date: "2024-01-20",
-      description: "Information disclosure in stdlib",
-      affected_versions: ["3.11.0"],
-      affected_entities: [],
-    },
-  ];
-
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.vulnerabilities.list({
       search,
@@ -194,22 +128,15 @@ export default function Vulnerabilities() {
         severity: severityFilter !== "all" ? severityFilter : undefined,
         status: statusFilter !== "all" ? statusFilter : undefined,
       }) as Promise<VulnerabilitiesResponse>,
-    placeholderData: {
-      items: mockVulnerabilities as Vulnerability[],
-      total: mockVulnerabilities.length,
-      page: 1,
-      per_page: 50,
-      pages: 1,
-    },
   });
 
+  const items = data?.items || [];
   const stats = {
-    total: mockVulnerabilities.length,
-    critical: mockVulnerabilities.filter((v) => v.severity === "critical")
-      .length,
-    high: mockVulnerabilities.filter((v) => v.severity === "high").length,
-    medium: mockVulnerabilities.filter((v) => v.severity === "medium").length,
-    low: mockVulnerabilities.filter((v) => v.severity === "low").length,
+    total: data?.total ?? items.length,
+    critical: items.filter((v) => v.severity === "critical").length,
+    high: items.filter((v) => v.severity === "high").length,
+    medium: items.filter((v) => v.severity === "medium").length,
+    low: items.filter((v) => v.severity === "low").length,
   };
 
   const getSeverityColor = (severity: string): string => {

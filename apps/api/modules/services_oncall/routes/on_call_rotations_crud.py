@@ -27,7 +27,6 @@ from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scop
 from apps.api.utils.validation_helpers import (
     validate_json_body,
     validate_required_fields,
-    validate_resource_exists,
 )
 
 bp = Blueprint("on_call_rotations_crud", __name__)
@@ -103,11 +102,17 @@ async def list_rotations():
         400: Invalid parameters
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id()
 
     pagination = PaginationParams.from_request()
 
     def get_rotations():
-        query = db.on_call_rotations.id > 0
+        if not tenant_id:
+            return 0, []
+
+        query = (db.on_call_rotations.id > 0) & (
+            db.on_call_rotations.tenant_id == tenant_id
+        )
 
         # Apply filters
         if request.args.get("org_id"):
@@ -271,7 +276,9 @@ async def create_rotation():
 
     def create():
         now = datetime.datetime.now(datetime.UTC)
+        resolved_tenant_id = tenant_id or getattr(parent, "tenant_id", None)
         insert_data = {
+            "tenant_id": resolved_tenant_id,
             "name": data["name"],
             "scope_type": scope_type,
             "schedule_type": schedule_type,
@@ -323,11 +330,12 @@ async def get_rotation(rotation_id: int):
     db = current_app.db
     tenant_id = get_current_tenant_id()
 
-    rotation, error = await validate_resource_exists(
-        db.on_call_rotations, rotation_id, "On-Call Rotation"
-    )
-    if error:
-        return error
+    def get_rotation_row():
+        return get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
+
+    rotation = await run_in_threadpool(get_rotation_row)
+    if not rotation:
+        return ApiResponse.not_found("On-Call Rotation", rotation_id)
 
     def get_full_rotation():
         # Get rotation DTOs
@@ -465,7 +473,10 @@ async def update_rotation(rotation_id: int):
                 update_dict["rotation_start_date"] = data["rotation_start_date"]
 
         if update_dict:
-            db(db.on_call_rotations.id == rotation_id).update(**update_dict)
+            db(
+                (db.on_call_rotations.id == rotation_id)
+                & (db.on_call_rotations.tenant_id == tenant_id)
+            ).update(**update_dict)
             db.commit()
 
         return get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
@@ -504,7 +515,10 @@ async def delete_rotation(rotation_id: int):
         rotation = get_tenant_scoped(db, db.on_call_rotations, rotation_id, tenant_id)
         if not rotation:
             return False
-        db(db.on_call_rotations.id == rotation_id).delete()
+        db(
+            (db.on_call_rotations.id == rotation_id)
+            & (db.on_call_rotations.tenant_id == tenant_id)
+        ).delete()
         db.commit()
         return True
 
