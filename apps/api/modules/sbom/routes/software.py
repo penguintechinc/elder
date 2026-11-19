@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timezone
 
 from quart import Blueprint, Response, current_app, jsonify, request
 from quart_schema import validate_response
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 
 from apps.api.auth.decorators import (
     login_required,
@@ -40,52 +42,44 @@ _columns_ensured = False
 
 
 def _ensure_software_columns(db) -> None:
-    """Ensure access_url and parent_system_id columns exist on software table."""
+    """Ensure optional software columns exist on software table."""
     global _columns_ensured
     if _columns_ensured:
         return
-    if not hasattr(db, "executesql"):
+    try:
+        engine = db.engine
+    except Exception:
+        engine = None
+    if engine is None:
         _columns_ensured = True
         return
-    statements = [
-        (
-            "ALTER TABLE software ADD COLUMN IF NOT EXISTS access_url VARCHAR(1024)",
-            "ALTER TABLE software ADD COLUMN access_url VARCHAR(1024)",
-        ),
-        (
-            "ALTER TABLE software ADD COLUMN IF NOT EXISTS parent_system_id INTEGER",
-            "ALTER TABLE software ADD COLUMN parent_system_id INTEGER",
-        ),
-        (
-            "ALTER TABLE software ADD COLUMN IF NOT EXISTS git_url VARCHAR(1024)",
-            "ALTER TABLE software ADD COLUMN git_url VARCHAR(1024)",
-        ),
-        (
-            "ALTER TABLE software ADD COLUMN IF NOT EXISTS git_path VARCHAR(512)",
-            "ALTER TABLE software ADD COLUMN git_path VARCHAR(512)",
-        ),
-        (
-            "ALTER TABLE software ADD COLUMN IF NOT EXISTS release_shasum VARCHAR(128)",
-            "ALTER TABLE software ADD COLUMN release_shasum VARCHAR(128)",
-        ),
+
+    columns_to_add = [
+        ("access_url", "VARCHAR(1024)"),
+        ("parent_system_id", "INTEGER"),
+        ("git_url", "VARCHAR(1024)"),
+        ("git_path", "VARCHAR(512)"),
+        ("release_shasum", "VARCHAR(128)"),
     ]
-    for pg_sql, sqlite_sql in statements:
+    try:
+        existing = {c["name"] for c in sa_inspect(engine).get_columns("software")}
+    except Exception:
+        existing = set()
+
+    is_sqlite = getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
+    for col_name, col_type in columns_to_add:
+        if col_name in existing:
+            continue
+        ddl = (
+            f"ALTER TABLE software ADD COLUMN {col_name} {col_type}"
+            if is_sqlite
+            else f"ALTER TABLE software ADD COLUMN IF NOT EXISTS {col_name} {col_type}"
+        )
         try:
-            db.executesql(pg_sql)
-            db.commit()
+            with engine.begin() as conn:
+                conn.execute(text(ddl))
         except Exception:
-            try:
-                db.rollback()
-            except Exception:
-                pass
-            try:
-                db.executesql(sqlite_sql)
-                db.commit()
-            except Exception:
-                try:
-                    db.rollback()
-                except Exception:
-                    pass
+            pass
     _columns_ensured = True
 
 

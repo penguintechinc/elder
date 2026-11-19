@@ -2,7 +2,7 @@ import { lazy } from "react";
 import type { RouteObject } from "react-router-dom";
 import type { MenuCategory } from "@penguintechinc/react-libs/components";
 import type { FrontendModule } from "../types";
-import { Bot, Network, Server } from "lucide-react";
+import { Bot } from "lucide-react";
 
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const AIResources = lazy(() => import("@/pages/AIResources"));
@@ -11,11 +11,7 @@ const navigation: MenuCategory[] = [
   {
     header: "AI Resources",
     collapsible: true,
-    items: [
-      { name: "AI LLMs", href: "/ai/llms", icon: Bot },
-      { name: "AI Gateways", href: "/ai/gateways", icon: Network },
-      { name: "MCP Servers", href: "/ai/mcp-servers", icon: Server },
-    ],
+    items: [{ name: "Artificial Intelligence", href: "/ai", icon: Bot }],
   },
 ];
 
