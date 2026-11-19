@@ -359,12 +359,9 @@ export function NodePropertyModal({
 
           {resourceCategory && (
             <div>
-              <label
-                htmlFor="flow-node-resource-picker"
-                className="block text-sm font-medium text-slate-300 mb-1"
-              >
+              <span className="block text-sm font-medium text-slate-300 mb-1">
                 Resource
-              </label>
+              </span>
               <SearchableSelect
                 options={categoryResources}
                 value={resourceId}
