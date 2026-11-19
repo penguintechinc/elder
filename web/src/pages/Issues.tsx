@@ -300,6 +300,26 @@ export default function Issues() {
   );
 }
 
+const ISSUE_RESOURCE_TYPES = [
+  { value: "service", label: "Service" },
+  { value: "networking", label: "Networking" },
+  { value: "data_store", label: "Data Store" },
+  { value: "software", label: "Software" },
+  { value: "certificate", label: "Certificate" },
+  { value: "project", label: "Project" },
+  { value: "organization", label: "Organization" },
+  { value: "identity", label: "Identity" },
+] as const;
+
+interface ResourceListItem {
+  id: number;
+  name?: string;
+  title?: string;
+  username?: string;
+  email?: string;
+  common_name?: string;
+}
+
 export interface CreateIssueModalProps {
   onClose: () => void;
   onSuccess: () => void;
@@ -326,6 +346,11 @@ export function CreateIssueModal({
   const [entityIds, setEntityIds] = useState<number[]>(
     defaultEntityId ? [defaultEntityId] : [],
   );
+  const [resourceType, setResourceType] = useState<string>("service");
+  const [resourceSearch, setResourceSearch] = useState<string>("");
+  const [selectedResources, setSelectedResources] = useState<
+    Array<{ type: string; id: number; label: string }>
+  >([]);
   const [projectId, setProjectId] = useState("");
   const [milestoneId, setMilestoneId] = useState("");
   const [selectedParentIssueId, setSelectedParentIssueId] = useState("");
@@ -348,6 +373,70 @@ export function CreateIssueModal({
     queryKey: ["entities-all"],
     queryFn: () => api.getEntities({ per_page: 1000 }),
   });
+
+  const { data: resourcesData, isLoading: resourcesLoading } = useQuery({
+    queryKey: ["issue-resource-options", resourceType, resourceSearch],
+    queryFn: async () => {
+      const params: { per_page: number; search?: string } = { per_page: 50 };
+      if (resourceSearch) params.search = resourceSearch;
+      switch (resourceType) {
+        case "service":
+          return api.getServices(params);
+        case "networking": {
+          const resp = await api.listNetworks({});
+          const items: ResourceListItem[] = Array.isArray(resp)
+            ? resp
+            : resp?.networks || resp?.items || [];
+          const filtered = resourceSearch
+            ? items.filter((n) =>
+                (n.name || "")
+                  .toLowerCase()
+                  .includes(resourceSearch.toLowerCase()),
+              )
+            : items;
+          return { items: filtered };
+        }
+        case "data_store":
+          return api.getDataStores(params);
+        case "software":
+          return api.getSoftware(params);
+        case "certificate":
+          return api.getCertificates(params);
+        case "project":
+          return api.getProjects(params);
+        case "organization":
+          return api.getOrganizations(params);
+        case "identity":
+          return api.getIdentities(params);
+        default:
+          return { items: [] };
+      }
+    },
+    enabled: !!resourceType,
+  });
+
+  const resourceOptions = useMemo(() => {
+    const raw: ResourceListItem[] = Array.isArray(resourcesData)
+      ? resourcesData
+      : resourcesData?.items || resourcesData?.certificates || [];
+    return raw
+      .filter(
+        (item) =>
+          !selectedResources.some(
+            (r) => r.type === resourceType && r.id === item.id,
+          ),
+      )
+      .map((item) => ({
+        value: String(item.id),
+        label:
+          item.name ||
+          item.title ||
+          item.common_name ||
+          item.username ||
+          item.email ||
+          `#${item.id}`,
+      }));
+  }, [resourcesData, selectedResources, resourceType]);
 
   const { data: projectsData } = useQuery({
     queryKey: ["projects-all"],
@@ -457,6 +546,18 @@ export function CreateIssueModal({
             error: err,
           });
           failedLinks.push(`entity ${entityId}`);
+        }
+      }
+
+      for (const r of selectedResources) {
+        try {
+          await api.linkIssueResource(issue.id, r.type, r.id);
+        } catch (err) {
+          console.warn("[CreateIssueModal] Failed to link resource", {
+            resource: r,
+            error: err,
+          });
+          failedLinks.push(`${r.type} ${r.id}`);
         }
       }
 
@@ -681,6 +782,79 @@ export function CreateIssueModal({
                 </div>
               </div>
             )}
+            <div>
+              <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                Resources
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <Select
+                  aria-label="Resource Type"
+                  value={resourceType}
+                  onChange={(e) => {
+                    setResourceType(e.target.value);
+                    setResourceSearch("");
+                  }}
+                >
+                  {ISSUE_RESOURCE_TYPES.map((rt) => (
+                    <option key={rt.value} value={rt.value}>
+                      {rt.label}
+                    </option>
+                  ))}
+                </Select>
+                <div className="sm:col-span-2">
+                  <SearchableSelect
+                    options={resourceOptions}
+                    value=""
+                    onSearch={setResourceSearch}
+                    isLoading={resourcesLoading}
+                    onChange={(val, opt) => {
+                      const id = parseInt(String(val), 10);
+                      if (
+                        !Number.isNaN(id) &&
+                        !selectedResources.some(
+                          (r) => r.type === resourceType && r.id === id,
+                        )
+                      ) {
+                        setSelectedResources((prev) => [
+                          ...prev,
+                          { type: resourceType, id, label: opt.label },
+                        ]);
+                      }
+                    }}
+                    placeholder="Search and link resources..."
+                    ariaLabel="Resources"
+                  />
+                </div>
+              </div>
+              {selectedResources.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selectedResources.map((r) => (
+                    <span
+                      key={`${r.type}:${r.id}`}
+                      className="inline-flex items-center gap-1 rounded-full border border-slate-600 bg-slate-800 px-2.5 py-0.5 text-xs text-slate-200"
+                    >
+                      <span className="text-slate-400">{r.type}:</span>
+                      {r.label}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedResources((prev) =>
+                            prev.filter(
+                              (item) =>
+                                !(item.type === r.type && item.id === r.id),
+                            ),
+                          )
+                        }
+                        aria-label={`Remove ${r.type} ${r.label}`}
+                        className="text-slate-400 hover:text-white"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
             <div>
               <span className="block text-sm font-medium text-slate-300 mb-1.5">
                 Entities

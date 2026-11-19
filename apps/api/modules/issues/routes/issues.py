@@ -198,6 +198,15 @@ class CreateIssueEntityLinkRequest(RequestModel):
     entity_id: int = Field(..., ge=1, description="Entity ID")
 
 
+class CreateIssueResourceLinkRequest(RequestModel):
+    """Request to link a resource to an issue."""
+
+    resource_type: str = Field(
+        ..., min_length=1, max_length=50, description="Resource type"
+    )
+    resource_id: int = Field(..., ge=1, description="Resource ID")
+
+
 class LinkIssueToProjectRequest(RequestModel):
     """Request to link an issue to a project."""
 
@@ -1433,6 +1442,163 @@ async def delete_issue_entity_link_by_entity(id: int, entity_id: int):
         return True, None, None
 
     result, error, status = await run_in_threadpool(delete_link)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return "", 204
+
+
+# ============================================================================
+# Issue Resource Link Endpoints
+# ============================================================================
+
+
+@bp.route("/<int:id>/resources", methods=["GET"])
+@login_required
+@require_scope("issues:read")
+async def list_issue_resource_links(id: int):
+    """
+    List resource links for an issue.
+
+    Path Parameters:
+        - id: Issue ID
+
+    Returns:
+        200: List of resource links
+        403: Tenant not found
+        404: Issue not found
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def get_resources():
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        links = db(db.issue_resource_links.issue_id == id).select()
+        return [dict(row) for row in links], None, None
+
+    result, error, status = await run_in_threadpool(get_resources)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return jsonify({"resources": result}), 200
+
+
+@bp.route("/<int:id>/resources", methods=["POST"])
+@login_required
+@require_scope("issues:write")
+@validated_request(body_model=CreateIssueResourceLinkRequest)
+async def create_issue_resource_link(id: int, body: CreateIssueResourceLinkRequest):
+    """
+    Link a generic resource to an issue.
+
+    Path Parameters:
+        - id: Issue ID
+
+    Request Body:
+        {
+            "resource_type": "device",
+            "resource_id": 42
+        }
+
+    Returns:
+        200: Resource already linked
+        201: Resource link created
+        400: Invalid request
+        403: Tenant not found
+        404: Issue not found
+    """
+    db = current_app.db
+
+    resource_type = body.resource_type.strip()
+    if not resource_type:
+        return jsonify({"error": "resource_type must be a non-empty string"}), 400
+
+    resource_id = body.resource_id
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def create_resource_link():
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404, None
+
+        existing = (
+            db(
+                (db.issue_resource_links.issue_id == id)
+                & (db.issue_resource_links.resource_type == resource_type)
+                & (db.issue_resource_links.resource_id == resource_id)
+            )
+            .select()
+            .first()
+        )
+        if existing:
+            return dict(existing), None, None, 200
+
+        link_id = db.issue_resource_links.insert(
+            issue_id=id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+        )
+        db.commit()
+
+        link = db.issue_resource_links[link_id]  # tenant-scope-exempt
+        return dict(link), None, None, 201
+
+    result, error, status, code = await run_in_threadpool(create_resource_link)
+
+    if error:
+        return jsonify({"error": error}), status
+
+    return jsonify(result), code
+
+
+@bp.route("/<int:id>/resources/<int:link_id>", methods=["DELETE"])
+@login_required
+@require_scope("issues:write")
+async def delete_issue_resource_link(id: int, link_id: int):
+    """
+    Remove a resource link from an issue.
+
+    Path Parameters:
+        - id: Issue ID
+        - link_id: Link ID
+
+    Returns:
+        204: Link removed
+        403: Tenant not found
+        404: Issue or link not found
+    """
+    db = current_app.db
+
+    tenant_id = _tenant_id()
+    if not tenant_id:
+        return jsonify({"error": "Tenant not found"}), 403
+
+    def delete_resource_link():
+        issue = get_tenant_scoped_issue(db, id, tenant_id)
+        if not issue:
+            return None, "Issue not found", 404
+
+        link = db.issue_resource_links[link_id]  # tenant-scope-exempt: see above
+        if not link or link.issue_id != id:
+            return None, "Link not found", 404
+
+        db(db.issue_resource_links.id == link_id).delete()
+        db.commit()
+
+        return True, None, None
+
+    result, error, status = await run_in_threadpool(delete_resource_link)
 
     if error:
         return jsonify({"error": error}), status
