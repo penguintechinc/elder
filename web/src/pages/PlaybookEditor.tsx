@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useCallback, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ReactFlow,
   Controls,
@@ -17,127 +17,169 @@ import {
   BackgroundVariant,
   Handle,
   Position,
-} from '@xyflow/react'
-import '@xyflow/react/dist/style.css'
-import { Save, Play, ArrowLeft, Trash2 } from 'lucide-react'
-import api from '@/lib/api'
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { Save, Play, ArrowLeft, Trash2 } from "lucide-react";
+import api from "@/lib/api";
+import {
+  NodePropertyModal,
+  EdgePropertyModal,
+} from "@/components/diagram/FlowPropertyModals";
 
 interface StreamNode extends Node {
-  data: { label: string; nodeType: string; config?: Record<string, unknown> }
+  data: {
+    label: string;
+    nodeType: string;
+    color?: string;
+    resourceType?: string;
+    resourceId?: number | string;
+    resourceName?: string;
+    config?: Record<string, unknown>;
+  };
 }
 
 const NODE_TYPES = {
   actions: [
-    { type: 'action_log', label: 'Log' },
-    { type: 'action_http_request', label: 'HTTP Request' },
-    { type: 'action_webhook_out', label: 'Webhook Out' },
+    { type: "action_log", label: "Log" },
+    { type: "action_http_request", label: "HTTP Request" },
+    { type: "action_webhook_out", label: "Webhook Out" },
   ],
   conditionals: [
-    { type: 'conditional_if_then', label: 'If-Then' },
-    { type: 'conditional_switch', label: 'Switch' },
-    { type: 'conditional_and', label: 'AND' },
-    { type: 'conditional_or', label: 'OR' },
-    { type: 'conditional_not', label: 'NOT' },
-    { type: 'conditional_equals', label: 'Equals' },
-    { type: 'conditional_greater_than', label: 'Greater Than' },
-    { type: 'conditional_less_than', label: 'Less Than' },
-    { type: 'conditional_contains', label: 'Contains' },
-    { type: 'conditional_regex', label: 'Regex' },
-    { type: 'conditional_for_each', label: 'For Each' },
-    { type: 'conditional_while', label: 'While Loop' },
+    { type: "conditional_if_then", label: "If-Then" },
+    { type: "conditional_switch", label: "Switch" },
+    { type: "conditional_and", label: "AND" },
+    { type: "conditional_or", label: "OR" },
+    { type: "conditional_not", label: "NOT" },
+    { type: "conditional_equals", label: "Equals" },
+    { type: "conditional_greater_than", label: "Greater Than" },
+    { type: "conditional_less_than", label: "Less Than" },
+    { type: "conditional_contains", label: "Contains" },
+    { type: "conditional_regex", label: "Regex" },
+    { type: "conditional_for_each", label: "For Each" },
+    { type: "conditional_while", label: "While Loop" },
   ],
   transforms: [
-    { type: 'transform_delay', label: 'Delay' },
-    { type: 'transform_expression', label: 'Expression' },
-    { type: 'transform_filter', label: 'Filter' },
-    { type: 'transform_json', label: 'JSON Transform' },
-    { type: 'transform_merge', label: 'Merge' },
-    { type: 'transform_split', label: 'Split' },
+    { type: "transform_delay", label: "Delay" },
+    { type: "transform_expression", label: "Expression" },
+    { type: "transform_filter", label: "Filter" },
+    { type: "transform_json", label: "JSON Transform" },
+    { type: "transform_merge", label: "Merge" },
+    { type: "transform_split", label: "Split" },
   ],
-}
+};
 
 function StreamNodeComponent({ data, selected }: NodeProps<StreamNode>) {
-  const bgColor = selected ? 'bg-amber-600' : 'bg-slate-700'
+  const isTransparent = data.color === "transparent";
+  const customStyle = data.color
+    ? { backgroundColor: isTransparent ? "transparent" : data.color }
+    : undefined;
+  const bgColor = customStyle ? "" : selected ? "bg-amber-600" : "bg-slate-700";
   return (
-    <div className={`${bgColor} px-4 py-3 rounded-lg border-2 ${selected ? 'border-amber-400' : 'border-slate-600'}`}>
-      <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-amber-500" />
+    <div
+      className={`${bgColor} px-4 py-3 rounded-lg border-2 ${selected ? "border-amber-400" : "border-slate-600"}`}
+      style={customStyle}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        className="!w-3 !h-3 !bg-amber-500"
+      />
       <div className="text-white text-sm font-medium">{data.label}</div>
-      <Handle type="source" position={Position.Bottom} className="!w-3 !h-3 !bg-amber-500" />
+      {data.resourceName && (
+        <div className="text-[10px] px-1.5 py-0.5 mt-1 rounded bg-black/40 text-amber-300 truncate max-w-[150px]">
+          {data.resourceName}
+        </div>
+      )}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        className="!w-3 !h-3 !bg-amber-500"
+      />
     </div>
-  )
+  );
 }
 
-const nodeTypes = { stream: StreamNodeComponent }
+const nodeTypes = { stream: StreamNodeComponent };
 
 export default function PlaybookEditor() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [nodes, setNodes] = useState<StreamNode[]>([])
-  const [edges, setEdges] = useState<Edge[]>([])
-  const [selectedNode, setSelectedNode] = useState<StreamNode | null>(null)
-  const [nodeConfig, setNodeConfig] = useState<Record<string, unknown>>({})
+  const [nodes, setNodes] = useState<StreamNode[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [selectedNode, setSelectedNode] = useState<StreamNode | null>(null);
+  const [nodeConfig, setNodeConfig] = useState<Record<string, unknown>>({});
+  const [doubleClickNode, setDoubleClickNode] = useState<Node | null>(null);
+  const [doubleClickEdge, setDoubleClickEdge] = useState<Edge | null>(null);
 
-  const { data: streamData, isLoading, error } = useQuery({
-    queryKey: ['stream', id],
-    queryFn: () => id ? api.getStream(Number(id)) : null,
+  const {
+    data: streamData,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["stream", id],
+    queryFn: () => (id ? api.getStream(Number(id)) : null),
     enabled: !!id,
-  })
+  });
 
   useEffect(() => {
-    if (streamData?.nodes) setNodes(streamData.nodes)
-    if (streamData?.edges) setEdges(streamData.edges)
-  }, [streamData])
+    if (streamData?.nodes) setNodes(streamData.nodes);
+    if (streamData?.edges) setEdges(streamData.edges);
+  }, [streamData]);
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      id ? api.updateStream(Number(id), { description: '' }) : Promise.resolve(null),
+      id
+        ? api.updateStream(Number(id), { description: "" })
+        : Promise.resolve(null),
     onSuccess: () => {
-      console.log('[PlaybookEditor] Saved playbook', { id })
-      queryClient.invalidateQueries({ queryKey: ['stream', id] })
+      console.log("[PlaybookEditor] Saved playbook", { id });
+      queryClient.invalidateQueries({ queryKey: ["stream", id] });
     },
-  })
+  });
 
   const executeMutation = useMutation({
     mutationFn: () =>
       id ? api.executeStream(Number(id)) : Promise.resolve(null),
     onSuccess: (data) => {
-      console.log('[PlaybookEditor] Executed playbook', { executionId: data?.execution_id })
-      alert(`Execution started: ${data?.execution_id}`)
+      console.log("[PlaybookEditor] Executed playbook", {
+        executionId: data?.execution_id,
+      });
+      alert(`Execution started: ${data?.execution_id}`);
     },
-  })
+  });
 
   const onNodesChange: OnNodesChange<StreamNode> = useCallback(
     (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
-    []
-  )
+    [],
+  );
   const onEdgesChange: OnEdgesChange = useCallback(
     (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
-    []
-  )
+    [],
+  );
   const onConnect: OnConnect = useCallback(
     (connection) => setEdges((eds) => addEdge(connection, eds)),
-    []
-  )
+    [],
+  );
 
   const addNode = (nodeType: string, label: string) => {
     const newNode: StreamNode = {
       id: `node-${Date.now()}`,
       data: { label, nodeType, config: {} },
       position: { x: 250, y: 100 + nodes.length * 100 },
-      type: 'stream',
-    }
-    setNodes([...nodes, newNode])
-    console.log('[PlaybookEditor] Added node', { nodeType, label })
-  }
+      type: "stream",
+    };
+    setNodes([...nodes, newNode]);
+    console.log("[PlaybookEditor] Added node", { nodeType, label });
+  };
 
   if (error) {
     return (
       <div className="min-h-screen bg-slate-900 p-6 flex items-center justify-center">
         <div className="text-red-400">Failed to load playbook</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -146,13 +188,15 @@ export default function PlaybookEditor() {
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button
-              onClick={() => navigate('/streams')}
+              onClick={() => navigate("/streams")}
               className="text-amber-400 hover:text-amber-300 transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
-              <h1 className="text-2xl font-bold text-amber-400">Playbook Editor</h1>
+              <h1 className="text-2xl font-bold text-amber-400">
+                Playbook Editor
+              </h1>
             </div>
           </div>
           <div className="flex gap-3">
@@ -240,9 +284,11 @@ export default function PlaybookEditor() {
               onConnect={onConnect}
               nodeTypes={nodeTypes}
               onNodeClick={(_, node) => {
-                setSelectedNode(node as StreamNode)
-                setNodeConfig(node.data.config || {})
+                setSelectedNode(node as StreamNode);
+                setNodeConfig(node.data.config || {});
               }}
+              onNodeDoubleClick={(_, node) => setDoubleClickNode(node)}
+              onEdgeDoubleClick={(_, edge) => setDoubleClickEdge(edge)}
             >
               <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
               <Controls />
@@ -257,8 +303,8 @@ export default function PlaybookEditor() {
               <h3 className="text-amber-400 font-semibold">Node Config</h3>
               <button
                 onClick={() => {
-                  setNodes(nodes.filter(n => n.id !== selectedNode.id))
-                  setSelectedNode(null)
+                  setNodes(nodes.filter((n) => n.id !== selectedNode.id));
+                  setSelectedNode(null);
                 }}
                 className="text-red-400 hover:text-red-300 transition-colors"
               >
@@ -267,16 +313,20 @@ export default function PlaybookEditor() {
             </div>
 
             <div className="bg-slate-700 rounded p-3 mb-4">
-              <p className="text-slate-300 text-sm font-mono">{selectedNode.data.label}</p>
+              <p className="text-slate-300 text-sm font-mono">
+                {selectedNode.data.label}
+              </p>
             </div>
 
             <div className="flex-1">
-              <label className="block text-slate-300 text-sm mb-2 font-semibold">Configuration</label>
+              <label className="block text-slate-300 text-sm mb-2 font-semibold">
+                Configuration
+              </label>
               <textarea
                 value={JSON.stringify(nodeConfig, null, 2)}
                 onChange={(e) => {
                   try {
-                    setNodeConfig(JSON.parse(e.target.value))
+                    setNodeConfig(JSON.parse(e.target.value));
                   } catch {
                     // ignore parse errors while typing
                   }
@@ -288,6 +338,30 @@ export default function PlaybookEditor() {
           </div>
         )}
       </div>
+
+      <NodePropertyModal
+        node={doubleClickNode}
+        onClose={() => setDoubleClickNode(null)}
+        onSave={(updatedNode) => {
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === updatedNode.id ? (updatedNode as StreamNode) : n,
+            ),
+          );
+          setDoubleClickNode(null);
+        }}
+      />
+
+      <EdgePropertyModal
+        edge={doubleClickEdge}
+        onClose={() => setDoubleClickEdge(null)}
+        onSave={(updatedEdge) => {
+          setEdges((eds) =>
+            eds.map((ed) => (ed.id === updatedEdge.id ? updatedEdge : ed)),
+          );
+          setDoubleClickEdge(null);
+        }}
+      />
     </div>
-  )
+  );
 }
