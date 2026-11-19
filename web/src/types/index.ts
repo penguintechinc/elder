@@ -438,3 +438,21 @@ export interface AIResourceListResponse {
   per_page: number;
   pages: number;
 }
+
+export interface Software {
+  id: number;
+  name: string;
+  vendor?: string;
+  organization_id: number;
+  software_type?: string;
+  version?: string;
+  seats?: number;
+  cost_monthly?: number | null;
+  renewal_date?: string;
+  license_url?: string;
+  access_url?: string;
+  parent_system_id?: number;
+  git_url?: string;
+  git_path?: string;
+  release_shasum?: string;
+}
