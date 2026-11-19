@@ -42,6 +42,9 @@ interface Software {
   license_url?: string;
   access_url?: string;
   parent_system_id?: number;
+  git_url?: string;
+  git_path?: string;
+  release_shasum?: string;
 }
 
 interface SBOMSchedule {
@@ -304,6 +307,24 @@ export default function Software() {
           ? "Select parent system"
           : "No entities found",
       },
+      {
+        name: "git_url",
+        label: "Git URL",
+        type: "url",
+        placeholder: "https://github.com/org/repo",
+      },
+      {
+        name: "git_path",
+        label: "Git Path (Monorepo)",
+        type: "text",
+        placeholder: "packages/app",
+      },
+      {
+        name: "release_shasum",
+        label: "Release SHA Sum",
+        type: "text",
+        placeholder: "sha256:...",
+      },
     ],
     [organizationOptions, vendorOptions, versionOptions, parentSystemOptions],
   );
@@ -409,6 +430,27 @@ export default function Software() {
           ? String(editingSoftware.parent_system_id)
           : "",
       },
+      {
+        name: "git_url",
+        label: "Git URL",
+        type: "url",
+        placeholder: "https://github.com/org/repo",
+        defaultValue: editingSoftware.git_url || "",
+      },
+      {
+        name: "git_path",
+        label: "Git Path (Monorepo)",
+        type: "text",
+        placeholder: "packages/app",
+        defaultValue: editingSoftware.git_path || "",
+      },
+      {
+        name: "release_shasum",
+        label: "Release SHA Sum",
+        type: "text",
+        placeholder: "sha256:...",
+        defaultValue: editingSoftware.release_shasum || "",
+      },
     ];
   }, [
     editingSoftware,
@@ -436,6 +478,9 @@ export default function Software() {
       parent_system_id: data.parent_system_id
         ? Number(data.parent_system_id)
         : undefined,
+      git_url: (data.git_url as string)?.trim() || undefined,
+      git_path: (data.git_path as string)?.trim() || undefined,
+      release_shasum: (data.release_shasum as string)?.trim() || undefined,
       organization_id: parseInt(data.organization_id as string),
     } as Parameters<typeof api.createSoftware>[0]);
   };
@@ -457,6 +502,9 @@ export default function Software() {
       parent_system_id: data.parent_system_id
         ? Number(data.parent_system_id)
         : undefined,
+      git_url: (data.git_url as string)?.trim() || undefined,
+      git_path: (data.git_path as string)?.trim() || undefined,
+      release_shasum: (data.release_shasum as string)?.trim() || undefined,
     };
     updateMutation.mutate(updateData);
   };
@@ -623,6 +671,26 @@ export default function Software() {
                       <ExternalLink className="w-3 h-3 flex-shrink-0" />
                       <span className="truncate">{software.access_url}</span>
                     </a>
+                  )}
+                  {software.git_url && (
+                    <a
+                      href={software.git_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
+                    >
+                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">
+                        {software.git_url}
+                        {software.git_path ? ` (${software.git_path})` : ""}
+                      </span>
+                    </a>
+                  )}
+                  {software.release_shasum && (
+                    <div className="truncate font-mono text-xs">
+                      SHA: {software.release_shasum}
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -814,6 +882,43 @@ function SoftwareDetailsTab({
             {software.access_url}
             <ExternalLink className="w-3 h-3" />
           </a>
+        </div>
+      )}
+
+      {software.git_url && (
+        <div>
+          <span className="block text-xs text-slate-500 uppercase">
+            Git URL
+          </span>
+          <a
+            href={software.git_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-primary-400 hover:text-primary-300"
+          >
+            {software.git_url}
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
+
+      {software.git_path && (
+        <div>
+          <span className="block text-xs text-slate-500 uppercase">
+            Git Path (Monorepo)
+          </span>
+          <p className="text-white font-mono text-sm">{software.git_path}</p>
+        </div>
+      )}
+
+      {software.release_shasum && (
+        <div>
+          <span className="block text-xs text-slate-500 uppercase">
+            Release SHA Sum
+          </span>
+          <p className="text-white font-mono text-sm break-all">
+            {software.release_shasum}
+          </p>
         </div>
       )}
 

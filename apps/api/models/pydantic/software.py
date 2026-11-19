@@ -33,6 +33,9 @@ class SoftwareDTO(ImmutableModel):
         license_url: Optional URL to license documentation
         access_url: Optional URL to access the software
         parent_system_id: Optional parent system entity ID
+        git_url: Optional Git repository URL
+        git_path: Optional Git path for monorepos
+        release_shasum: Optional SHA checksum for the release
         version: Optional software version
         business_purpose: Optional business purpose/justification
         software_type: Type classification (e.g., 'commercial', 'open-source')
@@ -58,6 +61,9 @@ class SoftwareDTO(ImmutableModel):
     license_url: str | None = None
     access_url: str | None = None
     parent_system_id: int | None = None
+    git_url: str | None = None
+    git_path: str | None = None
+    release_shasum: str | None = None
     version: str | None = None
     business_purpose: str | None = None
     software_type: str
@@ -100,6 +106,9 @@ class CreateSoftwareRequest(RequestModel):
         license_url: Optional URL to license documentation
         access_url: Optional URL to access the software
         parent_system_id: Optional parent system entity ID
+        git_url: Optional Git repository URL
+        git_path: Optional Git path for monorepos
+        release_shasum: Optional SHA checksum for the release
         version: Optional software version
         business_purpose: Optional business purpose/justification
         seats: Optional number of purchased licenses/seats
@@ -145,6 +154,18 @@ class CreateSoftwareRequest(RequestModel):
         default=None,
         ge=1,
         description="Optional parent system entity ID",
+    )
+    git_url: str | None = Field(
+        default=None,
+        description="Optional Git repository URL",
+    )
+    git_path: str | None = Field(
+        default=None,
+        description="Optional Git path for monorepos",
+    )
+    release_shasum: str | None = Field(
+        default=None,
+        description="Optional SHA checksum for the release",
     )
     version: str | None = Field(
         default=None,
@@ -205,6 +226,9 @@ class UpdateSoftwareRequest(RequestModel):
         license_url: URL to license documentation (optional)
         access_url: URL to access the software (optional)
         parent_system_id: Parent system entity ID (optional, must be >= 1)
+        git_url: Git repository URL (optional)
+        git_path: Git path for monorepos (optional)
+        release_shasum: SHA checksum for the release (optional)
         version: Software version (optional)
         business_purpose: Business purpose/justification (optional)
         seats: Number of purchased licenses/seats (optional)
@@ -245,6 +269,18 @@ class UpdateSoftwareRequest(RequestModel):
         default=None,
         ge=1,
         description="Parent system entity ID",
+    )
+    git_url: str | None = Field(
+        default=None,
+        description="Git repository URL",
+    )
+    git_path: str | None = Field(
+        default=None,
+        description="Git path for monorepos",
+    )
+    release_shasum: str | None = Field(
+        default=None,
+        description="SHA checksum for the release",
     )
     version: str | None = Field(
         default=None,

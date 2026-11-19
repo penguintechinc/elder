@@ -409,4 +409,7 @@ export interface Software {
   license_url?: string;
   access_url?: string;
   parent_system_id?: number;
+  git_url?: string;
+  git_path?: string;
+  release_shasum?: string;
 }

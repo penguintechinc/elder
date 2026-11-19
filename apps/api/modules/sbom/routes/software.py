@@ -56,6 +56,18 @@ def _ensure_software_columns(db) -> None:
             "ALTER TABLE software ADD COLUMN IF NOT EXISTS parent_system_id INTEGER",
             "ALTER TABLE software ADD COLUMN parent_system_id INTEGER",
         ),
+        (
+            "ALTER TABLE software ADD COLUMN IF NOT EXISTS git_url VARCHAR(1024)",
+            "ALTER TABLE software ADD COLUMN git_url VARCHAR(1024)",
+        ),
+        (
+            "ALTER TABLE software ADD COLUMN IF NOT EXISTS git_path VARCHAR(512)",
+            "ALTER TABLE software ADD COLUMN git_path VARCHAR(512)",
+        ),
+        (
+            "ALTER TABLE software ADD COLUMN IF NOT EXISTS release_shasum VARCHAR(128)",
+            "ALTER TABLE software ADD COLUMN release_shasum VARCHAR(128)",
+        ),
     ]
     for pg_sql, sqlite_sql in statements:
         try:
@@ -162,6 +174,9 @@ async def create_software(body: CreateSoftwareRequest):
             license_url=body.license_url,
             access_url=body.access_url,
             parent_system_id=body.parent_system_id,
+            git_url=body.git_url,
+            git_path=body.git_path,
+            release_shasum=body.release_shasum,
             version=body.version,
             business_purpose=body.business_purpose,
             software_type=body.software_type,
@@ -248,6 +263,9 @@ async def update_software(id: int, body: UpdateSoftwareRequest):
             "license_url",
             "access_url",
             "parent_system_id",
+            "git_url",
+            "git_path",
+            "release_shasum",
             "version",
             "business_purpose",
             "software_type",
