@@ -378,13 +378,21 @@ async def update_identity(id: int, body: UpdateIdentityRequest):
         if body.full_name is not None:
             update_fields["full_name"] = body.full_name
         if body.password is not None:
-            # Note: identities table doesn't have password_hash - passwords are managed separately
-            pass
+            pwd = body.password.get_secret_value()
+            if pwd:
+                update_fields["password_hash"] = generate_password_hash(pwd)
         if body.is_active is not None:
             update_fields["is_active"] = body.is_active
+        if body.mfa_enabled is not None:
+            update_fields["mfa_enabled"] = body.mfa_enabled
+        if body.organization_id is not None:
+            update_fields["organization_id"] = body.organization_id
+        if body.portal_role is not None:
+            update_fields["portal_role"] = body.portal_role
 
-        db(db.identities.id == id).update(**update_fields)
-        db.commit()
+        if update_fields:
+            db(db.identities.id == id).update(**update_fields)
+            db.commit()
         return db.identities[id]  # tenant-scope-exempt: verified above
 
     identity = await run_in_threadpool(update)
