@@ -25,6 +25,7 @@ import { confirmDelete } from "@/lib/confirmActions";
 import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
+import SearchableSelect from "@/components/SearchableSelect";
 import Select from "@/components/Select";
 import type {
   AIResource,
@@ -42,12 +43,59 @@ export interface AIResourcesProps {
   defaultType?: AIResourceType;
 }
 
-const RESOURCE_TABS: { value: "" | AIResourceType; label: string }[] = [
+const RESOURCE_TABS: {
+  value: "" | AIResourceType | "providers";
+  label: string;
+}[] = [
   { value: "", label: "All Resources" },
   { value: "llm", label: "AI LLMs" },
   { value: "ai_gateway", label: "AI Gateways" },
   { value: "mcp_server", label: "MCP Servers" },
+  { value: "providers", label: "Providers" },
 ];
+
+const COMMON_PROVIDERS = [
+  "Anthropic",
+  "OpenAI",
+  "Google",
+  "AWS Bedrock",
+  "Azure OpenAI",
+  "Vertex AI",
+  "xAI",
+  "Mistral",
+  "Cohere",
+  "Groq",
+  "Together AI",
+  "Meta / Llama",
+  "Ollama",
+  "LiteLLM",
+  "OpenRouter",
+  "Hugging Face",
+];
+
+const COMMON_MODELS_BY_PROVIDER: Record<string, string[]> = {
+  Anthropic: [
+    "claude-3-7-sonnet",
+    "claude-3-5-sonnet",
+    "claude-3-5-haiku",
+    "claude-opus-4",
+    "claude-sonnet-4",
+  ],
+  OpenAI: ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "o3", "o4-mini"],
+  Google: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.0-flash"],
+  "Vertex AI": ["gemini-2.5-pro", "gemini-2.5-flash", "claude-3-7-sonnet"],
+  "AWS Bedrock": [
+    "anthropic.claude-3-7-sonnet",
+    "amazon.nova-pro",
+    "meta.llama3-3-70b",
+  ],
+  "Azure OpenAI": ["gpt-4o", "gpt-4o-mini", "o3-mini"],
+  xAI: ["grok-3", "grok-3-mini"],
+  Mistral: ["mistral-large-latest", "codestral-latest", "mistral-small-latest"],
+  Cohere: ["command-a-03-2025", "command-r-plus", "embed-v4.0"],
+  Groq: ["llama-3.3-70b-versatile", "mixtral-8x7b-32768"],
+  Ollama: ["gemma4:12b", "llama3.3:70b", "qwen2.5-coder:32b"],
+};
 
 const RESOURCE_TYPES: { value: AIResourceType; label: string }[] = [
   { value: "llm", label: "AI LLM" },
@@ -212,9 +260,9 @@ function renderMetadataBadges(metadata?: Record<string, unknown> | null) {
 }
 
 export default function AIResources({ defaultType }: AIResourcesProps) {
-  const [activeType, setActiveType] = useState<"" | AIResourceType>(
-    defaultType || "",
-  );
+  const [activeType, setActiveType] = useState<
+    "" | AIResourceType | "providers"
+  >(defaultType || "");
   const [search, setSearch] = useState("");
   const [organizationFilter, setOrganizationFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -256,11 +304,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
     return map;
   }, [organizations]);
 
+  const apiTypeFilter =
+    activeType && activeType !== "providers" ? activeType : undefined;
+
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.aiResources.list({
       search,
       organization_id: organizationFilter,
-      resource_type: activeType,
+      resource_type: apiTypeFilter || "",
       status: statusFilter,
       agreement_level: agreementFilter,
     }),
@@ -271,13 +322,107 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
         organization_id: organizationFilter
           ? parseInt(organizationFilter, 10)
           : undefined,
-        resource_type: activeType || undefined,
+        resource_type: apiTypeFilter,
         status: statusFilter || undefined,
         agreement_level: agreementFilter || undefined,
       }),
   });
 
+  const { data: allResourcesData } = useQuery({
+    queryKey: queryKeys.aiResources.list({ scope: "all-providers" }),
+    queryFn: () => api.getAIResources({ per_page: 250 }),
+  });
+
   const resources: AIResource[] = useMemo(() => data?.items || [], [data]);
+  const allResources: AIResource[] = useMemo(
+    () => allResourcesData?.items || resources,
+    [allResourcesData, resources],
+  );
+
+  const providerOptions = useMemo(() => {
+    const set = new Set<string>(COMMON_PROVIDERS);
+    for (const r of allResources) {
+      if (r.provider?.trim()) set.add(r.provider.trim());
+    }
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b))
+      .map((p) => ({ value: p, label: p }));
+  }, [allResources]);
+
+  const modelOptions = useMemo(() => {
+    const selectedProvider = formState.provider.trim();
+    const set = new Set<string>();
+    if (selectedProvider && COMMON_MODELS_BY_PROVIDER[selectedProvider]) {
+      for (const m of COMMON_MODELS_BY_PROVIDER[selectedProvider]) set.add(m);
+    }
+    for (const r of allResources) {
+      if (
+        r.model_name?.trim() &&
+        (!selectedProvider ||
+          (r.provider || "").trim().toLowerCase() ===
+            selectedProvider.toLowerCase())
+      ) {
+        set.add(r.model_name.trim());
+      }
+    }
+    if (set.size === 0) {
+      for (const models of Object.values(COMMON_MODELS_BY_PROVIDER)) {
+        for (const m of models) set.add(m);
+      }
+    }
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b))
+      .map((m) => ({ value: m, label: m }));
+  }, [allResources, formState.provider]);
+
+  const providersSummary = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        provider: string;
+        items: AIResource[];
+        models: Set<string>;
+        allowedCount: number;
+        pendingCount: number;
+        monthlyBudget: number;
+        seats: number;
+      }
+    >();
+    const q = search.trim().toLowerCase();
+    for (const r of resources) {
+      const providerName = r.provider?.trim() || "Unassigned";
+      if (
+        q &&
+        !providerName.toLowerCase().includes(q) &&
+        !(r.model_name || "").toLowerCase().includes(q) &&
+        !r.name.toLowerCase().includes(q)
+      ) {
+        continue;
+      }
+      let entry = groups.get(providerName);
+      if (!entry) {
+        entry = {
+          provider: providerName,
+          items: [],
+          models: new Set<string>(),
+          allowedCount: 0,
+          pendingCount: 0,
+          monthlyBudget: 0,
+          seats: 0,
+        };
+        groups.set(providerName, entry);
+      }
+      entry.items.push(r);
+      if (r.model_name?.trim()) entry.models.add(r.model_name.trim());
+      if (r.status === "allowed") entry.allowedCount += 1;
+      if (r.status === "pending_review") entry.pendingCount += 1;
+      entry.monthlyBudget += r.budget_monthly || 0;
+      entry.seats += r.seats || 0;
+    }
+    return Array.from(groups.values()).sort((a, b) =>
+      a.provider.localeCompare(b.provider),
+    );
+  }, [resources, search]);
 
   const stats = useMemo(() => {
     const total = data?.total ?? resources.length;
@@ -335,15 +480,24 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
     },
   });
 
-  const openCreateModal = () => {
+  const openCreateModal = (preset?: {
+    provider?: string;
+    resource_type?: AIResourceType;
+  }) => {
     setEditingResource(null);
     setMetadataError(null);
-    setFormState(
-      emptyFormState(
-        activeType || defaultType || "llm",
+    const baseType =
+      preset?.resource_type ||
+      (activeType && activeType !== "providers"
+        ? activeType
+        : defaultType || "llm");
+    setFormState({
+      ...emptyFormState(
+        baseType,
         organizations[0] ? String(organizations[0].id) : "",
       ),
-    );
+      provider: preset?.provider || "",
+    });
     setShowFormModal(true);
   };
 
@@ -443,7 +597,7 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
             Track and govern approved LLMs, AI gateways, and MCP servers
           </p>
         </div>
-        <Button onClick={openCreateModal}>
+        <Button onClick={() => openCreateModal()}>
           <Plus className="w-4 h-4 mr-2" />
           Add AI Resource
         </Button>
@@ -582,163 +736,252 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
         </CardContent>
       </Card>
 
-      {/* Resources Table */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-            Inventory ({resources.length})
-          </h2>
-        </CardHeader>
-        <CardContent className="p-0 overflow-x-auto">
-          {isLoading ? (
-            <div className="p-8 text-center text-slate-500">
-              Loading AI resources...
-            </div>
-          ) : resources.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              No AI resources found. Add one to get started.
-            </div>
-          ) : (
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
-                  <th className="py-3 px-4">Name</th>
-                  <th className="py-3 px-4">Type</th>
-                  <th className="py-3 px-4">Provider / Model</th>
-                  <th className="py-3 px-4">Endpoint</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">Agreement</th>
-                  <th className="py-3 px-4">Plan</th>
-                  <th className="py-3 px-4">Budget / mo</th>
-                  <th className="py-3 px-4">Cost / 10M</th>
-                  <th className="py-3 px-4">Seats</th>
-                  <th className="py-3 px-4">Compliance</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
-                {resources.map((resource) => {
-                  const statusMeta = STATUS_BADGE[resource.status];
-                  const StatusIcon = statusMeta.icon;
-                  return (
-                    <tr
-                      key={resource.id}
-                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
-                    >
-                      <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
-                        <div>{resource.name}</div>
-                        <div className="text-xs text-slate-500">
-                          {orgNameById.get(resource.organization_id) ||
-                            `Org #${resource.organization_id}`}
+      {/* Providers Tab or Resources Table */}
+      {activeType === "providers" ? (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              AI Providers ({providersSummary.length})
+            </h2>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? (
+              <div className="p-8 text-center text-slate-500">
+                Loading providers...
+              </div>
+            ) : providersSummary.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                No AI providers found. Add an AI resource to see providers here.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {providersSummary.map((group) => (
+                  <div
+                    key={group.provider}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 p-4 flex flex-col justify-between gap-3 bg-white dark:bg-slate-800/40"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                            {group.provider}
+                          </h3>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {group.items.length} resource
+                            {group.items.length === 1 ? "" : "s"} &middot;{" "}
+                            {group.allowedCount} allowed &middot;{" "}
+                            {group.pendingCount} pending
+                          </p>
                         </div>
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                          {renderTypeIcon(resource.resource_type)}
-                          {TYPE_LABEL[resource.resource_type]}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                        <div>{resource.provider || "-"}</div>
-                        {resource.model_name && (
-                          <div className="text-xs text-slate-500 font-mono">
-                            {resource.model_name}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 max-w-[200px] truncate">
-                        {resource.endpoint_url ? (
-                          <a
-                            href={resource.endpoint_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"
-                          >
-                            <span className="truncate">
-                              {resource.endpoint_url}
-                            </span>
-                            <ExternalLink className="w-3 h-3 shrink-0" />
-                          </a>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusMeta.className}`}
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() =>
+                            openCreateModal({
+                              provider:
+                                group.provider === "Unassigned"
+                                  ? ""
+                                  : group.provider,
+                              resource_type: "llm",
+                            })
+                          }
                         >
-                          <StatusIcon className="w-3 h-3" />
-                          {statusMeta.label}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {resource.agreement_level ? (
-                          <span
-                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${AGREEMENT_BADGE[resource.agreement_level]}`}
-                          >
-                            {resource.agreement_level}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                        {resource.plan_info || "-"}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                        {formatCurrency(resource.budget_monthly)}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                        {formatCurrency(resource.cost_per_10m_tokens)}
-                      </td>
-                      <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
-                        {resource.seats ?? "-"}
-                      </td>
-                      <td className="py-3 px-4">
-                        {renderMetadataBadges(resource.metadata) || (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
-                        <div className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setViewingResource(resource)}
-                            className="p-1.5 text-slate-500 hover:text-blue-600 rounded"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(resource)}
-                            className="p-1.5 text-slate-500 hover:text-amber-600 rounded"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              confirmDelete(resource.name, () =>
-                                deleteMutation.mutate(resource.id),
-                              )
-                            }
-                            className="p-1.5 text-slate-500 hover:text-red-600 rounded"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <Plus className="w-3.5 h-3.5 mr-1" />
+                          Add LLM
+                        </Button>
+                      </div>
+
+                      {group.models.size > 0 && (
+                        <div className="mt-3">
+                          <p className="text-[11px] font-medium uppercase text-slate-500 mb-1">
+                            Models in use
+                          </p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Array.from(group.models)
+                              .sort()
+                              .map((model) => (
+                                <span
+                                  key={model}
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-mono bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200"
+                                >
+                                  {model}
+                                </span>
+                              ))}
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-xs text-slate-500">
+                      <span>
+                        Budget: {formatCurrency(group.monthlyBudget)}/mo
+                      </span>
+                      <span>Seats: {group.seats}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Inventory ({resources.length})
+            </h2>
+          </CardHeader>
+          <CardContent className="p-0 overflow-x-auto">
+            {isLoading ? (
+              <div className="p-8 text-center text-slate-500">
+                Loading AI resources...
+              </div>
+            ) : resources.length === 0 ? (
+              <div className="p-8 text-center text-slate-500">
+                No AI resources found. Add one to get started.
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 text-xs uppercase text-slate-500">
+                    <th className="py-3 px-4">Name</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Provider / Model</th>
+                    <th className="py-3 px-4">Endpoint</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Agreement</th>
+                    <th className="py-3 px-4">Plan</th>
+                    <th className="py-3 px-4">Budget / mo</th>
+                    <th className="py-3 px-4">Cost / 10M</th>
+                    <th className="py-3 px-4">Seats</th>
+                    <th className="py-3 px-4">Compliance</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                  {resources.map((resource) => {
+                    const statusMeta = STATUS_BADGE[resource.status];
+                    const StatusIcon = statusMeta.icon;
+                    return (
+                      <tr
+                        key={resource.id}
+                        className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                      >
+                        <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
+                          <div>{resource.name}</div>
+                          <div className="text-xs text-slate-500">
+                            {orgNameById.get(resource.organization_id) ||
+                              `Org #${resource.organization_id}`}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
+                            {renderTypeIcon(resource.resource_type)}
+                            {TYPE_LABEL[resource.resource_type]}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          <div>{resource.provider || "-"}</div>
+                          {resource.model_name && (
+                            <div className="text-xs text-slate-500 font-mono">
+                              {resource.model_name}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 max-w-[200px] truncate">
+                          {resource.endpoint_url ? (
+                            <a
+                              href={resource.endpoint_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              <span className="truncate">
+                                {resource.endpoint_url}
+                              </span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${statusMeta.className}`}
+                          >
+                            <StatusIcon className="w-3 h-3" />
+                            {statusMeta.label}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {resource.agreement_level ? (
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${AGREEMENT_BADGE[resource.agreement_level]}`}
+                            >
+                              {resource.agreement_level}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {resource.plan_info || "-"}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {formatCurrency(resource.budget_monthly)}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {formatCurrency(resource.cost_per_10m_tokens)}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 dark:text-slate-300">
+                          {resource.seats ?? "-"}
+                        </td>
+                        <td className="py-3 px-4">
+                          {renderMetadataBadges(resource.metadata) || (
+                            <span className="text-slate-400">-</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setViewingResource(resource)}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 rounded"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditModal(resource)}
+                              className="p-1.5 text-slate-500 hover:text-amber-600 rounded"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                confirmDelete(resource.name, () =>
+                                  deleteMutation.mutate(resource.id),
+                                )
+                              }
+                              className="p-1.5 text-slate-500 hover:text-red-600 rounded"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Create / Edit Modal */}
       {showFormModal && (
@@ -861,13 +1104,16 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                   >
                     Provider
                   </label>
-                  <Input
-                    id="ai-resource-provider"
+                  <SearchableSelect
+                    options={providerOptions}
                     value={formState.provider}
-                    onChange={(e) =>
-                      setFormState({ ...formState, provider: e.target.value })
+                    onChange={(val) =>
+                      setFormState({ ...formState, provider: String(val) })
                     }
-                    placeholder="e.g. Anthropic, OpenAI, LiteLLM"
+                    placeholder="Select or type provider (e.g. Anthropic)"
+                    allowCustom
+                    allowClear
+                    ariaLabel="Provider"
                   />
                 </div>
 
@@ -878,13 +1124,16 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                   >
                     Model Name
                   </label>
-                  <Input
-                    id="ai-resource-model"
+                  <SearchableSelect
+                    options={modelOptions}
                     value={formState.model_name}
-                    onChange={(e) =>
-                      setFormState({ ...formState, model_name: e.target.value })
+                    onChange={(val) =>
+                      setFormState({ ...formState, model_name: String(val) })
                     }
-                    placeholder="e.g. claude-3-7-sonnet"
+                    placeholder="Select or type model (e.g. claude-3-7-sonnet)"
+                    allowCustom
+                    allowClear
+                    ariaLabel="Model Name"
                   />
                 </div>
 

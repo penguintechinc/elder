@@ -9,6 +9,8 @@ from typing import Any
 
 from quart import Blueprint, current_app, request
 from quart_schema import validate_response
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
 
 from apps.api.auth.decorators import (
     login_required,
@@ -96,31 +98,39 @@ def _ensure_ai_resources_table(db: Any) -> None:
     global _table_ensured
     if _table_ensured:
         return
-    if not hasattr(db, "executesql"):
+    try:
+        engine = db.engine
+    except Exception:
+        engine = None
+    if engine is None:
         _table_ensured = True
         return
 
-    uri = str(getattr(db, "_uri", "") or "").lower()
-    if "sqlite" in uri:
-        db.executesql(_SQLITE_CREATE_SQL)
-        db.commit()
-    else:
-        try:
-            db.executesql(_PG_CREATE_SQL)
-            db.executesql(
-                "CREATE INDEX IF NOT EXISTS ix_ai_resources_resource_type "
-                "ON ai_resources (resource_type);"
+    try:
+        if sa_inspect(engine).has_table("ai_resources"):
+            _table_ensured = True
+            return
+    except Exception:
+        pass
+
+    is_sqlite = getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
+    with engine.begin() as conn:
+        if is_sqlite:
+            conn.execute(text(_SQLITE_CREATE_SQL))
+        else:
+            conn.execute(text(_PG_CREATE_SQL))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_ai_resources_resource_type "
+                    "ON ai_resources (resource_type);"
+                )
             )
-            db.executesql(
-                "CREATE INDEX IF NOT EXISTS ix_ai_resources_status "
-                "ON ai_resources (status);"
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_ai_resources_status "
+                    "ON ai_resources (status);"
+                )
             )
-            db.commit()
-        except Exception:
-            if hasattr(db, "rollback"):
-                db.rollback()
-            db.executesql(_SQLITE_CREATE_SQL)
-            db.commit()
     _table_ensured = True
 
 
