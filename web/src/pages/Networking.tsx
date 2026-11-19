@@ -30,10 +30,8 @@ import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
 import NetworkTopologyGraph from "@/components/NetworkTopologyGraph";
-import {
-  FormModalBuilder,
-  FormField,
-} from "@penguintechinc/react-libs/components";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import type { FormField } from "@/types/form";
 
 interface Organization {
   id: number;
@@ -126,6 +124,8 @@ export default function Networking() {
   const [createCidr, setCreateCidr] = useState("");
   const [addCidrToIpam, setAddCidrToIpam] = useState(true);
   const [createDescription, setCreateDescription] = useState("");
+  const [createGateway, setCreateGateway] = useState("");
+  const [createVlanId, setCreateVlanId] = useState("");
   const [createRegion, setCreateRegion] = useState("");
   const [createLocation, setCreateLocation] = useState("");
   const queryClient = useQueryClient();
@@ -138,6 +138,8 @@ export default function Networking() {
     setCreateCidr("");
     setAddCidrToIpam(true);
     setCreateDescription("");
+    setCreateGateway("");
+    setCreateVlanId("");
     setCreateRegion("");
     setCreateLocation("");
   };
@@ -175,6 +177,26 @@ export default function Networking() {
     queryKey: ["ipam-prefixes", createOrgId],
     queryFn: () =>
       api.getIpamPrefixes(
+        createOrgId ? { organization_id: parseInt(createOrgId, 10) } : {},
+      ),
+    enabled: showCreateModal,
+  });
+
+  const { data: ipamAddressesData, isLoading: ipamAddressesLoading } = useQuery(
+    {
+      queryKey: ["ipam-addresses", createOrgId],
+      queryFn: () =>
+        api.getIpamAddresses(
+          createOrgId ? { organization_id: parseInt(createOrgId, 10) } : {},
+        ),
+      enabled: showCreateModal,
+    },
+  );
+
+  const { data: ipamVlansData, isLoading: ipamVlansLoading } = useQuery({
+    queryKey: ["ipam-vlans", createOrgId],
+    queryFn: () =>
+      api.getIpamVlans(
         createOrgId ? { organization_id: parseInt(createOrgId, 10) } : {},
       ),
     enabled: showCreateModal,
@@ -247,6 +269,41 @@ export default function Networking() {
       .sort()
       .map((loc) => ({ value: loc, label: loc }));
   }, [allNetworks?.networks]);
+
+  const gatewayOptions = useMemo(() => {
+    const list = (ipamAddressesData?.addresses ||
+      ipamAddressesData?.items ||
+      []) as Array<{
+      id: number;
+      address: string;
+      dns_name?: string;
+      description?: string;
+    }>;
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    for (const addr of list) {
+      if (!addr.address || seen.has(addr.address)) continue;
+      seen.add(addr.address);
+      const detail = addr.dns_name || addr.description;
+      opts.push({
+        value: addr.address,
+        label: detail ? `${addr.address} — ${detail}` : addr.address,
+      });
+    }
+    return opts;
+  }, [ipamAddressesData]);
+
+  const vlanOptions = useMemo(() => {
+    const list = (ipamVlansData?.vlans || ipamVlansData?.items || []) as Array<{
+      id: number;
+      vid: number;
+      name: string;
+    }>;
+    return list.map((v) => ({
+      value: String(v.id),
+      label: `VLAN ${v.vid} — ${v.name}`,
+    }));
+  }, [ipamVlansData]);
 
   const cidrExistsInIpam = useMemo(() => {
     const normalized = createCidr.trim();
@@ -404,6 +461,8 @@ export default function Networking() {
       organization_id: parseInt(createOrgId, 10),
       parent_id: createParentId ? parseInt(createParentId, 10) : undefined,
       cidr: trimmedCidr || undefined,
+      gateway: createGateway.trim() || undefined,
+      vlan_id: createVlanId ? parseInt(createVlanId, 10) : undefined,
       description: createDescription.trim() || undefined,
       region: createRegion.trim() || undefined,
       location: createLocation.trim() || undefined,
@@ -861,6 +920,38 @@ export default function Networking() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="mb-1.5 block text-sm font-medium text-slate-300">
+                    Gateway (Optional)
+                  </span>
+                  <SearchableSelect
+                    options={gatewayOptions}
+                    value={createGateway}
+                    onChange={(val) => setCreateGateway(String(val))}
+                    placeholder="Search IPAM or enter gateway..."
+                    isLoading={ipamAddressesLoading}
+                    allowCustom
+                    allowClear
+                    ariaLabel="Gateway"
+                  />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-sm font-medium text-slate-300">
+                    VLAN (Optional)
+                  </span>
+                  <SearchableSelect
+                    options={vlanOptions}
+                    value={createVlanId}
+                    onChange={(val) => setCreateVlanId(String(val))}
+                    placeholder="Search IPAM VLANs..."
+                    isLoading={ipamVlansLoading}
+                    allowClear
+                    ariaLabel="VLAN"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="mb-1.5 block text-sm font-medium text-slate-300">
                     Region
                   </span>
                   <SearchableSelect
@@ -920,13 +1011,13 @@ export default function Networking() {
       )}
 
       {showCreateConnectionModal && (
-        <FormModalBuilder
+        <ModalFormBuilder
           isOpen={showCreateConnectionModal}
           onClose={() => setShowCreateConnectionModal(false)}
           title="Create Network Connection"
           fields={connectionFields}
           onSubmit={handleCreateConnection}
-          submitButtonText="Create"
+          submitLabel="Create"
         />
       )}
     </div>

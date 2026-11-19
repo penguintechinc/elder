@@ -1,142 +1,162 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, FileKey, Trash2, Edit2, Eye } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import Button from '@/components/Button'
-import Card, { CardHeader, CardContent } from '@/components/Card'
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, FileKey, Trash2, Edit2, Eye } from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import Button from "@/components/Button";
+import Card, { CardHeader, CardContent } from "@/components/Card";
 // Input is used in form configs only, not directly imported for this component
-import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
-import { Organization } from '@/types'
+import Select from "@/components/Select";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import type { FormField } from "@/types/form";
+import { Organization } from "@/types";
 
 interface Certificate {
-  id: number
-  name: string
-  organization_id: number
-  creator: string
-  cert_type: string
-  common_name?: string
-  issue_date?: string
-  expiration_date?: string
-  status: string
-  renewal_days_before?: number
-  auto_renew?: boolean
-  certificate_pem?: string
-  description?: string
+  id: number;
+  name: string;
+  organization_id: number;
+  creator: string;
+  cert_type: string;
+  common_name?: string;
+  issue_date?: string;
+  expiration_date?: string;
+  status: string;
+  renewal_days_before?: number;
+  auto_renew?: boolean;
+  certificate_pem?: string;
+  description?: string;
 }
 
 interface CertificateResponse {
-  certificates: Certificate[]
+  certificates: Certificate[];
 }
 
 interface OrganizationResponse {
-  items: Organization[]
+  items: Organization[];
 }
 
-type ApiError = { response?: { data?: { message?: string }, status?: number }, message?: string }
+type ApiError = {
+  response?: { data?: { message?: string }; status?: number };
+  message?: string;
+};
 
 const CERT_CREATORS = [
-  { value: 'digicert', label: 'DigiCert' },
-  { value: 'letsencrypt', label: 'Let\'s Encrypt' },
-  { value: 'self_signed', label: 'Self Signed' },
-  { value: 'sectigo', label: 'Sectigo' },
-  { value: 'globalsign', label: 'GlobalSign' },
-  { value: 'godaddy', label: 'GoDaddy' },
-  { value: 'entrust', label: 'Entrust' },
-  { value: 'certbot', label: 'Certbot' },
-  { value: 'acme', label: 'ACME' },
-  { value: 'comodo', label: 'Comodo' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "digicert", label: "DigiCert" },
+  { value: "letsencrypt", label: "Let's Encrypt" },
+  { value: "self_signed", label: "Self Signed" },
+  { value: "sectigo", label: "Sectigo" },
+  { value: "globalsign", label: "GlobalSign" },
+  { value: "godaddy", label: "GoDaddy" },
+  { value: "entrust", label: "Entrust" },
+  { value: "certbot", label: "Certbot" },
+  { value: "acme", label: "ACME" },
+  { value: "comodo", label: "Comodo" },
+  { value: "other", label: "Other" },
+];
 
 const CERT_TYPES = [
-  { value: 'ca_root', label: 'CA Root' },
-  { value: 'ca_intermediate', label: 'CA Intermediate' },
-  { value: 'server_cert', label: 'Server Certificate' },
-  { value: 'client_cert', label: 'Client Certificate' },
-  { value: 'code_signing', label: 'Code Signing' },
-  { value: 'wildcard', label: 'Wildcard' },
-  { value: 'san', label: 'SAN' },
-  { value: 'ecc', label: 'ECC' },
-  { value: 'rsa', label: 'RSA' },
-  { value: 'email', label: 'Email' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "ca_root", label: "CA Root" },
+  { value: "ca_intermediate", label: "CA Intermediate" },
+  { value: "server_cert", label: "Server Certificate" },
+  { value: "client_cert", label: "Client Certificate" },
+  { value: "code_signing", label: "Code Signing" },
+  { value: "wildcard", label: "Wildcard" },
+  { value: "san", label: "SAN" },
+  { value: "ecc", label: "ECC" },
+  { value: "rsa", label: "RSA" },
+  { value: "email", label: "Email" },
+  { value: "other", label: "Other" },
+];
 
-function getStatusBadge(status: string, expirationDate?: string, renewalDaysBefore?: number) {
-  const today = new Date()
-  const expDate = expirationDate ? new Date(expirationDate) : null
-  const daysUntilExpiry = expDate ? Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : 0
-  const renewalDays = renewalDaysBefore || 30
+function getStatusBadge(
+  status: string,
+  expirationDate?: string,
+  renewalDaysBefore?: number,
+) {
+  const today = new Date();
+  const expDate = expirationDate ? new Date(expirationDate) : null;
+  const daysUntilExpiry = expDate
+    ? Math.ceil((expDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+  const renewalDays = renewalDaysBefore || 30;
 
-  if (status === 'revoked') {
-    return { badge: 'Revoked', className: 'bg-gray-500/20 text-gray-400' }
+  if (status === "revoked") {
+    return { badge: "Revoked", className: "bg-gray-500/20 text-gray-400" };
   }
 
-  if (status === 'expired' || daysUntilExpiry <= 0) {
-    return { badge: 'Expired', className: 'bg-red-500/20 text-red-400' }
+  if (status === "expired" || daysUntilExpiry <= 0) {
+    return { badge: "Expired", className: "bg-red-500/20 text-red-400" };
   }
 
   if (daysUntilExpiry <= renewalDays) {
-    return { badge: 'Expiring Soon', className: 'bg-yellow-500/20 text-yellow-400' }
+    return {
+      badge: "Expiring Soon",
+      className: "bg-yellow-500/20 text-yellow-400",
+    };
   }
 
-  return { badge: 'Active', className: 'bg-green-500/20 text-green-400' }
+  return { badge: "Active", className: "bg-green-500/20 text-green-400" };
 }
 
 export default function Certificates() {
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null)
-  const [filterCreator, setFilterCreator] = useState('')
-  const [filterType, setFilterType] = useState('')
-  const [filterOrg, setFilterOrg] = useState('')
-  const queryClient = useQueryClient()
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedCertificate, setSelectedCertificate] =
+    useState<Certificate | null>(null);
+  const [filterCreator, setFilterCreator] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [filterOrg, setFilterOrg] = useState("");
+  const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
-    queryKey: ['certificates'],
+    queryKey: ["certificates"],
     queryFn: () => api.getCertificates() as Promise<CertificateResponse>,
-  })
+  });
 
   const { data: orgs } = useQuery({
-    queryKey: ['organizations'],
+    queryKey: ["organizations"],
     queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteCertificate(id),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ['certificates'],
-        refetchType: 'all'
-      })
-      toast.success('Certificate deleted')
+        queryKey: ["certificates"],
+        refetchType: "all",
+      });
+      toast.success("Certificate deleted");
     },
     onError: () => {
-      toast.error('Failed to delete certificate')
+      toast.error("Failed to delete certificate");
     },
-  })
+  });
 
-  const filteredCerts = data?.certificates?.filter((cert: Certificate) => {
-    if (filterCreator && cert.creator !== filterCreator) return false
-    if (filterType && cert.cert_type !== filterType) return false
-    if (filterOrg && cert.organization_id !== parseInt(filterOrg)) return false
-    return true
-  }) || []
+  const filteredCerts =
+    data?.certificates?.filter((cert: Certificate) => {
+      if (filterCreator && cert.creator !== filterCreator) return false;
+      if (filterType && cert.cert_type !== filterType) return false;
+      if (filterOrg && cert.organization_id !== parseInt(filterOrg))
+        return false;
+      return true;
+    }) || [];
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">Certificates</h1>
-          <p className="mt-2 text-slate-400">Manage SSL/TLS certificates and certificate authorities</p>
+          <p className="mt-2 text-slate-400">
+            Manage SSL/TLS certificates and certificate authorities
+          </p>
         </div>
-        <Button onClick={() => {
-          setSelectedCertificate(null)
-          setShowCreateModal(true)
-        }}>
+        <Button
+          onClick={() => {
+            setSelectedCertificate(null);
+            setShowCreateModal(true);
+          }}
+        >
           <Plus className="w-4 h-4 mr-2" />
           Add Certificate
         </Button>
@@ -148,27 +168,24 @@ export default function Certificates() {
           label="Filter by Creator"
           value={filterCreator}
           onChange={(e) => setFilterCreator(e.target.value)}
-          options={[
-            { value: '', label: 'All Creators' },
-            ...CERT_CREATORS,
-          ]}
+          options={[{ value: "", label: "All Creators" }, ...CERT_CREATORS]}
         />
         <Select
           label="Filter by Type"
           value={filterType}
           onChange={(e) => setFilterType(e.target.value)}
-          options={[
-            { value: '', label: 'All Types' },
-            ...CERT_TYPES,
-          ]}
+          options={[{ value: "", label: "All Types" }, ...CERT_TYPES]}
         />
         <Select
           label="Filter by Organization"
           value={filterOrg}
           onChange={(e) => setFilterOrg(e.target.value)}
           options={[
-            { value: '', label: 'All Organizations' },
-            ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
+            { value: "", label: "All Organizations" },
+            ...(orgs?.items || []).map((o: Organization) => ({
+              value: String(o.id),
+              label: o.name,
+            })),
           ]}
         />
       </div>
@@ -182,10 +199,13 @@ export default function Certificates() {
           <CardContent className="text-center py-12">
             <FileKey className="w-12 h-12 text-slate-600 mx-auto mb-4" />
             <p className="text-slate-400">No certificates found</p>
-            <Button className="mt-4" onClick={() => {
-              setSelectedCertificate(null)
-              setShowCreateModal(true)
-            }}>
+            <Button
+              className="mt-4"
+              onClick={() => {
+                setSelectedCertificate(null);
+                setShowCreateModal(true);
+              }}
+            >
               Add your first certificate
             </Button>
           </CardContent>
@@ -193,10 +213,21 @@ export default function Certificates() {
       ) : (
         <div className="space-y-4">
           {filteredCerts.map((cert: Certificate) => {
-            const { badge, className } = getStatusBadge(cert.status, cert.expiration_date, cert.renewal_days_before)
-            const creatorLabel = CERT_CREATORS.find(c => c.value === cert.creator)?.label || cert.creator
-            const typeLabel = CERT_TYPES.find(t => t.value === cert.cert_type)?.label || cert.cert_type
-            const orgName = orgs?.items?.find((o: Organization) => o.id === cert.organization_id)?.name || 'Unknown'
+            const { badge, className } = getStatusBadge(
+              cert.status,
+              cert.expiration_date,
+              cert.renewal_days_before,
+            );
+            const creatorLabel =
+              CERT_CREATORS.find((c) => c.value === cert.creator)?.label ||
+              cert.creator;
+            const typeLabel =
+              CERT_TYPES.find((t) => t.value === cert.cert_type)?.label ||
+              cert.cert_type;
+            const orgName =
+              orgs?.items?.find(
+                (o: Organization) => o.id === cert.organization_id,
+              )?.name || "Unknown";
 
             return (
               <Card key={cert.id}>
@@ -206,9 +237,13 @@ export default function Certificates() {
                       <div className="flex items-center gap-3 mb-3">
                         <FileKey className="w-5 h-5 text-primary-400" />
                         <div>
-                          <h3 className="text-lg font-semibold text-white">{cert.name}</h3>
+                          <h3 className="text-lg font-semibold text-white">
+                            {cert.name}
+                          </h3>
                           {cert.common_name && (
-                            <p className="text-sm text-slate-400">CN: {cert.common_name}</p>
+                            <p className="text-sm text-slate-400">
+                              CN: {cert.common_name}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -228,17 +263,29 @@ export default function Certificates() {
                         </div>
                         <div>
                           <p className="text-slate-500 mb-1">Status</p>
-                          <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${className}`}>
+                          <span
+                            className={`inline-block px-2 py-1 text-xs font-medium rounded ${className}`}
+                          >
                             {badge}
                           </span>
                         </div>
                         <div>
                           <p className="text-slate-500 mb-1">Issued</p>
-                          <p className="text-white">{cert.issue_date ? new Date(cert.issue_date).toLocaleDateString() : 'N/A'}</p>
+                          <p className="text-white">
+                            {cert.issue_date
+                              ? new Date(cert.issue_date).toLocaleDateString()
+                              : "N/A"}
+                          </p>
                         </div>
                         <div>
                           <p className="text-slate-500 mb-1">Expires</p>
-                          <p className="text-white">{cert.expiration_date ? new Date(cert.expiration_date).toLocaleDateString() : 'N/A'}</p>
+                          <p className="text-white">
+                            {cert.expiration_date
+                              ? new Date(
+                                  cert.expiration_date,
+                                ).toLocaleDateString()
+                              : "N/A"}
+                          </p>
                         </div>
                       </div>
 
@@ -252,8 +299,8 @@ export default function Certificates() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setSelectedCertificate(cert)
-                          setShowDetailsModal(true)
+                          setSelectedCertificate(cert);
+                          setShowDetailsModal(true);
                         }}
                         title="View details"
                       >
@@ -263,8 +310,8 @@ export default function Certificates() {
                         size="sm"
                         variant="ghost"
                         onClick={() => {
-                          setSelectedCertificate(cert)
-                          setShowEditModal(true)
+                          setSelectedCertificate(cert);
+                          setShowEditModal(true);
                         }}
                         title="Edit"
                       >
@@ -283,7 +330,7 @@ export default function Certificates() {
                   </div>
                 </CardContent>
               </Card>
-            )
+            );
           })}
         </div>
       )}
@@ -293,10 +340,10 @@ export default function Certificates() {
           onClose={() => setShowCreateModal(false)}
           onSuccess={async () => {
             await queryClient.invalidateQueries({
-              queryKey: ['certificates'],
-              refetchType: 'all'
-            })
-            setShowCreateModal(false)
+              queryKey: ["certificates"],
+              refetchType: "all",
+            });
+            setShowCreateModal(false);
           }}
         />
       )}
@@ -305,16 +352,16 @@ export default function Certificates() {
         <EditCertificateModal
           certificate={selectedCertificate}
           onClose={() => {
-            setShowEditModal(false)
-            setSelectedCertificate(null)
+            setShowEditModal(false);
+            setSelectedCertificate(null);
           }}
           onSuccess={async () => {
             await queryClient.invalidateQueries({
-              queryKey: ['certificates'],
-              refetchType: 'all'
-            })
-            setShowEditModal(false)
-            setSelectedCertificate(null)
+              queryKey: ["certificates"],
+              refetchType: "all",
+            });
+            setShowEditModal(false);
+            setSelectedCertificate(null);
           }}
         />
       )}
@@ -323,289 +370,404 @@ export default function Certificates() {
         <CertificateDetailsModal
           certificate={selectedCertificate}
           onClose={() => {
-            setShowDetailsModal(false)
-            setSelectedCertificate(null)
+            setShowDetailsModal(false);
+            setSelectedCertificate(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 interface CreateEditModalProps {
-  onClose: () => void
-  onSuccess: () => Promise<void>
+  onClose: () => void;
+  onSuccess: () => Promise<void>;
 }
 
 function CreateCertificateModal({ onClose, onSuccess }: CreateEditModalProps) {
   const { data: orgs } = useQuery({
-    queryKey: ['organizations'],
+    queryKey: ["organizations"],
     queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
-  })
+  });
+
+  const { data: servicesData } = useQuery({
+    queryKey: ["services-for-certs"],
+    queryFn: () => api.getServices({ per_page: 1000 }),
+  });
+
+  const { data: certsData } = useQuery({
+    queryKey: ["certificates"],
+    queryFn: () => api.getCertificates() as Promise<CertificateResponse>,
+  });
+
+  const commonNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    const services = (servicesData?.items || []) as Array<{
+      id: number;
+      name: string;
+      domains?: string[];
+    }>;
+    for (const svc of services) {
+      for (const domain of svc.domains || []) {
+        if (!domain || seen.has(domain)) continue;
+        seen.add(domain);
+        opts.push({
+          value: domain,
+          label: `${domain} — ${svc.name} [Service]`,
+        });
+      }
+    }
+    for (const cert of certsData?.certificates || []) {
+      if (!cert.common_name || seen.has(cert.common_name)) continue;
+      seen.add(cert.common_name);
+      opts.push({ value: cert.common_name, label: cert.common_name });
+    }
+    return opts;
+  }, [servicesData, certsData]);
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createCertificate(data as Parameters<typeof api.createCertificate>[0]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createCertificate(
+        data as Parameters<typeof api.createCertificate>[0],
+      ),
     onSuccess: () => {
-      toast.success('Certificate created successfully')
-      onSuccess()
+      toast.success("Certificate created successfully");
+      onSuccess();
     },
     onError: (error: ApiError) => {
-      toast.error(error.response?.data?.message || 'Failed to create certificate')
+      toast.error(
+        error.response?.data?.message || "Failed to create certificate",
+      );
     },
-  })
+  });
 
-  const fields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Certificate Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Production SSL Certificate',
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
-      ],
-    },
-    {
-      name: 'creator',
-      label: 'Certificate Creator',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: 'Select creator' },
-        ...CERT_CREATORS,
-      ],
-    },
-    {
-      name: 'cert_type',
-      label: 'Certificate Type',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: 'Select type' },
-        ...CERT_TYPES,
-      ],
-    },
-    {
-      name: 'common_name',
-      label: 'Common Name (CN)',
-      type: 'text',
-      placeholder: 'example.com',
-    },
-    {
-      name: 'issue_date',
-      label: 'Issue Date',
-      type: 'date',
-      required: true,
-    },
-    {
-      name: 'expiration_date',
-      label: 'Expiration Date',
-      type: 'date',
-      required: true,
-    },
-    {
-      name: 'auto_renew',
-      label: 'Auto-Renew',
-      type: 'checkbox',
-    },
-    {
-      name: 'certificate_pem',
-      label: 'Certificate PEM (optional)',
-      type: 'textarea',
-      rows: 6,
-      placeholder: '-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      rows: 3,
-    },
-  ], [orgs?.items])
+  const fields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Certificate Name",
+        type: "text",
+        required: true,
+        placeholder: "Production SSL Certificate",
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        searchable: true,
+        required: true,
+        placeholder: "Search organizations...",
+        options: (orgs?.items || []).map((o: Organization) => ({
+          value: String(o.id),
+          label: o.name,
+        })),
+      },
+      {
+        name: "creator",
+        label: "Certificate Creator",
+        type: "select",
+        required: true,
+        options: [{ value: "", label: "Select creator" }, ...CERT_CREATORS],
+      },
+      {
+        name: "cert_type",
+        label: "Certificate Type",
+        type: "select",
+        required: true,
+        options: [{ value: "", label: "Select type" }, ...CERT_TYPES],
+      },
+      {
+        name: "common_name",
+        label: "Common Name (CN)",
+        type: "text",
+        searchable: true,
+        allowCustom: true,
+        options: commonNameOptions,
+        placeholder: "example.com",
+      },
+      {
+        name: "issue_date",
+        label: "Issue Date",
+        type: "date",
+        required: true,
+      },
+      {
+        name: "expiration_date",
+        label: "Expiration Date",
+        type: "date",
+        required: true,
+      },
+      {
+        name: "auto_renew",
+        label: "Auto-Renew",
+        type: "checkbox",
+      },
+      {
+        name: "certificate_pem",
+        label: "Certificate PEM (optional)",
+        type: "textarea",
+        rows: 6,
+        placeholder:
+          "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        rows: 3,
+      },
+    ],
+    [orgs?.items, commonNameOptions],
+  );
 
   const handleSubmit = (data: Record<string, unknown>) => {
-    const orgId = data.organization_id
+    const orgId = data.organization_id;
     createMutation.mutate({
       name: String(data.name),
-      organization_id: typeof orgId === 'string' ? parseInt(orgId) : orgId,
+      organization_id: typeof orgId === "string" ? parseInt(orgId) : orgId,
       creator: String(data.creator),
       cert_type: String(data.cert_type),
       common_name: data.common_name ? String(data.common_name) : undefined,
       issue_date: String(data.issue_date),
       expiration_date: String(data.expiration_date),
       auto_renew: data.auto_renew === true,
-      certificate_pem: data.certificate_pem ? String(data.certificate_pem) : undefined,
+      certificate_pem: data.certificate_pem
+        ? String(data.certificate_pem)
+        : undefined,
       description: data.description ? String(data.description) : undefined,
-    })
-  }
+    });
+  };
 
   return (
-    <FormModalBuilder
+    <ModalFormBuilder
       isOpen={true}
       onClose={onClose}
       title="Create Certificate"
       fields={fields}
       onSubmit={handleSubmit}
-      submitButtonText={createMutation.isPending ? 'Creating...' : 'Create Certificate'}
+      isLoading={createMutation.isPending}
+      submitLabel={
+        createMutation.isPending ? "Creating..." : "Create Certificate"
+      }
     />
-  )
+  );
 }
 
 interface EditCertificateModalProps extends CreateEditModalProps {
-  certificate: Certificate
+  certificate: Certificate;
 }
 
-function EditCertificateModal({ certificate, onClose, onSuccess }: EditCertificateModalProps) {
+function EditCertificateModal({
+  certificate,
+  onClose,
+  onSuccess,
+}: EditCertificateModalProps) {
   const { data: orgs } = useQuery({
-    queryKey: ['organizations'],
+    queryKey: ["organizations"],
     queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
-  })
+  });
+
+  const { data: servicesData } = useQuery({
+    queryKey: ["services-for-certs"],
+    queryFn: () => api.getServices({ per_page: 1000 }),
+  });
+
+  const { data: certsData } = useQuery({
+    queryKey: ["certificates"],
+    queryFn: () => api.getCertificates() as Promise<CertificateResponse>,
+  });
+
+  const commonNameOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: Array<{ value: string; label: string }> = [];
+    const services = (servicesData?.items || []) as Array<{
+      id: number;
+      name: string;
+      domains?: string[];
+    }>;
+    for (const svc of services) {
+      for (const domain of svc.domains || []) {
+        if (!domain || seen.has(domain)) continue;
+        seen.add(domain);
+        opts.push({
+          value: domain,
+          label: `${domain} — ${svc.name} [Service]`,
+        });
+      }
+    }
+    for (const cert of certsData?.certificates || []) {
+      if (!cert.common_name || seen.has(cert.common_name)) continue;
+      seen.add(cert.common_name);
+      opts.push({ value: cert.common_name, label: cert.common_name });
+    }
+    return opts;
+  }, [servicesData, certsData]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.updateCertificate(certificate.id, data as Parameters<typeof api.updateCertificate>[1]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.updateCertificate(
+        certificate.id,
+        data as Parameters<typeof api.updateCertificate>[1],
+      ),
     onSuccess: () => {
-      toast.success('Certificate updated successfully')
-      onSuccess()
+      toast.success("Certificate updated successfully");
+      onSuccess();
     },
     onError: (error: ApiError) => {
-      toast.error(error.response?.data?.message || 'Failed to update certificate')
+      toast.error(
+        error.response?.data?.message || "Failed to update certificate",
+      );
     },
-  })
+  });
 
-  const editFields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Certificate Name',
-      type: 'text',
-      required: true,
-      defaultValue: certificate.name,
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      defaultValue: String(certificate.organization_id),
-      options: [
-        { value: '', label: 'Select organization' },
-        ...(orgs?.items || []).map((o: Organization) => ({ value: String(o.id), label: o.name })),
-      ],
-    },
-    {
-      name: 'creator',
-      label: 'Certificate Creator',
-      type: 'select',
-      required: true,
-      defaultValue: certificate.creator,
-      options: [
-        { value: '', label: 'Select creator' },
-        ...CERT_CREATORS,
-      ],
-    },
-    {
-      name: 'cert_type',
-      label: 'Certificate Type',
-      type: 'select',
-      required: true,
-      defaultValue: certificate.cert_type,
-      options: [
-        { value: '', label: 'Select type' },
-        ...CERT_TYPES,
-      ],
-    },
-    {
-      name: 'common_name',
-      label: 'Common Name (CN)',
-      type: 'text',
-      defaultValue: certificate.common_name || '',
-    },
-    {
-      name: 'issue_date',
-      label: 'Issue Date',
-      type: 'date',
-      required: true,
-      defaultValue: certificate.issue_date,
-    },
-    {
-      name: 'expiration_date',
-      label: 'Expiration Date',
-      type: 'date',
-      required: true,
-      defaultValue: certificate.expiration_date,
-    },
-    {
-      name: 'auto_renew',
-      label: 'Auto-Renew',
-      type: 'checkbox',
-      defaultValue: certificate.auto_renew || false,
-    },
-    {
-      name: 'certificate_pem',
-      label: 'Certificate PEM (optional)',
-      type: 'textarea',
-      rows: 6,
-      defaultValue: certificate.certificate_pem || '',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      rows: 3,
-      defaultValue: certificate.description || '',
-    },
-  ], [orgs?.items, certificate])
+  const editFields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Certificate Name",
+        type: "text",
+        required: true,
+        defaultValue: certificate.name,
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        searchable: true,
+        required: true,
+        placeholder: "Search organizations...",
+        defaultValue: String(certificate.organization_id),
+        options: (orgs?.items || []).map((o: Organization) => ({
+          value: String(o.id),
+          label: o.name,
+        })),
+      },
+      {
+        name: "creator",
+        label: "Certificate Creator",
+        type: "select",
+        required: true,
+        defaultValue: certificate.creator,
+        options: [{ value: "", label: "Select creator" }, ...CERT_CREATORS],
+      },
+      {
+        name: "cert_type",
+        label: "Certificate Type",
+        type: "select",
+        required: true,
+        defaultValue: certificate.cert_type,
+        options: [{ value: "", label: "Select type" }, ...CERT_TYPES],
+      },
+      {
+        name: "common_name",
+        label: "Common Name (CN)",
+        type: "text",
+        searchable: true,
+        allowCustom: true,
+        options: commonNameOptions,
+        defaultValue: certificate.common_name || "",
+      },
+      {
+        name: "issue_date",
+        label: "Issue Date",
+        type: "date",
+        required: true,
+        defaultValue: certificate.issue_date,
+      },
+      {
+        name: "expiration_date",
+        label: "Expiration Date",
+        type: "date",
+        required: true,
+        defaultValue: certificate.expiration_date,
+      },
+      {
+        name: "auto_renew",
+        label: "Auto-Renew",
+        type: "checkbox",
+        defaultValue: certificate.auto_renew || false,
+      },
+      {
+        name: "certificate_pem",
+        label: "Certificate PEM (optional)",
+        type: "textarea",
+        rows: 6,
+        defaultValue: certificate.certificate_pem || "",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        rows: 3,
+        defaultValue: certificate.description || "",
+      },
+    ],
+    [orgs?.items, commonNameOptions, certificate],
+  );
 
   const handleSubmit = (data: Record<string, unknown>) => {
-    const orgId = data.organization_id
+    const orgId = data.organization_id;
     updateMutation.mutate({
       name: String(data.name),
-      organization_id: typeof orgId === 'string' ? parseInt(orgId) : orgId,
+      organization_id: typeof orgId === "string" ? parseInt(orgId) : orgId,
       creator: String(data.creator),
       cert_type: String(data.cert_type),
       common_name: data.common_name ? String(data.common_name) : undefined,
       issue_date: String(data.issue_date),
       expiration_date: String(data.expiration_date),
       auto_renew: data.auto_renew === true,
-      certificate_pem: data.certificate_pem ? String(data.certificate_pem) : undefined,
+      certificate_pem: data.certificate_pem
+        ? String(data.certificate_pem)
+        : undefined,
       description: data.description ? String(data.description) : undefined,
-    })
-  }
+    });
+  };
 
   return (
-    <FormModalBuilder
+    <ModalFormBuilder
       isOpen={true}
       onClose={onClose}
       title="Edit Certificate"
       fields={editFields}
       onSubmit={handleSubmit}
-      submitButtonText={updateMutation.isPending ? 'Updating...' : 'Update Certificate'}
+      isLoading={updateMutation.isPending}
+      submitLabel={
+        updateMutation.isPending ? "Updating..." : "Update Certificate"
+      }
     />
-  )
+  );
 }
 
 interface CertificateDetailsModalProps {
-  certificate: Certificate
-  onClose: () => void
+  certificate: Certificate;
+  onClose: () => void;
 }
 
-function CertificateDetailsModal({ certificate, onClose }: CertificateDetailsModalProps) {
-  const creatorLabel = CERT_CREATORS.find(c => c.value === certificate.creator)?.label || certificate.creator
-  const typeLabel = CERT_TYPES.find(t => t.value === certificate.cert_type)?.label || certificate.cert_type
-  const { badge, className } = getStatusBadge(certificate.status, certificate.expiration_date, certificate.renewal_days_before)
+function CertificateDetailsModal({
+  certificate,
+  onClose,
+}: CertificateDetailsModalProps) {
+  const creatorLabel =
+    CERT_CREATORS.find((c) => c.value === certificate.creator)?.label ||
+    certificate.creator;
+  const typeLabel =
+    CERT_TYPES.find((t) => t.value === certificate.cert_type)?.label ||
+    certificate.cert_type;
+  const { badge, className } = getStatusBadge(
+    certificate.status,
+    certificate.expiration_date,
+    certificate.renewal_days_before,
+  );
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">{certificate.name}</h2>
+            <h2 className="text-xl font-semibold text-white">
+              {certificate.name}
+            </h2>
             <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>
@@ -615,11 +777,15 @@ function CertificateDetailsModal({ certificate, onClose }: CertificateDetailsMod
           <div className="grid grid-cols-2 gap-6">
             <div>
               <p className="text-sm text-slate-500 mb-1">Common Name</p>
-              <p className="text-white font-mono text-sm">{certificate.common_name || 'N/A'}</p>
+              <p className="text-white font-mono text-sm">
+                {certificate.common_name || "N/A"}
+              </p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">Status</p>
-              <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${className}`}>
+              <span
+                className={`inline-block px-2 py-1 text-xs font-medium rounded ${className}`}
+              >
                 {badge}
               </span>
             </div>
@@ -633,15 +799,25 @@ function CertificateDetailsModal({ certificate, onClose }: CertificateDetailsMod
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">Issue Date</p>
-              <p className="text-white">{certificate.issue_date ? new Date(certificate.issue_date).toLocaleDateString() : 'N/A'}</p>
+              <p className="text-white">
+                {certificate.issue_date
+                  ? new Date(certificate.issue_date).toLocaleDateString()
+                  : "N/A"}
+              </p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">Expiration Date</p>
-              <p className="text-white">{certificate.expiration_date ? new Date(certificate.expiration_date).toLocaleDateString() : 'N/A'}</p>
+              <p className="text-white">
+                {certificate.expiration_date
+                  ? new Date(certificate.expiration_date).toLocaleDateString()
+                  : "N/A"}
+              </p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">Auto-Renew</p>
-              <p className="text-white">{certificate.auto_renew ? 'Yes' : 'No'}</p>
+              <p className="text-white">
+                {certificate.auto_renew ? "Yes" : "No"}
+              </p>
             </div>
             <div>
               <p className="text-sm text-slate-500 mb-1">ID</p>
@@ -670,5 +846,5 @@ function CertificateDetailsModal({ certificate, onClose }: CertificateDetailsMod
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

@@ -345,6 +345,36 @@ export function CreateIssueModal({
     queryFn: () => api.getLabels({ per_page: 1000 }),
   });
 
+  const { data: existingIssues } = useQuery({
+    queryKey: queryKeys.issues.list({}),
+    queryFn: () => api.getIssues({ per_page: 200 }),
+  });
+
+  const channelOptions = Array.from(
+    new Set([
+      "email",
+      "chat",
+      "phone",
+      "web",
+      "slack",
+      ...((existingIssues?.items || []) as Issue[])
+        .map((i) => i.channel)
+        .filter((c): c is string => Boolean(c)),
+    ]),
+  ).map((c) => ({ value: c, label: c }));
+
+  const categoryOptions = Array.from(
+    new Set([
+      "billing",
+      "technical",
+      "account",
+      "general",
+      ...((existingIssues?.items || []) as Issue[])
+        .map((i) => i.category)
+        .filter((c): c is string => Boolean(c)),
+    ]),
+  ).map((c) => ({ value: c, label: c }));
+
   const createMutation = useMutation({
     mutationFn: async (data: {
       title: string;
@@ -550,18 +580,34 @@ export function CreateIssueModal({
                 className="grid grid-cols-2 gap-4 p-4 bg-slate-800/30 rounded-lg"
                 data-testid="support-fields"
               >
-                <Input
-                  label="Channel"
-                  value={channel}
-                  onChange={(e) => setChannel(e.target.value)}
-                  placeholder="email, chat, phone..."
-                />
-                <Input
-                  label="Category"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="billing, technical..."
-                />
+                <div>
+                  <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                    Channel
+                  </span>
+                  <SearchableSelect
+                    options={channelOptions}
+                    value={channel}
+                    onChange={(val) => setChannel(String(val))}
+                    placeholder="email, chat, phone..."
+                    allowCustom
+                    allowClear
+                    ariaLabel="Channel"
+                  />
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                    Category
+                  </span>
+                  <SearchableSelect
+                    options={categoryOptions}
+                    value={category}
+                    onChange={(val) => setCategory(String(val))}
+                    placeholder="billing, technical..."
+                    allowCustom
+                    allowClear
+                    ariaLabel="Category"
+                  />
+                </div>
               </div>
             )}
             <div>

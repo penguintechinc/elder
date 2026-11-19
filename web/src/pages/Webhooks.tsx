@@ -1,79 +1,94 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Webhook, TestTube, Trash2, CheckCircle, XCircle, Edit } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import Button from '@/components/Button'
-import Card, { CardHeader, CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import Select from '@/components/Select'
-import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
-import { ISSUE_TYPES, issueTypeLabel } from '@/lib/constants/issueTypes'
-import { Organization } from '@/types'
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Plus,
+  Webhook,
+  TestTube,
+  Trash2,
+  CheckCircle,
+  XCircle,
+  Edit,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import Button from "@/components/Button";
+import Card, { CardHeader, CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import Select from "@/components/Select";
+import SearchableSelect from "@/components/SearchableSelect";
+import AssigneePicker, { AssigneeValue } from "@/components/AssigneePicker";
+import { ISSUE_TYPES, issueTypeLabel } from "@/lib/constants/issueTypes";
+import { Organization } from "@/types";
 
 interface WebhookConfig {
-  id: number
-  name: string
-  url: string
-  organization_id: number
-  events: string[]
-  is_active: boolean
-  filter_issue_type?: string
-  filter_assignee_type?: 'identity' | 'org_unit'
-  filter_assignee_id?: number
+  id: number;
+  name: string;
+  url: string;
+  organization_id: number;
+  events: string[];
+  is_active: boolean;
+  filter_issue_type?: string;
+  filter_assignee_type?: "identity" | "org_unit";
+  filter_assignee_id?: number;
 }
 
 interface WebhooksResponse {
-  webhooks: WebhookConfig[]
+  webhooks: WebhookConfig[];
 }
 
 interface OrganizationResponse {
-  items: Organization[]
+  items: Organization[];
 }
 
 const EVENT_TYPES = [
-  { value: 'entity.created', label: 'Entity Created' },
-  { value: 'entity.updated', label: 'Entity Updated' },
-  { value: 'entity.deleted', label: 'Entity Deleted' },
-  { value: 'organization.created', label: 'Organization Created' },
-  { value: 'organization.updated', label: 'Organization Updated' },
-  { value: 'issue.created', label: 'Issue Created' },
-  { value: 'issue.updated', label: 'Issue Updated' },
-  { value: 'issue.closed', label: 'Issue Closed' },
-  { value: 'issue.assigned', label: 'Issue Assigned' },
-]
+  { value: "entity.created", label: "Entity Created" },
+  { value: "entity.updated", label: "Entity Updated" },
+  { value: "entity.deleted", label: "Entity Deleted" },
+  { value: "organization.created", label: "Organization Created" },
+  { value: "organization.updated", label: "Organization Updated" },
+  { value: "issue.created", label: "Issue Created" },
+  { value: "issue.updated", label: "Issue Updated" },
+  { value: "issue.closed", label: "Issue Closed" },
+  { value: "issue.assigned", label: "Issue Assigned" },
+];
 
 export default function Webhooks() {
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingWebhook, setEditingWebhook] = useState<WebhookConfig | null>(null)
-  const queryClient = useQueryClient()
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingWebhook, setEditingWebhook] = useState<WebhookConfig | null>(
+    null,
+  );
+  const queryClient = useQueryClient();
 
   const { data: profile } = useQuery({
-    queryKey: ['portal-profile'],
+    queryKey: ["portal-profile"],
     queryFn: () => api.getPortalProfile(),
     staleTime: 60000,
-  })
-  const isAdmin = profile?.global_role === 'admin' || profile?.tenant_role === 'admin'
+  });
+  const isAdmin =
+    profile?.global_role === "admin" || profile?.tenant_role === "admin";
 
   const { data, isLoading } = useQuery({
-    queryKey: ['webhooks'],
+    queryKey: ["webhooks"],
     queryFn: () => api.getWebhooks() as Promise<WebhooksResponse>,
     enabled: isAdmin,
-  })
+  });
 
   const testMutation = useMutation({
     mutationFn: (id: number) => api.testWebhook(id),
-    onSuccess: () => toast.success('Test webhook sent'),
-    onError: () => toast.error('Failed to send test webhook'),
-  })
+    onSuccess: () => toast.success("Test webhook sent"),
+    onError: () => toast.error("Failed to send test webhook"),
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteWebhook(id),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['webhooks'], refetchType: 'all' })
-      toast.success('Webhook deleted')
+      await queryClient.invalidateQueries({
+        queryKey: ["webhooks"],
+        refetchType: "all",
+      });
+      toast.success("Webhook deleted");
     },
-  })
+  });
 
   if (!isAdmin) {
     return (
@@ -84,7 +99,7 @@ export default function Webhooks() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
 
   return (
@@ -92,7 +107,9 @@ export default function Webhooks() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">Webhooks</h1>
-          <p className="mt-2 text-slate-400">Configure event webhooks and notifications</p>
+          <p className="mt-2 text-slate-400">
+            Configure event webhooks and notifications
+          </p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -127,12 +144,19 @@ export default function Webhooks() {
                       ) : (
                         <XCircle className="w-5 h-5 text-slate-500" />
                       )}
-                      <h3 className="text-lg font-semibold text-white">{webhook.name}</h3>
+                      <h3 className="text-lg font-semibold text-white">
+                        {webhook.name}
+                      </h3>
                     </div>
-                    <p className="text-sm text-slate-400 mb-3 font-mono">{webhook.url}</p>
+                    <p className="text-sm text-slate-400 mb-3 font-mono">
+                      {webhook.url}
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       {webhook.events?.map((event: string) => (
-                        <span key={event} className="px-2 py-1 text-xs bg-primary-500/20 text-primary-400 rounded">
+                        <span
+                          key={event}
+                          className="px-2 py-1 text-xs bg-primary-500/20 text-primary-400 rounded"
+                        >
                           {event}
                         </span>
                       ))}
@@ -144,13 +168,26 @@ export default function Webhooks() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <Button size="sm" variant="ghost" title="Edit webhook" onClick={() => setEditingWebhook(webhook)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Edit webhook"
+                      onClick={() => setEditingWebhook(webhook)}
+                    >
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => testMutation.mutate(webhook.id)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => testMutation.mutate(webhook.id)}
+                    >
                       <TestTube className="w-4 h-4" />
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => deleteMutation.mutate(webhook.id)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => deleteMutation.mutate(webhook.id)}
+                    >
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -165,8 +202,11 @@ export default function Webhooks() {
         <CreateWebhookModal
           onClose={() => setShowCreateModal(false)}
           onSuccess={async () => {
-            await queryClient.invalidateQueries({ queryKey: ['webhooks'], refetchType: 'all' })
-            setShowCreateModal(false)
+            await queryClient.invalidateQueries({
+              queryKey: ["webhooks"],
+              refetchType: "all",
+            });
+            setShowCreateModal(false);
           }}
         />
       )}
@@ -176,27 +216,33 @@ export default function Webhooks() {
           webhook={editingWebhook}
           onClose={() => setEditingWebhook(null)}
           onSuccess={async () => {
-            await queryClient.invalidateQueries({ queryKey: ['webhooks'], refetchType: 'all' })
-            setEditingWebhook(null)
+            await queryClient.invalidateQueries({
+              queryKey: ["webhooks"],
+              refetchType: "all",
+            });
+            setEditingWebhook(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 interface CreateWebhookModalProps {
-  onClose: () => void
-  onSuccess: () => Promise<void>
+  onClose: () => void;
+  onSuccess: () => Promise<void>;
 }
 
 function AssignmentFilters({
-  filterIssueType, onFilterIssueTypeChange, filterAssignee, onFilterAssigneeChange,
+  filterIssueType,
+  onFilterIssueTypeChange,
+  filterAssignee,
+  onFilterAssigneeChange,
 }: {
-  filterIssueType: string
-  onFilterIssueTypeChange: (v: string) => void
-  filterAssignee: AssigneeValue | null
-  onFilterAssigneeChange: (v: AssigneeValue | null) => void
+  filterIssueType: string;
+  onFilterIssueTypeChange: (v: string) => void;
+  filterAssignee: AssigneeValue | null;
+  onFilterAssigneeChange: (v: AssigneeValue | null) => void;
 }) {
   return (
     <div className="pt-4 border-t border-slate-700">
@@ -204,51 +250,84 @@ function AssignmentFilters({
         Assignment Filters (issue.assigned events only)
       </p>
       <div className="space-y-3">
-        <Select label="Issue Type" value={filterIssueType} onChange={(e) => onFilterIssueTypeChange(e.target.value)}>
+        <Select
+          label="Issue Type"
+          value={filterIssueType}
+          onChange={(e) => onFilterIssueTypeChange(e.target.value)}
+        >
           <option value="">Any issue type</option>
           {ISSUE_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
           ))}
         </Select>
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1.5">Assignee</label>
-          <AssigneePicker value={filterAssignee} onChange={onFilterAssigneeChange} />
+          <label className="block text-sm font-medium text-slate-300 mb-1.5">
+            Assignee
+          </label>
+          <AssigneePicker
+            value={filterAssignee}
+            onChange={onFilterAssigneeChange}
+          />
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
-  const [name, setName] = useState('')
-  const [url, setUrl] = useState('')
-  const [orgId, setOrgId] = useState('')
-  const [selectedEvents, setSelectedEvents] = useState<string[]>([])
-  const [secret, setSecret] = useState('')
-  const [filterIssueType, setFilterIssueType] = useState('')
-  const [filterAssignee, setFilterAssignee] = useState<AssigneeValue | null>(null)
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const [orgId, setOrgId] = useState("");
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  const [secret, setSecret] = useState("");
+  const [filterIssueType, setFilterIssueType] = useState("");
+  const [filterAssignee, setFilterAssignee] = useState<AssigneeValue | null>(
+    null,
+  );
 
   const { data: orgs } = useQuery({
-    queryKey: ['organizations'],
+    queryKey: ["organizations"],
     queryFn: () => api.getOrganizations() as Promise<OrganizationResponse>,
-  })
+  });
+
+  const { data: existingWebhooks } = useQuery({
+    queryKey: ["webhooks"],
+    queryFn: () => api.getWebhooks() as Promise<WebhooksResponse>,
+  });
+
+  const urlOptions = Array.from(
+    new Set(
+      (existingWebhooks?.webhooks || [])
+        .map((w) => w.url)
+        .filter((u): u is string => Boolean(u)),
+    ),
+  ).map((u) => ({ value: u, label: u }));
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createWebhook(data as Parameters<typeof api.createWebhook>[0]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createWebhook(data as Parameters<typeof api.createWebhook>[0]),
     onSuccess: (result) => {
-      console.log('[Webhooks] Create', { name: result?.name, events: result?.events, filter_issue_type: result?.filter_issue_type })
-      toast.success('Webhook created')
-      onSuccess()
+      console.log("[Webhooks] Create", {
+        name: result?.name,
+        events: result?.events,
+        filter_issue_type: result?.filter_issue_type,
+      });
+      toast.success("Webhook created");
+      onSuccess();
     },
-    onError: () => toast.error('Failed to create webhook'),
-  })
+    onError: () => toast.error("Failed to create webhook"),
+  });
 
   const toggleEvent = (event: string) => {
-    setSelectedEvents((prev) => (prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]))
-  }
+    setSelectedEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
+    );
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     const webhookData: Parameters<typeof api.createWebhook>[0] = {
       name,
       url,
@@ -259,9 +338,9 @@ function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
       filter_issue_type: filterIssueType || undefined,
       filter_assignee_type: filterAssignee?.assignee_type,
       filter_assignee_id: filterAssignee?.assignee_id,
-    }
-    createMutation.mutate(webhookData)
-  }
+    };
+    createMutation.mutate(webhookData);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -271,23 +350,52 @@ function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Input label="Name" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Production Webhook" />
-            <Input label="URL" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/webhook" />
-            <Select
-              label="Organization"
-              value={orgId}
-              onChange={(e) => setOrgId(e.target.value)}
-            >
-              <option value="">Select organization</option>
-              {(orgs?.items || []).map((o: Organization) => (
-                <option key={o.id} value={String(o.id)}>{o.name}</option>
-              ))}
-            </Select>
+            <Input
+              label="Name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Production Webhook"
+            />
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Events</label>
+              <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                URL <span className="text-red-400">*</span>
+              </span>
+              <SearchableSelect
+                options={urlOptions}
+                value={url}
+                onChange={(val) => setUrl(String(val))}
+                placeholder="https://example.com/webhook"
+                allowCustom
+                ariaLabel="URL"
+              />
+            </div>
+            <div>
+              <span className="block text-sm font-medium text-slate-300 mb-1.5">
+                Organization
+              </span>
+              <SearchableSelect
+                options={(orgs?.items || []).map((o: Organization) => ({
+                  value: String(o.id),
+                  label: o.name,
+                }))}
+                value={orgId}
+                onChange={(val) => setOrgId(String(val))}
+                placeholder="Select organization"
+                allowClear
+                ariaLabel="Organization"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Events
+              </label>
               <div className="space-y-2">
                 {EVENT_TYPES.map((event) => (
-                  <label key={event.value} className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    key={event.value}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="checkbox"
                       checked={selectedEvents.includes(event.value)}
@@ -295,12 +403,19 @@ function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
                       className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
                       data-testid={`event-checkbox-${event.value}`}
                     />
-                    <span className="text-sm text-slate-300">{event.label}</span>
+                    <span className="text-sm text-slate-300">
+                      {event.label}
+                    </span>
                   </label>
                 ))}
               </div>
             </div>
-            <Input label="Secret (optional)" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Webhook signing secret" />
+            <Input
+              label="Secret (optional)"
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              placeholder="Webhook signing secret"
+            />
             <AssignmentFilters
               filterIssueType={filterIssueType}
               onFilterIssueTypeChange={setFilterIssueType}
@@ -308,50 +423,72 @@ function CreateWebhookModal({ onClose, onSuccess }: CreateWebhookModalProps) {
               onFilterAssigneeChange={setFilterAssignee}
             />
             <div className="flex justify-end gap-3 mt-6">
-              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button type="submit" isLoading={createMutation.isPending}>Create</Button>
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="submit" isLoading={createMutation.isPending}>
+                Create
+              </Button>
             </div>
           </form>
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 interface EditWebhookModalProps {
-  webhook: WebhookConfig
-  onClose: () => void
-  onSuccess: () => Promise<void>
+  webhook: WebhookConfig;
+  onClose: () => void;
+  onSuccess: () => Promise<void>;
 }
 
-function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps) {
-  const [name, setName] = useState(webhook.name)
-  const [url, setUrl] = useState(webhook.url)
-  const [selectedEvents, setSelectedEvents] = useState<string[]>(webhook.events || [])
-  const [isActive, setIsActive] = useState(webhook.is_active)
-  const [filterIssueType, setFilterIssueType] = useState(webhook.filter_issue_type || '')
+function EditWebhookModal({
+  webhook,
+  onClose,
+  onSuccess,
+}: EditWebhookModalProps) {
+  const [name, setName] = useState(webhook.name);
+  const [url, setUrl] = useState(webhook.url);
+  const [selectedEvents, setSelectedEvents] = useState<string[]>(
+    webhook.events || [],
+  );
+  const [isActive, setIsActive] = useState(webhook.is_active);
+  const [filterIssueType, setFilterIssueType] = useState(
+    webhook.filter_issue_type || "",
+  );
   const [filterAssignee, setFilterAssignee] = useState<AssigneeValue | null>(
     webhook.filter_assignee_id && webhook.filter_assignee_type
-      ? { assignee_type: webhook.filter_assignee_type, assignee_id: webhook.filter_assignee_id }
-      : null
-  )
+      ? {
+          assignee_type: webhook.filter_assignee_type,
+          assignee_id: webhook.filter_assignee_id,
+        }
+      : null,
+  );
 
   const updateMutation = useMutation({
-    mutationFn: (data: Parameters<typeof api.updateWebhook>[1]) => api.updateWebhook(webhook.id, data),
+    mutationFn: (data: Parameters<typeof api.updateWebhook>[1]) =>
+      api.updateWebhook(webhook.id, data),
     onSuccess: async (result) => {
-      console.log('[Webhooks] Update', { name: result?.name, is_active: result?.is_active, filter_issue_type: result?.filter_issue_type })
-      toast.success('Webhook updated')
-      await onSuccess()
+      console.log("[Webhooks] Update", {
+        name: result?.name,
+        is_active: result?.is_active,
+        filter_issue_type: result?.filter_issue_type,
+      });
+      toast.success("Webhook updated");
+      await onSuccess();
     },
-    onError: () => toast.error('Failed to update webhook'),
-  })
+    onError: () => toast.error("Failed to update webhook"),
+  });
 
   const toggleEvent = (event: string) => {
-    setSelectedEvents((prev) => (prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]))
-  }
+    setSelectedEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
+    );
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     updateMutation.mutate({
       name,
       url,
@@ -360,8 +497,8 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
       filter_issue_type: filterIssueType || undefined,
       filter_assignee_type: filterAssignee?.assignee_type,
       filter_assignee_id: filterAssignee?.assignee_id,
-    })
-  }
+    });
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -370,9 +507,24 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
           <h2 className="text-xl font-semibold text-white">Edit Webhook</h2>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4" data-testid="edit-webhook-form">
-            <Input label="Name" required value={name} onChange={(e) => setName(e.target.value)} />
-            <Input label="URL" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} />
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            data-testid="edit-webhook-form"
+          >
+            <Input
+              label="Name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Input
+              label="URL"
+              type="url"
+              required
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -382,14 +534,21 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
                   className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
                   data-testid="is-active-toggle"
                 />
-                <span className="text-sm font-medium text-slate-300">Active</span>
+                <span className="text-sm font-medium text-slate-300">
+                  Active
+                </span>
               </label>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Events</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Events
+              </label>
               <div className="space-y-2">
                 {EVENT_TYPES.map((event) => (
-                  <label key={event.value} className="flex items-center gap-2 cursor-pointer">
+                  <label
+                    key={event.value}
+                    className="flex items-center gap-2 cursor-pointer"
+                  >
                     <input
                       type="checkbox"
                       checked={selectedEvents.includes(event.value)}
@@ -397,7 +556,9 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
                       className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
                       data-testid={`event-checkbox-${event.value}`}
                     />
-                    <span className="text-sm text-slate-300">{event.label}</span>
+                    <span className="text-sm text-slate-300">
+                      {event.label}
+                    </span>
                   </label>
                 ))}
               </div>
@@ -409,8 +570,14 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
               onFilterAssigneeChange={setFilterAssignee}
             />
             <div className="flex justify-end gap-3 mt-6">
-              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-              <Button type="submit" isLoading={updateMutation.isPending} data-testid="save-webhook-button">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                isLoading={updateMutation.isPending}
+                data-testid="save-webhook-button"
+              >
                 Save Changes
               </Button>
             </div>
@@ -418,5 +585,5 @@ function EditWebhookModal({ webhook, onClose, onSuccess }: EditWebhookModalProps
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

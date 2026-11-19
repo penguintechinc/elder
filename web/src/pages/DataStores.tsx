@@ -1,105 +1,128 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Edit, Trash2, Database, AlertCircle } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { queryKeys } from '@/lib/queryKeys'
-import { invalidateCache } from '@/lib/invalidateCache'
-import { confirmDelete } from '@/lib/confirmActions'
-import Button from '@/components/Button'
-import Card, { CardHeader, CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import Select from '@/components/Select'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { useState, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Database,
+  AlertCircle,
+} from "lucide-react";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import { invalidateCache } from "@/lib/invalidateCache";
+import { confirmDelete } from "@/lib/confirmActions";
+import Button from "@/components/Button";
+import Card, { CardHeader, CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import Select from "@/components/Select";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import { FormField } from "@/types/form";
 
 interface Organization {
-  id: number
-  name: string
+  id: number;
+  name: string;
 }
 
 interface Identity {
-  id: number
-  username: string
-  full_name?: string
+  id: number;
+  username: string;
+  full_name?: string;
 }
 
 interface DataStore {
-  id: number
-  name: string
-  description?: string
-  organization_id: number
-  data_classification: string
-  storage_type: string
-  location_region?: string
-  contains_pii: boolean
-  contains_phi: boolean
-  contains_pci: boolean
-  compliance_framework?: string
-  poc_identity_id?: number
+  id: number;
+  name: string;
+  description?: string;
+  organization_id: number;
+  data_classification: string;
+  storage_type: string;
+  location_region?: string;
+  contains_pii: boolean;
+  contains_phi: boolean;
+  contains_pci: boolean;
+  compliance_framework?: string;
+  poc_identity_id?: number;
 }
 
-
 const DATA_CLASSIFICATIONS = [
-  { value: 'public', label: 'Public', color: 'bg-green-500/20 text-green-400' },
-  { value: 'internal', label: 'Internal', color: 'bg-yellow-500/20 text-yellow-400' },
-  { value: 'confidential', label: 'Confidential', color: 'bg-orange-500/20 text-orange-400' },
-  { value: 'restricted', label: 'Restricted', color: 'bg-red-500/20 text-red-400' },
-]
+  { value: "public", label: "Public", color: "bg-green-500/20 text-green-400" },
+  {
+    value: "internal",
+    label: "Internal",
+    color: "bg-yellow-500/20 text-yellow-400",
+  },
+  {
+    value: "confidential",
+    label: "Confidential",
+    color: "bg-orange-500/20 text-orange-400",
+  },
+  {
+    value: "restricted",
+    label: "Restricted",
+    color: "bg-red-500/20 text-red-400",
+  },
+];
 
 const STORAGE_TYPES = [
-  { value: 'database', label: 'Database' },
-  { value: 'file_storage', label: 'File Storage' },
-  { value: 'data_warehouse', label: 'Data Warehouse' },
-  { value: 'data_lake', label: 'Data Lake' },
-  { value: 'cache', label: 'Cache' },
-  { value: 'message_queue', label: 'Message Queue' },
-  { value: 'search_index', label: 'Search Index' },
-  { value: 'time_series', label: 'Time Series' },
-  { value: 'blob_storage', label: 'Blob Storage' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "database", label: "Database" },
+  { value: "file_storage", label: "File Storage" },
+  { value: "data_warehouse", label: "Data Warehouse" },
+  { value: "data_lake", label: "Data Lake" },
+  { value: "cache", label: "Cache" },
+  { value: "message_queue", label: "Message Queue" },
+  { value: "search_index", label: "Search Index" },
+  { value: "time_series", label: "Time Series" },
+  { value: "blob_storage", label: "Blob Storage" },
+  { value: "other", label: "Other" },
+];
 
 const COMPLIANCE_FRAMEWORKS = [
-  { value: 'gdpr', label: 'GDPR' },
-  { value: 'hipaa', label: 'HIPAA' },
-  { value: 'pci_dss', label: 'PCI-DSS' },
-  { value: 'sox', label: 'SOX' },
-  { value: 'ccpa', label: 'CCPA' },
-  { value: 'none', label: 'None' },
-]
+  { value: "gdpr", label: "GDPR" },
+  { value: "hipaa", label: "HIPAA" },
+  { value: "pci_dss", label: "PCI-DSS" },
+  { value: "sox", label: "SOX" },
+  { value: "ccpa", label: "CCPA" },
+  { value: "none", label: "None" },
+];
 
 const REGIONS = [
-  { value: 'us-east-1', label: 'US East (N. Virginia)' },
-  { value: 'us-west-2', label: 'US West (Oregon)' },
-  { value: 'eu-west-1', label: 'EU (Ireland)' },
-  { value: 'eu-central-1', label: 'EU (Frankfurt)' },
-  { value: 'ap-southeast-1', label: 'Asia Pacific (Singapore)' },
-  { value: 'ap-northeast-1', label: 'Asia Pacific (Tokyo)' },
-  { value: 'on-premises', label: 'On-Premises' },
-  { value: 'hybrid', label: 'Hybrid' },
-  { value: 'other', label: 'Other' },
-]
+  { value: "us-east-1", label: "US East (N. Virginia)" },
+  { value: "us-west-2", label: "US West (Oregon)" },
+  { value: "eu-west-1", label: "EU (Ireland)" },
+  { value: "eu-central-1", label: "EU (Frankfurt)" },
+  { value: "ap-southeast-1", label: "Asia Pacific (Singapore)" },
+  { value: "ap-northeast-1", label: "Asia Pacific (Tokyo)" },
+  { value: "on-premises", label: "On-Premises" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "other", label: "Other" },
+];
 
 export default function DataStores() {
-  const [search, setSearch] = useState('')
-  const [organizationFilter, setOrganizationFilter] = useState<string>('')
-  const [classificationFilter, setClassificationFilter] = useState<string>('')
-  const [storageTypeFilter, setStorageTypeFilter] = useState<string>('')
-  const [regionFilter, setRegionFilter] = useState<string>('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingDataStore, setEditingDataStore] = useState<DataStore | null>(null)
-  const [viewingDataStore, setViewingDataStore] = useState<DataStore | null>(null)
-  const queryClient = useQueryClient()
+  const [search, setSearch] = useState("");
+  const [organizationFilter, setOrganizationFilter] = useState<string>("");
+  const [classificationFilter, setClassificationFilter] = useState<string>("");
+  const [storageTypeFilter, setStorageTypeFilter] = useState<string>("");
+  const [regionFilter, setRegionFilter] = useState<string>("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingDataStore, setEditingDataStore] = useState<DataStore | null>(
+    null,
+  );
+  const [viewingDataStore, setViewingDataStore] = useState<DataStore | null>(
+    null,
+  );
+  const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
     queryKey: queryKeys.organizations.dropdown,
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
-  })
+  });
 
   const { data: identities } = useQuery({
     queryKey: queryKeys.identities.list({}),
     queryFn: () => api.getIdentities({ per_page: 1000 }),
-  })
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.dataStores.list({
@@ -109,180 +132,222 @@ export default function DataStores() {
       storage_type: storageTypeFilter,
       location_region: regionFilter,
     }),
-    queryFn: () => api.getDataStores({
-      search,
-      organization_id: organizationFilter ? parseInt(organizationFilter) : undefined,
-      data_classification: classificationFilter || undefined,
-      storage_type: storageTypeFilter || undefined,
-      location_region: regionFilter || undefined,
-    }),
-  })
+    queryFn: () =>
+      api.getDataStores({
+        search,
+        organization_id: organizationFilter
+          ? parseInt(organizationFilter)
+          : undefined,
+        data_classification: classificationFilter || undefined,
+        storage_type: storageTypeFilter || undefined,
+        location_region: regionFilter || undefined,
+      }),
+  });
 
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createDataStore(data as Parameters<typeof api.createDataStore>[0]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createDataStore(data as Parameters<typeof api.createDataStore>[0]),
     onSuccess: async () => {
-      await invalidateCache.dataStores(queryClient)
-      toast.success('Data store created successfully')
-      setShowCreateModal(false)
+      await invalidateCache.dataStores(queryClient);
+      toast.success("Data store created successfully");
+      setShowCreateModal(false);
     },
     onError: () => {
-      toast.error('Failed to create data store')
+      toast.error("Failed to create data store");
     },
-  })
+  });
 
   const updateMutation = useMutation({
-    mutationFn: (data: unknown) => api.updateDataStore(editingDataStore!.id, data as Parameters<typeof api.updateDataStore>[1]),
+    mutationFn: (data: unknown) =>
+      api.updateDataStore(
+        editingDataStore!.id,
+        data as Parameters<typeof api.updateDataStore>[1],
+      ),
     onSuccess: async () => {
-      await invalidateCache.dataStores(queryClient)
-      toast.success('Data store updated successfully')
-      setEditingDataStore(null)
+      await invalidateCache.dataStores(queryClient);
+      toast.success("Data store updated successfully");
+      setEditingDataStore(null);
     },
     onError: () => {
-      toast.error('Failed to update data store')
+      toast.error("Failed to update data store");
     },
-  })
+  });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteDataStore(id),
     onSuccess: async () => {
-      await invalidateCache.dataStores(queryClient)
-      toast.success('Data store deleted successfully')
+      await invalidateCache.dataStores(queryClient);
+      toast.success("Data store deleted successfully");
     },
     onError: () => {
-      toast.error('Failed to delete data store')
+      toast.error("Failed to delete data store");
     },
-  })
+  });
 
   const handleDelete = (id: number, name: string) => {
     confirmDelete(`data store "${name}"`, () => {
-      deleteMutation.mutate(id)
-    })
-  }
+      deleteMutation.mutate(id);
+    });
+  };
 
   const getClassificationColor = (classification: string): string => {
-    const classif = DATA_CLASSIFICATIONS.find(c => c.value === classification)
-    return classif?.color || 'bg-slate-500/20 text-slate-400'
-  }
+    const classif = DATA_CLASSIFICATIONS.find(
+      (c) => c.value === classification,
+    );
+    return classif?.color || "bg-slate-500/20 text-slate-400";
+  };
 
   const organizationOptions = useMemo(
-    () => organizations?.items?.map((org: Organization) => ({
-      value: org.id.toString(),
-      label: org.name,
-    })) || [],
-    [organizations?.items]
-  )
+    () =>
+      organizations?.items?.map((org: Organization) => ({
+        value: org.id.toString(),
+        label: org.name,
+      })) || [],
+    [organizations?.items],
+  );
 
   const pocOptions = useMemo(
-    () => identities?.items?.map((identity: Identity) => ({
-      value: identity.id.toString(),
-      label: identity.full_name || identity.username,
-    })) || [],
-    [identities?.items]
-  )
+    () =>
+      identities?.items?.map((identity: Identity) => ({
+        value: identity.id.toString(),
+        label: identity.full_name || identity.username,
+      })) || [],
+    [identities?.items],
+  );
 
-  const dataStoreFields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-      placeholder: 'Production Customer Database',
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      placeholder: 'Brief description of the data store',
-      rows: 2,
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      options: [
-        { value: '', label: organizationOptions.length ? 'Select organization' : 'No organizations found' },
-        ...organizationOptions,
-      ],
-    },
-    {
-      name: 'data_classification',
-      label: 'Data Classification',
-      type: 'select',
-      required: true,
-      options: DATA_CLASSIFICATIONS.map(c => ({ value: c.value, label: c.label })),
-      defaultValue: 'internal',
-    },
-    {
-      name: 'storage_type',
-      label: 'Storage Type',
-      type: 'select',
-      required: true,
-      options: STORAGE_TYPES,
-      defaultValue: 'database',
-    },
-    {
-      name: 'location_region',
-      label: 'Location/Region',
-      type: 'select',
-      options: REGIONS,
-      defaultValue: 'us-east-1',
-    },
-    {
-      name: 'location_region_other',
-      label: 'Custom Region/Location',
-      type: 'text',
-      placeholder: 'Enter custom location or region',
-      showWhen: (values: Record<string, unknown>) => values.location_region === 'other',
-    },
-    {
-      name: 'contains_pii',
-      label: 'Contains Personally Identifiable Information (PII)',
-      type: 'checkbox',
-      defaultValue: false,
-    },
-    {
-      name: 'contains_phi',
-      label: 'Contains Protected Health Information (PHI)',
-      type: 'checkbox',
-      defaultValue: false,
-    },
-    {
-      name: 'contains_pci',
-      label: 'Contains Payment Card Industry (PCI) Data',
-      type: 'checkbox',
-      defaultValue: false,
-    },
-    {
-      name: 'compliance_framework',
-      label: 'Compliance Framework',
-      type: 'select',
-      options: COMPLIANCE_FRAMEWORKS,
-      defaultValue: 'none',
-    },
-    {
-      name: 'poc_identity_id',
-      label: 'Point of Contact',
-      type: 'select',
-      options: [
-        { value: '', label: pocOptions.length ? 'Select contact (optional)' : 'No identities found' },
-        ...pocOptions,
-      ],
-    },
-  ], [organizationOptions, pocOptions])
+  const regionOptions = useMemo(() => {
+    const preset = REGIONS.filter((r) => r.value !== "other");
+    const seen = new Set(preset.map((r) => r.value));
+    const existing = ((data?.items || []) as DataStore[])
+      .map((ds) => ds.location_region)
+      .filter((r): r is string => Boolean(r) && !seen.has(r));
+    const uniqueExisting = Array.from(new Set(existing)).map((r) => ({
+      value: r,
+      label: r,
+    }));
+    return [...preset, ...uniqueExisting];
+  }, [data?.items]);
 
-  const editFields: FormField[] = useMemo(() => dataStoreFields.map(field => ({
-    ...field,
-    defaultValue: field.name === 'organization_id' || field.name === 'poc_identity_id'
-      ? editingDataStore?.[field.name]?.toString()
-      : editingDataStore?.[field.name],
-  })), [dataStoreFields, editingDataStore])
+  const dataStoreFields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Name",
+        type: "text",
+        required: true,
+        placeholder: "Production Customer Database",
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        placeholder: "Brief description of the data store",
+        rows: 2,
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        required: true,
+        searchable: true,
+        placeholder: organizationOptions.length
+          ? "Select organization"
+          : "No organizations found",
+        options: organizationOptions,
+      },
+      {
+        name: "data_classification",
+        label: "Data Classification",
+        type: "select",
+        required: true,
+        options: DATA_CLASSIFICATIONS.map((c) => ({
+          value: c.value,
+          label: c.label,
+        })),
+        defaultValue: "internal",
+      },
+      {
+        name: "storage_type",
+        label: "Storage Type",
+        type: "select",
+        required: true,
+        options: STORAGE_TYPES,
+        defaultValue: "database",
+      },
+      {
+        name: "location_region",
+        label: "Location/Region",
+        type: "select",
+        searchable: true,
+        allowCustom: true,
+        options: regionOptions,
+        defaultValue: "us-east-1",
+      },
+      {
+        name: "location_region_other",
+        label: "Custom Region/Location",
+        type: "text",
+        placeholder: "Enter custom location or region",
+        showWhen: (values: Record<string, unknown>) =>
+          values.location_region === "other",
+      },
+      {
+        name: "contains_pii",
+        label: "Contains Personally Identifiable Information (PII)",
+        type: "checkbox",
+        defaultValue: false,
+      },
+      {
+        name: "contains_phi",
+        label: "Contains Protected Health Information (PHI)",
+        type: "checkbox",
+        defaultValue: false,
+      },
+      {
+        name: "contains_pci",
+        label: "Contains Payment Card Industry (PCI) Data",
+        type: "checkbox",
+        defaultValue: false,
+      },
+      {
+        name: "compliance_framework",
+        label: "Compliance Framework",
+        type: "select",
+        options: COMPLIANCE_FRAMEWORKS,
+        defaultValue: "none",
+      },
+      {
+        name: "poc_identity_id",
+        label: "Point of Contact",
+        type: "select",
+        searchable: true,
+        placeholder: pocOptions.length
+          ? "Select contact (optional)"
+          : "No identities found",
+        options: pocOptions,
+      },
+    ],
+    [organizationOptions, pocOptions, regionOptions],
+  );
+
+  const editFields: FormField[] = useMemo(
+    () =>
+      dataStoreFields.map((field) => ({
+        ...field,
+        defaultValue:
+          field.name === "organization_id" || field.name === "poc_identity_id"
+            ? editingDataStore?.[field.name]?.toString()
+            : editingDataStore?.[field.name],
+      })),
+    [dataStoreFields, editingDataStore],
+  );
 
   const handleCreateSubmit = (data: Record<string, unknown>) => {
     // Use custom region if "other" is selected
-    const locationRegion = data.location_region === 'other'
-      ? (data.location_region_other as string)?.trim()
-      : (data.location_region as string)
+    const locationRegion =
+      data.location_region === "other"
+        ? (data.location_region_other as string)?.trim()
+        : (data.location_region as string);
 
     createMutation.mutate({
       name: (data.name as string)?.trim(),
@@ -295,15 +360,18 @@ export default function DataStores() {
       contains_phi: data.contains_phi || false,
       contains_pci: data.contains_pci || false,
       compliance_framework: data.compliance_framework || undefined,
-      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id as string) : undefined,
-    } as Parameters<typeof api.createDataStore>[0])
-  }
+      poc_identity_id: data.poc_identity_id
+        ? parseInt(data.poc_identity_id as string)
+        : undefined,
+    } as Parameters<typeof api.createDataStore>[0]);
+  };
 
   const handleEditSubmit = (data: Record<string, unknown>) => {
     // Use custom region if "other" is selected
-    const locationRegion = data.location_region === 'other'
-      ? (data.location_region_other as string)?.trim()
-      : (data.location_region as string)
+    const locationRegion =
+      data.location_region === "other"
+        ? (data.location_region_other as string)?.trim()
+        : (data.location_region as string);
 
     updateMutation.mutate({
       name: (data.name as string)?.trim(),
@@ -315,9 +383,11 @@ export default function DataStores() {
       contains_phi: data.contains_phi || false,
       contains_pci: data.contains_pci || false,
       compliance_framework: data.compliance_framework || undefined,
-      poc_identity_id: data.poc_identity_id ? parseInt(data.poc_identity_id as string) : undefined,
-    } as Parameters<typeof api.updateDataStore>[1])
-  }
+      poc_identity_id: data.poc_identity_id
+        ? parseInt(data.poc_identity_id as string)
+        : undefined,
+    } as Parameters<typeof api.updateDataStore>[1]);
+  };
 
   return (
     <div className="p-8">
@@ -433,8 +503,8 @@ export default function DataStores() {
                   <div className="flex gap-2 flex-shrink-0">
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingDataStore(dataStore)
+                        e.stopPropagation();
+                        setEditingDataStore(dataStore);
                       }}
                       className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                     >
@@ -442,8 +512,8 @@ export default function DataStores() {
                     </button>
                     <button
                       onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(dataStore.id, dataStore.name)
+                        e.stopPropagation();
+                        handleDelete(dataStore.id, dataStore.name);
                       }}
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                     >
@@ -459,11 +529,17 @@ export default function DataStores() {
                 )}
 
                 <div className="flex flex-wrap gap-2 mb-3">
-                  <span className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}>
-                    {DATA_CLASSIFICATIONS.find(c => c.value === dataStore.data_classification)?.label || 'Unknown'}
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}
+                  >
+                    {DATA_CLASSIFICATIONS.find(
+                      (c) => c.value === dataStore.data_classification,
+                    )?.label || "Unknown"}
                   </span>
                   <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
-                    {STORAGE_TYPES.find(t => t.value === dataStore.storage_type)?.label || dataStore.storage_type}
+                    {STORAGE_TYPES.find(
+                      (t) => t.value === dataStore.storage_type,
+                    )?.label || dataStore.storage_type}
                   </span>
                 </div>
 
@@ -490,15 +566,21 @@ export default function DataStores() {
 
                 {dataStore.location_region && (
                   <div className="text-xs text-slate-500 mb-2">
-                    Region: {REGIONS.find(r => r.value === dataStore.location_region)?.label || dataStore.location_region}
+                    Region:{" "}
+                    {REGIONS.find((r) => r.value === dataStore.location_region)
+                      ?.label || dataStore.location_region}
                   </div>
                 )}
 
-                {dataStore.compliance_framework && dataStore.compliance_framework !== 'none' && (
-                  <div className="text-xs text-slate-500">
-                    Compliance: {COMPLIANCE_FRAMEWORKS.find(f => f.value === dataStore.compliance_framework)?.label || dataStore.compliance_framework}
-                  </div>
-                )}
+                {dataStore.compliance_framework &&
+                  dataStore.compliance_framework !== "none" && (
+                    <div className="text-xs text-slate-500">
+                      Compliance:{" "}
+                      {COMPLIANCE_FRAMEWORKS.find(
+                        (f) => f.value === dataStore.compliance_framework,
+                      )?.label || dataStore.compliance_framework}
+                    </div>
+                  )}
               </CardContent>
             </Card>
           ))}
@@ -507,25 +589,25 @@ export default function DataStores() {
 
       {/* Create Modal */}
       {showCreateModal && (
-        <FormModalBuilder
+        <ModalFormBuilder
           isOpen={showCreateModal}
           title="Add Data Store"
           fields={dataStoreFields}
           onSubmit={handleCreateSubmit}
           onClose={() => setShowCreateModal(false)}
-          submitButtonText="Create"
+          submitLabel="Create"
         />
       )}
 
       {/* Edit Modal */}
       {!!editingDataStore && (
-        <FormModalBuilder
+        <ModalFormBuilder
           isOpen={!!editingDataStore}
           title="Edit Data Store"
           fields={editFields}
           onSubmit={handleEditSubmit}
           onClose={() => setEditingDataStore(null)}
-          submitButtonText="Save"
+          submitLabel="Save"
         />
       )}
 
@@ -536,27 +618,32 @@ export default function DataStores() {
           identities={identities?.items || []}
           onClose={() => setViewingDataStore(null)}
           onEdit={() => {
-            setEditingDataStore(viewingDataStore)
-            setViewingDataStore(null)
+            setEditingDataStore(viewingDataStore);
+            setViewingDataStore(null);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 interface DataStoreDetailModalProps {
-  dataStore: DataStore
-  identities: Identity[]
-  onClose: () => void
-  onEdit: () => void
+  dataStore: DataStore;
+  identities: Identity[];
+  onClose: () => void;
+  onEdit: () => void;
 }
 
-function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataStoreDetailModalProps) {
+function DataStoreDetailModal({
+  dataStore,
+  identities,
+  onClose,
+  onEdit,
+}: DataStoreDetailModalProps) {
   const getPOCName = (pocId: number): string => {
-    const identity = identities.find((i: Identity) => i.id === pocId)
-    return identity?.full_name || identity?.username || 'Unknown'
-  }
+    const identity = identities.find((i: Identity) => i.id === pocId);
+    return identity?.full_name || identity?.username || "Unknown";
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -565,7 +652,9 @@ function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataSt
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Database className="w-5 h-5 text-primary-400" />
-              <h2 className="text-xl font-semibold text-white">{dataStore.name}</h2>
+              <h2 className="text-xl font-semibold text-white">
+                {dataStore.name}
+              </h2>
             </div>
             <button
               onClick={onEdit}
@@ -583,29 +672,62 @@ function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataSt
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-xs text-slate-500 uppercase">Classification</label>
+                <label className="text-xs text-slate-500 uppercase">
+                  Classification
+                </label>
                 <div className="mt-1">
-                  <span className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}>
-                    {DATA_CLASSIFICATIONS.find(c => c.value === dataStore.data_classification)?.label}
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}
+                  >
+                    {
+                      DATA_CLASSIFICATIONS.find(
+                        (c) => c.value === dataStore.data_classification,
+                      )?.label
+                    }
                   </span>
                 </div>
               </div>
               <div>
-                <label className="text-xs text-slate-500 uppercase">Storage Type</label>
-                <p className="text-sm text-white mt-1">{STORAGE_TYPES.find(t => t.value === dataStore.storage_type)?.label}</p>
+                <label className="text-xs text-slate-500 uppercase">
+                  Storage Type
+                </label>
+                <p className="text-sm text-white mt-1">
+                  {
+                    STORAGE_TYPES.find(
+                      (t) => t.value === dataStore.storage_type,
+                    )?.label
+                  }
+                </p>
               </div>
               <div>
-                <label className="text-xs text-slate-500 uppercase">Region</label>
-                <p className="text-sm text-white mt-1">{REGIONS.find(r => r.value === dataStore.location_region)?.label || dataStore.location_region || '-'}</p>
+                <label className="text-xs text-slate-500 uppercase">
+                  Region
+                </label>
+                <p className="text-sm text-white mt-1">
+                  {REGIONS.find((r) => r.value === dataStore.location_region)
+                    ?.label ||
+                    dataStore.location_region ||
+                    "-"}
+                </p>
               </div>
               <div>
-                <label className="text-xs text-slate-500 uppercase">Compliance</label>
-                <p className="text-sm text-white mt-1">{COMPLIANCE_FRAMEWORKS.find(f => f.value === dataStore.compliance_framework)?.label || dataStore.compliance_framework || '-'}</p>
+                <label className="text-xs text-slate-500 uppercase">
+                  Compliance
+                </label>
+                <p className="text-sm text-white mt-1">
+                  {COMPLIANCE_FRAMEWORKS.find(
+                    (f) => f.value === dataStore.compliance_framework,
+                  )?.label ||
+                    dataStore.compliance_framework ||
+                    "-"}
+                </p>
               </div>
             </div>
 
             <div className="bg-slate-800/50 rounded-lg p-4 space-y-2">
-              <label className="text-xs text-slate-500 uppercase block">Data Sensitivity Indicators</label>
+              <label className="text-xs text-slate-500 uppercase block">
+                Data Sensitivity Indicators
+              </label>
               <div className="flex flex-wrap gap-2">
                 {dataStore.contains_pii ? (
                   <div className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400">
@@ -642,8 +764,12 @@ function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataSt
 
             {dataStore.poc_identity_id && (
               <div>
-                <label className="text-xs text-slate-500 uppercase">Point of Contact</label>
-                <p className="text-sm text-white mt-1">{getPOCName(dataStore.poc_identity_id)}</p>
+                <label className="text-xs text-slate-500 uppercase">
+                  Point of Contact
+                </label>
+                <p className="text-sm text-white mt-1">
+                  {getPOCName(dataStore.poc_identity_id)}
+                </p>
               </div>
             )}
 
@@ -656,10 +782,10 @@ function DataStoreDetailModal({ dataStore, identities, onClose, onEdit }: DataSt
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
 function getClassificationColor(classification: string): string {
-  const classif = DATA_CLASSIFICATIONS.find(c => c.value === classification)
-  return classif?.color || 'bg-slate-500/20 text-slate-400'
+  const classif = DATA_CLASSIFICATIONS.find((c) => c.value === classification);
+  return classif?.color || "bg-slate-500/20 text-slate-400";
 }

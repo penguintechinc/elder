@@ -1,60 +1,64 @@
-import { useMemo } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
-import { Organization } from '@/types'
+import { useMemo } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import toast from "react-hot-toast";
+import api from "@/lib/api";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import { FormField } from "@/types/form";
+import { Organization } from "@/types";
 
 interface OnCallRotation {
-  id: number
-  name: string
-  description?: string
-  scope_type: string
-  organization_id?: number
-  service_id?: number
-  schedule_type: string
-  rotation_length_days?: number
-  rotation_start_date?: string
-  schedule_cron?: string
-  handoff_timezone?: string
-  shift_split?: boolean
-  is_active: boolean
+  id: number;
+  name: string;
+  description?: string;
+  scope_type: string;
+  organization_id?: number;
+  service_id?: number;
+  schedule_type: string;
+  rotation_length_days?: number;
+  rotation_start_date?: string;
+  schedule_cron?: string;
+  handoff_timezone?: string;
+  shift_split?: boolean;
+  is_active: boolean;
 }
 
 interface Service {
-  id: number
-  name: string
+  id: number;
+  name: string;
 }
 
 interface PaginatedResponse<T> {
-  items: T[]
+  items: T[];
 }
 
-type ApiError = { response?: { data?: { message?: string }, status?: number }, message?: string }
+type ApiError = {
+  response?: { data?: { message?: string }; status?: number };
+  message?: string;
+};
 
 interface CreateOnCallRotationModalProps {
-  isOpen: boolean
-  onClose: () => void
-  rotation?: OnCallRotation
-  onSuccess?: () => Promise<void>
+  isOpen: boolean;
+  onClose: () => void;
+  rotation?: OnCallRotation;
+  onSuccess?: () => Promise<void>;
 }
 
 // Timezone options for follow-the-sun schedules
 const TIMEZONE_OPTIONS = [
-  { value: 'UTC', label: 'UTC' },
-  { value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
-  { value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
-  { value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
-  { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
-  { value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
-  { value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
-  { value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
-  { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
-  { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
-  { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
-  { value: 'Australia/Sydney', label: 'Australia/Sydney (AEDT/AEST)' },
-  { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
-]
+  { value: "UTC", label: "UTC" },
+  { value: "America/New_York", label: "America/New_York (EST/EDT)" },
+  { value: "America/Chicago", label: "America/Chicago (CST/CDT)" },
+  { value: "America/Denver", label: "America/Denver (MST/MDT)" },
+  { value: "America/Los_Angeles", label: "America/Los_Angeles (PST/PDT)" },
+  { value: "Europe/London", label: "Europe/London (GMT/BST)" },
+  { value: "Europe/Paris", label: "Europe/Paris (CET/CEST)" },
+  { value: "Europe/Berlin", label: "Europe/Berlin (CET/CEST)" },
+  { value: "Asia/Tokyo", label: "Asia/Tokyo (JST)" },
+  { value: "Asia/Shanghai", label: "Asia/Shanghai (CST)" },
+  { value: "Asia/Singapore", label: "Asia/Singapore (SGT)" },
+  { value: "Australia/Sydney", label: "Australia/Sydney (AEDT/AEST)" },
+  { value: "Asia/Kolkata", label: "Asia/Kolkata (IST)" },
+];
 
 export default function CreateOnCallRotationModal({
   isOpen,
@@ -64,39 +68,54 @@ export default function CreateOnCallRotationModal({
 }: CreateOnCallRotationModalProps) {
   // Fetch organizations and services
   const { data: organizations } = useQuery({
-    queryKey: ['organizations-dropdown'],
-    queryFn: () => api.getOrganizations({ per_page: 1000 }) as Promise<PaginatedResponse<Organization>>,
-  })
+    queryKey: ["organizations-dropdown"],
+    queryFn: () =>
+      api.getOrganizations({ per_page: 1000 }) as Promise<
+        PaginatedResponse<Organization>
+      >,
+  });
 
   const { data: services } = useQuery({
-    queryKey: ['services-dropdown'],
-    queryFn: () => api.getServices({ per_page: 1000 }) as Promise<PaginatedResponse<Service>>,
-  })
+    queryKey: ["services-dropdown"],
+    queryFn: () =>
+      api.getServices({ per_page: 1000 }) as Promise<
+        PaginatedResponse<Service>
+      >,
+  });
 
   // Create/update mutation
   const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.createOnCallRotation(data as Parameters<typeof api.createOnCallRotation>[0]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.createOnCallRotation(
+        data as Parameters<typeof api.createOnCallRotation>[0],
+      ),
     onSuccess: () => {
-      toast.success('Rotation created successfully')
-      onSuccess?.()
+      toast.success("Rotation created successfully");
+      onSuccess?.();
     },
     onError: (error: ApiError) => {
-      const message = error?.response?.data?.message || 'Failed to create rotation'
-      toast.error(message)
+      const message =
+        error?.response?.data?.message || "Failed to create rotation";
+      toast.error(message);
     },
-  })
+  });
 
   const updateMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => api.updateOnCallRotation(rotation?.id ?? 0, data as Parameters<typeof api.updateOnCallRotation>[1]),
+    mutationFn: (data: Record<string, unknown>) =>
+      api.updateOnCallRotation(
+        rotation?.id ?? 0,
+        data as Parameters<typeof api.updateOnCallRotation>[1],
+      ),
     onSuccess: () => {
-      toast.success('Rotation updated successfully')
-      onSuccess?.()
+      toast.success("Rotation updated successfully");
+      onSuccess?.();
     },
     onError: (error: ApiError) => {
-      const message = error?.response?.data?.message || 'Failed to update rotation'
-      toast.error(message)
+      const message =
+        error?.response?.data?.message || "Failed to update rotation";
+      toast.error(message);
     },
-  })
+  });
 
   // Build organization and service options
   const organizationOptions = useMemo(
@@ -105,8 +124,8 @@ export default function CreateOnCallRotationModal({
         value: org.id.toString(),
         label: org.name,
       })) || [],
-    [organizations]
-  )
+    [organizations],
+  );
 
   const serviceOptions = useMemo(
     () =>
@@ -114,143 +133,154 @@ export default function CreateOnCallRotationModal({
         value: svc.id.toString(),
         label: svc.name,
       })) || [],
-    [services]
-  )
+    [services],
+  );
 
   // Edit-mode default values merged from rotation data
-  const editDefaults: Record<string, string | number | boolean> | undefined = useMemo(() => {
-    if (!rotation) return undefined
-    return {
-      name: rotation.name || '',
-      description: rotation.description || '',
-      scope_type: rotation.scope_type || 'organization',
-      organization_id: rotation.organization_id?.toString() || '',
-      service_id: rotation.service_id?.toString() || '',
-      schedule_type: rotation.schedule_type || 'weekly',
-      rotation_length_days: rotation.rotation_length_days?.toString() || '7',
-      rotation_start_date: rotation.rotation_start_date || '',
-      schedule_cron: rotation.schedule_cron || '',
-      handoff_timezone: rotation.handoff_timezone || 'UTC',
-      shift_split: rotation.shift_split || false,
-      is_active: rotation.is_active !== false,
-    }
-  }, [rotation])
+  const editDefaults: Record<string, string | number | boolean> | undefined =
+    useMemo(() => {
+      if (!rotation) return undefined;
+      return {
+        name: rotation.name || "",
+        description: rotation.description || "",
+        scope_type: rotation.scope_type || "organization",
+        organization_id: rotation.organization_id?.toString() || "",
+        service_id: rotation.service_id?.toString() || "",
+        schedule_type: rotation.schedule_type || "weekly",
+        rotation_length_days: rotation.rotation_length_days?.toString() || "7",
+        rotation_start_date: rotation.rotation_start_date || "",
+        schedule_cron: rotation.schedule_cron || "",
+        handoff_timezone: rotation.handoff_timezone || "UTC",
+        shift_split: rotation.shift_split || false,
+        is_active: rotation.is_active !== false,
+      };
+    }, [rotation]);
 
   // Form fields — when editing, override defaultValue from the rotation record
   const fields: FormField[] = useMemo(() => {
     const baseFields: FormField[] = [
       {
-        name: 'name',
-        label: 'Rotation Name',
-        type: 'text' as const,
+        name: "name",
+        label: "Rotation Name",
+        type: "text" as const,
         required: true,
-        placeholder: 'e.g., Backend API On-Call',
+        placeholder: "e.g., Backend API On-Call",
       },
       {
-        name: 'description',
-        label: 'Description',
-        type: 'textarea' as const,
-        placeholder: 'Optional description of this rotation',
+        name: "description",
+        label: "Description",
+        type: "textarea" as const,
+        placeholder: "Optional description of this rotation",
         rows: 2,
       },
       {
-        name: 'scope_type',
-        label: 'Scope',
-        type: 'radio' as const,
+        name: "scope_type",
+        label: "Scope",
+        type: "radio" as const,
         required: true,
-        defaultValue: 'organization',
+        defaultValue: "organization",
         options: [
-          { value: 'organization', label: 'Organization-level' },
-          { value: 'service', label: 'Service-level' },
+          { value: "organization", label: "Organization-level" },
+          { value: "service", label: "Service-level" },
         ],
       },
       {
-        name: 'organization_id',
-        label: 'Organization',
-        type: 'select' as const,
+        name: "organization_id",
+        label: "Organization",
+        type: "select" as const,
         required: true,
-        showWhen: (values) => values.scope_type === 'organization',
-        options: organizationOptions.length > 0 ? organizationOptions : [{ value: '', label: 'No organizations found' }],
+        searchable: true,
+        showWhen: (values) => values.scope_type === "organization",
+        options:
+          organizationOptions.length > 0
+            ? organizationOptions
+            : [{ value: "", label: "No organizations found" }],
       },
       {
-        name: 'service_id',
-        label: 'Service',
-        type: 'select' as const,
+        name: "service_id",
+        label: "Service",
+        type: "select" as const,
         required: true,
-        showWhen: (values) => values.scope_type === 'service',
-        options: serviceOptions.length > 0 ? serviceOptions : [{ value: '', label: 'No services found' }],
+        searchable: true,
+        showWhen: (values) => values.scope_type === "service",
+        options:
+          serviceOptions.length > 0
+            ? serviceOptions
+            : [{ value: "", label: "No services found" }],
       },
       {
-        name: 'schedule_type',
-        label: 'Schedule Type',
-        type: 'select' as const,
+        name: "schedule_type",
+        label: "Schedule Type",
+        type: "select" as const,
         required: true,
-        defaultValue: 'weekly',
+        defaultValue: "weekly",
         options: [
-          { value: 'weekly', label: 'Weekly Rotation' },
-          { value: 'cron', label: 'Custom Schedule (Cron)' },
-          { value: 'manual', label: 'Manual Assignment' },
-          { value: 'follow_the_sun', label: 'Follow-the-Sun (24/7)' },
+          { value: "weekly", label: "Weekly Rotation" },
+          { value: "cron", label: "Custom Schedule (Cron)" },
+          { value: "manual", label: "Manual Assignment" },
+          { value: "follow_the_sun", label: "Follow-the-Sun (24/7)" },
         ],
       },
       {
-        name: 'rotation_length_days',
-        label: 'Rotation Length (days)',
-        type: 'number' as const,
+        name: "rotation_length_days",
+        label: "Rotation Length (days)",
+        type: "number" as const,
         required: true,
         defaultValue: 7,
-        placeholder: '7',
-        showWhen: (values) => values.schedule_type === 'weekly',
+        placeholder: "7",
+        showWhen: (values) => values.schedule_type === "weekly",
       },
       {
-        name: 'rotation_start_date',
-        label: 'Rotation Start Date',
-        type: 'date' as const,
+        name: "rotation_start_date",
+        label: "Rotation Start Date",
+        type: "date" as const,
         required: true,
-        showWhen: (values) => values.schedule_type === 'weekly',
+        showWhen: (values) => values.schedule_type === "weekly",
       },
       {
-        name: 'schedule_cron',
-        label: 'Cron Expression',
-        type: 'text' as const,
+        name: "schedule_cron",
+        label: "Cron Expression",
+        type: "text" as const,
         required: true,
-        placeholder: '0 0 * * *',
-        helpText: 'E.g., "0 0 * * *" for daily at midnight, "0 9 * * MON" for Mondays at 9 AM',
-        showWhen: (values) => values.schedule_type === 'cron',
+        placeholder: "0 0 * * *",
+        helpText:
+          'E.g., "0 0 * * *" for daily at midnight, "0 9 * * MON" for Mondays at 9 AM',
+        showWhen: (values) => values.schedule_type === "cron",
       },
       {
-        name: 'handoff_timezone',
-        label: 'Handoff Timezone',
-        type: 'select' as const,
+        name: "handoff_timezone",
+        label: "Handoff Timezone",
+        type: "select" as const,
         required: true,
-        defaultValue: 'UTC',
-        showWhen: (values) => values.schedule_type === 'follow_the_sun',
+        searchable: true,
+        defaultValue: "UTC",
+        showWhen: (values) => values.schedule_type === "follow_the_sun",
         options: TIMEZONE_OPTIONS,
       },
       {
-        name: 'shift_split',
-        label: 'Split into multiple shifts per day',
-        type: 'checkbox' as const,
+        name: "shift_split",
+        label: "Split into multiple shifts per day",
+        type: "checkbox" as const,
         defaultValue: false,
-        showWhen: (values) => values.schedule_type === 'follow_the_sun',
+        showWhen: (values) => values.schedule_type === "follow_the_sun",
       },
       {
-        name: 'is_active',
-        label: 'Enable this rotation',
-        type: 'checkbox' as const,
+        name: "is_active",
+        label: "Enable this rotation",
+        type: "checkbox" as const,
         defaultValue: true,
       },
-    ]
+    ];
     // In edit mode, override defaultValue on each field from the rotation record
-    if (!editDefaults) return baseFields
+    if (!editDefaults) return baseFields;
     return baseFields.map((field) => {
-      const val = editDefaults[field.name]
-      return val !== undefined ? { ...field, defaultValue: val } : field
-    })
-  }, [organizationOptions, serviceOptions, editDefaults])
+      const val = editDefaults[field.name];
+      return val !== undefined ? { ...field, defaultValue: val } : field;
+    });
+  }, [organizationOptions, serviceOptions, editDefaults]);
 
   const handleSubmit = (data: Record<string, unknown>) => {
-    console.log('[CreateOnCallRotationModal] Form submitted with data:', data)
+    console.log("[CreateOnCallRotationModal] Form submitted with data:", data);
 
     // Clean up data based on schedule type
     const cleanedData: Record<string, unknown> = {
@@ -259,54 +289,67 @@ export default function CreateOnCallRotationModal({
       scope_type: String(data.scope_type),
       schedule_type: String(data.schedule_type),
       is_active: data.is_active !== false,
-    }
+    };
 
     // Add scope-specific fields
-    if (data.scope_type === 'organization') {
-      const orgId = data.organization_id
-      cleanedData.organization_id = typeof orgId === 'string' ? parseInt(orgId) : orgId
-    } else if (data.scope_type === 'service') {
-      const svcId = data.service_id
-      cleanedData.service_id = typeof svcId === 'string' ? parseInt(svcId) : svcId
+    if (data.scope_type === "organization") {
+      const orgId = data.organization_id;
+      cleanedData.organization_id =
+        typeof orgId === "string" ? parseInt(orgId) : orgId;
+    } else if (data.scope_type === "service") {
+      const svcId = data.service_id;
+      cleanedData.service_id =
+        typeof svcId === "string" ? parseInt(svcId) : svcId;
     }
 
     // Add schedule-specific fields
-    if (data.schedule_type === 'weekly') {
-      const rotationDays = data.rotation_length_days
-      cleanedData.rotation_length_days = typeof rotationDays === 'string' ? parseInt(rotationDays) : rotationDays || 7
-      cleanedData.rotation_start_date = String(data.rotation_start_date)
-    } else if (data.schedule_type === 'cron') {
-      cleanedData.schedule_cron = String(data.schedule_cron)
-    } else if (data.schedule_type === 'follow_the_sun') {
-      cleanedData.handoff_timezone = String(data.handoff_timezone || 'UTC')
-      cleanedData.shift_split = data.shift_split !== false
+    if (data.schedule_type === "weekly") {
+      const rotationDays = data.rotation_length_days;
+      cleanedData.rotation_length_days =
+        typeof rotationDays === "string"
+          ? parseInt(rotationDays)
+          : rotationDays || 7;
+      cleanedData.rotation_start_date = String(data.rotation_start_date);
+    } else if (data.schedule_type === "cron") {
+      cleanedData.schedule_cron = String(data.schedule_cron);
+    } else if (data.schedule_type === "follow_the_sun") {
+      cleanedData.handoff_timezone = String(data.handoff_timezone || "UTC");
+      cleanedData.shift_split = data.shift_split !== false;
       // Default shift config for follow-the-sun (can be customized later)
       cleanedData.shift_config = {
         shifts: [
-          { name: 'Day Shift', start_hour: 8, end_hour: 20, timezone: String(data.handoff_timezone || 'UTC') }
-        ]
-      }
+          {
+            name: "Day Shift",
+            start_hour: 8,
+            end_hour: 20,
+            timezone: String(data.handoff_timezone || "UTC"),
+          },
+        ],
+      };
     }
 
-    console.log('[CreateOnCallRotationModal] Cleaned data for API:', cleanedData)
+    console.log(
+      "[CreateOnCallRotationModal] Cleaned data for API:",
+      cleanedData,
+    );
 
     if (rotation) {
-      updateMutation.mutate(cleanedData)
+      updateMutation.mutate(cleanedData);
     } else {
-      createMutation.mutate(cleanedData)
+      createMutation.mutate(cleanedData);
     }
-  }
+  };
 
-  if (!isOpen) return null
+  if (!isOpen) return null;
 
   return (
-    <FormModalBuilder
-      title={rotation ? 'Edit Rotation' : 'Create On-Call Rotation'}
+    <ModalFormBuilder
+      title={rotation ? "Edit Rotation" : "Create On-Call Rotation"}
       fields={fields}
       isOpen={isOpen}
       onClose={onClose}
       onSubmit={handleSubmit}
-      submitButtonText={rotation ? 'Update' : 'Create'}
+      submitLabel={rotation ? "Update" : "Create"}
     />
-  )
+  );
 }
