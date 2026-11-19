@@ -11,6 +11,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
 from apps.api.models.pydantic.network import CreateNetworkRequest, UpdateNetworkRequest
 from apps.api.services.networking import NetworkingService
+from apps.api.services.networking.service import DuplicateResourceError
 from apps.api.utils.quart_validation import ValidationErrorResponse
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ async def create_network():
         body = CreateNetworkRequest.model_validate(data)
         service = NetworkingService()
 
-        network = service.create_network(
+        network, created = service.create_or_update_network(
             name=body.name,
             network_type=body.network_type,
             organization_id=body.organization_id,
@@ -97,10 +98,22 @@ async def create_network():
             organizational_unit=body.organizational_unit,
             attributes=body.attributes,
             tags=body.tags,
+            overwrite=body.overwrite,
         )
 
-        return jsonify(network), 201
+        return jsonify(network), 201 if created else 200
 
+    except DuplicateResourceError as e:
+        return (
+            jsonify(
+                {
+                    "error": str(e),
+                    "code": "DUPLICATE_RESOURCE",
+                    "existing_id": e.existing_id,
+                }
+            ),
+            409,
+        )
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
     except Exception as e:

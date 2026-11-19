@@ -164,6 +164,10 @@ class CreateIPAMPrefixRequest(RequestModel):
         default=False,
         description="Whether prefix is used as address pool",
     )
+    overwrite: bool = Field(
+        default=False,
+        description="Overwrite existing matching resource if found",
+    )
 
 
 class UpdateIPAMPrefixRequest(RequestModel):
@@ -252,6 +256,10 @@ class CreateIPAMAddressRequest(RequestModel):
         default=None,
         description="Optional DNS hostname",
     )
+    overwrite: bool = Field(
+        default=False,
+        description="Overwrite existing matching resource if found",
+    )
 
 
 class UpdateIPAMAddressRequest(RequestModel):
@@ -329,6 +337,10 @@ class CreateIPAMVlanRequest(RequestModel):
     status: str = Field(
         default="active",
         description="Current status (active/reserved/deprecated)",
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="Overwrite existing matching resource if found",
     )
 
 

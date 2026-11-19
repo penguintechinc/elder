@@ -187,6 +187,10 @@ class CreateNetworkRequest(RequestModel):
         default=True,
         description="Active status",
     )
+    overwrite: bool = Field(
+        default=False,
+        description="Overwrite existing matching resource if found",
+    )
 
 
 class UpdateNetworkRequest(RequestModel):

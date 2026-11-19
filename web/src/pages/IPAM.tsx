@@ -70,6 +70,24 @@ interface IpamVlan {
 
 type TabType = "prefixes" | "addresses" | "vlans";
 
+interface PendingOverwriteState {
+  kind: "prefix" | "address" | "vlan";
+  payload: Record<string, unknown>;
+  message: string;
+}
+
+function getConflictMessage(error: unknown, fallback: string): string | null {
+  if (!error || typeof error !== "object") return null;
+  const err = error as {
+    response?: {
+      status?: number;
+      data?: { error?: string; message?: string; code?: string };
+    };
+  };
+  if (err.response?.status !== 409) return null;
+  return err.response?.data?.error || err.response?.data?.message || fallback;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   active: "bg-green-500/20 text-green-400",
   reserved: "bg-yellow-500/20 text-yellow-400",
@@ -115,6 +133,8 @@ export default function IPAM() {
     null,
   );
   const [editingVlan, setEditingVlan] = useState<IpamVlan | null>(null);
+  const [pendingOverwrite, setPendingOverwrite] =
+    useState<PendingOverwriteState | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -175,7 +195,21 @@ export default function IPAM() {
       setShowCreatePrefixModal(false);
       toast.success("Prefix created successfully");
     },
-    onError: () => toast.error("Failed to create prefix"),
+    onError: (error, variables) => {
+      const conflictMsg = getConflictMessage(
+        error,
+        "A matching prefix already exists.",
+      );
+      if (conflictMsg) {
+        setPendingOverwrite({
+          kind: "prefix",
+          payload: (variables as Record<string, unknown>) ?? {},
+          message: conflictMsg,
+        });
+        return;
+      }
+      toast.error("Failed to create prefix");
+    },
   });
 
   const createAddressMutation = useMutation({
@@ -191,7 +225,21 @@ export default function IPAM() {
       setShowCreateAddressModal(false);
       toast.success("Address created successfully");
     },
-    onError: () => toast.error("Failed to create address"),
+    onError: (error, variables) => {
+      const conflictMsg = getConflictMessage(
+        error,
+        "A matching IP address already exists.",
+      );
+      if (conflictMsg) {
+        setPendingOverwrite({
+          kind: "address",
+          payload: (variables as Record<string, unknown>) ?? {},
+          message: conflictMsg,
+        });
+        return;
+      }
+      toast.error("Failed to create address");
+    },
   });
 
   const createVlanMutation = useMutation({
@@ -205,7 +253,21 @@ export default function IPAM() {
       setShowCreateVlanModal(false);
       toast.success("VLAN created successfully");
     },
-    onError: () => toast.error("Failed to create VLAN"),
+    onError: (error, variables) => {
+      const conflictMsg = getConflictMessage(
+        error,
+        "A matching VLAN already exists.",
+      );
+      if (conflictMsg) {
+        setPendingOverwrite({
+          kind: "vlan",
+          payload: (variables as Record<string, unknown>) ?? {},
+          message: conflictMsg,
+        });
+        return;
+      }
+      toast.error("Failed to create VLAN");
+    },
   });
 
   // Update mutations
@@ -903,6 +965,55 @@ export default function IPAM() {
           onSubmit={(data) => updateVlanMutation.mutate(data as unknown)}
           submitLabel="Update"
         />
+      )}
+
+      {pendingOverwrite && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Duplicate IPAM Entry"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold text-white">
+              Duplicate Entry Detected
+            </h2>
+            <p className="mt-2 text-sm text-slate-300">
+              {pendingOverwrite.message}
+            </p>
+            <p className="mt-2 text-sm text-slate-400">
+              Do you want to overwrite the existing entry?
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setPendingOverwrite(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  const payload = {
+                    ...pendingOverwrite.payload,
+                    overwrite: true,
+                  };
+                  if (pendingOverwrite.kind === "prefix") {
+                    createPrefixMutation.mutate(payload);
+                  } else if (pendingOverwrite.kind === "address") {
+                    createAddressMutation.mutate(payload);
+                  } else {
+                    createVlanMutation.mutate(payload);
+                  }
+                  setPendingOverwrite(null);
+                }}
+              >
+                Overwrite Existing
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
