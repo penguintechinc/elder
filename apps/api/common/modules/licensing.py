@@ -7,11 +7,50 @@ the module (never crashes, never hard-denies on infra failure).
 
 from __future__ import annotations
 
+import os
 from typing import Any
+from urllib.parse import urlparse
 
 import structlog
 
 logger = structlog.get_logger()
+
+_BYPASS_SUFFIXES = (".penguincloud.io", ".penguintech.cloud", ".elder.app")
+_BYPASS_EXACT = ("penguincloud.io", "penguintech.cloud", "elder.app")
+
+
+def _extract_hostname(raw: str | None) -> str:
+    """Extract lowercase hostname (without port) from a URL or Host header."""
+    if not raw:
+        return ""
+    value = raw.strip()
+    if "://" in value:
+        parsed = urlparse(value)
+        return (parsed.hostname or "").lower()
+    return value.split(":", 1)[0].lower()
+
+
+def is_bypass_domain() -> bool:
+    """Return True if the active request host or SITE_URL/APP_DOMAIN is a bypass domain."""
+    candidates: list[str] = [
+        os.environ.get("SITE_URL", ""),
+        os.environ.get("APP_DOMAIN", ""),
+    ]
+    try:
+        from quart import has_request_context, request
+
+        if has_request_context():
+            candidates.insert(0, request.host)
+    except Exception:
+        pass
+
+    for raw in candidates:
+        host = _extract_hostname(raw)
+        if not host:
+            continue
+        if host in _BYPASS_EXACT or any(host.endswith(s) for s in _BYPASS_SUFFIXES):
+            return True
+    return False
 
 
 def module_licensed(app: Any, manifest: Any) -> bool:
@@ -38,6 +77,9 @@ def module_licensed(app: Any, manifest: Any) -> bool:
     """
     # Module doesn't require a license feature
     if manifest.license_feature is None:
+        return True
+
+    if is_bypass_domain():
         return True
 
     try:

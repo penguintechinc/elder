@@ -98,6 +98,11 @@ def resolve_limits(license_client: Any | None) -> tuple[str, LimitSet]:
         "enterprise" (or whatever the server returns, defaulting unknown
         values to the community LimitSet).
     """
+    from apps.api.common.modules.licensing import is_bypass_domain
+
+    if is_bypass_domain():
+        return "enterprise", TIER_DEFAULTS["enterprise"]
+
     now = time.monotonic()
     if license_client is not None:
         cached = _cache.get(license_client)
