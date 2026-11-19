@@ -549,7 +549,7 @@ async def create_address():
         return (
             db(
                 (db.ipam_addresses.address == data.address)
-                & (db.ipam_addresses.prefix_id == data.prefix_id)
+                & (db.ipam_addresses.organization_id == prefix.organization_id)
             )
             .select()
             .first()
@@ -561,7 +561,7 @@ async def create_address():
             return (
                 jsonify(
                     {
-                        "error": f"IPAM address '{data.address}' already exists in this prefix",
+                        "error": f"IPAM address '{data.address}' already exists in this organization",
                         "code": "DUPLICATE_RESOURCE",
                         "existing_id": existing.id,
                     }
@@ -572,6 +572,7 @@ async def create_address():
         def overwrite_address():
             now = datetime.now(UTC)
             db(db.ipam_addresses.id == existing.id).update(
+                prefix_id=data.prefix_id,
                 description=data.description,
                 status=data.status,
                 dns_name=data.dns_name,
