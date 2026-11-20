@@ -236,4 +236,40 @@ spec:
           except:
             - 169.254.169.254/32
         - cidr: ::/0
+---
+# Egress strictly for svc-integrations CronJob pods: HTTPS/HTTP (SaaS, Cloud APIs,
+# GitHub/GitLab/Jira/Linear/ServiceNow/Okta/Authentik/GWS/Vultr/FleetDM),
+# LDAP/LDAPS (389/636), and Kubernetes APIs (6443/8443) while blocking cloud
+# IMDS metadata (169.254.169.254/32) and permitting zero external ingress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-svc-integrations-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-integrations" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "svc-integrations" .) | nindent 6 }}
+  egress:
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 169.254.169.254/32
+        - cidr: ::/0
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+            - port: "80"
+              protocol: TCP
+            - port: "636"
+              protocol: TCP
+            - port: "389"
+              protocol: TCP
+            - port: "6443"
+              protocol: TCP
+            - port: "8443"
+              protocol: TCP
 {{- end }}

@@ -2,7 +2,11 @@
 resolver = "2"
 members = [
     "crates/elder-svc-common",
+    "crates/elder-int-workmgmt",
+    "crates/elder-int-cloud",
+    "crates/elder-int-identity",
     "services/svc-scanning",
+    "services/svc-integrations",
 ]
 
 [profile.release]

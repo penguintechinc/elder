@@ -82,7 +82,7 @@ app.kubernetes.io/component: {{ $component }}
 {{/*
 Image name helper.
 global.imageRegistry only applies to the PenguinTech-built app images
-(web/api/svc-scanning/worker/flows-invoker) — postgres and redis are external
+(web/api/svc-scanning/svc-integrations/worker/flows-invoker) — postgres and redis are external
 upstream images (pgvector/pgvector, redis) that must keep pulling from their
 own registry (docker.io) regardless of the local alpha registry override,
 otherwise setting global.imageRegistry: localhost:32000 breaks them.
@@ -90,7 +90,7 @@ otherwise setting global.imageRegistry: localhost:32000 breaks them.
 {{- define "elder.image" -}}
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
-{{- $isAppImage := or (eq $component "web") (eq $component "api") (eq $component "svc-scanning") (eq $component "worker") (eq $component "flows-invoker") -}}
+{{- $isAppImage := or (eq $component "web") (eq $component "api") (eq $component "svc-scanning") (eq $component "svc-integrations") (eq $component "worker") (eq $component "flows-invoker") -}}
 {{- $registry := "" -}}
 {{- if $isAppImage -}}
 {{- $registry = $context.Values.global.imageRegistry -}}

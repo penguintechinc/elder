@@ -383,7 +383,7 @@ format-check: ## Check formatting without modifying files (ruff + prettier)
 # ── Build ──────────────────────────────────────────────────────────────────
 build: docker-build ## Build all service containers
 
-docker-build: ## Build all four service images locally
+docker-build: ## Build all service images locally
 	@echo "$(BLUE)Building elder-api...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-api:$(VERSION) \
 		-f apps/api/Dockerfile .
@@ -393,6 +393,9 @@ docker-build: ## Build all four service images locally
 	@echo "$(BLUE)Building elder-svc-scanning...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-svc-scanning:$(VERSION) \
 		-f services/svc-scanning/Dockerfile .
+	@echo "$(BLUE)Building elder-svc-integrations...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-svc-integrations:$(VERSION) \
+		-f services/svc-integrations/Dockerfile .
 	@echo "$(BLUE)Building elder-worker...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-worker:$(VERSION) \
 		-f apps/worker/Dockerfile .
@@ -415,6 +418,10 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 	@docker build -t localhost:32000/elder-svc-scanning:alpha-latest \
 		-f services/svc-scanning/Dockerfile .
 	@docker push localhost:32000/elder-svc-scanning:alpha-latest
+	@echo "$(BLUE)Building elder-svc-integrations → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-svc-integrations:alpha-latest \
+		-f services/svc-integrations/Dockerfile .
+	@docker push localhost:32000/elder-svc-integrations:alpha-latest
 	@echo "$(BLUE)Building elder-worker → localhost:32000...$(RESET)"
 	@docker build -t localhost:32000/elder-worker:alpha-latest \
 		--build-arg APP_VERSION=$(VERSION) \
@@ -423,7 +430,7 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 	@echo "$(GREEN)All alpha images built and pushed at $(VERSION)$(RESET)"
 
 docker-push: ## Push all service images to ghcr.io (requires docker login)
-	@for svc in api web svc-scanning worker; do \
+	@for svc in api web svc-scanning svc-integrations worker; do \
 		echo "$(BLUE)Pushing elder-$$svc...$(RESET)"; \
 		docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-$$svc:$(VERSION); \
 	done

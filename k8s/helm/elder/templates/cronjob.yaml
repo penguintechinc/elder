@@ -88,3 +88,89 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
 {{- end }}
+{{- $int := index .Values "svc-integrations" -}}
+{{- if $int.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "elder.fullname" . }}-svc-integrations
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-integrations" .) | nindent 4 }}
+spec:
+  schedule: {{ $int.schedule | default "* * * * *" | quote }}
+  concurrencyPolicy: {{ $int.concurrencyPolicy | default "Forbid" }}
+  startingDeadlineSeconds: {{ $int.startingDeadlineSeconds | default 55 }}
+  successfulJobsHistoryLimit: {{ $int.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ $int.failedJobsHistoryLimit | default 3 }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "elder.componentSelectorLabels" (list "svc-integrations" .) | nindent 8 }}
+    spec:
+      backoffLimit: {{ $int.backoffLimit | default 1 }}
+      activeDeadlineSeconds: {{ $int.activeDeadlineSeconds | default 300 }}
+      ttlSecondsAfterFinished: {{ $int.ttlSecondsAfterFinished | default 600 }}
+      template:
+        metadata:
+          labels:
+            {{- include "elder.componentSelectorLabels" (list "svc-integrations" .) | nindent 12 }}
+        spec:
+          {{- with .Values.global.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+          serviceAccountName: {{ include "elder.serviceAccountName" . }}
+          restartPolicy: Never
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+          - name: svc-integrations
+            image: {{ include "elder.image" (list "svc-integrations" .) }}
+            imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-integrations" .) }}
+            args: ["run", "--once"]
+            {{- if .Values.otel.enabled }}
+            envFrom:
+            - configMapRef:
+                name: elder-otel
+            {{- end }}
+            env:
+            {{- range $key, $value := $int.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: "svc-integrations"
+            {{- end }}
+            - name: JWT_SECRET_KEY
+              value: {{ (.Values.api.env).JWT_SECRET_KEY | default ((.Values.api.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+            resources:
+              {{- toYaml $int.resources | nindent 14 }}
+            volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            securityContext:
+              {{- if $int.securityContext }}
+              {{- toYaml $int.securityContext | nindent 14 }}
+              {{- else }}
+              {{- toYaml .Values.securityContext | nindent 14 }}
+              {{- end }}
+          volumes:
+          - name: tmp
+            emptyDir:
+              sizeLimit: {{ ($int.tmpStorage).sizeLimit | default "256Mi" }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

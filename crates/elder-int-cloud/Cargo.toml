@@ -1,0 +1,27 @@
+[package]
+name = "elder-int-cloud"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Stateless pure-rustls cloud and infrastructure discovery & IAM sync providers for Elder"
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+elder-svc-common = { path = "../elder-svc-common" }
+hex = "0.4"
+hmac = "0.12"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+roxmltree = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+url = "2"
+
+[dev-dependencies]
+rand = "0.8"
+rsa = { version = "0.9", features = ["sha2"] }

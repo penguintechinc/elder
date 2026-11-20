@@ -363,7 +363,7 @@ jobs:
     - name: Rust unit tests
       run: cargo test --workspace --locked
 
-    - name: Docker build + healthcheck smoke (svc-scanning)
+    - name: Docker build + healthcheck smoke (Rust services)
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Build svc-scanning image and run healthcheck
@@ -373,6 +373,14 @@ jobs:
           -e ELDER_API_URL=http://localhost:5000 \
           -e JWT_SECRET_KEY=ci-test-secret-key-at-least-32-bytes \
           elder-svc-scanning:ci-test healthcheck
+
+    - name: Build svc-integrations image and run healthcheck
+      run: |
+        docker build -f services/svc-integrations/Dockerfile -t elder-svc-integrations:ci-test .
+        docker run --rm \
+          -e ELDER_API_URL=http://localhost:5000 \
+          -e JWT_SECRET_KEY=ci-test-secret-key-at-least-32-bytes \
+          elder-svc-integrations:ci-test healthcheck
 
   security:
     runs-on: ubuntu-latest
@@ -528,7 +536,7 @@ jobs:
         - Python Integration: ${R_INTEGRATION}
         - Web Build: ${R_WEB}
         - Web A11y Lint: ${R_A11Y}
-        - Rust (svc-scanning): ${R_RUST}
+        - Rust (svc-scanning, svc-integrations): ${R_RUST}
         - Docker Smoke: ${R_DOCKER}
         - Security: ${R_SECURITY}
         - License: ${R_LICENSE}

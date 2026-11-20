@@ -32,6 +32,10 @@ if command -v docker &> /dev/null; then
         echo "Building svc-scanning image..."
         docker build -t "$PROJECT_NAME/svc-scanning:test" -f "services/svc-scanning/Dockerfile" .
     fi
+    if [ -f "services/svc-integrations/Dockerfile" ]; then
+        echo "Building svc-integrations image..."
+        docker build -t "$PROJECT_NAME/svc-integrations:test" -f "services/svc-integrations/Dockerfile" .
+    fi
 
     echo "Docker images built successfully"
 else

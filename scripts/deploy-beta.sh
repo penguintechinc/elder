@@ -37,7 +37,8 @@ usage() {
     echo "  all       Build and deploy all images (default)"
     echo "  api       Build and deploy only elder-api"
     echo "  web       Build and deploy only elder-web"
-    echo "  svc-scanning  Build and deploy only elder-svc-scanning"
+    echo "  svc-scanning      Build and deploy only elder-svc-scanning"
+    echo "  svc-integrations  Build and deploy only elder-svc-integrations"
     echo "  worker    Build and deploy only elder-worker"
     echo ""
     echo "OPTIONS:"
@@ -85,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             K8S_CONTEXT="$2"
             shift 2
             ;;
-        all|api|web|svc-scanning|worker|flows-invoker)
+        all|api|web|svc-scanning|svc-integrations|worker|flows-invoker)
             TARGET_IMAGE="$1"
             shift
             ;;
@@ -124,6 +125,7 @@ declare -A IMAGES
 IMAGES[api]="apps/api/Dockerfile:."
 IMAGES[web]="web/Dockerfile:."
 IMAGES[svc-scanning]="services/svc-scanning/Dockerfile:."
+IMAGES[svc-integrations]="services/svc-integrations/Dockerfile:."
 IMAGES[worker]="apps/worker/Dockerfile:."
 IMAGES[flows-invoker]="apps/flows_invoker/Dockerfile:."
 
@@ -194,10 +196,10 @@ helm_upgrade() {
 
     log_info "Waiting for rollout to complete..."
     local services=("api" "web" "worker" "flows-invoker")
-    if [ "$TARGET_IMAGE" != "all" ] && [ "$TARGET_IMAGE" != "svc-scanning" ]; then
-        services=("$TARGET_IMAGE")
-    elif [ "$TARGET_IMAGE" = "svc-scanning" ]; then
+    if [ "$TARGET_IMAGE" = "svc-scanning" ] || [ "$TARGET_IMAGE" = "svc-integrations" ]; then
         services=()
+    elif [ "$TARGET_IMAGE" != "all" ]; then
+        services=("$TARGET_IMAGE")
     fi
 
     for svc in "${services[@]}"; do
@@ -210,17 +212,19 @@ helm_upgrade() {
         fi
     done
 
-    if [ "$TARGET_IMAGE" = "all" ] || [ "$TARGET_IMAGE" = "svc-scanning" ]; then
-        kubectl --context="$K8S_CONTEXT" get cronjob elder-svc-scanning -n "$K8S_NAMESPACE" &>/dev/null \
-            || log_warn "CronJob elder-svc-scanning not found in ${K8S_NAMESPACE}"
-    fi
+    for cron_svc in svc-scanning svc-integrations; do
+        if [ "$TARGET_IMAGE" = "all" ] || [ "$TARGET_IMAGE" = "$cron_svc" ]; then
+            kubectl --context="$K8S_CONTEXT" get cronjob "elder-${cron_svc}" -n "$K8S_NAMESPACE" &>/dev/null \
+                || log_warn "CronJob elder-${cron_svc} not found in ${K8S_NAMESPACE}"
+        fi
+    done
 
     log_success "Helm upgrade complete"
 }
 
 # Determine which images to build
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web" "svc-scanning" "worker" "flows-invoker")
+    TARGETS=("api" "web" "svc-scanning" "svc-integrations" "worker" "flows-invoker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi
