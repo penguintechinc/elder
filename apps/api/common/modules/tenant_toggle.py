@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def is_module_enabled(
-    db: Any, redis_client: redis.Redis, tenant_id: int, module_name: str, default: bool
+    db: Any,
+    redis_client: redis.Redis | None,
+    tenant_id: int,
+    module_name: str,
+    default: bool,
 ) -> bool:
     """
     Check if a module is enabled for a specific tenant.
@@ -30,7 +34,7 @@ def is_module_enabled(
 
     Args:
         db: penguin-dal DAL instance for database queries
-        redis_client: Redis client for caching
+        redis_client: Redis client for caching (or None if unavailable)
         tenant_id: Tenant ID to check
         module_name: Module name (e.g., 'infrastructure', 'sbom')
         default: Default enabled state if module row doesn't exist
@@ -41,15 +45,16 @@ def is_module_enabled(
     cache_key = f"elder:modtoggle:{tenant_id}"
 
     # Try to get from cache
-    try:
-        cached = redis_client.get(cache_key)
-        if cached:
-            import json
+    if redis_client is not None:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                import json
 
-            module_map = json.loads(cached)
-            return module_map.get(module_name, default)
-    except redis.RedisError as e:
-        logger.warning(f"Redis unavailable, falling back to DB: {e}")
+                module_map = json.loads(cached)
+                return module_map.get(module_name, default)
+        except redis.RedisError as e:
+            logger.warning(f"Redis unavailable, falling back to DB: {e}")
 
     # Cache miss or Redis unavailable — load from database
     try:
@@ -57,12 +62,13 @@ def is_module_enabled(
         module_map = {row.module_name: row.enabled for row in rows}
 
         # Try to cache for next request (fail-soft if Redis is still down)
-        try:
-            import json
+        if redis_client is not None:
+            try:
+                import json
 
-            redis_client.setex(cache_key, 60, json.dumps(module_map))
-        except redis.RedisError as e:
-            logger.debug(f"Could not cache module toggles: {e}")
+                redis_client.setex(cache_key, 60, json.dumps(module_map))
+            except redis.RedisError as e:
+                logger.debug(f"Could not cache module toggles: {e}")
 
         return module_map.get(module_name, default)
     except Exception as e:
@@ -72,7 +78,7 @@ def is_module_enabled(
 
 def set_module_enabled(
     db: Any,
-    redis_client: redis.Redis,
+    redis_client: redis.Redis | None,
     tenant_id: int,
     module_name: str,
     enabled: bool,
@@ -122,10 +128,11 @@ def set_module_enabled(
 
         # Bust Redis cache for this tenant
         cache_key = f"elder:modtoggle:{tenant_id}"
-        try:
-            redis_client.delete(cache_key)
-        except redis.RedisError as e:
-            logger.warning(f"Could not bust Redis cache: {e}")
+        if redis_client is not None:
+            try:
+                redis_client.delete(cache_key)
+            except redis.RedisError as e:
+                logger.warning(f"Could not bust Redis cache: {e}")
 
     except Exception as e:
         logger.error(f"Failed to set module enabled state: {e}")
@@ -134,7 +141,7 @@ def set_module_enabled(
 
 def get_tenant_modules(
     db: Any,
-    redis_client: redis.Redis,
+    redis_client: redis.Redis | None,
     tenant_id: int,
     all_modules_with_defaults: dict[str, bool],
 ) -> dict[str, bool]:
@@ -146,7 +153,7 @@ def get_tenant_modules(
 
     Args:
         db: penguin-dal DAL instance for database queries
-        redis_client: Redis client for caching
+        redis_client: Redis client for caching (or None if unavailable)
         tenant_id: Tenant ID
         all_modules_with_defaults: Dict of {module_name: default_enabled}
 
@@ -156,18 +163,19 @@ def get_tenant_modules(
     cache_key = f"elder:modtoggle:{tenant_id}"
 
     # Try cache first
-    try:
-        cached = redis_client.get(cache_key)
-        if cached:
-            import json
+    if redis_client is not None:
+        try:
+            cached = redis_client.get(cache_key)
+            if cached:
+                import json
 
-            cached_map = json.loads(cached)
-            # Fill in any missing modules from defaults
-            result = dict(all_modules_with_defaults)
-            result.update(cached_map)
-            return result
-    except redis.RedisError as e:
-        logger.warning(f"Redis unavailable, falling back to DB: {e}")
+                cached_map = json.loads(cached)
+                # Fill in any missing modules from defaults
+                result = dict(all_modules_with_defaults)
+                result.update(cached_map)
+                return result
+        except redis.RedisError as e:
+            logger.warning(f"Redis unavailable, falling back to DB: {e}")
 
     # Cache miss or Redis unavailable — load from database
     try:
@@ -179,12 +187,13 @@ def get_tenant_modules(
         result.update(tenant_overrides)
 
         # Try to cache (fail-soft)
-        try:
-            import json
+        if redis_client is not None:
+            try:
+                import json
 
-            redis_client.setex(cache_key, 60, json.dumps(tenant_overrides))
-        except redis.RedisError as e:
-            logger.debug(f"Could not cache module toggles: {e}")
+                redis_client.setex(cache_key, 60, json.dumps(tenant_overrides))
+            except redis.RedisError as e:
+                logger.debug(f"Could not cache module toggles: {e}")
 
         return result
     except Exception as e:

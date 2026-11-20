@@ -218,17 +218,26 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
     Raises:
         Exception: If execution fails (job remains pending for XAUTOCLAIM reclaim)
     """
-    from datetime import datetime, timezone
+    import os
+    from datetime import datetime
 
+    from apps.api.modules.registry import resolve_enabled
     from apps.worker.config.settings import settings
     from apps.worker.streams.connectors.registry import discover_connectors
     from apps.worker.streams.executor.node_registry import discover_nodes
     from apps.worker.streams.executor.playbook_executor import PlaybookExecutor
 
+    raw_payload = envelope.payload if isinstance(envelope.payload, dict) else {}
+    auth_token = raw_payload.get("auth_token")
+    safe_payload = {
+        k: ("***REDACTED***" if k in ("auth_token", "_elder_auth_token") else v)
+        for k, v in raw_payload.items()
+    }
+
     logger.info(
         "streams_job_received",
         job_id=envelope.job_id,
-        payload=envelope.payload,
+        payload=safe_payload,
     )
 
     if not settings.database_url:
@@ -273,7 +282,7 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
                     execution_id=execution_id,
                     status=execution.status,
                 )
-                return execution, None, None, None
+                return execution, None, None, None, None
 
             # Load playbook
             playbook = (
@@ -289,7 +298,7 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
                     f"Playbook {playbook_id} not found in tenant {tenant_id}"
                 )
 
-            # Load nodes
+            # Load nodes from normalized table
             nodes = db(
                 (db.stream_nodes.playbook_id == playbook_id)
                 & (db.stream_nodes.tenant_id == tenant_id)
@@ -305,12 +314,13 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
                         "label": n.label,
                         "category": n.node_category,
                         "nodeType": n.node_type,
+                        "config": n.config or {},
                     },
                 }
                 for n in nodes
             ]
 
-            # Load edges
+            # Load edges from normalized table
             edges = db(
                 (db.stream_edges.playbook_id == playbook_id)
                 & (db.stream_edges.tenant_id == tenant_id)
@@ -325,7 +335,74 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
                 for e in edges
             ]
 
-            return execution, nodes_list, edges_list, db
+            # Fall back to latest stream_versions.canvas_json when stream_nodes is empty
+            if not nodes_list:
+                latest_version = (
+                    db(
+                        (db.stream_versions.playbook_id == playbook_id)
+                        & (db.stream_versions.tenant_id == tenant_id)
+                    )
+                    .select(orderby=~db.stream_versions.version_number, limitby=(0, 1))
+                    .first()
+                )
+                if latest_version:
+                    canvas = latest_version.canvas_json or {}
+                    raw_nodes = canvas.get("nodes") or latest_version.nodes_json or []
+                    raw_edges = canvas.get("edges") or latest_version.edges_json or []
+                    for rn in raw_nodes:
+                        if not isinstance(rn, dict):
+                            continue
+                        data_obj = rn.get("data") or {}
+                        node_type = (
+                            rn.get("nodeType")
+                            or data_obj.get("nodeType")
+                            or rn.get("type")
+                            or ""
+                        )
+                        node_label = rn.get("label") or data_obj.get("label") or ""
+                        node_category = (
+                            rn.get("category") or data_obj.get("category") or ""
+                        )
+                        node_config = rn.get("config") or data_obj.get("config") or {}
+                        nodes_list.append(
+                            {
+                                "id": rn.get("id", ""),
+                                "type": node_type,
+                                "category": node_category,
+                                "label": node_label,
+                                "config": node_config,
+                                "data": {
+                                    "label": node_label,
+                                    "category": node_category,
+                                    "nodeType": node_type,
+                                    "config": node_config,
+                                },
+                            }
+                        )
+                    if not edges_list and raw_edges:
+                        edges_list = [
+                            {
+                                "source": re.get("source", ""),
+                                "target": re.get("target", ""),
+                                "sourceHandle": re.get("sourceHandle"),
+                                "targetHandle": re.get("targetHandle"),
+                            }
+                            for re in raw_edges
+                            if isinstance(re, dict)
+                        ]
+
+            # Resolve enabled modules for this environment & tenant
+            resolved_manifests = resolve_enabled(os.environ)
+            enabled_modules: dict[str, bool] = {
+                m.name: bool(m.default_enabled) for m in resolved_manifests
+            }
+            if hasattr(db, "tenant_modules"):
+                toggle_rows = db(db.tenant_modules.tenant_id == tenant_id).select()
+                for row in toggle_rows:
+                    if row.module_name in enabled_modules:
+                        enabled_modules[row.module_name] = bool(row.enabled)
+
+            return execution, nodes_list, edges_list, enabled_modules, db
 
         except Exception:
             raise
@@ -338,7 +415,13 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
         discover_connectors()
 
         # Load execution, playbook, nodes, edges
-        execution, nodes_list, edges_list, db = _load_execution_and_playbook()
+        (
+            execution,
+            nodes_list,
+            edges_list,
+            enabled_modules,
+            db,
+        ) = _load_execution_and_playbook()
 
         if execution.status not in ("pending", "queued"):
             # Already terminal, return cached result
@@ -357,12 +440,30 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
         )
         db.commit()
 
-        # Prepare playbook data for executor
+        # Prepare playbook data for executor (auth_token stays strictly in-memory)
+        trigger_data = execution.input_json or {}
+        exec_global_config: dict[str, Any] = {
+            "skip_inactive_branches": True,
+            "tenant_id": tenant_id,
+            "enabled_modules": enabled_modules,
+            "trigger_data": trigger_data,
+        }
+        if auth_token:
+            exec_global_config["_elder_auth_token"] = auth_token
+
         playbook_data = {
             "nodes": nodes_list,
             "edges": edges_list,
-            "config": {},
-            "trigger_output": execution.input_json or {},
+            "config": exec_global_config,
+            "trigger_data": trigger_data,
+            "trigger_output": trigger_data,
+            "tenant_id": tenant_id,
+            "enabled_modules": enabled_modules,
+        }
+
+        node_type_by_id = {
+            n["id"]: (n.get("type") or (n.get("data") or {}).get("nodeType") or "")
+            for n in nodes_list
         }
 
         # Execute playbook
@@ -386,15 +487,20 @@ async def handle_streams(envelope: JobEnvelope) -> dict[str, Any]:
 
         # Insert stream_node_executions for each node that ran
         for node_id, node_result in result.node_results.items():
+            resolved_node_type = (
+                getattr(node_result, "node_type", "")
+                or node_type_by_id.get(node_id)
+                or (
+                    node_result.node_id.split("_")[0]
+                    if "_" in node_result.node_id
+                    else node_result.node_id
+                )
+            )[:50]
             db.stream_node_executions.insert(
                 tenant_id=tenant_id,
                 execution_id=execution_id,
                 node_id=node_id,
-                node_type=(
-                    node_result.node_id.split("_")[0]
-                    if "_" in node_result.node_id
-                    else node_result.node_id
-                ),
+                node_type=resolved_node_type,
                 playbook_id=playbook_id,
                 status=node_result.status.value,
                 input_json={},

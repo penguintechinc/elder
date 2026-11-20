@@ -123,6 +123,12 @@ class NodeRegistry:
             return cls._registry.get(node_type)
 
     @classmethod
+    def list_all(cls) -> dict[str, NodeInfo]:
+        """Return a snapshot of all registered nodes keyed by node_type."""
+        with cls._lock:
+            return dict(cls._registry)
+
+    @classmethod
     def is_registered(cls, node_type: str) -> bool:
         """Check if a node type is registered."""
         with cls._lock:
@@ -191,6 +197,7 @@ def discover_nodes() -> int:
     logger.info("Starting node discovery...")
 
     node_modules = [
+        "apps.worker.streams.nodes.triggers",
         "apps.worker.streams.nodes.actions",
         "apps.worker.streams.nodes.transforms",
         "apps.worker.streams.nodes.conditionals",

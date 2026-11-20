@@ -9,7 +9,8 @@ Ported from icestreams-worker; converted to Elder node contract.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Type
+import os
+from typing import Any
 
 from apps.worker.streams.executor.node_registry import register_node
 from apps.worker.streams.nodes.base import BaseNode
@@ -24,6 +25,30 @@ from .base import (
 from .executor import ConnectorActionExecutor
 
 logger = logging.getLogger(__name__)
+
+
+def resolve_connector_base_url(manifest: ConnectorManifest) -> str:
+    """Resolve base URL for a connector via env var -> settings -> manifest default."""
+    if manifest.id == "elder":
+        env_url = os.environ.get("ELDER_API_URL") or (
+            os.environ.get(manifest.base_url_env) if manifest.base_url_env else None
+        )
+        if env_url:
+            return env_url
+        try:
+            from apps.worker.config.settings import settings
+
+            if getattr(settings, "elder_api_url", None):
+                return settings.elder_api_url
+        except Exception:
+            pass
+        return manifest.default_url
+
+    if manifest.base_url_env:
+        env_url = os.environ.get(manifest.base_url_env)
+        if env_url:
+            return env_url
+    return manifest.default_url
 
 
 def _port_to_node_input(port: PortDefinition) -> dict[str, Any]:
@@ -69,6 +94,13 @@ def create_trigger_node(
     conn_color = manifest.color
     trig_icon = trigger.icon
     trig_schema = trigger.config_schema
+    trig_req_module = trigger.required_module
+    trig_req_license = trigger.required_license_feature
+    trig_req_flag = trigger.required_feature_flag
+    trig_subcategory = trigger.subcategory
+    trig_output_schema = trigger.output_schema
+    trig_query_params = trigger.query_params
+    trig_path_params = trigger.path_params
 
     # Pre-compute outputs
     outs = [_port_to_node_output(p) for p in trigger.outputs]
@@ -86,12 +118,20 @@ def create_trigger_node(
         description = desc
         category = "triggers"
 
-        # Store connector and trigger info for UI
+        # Store connector and trigger info for UI & enforcement
         connector_id_attr = conn_id
         connector_name_attr = conn_name
         connector_color_attr = conn_color
+        icon = trig_icon
         trigger_icon = trig_icon
         config_schema_attr = trig_schema
+        required_module = trig_req_module
+        required_license_feature = trig_req_license
+        required_feature_flag = trig_req_flag
+        subcategory = trig_subcategory
+        output_schema_attr = trig_output_schema
+        query_params_attr = trig_query_params
+        path_params_attr = trig_path_params
 
         @classmethod
         def inputs(cls) -> list[dict[str, Any]]:
@@ -113,10 +153,12 @@ def create_trigger_node(
         async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
             """Execute trigger node.
 
-            For triggers, data comes from the trigger_data in context global_config.
+            For triggers, data comes from the trigger_data in context/global_config.
             """
-            # Get trigger data from global_config (set by webhook handler)
-            trigger_data = self.context.get("global_config", {}).get("trigger_data", {})
+            global_cfg = self.context.get("global_config", {})
+            trigger_data = self.context.get("trigger_data")
+            if trigger_data is None:
+                trigger_data = global_cfg.get("trigger_data", {})
 
             # Route data to appropriate output port
             node_id = self.context.get("node_id", "")
@@ -125,7 +167,11 @@ def create_trigger_node(
             }
 
             # For event triggers with multiple outputs, route by event type if present
-            if len(outs) > 1 and "event_type" in trigger_data:
+            if (
+                len(outs) > 1
+                and isinstance(trigger_data, dict)
+                and "event_type" in trigger_data
+            ):
                 event_type = trigger_data.get("event_type", "other")
                 output_data[event_type] = {
                     "data": trigger_data,
@@ -169,6 +215,13 @@ def create_action_node(
     act_method = action.method
     act_schema = action.config_schema
     act_body_template = action.request_body_template
+    act_req_module = action.required_module
+    act_req_license = action.required_license_feature
+    act_req_flag = action.required_feature_flag
+    act_subcategory = action.subcategory
+    act_output_schema = action.output_schema
+    act_query_params = action.query_params
+    act_path_params = action.path_params
 
     # Pre-compute inputs and outputs
     inps = [_port_to_node_input(p) for p in action.inputs]
@@ -194,10 +247,18 @@ def create_action_node(
         connector_id_attr = conn_id
         connector_name_attr = conn_name
         connector_color_attr = conn_color
+        icon = act_icon
         action_icon = act_icon
         action_endpoint = act_endpoint
         action_method = act_method
         config_schema_attr = act_schema
+        required_module = act_req_module
+        required_license_feature = act_req_license
+        required_feature_flag = act_req_flag
+        subcategory = act_subcategory
+        output_schema_attr = act_output_schema
+        query_params_attr = act_query_params
+        path_params_attr = act_path_params
 
         @classmethod
         def inputs(cls) -> list[dict[str, Any]]:
@@ -221,6 +282,7 @@ def create_action_node(
             config = self.context.get("config", {})
             global_config = self.context.get("global_config", {})
             node_id = self.context.get("node_id", "")
+            resolved_base_url = resolve_connector_base_url(manifest)
 
             try:
                 result = await executor.execute_action(
@@ -233,7 +295,10 @@ def create_action_node(
                     config=config,
                     inputs=inputs,
                     variables=global_config,
-                    base_url=manifest.default_url,
+                    base_url=resolved_base_url,
+                    context=self.context,
+                    query_params=act_query_params,
+                    path_params=act_path_params,
                 )
 
                 self.log_info(f"Action {action.name} completed")
@@ -279,6 +344,13 @@ def create_transform_node(
     trans_endpoint = transform.endpoint
     trans_method = transform.method
     trans_schema = transform.config_schema
+    trans_req_module = transform.required_module
+    trans_req_license = transform.required_license_feature
+    trans_req_flag = transform.required_feature_flag
+    trans_subcategory = transform.subcategory
+    trans_output_schema = transform.output_schema
+    trans_query_params = transform.query_params
+    trans_path_params = transform.path_params
 
     # Pre-compute inputs and outputs
     inps = [_port_to_node_input(p) for p in transform.inputs]
@@ -302,10 +374,18 @@ def create_transform_node(
         connector_id_attr = conn_id
         connector_name_attr = conn_name
         connector_color_attr = conn_color
+        icon = trans_icon
         transform_icon = trans_icon
         transform_endpoint = trans_endpoint
         transform_method = trans_method
         config_schema_attr = trans_schema
+        required_module = trans_req_module
+        required_license_feature = trans_req_license
+        required_feature_flag = trans_req_flag
+        subcategory = trans_subcategory
+        output_schema_attr = trans_output_schema
+        query_params_attr = trans_query_params
+        path_params_attr = trans_path_params
 
         @classmethod
         def inputs(cls) -> list[dict[str, Any]]:
@@ -328,6 +408,7 @@ def create_transform_node(
             config = self.context.get("config", {})
             global_config = self.context.get("global_config", {})
             node_id = self.context.get("node_id", "")
+            resolved_base_url = resolve_connector_base_url(manifest)
 
             try:
                 if trans_endpoint:
@@ -342,7 +423,10 @@ def create_transform_node(
                         config=config,
                         inputs=inputs,
                         variables=global_config,
-                        base_url=manifest.default_url,
+                        base_url=resolved_base_url,
+                        context=self.context,
+                        query_params=trans_query_params,
+                        path_params=trans_path_params,
                     )
                 else:
                     # Pass-through transform (no API call)

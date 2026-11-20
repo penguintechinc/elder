@@ -23,6 +23,7 @@ import httpx
 from ...executor.node_registry import register_node
 from ..base import BaseNode
 from ..net_guard import guard_ssrf
+from ..template import interpolate_any, interpolate_value
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,10 @@ class WebhookOutAction(BaseNode):
 
     async def execute(self, inputs: dict[str, Any]) -> dict[str, Any]:
         """Execute webhook send."""
-        url = inputs.get("url", "")
+        raw_url = inputs.get("url") or self.get_config_value("url", "")
+        url = str(
+            interpolate_value(raw_url, self.context, inputs, preserve_type=False) or ""
+        ).strip()
         if not url:
             raise ValueError("Webhook URL is required")
 
@@ -207,8 +211,37 @@ class WebhookOutAction(BaseNode):
         # issuing any request. Workflow authors supply arbitrary URLs.
         guard_ssrf(url)
 
-        payload = inputs.get("payload", {})
-        custom_headers = inputs.get("headers")
+        if "payload" in inputs and inputs["payload"] is not None:
+            payload = inputs["payload"]
+        else:
+            cfg_payload = self.get_config_value("payload")
+            if cfg_payload not in (None, ""):
+                if isinstance(cfg_payload, str):
+                    evaluated = interpolate_value(
+                        cfg_payload, self.context, inputs, preserve_type=True
+                    )
+                    if isinstance(evaluated, str):
+                        try:
+                            payload = json.loads(evaluated)
+                        except json.JSONDecodeError:
+                            payload = evaluated
+                    else:
+                        payload = evaluated
+                else:
+                    payload = interpolate_any(
+                        cfg_payload, self.context, inputs, preserve_type=True
+                    )
+            else:
+                payload = inputs.get("in", inputs.get("default", {}))
+
+        raw_headers = inputs.get("headers") or self.get_config_value("headers")
+        if isinstance(raw_headers, str) and raw_headers.strip():
+            raw_headers = json.loads(raw_headers)
+        custom_headers = (
+            interpolate_any(raw_headers, self.context, inputs, preserve_type=False)
+            if isinstance(raw_headers, dict)
+            else None
+        )
 
         timeout = float(self.get_config_value("timeout", 30))
         max_retries = int(self.get_config_value("maxRetries", 3))
@@ -223,6 +256,11 @@ class WebhookOutAction(BaseNode):
 
         node_id = self.context.get("node_id", "")
         return {
+            "out": {
+                "data": {"success": success, "status": status, "message": message},
+                "metadata": {},
+                "source_node_id": node_id,
+            },
             "success": {"data": success, "metadata": {}, "source_node_id": node_id},
             "status": {"data": status, "metadata": {}, "source_node_id": node_id},
             "message": {"data": message, "metadata": {}, "source_node_id": node_id},

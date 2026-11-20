@@ -5,6 +5,7 @@
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from quart import Blueprint, current_app, g, jsonify, request
 
@@ -218,9 +219,209 @@ def _serialize_lock(lock, user_is_holder=False):
     }
 
 
+def _sync_stream_nodes_edges(db, tenant_id: int, stream_id: int, canvas: dict) -> None:
+    """Sync normalized `stream_nodes` and `stream_edges` tables from canvas JSON."""
+    now = datetime.now(UTC)
+    db(
+        (db.stream_nodes.playbook_id == stream_id)
+        & (db.stream_nodes.tenant_id == tenant_id)
+    ).delete()
+    db(
+        (db.stream_edges.playbook_id == stream_id)
+        & (db.stream_edges.tenant_id == tenant_id)
+    ).delete()
+
+    raw_nodes = canvas.get("nodes") or []
+    for idx, raw_node in enumerate(raw_nodes):
+        if not isinstance(raw_node, dict):
+            continue
+        raw_data = raw_node.get("data")
+        data_obj: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
+        node_id = str(raw_node.get("id") or raw_node.get("node_id") or "")[:100]
+        if not node_id:
+            continue
+        node_type = str(
+            raw_node.get("nodeType")
+            or raw_node.get("node_type")
+            or data_obj.get("nodeType")
+            or data_obj.get("node_type")
+            or raw_node.get("type")
+            or ""
+        )[:50]
+        node_category = str(
+            raw_node.get("category")
+            or raw_node.get("node_category")
+            or data_obj.get("category")
+            or "transform"
+        )[:50]
+        label = str(raw_node.get("label") or data_obj.get("label") or node_type)[:255]
+        raw_pos = raw_node.get("position")
+        pos: dict[str, Any] = raw_pos if isinstance(raw_pos, dict) else {}
+        pos_x = int(round(float(raw_node.get("position_x", pos.get("x", 0)) or 0)))
+        pos_y = int(round(float(raw_node.get("position_y", pos.get("y", 0)) or 0)))
+        config = raw_node.get("config")
+        if config is None:
+            config = data_obj.get("config")
+        if not isinstance(config, dict):
+            config = {}
+
+        db.stream_nodes.insert(
+            tenant_id=tenant_id,
+            playbook_id=stream_id,
+            node_id=node_id,
+            node_type=node_type,
+            node_category=node_category,
+            label=label,
+            position_x=pos_x,
+            position_y=pos_y,
+            config=config,
+            is_enabled=True,
+            execution_order=idx,
+            created_at=now,
+            updated_at=now,
+        )
+
+    raw_edges = canvas.get("edges") or []
+    for idx, raw_edge in enumerate(raw_edges):
+        if not isinstance(raw_edge, dict):
+            continue
+        source_id = str(raw_edge.get("source") or raw_edge.get("source_node_id") or "")[
+            :100
+        ]
+        target_id = str(raw_edge.get("target") or raw_edge.get("target_node_id") or "")[
+            :100
+        ]
+        if not source_id or not target_id:
+            continue
+        edge_id = str(raw_edge.get("id") or f"e-{source_id}-{target_id}-{idx}")[:100]
+        src_handle = raw_edge.get("sourceHandle") or raw_edge.get("source_handle")
+        tgt_handle = raw_edge.get("targetHandle") or raw_edge.get("target_handle")
+        db.stream_edges.insert(
+            tenant_id=tenant_id,
+            playbook_id=stream_id,
+            edge_id=edge_id,
+            source_node_id=source_id,
+            target_node_id=target_id,
+            source_handle=str(src_handle)[:50] if src_handle else None,
+            target_handle=str(tgt_handle)[:50] if tgt_handle else None,
+            label=(str(raw_edge.get("label"))[:255] if raw_edge.get("label") else None),
+            created_at=now,
+            updated_at=now,
+        )
+
+
+def _load_stream_nodes_edges(
+    db, tenant_id: int, stream_id: int
+) -> tuple[list[dict], list[dict]]:
+    """Load stream nodes & edges from normalized tables or latest version snapshot."""
+    node_rows = db(
+        (db.stream_nodes.playbook_id == stream_id)
+        & (db.stream_nodes.tenant_id == tenant_id)
+    ).select()
+    edge_rows = db(
+        (db.stream_edges.playbook_id == stream_id)
+        & (db.stream_edges.tenant_id == tenant_id)
+    ).select()
+
+    if node_rows:
+        nodes = [
+            {
+                "id": n.node_id,
+                "type": n.node_type,
+                "category": n.node_category,
+                "label": n.label,
+                "config": n.config or {},
+                "data": {
+                    "label": n.label,
+                    "category": n.node_category,
+                    "nodeType": n.node_type,
+                    "config": n.config or {},
+                },
+            }
+            for n in node_rows
+        ]
+        edges = [
+            {
+                "id": e.edge_id,
+                "source": e.source_node_id,
+                "target": e.target_node_id,
+                "sourceHandle": e.source_handle,
+                "targetHandle": e.target_handle,
+            }
+            for e in edge_rows
+        ]
+        return nodes, edges
+
+    latest_version = (
+        db(
+            (db.stream_versions.playbook_id == stream_id)
+            & (db.stream_versions.tenant_id == tenant_id)
+        )
+        .select(orderby=~db.stream_versions.version_number, limitby=(0, 1))
+        .first()
+    )
+    if not latest_version:
+        return [], []
+    canvas = latest_version.canvas_json or {}
+    nodes = list(canvas.get("nodes") or latest_version.nodes_json or [])
+    edges = list(canvas.get("edges") or latest_version.edges_json or [])
+    return nodes, edges
+
+
+def _mint_execution_jwt(
+    app_config: dict,
+    claims: dict,
+    current_user,
+    tenant_id: int,
+    identity_id: int,
+) -> str | None:
+    """Mint a short-lived (15m) tenant-scoped JWT for Elder connector actions."""
+    secret = app_config.get("JWT_SECRET_KEY") or app_config.get("SECRET_KEY")
+    if not secret:
+        return None
+    import jwt
+
+    now = datetime.now(UTC)
+    is_portal = (
+        hasattr(current_user, "_portal_user") or claims.get("type") == "portal_user"
+    )
+    sub = str(claims.get("sub") or getattr(current_user, "id", None) or identity_id)
+    payload = {
+        "sub": sub,
+        "type": "portal_user" if is_portal else "access",
+        "iat": now,
+        "exp": now + timedelta(minutes=15),
+        "tenant": str(tenant_id),
+        "identity_id": identity_id,
+        "scope": list(claims.get("scope") or []),
+        "roles": list(claims.get("roles") or []),
+        "iss": app_config.get("JWT_ISSUER", "elder-api"),
+        "aud": app_config.get("JWT_AUDIENCE", "elder-api"),
+    }
+    algorithm = app_config.get("JWT_ALGORITHM", "HS256")
+    return jwt.encode(payload, secret, algorithm=algorithm)
+
+
 # ============================================================================
-# Playbook CRUD
+# Playbook CRUD & Node Catalog
 # ============================================================================
+
+
+@bp.route("/node-catalog", methods=["GET"])
+@login_required
+@require_scope("streams:read")
+async def get_stream_node_catalog():
+    """List generic and Elder playbook nodes with live tenant/route availability."""
+    app = current_app._get_current_object()
+    db = app.db
+    tenant_id = _get_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    from apps.api.modules.streams.node_catalog import get_node_catalog
+
+    catalog = await run_in_threadpool(lambda: get_node_catalog(app, db, tenant_id))
+    return ApiResponse.success(data=catalog)
 
 
 @bp.route("", methods=["GET"])
@@ -475,7 +676,7 @@ async def get_stream(stream_id):
     return ApiResponse.success(data=result)
 
 
-@bp.route("/<int:stream_id>", methods=["PUT"])
+@bp.route("/<int:stream_id>", methods=["PUT", "PATCH"])
 @login_required
 @require_scope("streams:write")
 async def update_stream(stream_id):
@@ -493,7 +694,7 @@ async def update_stream(stream_id):
             "status": "optional string",
             "is_enabled": "optional boolean",
             "is_public": "optional boolean",
-            "canvas_data": "optional object (creates new version)"
+            "canvas_data": "optional object (creates new version & syncs nodes/edges)"
         }
 
     Returns:
@@ -501,7 +702,8 @@ async def update_stream(stream_id):
         404: Stream not found
         403: Access denied
     """
-    db = current_app.db
+    app = current_app._get_current_object()
+    db = app.db
     tenant_id = _get_tenant_id()
     identity_id = _get_identity_id()
 
@@ -558,7 +760,8 @@ async def update_stream(stream_id):
         db(db.stream_playbooks.id == stream_id).update(**update_data)
         db.commit()
 
-        # If canvas_data is provided, create new version
+        validation_summary = None
+        # If canvas_data is provided, create new version & sync normalized nodes/edges
         if "canvas_data" in data:
             # penguin-dal has no field .max(); order desc + take 1
             last_version = (
@@ -569,7 +772,7 @@ async def update_stream(stream_id):
             max_version = last_version.version_number if last_version else 0
 
             new_version = max_version + 1
-            canvas = data.get("canvas_data", {})
+            canvas = data.get("canvas_data") or {}
             now = datetime.now(UTC)
             db.stream_versions.insert(
                 tenant_id=tenant_id,
@@ -583,7 +786,18 @@ async def update_stream(stream_id):
                 created_at=now,
                 updated_at=now,
             )
+            _sync_stream_nodes_edges(db, tenant_id, stream_id, canvas)
             db.commit()
+
+            from apps.api.modules.streams.node_catalog import validate_playbook_nodes
+
+            validation_summary = validate_playbook_nodes(
+                app,
+                db,
+                tenant_id,
+                canvas.get("nodes", []),
+                canvas.get("edges", []),
+            )
 
         # Fetch updated stream with latest version
         stream = db(db.stream_playbooks.id == stream_id).select().first()
@@ -592,7 +806,10 @@ async def update_stream(stream_id):
             .select(orderby=~db.stream_versions.version_number, limitby=(0, 1))
             .first()
         )
-        return _serialize_stream(db, stream, version), None
+        serialized = _serialize_stream(db, stream, version)
+        if validation_summary is not None:
+            serialized["validation"] = validation_summary
+        return serialized, None
 
     result, lock_error = await run_in_threadpool(update)
 
@@ -605,6 +822,56 @@ async def update_stream(stream_id):
         return ApiResponse.not_found("Stream")
 
     return ApiResponse.success(data=result)
+
+
+@bp.route("/<int:stream_id>/validate", methods=["POST"])
+@login_required
+@require_scope("streams:read")
+async def validate_stream(stream_id):
+    """Validate playbook graph, node types, module availability, and config."""
+    app = current_app._get_current_object()
+    db = app.db
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    data = await request.get_json(silent=True) or {}
+
+    def _validate():
+        stream = (
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not stream:
+            return None, 404
+        if not _can_read_stream(db, stream, tenant_id, identity_id):
+            return None, 403
+
+        if "canvas_data" in data and isinstance(data["canvas_data"], dict):
+            nodes = data["canvas_data"].get("nodes") or []
+            edges = data["canvas_data"].get("edges") or []
+        elif "nodes" in data:
+            nodes = data.get("nodes") or []
+            edges = data.get("edges") or []
+        else:
+            nodes, edges = _load_stream_nodes_edges(db, tenant_id, stream_id)
+
+        from apps.api.modules.streams.node_catalog import validate_playbook_nodes
+
+        return validate_playbook_nodes(app, db, tenant_id, nodes, edges), 200
+
+    result, status_code = await run_in_threadpool(_validate)
+    if status_code == 404:
+        return ApiResponse.not_found("Stream")
+    if status_code == 403:
+        return ApiResponse.error("Access denied", 403)
+    return ApiResponse.success(data=result, status_code=200)
 
 
 @bp.route("/<int:stream_id>", methods=["DELETE"])
@@ -1023,11 +1290,15 @@ async def execute_stream(stream_id):
     Returns:
         202: Execution queued
         404: Stream not found
-        403: Access denied
+        403: Access denied or disabled/unlicensed module
+        400: Playbook validation error
     """
-    db = current_app.db
+    app = current_app._get_current_object()
+    db = app.db
     tenant_id = _get_tenant_id()
     identity_id = _get_identity_id()
+    claims = dict(getattr(g, "claims", {}) or {})
+    current_user = getattr(g, "current_user", None)
 
     if not tenant_id or not identity_id:
         return ApiResponse.error("Tenant or identity not found", 403)
@@ -1050,11 +1321,52 @@ async def execute_stream(stream_id):
         if not _can_edit_stream(db, stream, tenant_id, identity_id):
             return None, 403, None, None
 
+        from apps.api.modules.streams.node_catalog import validate_playbook_nodes
+
+        nodes, edges = _load_stream_nodes_edges(db, tenant_id, stream_id)
+        validation = validate_playbook_nodes(app, db, tenant_id, nodes, edges)
+
         if data.get("dry_run"):
-            # Dry run - just validate
             return (
-                {"dry_run": True, "message": "Stream validation successful"},
+                {
+                    "dry_run": True,
+                    "valid": validation["valid"],
+                    "message": (
+                        "Stream validation successful"
+                        if validation["valid"]
+                        else "Stream validation failed"
+                    ),
+                    "validation": validation,
+                },
                 200,
+                None,
+                None,
+            )
+
+        if validation.get("has_disabled_modules"):
+            return (
+                {
+                    "error": (
+                        "Playbook uses disabled or unlicensed module(s): "
+                        + ", ".join(validation.get("disabled_modules") or [])
+                    ),
+                    "code": "MODULE_DISABLED",
+                    "disabled_modules": validation.get("disabled_modules") or [],
+                    "validation": validation,
+                },
+                403,
+                None,
+                None,
+            )
+
+        if not validation.get("valid", True):
+            return (
+                {
+                    "error": "Playbook validation failed",
+                    "code": "VALIDATION_ERROR",
+                    "validation": validation,
+                },
+                400,
                 None,
                 None,
             )
@@ -1104,17 +1416,23 @@ async def execute_stream(stream_id):
             from shared.jobbus import JobBus
 
             if settings.redis_url:
+                execution_jwt = _mint_execution_jwt(
+                    dict(app.config), claims, current_user, tenant_id, identity_id
+                )
+                job_payload = {
+                    "execution_id": execution_uuid,
+                    "playbook_id": stream_id,
+                    "tenant_id": tenant_id,
+                }
+                if execution_jwt:
+                    job_payload["auth_token"] = execution_jwt
                 redis_client = redis.asyncio.from_url(settings.redis_url)
                 jobbus = JobBus(redis_client)
                 await jobbus.ensure_group("streams")
                 await jobbus.enqueue(
                     "streams",
                     "execute_playbook",
-                    {
-                        "execution_id": execution_uuid,
-                        "playbook_id": stream_id,
-                        "tenant_id": tenant_id,
-                    },
+                    job_payload,
                     enqueued_at=enqueue_time.isoformat(),
                     tenant_id=tenant_id,
                     idempotency_key=execution_uuid,
@@ -1136,7 +1454,31 @@ async def execute_stream(stream_id):
     if status_code == 404:
         return ApiResponse.not_found("Stream")
     elif status_code == 403:
+        if isinstance(result, dict) and result.get("code") == "MODULE_DISABLED":
+            return ApiResponse.error(
+                result["error"],
+                403,
+                code="MODULE_DISABLED",
+                disabled_modules=result.get("disabled_modules", []),
+                validation=result.get("validation"),
+            )
         return ApiResponse.error("Access denied - cannot execute this stream", 403)
+    elif status_code == 400:
+        err_msg = (
+            result.get("error", "Validation failed")
+            if isinstance(result, dict)
+            else "Validation failed"
+        )
+        return ApiResponse.error(
+            err_msg,
+            400,
+            code=(
+                result.get("code", "VALIDATION_ERROR")
+                if isinstance(result, dict)
+                else "VALIDATION_ERROR"
+            ),
+            validation=result.get("validation") if isinstance(result, dict) else None,
+        )
     elif status_code == 200:
         return ApiResponse.success(data=result, status_code=200)
 
