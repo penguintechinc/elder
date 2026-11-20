@@ -1729,6 +1729,62 @@ class ApiClient {
     return response.data;
   }
 
+  // Inbound (Receiving) Webhooks
+  async getInboundWebhooks() {
+    const response = await this.client.get("/webhooks/inbound");
+    return response.data;
+  }
+
+  async createInboundWebhook(data: {
+    name: string;
+    description?: string;
+    auth_type?: "bearer" | "basic";
+    bearer_token?: string;
+    basic_username?: string;
+    basic_password?: string;
+    stream_id?: number;
+    is_active?: boolean;
+    metadata?: Record<string, unknown>;
+  }) {
+    const response = await this.client.post("/webhooks/inbound", data);
+    return response.data;
+  }
+
+  async updateInboundWebhook(
+    id: number,
+    data: Partial<{
+      name: string;
+      description: string;
+      auth_type: "bearer" | "basic";
+      bearer_token: string;
+      basic_username: string;
+      basic_password: string;
+      stream_id: number | null;
+      is_active: boolean;
+      metadata: Record<string, unknown>;
+    }>,
+  ) {
+    const response = await this.client.put(`/webhooks/inbound/${id}`, data);
+    return response.data;
+  }
+
+  async deleteInboundWebhook(id: number) {
+    const response = await this.client.delete(`/webhooks/inbound/${id}`);
+    return response.data;
+  }
+
+  async rotateInboundWebhookCredentials(id: number) {
+    const response = await this.client.post(
+      `/webhooks/inbound/${id}/rotate-credentials`,
+    );
+    return response.data;
+  }
+
+  async getInboundWebhookEvents(id: number) {
+    const response = await this.client.get(`/webhooks/inbound/${id}/events`);
+    return response.data;
+  }
+
   // Backup Management
   async getBackupJobs(params?: { organization_id?: number }) {
     const response = await this.client.get("/backup/jobs", { params });

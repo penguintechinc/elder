@@ -12,7 +12,13 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
+from apps.api.models.base import (
+    Base,
+    IDMixin,
+    TenantScopedMixin,
+    TimestampMixin,
+    VillageIDMixin,
+)
 
 
 class Webhook(Base, IDMixin, VillageIDMixin, TimestampMixin):
@@ -114,3 +120,45 @@ class NotificationRule(Base, IDMixin, TimestampMixin):
     config_json = Column(JSON, nullable=False)
     enabled = Column(Boolean, nullable=False)
     organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+
+
+class InboundWebhook(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
+    """Tenant-scoped inbound (receiving) webhook with required authentication."""
+
+    __tablename__ = "inbound_webhooks"
+
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    slug = Column(String(64), nullable=False, unique=True, index=True)
+    auth_type = Column(String(32), nullable=False, default="bearer")
+    bearer_token_hash = Column(String(255), nullable=True)
+    bearer_token_preview = Column(String(32), nullable=True)
+    basic_username = Column(String(255), nullable=True)
+    basic_password_hash = Column(String(255), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    stream_id = Column(Integer, nullable=True)
+    webhook_metadata = Column("metadata", JSON, nullable=True)
+    last_received_at = Column(DateTime(timezone=True), nullable=True)
+    receive_count = Column(Integer, nullable=False, default=0)
+
+
+class InboundWebhookEvent(Base, IDMixin):
+    """Audit record for an authenticated inbound webhook request."""
+
+    __tablename__ = "inbound_webhook_events"
+
+    inbound_webhook_id = Column(
+        Integer,
+        ForeignKey("inbound_webhooks.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    tenant_id = Column(Integer, nullable=True, index=True)
+    source_ip = Column(String(64), nullable=True)
+    headers = Column(JSON, nullable=True)
+    payload = Column(JSON, nullable=True)
+    status = Column(String(32), nullable=False, default="received")
+    received_at = Column(DateTime(timezone=True), nullable=False)
