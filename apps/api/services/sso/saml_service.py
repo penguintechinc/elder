@@ -17,6 +17,15 @@ from apps.api.services.sso.idp_access import (
     IdPConfigView,
     IdPForbiddenError,
     IdPNotFoundError,
+    IdPTenantNotFoundError,
+    IdPValidationError,
+    normalize_attribute_mappings,
+    validate_oidc_attribute_mappings,
+)
+from apps.api.services.sso.idp_validation import (
+    HTTPS_URL_FIELDS,
+    validate_https_url,
+    validate_x509_certificate,
 )
 
 # Columns an admin may change through update_idp_config. ``tenant_id`` and
@@ -48,24 +57,33 @@ class SAMLService:
     """SAML 2.0 Service Provider implementation."""
 
     @staticmethod
-    def get_idp_config(tenant_id: int | None = None) -> dict | None:
-        """Get IdP configuration for a tenant or global.
+    def get_idp_config(
+        tenant_id: int | None = None,
+        idp_type: str = "saml",
+    ) -> dict | None:
+        """Get IdP configuration for a tenant or global, filtered by protocol type.
+
+        Filters by ``idp_type`` (default ``"saml"``) and orders deterministically
+        by ``id`` so an OIDC config can never shadow a SAML config (gh-312).
 
         Args:
             tenant_id: Tenant ID or None for global IdP
+            idp_type: Protocol type filter (``"saml"`` or ``"oidc"``)
 
         Returns:
             IdP configuration dict or None
         """
         db = current_app.db
+        table = db.idp_configurations
         if tenant_id:
             # Try tenant-specific IdP first
             config = (
                 db(
-                    (db.idp_configurations.tenant_id == tenant_id)
-                    & (db.idp_configurations.is_active == True)  # noqa: E712
+                    (table.tenant_id == tenant_id)
+                    & (table.idp_type == idp_type)
+                    & (table.is_active == True)  # noqa: E712
                 )
-                .select()
+                .select(orderby=table.id)
                 .first()
             )
 
@@ -75,10 +93,11 @@ class SAMLService:
         # Fall back to global IdP
         config = (
             db(
-                (db.idp_configurations.tenant_id == None)  # noqa: E711
-                & (db.idp_configurations.is_active == True)  # noqa: E712
+                (table.tenant_id == None)  # noqa: E711
+                & (table.idp_type == idp_type)
+                & (table.is_active == True)  # noqa: E712
             )
-            .select()
+            .select(orderby=table.id)
             .first()
         )
 
@@ -95,7 +114,9 @@ class SAMLService:
             "tenant_id": config.tenant_id,
             "idp_type": config.idp_type,
             "name": config.name,
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }
@@ -193,28 +214,66 @@ class SAMLService:
                 )
             owner_tenant_id = caller.tenant_id
 
-        config_id = db.idp_configurations.insert(
-            tenant_id=owner_tenant_id,
-            idp_type=idp_type,
-            name=name,
-            entity_id=entity_id,
-            metadata_url=metadata_url,
-            sso_url=sso_url,
-            slo_url=slo_url,
-            certificate=certificate,
-            oidc_client_id=oidc_client_id,
-            oidc_client_secret=oidc_client_secret,
-            oidc_issuer_url=oidc_issuer_url,
-            oidc_scopes=oidc_scopes or "openid profile email",
-            oidc_response_type=oidc_response_type or "code",
-            oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
-            or "client_secret_basic",
-            attribute_mappings=attribute_mappings or {},
-            jit_provisioning_enabled=jit_provisioning_enabled,
-            default_role=default_role,
-            is_active=True,
-        )
-        db.commit()
+        # Validate HTTPS URLs, X.509 certificate expiry, and OIDC mappings at CRUD time (gh-312, gh-313).
+        for field_name, url_value in (
+            ("metadata_url", metadata_url),
+            ("sso_url", sso_url),
+            ("slo_url", slo_url),
+            ("oidc_issuer_url", oidc_issuer_url),
+        ):
+            if url_value is not None:
+                validate_https_url(url_value, field=field_name)
+        if certificate is not None:
+            validate_x509_certificate(certificate, field="certificate")
+        validate_oidc_attribute_mappings(idp_type, attribute_mappings)
+
+        # regression: gh-313 -- verify target tenant exists before insert so a
+        # global-admin POST with a nonexistent tenant_id returns 404 instead of
+        # a 500 foreign-key IntegrityError.
+        if owner_tenant_id is not None:
+            if (
+                owner_tenant_id <= 0
+                or db(db.tenants.id == owner_tenant_id).select(db.tenants.id).first()
+                is None
+            ):
+                raise IdPTenantNotFoundError(owner_tenant_id)
+
+        try:
+            config_id = db.idp_configurations.insert(
+                tenant_id=owner_tenant_id,
+                idp_type=idp_type,
+                name=name,
+                entity_id=entity_id,
+                metadata_url=metadata_url,
+                sso_url=sso_url,
+                slo_url=slo_url,
+                certificate=certificate,
+                oidc_client_id=oidc_client_id,
+                oidc_client_secret=oidc_client_secret,
+                oidc_issuer_url=oidc_issuer_url,
+                oidc_scopes=oidc_scopes or "openid profile email",
+                oidc_response_type=oidc_response_type or "code",
+                oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
+                or "client_secret_basic",
+                attribute_mappings=attribute_mappings or {},
+                jit_provisioning_enabled=jit_provisioning_enabled,
+                default_role=default_role,
+                is_active=True,
+            )
+            db.commit()
+        except Exception as exc:
+            pgcode = getattr(exc, "pgcode", None)
+            orig = getattr(exc, "orig", None)
+            orig_pgcode = getattr(orig, "pgcode", None) if orig is not None else None
+            if owner_tenant_id is not None and (
+                pgcode == "23503"
+                or orig_pgcode == "23503"
+                or "foreign key" in str(exc).lower()
+            ):
+                if hasattr(type(db), "rollback"):
+                    db.rollback()
+                raise IdPTenantNotFoundError(owner_tenant_id) from None
+            raise
 
         created = db(db.idp_configurations.id == config_id).select().first()
         return IdPConfigView.from_record(created).to_dict()
@@ -253,6 +312,17 @@ class SAMLService:
             )
 
         changes = {k: v for k, v in updates.items() if k in _UPDATABLE_FIELDS}
+        # Validate HTTPS URLs, X.509 certificate expiry, and OIDC mappings on update (gh-312, gh-313).
+        # Runs after tenant ownership check so foreign config IDs still 404.
+        for url_field in HTTPS_URL_FIELDS:
+            if url_field in changes and changes[url_field] is not None:
+                validate_https_url(changes[url_field], field=url_field)
+        if "certificate" in changes and changes["certificate"] is not None:
+            validate_x509_certificate(changes["certificate"], field="certificate")
+        if "attribute_mappings" in changes:
+            validate_oidc_attribute_mappings(
+                config.idp_type, changes["attribute_mappings"]
+            )
         # The UPDATE carries the same tenant-scoped predicate as the load, so a
         # row deleted/moved between the statements simply matches nothing.
         if changes:
@@ -304,10 +374,17 @@ class SAMLService:
         Returns:
             Authenticated user dict or error
         """
-        # Get IdP config
-        idp_config = SAMLService.get_idp_config(tenant_id)
+        # Get SAML IdP config
+        idp_config = SAMLService.get_idp_config(tenant_id, idp_type="saml")
         if not idp_config:
             return {"error": "No IdP configured for this tenant"}
+
+        # Reject expired or malformed IdP certificates at assertion verification (gh-312).
+        if idp_config.get("certificate"):
+            try:
+                validate_x509_certificate(idp_config["certificate"])
+            except IdPValidationError as exc:
+                return {"error": str(exc)}
 
         # In production, use python3-saml to validate and parse response
         # For now, simulate SAML response parsing
@@ -401,14 +478,12 @@ class SAMLService:
         """
         entity_id = f"{base_url}/saml/metadata"
         acs_url = f"{base_url}/api/v1/sso/saml/acs"
-        slo_url = f"{base_url}/api/v1/sso/saml/slo"
 
         if tenant_id:
             entity_id = f"{base_url}/saml/metadata/{tenant_id}"
             acs_url = f"{base_url}/api/v1/sso/saml/acs/{tenant_id}"
-            slo_url = f"{base_url}/api/v1/sso/saml/slo/{tenant_id}"
 
-        # Basic SP metadata template
+        # Basic SP metadata template (SAML SLO is intentionally omitted / 501)
         metadata = f"""<?xml version="1.0"?>
 <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
                      entityID="{entity_id}">
@@ -419,8 +494,6 @@ class SAMLService:
     <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
                                  Location="{acs_url}"
                                  index="1"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-                            Location="{slo_url}"/>
   </md:SPSSODescriptor>
 </md:EntityDescriptor>"""
 

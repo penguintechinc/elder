@@ -16,6 +16,8 @@ import requests
 from authlib.integrations.requests_client import OAuth2Session
 from quart import current_app
 
+from apps.api.services.sso.idp_access import normalize_attribute_mappings
+
 
 class OIDCService:
     """OpenID Connect authentication service."""
@@ -59,15 +61,16 @@ class OIDCService:
             IdP configuration dict or None
         """
         db = current_app.db
+        table = db.idp_configurations
         if tenant_id:
             # Try tenant-specific IdP first
             config = (
                 db(
-                    (db.idp_configurations.tenant_id == tenant_id)
-                    & (db.idp_configurations.idp_type == "oidc")
-                    & (db.idp_configurations.is_active == True)  # noqa: E712
+                    (table.tenant_id == tenant_id)
+                    & (table.idp_type == "oidc")
+                    & (table.is_active == True)  # noqa: E712
                 )
-                .select()
+                .select(orderby=table.id)
                 .first()
             )
 
@@ -77,11 +80,11 @@ class OIDCService:
         # Fall back to global IdP
         config = (
             db(
-                (db.idp_configurations.tenant_id == None)  # noqa: E711
-                & (db.idp_configurations.idp_type == "oidc")
-                & (db.idp_configurations.is_active == True)  # noqa: E712
+                (table.tenant_id == None)  # noqa: E711
+                & (table.idp_type == "oidc")
+                & (table.is_active == True)  # noqa: E712
             )
-            .select()
+            .select(orderby=table.id)
             .first()
         )
 
@@ -105,7 +108,9 @@ class OIDCService:
             "oidc_response_type": config.oidc_response_type or "code",
             "oidc_token_endpoint_auth_method": config.oidc_token_endpoint_auth_method
             or "client_secret_basic",
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }

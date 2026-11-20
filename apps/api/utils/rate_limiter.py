@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 _HEADERS_G_KEY = "_rate_limit_headers"
 _ENFORCED_G_KEY = "_rate_limit_enforced"
 _STORAGE_EXT_KEY = "_rate_limiter_storage"
-_ROUTE_LIMITERS_EXT_KEY = "_rate_limit_route_limiters"
+_ROUTE_LIMITERS_EXT_KEY = "route_rate_limiters"
 
 # Values accepted to explicitly disable a tier or per-endpoint rate limit.
 _DISABLED_SPEC_VALUES: frozenset[str] = frozenset(
@@ -475,6 +475,9 @@ def init_rate_limiter(app: Quart) -> RequestRateLimiter | None:
 
     @app.before_request
     async def _enforce_rate_limit() -> Response | None:
+        if not app.config.get("RATELIMIT_ENABLED", True):
+            return None
+
         # 1. Explicit config/env override (highest precedence)
         matched_override, override_limiter = _match_endpoint_override(
             override_limiters, request.endpoint, request.path

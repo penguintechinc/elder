@@ -29,11 +29,24 @@ from apps.api.services.sso.idp_access import (
     IdPCaller,
     IdPForbiddenError,
     IdPNotFoundError,
+    IdPTenantNotFoundError,
+    IdPValidationError,
+)
+from apps.api.services.sso.idp_validation import (
+    validate_https_url,
+    validate_x509_certificate,
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool, run_in_threadpool_no_retry
+from apps.api.utils.rate_limiter import rate_limit
 
 bp = Blueprint("sso", __name__)
+
+# Uniform error message returned by ``saml_login`` for every unavailable state
+# (missing tenant, no SAML IdP, disabled IdP, missing/non-HTTPS SSO URL, or
+# expired/invalid IdP certificate) so unauthenticated callers cannot enumerate
+# tenants or probe SSO configuration state (gh-312).
+_SAML_LOGIN_UNAVAILABLE_MSG = "SAML SSO login is not available for this organization"
 
 
 def _attach_auth_cookies(response, tokens: dict) -> None:
@@ -168,6 +181,24 @@ def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> 
             "idp_global_admin": caller.is_global_admin,
         },
     )
+    if isinstance(exc, IdPValidationError):
+        return (
+            jsonify(
+                {
+                    "error": f"Validation failed: {exc.field}: {exc.message}",
+                    "validation_errors": [
+                        {
+                            "field": exc.field,
+                            "type": exc.error_type,
+                            "message": exc.message,
+                        }
+                    ],
+                }
+            ),
+            400,
+        )
+    if isinstance(exc, IdPTenantNotFoundError):
+        return ApiResponse.not_found("Tenant")
     if isinstance(exc, IdPNotFoundError):
         return ApiResponse.not_found("IdP configuration", config_id)
     return ApiResponse.forbidden(str(exc))
@@ -207,7 +238,11 @@ def _validation_error_response(exc: ValidationError) -> tuple:
         }
         for err in exc.errors()
     ]
-    return jsonify({"error": "Validation failed", "validation_errors": errors}), 400
+    # regression: gh-313 -- surface field names & static messages in `error` so
+    # SPA error toasts show which field(s) failed instead of bare "Validation failed".
+    parts = list(dict.fromkeys(f"{e['field']}: {e['message']}" for e in errors))
+    summary = f"Validation failed: {'; '.join(parts)}" if parts else "Validation failed"
+    return jsonify({"error": summary, "validation_errors": errors}), 400
 
 
 @bp.route("/idp", methods=["GET"])
@@ -259,6 +294,7 @@ async def list_idp_configs():
 @validate_response(IdPConfigResponse, 201)
 @document_response(IdPErrorResponse, 400)
 @document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
 async def create_idp_config():
     """Create a new IdP configuration.
 
@@ -448,29 +484,68 @@ def get_sp_metadata(tenant_id=None):
 
 
 @bp.route("/saml/login/<int:tenant_id>", methods=["GET"])
-def saml_login(tenant_id):
+@rate_limit(
+    "10/minute",
+    key_prefix="elder_saml_login",
+    config_key="SAML_LOGIN_RATELIMIT",
+)
+@document_response(IdPErrorResponse, 404)
+async def saml_login(tenant_id):
     """Initiate SAML SSO login.
+
+    Rate-limited per IP (default ``10/minute``, configurable via
+    ``SAML_LOGIN_RATELIMIT``). Returns one uniform 404 body for every
+    unavailable state (unknown tenant, no active SAML IdP, missing/non-HTTPS
+    SSO URL, or expired/invalid IdP certificate) so callers cannot enumerate
+    tenants (gh-312).
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        Redirect to IdP or error
+        200: IdP SSO URL to redirect to
+        404: SAML SSO login is not available for this organization
+        429: Rate limit exceeded
     """
-    idp_config = SAMLService.get_idp_config(tenant_id)
+    idp_config = await run_in_threadpool(SAMLService.get_idp_config, tenant_id, "saml")
 
     if not idp_config:
-        return ApiResponse.error("No IdP configured for this tenant", 404)
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=no_config", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
 
-    if not idp_config.get("sso_url"):
-        return ApiResponse.bad_request("IdP SSO URL not configured")
+    sso_url = idp_config.get("sso_url")
+    if not sso_url:
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=missing_sso_url", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
+
+    try:
+        validate_https_url(sso_url)
+    except IdPValidationError:
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=invalid_sso_url", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
+
+    if idp_config.get("certificate"):
+        try:
+            validate_x509_certificate(idp_config["certificate"])
+        except IdPValidationError:
+            current_app.logger.warning(
+                "saml_login_unavailable tenant_id=%s reason=invalid_or_expired_cert",
+                tenant_id,
+            )
+            return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
 
     # In production, generate SAML AuthnRequest and redirect
     # For now, return the SSO URL for manual redirect
     return (
         jsonify(
             {
-                "sso_url": idp_config["sso_url"],
+                "sso_url": sso_url,
                 "message": "Redirect to SSO URL to initiate login",
             }
         ),
@@ -521,17 +596,34 @@ async def saml_acs(tenant_id):
 
 
 @bp.route("/saml/slo/<int:tenant_id>", methods=["GET", "POST"])
+@document_response(IdPErrorResponse, 501)
 def saml_slo(tenant_id):
-    """SAML Single Logout endpoint.
+    """SAML Single Logout (SLO) endpoint -- intentionally unsupported (501).
+
+    Elder issues stateless JWTs and does not maintain SAML IdP
+    ``SessionIndex`` state, so neither SP-initiated nor IdP-initiated SAML
+    Single Logout can securely terminate or verify federated sessions here.
+    Users should log out locally via ``POST /api/v1/auth/logout`` (or
+    ``POST /api/v1/portal/auth/logout`` for portal sessions) and sign out of
+    their identity provider separately (gh-312).
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        Logout confirmation
+        501: SAML Single Logout is not supported
     """
-    # In production, process SLO request/response
-    return jsonify({"message": "Logged out successfully", "tenant_id": tenant_id}), 200
+    return (
+        jsonify(
+            {
+                "error": (
+                    "SAML Single Logout (SLO) is not supported. "
+                    "Use POST /api/v1/auth/logout to terminate your local session."
+                )
+            }
+        ),
+        501,
+    )
 
 
 # =============================================================================
