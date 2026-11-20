@@ -7,7 +7,7 @@ and extracting endpoint information without external dependencies.
 
 import pytest
 
-from apps.scanner.parsers.endpoint_parser_fastapi import FastAPIEndpointParser
+from apps.api.services.sbom.parsers.endpoint_parser_fastapi import FastAPIEndpointParser
 
 
 @pytest.fixture

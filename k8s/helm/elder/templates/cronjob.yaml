@@ -1,0 +1,90 @@
+{{- $svc := index .Values "svc-scanning" -}}
+{{- if $svc.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "elder.fullname" . }}-svc-scanning
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-scanning" .) | nindent 4 }}
+spec:
+  schedule: {{ $svc.schedule | default "* * * * *" | quote }}
+  concurrencyPolicy: {{ $svc.concurrencyPolicy | default "Forbid" }}
+  startingDeadlineSeconds: {{ $svc.startingDeadlineSeconds | default 55 }}
+  successfulJobsHistoryLimit: {{ $svc.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ $svc.failedJobsHistoryLimit | default 3 }}
+  jobTemplate:
+    metadata:
+      labels:
+        {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 8 }}
+    spec:
+      backoffLimit: {{ $svc.backoffLimit | default 1 }}
+      activeDeadlineSeconds: {{ $svc.activeDeadlineSeconds | default 300 }}
+      ttlSecondsAfterFinished: {{ $svc.ttlSecondsAfterFinished | default 600 }}
+      template:
+        metadata:
+          labels:
+            {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 12 }}
+        spec:
+          {{- with .Values.global.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+          serviceAccountName: {{ include "elder.serviceAccountName" . }}
+          restartPolicy: Never
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+          - name: svc-scanning
+            image: {{ include "elder.image" (list "svc-scanning" .) }}
+            imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-scanning" .) }}
+            args: ["run", "--once"]
+            {{- if .Values.otel.enabled }}
+            envFrom:
+            - configMapRef:
+                name: elder-otel
+            {{- end }}
+            env:
+            {{- range $key, $value := $svc.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: "svc-scanning"
+            {{- end }}
+            - name: JWT_SECRET_KEY
+              value: {{ (.Values.api.env).JWT_SECRET_KEY | default ((.Values.api.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+            resources:
+              {{- toYaml $svc.resources | nindent 14 }}
+            volumeMounts:
+            - name: screenshots
+              mountPath: /tmp/screenshots
+            - name: tmp
+              mountPath: /tmp
+            securityContext:
+              {{- if $svc.securityContext }}
+              {{- toYaml $svc.securityContext | nindent 14 }}
+              {{- else }}
+              {{- toYaml .Values.securityContext | nindent 14 }}
+              {{- end }}
+          volumes:
+          - name: screenshots
+            emptyDir:
+              sizeLimit: {{ ($svc.screenshotStorage).sizeLimit | default "1Gi" }}
+          - name: tmp
+            emptyDir:
+              sizeLimit: {{ ($svc.tmpStorage).sizeLimit | default "512Mi" }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

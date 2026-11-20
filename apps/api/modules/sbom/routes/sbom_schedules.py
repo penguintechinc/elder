@@ -14,6 +14,7 @@ from apps.api.auth.decorators import (
     require_scope,
     resource_role_required,
 )
+from apps.api.auth.jwt_handler import is_system_service_worker
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMScanScheduleDTO,
@@ -273,6 +274,7 @@ async def update_schedule(id: int):
         }
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
 
     # Validate JSON body
@@ -280,10 +282,22 @@ async def update_schedule(id: int):
     if error := validate_json_body(data):
         return error
 
-    # Validate schedule exists and belongs to caller's tenant (gh-237)
-    schedule = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.sbom_scan_schedules, id, tenant_id)
-    )
+    # Validate schedule exists and belongs to caller's tenant (gh-237), or
+    # belongs to an active tenant when invoked by system service_worker.
+    def resolve_schedule():
+        if system_worker:
+            row = db.sbom_scan_schedules[id]  # tenant-scope-exempt: JWT worker
+            if not row:
+                return None
+            active_tenant = (
+                db((db.tenants.id == row.tenant_id) & (db.tenants.is_active == True))  # noqa: E712
+                .select(db.tenants.id)
+                .first()
+            )
+            return row if active_tenant else None
+        return get_tenant_scoped(db, db.sbom_scan_schedules, id, tenant_id)
+
+    schedule = await run_in_threadpool(resolve_schedule)
     if not schedule:
         return ApiResponse.not_found("SBOM Scan Schedule", id)
 
@@ -399,9 +413,27 @@ async def get_due_schedules():
         GET /api/v1/sbom/schedules/due
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
+    if not system_worker and not tenant_id:
+        return ApiResponse.error("Invalid or missing tenant claim", 400)
 
     def get_schedules():
+        now = datetime.datetime.now(datetime.UTC)
+        if system_worker:
+            active_tenant_ids = [
+                r.id
+                for r in db(db.tenants.is_active == True).select(db.tenants.id)  # noqa: E712
+            ]
+            if not active_tenant_ids:
+                return []
+            query = (
+                (db.sbom_scan_schedules.is_active == True)  # noqa: E712
+                & (db.sbom_scan_schedules.next_run_at <= now)
+                & (db.sbom_scan_schedules.tenant_id.belongs(active_tenant_ids))
+            )
+            return db(query).select(orderby=db.sbom_scan_schedules.next_run_at)
+
         # gh-237: scope to caller's tenant -- this endpoint previously
         # returned every tenant's due schedules (including credential_id/
         # credential_mapping fields) to any caller with sbom:read.
@@ -411,7 +443,6 @@ async def get_due_schedules():
         # `False & Query(...)` then raises TypeError ("unsupported operand
         # type(s) for &: 'bool' and 'Query'"), meaning this endpoint 500'd
         # unconditionally before this fix.
-        now = datetime.datetime.now(datetime.UTC)
         query = (
             (db.sbom_scan_schedules.is_active == True)  # noqa: E712
             & (db.sbom_scan_schedules.next_run_at <= now)

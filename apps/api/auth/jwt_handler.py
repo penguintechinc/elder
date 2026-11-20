@@ -14,6 +14,148 @@ from werkzeug.security import check_password_hash
 logger = logging.getLogger(__name__)
 
 MAX_SERVICE_RESEARCHER_TTL_SECONDS = 600
+MAX_SERVICE_WORKER_TTL_SECONDS = 600
+
+SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
+    "svc-scanning": frozenset(
+        {
+            "discovery:read",
+            "discovery:write",
+            "sbom:read",
+            "sbom:write",
+            "vulnerabilities:write",
+        }
+    ),
+    "svc-integrations": frozenset(
+        {
+            "discovery:read",
+            "discovery:write",
+            "entities:read",
+            "entities:write",
+            "organizations:read",
+            "organizations:write",
+            "dependencies:read",
+            "dependencies:write",
+            "identities:read",
+            "identities:write",
+            "issues:read",
+            "issues:write",
+            "projects:read",
+            "projects:write",
+            "integrations:sync",
+        }
+    ),
+}
+
+
+class ServiceWorkerIdentity:
+    """Synthetic identity representing an authenticated machine service worker."""
+
+    def __init__(self, worker_name: str, tid: int | None, scopes: list[str]) -> None:
+        self.id = 0
+        self.username = worker_name
+        self.email = None
+        self.display_name = f"Service Worker ({worker_name})"
+        self.is_active = True
+        self.is_superuser = False
+        self.tenant_id = tid
+        self.portal_role = "service_worker"
+        self.token_type = "service_worker"
+        self.scopes = scopes
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+def is_system_service_worker() -> bool:
+    """Return True if the active request is authenticated as a system-tenant service_worker."""
+    claims = getattr(g, "claims", {}) or {}
+    if claims.get("type") != "service_worker" or claims.get("tenant") != "system":
+        return False
+    user = getattr(g, "current_user", None)
+    return bool(
+        user is not None
+        and getattr(user, "token_type", None) == "service_worker"
+        and getattr(user, "tenant_id", None) is None
+        and getattr(user, "username", None) in SERVICE_WORKER_ALLOWED_SCOPES
+    )
+
+
+def _validate_service_worker_claims(
+    payload: dict[str, Any], expected_issuer: str, expected_audience: str
+) -> dict[str, Any] | None:
+    """Validate and normalize claims for a ``service_worker`` machine JWT."""
+    if payload.get("iss") != expected_issuer or payload.get("aud") != expected_audience:
+        logger.warning("Rejected service_worker token: missing or invalid iss/aud")
+        return None
+
+    exp_raw = payload.get("exp")
+    iat_raw = payload.get("iat")
+    if (
+        isinstance(exp_raw, bool)
+        or not isinstance(exp_raw, int | float)
+        or isinstance(iat_raw, bool)
+        or not isinstance(iat_raw, int | float)
+    ):
+        logger.warning("Rejected service_worker token: missing or invalid exp/iat")
+        return None
+
+    now_ts = datetime.now(UTC).timestamp()
+    lifetime = float(exp_raw) - float(iat_raw)
+    if lifetime <= 0 or lifetime > MAX_SERVICE_WORKER_TTL_SECONDS:
+        logger.warning("Rejected service_worker token: invalid issued lifetime")
+        return None
+    if float(exp_raw) - now_ts > MAX_SERVICE_WORKER_TTL_SECONDS:
+        logger.warning("Rejected service_worker token: TTL exceeds 10 minutes")
+        return None
+
+    sub = payload.get("sub")
+    if not isinstance(sub, str) or sub not in SERVICE_WORKER_ALLOWED_SCOPES:
+        logger.warning("Rejected service_worker token: invalid sub")
+        return None
+    allowed_scopes = SERVICE_WORKER_ALLOWED_SCOPES[sub]
+
+    raw_scopes = payload.get("scope")
+    if isinstance(raw_scopes, str):
+        candidate_scopes: list[Any] = raw_scopes.split()
+    elif isinstance(raw_scopes, list):
+        candidate_scopes = raw_scopes
+    else:
+        logger.warning("Rejected service_worker token: invalid scope claim")
+        return None
+
+    validated_scopes: list[str] = []
+    for scope in candidate_scopes:
+        if not isinstance(scope, str):
+            logger.warning("Rejected service_worker token: non-string scope")
+            return None
+        cleaned = scope.strip()
+        if not cleaned or cleaned not in allowed_scopes:
+            logger.warning("Rejected service_worker token: disallowed scope")
+            return None
+        if cleaned not in validated_scopes:
+            validated_scopes.append(cleaned)
+    if not validated_scopes:
+        logger.warning("Rejected service_worker token: empty scope claim")
+        return None
+
+    tenant_raw = payload.get("tenant")
+    if isinstance(tenant_raw, bool) or not isinstance(tenant_raw, str):
+        logger.warning("Rejected service_worker token: missing or invalid tenant")
+        return None
+    tenant_clean = tenant_raw.strip()
+    if tenant_clean == "system":
+        normalized_tenant = "system"
+    elif tenant_clean.isascii() and tenant_clean.isdigit() and int(tenant_clean) > 0:
+        normalized_tenant = str(int(tenant_clean))
+    else:
+        logger.warning("Rejected service_worker token: invalid tenant value")
+        return None
+
+    payload["tenant"] = normalized_tenant
+    payload["roles"] = ["service_worker"]
+    payload["scope"] = validated_scopes
+    return payload
 
 
 def _is_valid_read_scope(scope: Any) -> bool:
@@ -293,6 +435,14 @@ def verify_token(token: str) -> dict[str, Any] | None:
             payload["roles"] = ["viewer"]
             payload["scope"] = [s.strip() for s in candidate_scopes]
             payload["delegated_by"] = delegated_by.strip()
+        elif payload.get("type") == "service_worker":
+            if (
+                _validate_service_worker_claims(
+                    payload, expected_issuer, expected_audience
+                )
+                is None
+            ):
+                return None
 
         return payload
     except jwt.ExpiredSignatureError:
@@ -421,6 +571,33 @@ def get_current_user() -> Any:
             )
             g.current_user = service_identity
             return service_identity
+
+        if token_type == "service_worker":
+            sub = payload.get("sub", "")
+            allowed = SERVICE_WORKER_ALLOWED_SCOPES.get(sub)
+            if not allowed:
+                logger.warning("Rejected service_worker token with invalid sub")
+                return None
+            tenant_raw = payload.get("tenant")
+            if tenant_raw == "system":
+                tid = None
+            elif (
+                isinstance(tenant_raw, str)
+                and tenant_raw.isascii()
+                and tenant_raw.isdigit()
+                and int(tenant_raw) > 0
+            ):
+                tid = int(tenant_raw)
+            else:
+                logger.warning("Rejected service_worker token with invalid tenant")
+                return None
+            scopes = [s for s in (payload.get("scope") or []) if s in allowed]
+            if not scopes:
+                logger.warning("Rejected service_worker token with empty scopes")
+                return None
+            worker_identity = ServiceWorkerIdentity(sub, tid, scopes)
+            g.current_user = worker_identity
+            return worker_identity
 
         user_id = int(payload["sub"])  # Convert string back to integer
         token_type = payload.get("type", "access")

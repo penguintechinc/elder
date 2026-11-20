@@ -36,8 +36,8 @@ modules:
 
 # OpenTelemetry (Phase 0.5) — ungated/Free observability; all services export to SigNoz via OTLP.
 # Rendered into the elder-otel ConfigMap (OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL), consumed via
-# envFrom by the api, worker, and scanner Deployments. OTEL_SERVICE_NAME is set per-component
-# (elder-api/elder-worker/elder-scanner) directly in the deployment template.
+# envFrom by the api, worker, and svc-scanning workloads. OTEL_SERVICE_NAME is set per-component
+# (elder-api/elder-worker in Deployment, svc-scanning in CronJob).
 otel:
   enabled: true
   endpoint: "http://signoz-otel-collector:4318"
@@ -333,53 +333,44 @@ api:
       drop:
         - ALL
 
-# Scanner Service
-scanner:
+# Scanning Service (Rust data-plane CronJob)
+svc-scanning:
   enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 55
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
   image:
-    repository: elder-scanner
+    repository: elder-svc-scanning
     tag: latest
     pullPolicy: IfNotPresent
-  replicaCount: 1
-  buildArgs:
-    SCANNER_POLL_INTERVAL: "300"
   env:
-    SCANNER_POLL_INTERVAL: "300"
     ELDER_API_URL: "http://elder-api:5000"
-    ELDER_API_TOKEN: ""
-    SCREENSHOT_DIR: "/app/screenshots"
-    LOG_LEVEL: INFO
+    SCREENSHOT_DIR: "/tmp/screenshots"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    SCANNER_MASSCAN_RATE: "1000"
+    SCANNER_MAX_CONCURRENT_JOBS: "5"
+    SCANNER_JOB_TIMEOUT_SECONDS: "300"
+    NVD_SYNC_ENABLED: "true"
+    NVD_SYNC_INTERVAL: "21600"
   resources:
     requests:
-      memory: "256Mi"
-      cpu: "250m"
+      memory: "128Mi"
+      cpu: "100m"
     limits:
       memory: "1Gi"
       cpu: "1000m"
   screenshotStorage:
     sizeLimit: "1Gi"
-  # Scanner has no HTTP server (poll-loop service) so probes are exec-based,
-  # reusing the exact script its own Docker HEALTHCHECK already runs
-  # (apps/scanner/healthcheck.py — verifies imports, ELDER_API_URL is set,
-  # and the screenshot dir is writable). Same command for both: it's a
-  # config/self-check only, not a live network call to elder-api, so there
-  # is no separate "dependency-gated" variant to split it into yet.
-  # Release audit finding #6 — scanner previously had no probes at all.
-  healthcheck:
-    enabled: true
-    initialDelaySeconds: 30
-    periodSeconds: 30
-    timeoutSeconds: 10
-    failureThreshold: 3
-    liveness:
-      initialDelaySeconds: 45
-      periodSeconds: 30
-      timeoutSeconds: 10
-      failureThreshold: 5
-  # ROOT CAPABILITY EXCEPTION (approved): masscan (apps/scanner/scanners/network.py)
+  tmpStorage:
+    sizeLimit: "512Mi"
+  # ROOT CAPABILITY EXCEPTION (approved): masscan (services/svc-scanning/src/scanners/network.rs)
   # requires CAP_NET_RAW for raw-socket SYN scanning. Process still runs as
   # non-root UID 1000 with every other capability dropped and a read-only
-  # root filesystem. See apps/scanner/Dockerfile for the matching Docker-side
+  # root filesystem. See services/svc-scanning/Dockerfile for the matching Docker-side
   # documentation of this exception.
   securityContext:
     runAsNonRoot: true

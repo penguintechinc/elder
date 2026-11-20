@@ -25,6 +25,7 @@ jobs:
     outputs:
       python: ${{ steps.changes.outputs.python }}
       web: ${{ steps.changes.outputs.web }}
+      rust: ${{ steps.changes.outputs.rust }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3
@@ -39,6 +40,12 @@ jobs:
               - 'web/**'
               - 'package.json'
               - 'package-lock.json'
+            rust:
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - 'crates/**'
+              - 'services/**'
 
   python-lint:
     runs-on: ubuntu-latest
@@ -322,6 +329,51 @@ jobs:
     - name: Smoke test — import check
       run: docker run --rm elder-api:ci-test python3 -c "import apps.api.main; print('Import OK')"
 
+  rust-check:
+    runs-on: ubuntu-24.04
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'schedule'
+
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+    - name: Ensure Rust toolchain (rust-toolchain.toml)
+      run: |
+        rustup show active-toolchain
+        rustc --version
+        cargo --version
+
+    - name: Cache Cargo dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5
+      with:
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+        restore-keys: ${{ runner.os }}-cargo-
+
+    - name: Rust formatting check
+      run: cargo fmt --all -- --check
+
+    - name: Rust clippy lint
+      run: cargo clippy --workspace --all-targets -- -D warnings
+
+    - name: Rust unit tests
+      run: cargo test --workspace --locked
+
+    - name: Docker build + healthcheck smoke (svc-scanning)
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+
+    - name: Build svc-scanning image and run healthcheck
+      run: |
+        docker build -f services/svc-scanning/Dockerfile -t elder-svc-scanning:ci-test .
+        docker run --rm \
+          -e ELDER_API_URL=http://localhost:5000 \
+          -e JWT_SECRET_KEY=ci-test-secret-key-at-least-32-bytes \
+          elder-svc-scanning:ci-test healthcheck
+
   security:
     runs-on: ubuntu-latest
     permissions:
@@ -422,7 +474,7 @@ jobs:
       # creates .venv and installs both requirements.txt (the shipped
       # dependency tree being license-checked) and requirements-dev.txt
       # (which pins pip-licenses==5.5.5) with --require-hashes. The target
-      # additionally scans the apps/{worker,scanner,mcp} lock files, each in a
+      # additionally scans the apps/{worker,mcp} lock files, each in a
       # throwaway venv it creates at run time (those trees pin conflicting
       # versions and cannot share .venv) — the apt build deps cached above
       # cover their compiled dependencies too.
@@ -436,7 +488,7 @@ jobs:
 
   ci-summary:
     runs-on: ubuntu-latest
-    needs: [python-lint, lint-debt, python-unit, python-integration, web-build, web-a11y-lint, docker-smoke, security, license-check, license-check-deps]
+    needs: [python-lint, lint-debt, python-unit, python-integration, web-build, web-a11y-lint, rust-check, docker-smoke, security, license-check, license-check-deps]
     if: always()
     permissions:
       contents: read
@@ -457,6 +509,7 @@ jobs:
         R_INTEGRATION: ${{ needs.python-integration.result }}
         R_WEB: ${{ needs.web-build.result }}
         R_A11Y: ${{ needs.web-a11y-lint.result }}
+        R_RUST: ${{ needs.rust-check.result }}
         R_DOCKER: ${{ needs.docker-smoke.result }}
         R_SECURITY: ${{ needs.security.result }}
         R_LICENSE: ${{ needs.license-check.result }}
@@ -475,6 +528,7 @@ jobs:
         - Python Integration: ${R_INTEGRATION}
         - Web Build: ${R_WEB}
         - Web A11y Lint: ${R_A11Y}
+        - Rust (svc-scanning): ${R_RUST}
         - Docker Smoke: ${R_DOCKER}
         - Security: ${R_SECURITY}
         - License: ${R_LICENSE}
@@ -510,6 +564,7 @@ jobs:
         needs.lint-debt.result == 'failure' ||
         needs.web-build.result == 'failure' ||
         needs.web-a11y-lint.result == 'failure' ||
+        needs.rust-check.result == 'failure' ||
         needs.docker-smoke.result == 'failure' ||
         needs.license-check-deps.result == 'failure'
       run: |

@@ -25,7 +25,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy all requirements files
 COPY requirements.txt .
 COPY apps/worker/requirements.txt apps/worker/
-COPY apps/scanner/requirements.txt apps/scanner/
 COPY apps/mcp/requirements.txt apps/mcp/
 
 # Install dependencies

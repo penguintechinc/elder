@@ -601,7 +601,7 @@ async def update_component_vulnerability(id: int):
 @bp.route("/nvd-sync", methods=["POST"])
 @login_required
 @require_scope("sbom:write")
-@role_required("admin")
+@role_required("admin", allow_service_worker_scopes=("vulnerabilities:write",))
 async def trigger_nvd_sync():
     """
     Trigger NVD sync to enrich vulnerability CVSS data.

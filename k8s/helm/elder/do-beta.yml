@@ -132,22 +132,25 @@ api:
   autoscaling:
     enabled: false
 
-# Scanner Service - 1 replica on DO beta
-scanner:
+# Scanning Service (Rust CronJob on DO beta)
+svc-scanning:
   enabled: true
-  replicaCount: 1
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
   image:
-    repository: ghcr.io/penguintechinc/elder-scanner
+    repository: ghcr.io/penguintechinc/elder-svc-scanning
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:
-    SCANNER_POLL_INTERVAL: "300"
-    LOG_LEVEL: INFO
     ELDER_API_URL: "http://elder-api:5000"
+    SCREENSHOT_DIR: "/tmp/screenshots"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    SCANNER_JOB_TIMEOUT_SECONDS: "300"
   resources:
     requests:
-      memory: "256Mi"
-      cpu: "250m"
+      memory: "128Mi"
+      cpu: "100m"
     limits:
       memory: "1Gi"
       cpu: "1000m"

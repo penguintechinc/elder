@@ -140,6 +140,7 @@ CORRECT_PACKAGES=(
   "elder-grpc"
   "elder-envoy"
   "elder-scanner"
+  "elder-svc-scanning"
   "elder-worker"
 )
 

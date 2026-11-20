@@ -220,7 +220,7 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
         }
 
         # Build and push/load each service
-        for svc in api web scanner worker; do
+        for svc in api web svc-scanning worker; do
             log_info "Building ${svc}..."
             case "$svc" in
                 api)
@@ -247,14 +247,13 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
                         exit 1
                     fi
                     ;;
-                scanner)
-                    if docker build -t elder-scanner:alpha-latest \
-                        --build-arg APP_VERSION="${APP_VERSION:-}" \
+                svc-scanning)
+                    if docker build -t elder-svc-scanning:alpha-latest \
                         $PLATFORM_ARG \
-                        -f apps/scanner/Dockerfile --no-cache apps/scanner; then
-                        _push_or_load "elder-scanner:alpha-latest" || { record_fail "Failed to deploy scanner image"; exit 1; }
+                        -f services/svc-scanning/Dockerfile --no-cache .; then
+                        _push_or_load "elder-svc-scanning:alpha-latest" || { record_fail "Failed to deploy svc-scanning image"; exit 1; }
                     else
-                        record_fail "Failed to build scanner image"
+                        record_fail "Failed to build svc-scanning image"
                         exit 1
                     fi
                     ;;
@@ -621,15 +620,14 @@ fi
 # ALPHA-ONLY TESTS (K8s pod tests)
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
-    # Step 6: Scanner Pod Test
+    # Step 6: svc-scanning CronJob Check
     log_info ""
-    log_info "Step 6: Scanner Pod Status..."
+    log_info "Step 6: svc-scanning CronJob Status..."
 
-    SCANNER_STATUS=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app.kubernetes.io/component=scanner -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
-    if [ "$SCANNER_STATUS" = "Running" ]; then
-        record_pass "Scanner pod is Running"
+    if kubectl --context $K8S_CONTEXT get cronjob elder-svc-scanning -n elder >/dev/null 2>&1; then
+        record_pass "svc-scanning CronJob exists"
     else
-        log_warn "Scanner pod status: $SCANNER_STATUS (may be expected for dev setup)"
+        log_warn "svc-scanning CronJob not found (may be expected for dev setup)"
     fi
 
     # Step 7: Worker Pod Test and Health Check

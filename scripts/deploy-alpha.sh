@@ -43,17 +43,17 @@ readonly REGISTRY="${REGISTRY:-localhost:32000}"
 
 # Services with their build contexts and Dockerfile paths (relative to
 # PROJECT_ROOT). All four Dockerfiles COPY paths relative to the repo root
-# (e.g. `COPY apps/scanner/ .`), so all four need repo root as build context.
+# (e.g. `COPY services/svc-scanning ...`), so all four need repo root as build context.
 declare -A SERVICE_DOCKERFILE=(
     ["api"]="apps/api/Dockerfile"
     ["worker"]="apps/worker/Dockerfile"
-    ["scanner"]="apps/scanner/Dockerfile"
+    ["svc-scanning"]="services/svc-scanning/Dockerfile"
     ["web"]="web/Dockerfile"
 )
 declare -A SERVICE_CONTEXT=(
     ["api"]="."
     ["worker"]="."
-    ["scanner"]="."
+    ["svc-scanning"]="."
     ["web"]="."
 )
 
@@ -228,7 +228,7 @@ do_deploy() {
             --set "api.image.tag=${TAG}" \
             --set "web.image.tag=${TAG}" \
             --set "worker.image.tag=${TAG}" \
-            --set "scanner.image.tag=${TAG}" \
+            --set "svc-scanning.image.tag=${TAG}" \
             --dry-run --debug
         return 0
     fi
@@ -240,7 +240,7 @@ do_deploy() {
         --set "api.image.tag=${TAG}" \
         --set "web.image.tag=${TAG}" \
         --set "worker.image.tag=${TAG}" \
-        --set "scanner.image.tag=${TAG}" \
+        --set "svc-scanning.image.tag=${TAG}" \
         --force-conflicts \
         --wait --timeout 300s; then
         print_error "Failed to apply Helm release"
@@ -349,10 +349,10 @@ ENVIRONMENT:
     REGISTRY:       ${REGISTRY}
 
 SERVICES:
-    api        (apps/api, build context: repo root)
-    worker     (apps/worker, build context: repo root)
-    scanner    (apps/scanner, build context: repo root)
-    web        (web, build context: repo root)
+    api          (apps/api, build context: repo root)
+    worker       (apps/worker, build context: repo root)
+    svc-scanning (services/svc-scanning, build context: repo root)
+    web          (web, build context: repo root)
 
 EXAMPLES:
     # Full build and deploy

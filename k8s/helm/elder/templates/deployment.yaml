@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "flows-invoker" }}
+{{- range $component := list "postgres" "redis" "web" "api" "worker" "flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
@@ -35,7 +35,7 @@ spec:
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
         {{- $hasModules := or (eq $component "api") (eq $component "worker") }}
-        {{- $isOtelComponent := or (eq $component "api") (eq $component "worker") (eq $component "scanner") }}
+        {{- $isOtelComponent := or (eq $component "api") (eq $component "worker") }}
         {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
         {{- if or $hasModules $hasOtel }}
         envFrom:
@@ -99,7 +99,7 @@ spec:
         {{/* Release audit finding #6: liveness must be a lighter,
              dependency-free self-check while readiness gates traffic on
              dependency availability — previously identical for
-             web/api/worker, and scanner had no probes at all.
+             web/api/worker.
              livenessPath falls back to the readiness path when a
              component has no separate self-only endpoint (api/worker);
              web overrides it to "/" (see values.yaml). `dig` safely
@@ -123,14 +123,6 @@ spec:
             command:
             - redis-cli
             - ping
-          {{- else if eq $component "scanner" }}
-          # No HTTP server (poll-loop service) — reuses the exact script its
-          # own Docker HEALTHCHECK already runs (apps/scanner/healthcheck.py:
-          # verifies imports, ELDER_API_URL is set, screenshot dir writable).
-          exec:
-            command:
-            - python3
-            - healthcheck.py
           {{- else if eq $component "flows-invoker" }}
           # No HTTP server in this service (pure Redis Streams consumer) —
           # health is verified via a native Python exec probe.
@@ -159,11 +151,6 @@ spec:
             command:
             - redis-cli
             - ping
-          {{- else if eq $component "scanner" }}
-          exec:
-            command:
-            - python3
-            - healthcheck.py
           {{- else if eq $component "flows-invoker" }}
           exec:
             command:
@@ -178,7 +165,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -192,9 +179,6 @@ spec:
           mountPath: /data
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "scanner" }}
-        - name: screenshots
-          mountPath: /app/screenshots
         {{- else if eq $component "api" }}
         - name: instance-dir
           mountPath: /app/instance
@@ -222,13 +206,9 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
       volumes:
-      {{- if eq $component "scanner" }}
-      - name: screenshots
-        emptyDir:
-          sizeLimit: {{ ($componentConfig.screenshotStorage).sizeLimit | default "1Gi" }}
-      {{- else if eq $component "api" }}
+      {{- if eq $component "api" }}
       - name: instance-dir
         emptyDir: {}
       - name: tmp
@@ -280,7 +260,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "scanner") (ne $component "worker") }}
+{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "worker") }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 
-from apps.scanner.parsers.endpoint_parser_express import ExpressEndpointParser
+from apps.api.services.sbom.parsers.endpoint_parser_express import ExpressEndpointParser
 
 
 class TestExpressEndpointParserCanParse:

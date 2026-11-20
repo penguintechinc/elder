@@ -7,6 +7,7 @@ import logging
 from quart import Blueprint, current_app, jsonify, request
 
 from apps.api.auth.decorators import admin_required, login_required, require_scope
+from apps.api.auth.jwt_handler import is_system_service_worker
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.discovery import DiscoveryService
 from apps.api.utils.tenant_scoping import get_current_tenant_id
@@ -35,6 +36,23 @@ def _tenant_organization_ids(db, tenant_id: int | None) -> set[int]:
         for row in db(db.organizations.tenant_id == tenant_id).select(
             db.organizations.id
         )
+    }
+
+
+def _active_organization_ids(db) -> set[int]:
+    """Organization ids owned by active organizations in active tenants."""
+    active_tenant_ids = {
+        row.id
+        for row in db(db.tenants.is_active == True).select(db.tenants.id)  # noqa: E712
+    }
+    if not active_tenant_ids:
+        return set()
+    return {
+        row.id
+        for row in db(
+            (db.organizations.is_active == True)  # noqa: E712
+            & (db.organizations.tenant_id.belongs(active_tenant_ids))
+        ).select(db.organizations.id)
     }
 
 
@@ -377,14 +395,19 @@ def get_pending_jobs():
     """
     try:
         db = current_app.db_read
-        tenant_id = get_current_tenant_id()
-        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+        if is_system_service_worker():
+            allowed_org_ids = _active_organization_ids(db)
+        else:
+            tenant_id = get_current_tenant_id()
+            if not tenant_id:
+                return jsonify({"error": "Invalid or missing tenant claim"}), 400
+            allowed_org_ids = _tenant_organization_ids(db, tenant_id)
 
         service = get_discovery_service(read_only=True)
         jobs = [
             job
             for job in service.get_pending_jobs()
-            if _job_organization_id(job.get("config_json")) in tenant_org_ids
+            if _job_organization_id(job.get("config_json")) in allowed_org_ids
         ]
         return jsonify({"jobs": jobs}), 200
 
@@ -413,11 +436,17 @@ def start_job(job_id):
     """
     try:
         db = current_app.db
-        tenant_id = get_current_tenant_id()
         job = db.discovery_jobs[job_id]  # tenant-scope-exempt: verified below
-        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
-        if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
-            return jsonify({"error": f"Job not found: {job_id}"}), 404
+        if is_system_service_worker():
+            if not job or _job_organization_id(
+                job.config_json
+            ) not in _active_organization_ids(db):
+                return jsonify({"error": f"Job not found: {job_id}"}), 404
+        else:
+            tenant_id = get_current_tenant_id()
+            tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+            if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
+                return jsonify({"error": f"Job not found: {job_id}"}), 404
 
         service = get_discovery_service()
         result = service.mark_job_running(job_id)
@@ -458,11 +487,17 @@ async def complete_job(job_id):
     """
     try:
         db = current_app.db
-        tenant_id = get_current_tenant_id()
         job = db.discovery_jobs[job_id]  # tenant-scope-exempt: verified below
-        tenant_org_ids = _tenant_organization_ids(db, tenant_id)
-        if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
-            return jsonify({"error": f"Job not found: {job_id}"}), 404
+        if is_system_service_worker():
+            if not job or _job_organization_id(
+                job.config_json
+            ) not in _active_organization_ids(db):
+                return jsonify({"error": f"Job not found: {job_id}"}), 404
+        else:
+            tenant_id = get_current_tenant_id()
+            tenant_org_ids = _tenant_organization_ids(db, tenant_id)
+            if not job or _job_organization_id(job.config_json) not in tenant_org_ids:
+                return jsonify({"error": f"Job not found: {job_id}"}), 404
 
         data = await request.get_json()
 

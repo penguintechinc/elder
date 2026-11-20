@@ -18,8 +18,20 @@ updates:
       - "/"
       - "/apps/flows_invoker"
       - "/apps/mcp"
-      - "/apps/scanner"
       - "/apps/worker"
+    schedule:
+      interval: "weekly"
+    groups:
+      all-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+  - package-ecosystem: "cargo"
+    directory: "/"
     schedule:
       interval: "weekly"
     groups:
@@ -51,8 +63,8 @@ updates:
       - "/apps/api"
       - "/apps/flows_invoker"
       - "/apps/mcp"
-      - "/apps/scanner"
       - "/apps/worker"
+      - "/services/svc-scanning"
       - "/tests"
       - "/web"
     schedule:

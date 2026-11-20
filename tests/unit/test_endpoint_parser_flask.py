@@ -7,7 +7,7 @@ authentication requirements.
 
 import pytest
 
-from apps.scanner.parsers.endpoint_parser_flask import FlaskEndpointParser
+from apps.api.services.sbom.parsers.endpoint_parser_flask import FlaskEndpointParser
 
 
 class TestFlaskParserCanParse:
