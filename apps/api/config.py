@@ -116,6 +116,7 @@ class Config:
     # Rate Limiting
     RATELIMIT_ENABLED = config("RATELIMIT_ENABLED", default=True, cast=bool)
     RATELIMIT_DEFAULT = config("RATELIMIT_DEFAULT", default="100/minute")
+    SAML_LOGIN_RATELIMIT = config("SAML_LOGIN_RATELIMIT", default="10/minute")
     RATELIMIT_STORAGE_URL = REDIS_URL
 
     # SAML Authentication

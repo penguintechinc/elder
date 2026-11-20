@@ -59,15 +59,16 @@ class OIDCService:
             IdP configuration dict or None
         """
         db = current_app.db
+        table = db.idp_configurations
         if tenant_id:
             # Try tenant-specific IdP first
             config = (
                 db(
-                    (db.idp_configurations.tenant_id == tenant_id)
-                    & (db.idp_configurations.idp_type == "oidc")
-                    & (db.idp_configurations.is_active == True)  # noqa: E712
+                    (table.tenant_id == tenant_id)
+                    & (table.idp_type == "oidc")
+                    & (table.is_active == True)  # noqa: E712
                 )
-                .select()
+                .select(orderby=table.id)
                 .first()
             )
 
@@ -77,11 +78,11 @@ class OIDCService:
         # Fall back to global IdP
         config = (
             db(
-                (db.idp_configurations.tenant_id == None)  # noqa: E711
-                & (db.idp_configurations.idp_type == "oidc")
-                & (db.idp_configurations.is_active == True)  # noqa: E712
+                (table.tenant_id == None)  # noqa: E711
+                & (table.idp_type == "oidc")
+                & (table.is_active == True)  # noqa: E712
             )
-            .select()
+            .select(orderby=table.id)
             .first()
         )
 

@@ -21,7 +21,10 @@ from pydantic import (
     StrictInt,
     StrictStr,
     StringConstraints,
+    field_validator,
 )
+
+from apps.api.services.sso.idp_validation import validate_https_url
 
 # Columns an administrator may change on an existing IdP config. Mirrors
 # ``saml_service._UPDATABLE_FIELDS``; a test pins both so neither can widen
@@ -77,6 +80,14 @@ class _IdPWriteBase(BaseModel):
     attribute_mappings: AttributeMappings = None
     # Present-but-null is distinguishable from absent via ``model_fields_set``.
     tenant_id: StrictInt | None = None
+
+    @field_validator("metadata_url", "sso_url", "slo_url", "oidc_issuer_url")
+    @classmethod
+    def _require_https_url(cls, value: str | None) -> str | None:
+        """Require https:// scheme on all IdP HTTP endpoint URLs (gh-312)."""
+        if value is None:
+            return None
+        return validate_https_url(value)
 
 
 class CreateIdPConfigRequest(_IdPWriteBase):
