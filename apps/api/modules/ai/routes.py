@@ -156,8 +156,12 @@ def _parse_json_field(val: Any) -> Any:
 def _row_to_dto(row: Any) -> AIResourceDTO:
     """Map an AIResource DB row to AIResourceDTO, handling extra_metadata/metadata."""
     raw_meta = getattr(row, "extra_metadata", None)
-    if raw_meta is None and isinstance(row, dict):
-        raw_meta = row.get("metadata")
+    if raw_meta is None:
+        raw_meta = (
+            row.get("metadata")
+            if isinstance(row, dict)
+            else getattr(row, "metadata", None)
+        )
     metadata = _parse_json_field(raw_meta)
     tags = _parse_json_field(getattr(row, "tags", None))
 
@@ -309,7 +313,7 @@ async def create_ai_resource(body: CreateAIResourceRequest):
             owner_id=body.owner_id,
             notes=body.notes,
             tags=body.tags,
-            extra_metadata=body.metadata,
+            metadata=body.metadata,
             is_active=body.is_active,
             created_at=now,
             updated_at=now,
@@ -418,7 +422,7 @@ async def update_ai_resource(id: int, body: UpdateAIResourceRequest):
                 update_dict[field] = getattr(body, field)
 
         if "metadata" in data_dict:
-            update_dict["extra_metadata"] = body.metadata
+            update_dict["metadata"] = body.metadata
 
         if body.organization_id is not None:
             update_dict["organization_id"] = body.organization_id
