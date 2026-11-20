@@ -2,6 +2,7 @@
 
 # flake8: noqa: E501
 
+import json
 from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,45 @@ from apps.api.services.iam.aws_client import AWSIAMClient
 from apps.api.services.iam.base import BaseIAMProvider
 from apps.api.services.iam.gcp_client import GCPIAMClient
 from apps.api.services.iam.k8s_client import KubernetesRBACClient
+
+_IAM_SENSITIVE_FIELDS = (
+    "access_key_id",
+    "secret_access_key",
+    "credentials_json",
+    "token",
+    "session_token",
+    "kubeconfig",
+    "client_secret",
+    "private_key",
+    "api_token",
+    "api_key",
+)
+_REDACTED_SENTINELS = frozenset({"", "***REDACTED***", "***masked***"})
+
+
+def _parse_json_dict(raw: Any) -> dict[str, Any]:
+    """Parse a JSON column value (dict or JSON string) into a fresh dict."""
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(parsed)
+        except (ValueError, TypeError):
+            pass
+    return {}
+
+
+def _is_blank_or_redacted_secret(value: Any) -> bool:
+    """Return True when a secret value is empty, None, or a redaction marker."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() in _REDACTED_SENTINELS
+    if isinstance(value, dict) and not value:
+        return True
+    return False
 
 
 class IAMService:
@@ -62,12 +102,19 @@ class IAMService:
 
     # Provider Management
 
-    def list_providers(self, enabled_only: bool = False) -> list[dict[str, Any]]:
+    def list_providers(
+        self,
+        enabled_only: bool = False,
+        organization_id: int | None = None,
+    ) -> list[dict[str, Any]]:
         """List all IAM providers."""
         query = self.db.iam_providers.id > 0
 
         if enabled_only:
-            query &= self.db.iam_providers.enabled is True
+            query &= self.db.iam_providers.enabled == True  # noqa: E712
+
+        if organization_id is not None:
+            query &= self.db.iam_providers.organization_id == organization_id
 
         providers = self.db(query).select(orderby=self.db.iam_providers.name)
 
@@ -88,6 +135,7 @@ class IAMService:
         provider_type: str,
         config: dict[str, Any],
         description: str | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """Create a new IAM provider."""
         # Validate provider type
@@ -97,14 +145,31 @@ class IAMService:
                 f"Invalid provider type: {provider_type}. Must be one of {valid_types}"
             )
 
-        # Create provider
+        resolved_org_id = organization_id
+        if resolved_org_id is None:
+            first_org = (
+                self.db(self.db.organizations.id > 0)
+                .select(orderby=self.db.organizations.id, limitby=(0, 1))
+                .first()
+            )
+            if not first_org:
+                raise ValueError(
+                    "organization_id is required (no default organization exists)"
+                )
+            resolved_org_id = first_org.id
+
+        provider_config = dict(config or {})
+        if description is not None:
+            provider_config["_description"] = description
+
+        # Create provider (matching live iam_providers columns)
         now = datetime.now(UTC)
         provider_id = self.db.iam_providers.insert(
             name=name,
             provider_type=provider_type.lower(),
+            organization_id=resolved_org_id,
             enabled=True,
-            config_json=config,
-            description=description,
+            config_json=provider_config,
             created_at=now,
             updated_at=now,
         )
@@ -120,6 +185,7 @@ class IAMService:
         config: dict[str, Any] | None = None,
         description: str | None = None,
         enabled: bool | None = None,
+        organization_id: int | None = None,
     ) -> dict[str, Any]:
         """Update provider configuration."""
         provider = self.db.iam_providers[provider_id]
@@ -127,17 +193,41 @@ class IAMService:
         if not provider:
             raise Exception(f"Provider not found: {provider_id}")
 
-        update_data = {}
+        existing_cfg = _parse_json_dict(getattr(provider, "config_json", None))
+        update_data: dict[str, Any] = {}
         if name is not None:
             update_data["name"] = name
-        if config is not None:
-            update_data["config_json"] = config
-        if description is not None:
-            update_data["description"] = description
         if enabled is not None:
             update_data["enabled"] = enabled
+        if organization_id is not None:
+            update_data["organization_id"] = organization_id
+
+        if config is not None or description is not None:
+            if config is not None:
+                merged_cfg = dict(config)
+                if (
+                    description is None
+                    and "_description" not in merged_cfg
+                    and "_description" in existing_cfg
+                ):
+                    merged_cfg["_description"] = existing_cfg["_description"]
+                for secret_key in _IAM_SENSITIVE_FIELDS:
+                    if (
+                        secret_key in existing_cfg
+                        and not _is_blank_or_redacted_secret(existing_cfg[secret_key])
+                        and _is_blank_or_redacted_secret(merged_cfg.get(secret_key))
+                    ):
+                        merged_cfg[secret_key] = existing_cfg[secret_key]
+            else:
+                merged_cfg = dict(existing_cfg)
+
+            if description is not None:
+                merged_cfg["_description"] = description
+
+            update_data["config_json"] = merged_cfg
 
         if update_data:
+            update_data["updated_at"] = datetime.now(UTC)
             self.db(self.db.iam_providers.id == provider_id).update(**update_data)
             self.db.commit()
 
@@ -389,26 +479,17 @@ class IAMService:
 
     def _sanitize_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
         """Remove sensitive fields from provider data."""
-        # Create a copy
         sanitized = dict(provider)
 
-        # Remove or mask sensitive config fields
-        if "config_json" in sanitized and sanitized["config_json"]:
-            config = dict(sanitized["config_json"])
+        if "config_json" in sanitized and sanitized["config_json"] is not None:
+            config = _parse_json_dict(sanitized["config_json"])
 
-            # Mask sensitive fields
-            sensitive_fields = [
-                "access_key_id",
-                "secret_access_key",
-                "credentials_json",
-                "token",
-                "session_token",
-                "kubeconfig",
-            ]
-
-            for field in sensitive_fields:
-                if field in config:
+            for field in _IAM_SENSITIVE_FIELDS:
+                if field in config and not _is_blank_or_redacted_secret(config[field]):
                     config[field] = "***REDACTED***"
+
+            if "description" not in sanitized:
+                sanitized["description"] = config.get("_description")
 
             sanitized["config_json"] = config
 

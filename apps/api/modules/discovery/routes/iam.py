@@ -32,6 +32,7 @@ def list_providers():
 
     Query params:
         - enabled_only: Only return enabled providers (default: false)
+        - organization_id: Optional organization ID filter
 
     Returns:
         200: List of providers
@@ -39,8 +40,11 @@ def list_providers():
     try:
         service = get_iam_service()
         enabled_only = request.args.get("enabled_only", "false").lower() == "true"
+        organization_id = request.args.get("organization_id", type=int)
 
-        providers = service.list_providers(enabled_only=enabled_only)
+        providers = service.list_providers(
+            enabled_only=enabled_only, organization_id=organization_id
+        )
 
         return jsonify({"providers": providers, "count": len(providers)}), 200
 
@@ -114,6 +118,7 @@ async def create_provider():
             provider_type=data["provider_type"],
             config=data["config"],
             description=data.get("description"),
+            organization_id=data.get("organization_id"),
         )
 
         return jsonify(provider), 201
@@ -154,6 +159,7 @@ async def update_provider(provider_id):
             config=data.get("config"),
             description=data.get("description"),
             enabled=data.get("enabled"),
+            organization_id=data.get("organization_id"),
         )
 
         return jsonify(provider), 200

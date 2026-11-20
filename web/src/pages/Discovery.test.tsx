@@ -62,7 +62,14 @@ describe("Discovery page", () => {
   });
 
   it("allows selecting FleetDM Endpoint Discovery and submitting the modal form", async () => {
-    vi.mocked(api.createDiscoveryJob).mockResolvedValue({ id: 42 });
+    vi.mocked(api.createDiscoveryJob).mockResolvedValue({
+      id: 42,
+      name: "Prod FleetDM",
+      provider: "fleetdm",
+      config_json: {},
+      schedule_interval: 3600,
+      enabled: true,
+    });
     renderDiscovery();
 
     const buttons = await screen.findAllByRole("button", {

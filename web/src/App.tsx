@@ -1,32 +1,32 @@
-import { lazy, useEffect, Suspense, useMemo } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
-import Layout from './components/Layout'
-import Dashboard from './pages/Dashboard'
-import Search from './pages/Search'
-import Login from './pages/LoginPageWrapper'
-import Register from './pages/Register'
-import Profile from './pages/Profile'
+import { lazy, useEffect, Suspense, useMemo } from "react";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
+import Layout from "./components/Layout";
+import Dashboard from "./pages/Dashboard";
+import Search from "./pages/Search";
+import Login from "./pages/LoginPageWrapper";
+import Register from "./pages/Register";
+import Profile from "./pages/Profile";
 // v2.2.0 Enterprise Admin Pages
-import Tenants from './pages/Tenants'
-import TenantDetail from './pages/TenantDetail'
-import SSOConfiguration from './pages/SSOConfiguration'
-import AuditLogs from './pages/AuditLogs'
-import AdminSettings from './pages/AdminSettings'
-import SyncConfig from './pages/SyncConfig'
-import LicensePolicies from './pages/LicensePolicies'
-import ModuleToggles from './pages/ModuleToggles'
+import Tenants from "./pages/Tenants";
+import TenantDetail from "./pages/TenantDetail";
+import SSOConfiguration from "./pages/SSOConfiguration";
+import AuditLogs from "./pages/AuditLogs";
+import AdminSettings from "./pages/AdminSettings";
+import Integrations from "./pages/Integrations";
+import LicensePolicies from "./pages/LicensePolicies";
+import ModuleToggles from "./pages/ModuleToggles";
 // Village ID Redirect
-import VillageIdRedirect from './components/VillageIdRedirect'
-import { AppConsoleVersion } from '@penguintechinc/react-libs/components'
-import { isAuthenticated } from './lib/api'
+import VillageIdRedirect from "./components/VillageIdRedirect";
+import { AppConsoleVersion } from "@penguintechinc/react-libs/components";
+import { isAuthenticated } from "./lib/api";
 
 // Module framework
-import { routesFor } from './modules/registry'
-import { useModules } from './hooks/useModules'
+import { routesFor } from "./modules/registry";
+import { useModules } from "./hooks/useModules";
 
 // Geographic resource map — lazy-loaded: pulls in maplibre-gl, kept out of
 // the main bundle since it's a large dependency.
-const Map = lazy(() => import('./pages/Map'))
+const Map = lazy(() => import("./pages/Map"));
 
 // Protected route wrapper component. The actual JWTs are HttpOnly cookies
 // (gh security audit) -- this checks only the non-sensitive "logged in"
@@ -34,23 +34,23 @@ const Map = lazy(() => import('./pages/Map'))
 // enforces on every request, this is a UX-only redirect.
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />
+    return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>
+  return <>{children}</>;
 }
 
 // Route catch-all: logs unmatched paths and redirects appropriately
 function RouteNotFound() {
-  const location = useLocation()
-  const { isLoading: modulesLoading } = useModules()
-  const hasToken = isAuthenticated()
+  const location = useLocation();
+  const { isLoading: modulesLoading } = useModules();
+  const hasToken = isAuthenticated();
 
   useEffect(() => {
     if (!modulesLoading) {
-      console.warn('[Elder] Route not found:', location.pathname)
+      console.warn("[Elder] Route not found:", location.pathname);
     }
-  }, [location.pathname, modulesLoading])
+  }, [location.pathname, modulesLoading]);
 
   // Module routes register asynchronously (useModules fetches /api/v1/modules).
   // Until that resolves, moduleRoutes is empty, so a valid module path (e.g.
@@ -63,49 +63,68 @@ function RouteNotFound() {
       <div className="flex items-center justify-center min-h-screen bg-bg-primary">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-600 border-t-primary-500" />
       </div>
-    )
+    );
   }
 
   if (hasToken) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/" replace />;
   }
 
-  return <Navigate to="/login" replace />
+  return <Navigate to="/login" replace />;
 }
 
 export default function App() {
-  const { enabled: enabledModules } = useModules()
+  const { enabled: enabledModules } = useModules();
 
   // Get module routes only for enabled modules
   const moduleRoutes = useMemo(
     () => routesFor(enabledModules),
-    [enabledModules]
-  )
+    [enabledModules],
+  );
 
   return (
     <>
       <AppConsoleVersion
         appName="Elder"
-        webuiVersion={import.meta.env.VITE_VERSION || '0.0.0'}
+        webuiVersion={import.meta.env.VITE_VERSION || "0.0.0"}
         webuiBuildEpoch={Number(import.meta.env.VITE_BUILD_TIME) || 0}
         environment={import.meta.env.MODE}
         webuiEmoji="🏛️"
         metadata={{
-          'API URL': import.meta.env.VITE_API_URL || '(relative - using nginx proxy)',
+          "API URL":
+            import.meta.env.VITE_API_URL || "(relative - using nginx proxy)",
         }}
       />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/id/:villageId" element={<ProtectedRoute><VillageIdRedirect /></ProtectedRoute>} />
-        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route
+          path="/id/:villageId"
+          element={
+            <ProtectedRoute>
+              <VillageIdRedirect />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
           {/* Core pages (always available) */}
           <Route index element={<Dashboard />} />
           <Route path="search" element={<Search />} />
           <Route path="profile" element={<Profile />} />
           <Route
             path="map"
-            element={<Suspense fallback={<div />}><Map /></Suspense>}
+            element={
+              <Suspense fallback={<div />}>
+                <Map />
+              </Suspense>
+            }
           />
 
           {/* Module-gated routes: wrap each lazy element in its own Suspense.
@@ -127,12 +146,18 @@ export default function App() {
           <Route path="admin/sso" element={<SSOConfiguration />} />
           <Route path="admin/audit-logs" element={<AuditLogs />} />
           <Route path="admin/settings" element={<AdminSettings />} />
-          <Route path="admin/sync-config" element={<SyncConfig />} />
+          <Route path="admin/integrations" element={<Integrations />} />
+          <Route
+            path="admin/sync-config"
+            element={
+              <Navigate to="/admin/integrations?tab=work-management" replace />
+            }
+          />
           <Route path="admin/license-policies" element={<LicensePolicies />} />
           <Route path="admin/modules" element={<ModuleToggles />} />
         </Route>
         <Route path="*" element={<RouteNotFound />} />
       </Routes>
     </>
-  )
+  );
 }

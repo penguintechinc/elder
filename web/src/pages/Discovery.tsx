@@ -1,7 +1,9 @@
 import { useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
+  Plug,
   Compass,
   Play,
   Trash2,
@@ -12,7 +14,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Organization } from "@/types";
-import api from "@/lib/api";
+import api, { type DiscoveryJobItem } from "@/lib/api";
 import Button from "@/components/Button";
 import Card, { CardContent } from "@/components/Card";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
@@ -20,12 +22,9 @@ import { FormField } from "@/types/form";
 import { getStatusColor } from "@/lib/colorHelpers";
 import { confirmDelete } from "@/lib/confirmActions";
 
-interface DiscoveryJob {
-  id: number;
-  name: string;
-  discovery_type: string;
+interface DiscoveryJob extends DiscoveryJobItem {
+  discovery_type?: string;
   schedule?: string;
-  enabled: boolean;
 }
 
 interface DiscoveryRun {
@@ -289,7 +288,14 @@ export default function Discovery() {
             Automatically discover and track cloud resources
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            to="/admin/integrations?tab=cloud"
+            className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <Plug className="w-4 h-4 mr-2 text-yellow-500" />
+            Manage Integration Profiles
+          </Link>
           <Button variant="secondary" onClick={() => setShowScanModal(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Local Scan
@@ -352,7 +358,9 @@ export default function Discovery() {
                         <p className="text-sm text-slate-400 mt-1">
                           {
                             DISCOVERY_TYPES.find(
-                              (t) => t.value === job.discovery_type,
+                              (t) =>
+                                t.value ===
+                                (job.discovery_type || job.provider),
                             )?.label
                           }
                         </p>

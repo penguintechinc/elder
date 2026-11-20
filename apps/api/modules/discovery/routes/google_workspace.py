@@ -102,6 +102,7 @@ async def create_provider():
             admin_email=data["admin_email"],
             service_account_json=data["service_account_json"],
             description=data.get("description"),
+            domain=data.get("domain"),
         )
 
         return jsonify(provider), 201
@@ -169,6 +170,7 @@ async def update_provider(provider_id):
             service_account_json=data.get("service_account_json"),
             description=data.get("description"),
             enabled=data.get("enabled"),
+            domain=data.get("domain"),
         )
 
         return jsonify(provider), 200

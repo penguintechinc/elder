@@ -11,6 +11,58 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from penguin_dal import DAL
 
+_REDACTED_SENTINELS = frozenset({"", "***REDACTED***", "***masked***"})
+_REQUIRED_SERVICE_ACCOUNT_KEYS = ("type", "project_id", "private_key", "client_email")
+
+
+def _parse_json_dict(raw: Any) -> dict[str, Any]:
+    """Parse a JSON column value (dict or JSON string) into a fresh dict."""
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(parsed)
+        except (ValueError, TypeError):
+            pass
+    return {}
+
+
+def _is_redacted_or_empty(value: Any) -> bool:
+    """Return True when credential input is empty, None, or a redaction sentinel."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() in _REDACTED_SENTINELS
+    if isinstance(value, dict) and not value:
+        return True
+    return False
+
+
+def _parse_service_account_json(raw: Any) -> dict[str, Any]:
+    """Validate and normalize a Google service account credential payload."""
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("Invalid service account JSON") from exc
+    elif isinstance(raw, dict):
+        parsed = dict(raw)
+    else:
+        raise ValueError("service_account_json must be a JSON object or JSON string")
+
+    if not isinstance(parsed, dict):
+        raise ValueError("service_account_json must be a JSON object")
+
+    missing = [k for k in _REQUIRED_SERVICE_ACCOUNT_KEYS if not parsed.get(k)]
+    if missing:
+        raise ValueError(
+            f"Invalid service account JSON. Missing keys: {', '.join(missing)}"
+        )
+
+    return dict(parsed)
+
 
 class GoogleWorkspaceService:
     """Service for Google Workspace user and group management."""
@@ -79,8 +131,9 @@ class GoogleWorkspaceService:
         organization_id: int,
         customer_id: str,
         admin_email: str,
-        service_account_json: dict[str, Any],
+        service_account_json: dict[str, Any] | str,
         description: str | None = None,
+        domain: str | None = None,
     ) -> dict[str, Any]:
         """
         Create Google Workspace provider.
@@ -90,28 +143,45 @@ class GoogleWorkspaceService:
             organization_id: Organization ID
             customer_id: Google Workspace customer ID
             admin_email: Admin user email for delegation
-            service_account_json: Service account credentials JSON
+            service_account_json: Service account credentials JSON (dict or JSON string)
             description: Optional description
+            domain: Optional workspace domain (defaults from admin_email or customer_id)
 
         Returns:
             Created provider dictionary
         """
-        # Validate service account JSON
-        required_keys = ["type", "project_id", "private_key", "client_email"]
-        missing = [k for k in required_keys if k not in service_account_json]
-        if missing:
-            raise Exception(
-                f"Invalid service account JSON. Missing keys: {', '.join(missing)}"
-            )
+        if not name or not str(name).strip():
+            raise ValueError("name is required")
+        if organization_id is None:
+            raise ValueError("organization_id is required")
+        if not customer_id or not str(customer_id).strip():
+            raise ValueError("customer_id is required")
+        if not admin_email or not str(admin_email).strip():
+            raise ValueError("admin_email is required")
+
+        sa_dict = _parse_service_account_json(service_account_json)
+
+        resolved_domain = (domain or "").strip()
+        if not resolved_domain:
+            if "@" in admin_email:
+                resolved_domain = admin_email.split("@", 1)[1].strip()
+            else:
+                resolved_domain = str(customer_id).strip()
+
+        creds_payload: dict[str, Any] = {
+            "service_account_json": sa_dict,
+            "customer_id": str(customer_id).strip(),
+        }
+        if description is not None:
+            creds_payload["_description"] = description
 
         now = datetime.now(UTC)
         provider_id = self.db.google_workspace_providers.insert(
-            name=name,
+            name=str(name).strip(),
+            domain=resolved_domain,
+            admin_email=str(admin_email).strip(),
+            credentials_json=creds_payload,
             organization_id=organization_id,
-            customer_id=customer_id,
-            admin_email=admin_email,
-            service_account_json=json.dumps(service_account_json),
-            description=description,
             enabled=True,
             created_at=now,
             updated_at=now,
@@ -128,9 +198,10 @@ class GoogleWorkspaceService:
         name: str | None = None,
         customer_id: str | None = None,
         admin_email: str | None = None,
-        service_account_json: dict[str, Any] | None = None,
+        service_account_json: dict[str, Any] | str | None = None,
         description: str | None = None,
         enabled: bool | None = None,
+        domain: str | None = None,
     ) -> dict[str, Any]:
         """
         Update provider configuration.
@@ -143,6 +214,7 @@ class GoogleWorkspaceService:
             service_account_json: New service account credentials
             description: New description
             enabled: New enabled status
+            domain: New workspace domain
 
         Returns:
             Updated provider dictionary
@@ -155,25 +227,46 @@ class GoogleWorkspaceService:
         if not provider:
             raise Exception(f"Google Workspace provider {provider_id} not found")
 
-        update_data = {"updated_at": datetime.now(UTC)}
+        existing_creds = _parse_json_dict(getattr(provider, "credentials_json", None))
+        if (
+            "service_account_json" not in existing_creds
+            and "private_key" in existing_creds
+        ):
+            merged_creds: dict[str, Any] = {"service_account_json": existing_creds}
+        else:
+            merged_creds = dict(existing_creds)
+
+        creds_changed = False
+        if customer_id is not None:
+            merged_creds["customer_id"] = str(customer_id).strip()
+            creds_changed = True
+        if description is not None:
+            merged_creds["_description"] = description
+            creds_changed = True
+        if service_account_json is not None and not _is_redacted_or_empty(
+            service_account_json
+        ):
+            merged_creds["service_account_json"] = _parse_service_account_json(
+                service_account_json
+            )
+            creds_changed = True
+
+        update_data: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
-            update_data["name"] = name
+            update_data["name"] = str(name).strip()
 
-        if customer_id is not None:
-            update_data["customer_id"] = customer_id
+        if domain is not None:
+            update_data["domain"] = str(domain).strip()
 
         if admin_email is not None:
-            update_data["admin_email"] = admin_email
-
-        if service_account_json is not None:
-            update_data["service_account_json"] = json.dumps(service_account_json)
-
-        if description is not None:
-            update_data["description"] = description
+            update_data["admin_email"] = str(admin_email).strip()
 
         if enabled is not None:
             update_data["enabled"] = enabled
+
+        if creds_changed:
+            update_data["credentials_json"] = merged_creds
 
         self.db(self.db.google_workspace_providers.id == provider_id).update(
             **update_data
@@ -226,13 +319,14 @@ class GoogleWorkspaceService:
 
         try:
             client = self._get_directory_client(provider)
+            customer_id = self._get_customer_id(provider)
 
             # Test by listing domains
-            results = client.domains().list(customer=provider.customer_id).execute()
+            results = client.domains().list(customer=customer_id).execute()
 
             return {
                 "success": True,
-                "customer_id": provider.customer_id,
+                "customer_id": customer_id,
                 "domains": results.get("domains", []),
                 "message": "Successfully connected to Google Workspace",
             }
@@ -270,7 +364,10 @@ class GoogleWorkspaceService:
         try:
             client = self._get_directory_client(provider)
 
-            params = {"customer": provider.customer_id, "maxResults": min(limit, 500)}
+            params = {
+                "customer": self._get_customer_id(provider),
+                "maxResults": min(limit, 500),
+            }
 
             if domain:
                 params["domain"] = domain
@@ -467,7 +564,10 @@ class GoogleWorkspaceService:
         try:
             client = self._get_directory_client(provider)
 
-            params = {"customer": provider.customer_id, "maxResults": min(limit, 200)}
+            params = {
+                "customer": self._get_customer_id(provider),
+                "maxResults": min(limit, 200),
+            }
 
             if domain:
                 params["domain"] = domain
@@ -675,6 +775,16 @@ class GoogleWorkspaceService:
     # Helper Methods
     # ===========================
 
+    def _get_customer_id(self, provider: Any) -> str:
+        """Resolve Google Workspace customer_id from credentials_json or fallback."""
+        creds = _parse_json_dict(getattr(provider, "credentials_json", None))
+        customer_id = creds.get("customer_id") or getattr(provider, "customer_id", None)
+        return str(customer_id or "my_customer")
+
+    def _get_workspace_client(self, provider: Any):
+        """Alias for _get_directory_client."""
+        return self._get_directory_client(provider)
+
     def _get_directory_client(self, provider: Any):
         """
         Get Google Directory API client.
@@ -685,7 +795,21 @@ class GoogleWorkspaceService:
         Returns:
             Directory API client
         """
-        credentials_info = json.loads(provider.service_account_json)
+        raw_creds = getattr(provider, "credentials_json", None)
+        if raw_creds is None:
+            raw_creds = getattr(provider, "service_account_json", None)
+
+        creds_blob = _parse_json_dict(raw_creds)
+        if "service_account_json" in creds_blob:
+            inner = creds_blob["service_account_json"]
+            credentials_info = (
+                _parse_json_dict(inner) if isinstance(inner, (str, dict)) else {}
+            )
+        else:
+            credentials_info = creds_blob
+
+        if not credentials_info:
+            raise ValueError("Google Workspace provider has no valid credentials")
 
         credentials = service_account.Credentials.from_service_account_info(
             credentials_info,
@@ -702,7 +826,7 @@ class GoogleWorkspaceService:
 
     def _sanitize_provider(self, provider_dict: dict[str, Any]) -> dict[str, Any]:
         """
-        Sanitize provider dictionary (mask credentials).
+        Sanitize provider dictionary (mask credentials and surface safe metadata).
 
         Args:
             provider_dict: Provider dictionary
@@ -710,10 +834,39 @@ class GoogleWorkspaceService:
         Returns:
             Sanitized provider dictionary
         """
-        if "service_account_json" in provider_dict:
-            provider_dict["service_account_json"] = "***masked***"
+        sanitized = dict(provider_dict)
+        creds_blob = _parse_json_dict(sanitized.get("credentials_json"))
 
-        return provider_dict
+        customer_id = sanitized.get("customer_id") or creds_blob.get("customer_id")
+        description = (
+            sanitized.get("description")
+            if "description" in sanitized
+            else creds_blob.get("_description")
+        )
+
+        sa_info = (
+            creds_blob.get("service_account_json")
+            if "service_account_json" in creds_blob
+            else (creds_blob if "private_key" in creds_blob else None)
+        )
+        has_credentials = bool(sa_info) or bool(sanitized.get("service_account_json"))
+
+        if (
+            "credentials_json" in sanitized
+            and sanitized["credentials_json"] is not None
+        ):
+            sanitized["credentials_json"] = "***REDACTED***"
+        if (
+            "service_account_json" in sanitized
+            and sanitized["service_account_json"] is not None
+        ):
+            sanitized["service_account_json"] = "***REDACTED***"
+
+        sanitized["customer_id"] = customer_id
+        sanitized["description"] = description
+        sanitized["has_credentials"] = has_credentials
+
+        return sanitized
 
     def _format_user(self, user: dict[str, Any]) -> dict[str, Any]:
         """Format user data for API response."""

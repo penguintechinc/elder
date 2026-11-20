@@ -1,6 +1,6 @@
-import { useLocation, Outlet, useNavigate } from 'react-router-dom'
-import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useLocation, Outlet, useNavigate } from "react-router-dom";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Search as SearchIcon,
@@ -13,71 +13,105 @@ import {
   ChevronDown,
   ChevronRight,
   Shield,
-  Repeat2,
+  Plug,
   Lock,
   Zap,
-} from 'lucide-react'
-import { SidebarMenu, MenuCategory, MenuItem } from '@penguintechinc/react-libs/components'
-import api from '@/lib/api'
+} from "lucide-react";
+import {
+  SidebarMenu,
+  MenuCategory,
+  MenuItem,
+} from "@penguintechinc/react-libs/components";
+import api from "@/lib/api";
 
 // Module framework
-import { navFor } from '@/modules/registry'
-import { useModules } from '@/hooks/useModules'
+import { navFor } from "@/modules/registry";
+import { useModules } from "@/hooks/useModules";
 
 // Core navigation (always available)
 const coreNavigation: MenuCategory[] = [
   {
     items: [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-      { name: 'Search', href: '/search', icon: SearchIcon },
-      { name: 'Map', href: '/map', icon: MapIcon },
+      { name: "Dashboard", href: "/", icon: LayoutDashboard },
+      { name: "Search", href: "/search", icon: SearchIcon },
+      { name: "Map", href: "/map", icon: MapIcon },
     ],
   },
-]
+];
 
 // Admin navigation - shown based on user role
 const adminNavigation: MenuItem[] = [
-  { name: 'Audit Logs', href: '/admin/audit-logs', icon: FileText, roles: ['admin', 'support', 'tenant_admin'] },
-  { name: 'Settings', href: '/admin/settings', icon: Settings, roles: ['admin'] },
-  { name: 'SSO Config', href: '/admin/sso', icon: Shield, roles: ['admin', 'tenant_admin'] },
-  { name: 'Module Toggles', href: '/admin/modules', icon: Zap, roles: ['admin'] },
-  { name: 'Sync Config', href: '/admin/sync-config', icon: Repeat2, roles: ['admin'] },
-  { name: 'License Policies', href: '/admin/license-policies', icon: Lock, roles: ['admin'] },
-  { name: 'Tenants', href: '/admin/tenants', icon: Users, roles: ['admin'] },
-]
+  {
+    name: "Audit Logs",
+    href: "/admin/audit-logs",
+    icon: FileText,
+    roles: ["admin", "support", "tenant_admin"],
+  },
+  {
+    name: "Settings",
+    href: "/admin/settings",
+    icon: Settings,
+    roles: ["admin"],
+  },
+  {
+    name: "SSO Config",
+    href: "/admin/sso",
+    icon: Shield,
+    roles: ["admin", "tenant_admin"],
+  },
+  {
+    name: "Module Toggles",
+    href: "/admin/modules",
+    icon: Zap,
+    roles: ["admin"],
+  },
+  {
+    name: "Integrations",
+    href: "/admin/integrations",
+    icon: Plug,
+    roles: ["admin"],
+  },
+  {
+    name: "License Policies",
+    href: "/admin/license-policies",
+    icon: Lock,
+    roles: ["admin"],
+  },
+  { name: "Tenants", href: "/admin/tenants", icon: Users, roles: ["admin"] },
+];
 
 // Footer items for profile and logout
 const footerItems: MenuItem[] = [
-  { name: 'Profile', href: '/profile', icon: User },
-  { name: 'Logout', href: '#logout', icon: LogOut },
-]
+  { name: "Profile", href: "/profile", icon: User },
+  { name: "Logout", href: "#logout", icon: LogOut },
+];
 
 export default function Layout() {
-  const location = useLocation()
-  const navigate = useNavigate()
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Fetch user profile for role-based navigation
   const { data: userProfile } = useQuery({
-    queryKey: ['portal-profile'],
+    queryKey: ["portal-profile"],
     queryFn: () => api.getPortalProfile(),
     staleTime: 60000, // Cache for 1 minute
     retry: false,
-  })
+  });
 
   // Fetch enabled modules
-  const { enabled: enabledModules } = useModules()
+  const { enabled: enabledModules } = useModules();
 
   // Determine user roles for admin navigation visibility
-  const globalRole = userProfile?.global_role
-  const tenantRole = userProfile?.tenant_role
+  const globalRole = userProfile?.global_role;
+  const tenantRole = userProfile?.tenant_role;
 
   // Filter admin navigation based on user roles
-  const visibleAdminNav = adminNavigation.filter(item => {
-    if (globalRole === 'admin') return item.roles?.includes('admin')
-    if (globalRole === 'support') return item.roles?.includes('support')
-    if (tenantRole === 'admin') return item.roles?.includes('tenant_admin')
-    return false
-  })
+  const visibleAdminNav = adminNavigation.filter((item) => {
+    if (globalRole === "admin") return item.roles?.includes("admin");
+    if (globalRole === "support") return item.roles?.includes("support");
+    if (tenantRole === "admin") return item.roles?.includes("tenant_admin");
+    return false;
+  });
 
   // Build navigation: core + module nav + admin
   const allCategories: MenuCategory[] = useMemo(() => {
@@ -87,38 +121,40 @@ export default function Layout() {
       ...(visibleAdminNav.length > 0
         ? [
             {
-              header: 'Administration',
+              header: "Administration",
               collapsible: true,
               items: visibleAdminNav,
             },
           ]
         : []),
-    ]
-    return categories
-  }, [enabledModules, visibleAdminNav])
+    ];
+    return categories;
+  }, [enabledModules, visibleAdminNav]);
 
   const handleLogout = () => {
     // Tokens are HttpOnly cookies (gh security audit) -- only the backend
     // can clear them, so this must round-trip through the API before
     // navigating away. Best-effort: api.logout() never throws.
     void api.logout().finally(() => {
-      window.location.href = '/login'
-    })
-  }
+      window.location.href = "/login";
+    });
+  };
 
   const handleNavigate = (href: string) => {
-    if (href === '#logout') {
-      handleLogout()
+    if (href === "#logout") {
+      handleLogout();
     } else {
-      navigate(href)
+      navigate(href);
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-slate-900">
       {/* Sidebar */}
       <SidebarMenu
-        logo={<img src="/elder-logo.png" alt="Elder Logo" className="h-12 w-auto" />}
+        logo={
+          <img src="/elder-logo.png" alt="Elder Logo" className="h-12 w-auto" />
+        }
         categories={allCategories}
         currentPath={location.pathname}
         onNavigate={handleNavigate}
@@ -135,5 +171,5 @@ export default function Layout() {
         </main>
       </div>
     </div>
-  )
+  );
 }

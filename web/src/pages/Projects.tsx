@@ -258,7 +258,7 @@ export default function Projects() {
         </div>
         <div className="flex items-center gap-3">
           <Link
-            to="/admin/sync-config"
+            to="/admin/integrations?tab=work-management"
             className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <GitBranch className="w-4 h-4 mr-2 text-yellow-500" />

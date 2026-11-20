@@ -2,11 +2,53 @@
 
 # flake8: noqa: E501
 
+import json
 import logging
 from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+_DISCOVERY_SENSITIVE_FIELDS = (
+    "access_key_id",
+    "secret_access_key",
+    "credentials_json",
+    "token",
+    "api_token",
+    "api_key",
+    "fleetdm_api_token",
+    "client_secret",
+    "kubeconfig",
+    "private_key",
+    "session_token",
+)
+_REDACTED_SENTINELS = frozenset({"", "***REDACTED***", "***masked***"})
+
+
+def _parse_json_dict(raw: Any) -> dict[str, Any]:
+    """Parse a JSON column value (dict or JSON string) into a fresh dict."""
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return dict(parsed)
+        except (ValueError, TypeError):
+            pass
+    return {}
+
+
+def _is_blank_or_redacted_secret(value: Any) -> bool:
+    """Return True when a secret value is empty, None, or a redaction marker."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() in _REDACTED_SENTINELS
+    if isinstance(value, dict) and not value:
+        return True
+    return False
+
 
 # Canonical edge types allowed in dependencies table.
 CANONICAL_EDGE_TYPES: frozenset[str] = frozenset(
@@ -103,17 +145,33 @@ class DiscoveryService:
         query = self.db.discovery_jobs.id > 0
 
         if provider:
-            query &= self.db.discovery_jobs.provider == provider
+            query &= self.db.discovery_jobs.provider == provider.lower()
 
         if enabled is not None:
             query &= self.db.discovery_jobs.enabled == enabled
 
-        if organization_id:
-            query &= self.db.discovery_jobs.organization_id == organization_id
-
         jobs = self.db(query).select(orderby=self.db.discovery_jobs.name)
 
-        return [self._sanitize_job(j.as_dict()) for j in jobs]
+        results: list[dict[str, Any]] = []
+        for job in jobs:
+            job_dict = job.as_dict()
+            if organization_id is not None:
+                cfg = _parse_json_dict(job_dict.get("config_json"))
+                row_org = job_dict.get("organization_id")
+                job_org = (
+                    row_org if row_org is not None else cfg.get("_organization_id")
+                )
+                try:
+                    matches = job_org is not None and int(job_org) == int(
+                        organization_id
+                    )
+                except (TypeError, ValueError):
+                    matches = job_org == organization_id
+                if not matches:
+                    continue
+            results.append(self._sanitize_job(job_dict))
+
+        return results
 
     def get_job(self, job_id: int) -> dict[str, Any]:
         """Get discovery job details."""
@@ -129,9 +187,10 @@ class DiscoveryService:
         name: str,
         provider: str,
         config: dict[str, Any],
-        organization_id: int = None,  # Optional - stored in config for now
+        organization_id: int | None = None,  # Optional - stored in config_json
         schedule_interval: int | None = None,
         description: str | None = None,
+        enabled: bool = True,
     ) -> dict[str, Any]:
         """Create a new discovery job."""
         # Validate provider type
@@ -140,6 +199,7 @@ class DiscoveryService:
             "gcp",
             "azure",
             "kubernetes",
+            "vultr",
             "fleetdm",
             "network",
             "http_screenshot",
@@ -150,22 +210,22 @@ class DiscoveryService:
                 f"Invalid provider: {provider}. Must be one of {valid_providers}"
             )
 
-        # Store organization_id and description in config for now
-        # (until schema migration adds these columns)
-        job_config = dict(config)
-        if organization_id:
+        # Store organization_id and description in config_json (matching live table columns)
+        job_config = dict(config or {})
+        if organization_id is not None:
             job_config["_organization_id"] = organization_id
-        if description:
+        if description is not None:
             job_config["_description"] = description
 
         # Create job
         now = datetime.now(UTC)
+        resolved_interval = schedule_interval if schedule_interval is not None else 3600
         job_id = self.db.discovery_jobs.insert(
             name=name,
             provider=provider.lower(),
-            enabled=True,
+            enabled=enabled,
             config_json=job_config,
-            schedule_interval=schedule_interval or 3600,
+            schedule_interval=resolved_interval,
             created_at=now,
             updated_at=now,
         )
@@ -189,19 +249,46 @@ class DiscoveryService:
         if not job:
             raise Exception(f"Discovery job not found: {job_id}")
 
-        update_data = {}
+        existing_cfg = _parse_json_dict(getattr(job, "config_json", None))
+        update_data: dict[str, Any] = {}
         if name is not None:
             update_data["name"] = name
-        if config is not None:
-            update_data["config_json"] = config
         if schedule_interval is not None:
             update_data["schedule_interval"] = schedule_interval
-        if description is not None:
-            update_data["description"] = description
         if enabled is not None:
             update_data["enabled"] = enabled
 
+        if config is not None or description is not None:
+            if config is not None:
+                merged_cfg = dict(config)
+                if (
+                    "_organization_id" not in merged_cfg
+                    or merged_cfg.get("_organization_id") is None
+                ) and "_organization_id" in existing_cfg:
+                    merged_cfg["_organization_id"] = existing_cfg["_organization_id"]
+                if (
+                    description is None
+                    and "_description" not in merged_cfg
+                    and "_description" in existing_cfg
+                ):
+                    merged_cfg["_description"] = existing_cfg["_description"]
+                for secret_key in _DISCOVERY_SENSITIVE_FIELDS:
+                    if (
+                        secret_key in existing_cfg
+                        and not _is_blank_or_redacted_secret(existing_cfg[secret_key])
+                        and _is_blank_or_redacted_secret(merged_cfg.get(secret_key))
+                    ):
+                        merged_cfg[secret_key] = existing_cfg[secret_key]
+            else:
+                merged_cfg = dict(existing_cfg)
+
+            if description is not None:
+                merged_cfg["_description"] = description
+
+            update_data["config_json"] = merged_cfg
+
         if update_data:
+            update_data["updated_at"] = datetime.now(UTC)
             self.db(self.db.discovery_jobs.id == job_id).update(**update_data)
             self.db.commit()
 
@@ -1959,24 +2046,17 @@ class DiscoveryService:
         sanitized = dict(job)
 
         # Mask sensitive config fields
-        if "config_json" in sanitized and sanitized["config_json"]:
-            config = dict(sanitized["config_json"])
+        if "config_json" in sanitized and sanitized["config_json"] is not None:
+            config = _parse_json_dict(sanitized["config_json"])
 
-            sensitive_fields = [
-                "access_key_id",
-                "secret_access_key",
-                "credentials_json",
-                "token",
-                "api_token",
-                "api_key",
-                "fleetdm_api_token",
-                "client_secret",
-                "kubeconfig",
-            ]
-
-            for field in sensitive_fields:
-                if field in config:
+            for field in _DISCOVERY_SENSITIVE_FIELDS:
+                if field in config and not _is_blank_or_redacted_secret(config[field]):
                     config[field] = "***REDACTED***"
+
+            if "_organization_id" in config and "organization_id" not in sanitized:
+                sanitized["organization_id"] = config["_organization_id"]
+            if "_description" in config and "description" not in sanitized:
+                sanitized["description"] = config["_description"]
 
             sanitized["config_json"] = config
 
