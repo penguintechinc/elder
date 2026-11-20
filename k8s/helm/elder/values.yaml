@@ -367,11 +367,9 @@ svc-scanning:
     sizeLimit: "1Gi"
   tmpStorage:
     sizeLimit: "512Mi"
-  # ROOT CAPABILITY EXCEPTION (approved): masscan (services/svc-scanning/src/scanners/network.rs)
-  # requires CAP_NET_RAW for raw-socket SYN scanning. Process still runs as
-  # non-root UID 1000 with every other capability dropped and a read-only
-  # root filesystem. See services/svc-scanning/Dockerfile for the matching Docker-side
-  # documentation of this exception.
+  # Runs unprivileged under PodSecurity Admission `restricted` (capabilities
+  # dropped to ALL). Network discovery defaults to native async `tcp_connect`;
+  # raw-socket `masscan` SYN scans require opting in on a non-restricted namespace.
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -380,8 +378,6 @@ svc-scanning:
     capabilities:
       drop:
         - ALL
-      add:
-        - NET_RAW
 
 # Integrations Service (Rust data-plane CronJob)
 svc-integrations:
