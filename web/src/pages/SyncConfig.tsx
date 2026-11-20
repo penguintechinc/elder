@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -229,7 +229,15 @@ function getApiErrorMessage(err: unknown, fallback: string): string {
   );
 }
 
-export default function SyncConfig() {
+export interface SyncConfigProps {
+  embedded?: boolean;
+  openCreateSignal?: number;
+}
+
+export default function SyncConfig({
+  embedded = false,
+  openCreateSignal = 0,
+}: SyncConfigProps) {
   const queryClient = useQueryClient();
 
   const [showModal, setShowModal] = useState(false);
@@ -411,18 +419,32 @@ export default function SyncConfig() {
     },
   });
 
-  const handleOpenCreate = (platform: SyncPlatform = "github") => {
-    setEditingConfig(null);
-    setFormState({
-      ...INITIAL_FORM,
-      platform,
-      elder_organization_id: organizations[0]
-        ? String(organizations[0].id)
-        : "",
-    });
-    setFormError(null);
-    setShowModal(true);
-  };
+  const defaultOrgId = organizations[0] ? String(organizations[0].id) : "";
+
+  const handleOpenCreate = useCallback(
+    (platform: SyncPlatform = "github") => {
+      setEditingConfig(null);
+      setFormState({
+        ...INITIAL_FORM,
+        platform,
+        elder_organization_id: defaultOrgId,
+      });
+      setFormError(null);
+      setShowModal(true);
+    },
+    [defaultOrgId],
+  );
+
+  const lastCreateSignalRef = useRef(0);
+  useEffect(() => {
+    if (
+      openCreateSignal > 0 &&
+      openCreateSignal !== lastCreateSignalRef.current
+    ) {
+      lastCreateSignalRef.current = openCreateSignal;
+      handleOpenCreate("github");
+    }
+  }, [openCreateSignal, handleOpenCreate]);
 
   const handleOpenEdit = (cfg: SyncConfigItem) => {
     setEditingConfig(cfg);
@@ -734,51 +756,97 @@ export default function SyncConfig() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white">
-            GitHub & Jira Integrations
-          </h1>
-          <p className="mt-1 text-slate-400">
-            Configure two-way sync across Issues, Milestones, Projects, and
-            Labels
-          </p>
+      {embedded ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">
+              Work Management Sync
+            </h2>
+            <p className="mt-0.5 text-sm text-slate-400">
+              Two-way sync across Issues, Milestones, Projects, and Labels
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/issues"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Issues
+            </Link>
+            <Link
+              to="/milestones"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Milestones
+            </Link>
+            <Link
+              to="/projects"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Projects
+            </Link>
+            <Link
+              to="/labels"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Labels
+            </Link>
+            <Button
+              onClick={() => handleOpenCreate("github")}
+              data-testid="add-sync-config-btn"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Integration
+            </Button>
+          </div>
         </div>
+      ) : (
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-white">
+              GitHub & Jira Integrations
+            </h1>
+            <p className="mt-1 text-slate-400">
+              Configure two-way sync across Issues, Milestones, Projects, and
+              Labels
+            </p>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/issues"
-            className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            Issues
-          </Link>
-          <Link
-            to="/milestones"
-            className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            Milestones
-          </Link>
-          <Link
-            to="/projects"
-            className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            Projects
-          </Link>
-          <Link
-            to="/labels"
-            className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            Labels
-          </Link>
-          <Button
-            onClick={() => handleOpenCreate("github")}
-            data-testid="add-sync-config-btn"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Integration
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/issues"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Issues
+            </Link>
+            <Link
+              to="/milestones"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Milestones
+            </Link>
+            <Link
+              to="/projects"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Projects
+            </Link>
+            <Link
+              to="/labels"
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            >
+              Labels
+            </Link>
+            <Button
+              onClick={() => handleOpenCreate("github")}
+              data-testid="add-sync-config-btn"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Integration
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Action Feedback Banner */}
       {actionBanner && (

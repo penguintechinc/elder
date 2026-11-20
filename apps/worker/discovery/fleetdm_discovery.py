@@ -10,13 +10,13 @@ from typing import Any
 
 import httpx
 
-from apps.worker.connectors.fleetdm_connector import (
+from apps.worker.discovery.base import BaseDiscoveryProvider
+from shared.fleetdm_helpers import (
     _cvss_to_severity,
     _extract_safe_mdm,
     _parse_retry_after,
     _safe_json,
 )
-from apps.worker.discovery.base import BaseDiscoveryProvider
 
 logger = logging.getLogger(__name__)
 

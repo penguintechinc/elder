@@ -188,6 +188,117 @@ export interface UpdateSyncConfigPayload {
   config_json?: Record<string, unknown>;
 }
 
+export type CloudDiscoveryProvider =
+  | "aws"
+  | "gcp"
+  | "azure"
+  | "kubernetes"
+  | "vultr";
+
+export type DiscoveryProviderType =
+  | CloudDiscoveryProvider
+  | "fleetdm"
+  | "network"
+  | "http_screenshot"
+  | "banner";
+
+export interface DiscoveryJobItem {
+  id: number;
+  name: string;
+  provider: string;
+  config_json: Record<string, unknown> | null;
+  schedule_interval: number;
+  enabled: boolean;
+  organization_id?: number;
+  description?: string | null;
+  credential_type?: string | null;
+  credential_id?: number | null;
+  credential_mapping?: Record<string, unknown> | null;
+  last_run_at?: string | null;
+  next_run_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface DiscoveryJobTestResult {
+  job_id: number;
+  success: boolean;
+  tested_at: string;
+  auth_method?: string;
+  identity?: {
+    account?: string;
+    arn?: string;
+    user_id?: string;
+  };
+  error?: string;
+}
+
+export interface DiscoveryJobHistoryItem {
+  id: number;
+  job_id: number;
+  started_at: string;
+  completed_at?: string | null;
+  status: string;
+  entities_discovered: number;
+  entities_created?: number;
+  entities_updated?: number;
+  error_message?: string | null;
+  results_json?: Record<string, unknown> | null;
+}
+
+export type IAMProviderType = "aws_iam" | "gcp_iam" | "kubernetes";
+
+export interface IAMProviderItem {
+  id: number;
+  name: string;
+  provider_type: IAMProviderType | string;
+  config_json: Record<string, unknown> | null;
+  organization_id: number;
+  enabled: boolean;
+  description?: string | null;
+  last_sync_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface IAMProviderTestResult {
+  provider_id: number;
+  success: boolean;
+  tested_at: string;
+  error?: string;
+}
+
+export interface IAMProviderSyncResult {
+  users_synced?: number;
+  roles_synced?: number;
+  policies_synced?: number;
+  errors?: string[];
+}
+
+export interface GoogleWorkspaceProviderItem {
+  id: number;
+  name: string;
+  domain: string;
+  admin_email: string;
+  organization_id: number;
+  enabled: boolean;
+  customer_id?: string | null;
+  description?: string | null;
+  has_credentials?: boolean;
+  credentials_json?: string;
+  last_sync_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface GoogleWorkspaceTestResult {
+  success: boolean;
+  customer_id?: string;
+  domains?: Array<{ domainName?: string }>;
+  message?: string;
+  error?: string;
+}
+
 class ApiClient {
   private client: AxiosInstance;
   private isRefreshing = false;
@@ -1607,12 +1718,15 @@ class ApiClient {
   }
 
   // IAM Integration
-  async getIAMProviders(params?: { organization_id?: number }) {
+  async getIAMProviders(params?: {
+    organization_id?: number;
+    enabled_only?: boolean;
+  }): Promise<{ providers: IAMProviderItem[]; count?: number }> {
     const response = await this.client.get("/iam/providers", { params });
     return response.data;
   }
 
-  async getIAMProvider(id: number) {
+  async getIAMProvider(id: number): Promise<IAMProviderItem> {
     const response = await this.client.get(`/iam/providers/${id}`);
     return response.data;
   }
@@ -1623,7 +1737,7 @@ class ApiClient {
     organization_id: number;
     config: Record<string, unknown>;
     description?: string;
-  }) {
+  }): Promise<IAMProviderItem> {
     const response = await this.client.post("/iam/providers", data);
     return response.data;
   }
@@ -1635,14 +1749,25 @@ class ApiClient {
       config: Record<string, unknown>;
       description: string;
       enabled: boolean;
+      organization_id: number;
     }>,
-  ) {
+  ): Promise<IAMProviderItem> {
     const response = await this.client.put(`/iam/providers/${id}`, data);
     return response.data;
   }
 
-  async deleteIAMProvider(id: number) {
+  async deleteIAMProvider(id: number): Promise<{ message: string }> {
     const response = await this.client.delete(`/iam/providers/${id}`);
+    return response.data;
+  }
+
+  async testIAMProvider(id: number): Promise<IAMProviderTestResult> {
+    const response = await this.client.post(`/iam/providers/${id}/test`);
+    return response.data;
+  }
+
+  async syncIAMProvider(id: number): Promise<IAMProviderSyncResult> {
+    const response = await this.client.post(`/iam/providers/${id}/sync`);
     return response.data;
   }
 
@@ -1670,13 +1795,15 @@ class ApiClient {
   // Cloud Discovery
   async getDiscoveryJobs(params?: {
     organization_id?: number;
+    provider?: string;
+    enabled?: boolean;
     status?: string;
-  }) {
+  }): Promise<{ jobs: DiscoveryJobItem[]; count?: number }> {
     const response = await this.client.get("/discovery/jobs", { params });
     return response.data;
   }
 
-  async getDiscoveryJob(id: number) {
+  async getDiscoveryJob(id: number): Promise<DiscoveryJobItem> {
     const response = await this.client.get(`/discovery/jobs/${id}`);
     return response.data;
   }
@@ -1687,16 +1814,29 @@ class ApiClient {
     organization_id: number;
     config: Record<string, unknown>;
     schedule?: string;
+    schedule_interval?: number;
+    description?: string;
     enabled?: boolean;
-  }) {
+  }): Promise<DiscoveryJobItem> {
     // Map frontend field names to backend field names
+    const parsedSchedule =
+      data.schedule_interval !== undefined
+        ? data.schedule_interval
+        : data.schedule
+          ? parseInt(data.schedule, 10)
+          : undefined;
     const payload = {
       name: data.name,
       provider: data.provider_type, // Backend expects 'provider' not 'provider_type'
       organization_id: data.organization_id,
       config: data.config,
-      schedule_interval: data.schedule ? parseInt(data.schedule) : undefined,
-      description: data.name, // Use name as description if not provided
+      schedule_interval:
+        parsedSchedule !== undefined && !Number.isNaN(parsedSchedule)
+          ? parsedSchedule
+          : undefined,
+      description:
+        data.description !== undefined ? data.description : data.name,
+      enabled: data.enabled,
     };
     const response = await this.client.post("/discovery/jobs", payload);
     return response.data;
@@ -1707,16 +1847,22 @@ class ApiClient {
     data: Partial<{
       name: string;
       config: Record<string, unknown>;
-      schedule: string;
+      schedule_interval: number;
+      description: string;
       enabled: boolean;
     }>,
-  ) {
+  ): Promise<DiscoveryJobItem> {
     const response = await this.client.put(`/discovery/jobs/${id}`, data);
     return response.data;
   }
 
-  async deleteDiscoveryJob(id: number) {
+  async deleteDiscoveryJob(id: number): Promise<{ message: string }> {
     const response = await this.client.delete(`/discovery/jobs/${id}`);
+    return response.data;
+  }
+
+  async testDiscoveryJob(id: number): Promise<DiscoveryJobTestResult> {
+    const response = await this.client.post(`/discovery/jobs/${id}/test`);
     return response.data;
   }
 
@@ -1725,20 +1871,28 @@ class ApiClient {
     return response.data;
   }
 
-  async getDiscoveryJobHistory(jobId: number) {
+  async getDiscoveryJobHistory(jobId: number): Promise<{
+    history: DiscoveryJobHistoryItem[];
+    runs?: DiscoveryJobHistoryItem[];
+    count?: number;
+  }> {
     const response = await this.client.get(`/discovery/jobs/${jobId}/history`);
     return response.data;
   }
 
   // Google Workspace
-  async getGoogleWorkspaceProviders(params?: { organization_id?: number }) {
+  async getGoogleWorkspaceProviders(params?: {
+    organization_id?: number;
+  }): Promise<{ providers: GoogleWorkspaceProviderItem[]; count?: number }> {
     const response = await this.client.get("/google-workspace/providers", {
       params,
     });
     return response.data;
   }
 
-  async getGoogleWorkspaceProvider(id: number) {
+  async getGoogleWorkspaceProvider(
+    id: number,
+  ): Promise<GoogleWorkspaceProviderItem> {
     const response = await this.client.get(`/google-workspace/providers/${id}`);
     return response.data;
   }
@@ -1746,11 +1900,12 @@ class ApiClient {
   async createGoogleWorkspaceProvider(data: {
     name: string;
     organization_id: number;
+    domain?: string;
     customer_id: string;
     admin_email: string;
-    service_account_json: Record<string, unknown>;
+    service_account_json: Record<string, unknown> | string;
     description?: string;
-  }) {
+  }): Promise<GoogleWorkspaceProviderItem> {
     const response = await this.client.post(
       "/google-workspace/providers",
       data,
@@ -1762,13 +1917,14 @@ class ApiClient {
     id: number,
     data: Partial<{
       name: string;
+      domain: string;
       customer_id: string;
       admin_email: string;
-      service_account_json: Record<string, unknown>;
+      service_account_json: Record<string, unknown> | string;
       description: string;
       enabled: boolean;
     }>,
-  ) {
+  ): Promise<GoogleWorkspaceProviderItem> {
     const response = await this.client.put(
       `/google-workspace/providers/${id}`,
       data,
@@ -1776,14 +1932,18 @@ class ApiClient {
     return response.data;
   }
 
-  async deleteGoogleWorkspaceProvider(id: number) {
+  async deleteGoogleWorkspaceProvider(
+    id: number,
+  ): Promise<{ message: string }> {
     const response = await this.client.delete(
       `/google-workspace/providers/${id}`,
     );
     return response.data;
   }
 
-  async testGoogleWorkspaceProvider(id: number) {
+  async testGoogleWorkspaceProvider(
+    id: number,
+  ): Promise<GoogleWorkspaceTestResult> {
     const response = await this.client.post(
       `/google-workspace/providers/${id}/test`,
     );

@@ -139,6 +139,7 @@ async def create_discovery_job():
             organization_id=data["organization_id"],
             schedule_interval=data.get("schedule_interval"),
             description=data.get("description"),
+            enabled=bool(data.get("enabled", True)),
         )
 
         return jsonify(job), 201
