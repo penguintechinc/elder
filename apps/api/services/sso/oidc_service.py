@@ -16,6 +16,8 @@ import requests
 from authlib.integrations.requests_client import OAuth2Session
 from quart import current_app
 
+from apps.api.services.sso.idp_access import normalize_attribute_mappings
+
 
 class OIDCService:
     """OpenID Connect authentication service."""
@@ -106,7 +108,9 @@ class OIDCService:
             "oidc_response_type": config.oidc_response_type or "code",
             "oidc_token_endpoint_auth_method": config.oidc_token_endpoint_auth_method
             or "client_secret_basic",
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }

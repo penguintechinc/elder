@@ -1301,7 +1301,10 @@ class TestFailuresNeverLeakSecrets:
         raw = (await resp.get_data()).decode()
         assert resp.status_code == 400, raw
         body = json.loads(raw)
-        assert body["error"] == "Validation failed"
+        # regression: gh-313 -- error includes failing field name(s)
+        expected_field = next(iter(bad))
+        assert body["error"].startswith("Validation failed:")
+        assert expected_field in body["error"]
         assert body["validation_errors"]
         for err in body["validation_errors"]:
             assert set(err) == {"field", "type", "message"}
@@ -1655,3 +1658,276 @@ class TestResponseSchemaBoundary:
         secret_prop = request_schema["properties"]["oidc_client_secret"]
         assert "writeOnly" in json.dumps(secret_prop)
         assert "password" in json.dumps(secret_prop)
+
+
+class TestIdpConfigGh313Followups:
+    """Regression tests for gh-313 SSO IdP CRUD follow-ups."""
+
+    @pytest.mark.asyncio
+    async def test_validation_400_includes_field_names_in_error(
+        self, async_client, world
+    ):
+        """regression: gh-313 -- 400 validation error includes failing field names."""
+        resp = await async_client.post(
+            "/api/v1/sso/idp",
+            json={"idp_type": "invalid-proto", "default_role": ""},
+            headers=world.auth("a_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400, raw
+        body = json.loads(raw)
+        assert body["error"].startswith("Validation failed:")
+        for expected_field in ("name", "idp_type", "default_role"):
+            assert expected_field in body["error"]
+        assert "invalid-proto" not in raw
+        assert isinstance(body["validation_errors"], list)
+        assert len(body["validation_errors"]) >= 3
+
+    @pytest.mark.parametrize(
+        ("raw_mappings", "expected"),
+        [
+            (None, {}),
+            (
+                '{"email": "email", "full_name": "name"}',
+                {"email": "email", "full_name": "name"},
+            ),
+            ("[1, 2, 3]", {}),
+            ("not-valid-json", {}),
+            (["a", "b"], {}),
+            (42, {}),
+            (True, {}),
+        ],
+        ids=[
+            "none",
+            "json-dict-str",
+            "json-list-str",
+            "bad-json-str",
+            "list",
+            "int",
+            "bool",
+        ],
+    )
+    def test_legacy_non_dict_attribute_mappings_normalized_on_read(
+        self, raw_mappings, expected
+    ):
+        """regression: gh-313 -- legacy non-dict attribute_mappings never crash read."""
+        row = SimpleNamespace(
+            id=10,
+            tenant_id=2,
+            idp_type="saml",
+            name="legacy-idp",
+            attribute_mappings=raw_mappings,
+            jit_provisioning_enabled=True,
+            default_role="reader",
+            is_active=True,
+            entity_id="https://legacy.example/saml",
+            metadata_url=None,
+            sso_url=None,
+            slo_url=None,
+            certificate=None,
+            oidc_client_id=None,
+            oidc_client_secret=None,
+            oidc_issuer_url=None,
+            oidc_scopes=None,
+            oidc_response_type=None,
+            oidc_token_endpoint_auth_method=None,
+        )
+        view_dict = IdPConfigView.from_record(row).to_dict()
+        assert view_dict["attribute_mappings"] == expected
+
+        # Direct response schema validation also coerces non-dict values safely.
+        raw_payload = {**view_dict, "attribute_mappings": raw_mappings}
+        validated = IdPConfigResponse.model_validate(raw_payload)
+        assert validated.attribute_mappings == expected
+
+    @pytest.mark.asyncio
+    async def test_list_endpoint_survives_legacy_non_dict_attribute_mappings(
+        self, app, async_client, world
+    ):
+        """regression: gh-313 -- GET /api/v1/sso/idp returns 200 even with legacy non-dict row."""
+        async with app.app_context():
+            db = current_app.db
+            db(db.idp_configurations.id == world.a_saml).update(
+                attribute_mappings=["legacy", "non-dict"]
+            )
+            db.commit()
+
+        resp = await async_client.get("/api/v1/sso/idp", headers=world.auth("a_admin"))
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 200, raw
+        items = json.loads(raw)
+        assert isinstance(items, list)
+        row = next(item for item in items if item["id"] == world.a_saml)
+        assert row["attribute_mappings"] == {}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad_tenant_id", [99999999, 0, -5])
+    async def test_global_admin_post_nonexistent_tenant_returns_404(
+        self, app, async_client, world, bad_tenant_id
+    ):
+        """regression: gh-313 -- global-admin POST with nonexistent tenant_id returns 404, not 500."""
+        resp = await async_client.post(
+            "/api/v1/sso/idp",
+            json={
+                "name": f"{world.prefix}-missing-tenant",
+                "idp_type": "saml",
+                "tenant_id": bad_tenant_id,
+            },
+            headers=world.auth("global_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 404, raw
+        body = json.loads(raw)
+        assert body == {"error": "Tenant not found"}
+        assert str(bad_tenant_id) not in raw
+
+    @pytest.mark.asyncio
+    async def test_global_admin_post_fk_violation_race_returns_404(
+        self, app, async_client, world, mocker
+    ):
+        """regression: gh-313 -- FK violation during insert maps cleanly to 404, not 500."""
+        fk_exc = RuntimeError("FOREIGN KEY constraint failed")
+        fk_exc.pgcode = "23503"  # type: ignore[attr-defined]
+        async with app.app_context():
+            table_cls = type(current_app.db.idp_configurations)
+        mocker.patch.object(table_cls, "insert", side_effect=fk_exc)
+        resp = await async_client.post(
+            "/api/v1/sso/idp",
+            json={
+                "name": f"{world.prefix}-fk-race",
+                "idp_type": "saml",
+                "tenant_id": world.tenant_a,
+            },
+            headers=world.auth("global_admin"),
+        )
+
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 404, raw
+        assert json.loads(raw) == {"error": "Tenant not found"}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "bad_email_claim", ["preferred_username", "", "Email", "upn"]
+    )
+    async def test_oidc_create_rejects_non_email_attribute_mapping(
+        self, app, async_client, world, bad_email_claim
+    ):
+        """regression: gh-313 -- OIDC create rejects attribute_mappings.email != 'email'."""
+        before = await _count_configs(app, world.tenant_a)
+        resp = await async_client.post(
+            "/api/v1/sso/idp",
+            json={
+                "name": f"{world.prefix}-oidc-bad-email",
+                "idp_type": "oidc",
+                "attribute_mappings": {"email": bad_email_claim},
+            },
+            headers=world.auth("a_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400, raw
+        body = json.loads(raw)
+        assert "attribute_mappings" in body["error"]
+        assert body["validation_errors"][0]["field"] == "attribute_mappings"
+        if bad_email_claim:
+            assert bad_email_claim not in raw
+        assert await _count_configs(app, world.tenant_a) == before
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "mappings",
+        [
+            None,
+            {},
+            {"full_name": "name"},
+            {"email": "email"},
+            {"email": "email", "full_name": "name"},
+        ],
+    )
+    async def test_oidc_create_allows_valid_or_omitted_email_mapping(
+        self, async_client, world, mappings
+    ):
+        """regression: gh-313 -- OIDC create accepts omitted or 'email' mapping."""
+        payload: dict[str, Any] = {
+            "name": f"{world.prefix}-oidc-ok-email",
+            "idp_type": "oidc",
+        }
+        if mappings is not None:
+            payload["attribute_mappings"] = mappings
+        resp = await async_client.post(
+            "/api/v1/sso/idp", json=payload, headers=world.auth("a_admin")
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 201, raw
+        created = json.loads(raw)
+        assert created["attribute_mappings"] == (mappings or {})
+
+    @pytest.mark.asyncio
+    async def test_saml_create_and_update_allow_custom_email_mapping(
+        self, async_client, world
+    ):
+        """regression: gh-313 -- SAML configs are not restricted to attribute_mappings.email == 'email'."""
+        create_resp = await async_client.post(
+            "/api/v1/sso/idp",
+            json={
+                "name": f"{world.prefix}-saml-custom-email",
+                "idp_type": "saml",
+                "attribute_mappings": {"email": "mail"},
+            },
+            headers=world.auth("a_admin"),
+        )
+        assert create_resp.status_code == 201, (await create_resp.get_data()).decode()
+        created = json.loads((await create_resp.get_data()).decode())
+        assert created["attribute_mappings"] == {"email": "mail"}
+
+        update_resp = await async_client.put(
+            f"/api/v1/sso/idp/{created['id']}",
+            json={"attribute_mappings": {"email": "urn:oid:0.9.2342.19200300.100.1.3"}},
+            headers=world.auth("a_admin"),
+        )
+        assert update_resp.status_code == 200, (await update_resp.get_data()).decode()
+
+    @pytest.mark.asyncio
+    async def test_oidc_update_rejects_non_email_attribute_mapping(
+        self, app, async_client, world
+    ):
+        """regression: gh-313 -- OIDC update rejects attribute_mappings.email != 'email'."""
+        before = await _row(app, world.b_oidc)
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"attribute_mappings": {"email": "preferred_username"}},
+            headers=world.auth("b_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 400, raw
+        body = json.loads(raw)
+        assert "attribute_mappings" in body["error"]
+        assert body["validation_errors"][0]["field"] == "attribute_mappings"
+        assert "preferred_username" not in raw
+        assert await _row(app, world.b_oidc) == before
+
+    @pytest.mark.asyncio
+    async def test_oidc_update_accepts_email_mapping(self, async_client, world):
+        """regression: gh-313 -- OIDC update accepts attribute_mappings.email == 'email'."""
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"attribute_mappings": {"email": "email", "full_name": "name"}},
+            headers=world.auth("b_admin"),
+        )
+        raw = (await resp.get_data()).decode()
+        assert resp.status_code == 200, raw
+        assert json.loads(raw)["attribute_mappings"] == {
+            "email": "email",
+            "full_name": "name",
+        }
+
+    @pytest.mark.asyncio
+    async def test_foreign_oidc_update_with_bad_email_mapping_still_404(
+        self, async_client, world
+    ):
+        """regression: gh-313 -- tenant-ownership 404 runs before OIDC mapping 400."""
+        resp = await async_client.put(
+            f"/api/v1/sso/idp/{world.b_oidc}",
+            json={"attribute_mappings": {"email": "preferred_username"}},
+            headers=world.auth("a_admin"),
+        )
+        assert resp.status_code == 404

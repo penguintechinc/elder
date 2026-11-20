@@ -29,9 +29,10 @@ from apps.api.services.sso.idp_access import (
     IdPCaller,
     IdPForbiddenError,
     IdPNotFoundError,
+    IdPTenantNotFoundError,
+    IdPValidationError,
 )
 from apps.api.services.sso.idp_validation import (
-    IdPValidationError,
     validate_https_url,
     validate_x509_certificate,
 )
@@ -180,6 +181,24 @@ def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> 
             "idp_global_admin": caller.is_global_admin,
         },
     )
+    if isinstance(exc, IdPValidationError):
+        return (
+            jsonify(
+                {
+                    "error": f"Validation failed: {exc.field}: {exc.message}",
+                    "validation_errors": [
+                        {
+                            "field": exc.field,
+                            "type": exc.error_type,
+                            "message": exc.message,
+                        }
+                    ],
+                }
+            ),
+            400,
+        )
+    if isinstance(exc, IdPTenantNotFoundError):
+        return ApiResponse.not_found("Tenant")
     if isinstance(exc, IdPNotFoundError):
         return ApiResponse.not_found("IdP configuration", config_id)
     return ApiResponse.forbidden(str(exc))
@@ -219,7 +238,11 @@ def _validation_error_response(exc: ValidationError) -> tuple:
         }
         for err in exc.errors()
     ]
-    return jsonify({"error": "Validation failed", "validation_errors": errors}), 400
+    # regression: gh-313 -- surface field names & static messages in `error` so
+    # SPA error toasts show which field(s) failed instead of bare "Validation failed".
+    parts = list(dict.fromkeys(f"{e['field']}: {e['message']}" for e in errors))
+    summary = f"Validation failed: {'; '.join(parts)}" if parts else "Validation failed"
+    return jsonify({"error": summary, "validation_errors": errors}), 400
 
 
 @bp.route("/idp", methods=["GET"])
@@ -271,6 +294,7 @@ async def list_idp_configs():
 @validate_response(IdPConfigResponse, 201)
 @document_response(IdPErrorResponse, 400)
 @document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
 async def create_idp_config():
     """Create a new IdP configuration.
 
@@ -342,8 +366,6 @@ async def create_idp_config():
                 **fields,
             )
         )
-    except IdPValidationError as exc:
-        return ApiResponse.bad_request(str(exc))
     except IdPAccessError as exc:
         return _idp_error_response(exc, "create", caller)
     except Exception as exc:
@@ -393,8 +415,6 @@ async def update_idp_config(config_id):
         result = await run_in_threadpool(
             SAMLService.update_idp_config, config_id, caller, updates
         )
-    except IdPValidationError as exc:
-        return ApiResponse.bad_request(str(exc))
     except IdPAccessError as exc:
         return _idp_error_response(exc, "update", caller)
     except Exception as exc:

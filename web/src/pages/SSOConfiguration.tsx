@@ -11,9 +11,7 @@ import type { IdPConfiguration } from '@/types'
 
 type ApiError = { response?: { data?: { error?: string }, status?: number }, message?: string }
 
-interface IdPConfigsResponse {
-  items: IdPConfiguration[]
-}
+type IdPConfigsResponse = IdPConfiguration[] | { items: IdPConfiguration[] }
 
 const idpFields: FormField[] = [
   {
@@ -95,7 +93,10 @@ export default function SSOConfiguration() {
     queryKey: ['idp-configs'],
     queryFn: () => api.getIdPConfigs() as Promise<IdPConfigsResponse>,
   })
-  const idpConfigs = idpResponse?.items ?? []
+  // regression: gh-313 -- GET /api/v1/sso/idp returns a bare array
+  const idpConfigs = Array.isArray(idpResponse)
+    ? idpResponse
+    : (idpResponse?.items ?? [])
 
   const createIdPMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.createIdPConfig(data as Parameters<typeof api.createIdPConfig>[0]),

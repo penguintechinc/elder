@@ -22,6 +22,8 @@ authenticated admin now goes through this module:
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -39,8 +41,78 @@ class IdPNotFoundError(IdPAccessError):
         self.config_id = config_id
 
 
+class IdPTenantNotFoundError(IdPAccessError):
+    """The requested owning tenant does not exist (404)."""
+
+    def __init__(self, tenant_id: int | None = None) -> None:
+        """Remember the requested tenant id for logging (never echoed in responses)."""
+        super().__init__("Tenant not found")
+        self.tenant_id = tenant_id
+
+
+class IdPValidationError(IdPAccessError, ValueError):
+    """Domain-level validation failure on an IdP configuration field (400)."""
+
+    def __init__(
+        self,
+        field: str,
+        message: str | None = None,
+        error_type: str = "value_error",
+    ) -> None:
+        """Record the failing field name and static error message (no user values)."""
+        if message is None:
+            resolved_field = "configuration"
+            resolved_message = field
+        else:
+            resolved_field = field
+            resolved_message = message
+        super().__init__(resolved_message)
+        self.field = resolved_field
+        self.message = resolved_message
+        self.error_type = error_type
+
+
 class IdPForbiddenError(IdPAccessError):
     """The caller attempted something their scope never permits (403)."""
+
+
+def normalize_attribute_mappings(value: Any) -> dict[str, Any]:
+    """Coerce legacy/malformed attribute_mappings values into a plain dict.
+
+    regression: gh-313 -- legacy rows may store None, a JSON-encoded string,
+    a list, or another non-dict value; never fail list/read endpoints on them.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (ValueError, TypeError):
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def validate_oidc_attribute_mappings(
+    idp_type: str | None, attribute_mappings: Any
+) -> None:
+    """Ensure OIDC configs do not remap the email claim away from ``"email"``.
+
+    regression: gh-313 -- remapping ``attribute_mappings.email`` on an OIDC IdP
+    could bind JIT provisioning to an unverified claim. Omitting ``email`` (or
+    setting it to ``"email"``) is allowed; any other value is rejected with 400.
+    """
+    if (
+        idp_type == "oidc"
+        and isinstance(attribute_mappings, Mapping)
+        and "email" in attribute_mappings
+        and attribute_mappings["email"] != "email"
+    ):
+        raise IdPValidationError(
+            field="attribute_mappings",
+            message="OIDC attribute_mappings.email must be 'email'",
+        )
 
 
 @dataclass(slots=True, frozen=True)
@@ -111,11 +183,7 @@ class IdPConfigView:
             tenant_id=record.tenant_id,
             idp_type=record.idp_type,
             name=record.name,
-            attribute_mappings=(
-                record.attribute_mappings
-                if isinstance(record.attribute_mappings, dict)
-                else {}
-            ),
+            attribute_mappings=normalize_attribute_mappings(record.attribute_mappings),
             jit_provisioning_enabled=bool(record.jit_provisioning_enabled),
             default_role=record.default_role,
             is_active=bool(record.is_active),
