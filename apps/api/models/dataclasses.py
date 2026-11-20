@@ -352,6 +352,8 @@ class IssueDTO:
     created_at: datetime
     updated_at: datetime
     closed_by_id: int | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
     due_date: datetime | None = None
     assignee_type: str | None = None
     channel: str | None = None
@@ -379,6 +381,8 @@ class CreateIssueRequest:
     organization_id: int | None = None
     is_incident: int = 0
     parent_issue_id: int | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 @dataclass(slots=True)
@@ -393,6 +397,8 @@ class UpdateIssueRequest:
     assignee_id: int | None = None
     is_incident: int | None = None
     parent_issue_id: int | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
 
 
 @dataclass(slots=True, frozen=True)

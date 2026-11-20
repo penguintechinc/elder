@@ -192,6 +192,9 @@ export interface Issue {
   first_response_at?: string;
   resolved_at?: string;
   parent_issue_id?: number;
+  start_date?: string | null;
+  end_date?: string | null;
+  due_date?: string | null;
   closed_at?: string;
   created_at: string;
   updated_at: string;

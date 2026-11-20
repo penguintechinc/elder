@@ -319,7 +319,19 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         comment="Parent issue id for sub-tasks (self-referential)",
     )
 
-    # Closure tracking
+    # Schedule and closure tracking
+    start_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Issue start date",
+    )
+
+    end_date = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Issue end date",
+    )
+
     due_date = Column(
         DateTime(timezone=True),
         nullable=True,

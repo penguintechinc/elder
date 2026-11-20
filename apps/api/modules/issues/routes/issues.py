@@ -147,6 +147,8 @@ class CreateIssueRequest(RequestModel):
     parent_issue_id: int | None = Field(
         default=None, ge=1, description="Parent issue id for sub-tasks"
     )
+    start_date: datetime | None = Field(default=None, description="Issue start date")
+    end_date: datetime | None = Field(default=None, description="Issue end date")
 
 
 class UpdateIssueRequest(RequestModel):
@@ -170,6 +172,8 @@ class UpdateIssueRequest(RequestModel):
         default=None, description="Universal free-form JSON metadata bag"
     )
     parent_issue_id: int | None = Field(default=None, ge=1)
+    start_date: datetime | None = Field(default=None, description="Issue start date")
+    end_date: datetime | None = Field(default=None, description="Issue end date")
 
 
 class CreateIssueCommentRequest(RequestModel):
@@ -373,6 +377,13 @@ async def create_issue(body: CreateIssueRequest):
     current_user_id = g.current_user.id
     redis_client = getattr(current_app, "redis_client", None)
 
+    if (
+        body.start_date is not None
+        and body.end_date is not None
+        and body.end_date < body.start_date
+    ):
+        return jsonify({"error": "end_date must be on or after start_date"}), 400
+
     def create():
         # Create issue
         now = datetime.now(UTC)
@@ -392,6 +403,8 @@ async def create_issue(body: CreateIssueRequest):
             category=body.category,
             metadata=body.metadata,
             parent_issue_id=body.parent_issue_id,
+            start_date=body.start_date,
+            end_date=body.end_date,
             tenant_id=tenant_id,
             village_id=_mint_village_id(tenant_id, redis_client),
             created_at=now,
@@ -624,6 +637,27 @@ async def update_issue(id: int, body: UpdateIssueRequest):
             update_fields["metadata"] = body.metadata
         if body.parent_issue_id is not None:
             update_fields["parent_issue_id"] = body.parent_issue_id
+        if "start_date" in body.model_fields_set:
+            update_fields["start_date"] = body.start_date
+        if "end_date" in body.model_fields_set:
+            update_fields["end_date"] = body.end_date
+
+        effective_start = (
+            update_fields["start_date"]
+            if "start_date" in update_fields
+            else getattr(issue, "start_date", None)
+        )
+        effective_end = (
+            update_fields["end_date"]
+            if "end_date" in update_fields
+            else getattr(issue, "end_date", None)
+        )
+        if (
+            effective_start is not None
+            and effective_end is not None
+            and effective_end < effective_start
+        ):
+            return None, "end_date must be on or after start_date", 400, False
 
         # Update issue (re-scoped to tenant for defense-in-depth). Guard the
         # empty-body case: penguin-dal's .update() with no kwargs emits an
