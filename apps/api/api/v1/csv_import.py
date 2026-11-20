@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
-from quart import Blueprint, Response, current_app, jsonify, request
+from quart import Blueprint, Response, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required, require_scope
+from apps.api.auth.decorators import login_required
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
@@ -20,7 +20,7 @@ bp = Blueprint("csv_import", __name__)
 MAX_CSV_ROWS = 1000
 MAX_CSV_BYTES = 5 * 1024 * 1024
 MAX_ERRORS_RETURNED = 50
-FORMULA_PREFIXES = ("=", "+", "@", "\t", "\r")
+FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
 def _safe_str(val: str | None, max_len: int = 512) -> tuple[str, str | None]:
@@ -92,7 +92,10 @@ def _parse_iso_datetime(val: str | None) -> tuple[datetime | None, str | None]:
     if not cleaned:
         return None, None
     try:
-        return datetime.fromisoformat(cleaned.replace("Z", "+00:00")), None
+        parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed, None
     except ValueError:
         return None, "must be a valid ISO-8601 date (YYYY-MM-DD) or datetime"
 
@@ -318,6 +321,17 @@ async def import_csv_resource(resource: str):
     spec = CSV_TEMPLATES.get(resource)
     if not spec:
         return ApiResponse.not_found("CSV import resource", resource)
+
+    # Enforce per-resource OIDC write scope (matches @require_scope)
+    required_scope = spec["scope"]
+    claims = getattr(g, "claims", {}) or {}
+    granted = set(claims.get("scope", []))
+    is_super = bool(
+        getattr(g, "current_user", None)
+        and getattr(g.current_user, "is_superuser", False)
+    )
+    if not is_super and required_scope not in granted:
+        return jsonify({"error": f"Missing required scope: '{required_scope}'"}), 403
 
     db = current_app.db
     tenant_id = get_current_tenant_id()
@@ -610,6 +624,7 @@ async def import_csv_resource(resource: str):
                             "software_type": stype,
                             "version": ver or None,
                             "description": desc or None,
+                            "is_active": True,
                             "created_at": now,
                             "updated_at": now,
                         }
@@ -662,6 +677,11 @@ async def import_csv_resource(resource: str):
 
         if errors:
             return 0, errors
+
+        if resource == "ai_resources":
+            from apps.api.modules.ai.routes import _ensure_ai_resources_table
+
+            _ensure_ai_resources_table(db)
 
         table = getattr(db, resource)
         for item in prepared:

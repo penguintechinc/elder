@@ -248,8 +248,18 @@ async def create_rotation():
                 "rotation_length_days and rotation_start_date required for weekly schedule",
                 400,
             )
+        raw_start = data["rotation_start_date"]
+        if isinstance(raw_start, str):
+            try:
+                parsed_start = datetime.date.fromisoformat(raw_start.strip()[:10])
+            except ValueError:
+                return ApiResponse.error(
+                    "rotation_start_date must be a valid ISO date (YYYY-MM-DD)", 400
+                )
+        else:
+            parsed_start = raw_start
         schedule_data["rotation_length_days"] = data["rotation_length_days"]
-        schedule_data["rotation_start_date"] = data["rotation_start_date"]
+        schedule_data["rotation_start_date"] = parsed_start
 
     elif schedule_type == "cron":
         if not data.get("schedule_cron"):
@@ -315,6 +325,7 @@ async def create_rotation():
                     order_index=idx,
                     is_active=True,
                     created_at=now,
+                    updated_at=now,
                 )
 
         db.commit()

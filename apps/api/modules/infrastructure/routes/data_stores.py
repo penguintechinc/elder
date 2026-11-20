@@ -362,13 +362,21 @@ async def get_data_store(id: int):
     tenant_id = get_current_tenant_id()
 
     # gh-237: 404 on cross-tenant id guesses instead of leaking existence
-    data_store = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.data_stores, id, tenant_id)
-    )
+    def fetch_store():
+        row = get_tenant_scoped(db, db.data_stores, id, tenant_id)
+        if not row:
+            return None, []
+        labels_by_name = _ensure_preseeded_data_labels(db)
+        labels_map = _hydrate_data_store_labels(db, [row], labels_by_name)
+        return row, labels_map.get(row.id, [])
+
+    data_store, store_labels = await run_in_threadpool(fetch_store)
     if not data_store:
         return ApiResponse.not_found("Data store", id)
 
-    return DataStoreResponse.model_validate(data_store), 200
+    return DataStoreResponse.model_validate(data_store).model_copy(
+        update={"labels": store_labels}
+    ), 200
 
 
 @bp.route("/<int:id>", methods=["PUT"])

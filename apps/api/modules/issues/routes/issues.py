@@ -41,6 +41,15 @@ bp = Blueprint("issues", __name__)
 logger = logging.getLogger(__name__)
 
 
+def _to_utc(dt: datetime | None) -> datetime | None:
+    """Normalize naive or aware datetime to UTC-aware for safe comparison/storage."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 def _lowercase_issue_casing(dto: IssueDTO) -> IssueDTO:
     """Normalize status, priority, issue_type to lowercase for API responses.
 
@@ -377,11 +386,9 @@ async def create_issue(body: CreateIssueRequest):
     current_user_id = g.current_user.id
     redis_client = getattr(current_app, "redis_client", None)
 
-    if (
-        body.start_date is not None
-        and body.end_date is not None
-        and body.end_date < body.start_date
-    ):
+    norm_start = _to_utc(body.start_date)
+    norm_end = _to_utc(body.end_date)
+    if norm_start is not None and norm_end is not None and norm_end < norm_start:
         return jsonify({"error": "end_date must be on or after start_date"}), 400
 
     def create():
@@ -403,8 +410,8 @@ async def create_issue(body: CreateIssueRequest):
             category=body.category,
             metadata=body.metadata,
             parent_issue_id=body.parent_issue_id,
-            start_date=body.start_date,
-            end_date=body.end_date,
+            start_date=norm_start,
+            end_date=norm_end,
             tenant_id=tenant_id,
             village_id=_mint_village_id(tenant_id, redis_client),
             created_at=now,
@@ -638,16 +645,16 @@ async def update_issue(id: int, body: UpdateIssueRequest):
         if body.parent_issue_id is not None:
             update_fields["parent_issue_id"] = body.parent_issue_id
         if "start_date" in body.model_fields_set:
-            update_fields["start_date"] = body.start_date
+            update_fields["start_date"] = _to_utc(body.start_date)
         if "end_date" in body.model_fields_set:
-            update_fields["end_date"] = body.end_date
+            update_fields["end_date"] = _to_utc(body.end_date)
 
-        effective_start = (
+        effective_start = _to_utc(
             update_fields["start_date"]
             if "start_date" in update_fields
             else getattr(issue, "start_date", None)
         )
-        effective_end = (
+        effective_end = _to_utc(
             update_fields["end_date"]
             if "end_date" in update_fields
             else getattr(issue, "end_date", None)
