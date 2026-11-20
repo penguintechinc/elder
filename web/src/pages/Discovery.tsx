@@ -43,6 +43,7 @@ const INTEGRATION_DISCOVERY_TYPES = [
   { value: "gcp", label: "GCP Discovery" },
   { value: "azure", label: "Azure Discovery" },
   { value: "kubernetes", label: "Kubernetes Discovery" },
+  { value: "fleetdm", label: "FleetDM Endpoint Discovery" },
 ];
 
 // Simple unauthenticated scans

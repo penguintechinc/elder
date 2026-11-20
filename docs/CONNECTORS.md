@@ -13,7 +13,7 @@ Elder Connectors are discovery integrations that automatically sync resources fr
 | [LDAP](#ldap-connector) | LDAP/Active Directory | Users, Groups, OUs |
 | [iBoss](#iboss-connector) | iBoss Cloud Security | Users, Groups, Policies, Connectors, Applications |
 | [vCenter](#vcenter-connector) | VMware vCenter | VMs, Hosts, Datastores, Clusters, Networks |
-| [FleetDM](#fleetdm-connector) | FleetDM | Hosts, Vulnerabilities, Policies, Software |
+| [FleetDM](#fleetdm-connector) | FleetDM (v4.95.0 / Fleet 5) | Fleets/Teams, Posture, Hosts, OS Versions, Software, CVEs, Policies, Labels, MDM Profiles, Scripts, Reports |
 
 ## Common Configuration
 
@@ -310,7 +310,7 @@ Read-only access to vCenter is sufficient:
 
 ## FleetDM Connector
 
-Syncs endpoints and security data from FleetDM.
+Syncs endpoint inventory, OS versions, software titles/versions, CVE vulnerabilities, compliance policies, labels, MDM posture/profiles, scripts, saved reports, and custom host vitals from FleetDM (Fleet v4.95.0 and Fleet 5 REST APIs, with automatic Fleet 4.x route fallback). All synced attributes are strictly PII-free (user emails, `device_mapping`, `end_users`, `author_email`/`author_name`, and encryption/recovery keys are never persisted).
 
 ### Configuration
 
@@ -318,32 +318,62 @@ Syncs endpoints and security data from FleetDM.
 FLEETDM_ENABLED=true
 FLEETDM_URL=https://fleet.example.com
 FLEETDM_API_TOKEN=<api-token>
+FLEETDM_VERIFY_SSL=true
+FLEETDM_SYNC_MDM=true
+FLEETDM_SYNC_LABELS=true
+FLEETDM_SYNC_OS_VERSIONS=true
+FLEETDM_SYNC_SCRIPTS_REPORTS=true
+FLEETDM_SYNC_HOST_DETAILS=false
+FLEETDM_PER_PAGE=100
 FLEETDM_SYNC_INTERVAL=3600
 ```
 
-### Resources Synced
+### API Endpoints Synced
 
-- **Compute**: Managed endpoints/hosts
-- **Security**: Vulnerabilities (CVEs), Compliance policies
-- **Software**: Installed software inventory across fleet
-- **Organizations**: Teams
+- **Configuration & Version**: `GET /api/v1/fleet/config`, `GET /api/v1/fleet/version`
+- **Fleets / Teams**: `GET /api/v1/fleet/fleets` (fallback: `/api/v1/fleet/teams`; graceful skip on Free 402/403)
+- **Posture Summaries**: `GET /api/v1/fleet/host_summary`, `/hosts/summary/mdm`, `/disk_encryption`, `/configuration_profiles/summary`
+- **Hosts**: `GET /api/v1/fleet/hosts?include_device_status=true` (plus optional `/hosts/{id}/certificates` and `/hosts/{id}/configuration_profiles` counts when `FLEETDM_SYNC_HOST_DETAILS=true`)
+- **OS & Software**: `GET /api/v1/fleet/os_versions`, `/software/versions` (fallback `/software`), `/software/titles`
+- **Vulnerabilities**: `GET /api/v1/fleet/vulnerabilities` and `/vulnerabilities/{cve}`
+- **Policies**: `GET /api/v1/fleet/policies` (Fleet 4.x fallback: `/global/policies`, `/fleets/{id}/policies`, `/teams/{id}/policies`)
+- **Labels, MDM & Automation**: `GET /api/v1/fleet/labels`, `/labels/{id}/hosts`, `/configuration_profiles`, `/reports` (fallback `/queries`), `/scripts`, `/custom_host_vitals`
 
-### Entity Types
+### Entity Types & Relationships
 
-| Resource | Elder Entity Type | Tags |
-|----------|-------------------|------|
-| Hosts | compute | fleetdm, endpoint, {platform} |
-| Vulnerabilities | security | fleetdm, vulnerability, {severity} |
-| Policies | security | fleetdm, policy, compliance |
-| Software | compute | fleetdm, software, application, {source} |
+| Resource | Entity Type | Sub-Type | External ID |
+|----------|-------------|----------|-------------|
+| Endpoint Posture | security | `endpoint_posture` | `fleetdm:posture` |
+| Hosts | compute | `endpoint` | `fleetdm:host:{id}` |
+| OS Versions | compute | `os_version` | `fleetdm:os:{id}` |
+| Software | compute | `software` | `fleetdm:software:{id}` |
+| Vulnerabilities | security | `vulnerability` | `fleetdm:vuln:{cve}` |
+| Policies | security | `policy` | `fleetdm:policy:{id}` |
+| Labels | compute | `fleet_label` | `fleetdm:label:{id}` |
+| MDM Profiles | security | `mdm_profile` | `fleetdm:profile:{uuid}` |
+| Reports / Queries | compute | `fleet_report` | `fleetdm:report:{id}` |
+| Scripts | compute | `fleet_script` | `fleetdm:script:{id}` |
+| Custom Host Vitals | compute | `fleet_custom_vital` | `fleetdm:vital:{id}` |
+
+**Relationships created:**
+- Vulnerability -> Host / Software / OS Version: `affects` (via `/hosts?vulnerability={cve}` and `/vulnerabilities/{cve}`)
+- Software -> Host: `installed_on` (via `/hosts?software_version_id={id}`)
+- Host -> Failing Policy: `fails_policy` (via `/hosts?policy_id={id}&policy_response=failing`)
+- Host -> Custom/Manual Label: `member_of` (via `/labels/{id}/hosts`)
 
 ### Vulnerability Severity Mapping
 
-FleetDM CVSS scores are mapped to severity levels:
+FleetDM CVSS scores are mapped to severity levels (nullable `cvss_score` maps to `unknown`):
 - **Critical**: CVSS >= 9.0
 - **High**: CVSS >= 7.0
 - **Medium**: CVSS >= 4.0
 - **Low**: CVSS < 4.0
+- **Unknown**: `cvss_score` is `null`
+
+### Discovery UI & Playbooks Integration
+
+- **UI Discovery Provider**: Select **FleetDM Endpoint Discovery** (`provider="fleetdm"`) under **Cloud Discovery** (`Discovery.tsx`) with JSON config `{"url": "https://fleet.example.com", "api_token": "<token>", "verify_ssl": true}`.
+- **Playbooks / Streams Manifest**: Defined in `apps/worker/streams/connectors/manifests/fleetdm.yaml` (JWT Bearer auth via `FLEETDM_API_TOKEN` and `FLEETDM_URL`), providing 3 webhook triggers, 19 read transforms, and 21 remediation/MDM/fleet actions.
 
 ---
 
@@ -392,7 +422,7 @@ Connectors run on configurable intervals (default: 1 hour) and update existing e
 Entities are matched using provider-specific IDs stored in attributes:
 - AWS: `aws_instance_id`, `aws_rds_id`, etc.
 - vCenter: `vcenter_vm_id`, `vcenter_host_id`, etc.
-- FleetDM: `fleetdm_host_id`, `cve`, etc.
+- FleetDM: `external_id` (`fleetdm:host:{id}`, `fleetdm:vuln:{cve}`, `fleetdm:software:{id}`, `fleetdm:policy:{id}`, etc.)
 
 ### Error Handling
 
