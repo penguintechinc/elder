@@ -17,6 +17,9 @@ from apps.api.services.sso.idp_access import (
     IdPConfigView,
     IdPForbiddenError,
     IdPNotFoundError,
+    IdPTenantNotFoundError,
+    normalize_attribute_mappings,
+    validate_oidc_attribute_mappings,
 )
 
 # Columns an admin may change through update_idp_config. ``tenant_id`` and
@@ -95,7 +98,9 @@ class SAMLService:
             "tenant_id": config.tenant_id,
             "idp_type": config.idp_type,
             "name": config.name,
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }
@@ -193,28 +198,55 @@ class SAMLService:
                 )
             owner_tenant_id = caller.tenant_id
 
-        config_id = db.idp_configurations.insert(
-            tenant_id=owner_tenant_id,
-            idp_type=idp_type,
-            name=name,
-            entity_id=entity_id,
-            metadata_url=metadata_url,
-            sso_url=sso_url,
-            slo_url=slo_url,
-            certificate=certificate,
-            oidc_client_id=oidc_client_id,
-            oidc_client_secret=oidc_client_secret,
-            oidc_issuer_url=oidc_issuer_url,
-            oidc_scopes=oidc_scopes or "openid profile email",
-            oidc_response_type=oidc_response_type or "code",
-            oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
-            or "client_secret_basic",
-            attribute_mappings=attribute_mappings or {},
-            jit_provisioning_enabled=jit_provisioning_enabled,
-            default_role=default_role,
-            is_active=True,
-        )
-        db.commit()
+        validate_oidc_attribute_mappings(idp_type, attribute_mappings)
+
+        # regression: gh-313 -- verify target tenant exists before insert so a
+        # global-admin POST with a nonexistent tenant_id returns 404 instead of
+        # a 500 foreign-key IntegrityError.
+        if owner_tenant_id is not None:
+            if (
+                owner_tenant_id <= 0
+                or db(db.tenants.id == owner_tenant_id).select(db.tenants.id).first()
+                is None
+            ):
+                raise IdPTenantNotFoundError(owner_tenant_id)
+
+        try:
+            config_id = db.idp_configurations.insert(
+                tenant_id=owner_tenant_id,
+                idp_type=idp_type,
+                name=name,
+                entity_id=entity_id,
+                metadata_url=metadata_url,
+                sso_url=sso_url,
+                slo_url=slo_url,
+                certificate=certificate,
+                oidc_client_id=oidc_client_id,
+                oidc_client_secret=oidc_client_secret,
+                oidc_issuer_url=oidc_issuer_url,
+                oidc_scopes=oidc_scopes or "openid profile email",
+                oidc_response_type=oidc_response_type or "code",
+                oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
+                or "client_secret_basic",
+                attribute_mappings=attribute_mappings or {},
+                jit_provisioning_enabled=jit_provisioning_enabled,
+                default_role=default_role,
+                is_active=True,
+            )
+            db.commit()
+        except Exception as exc:
+            pgcode = getattr(exc, "pgcode", None)
+            orig = getattr(exc, "orig", None)
+            orig_pgcode = getattr(orig, "pgcode", None) if orig is not None else None
+            if owner_tenant_id is not None and (
+                pgcode == "23503"
+                or orig_pgcode == "23503"
+                or "foreign key" in str(exc).lower()
+            ):
+                if hasattr(type(db), "rollback"):
+                    db.rollback()
+                raise IdPTenantNotFoundError(owner_tenant_id) from None
+            raise
 
         created = db(db.idp_configurations.id == config_id).select().first()
         return IdPConfigView.from_record(created).to_dict()
@@ -253,6 +285,10 @@ class SAMLService:
             )
 
         changes = {k: v for k, v in updates.items() if k in _UPDATABLE_FIELDS}
+        if "attribute_mappings" in changes:
+            validate_oidc_attribute_mappings(
+                config.idp_type, changes["attribute_mappings"]
+            )
         # The UPDATE carries the same tenant-scoped predicate as the load, so a
         # row deleted/moved between the statements simply matches nothing.
         if changes:

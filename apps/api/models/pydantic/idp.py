@@ -21,7 +21,10 @@ from pydantic import (
     StrictInt,
     StrictStr,
     StringConstraints,
+    field_validator,
 )
+
+from apps.api.services.sso.idp_access import normalize_attribute_mappings
 
 # Columns an administrator may change on an existing IdP config. Mirrors
 # ``saml_service._UPDATABLE_FIELDS``; a test pins both so neither can widen
@@ -140,6 +143,12 @@ class IdPConfigResponse(BaseModel):
     oidc_response_type: str | None = None
     oidc_token_endpoint_auth_method: str | None = None
     has_client_secret: bool = False
+
+    @field_validator("attribute_mappings", mode="before")
+    @classmethod
+    def _coerce_attribute_mappings(cls, value: Any) -> dict[str, Any]:
+        """Guard against legacy non-dict attribute_mappings on read (regression: gh-313)."""
+        return normalize_attribute_mappings(value)
 
 
 class IdPConfigUpdateResponse(IdPConfigResponse):
