@@ -21,11 +21,30 @@ ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_VERSION=$VITE_VERSION
 ENV VITE_BUILD_TIME=$VITE_BUILD_TIME
 
-# Copy source code
+# Copy source code and .version for build metadata
+COPY .version /tmp/.version
 COPY web/ .
 
-# Build the application
-RUN npm run build
+# Build the application (fall back to .version when VITE_VERSION / VITE_BUILD_TIME aren't passed)
+RUN set -eu; \
+    if [ -z "${VITE_VERSION:-}" ] || [ "${VITE_VERSION}" = "0.0.0" ]; then \
+      if [ -f /tmp/.version ]; then \
+        VITE_VERSION="$(tr -d '[:space:]' < /tmp/.version)"; \
+      fi; \
+    fi; \
+    if [ -z "${VITE_BUILD_TIME:-}" ]; then \
+      printf '%s' "${VITE_VERSION:-}" > /tmp/.ver; \
+      EPOCH="$(awk -F. 'NF>=4 && $4 ~ /^[0-9]+$/ {print $4}' /tmp/.ver)"; \
+      rm -f /tmp/.ver; \
+      if [ -n "$EPOCH" ]; then \
+        VITE_BUILD_TIME="$EPOCH"; \
+      else \
+        VITE_BUILD_TIME="$(date +%s)"; \
+      fi; \
+    fi; \
+    export VITE_VERSION VITE_BUILD_TIME; \
+    rm -f /tmp/.version; \
+    npm run build
 
 # Production stage — serve built files via a rootless nginx reverse proxy.
 # This is what makes login work from ANY browser, not just one on the
