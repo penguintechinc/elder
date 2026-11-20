@@ -25,6 +25,8 @@ from ..base import BaseNode
 # working; the canonical home for the SSRF guard is nodes/net_guard.py.
 from ..net_guard import guard_ssrf as _guard_ssrf  # noqa: F401
 from ..net_guard import is_blocked_ip as _is_blocked_ip  # noqa: F401
+from ..template import interpolate_any, interpolate_value
+from .webhook_out import AuthConfig
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +216,10 @@ class HttpRequestAction(BaseNode):
         """Execute HTTP request."""
         start_time = time.perf_counter()
 
-        url = inputs.get("url", "")
+        raw_url = inputs.get("url") or self.get_config_value("url", "")
+        url = str(
+            interpolate_value(raw_url, self.context, inputs, preserve_type=False) or ""
+        ).strip()
         if not url:
             raise ValueError("URL is required")
 
@@ -224,10 +229,76 @@ class HttpRequestAction(BaseNode):
         _guard_ssrf(url)
 
         method = inputs.get("method") or self.get_config_value("method", "GET")
-        method = method.upper()
-        body = inputs.get("body")
-        headers = inputs.get("headers") or self.get_config_value("headers", {})
-        params = inputs.get("params") or self.get_config_value("params", {})
+        method = str(method).upper()
+
+        if "body" in inputs and inputs["body"] is not None:
+            body = inputs["body"]
+        else:
+            cfg_body = self.get_config_value("body")
+            if cfg_body not in (None, ""):
+                if isinstance(cfg_body, str):
+                    evaluated = interpolate_value(
+                        cfg_body, self.context, inputs, preserve_type=True
+                    )
+                    if isinstance(evaluated, str):
+                        try:
+                            body = json.loads(evaluated)
+                        except json.JSONDecodeError:
+                            body = evaluated
+                    else:
+                        body = evaluated
+                else:
+                    body = interpolate_any(
+                        cfg_body, self.context, inputs, preserve_type=True
+                    )
+            else:
+                body = None
+
+        auth_cfg = AuthConfig(
+            auth_type=self.get_config_value("authType", "none"),
+            bearer_token=interpolate_value(
+                self.get_config_value("bearerToken"),
+                self.context,
+                inputs,
+                preserve_type=False,
+            ),
+            basic_username=interpolate_value(
+                self.get_config_value("basicUsername"),
+                self.context,
+                inputs,
+                preserve_type=False,
+            ),
+            basic_password=interpolate_value(
+                self.get_config_value("basicPassword"),
+                self.context,
+                inputs,
+                preserve_type=False,
+            ),
+            api_key_header=self.get_config_value("apiKeyHeader"),
+            api_key_value=interpolate_value(
+                self.get_config_value("apiKeyValue"),
+                self.context,
+                inputs,
+                preserve_type=False,
+            ),
+        )
+        headers: dict[str, Any] = auth_cfg.build_headers()
+        raw_headers = inputs.get("headers") or self.get_config_value("headers", {})
+        if isinstance(raw_headers, str) and raw_headers.strip():
+            raw_headers = json.loads(raw_headers)
+        if isinstance(raw_headers, dict):
+            headers.update(
+                interpolate_any(raw_headers, self.context, inputs, preserve_type=False)
+            )
+
+        raw_params = inputs.get("params") or self.get_config_value("params", {})
+        if isinstance(raw_params, str) and raw_params.strip():
+            raw_params = json.loads(raw_params)
+        params = (
+            interpolate_any(raw_params, self.context, inputs, preserve_type=False)
+            if isinstance(raw_params, dict)
+            else {}
+        )
 
         timeout = float(self.get_config_value("timeout", 30))
         max_retries = int(self.get_config_value("maxRetries", 3))
@@ -256,26 +327,32 @@ class HttpRequestAction(BaseNode):
                 "body": response_body,
             }
 
+            node_id = self.context.get("node_id", "")
             return {
+                "out": {
+                    "data": response_obj,
+                    "metadata": {},
+                    "source_node_id": node_id,
+                },
                 "response": {
                     "data": response_obj,
                     "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
+                    "source_node_id": node_id,
                 },
                 "status": {
                     "data": response.status_code,
                     "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
+                    "source_node_id": node_id,
                 },
                 "headers": {
                     "data": dict(response.headers),
                     "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
+                    "source_node_id": node_id,
                 },
                 "body": {
                     "data": response_body,
                     "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
+                    "source_node_id": node_id,
                 },
             }
 

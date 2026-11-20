@@ -14,6 +14,7 @@ from typing import Any, Dict, List
 
 from ...executor.node_registry import register_node
 from ..base import BaseNode
+from ..template import interpolate_value
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,11 @@ class LogAction(BaseNode):
         """Define output ports for the log node."""
         return [
             {
+                "name": "out",
+                "description": "Pass-through payload so downstream nodes continue cleanly",
+                "data_type": "any",
+            },
+            {
                 "name": "logged",
                 "description": "Whether message was logged successfully",
                 "data_type": "bool",
@@ -74,17 +80,26 @@ class LogAction(BaseNode):
         """Execute log action."""
         start_time = time.perf_counter()
 
-        message = inputs.get("message", "")
+        raw_message = inputs.get("message")
+        if raw_message is None or raw_message == "":
+            raw_message = self.get_config_value("message", "")
+        message = interpolate_value(
+            raw_message, self.context, inputs, preserve_type=False
+        )
         data = inputs.get("data")
+        if data is None and "in" in inputs:
+            data = inputs.get("in")
 
         level = self.get_config_value("level", "INFO").upper()
         include_data = self.get_config_value("includeData", True)
 
         try:
             if not include_data:
-                data = None
+                log_data = None
+            else:
+                log_data = data
 
-            log_entry = self._format_log_entry(level, message, data)
+            log_entry = self._format_log_entry(level, str(message), log_data)
 
             if level == "DEBUG":
                 logger.debug(log_entry)
@@ -99,12 +114,23 @@ class LogAction(BaseNode):
 
             print(log_entry, flush=True)
 
+            node_id = self.context.get("node_id", "")
+            passthrough = (
+                inputs["in"]
+                if "in" in inputs
+                else (data if data is not None else message)
+            )
             return {
+                "out": {
+                    "data": passthrough,
+                    "metadata": {},
+                    "source_node_id": node_id,
+                },
                 "logged": {
                     "data": True,
                     "metadata": {},
-                    "source_node_id": self.context.get("node_id", ""),
-                }
+                    "source_node_id": node_id,
+                },
             }
 
         except Exception as e:

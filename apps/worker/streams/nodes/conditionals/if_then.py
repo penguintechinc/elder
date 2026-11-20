@@ -17,6 +17,7 @@ from typing import Any, Dict, List
 from ...executor.node_registry import register_node
 from ..base import BaseNode
 from ..regex_guard import UnsafeRegexError, safe_regex_search
+from ..template import interpolate_value
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +108,17 @@ class IfThenConditional(BaseNode):
         """
         field = condition.get("field", "")
         op_name = condition.get("operator", "eq")
-        expected = condition.get("value")
+        raw_expected = condition.get("value")
+        expected = interpolate_value(
+            raw_expected, self.context, {"in": data}, preserve_type=True
+        )
 
-        actual = self._get_field_value(data, field) if isinstance(data, dict) else None
+        if not field:
+            actual = data
+        elif isinstance(data, dict):
+            actual = self._get_field_value(data, field)
+        else:
+            actual = None
 
         if op_name == "regex":
             try:

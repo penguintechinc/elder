@@ -3728,9 +3728,37 @@ class ApiClient {
       description: string;
       trigger_type: string;
       is_enabled: boolean;
+      is_public: boolean;
+      tags: string[];
+      status: string;
+      canvas_data: {
+        nodes: unknown[];
+        edges: unknown[];
+        viewport?: { x: number; y: number; zoom: number };
+      };
     }>,
   ) {
-    const response = await this.client.patch(`/streams/${id}`, data);
+    const response = await this.client.put(`/streams/${id}`, data);
+    return response.data;
+  }
+
+  async getStreamNodeCatalog() {
+    const response = await this.client.get("/streams/node-catalog");
+    return response.data;
+  }
+
+  async validateStream(
+    id: number,
+    data?: {
+      canvas_data?: { nodes: unknown[]; edges: unknown[] };
+      nodes?: unknown[];
+      edges?: unknown[];
+    },
+  ) {
+    const response = await this.client.post(
+      `/streams/${id}/validate`,
+      data || {},
+    );
     return response.data;
   }
 
@@ -3971,7 +3999,12 @@ class ApiClient {
     per_page?: number;
   }): Promise<{
     history: SyncHistoryItem[];
-    pagination: { page: number; per_page: number; total: number; pages: number };
+    pagination: {
+      page: number;
+      per_page: number;
+      total: number;
+      pages: number;
+    };
   }> {
     const response = await this.client.get("/sync/history", { params });
     return response.data;

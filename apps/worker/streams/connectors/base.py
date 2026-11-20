@@ -57,6 +57,7 @@ class ConfigField:
     default: Any = None
     supports_variables: bool = False
     description: str = ""
+    show_when: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ConfigField:
@@ -72,6 +73,7 @@ class ConfigField:
             default=data.get("default"),
             supports_variables=data.get("supports_variables", False),
             description=data.get("description", ""),
+            show_when=data.get("show_when"),
         )
 
 
@@ -106,6 +108,13 @@ class TriggerDefinition:
     webhook_path: str = ""
     outputs: tuple = ()
     config_schema: tuple = ()
+    required_module: str | None = None
+    required_license_feature: str | None = None
+    required_feature_flag: str | None = None
+    subcategory: str = ""
+    output_schema: tuple = ()
+    query_params: tuple[str, ...] = ()
+    path_params: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TriggerDefinition:
@@ -113,6 +122,12 @@ class TriggerDefinition:
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
         config_schema = tuple(
             ConfigField.from_dict(f) for f in data.get("config_schema", [])
+        )
+        raw_out_schema = data.get("output_schema") or ()
+        out_schema = (
+            tuple(raw_out_schema)
+            if isinstance(raw_out_schema, (list, tuple))
+            else (raw_out_schema,)
         )
         return cls(
             id=data["id"],
@@ -122,6 +137,13 @@ class TriggerDefinition:
             webhook_path=data.get("webhook_path", ""),
             outputs=outputs,
             config_schema=config_schema,
+            required_module=data.get("required_module"),
+            required_license_feature=data.get("required_license_feature"),
+            required_feature_flag=data.get("required_feature_flag"),
+            subcategory=data.get("subcategory", ""),
+            output_schema=out_schema,
+            query_params=tuple(data.get("query_params") or ()),
+            path_params=tuple(data.get("path_params") or ()),
         )
 
 
@@ -139,6 +161,13 @@ class ActionDefinition:
     outputs: tuple = ()
     config_schema: tuple = ()
     request_body_template: str = ""
+    required_module: str | None = None
+    required_license_feature: str | None = None
+    required_feature_flag: str | None = None
+    subcategory: str = ""
+    output_schema: tuple = ()
+    query_params: tuple[str, ...] = ()
+    path_params: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ActionDefinition:
@@ -147,6 +176,12 @@ class ActionDefinition:
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
         config_schema = tuple(
             ConfigField.from_dict(f) for f in data.get("config_schema", [])
+        )
+        raw_out_schema = data.get("output_schema") or ()
+        out_schema = (
+            tuple(raw_out_schema)
+            if isinstance(raw_out_schema, (list, tuple))
+            else (raw_out_schema,)
         )
         return cls(
             id=data["id"],
@@ -159,6 +194,13 @@ class ActionDefinition:
             outputs=outputs,
             config_schema=config_schema,
             request_body_template=data.get("request_body_template", ""),
+            required_module=data.get("required_module"),
+            required_license_feature=data.get("required_license_feature"),
+            required_feature_flag=data.get("required_feature_flag"),
+            subcategory=data.get("subcategory", ""),
+            output_schema=out_schema,
+            query_params=tuple(data.get("query_params") or ()),
+            path_params=tuple(data.get("path_params") or ()),
         )
 
 
@@ -175,6 +217,13 @@ class TransformDefinition:
     inputs: tuple = ()
     outputs: tuple = ()
     config_schema: tuple = ()
+    required_module: str | None = None
+    required_license_feature: str | None = None
+    required_feature_flag: str | None = None
+    subcategory: str = ""
+    output_schema: tuple = ()
+    query_params: tuple[str, ...] = ()
+    path_params: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TransformDefinition:
@@ -183,6 +232,12 @@ class TransformDefinition:
         outputs = tuple(PortDefinition.from_dict(o) for o in data.get("outputs", []))
         config_schema = tuple(
             ConfigField.from_dict(f) for f in data.get("config_schema", [])
+        )
+        raw_out_schema = data.get("output_schema") or ()
+        out_schema = (
+            tuple(raw_out_schema)
+            if isinstance(raw_out_schema, (list, tuple))
+            else (raw_out_schema,)
         )
         return cls(
             id=data["id"],
@@ -194,6 +249,13 @@ class TransformDefinition:
             inputs=inputs,
             outputs=outputs,
             config_schema=config_schema,
+            required_module=data.get("required_module"),
+            required_license_feature=data.get("required_license_feature"),
+            required_feature_flag=data.get("required_feature_flag"),
+            subcategory=data.get("subcategory", ""),
+            output_schema=out_schema,
+            query_params=tuple(data.get("query_params") or ()),
+            path_params=tuple(data.get("path_params") or ()),
         )
 
 

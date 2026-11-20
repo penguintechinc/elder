@@ -58,11 +58,12 @@ def _serialize_output(value: Any) -> dict[str, Any]:
         }
     if isinstance(value, dict):
         ts = value.get("timestamp")
+        ts_val = ts.isoformat() if isinstance(ts, datetime) else ts
         return {
             "data": value.get("data"),
             "metadata": value.get("metadata", {}),
             "source_node_id": value.get("source_node_id", ""),
-            "timestamp": ts.isoformat() if hasattr(ts, "isoformat") else ts,
+            "timestamp": ts_val,
         }
     return {"data": value, "metadata": {}, "source_node_id": "", "timestamp": None}
 
@@ -93,11 +94,13 @@ class NodeResult:
     execution_time_ms: float = 0.0
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    node_type: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert NodeResult to dictionary for serialization."""
         return {
             "node_id": self.node_id,
+            "node_type": self.node_type,
             "status": self.status.value,
             "outputs": {k: _serialize_output(v) for k, v in self.outputs.items()},
             "error": self.error,
@@ -160,6 +163,36 @@ class PassThroughNode(BaseNode):
         return inputs
 
 
+def _resolve_source_handle(
+    source_outputs: dict[str, Any], raw_source_handle: str | None
+) -> str | None:
+    """Resolve an edge's sourceHandle against a node's emitted output ports."""
+    if raw_source_handle and raw_source_handle != "default":
+        return raw_source_handle if raw_source_handle in source_outputs else None
+    if "default" in source_outputs:
+        return "default"
+    if "out" in source_outputs:
+        return "out"
+    if source_outputs:
+        return next(iter(source_outputs.keys()))
+    return None
+
+
+def _extract_primary_output(outputs: dict[str, Any]) -> Any:
+    """Extract the primary payload from a node's output ports for $node[...] lookup."""
+    unwrapped = {k: _unwrap_output(v) for k, v in outputs.items()}
+    if "out" in unwrapped and unwrapped["out"] is not None:
+        return unwrapped["out"]
+    if "default" in unwrapped and unwrapped["default"] is not None:
+        return unwrapped["default"]
+    non_none = [v for v in unwrapped.values() if v is not None]
+    if len(non_none) == 1 and isinstance(non_none[0], dict):
+        return {**non_none[0], **unwrapped}
+    if len(non_none) == 1:
+        return non_none[0]
+    return unwrapped
+
+
 class PlaybookExecutor:
     """Main executor for running playbook node graphs."""
 
@@ -176,6 +209,7 @@ class PlaybookExecutor:
         self.playbook_id = playbook_id
         self.node_timeout_seconds = node_timeout_seconds
         self._node_outputs: dict[str, dict[str, NodeData]] = {}
+        self._node_context_outputs: dict[str, Any] = {}
         self._execution_order: list[str] = []
 
         logger.info(
@@ -194,7 +228,31 @@ class PlaybookExecutor:
         try:
             nodes = playbook_data.get("nodes", [])
             edges = playbook_data.get("edges", [])
-            global_config = playbook_data.get("config", {})
+            raw_global_config = playbook_data.get("config", {})
+            global_config = (
+                dict(raw_global_config) if isinstance(raw_global_config, dict) else {}
+            )
+
+            if "trigger_data" not in global_config:
+                trigger_payload = playbook_data.get("trigger_data")
+                if trigger_payload is None:
+                    trigger_payload = playbook_data.get("trigger_output")
+                if trigger_payload is not None:
+                    global_config["trigger_data"] = trigger_payload
+            if (
+                "tenant_id" not in global_config
+                and playbook_data.get("tenant_id") is not None
+            ):
+                global_config["tenant_id"] = playbook_data.get("tenant_id")
+            if (
+                "enabled_modules" not in global_config
+                and playbook_data.get("enabled_modules") is not None
+            ):
+                global_config["enabled_modules"] = playbook_data.get("enabled_modules")
+
+            skip_inactive_branches = bool(
+                global_config.get("skip_inactive_branches", False)
+            )
 
             if not nodes:
                 return ExecutionResult(
@@ -208,6 +266,7 @@ class PlaybookExecutor:
             logger.info(f"Execution order: {execution_order}")
 
             self._node_outputs = {}
+            self._node_context_outputs = {}
 
             node_results: dict[str, NodeResult] = {}
             completed_nodes: list[str] = []
@@ -222,6 +281,27 @@ class PlaybookExecutor:
                     logger.error(f"Node {node_id} not found in nodes list")
                     continue
 
+                if skip_inactive_branches and not self._has_active_incoming_edge(
+                    node_id, edges, node_results
+                ):
+                    now = datetime.now(UTC)
+                    node_type = self._resolve_node_type(node_data)
+                    result = NodeResult(
+                        node_id=node_id,
+                        node_type=node_type,
+                        status=NodeStatus.SKIPPED,
+                        outputs={},
+                        execution_time_ms=0.0,
+                        started_at=now,
+                        completed_at=now,
+                    )
+                    node_results[node_id] = result
+                    skipped_nodes.append(node_id)
+                    logger.info(
+                        f"Skipped node {node_id} ({node_type}): inactive branch"
+                    )
+                    continue
+
                 inputs = self._gather_inputs(node_id, edges, self._node_outputs)
 
                 result = await self._execute_node(
@@ -231,7 +311,7 @@ class PlaybookExecutor:
 
                 if result.status == NodeStatus.SUCCESS:
                     completed_nodes.append(node_id)
-                    self._route_outputs(node_id, result, edges)
+                    self._route_outputs(node_id, result, edges, node_data)
                 elif result.status == NodeStatus.FAILED:
                     failed_nodes.append(node_id)
                     if not global_config.get("continue_on_error", False):
@@ -246,7 +326,7 @@ class PlaybookExecutor:
 
             success = len(failed_nodes) == 0 and len(completed_nodes) > 0
 
-            result = ExecutionResult(
+            exec_result = ExecutionResult(
                 success=success,
                 node_results=node_results,
                 error=(f"{len(failed_nodes)} node(s) failed" if failed_nodes else None),
@@ -262,7 +342,7 @@ class PlaybookExecutor:
                 f"skipped={len(skipped_nodes)}, time={execution_time_ms:.2f}ms"
             )
 
-            return result
+            return exec_result
 
         except Exception as e:
             execution_time_ms = (time.time() - start_time) * 1000
@@ -274,6 +354,48 @@ class PlaybookExecutor:
                 error=f"Execution failed: {str(e)}",
                 execution_time_ms=execution_time_ms,
             )
+
+    @staticmethod
+    def _resolve_node_type(node_data: dict[str, Any]) -> str:
+        """Resolve the Streams node type from backend or ReactFlow node dicts."""
+        data_obj = node_data.get("data") or {}
+        raw_type = node_data.get("type")
+        data_node_type = data_obj.get("nodeType")
+        if (
+            raw_type in (None, "", "stream", "playbookNode", "default")
+            and data_node_type
+        ):
+            return str(data_node_type)
+        return str(raw_type or data_node_type or "unknown")
+
+    def _has_active_incoming_edge(
+        self,
+        node_id: str,
+        edges: list[dict[str, Any]],
+        node_results: dict[str, NodeResult],
+    ) -> bool:
+        """Return True if node has no incoming edges or at least one active branch."""
+        incoming_edges = [edge for edge in edges if edge.get("target") == node_id]
+        if not incoming_edges:
+            return True
+
+        for edge in incoming_edges:
+            source_node_id = edge.get("source")
+            if not source_node_id:
+                continue
+            source_result = node_results.get(source_node_id)
+            if not source_result or source_result.status != NodeStatus.SUCCESS:
+                continue
+            source_outputs = self._node_outputs.get(source_node_id, {})
+            resolved_handle = _resolve_source_handle(
+                source_outputs, edge.get("sourceHandle")
+            )
+            if resolved_handle is None:
+                continue
+            if _unwrap_output(source_outputs[resolved_handle]) is not None:
+                return True
+
+        return False
 
     def _get_execution_order(
         self, nodes: list[dict[str, Any]], edges: list[dict[str, Any]]
@@ -299,13 +421,13 @@ class PlaybookExecutor:
         started_at = datetime.now(UTC)
         start_time = time.time()
 
-        logger.info(f"Executing node: {node_id} ({node_data.get('type', 'unknown')})")
+        node_type = self._resolve_node_type(node_data)
+        logger.info(f"Executing node: {node_id} ({node_type})")
 
         try:
-            node_type = node_data.get("type") or node_data.get("data", {}).get(
-                "nodeType", "unknown"
-            )
-            node_config = node_data.get("config", {})
+            data_obj = node_data.get("data") or {}
+            node_config = node_data.get("config") or data_obj.get("config") or {}
+            node_label = node_data.get("label") or data_obj.get("label", "")
 
             context = {
                 "execution_id": self.execution_id,
@@ -313,9 +435,13 @@ class PlaybookExecutor:
                 "node_id": node_id,
                 "config": node_config,
                 "global_config": global_config,
+                "node_outputs": dict(self._node_context_outputs),
+                "trigger_data": global_config.get("trigger_data", {}),
+                "tenant_id": global_config.get("tenant_id"),
                 "metadata": {
-                    "label": node_data.get("data", {}).get("label", ""),
-                    "category": node_data.get("data", {}).get("category", ""),
+                    "label": node_label,
+                    "category": node_data.get("category")
+                    or data_obj.get("category", ""),
                 },
             }
 
@@ -328,12 +454,39 @@ class PlaybookExecutor:
                 completed_at = datetime.now(UTC)
                 return NodeResult(
                     node_id=node_id,
+                    node_type=node_type,
                     status=NodeStatus.FAILED,
                     error=error_msg,
                     execution_time_ms=execution_time_ms,
                     started_at=started_at,
                     completed_at=completed_at,
                 )
+
+            required_module = getattr(node_class, "required_module", None)
+            enabled_modules = global_config.get("enabled_modules")
+            if (
+                required_module
+                and required_module != "core"
+                and enabled_modules is not None
+            ):
+                if isinstance(enabled_modules, dict):
+                    is_module_on = bool(enabled_modules.get(required_module, False))
+                else:
+                    is_module_on = required_module in enabled_modules
+                if not is_module_on:
+                    error_msg = f"Module '{required_module}' is disabled for this tenant/environment"
+                    logger.warning(f"Node {node_id} blocked: {error_msg}")
+                    execution_time_ms = (time.time() - start_time) * 1000
+                    completed_at = datetime.now(UTC)
+                    return NodeResult(
+                        node_id=node_id,
+                        node_type=node_type,
+                        status=NodeStatus.FAILED,
+                        error=error_msg,
+                        execution_time_ms=execution_time_ms,
+                        started_at=started_at,
+                        completed_at=completed_at,
+                    )
 
             node_instance = node_class(context)
 
@@ -355,6 +508,7 @@ class PlaybookExecutor:
 
             return NodeResult(
                 node_id=node_id,
+                node_type=node_type,
                 status=NodeStatus.SUCCESS,
                 outputs=outputs,
                 execution_time_ms=execution_time_ms,
@@ -371,6 +525,7 @@ class PlaybookExecutor:
 
             return NodeResult(
                 node_id=node_id,
+                node_type=node_type,
                 status=NodeStatus.FAILED,
                 error=error_msg,
                 execution_time_ms=execution_time_ms,
@@ -385,24 +540,35 @@ class PlaybookExecutor:
         node_outputs: dict[str, dict[str, NodeData]],
     ) -> dict[str, NodeData]:
         """Gather input data for a node from upstream outputs."""
-        inputs: dict[str, NodeData] = {}
+        inputs: dict[str, Any] = {}
 
         incoming_edges = [edge for edge in edges if edge.get("target") == node_id]
 
         for edge in incoming_edges:
             source_node_id = edge.get("source")
-            source_handle = edge.get("sourceHandle", "default")
-            target_handle = edge.get("targetHandle", "default")
+            raw_source_handle = edge.get("sourceHandle")
+            raw_target_handle = edge.get("targetHandle")
+            target_handle = raw_target_handle or "default"
 
             if source_node_id in node_outputs:
                 source_outputs = node_outputs[source_node_id]
-                if source_handle in source_outputs:
-                    inputs[target_handle] = _unwrap_output(
-                        source_outputs[source_handle]
-                    )
+                resolved_source = _resolve_source_handle(
+                    source_outputs, raw_source_handle
+                )
+                if resolved_source is not None and resolved_source in source_outputs:
+                    unwrapped_val = _unwrap_output(source_outputs[resolved_source])
+                    if target_handle not in inputs or (
+                        inputs[target_handle] is None and unwrapped_val is not None
+                    ):
+                        inputs[target_handle] = unwrapped_val
+                    if not raw_target_handle or raw_target_handle == "default":
+                        if "in" not in inputs or (
+                            inputs["in"] is None and unwrapped_val is not None
+                        ):
+                            inputs["in"] = unwrapped_val
                     logger.debug(
                         f"Gathered input for {node_id}[{target_handle}] "
-                        f"from {source_node_id}[{source_handle}]"
+                        f"from {source_node_id}[{resolved_source}]"
                     )
 
         return inputs
@@ -412,9 +578,19 @@ class PlaybookExecutor:
         node_id: str,
         result: NodeResult,
         edges: list[dict[str, Any]],
+        node_data: dict[str, Any] | None = None,
     ) -> None:
         """Store node outputs for downstream consumption."""
         self._node_outputs[node_id] = result.outputs
+        primary = _extract_primary_output(result.outputs)
+        node_label = ""
+        if node_data:
+            node_label = node_data.get("label") or (node_data.get("data") or {}).get(
+                "label", ""
+            )
+        if node_label:
+            self._node_context_outputs[node_label] = primary
+        self._node_context_outputs[node_id] = primary
         logger.debug(
             f"Routed {len(result.outputs)} output(s) from node {node_id}: "
             f"{list(result.outputs.keys())}"
