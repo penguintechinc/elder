@@ -46,6 +46,7 @@ EXPECTED_DATA_STORE_FIELDS = {
     "village_id",
     "created_at",
     "updated_at",
+    "labels",
 }
 
 

@@ -691,11 +691,15 @@ function DataLabelsTab({ labels, onFilterByLabel }: DataLabelsTabProps) {
               placeholder="Optional description"
             />
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              <label
+                htmlFor="new-label-color"
+                className="block text-sm font-medium text-slate-300 mb-1.5"
+              >
                 Color
               </label>
               <div className="flex items-center gap-2">
                 <input
+                  id="new-label-color"
                   type="color"
                   value={color}
                   onChange={(e) => setColor(e.target.value)}
@@ -980,10 +984,14 @@ function DataStoreFormModal({
               placeholder="Production Customer Database"
             />
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              <label
+                htmlFor="datastore-description"
+                className="block text-sm font-medium text-slate-300 mb-1.5"
+              >
                 Description
               </label>
               <textarea
+                id="datastore-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
@@ -1085,9 +1093,9 @@ function DataStoreFormModal({
 
             {/* Data Labels */}
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
+              <span className="block text-sm font-medium text-slate-300 mb-2">
                 Data Labels
-              </label>
+              </span>
               <div className="flex flex-wrap gap-2">
                 {allLabels.map((lbl) => {
                   const selected = selectedLabelIds.includes(lbl.id);
@@ -1119,10 +1127,14 @@ function DataStoreFormModal({
 
             {/* Metadata JSON */}
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              <label
+                htmlFor="datastore-metadata"
+                className="block text-sm font-medium text-slate-300 mb-1.5"
+              >
                 Metadata (JSON, Optional)
               </label>
               <textarea
+                id="datastore-metadata"
                 value={metadataText}
                 onChange={(e) => setMetadataText(e.target.value)}
                 rows={3}
