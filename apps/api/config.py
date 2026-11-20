@@ -196,7 +196,6 @@ class Config:
     ELDER_INTERNAL_API_URL = config(
         "ELDER_INTERNAL_API_URL", default="http://127.0.0.1:5000"
     )
-    AI_RESEARCHER_SERVICE_TOKEN = config("AI_RESEARCHER_SERVICE_TOKEN", default="")
 
     # WebSocket
     WEBSOCKET_ENABLED = config("WEBSOCKET_ENABLED", default=True, cast=bool)

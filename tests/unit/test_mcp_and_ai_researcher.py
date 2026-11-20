@@ -21,11 +21,24 @@ from apps.api.auth.jwt_handler import (
     MAX_SERVICE_RESEARCHER_TTL_SECONDS,
     generate_service_researcher_token,
     generate_token,
+    get_current_user,
+    get_service_researcher_read_scopes,
     verify_token,
 )
+from apps.api.auth.rbac import role_scopes
 from apps.api.common.modules.tenant_toggle import set_module_enabled
+from apps.api.config import Config
 from apps.api.main import create_app
-from apps.api.services.ai_researcher import resolve_effective_modules
+from apps.api.services.ai_researcher import (
+    AIResearchPermissionError,
+    filter_tools_by_scopes,
+    get_ai_researcher_config,
+    get_tool_required_scope,
+    intersect_caller_read_scopes,
+    resolve_effective_modules,
+    run_ai_research,
+)
+from apps.api.services.portal_auth.service import PortalAuthService
 from apps.mcp.auth import ElderAuthError, ElderSession
 from apps.mcp.client import ElderAPIError, ElderClient
 from apps.mcp.registry import (
@@ -262,23 +275,68 @@ async def test_elder_client_api_key_auth_put_and_error_handling() -> None:
 
 @pytest.mark.asyncio
 async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> None:
-    """service_researcher JWTs enforce <=10m TTL, viewer role, read-only scopes, and tenant boundary."""
+    """service_researcher JWTs enforce <=10m TTL, viewer role, read-only scopes, caller delegation, and tenant boundary."""
     async with app.app_context():
         with pytest.raises(ValueError, match="TTL"):
             generate_service_researcher_token(
-                tenant_id=1, ttl_seconds=MAX_SERVICE_RESEARCHER_TTL_SECONDS + 1
+                tenant_id=1,
+                scopes=["entities:read"],
+                ttl_seconds=MAX_SERVICE_RESEARCHER_TTL_SECONDS + 1,
+                caller_sub="user-1",
             )
         with pytest.raises(ValueError, match="scope"):
-            generate_service_researcher_token(tenant_id=1, scopes=["entities:write"])
+            generate_service_researcher_token(
+                tenant_id=1,
+                scopes=["entities:write"],
+                caller_sub="user-1",
+            )
         with pytest.raises(ValueError, match="scope"):
-            generate_service_researcher_token(tenant_id=1, scopes=["*:read"])
+            generate_service_researcher_token(
+                tenant_id=1,
+                scopes=["*:read"],
+                caller_sub="user-1",
+            )
+        with pytest.raises(ValueError, match="scope"):
+            generate_service_researcher_token(
+                tenant_id=1,
+                scopes=[],
+                caller_sub="user-1",
+            )
+        with pytest.raises(ValueError, match="caller_sub"):
+            generate_service_researcher_token(
+                tenant_id=1,
+                scopes=["entities:read"],
+                caller_sub="   ",
+            )
 
-        valid_token = generate_service_researcher_token(tenant_id=1, ttl_seconds=300)
+        valid_token = generate_service_researcher_token(
+            tenant_id=1,
+            scopes=["infrastructure:read", "ai:read", "infrastructure:read"],
+            ttl_seconds=300,
+            caller_sub="user-42",
+            caller_username="alice",
+        )
         verified = verify_token(valid_token)
         assert verified is not None
         assert verified["type"] == "service_researcher"
         assert verified["tenant"] == "1"
         assert verified["roles"] == ["viewer"]
+        assert verified["scope"] == ["ai:read", "infrastructure:read"]
+        assert verified["sub"] == "service-researcher:1:user-42"
+        assert verified["delegated_by"] == "user-42"
+        assert verified["act"] == {"sub": "user-42", "username": "alice"}
+
+        async with app.test_request_context(
+            "/api/v1/entities",
+            headers={"Authorization": f"Bearer {valid_token}"},
+        ):
+            identity = get_current_user()
+            assert identity is not None
+            assert getattr(identity, "delegated_by", None) == "user-42"
+            assert getattr(identity, "act", None) == {
+                "sub": "user-42",
+                "username": "alice",
+            }
 
         secret = app.config["JWT_SECRET_KEY"] or app.config["SECRET_KEY"]
         alg = app.config["JWT_ALGORITHM"]
@@ -286,7 +344,8 @@ async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> 
 
         forged_long = jwt.encode(
             {
-                "sub": "service-researcher:1",
+                "sub": "service-researcher:1:user-42",
+                "delegated_by": "user-42",
                 "type": "service_researcher",
                 "iat": now,
                 "exp": now + timedelta(seconds=900),
@@ -302,7 +361,8 @@ async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> 
 
         forged_write_scope = jwt.encode(
             {
-                "sub": "service-researcher:1",
+                "sub": "service-researcher:1:user-42",
+                "delegated_by": "user-42",
                 "type": "service_researcher",
                 "iat": now,
                 "exp": now + timedelta(seconds=120),
@@ -318,7 +378,8 @@ async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> 
 
         forged_no_iss = jwt.encode(
             {
-                "sub": "service-researcher:1",
+                "sub": "service-researcher:1:user-42",
+                "delegated_by": "user-42",
                 "type": "service_researcher",
                 "iat": now,
                 "exp": now + timedelta(seconds=120),
@@ -330,6 +391,39 @@ async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> 
             algorithm=alg,
         )
         assert verify_token(forged_no_iss) is None
+
+        forged_no_delegated_by = jwt.encode(
+            {
+                "sub": "service-researcher:1",
+                "type": "service_researcher",
+                "iat": now,
+                "exp": now + timedelta(seconds=120),
+                "tenant": "1",
+                "scope": ["entities:read"],
+                "iss": app.config.get("JWT_ISSUER", "elder-api"),
+                "aud": app.config.get("JWT_AUDIENCE", "elder-api"),
+            },
+            secret,
+            algorithm=alg,
+        )
+        assert verify_token(forged_no_delegated_by) is None
+
+        forged_blank_delegated_by = jwt.encode(
+            {
+                "sub": "service-researcher:1",
+                "delegated_by": "   ",
+                "type": "service_researcher",
+                "iat": now,
+                "exp": now + timedelta(seconds=120),
+                "tenant": "1",
+                "scope": ["entities:read"],
+                "iss": app.config.get("JWT_ISSUER", "elder-api"),
+                "aud": app.config.get("JWT_AUDIENCE", "elder-api"),
+            },
+            secret,
+            algorithm=alg,
+        )
+        assert verify_token(forged_blank_delegated_by) is None
 
         db = app.db
         org1 = _seed_org(db, tenant_id=1, name=f"Tenant1Org-{uuid4().hex[:6]}")
@@ -621,6 +715,672 @@ async def test_ai_researcher_multistep_tool_calling_and_fail_loud_503(app) -> No
             err_data = await resp_503.get_json()
             assert err_data["error"] == "OLLAMA_UNAVAILABLE"
     finally:
+        if prior_ollama_transport is sentinel:
+            app.extensions.pop("ai_researcher_ollama_transport", None)
+        else:
+            app.extensions["ai_researcher_ollama_transport"] = prior_ollama_transport
+        if prior_elder_transport is sentinel:
+            app.extensions.pop("ai_researcher_elder_transport", None)
+        else:
+            app.extensions["ai_researcher_elder_transport"] = prior_elder_transport
+
+
+def _encode_test_jwt(
+    app,
+    *,
+    sub: str,
+    tenant_id: int = 1,
+    token_type: str = "access",
+    roles: list[str] | None = None,
+    scopes: list[str] | None = None,
+    extra: dict | None = None,
+) -> str:
+    secret = app.config["JWT_SECRET_KEY"] or app.config["SECRET_KEY"]
+    alg = app.config["JWT_ALGORITHM"]
+    now = datetime.now(UTC)
+    payload: dict = {
+        "sub": sub,
+        "type": token_type,
+        "iat": now,
+        "exp": now + timedelta(minutes=15),
+        "iss": app.config.get("JWT_ISSUER", "elder-api"),
+        "aud": app.config.get("JWT_AUDIENCE", "elder-api"),
+    }
+    if token_type == "portal_user":
+        payload["tenant_id"] = tenant_id
+    else:
+        payload["tenant"] = str(tenant_id)
+    if roles is not None:
+        payload["roles"] = roles
+    if scopes is not None:
+        payload["scope"] = scopes
+    if extra:
+        payload.update(extra)
+    return jwt.encode(payload, secret, algorithm=alg)
+
+
+def _create_test_identity(
+    app,
+    *,
+    username: str,
+    tenant_id: int = 1,
+    portal_role: str = "observer",
+    is_superuser: bool = False,
+) -> int:
+    existing = app.db(app.db.identities.username == username).select().first()
+    if existing:
+        app.db(app.db.identities.id == existing.id).delete()
+        app.db.commit()
+    ident_id = app.db.identities.insert(
+        tenant_id=tenant_id,
+        identity_type="human",
+        username=username,
+        email=f"{username}@example.com",
+        auth_provider="local",
+        is_active=True,
+        is_superuser=is_superuser,
+        mfa_enabled=False,
+        must_change_password=False,
+        do_not_sell_share=False,
+        portal_role=portal_role,
+    )
+    app.db.commit()
+    return int(ident_id)
+
+
+def _delete_test_identity(app, ident_id: int) -> None:
+    app.db(app.db.identities.id == ident_id).delete()
+    app.db.commit()
+
+
+def _create_test_portal_user(
+    app,
+    *,
+    email: str,
+    tenant_id: int = 1,
+    global_role: str | None = None,
+    tenant_role: str | None = "observer",
+) -> int:
+    existing = app.db(app.db.portal_users.email == email).select().first()
+    if existing:
+        app.db(app.db.portal_users.id == existing.id).delete()
+        app.db.commit()
+    pu_id = app.db.portal_users.insert(
+        tenant_id=tenant_id,
+        email=email,
+        password_hash="test-hash",
+        global_role=global_role,
+        tenant_role=tenant_role,
+        is_active=True,
+        email_verified=True,
+    )
+    app.db.commit()
+    return int(pu_id)
+
+
+def _delete_test_portal_user(app, pu_id: int) -> None:
+    app.db(app.db.portal_users.id == pu_id).delete()
+    app.db.commit()
+
+
+@pytest.mark.asyncio
+async def test_ai_research_endpoints_require_ai_read_scope(app, async_client) -> None:
+    """Callers without ai:read are rejected with 403 on both AI research config and run endpoints."""
+    async with app.app_context():
+        ident_id = _create_test_identity(
+            app, username="sec-observer-no-ai", tenant_id=1, portal_role="observer"
+        )
+        no_ai_token = _encode_test_jwt(
+            app,
+            sub=str(ident_id),
+            tenant_id=1,
+            roles=["observer"],
+            scopes=["infrastructure:read"],
+            extra={"username": "sec-observer-no-ai"},
+        )
+
+    headers = {"Authorization": f"Bearer {no_ai_token}"}
+    try:
+        cfg_resp = await async_client.get(
+            "/api/v1/search/ai-research/config", headers=headers
+        )
+        assert cfg_resp.status_code == 403
+
+        run_resp = await async_client.post(
+            "/api/v1/search/ai-research",
+            headers=headers,
+            json={"query": "find web hosts"},
+        )
+        assert run_resp.status_code == 403
+
+        async with app.app_context():
+            with pytest.raises(AIResearchPermissionError):
+                await run_ai_research(
+                    app,
+                    1,
+                    query="find web hosts",
+                    caller_sub=str(ident_id),
+                    caller_scopes=["infrastructure:read"],
+                )
+
+            with pytest.raises(AIResearchPermissionError):
+                await run_ai_research(
+                    app,
+                    1,
+                    query="find web hosts",
+                    caller_sub="   ",
+                    caller_scopes=["ai:read", "infrastructure:read"],
+                )
+    finally:
+        async with app.app_context():
+            _delete_test_identity(app, ident_id)
+
+
+@pytest.mark.asyncio
+async def test_ai_research_confused_deputy_scope_and_tool_filtering(
+    app, async_client
+) -> None:
+    """AI researcher narrows downstream JWT scopes, carries caller delegation, and blocks unpermitted tools."""
+    module_redis = app.extensions.get("module_redis")
+    async with app.app_context():
+        prior_modules = resolve_effective_modules(app, 1)
+        prior_secrets = "secrets" in prior_modules
+        prior_issues = "issues" in prior_modules
+        set_module_enabled(app.db, module_redis, 1, "secrets", True)
+        set_module_enabled(app.db, module_redis, 1, "issues", True)
+        ident_id = _create_test_identity(
+            app, username="narrow", tenant_id=1, portal_role="observer"
+        )
+        narrow_scopes = ["ai:read", "infrastructure:read"]
+        caller_token = _encode_test_jwt(
+            app,
+            sub=str(ident_id),
+            tenant_id=1,
+            roles=["observer"],
+            scopes=narrow_scopes,
+            extra={"username": "narrow"},
+        )
+        full_admin_cfg = await get_ai_researcher_config(
+            app, 1, caller_scopes=get_service_researcher_read_scopes()
+        )
+        expected_narrow_tools = filter_tools_by_scopes(
+            get_tools(
+                enabled_modules=resolve_effective_modules(app, 1), read_only=True
+            ),
+            narrow_scopes,
+        )
+
+    sentinel = object()
+    prior_ollama_transport = app.extensions.get(
+        "ai_researcher_ollama_transport", sentinel
+    )
+    prior_elder_transport = app.extensions.get(
+        "ai_researcher_elder_transport", sentinel
+    )
+
+    seen_ollama_tool_names: list[list[str]] = []
+    seen_elder_paths: list[str] = []
+    seen_elder_tokens: list[str] = []
+    ollama_turn = 0
+
+    def ollama_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal ollama_turn
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "llama3.2"}]})
+        if request.url.path == "/api/chat":
+            body = json.loads(request.content.decode("utf-8"))
+            tools = body.get("tools") or []
+            seen_ollama_tool_names.append([t["function"]["name"] for t in tools])
+            ollama_turn += 1
+            if ollama_turn == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "search_entities",
+                                        "arguments": {"query": "api"},
+                                    }
+                                },
+                                {
+                                    "function": {
+                                        "name": "list_secrets_metadata",
+                                        "arguments": {},
+                                    }
+                                },
+                            ],
+                        }
+                    },
+                )
+            messages = body.get("messages") or []
+            tool_msgs = [
+                json.loads(m["content"]) for m in messages if m.get("role") == "tool"
+            ]
+            assert any(
+                "list_secrets_metadata" in msg.get("error", "")
+                and "not permitted" in msg.get("error", "")
+                for msg in tool_msgs
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "message": {
+                        "role": "assistant",
+                        "content": "Found matching entities; secret tools are not permitted.",
+                    }
+                },
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    def elder_handler(request: httpx.Request) -> httpx.Response:
+        seen_elder_paths.append(request.url.path)
+        auth_header = request.headers.get("Authorization", "")
+        assert auth_header.startswith("Bearer ")
+        seen_elder_tokens.append(auth_header.removeprefix("Bearer ").strip())
+        if request.url.path.startswith("/api/v1/secrets"):
+            return httpx.Response(500, json={"error": "must not be called"})
+        if request.url.path == "/api/v1/entities":
+            return httpx.Response(
+                200,
+                json={
+                    "entities": [{"id": 10, "name": "api-gw", "village_id": "v-api-1"}]
+                },
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+        ollama_handler
+    )
+    app.extensions["ai_researcher_elder_transport"] = httpx.MockTransport(elder_handler)
+
+    try:
+        headers = {"Authorization": f"Bearer {caller_token}"}
+        cfg_resp = await async_client.get(
+            "/api/v1/search/ai-research/config", headers=headers
+        )
+        assert cfg_resp.status_code == 200
+        cfg_data = await cfg_resp.get_json()
+        assert cfg_data["mcp_tool_count"] == len(expected_narrow_tools)
+        assert cfg_data["mcp_tool_count"] < full_admin_cfg["mcp_tool_count"]
+
+        run_resp = await async_client.post(
+            "/api/v1/search/ai-research",
+            headers=headers,
+            json={"query": "inspect entities and secrets"},
+        )
+        assert run_resp.status_code == 200
+        run_data = await run_resp.get_json()
+        assert "Found matching entities" in run_data["answer"]
+        assert any(
+            s.get("tool") == "list_secrets_metadata" and s.get("status") == "error"
+            for s in run_data.get("steps", [])
+        )
+        assert any(
+            s.get("tool") == "search_entities" and s.get("status") == "ok"
+            for s in run_data.get("steps", [])
+        )
+
+        assert seen_ollama_tool_names
+        for exposed_names in seen_ollama_tool_names:
+            assert "search_entities" in exposed_names
+            assert "universal_search" in exposed_names
+            assert "list_secrets_metadata" not in exposed_names
+            assert "list_issues" not in exposed_names
+            assert "list_identities" not in exposed_names
+
+        assert "/api/v1/entities" in seen_elder_paths
+        assert not any(p.startswith("/api/v1/secrets") for p in seen_elder_paths)
+        assert len(seen_elder_tokens) >= 1
+
+        async with app.app_context():
+            for downstream_tok in seen_elder_tokens:
+                claims = verify_token(downstream_tok)
+                assert claims is not None
+                assert claims["type"] == "service_researcher"
+                assert claims["tenant"] == "1"
+                assert claims["roles"] == ["viewer"]
+                assert claims["scope"] == ["ai:read", "infrastructure:read"]
+                assert claims["delegated_by"] == str(ident_id)
+                assert claims["sub"] == f"service-researcher:1:{ident_id}"
+                assert claims["act"] == {"sub": str(ident_id), "username": "narrow"}
+    finally:
+        async with app.app_context():
+            _delete_test_identity(app, ident_id)
+            set_module_enabled(app.db, module_redis, 1, "secrets", prior_secrets)
+            set_module_enabled(app.db, module_redis, 1, "issues", prior_issues)
+        if prior_ollama_transport is sentinel:
+            app.extensions.pop("ai_researcher_ollama_transport", None)
+        else:
+            app.extensions["ai_researcher_ollama_transport"] = prior_ollama_transport
+        if prior_elder_transport is sentinel:
+            app.extensions.pop("ai_researcher_elder_transport", None)
+        else:
+            app.extensions["ai_researcher_elder_transport"] = prior_elder_transport
+
+
+def test_tool_scope_mapping_completeness_and_intersection() -> None:
+    """Every read-only MCP tool maps to a registered read scope; scope intersection drops mutations."""
+    catalog = set(get_service_researcher_read_scopes())
+    read_only_tools = [tool for tool in TOOL_REGISTRY if tool.read_only]
+    assert len(read_only_tools) > 0
+
+    for tool in read_only_tools:
+        req_scope = get_tool_required_scope(tool)
+        assert (
+            req_scope is not None
+        ), f"Missing required scope for read-only tool {tool.name}"
+        assert (
+            req_scope in catalog
+        ), f"Scope {req_scope!r} for tool {tool.name} missing from catalog"
+
+    assert intersect_caller_read_scopes(
+        [
+            "ai:read",
+            "entities:write",
+            "secrets:admin",
+            "issues:delete",
+            "flows:execute",
+            "access_reviews:approve",
+            "entities:read",
+        ]
+    ) == ["ai:read", "entities:read"]
+    assert intersect_caller_read_scopes("ai:read entities:read entities:write") == [
+        "ai:read",
+        "entities:read",
+    ]
+    wildcard_expanded = intersect_caller_read_scopes(["*:read"])
+    assert "*:read" not in wildcard_expanded
+    assert wildcard_expanded == sorted(catalog)
+    assert intersect_caller_read_scopes(None) == []
+
+    observer_scopes = role_scopes("observer")
+    assert "ai:read" in observer_scopes
+    assert "entities:read" in observer_scopes
+    assert "infrastructure:read" in observer_scopes
+    assert "documents:read" in observer_scopes
+    assert "webhooks_alerting:read" in observer_scopes
+    assert "users:read" not in observer_scopes
+    assert "backup:read" not in observer_scopes
+    assert "logs:read" not in observer_scopes
+    assert all(s.endswith(":read") for s in observer_scopes)
+
+    all_module_ids = {t.required_module for t in read_only_tools if t.required_module}
+    all_read_tools = get_tools(enabled_modules=all_module_ids, read_only=True)
+
+    observer_tool_names = {
+        t.name for t in filter_tools_by_scopes(all_read_tools, observer_scopes)
+    }
+    for sensitive_tool in (
+        "list_identities",
+        "get_identity",
+        "list_identity_groups",
+        "list_backups",
+        "get_backup_stats",
+        "list_system_logs",
+    ):
+        assert sensitive_tool not in observer_tool_names
+
+    editor_tool_names = {
+        t.name for t in filter_tools_by_scopes(all_read_tools, role_scopes("editor"))
+    }
+    assert "list_identities" in editor_tool_names
+    assert "list_backups" not in editor_tool_names
+    assert "list_system_logs" not in editor_tool_names
+
+    admin_tool_names = {
+        t.name for t in filter_tools_by_scopes(all_read_tools, role_scopes("admin"))
+    }
+    assert "list_backups" in admin_tool_names
+    assert "list_system_logs" in admin_tool_names
+
+
+@pytest.mark.asyncio
+async def test_cross_tenant_service_token_override_completely_removed(app) -> None:
+    """AI_RESEARCHER_SERVICE_TOKEN is absent from Config/app.config and ignored if manually injected."""
+    assert not hasattr(Config, "AI_RESEARCHER_SERVICE_TOKEN")
+    assert "AI_RESEARCHER_SERVICE_TOKEN" not in app.config
+
+    async with app.app_context():
+        foreign_token = generate_service_researcher_token(
+            tenant_id=2,
+            scopes=["ai:read", "infrastructure:read"],
+            ttl_seconds=300,
+            caller_sub="foreign-admin",
+        )
+        seen_tokens: list[str] = []
+
+        def ollama_handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/chat":
+                body = json.loads(request.content.decode("utf-8"))
+                tool_msgs = [
+                    m for m in (body.get("messages") or []) if m.get("role") == "tool"
+                ]
+                if not tool_msgs:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "message": {
+                                "role": "assistant",
+                                "content": "",
+                                "tool_calls": [
+                                    {
+                                        "function": {
+                                            "name": "search_entities",
+                                            "arguments": {"query": "db"},
+                                        }
+                                    }
+                                ],
+                            }
+                        },
+                    )
+                return httpx.Response(
+                    200, json={"message": {"role": "assistant", "content": "Done"}}
+                )
+            return httpx.Response(404, json={"error": "not found"})
+
+        def elder_handler(request: httpx.Request) -> httpx.Response:
+            auth_header = request.headers.get("Authorization", "")
+            seen_tokens.append(auth_header.removeprefix("Bearer ").strip())
+            return httpx.Response(200, json={"entities": []})
+
+        app.config["AI_RESEARCHER_SERVICE_TOKEN"] = foreign_token
+        try:
+            result = await run_ai_research(
+                app,
+                1,
+                query="db",
+                caller_sub="caller-tenant-1",
+                caller_scopes=["ai:read", "infrastructure:read"],
+                ollama_transport=httpx.MockTransport(ollama_handler),
+                elder_transport=httpx.MockTransport(elder_handler),
+            )
+            assert result["answer"] == "Done"
+            assert len(seen_tokens) == 1
+            assert seen_tokens[0] != foreign_token
+            verified = verify_token(seen_tokens[0])
+            assert verified is not None
+            assert verified["tenant"] == "1"
+            assert verified["delegated_by"] == "caller-tenant-1"
+        finally:
+            app.config.pop("AI_RESEARCHER_SERVICE_TOKEN", None)
+
+
+@pytest.mark.asyncio
+async def test_portal_user_scopes_and_superuser_empty_scope_fallback(
+    app, async_client
+) -> None:
+    """portal_user JWTs receive role-derived read scopes (including legacy cookies) and non-superusers cannot bypass empty scope."""
+    observer_claims = PortalAuthService.generate_jwt_claims(
+        {
+            "id": 71,
+            "email": "obs@example.com",
+            "tenant_id": 1,
+            "global_role": None,
+            "tenant_role": "observer",
+        }
+    )
+    assert observer_claims["roles"] == ["observer"]
+    assert observer_claims["scope"] == role_scopes("observer")
+    assert "ai:read" in observer_claims["scope"]
+    assert "users:read" not in observer_claims["scope"]
+    assert all(s.endswith(":read") for s in observer_claims["scope"])
+
+    superadmin_claims = PortalAuthService.generate_jwt_claims(
+        {
+            "id": 72,
+            "email": "sa@example.com",
+            "tenant_id": 1,
+            "global_role": "superadmin",
+            "tenant_role": "observer",
+        }
+    )
+    assert superadmin_claims["roles"] == ["admin"]
+    assert superadmin_claims["scope"] == role_scopes("admin")
+
+    sentinel = object()
+    prior_ollama_transport = app.extensions.get(
+        "ai_researcher_ollama_transport", sentinel
+    )
+    prior_elder_transport = app.extensions.get(
+        "ai_researcher_elder_transport", sentinel
+    )
+    seen_downstream_scopes: list[list[str]] = []
+
+    def ollama_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "llama3.2"}]})
+        if request.url.path == "/api/chat":
+            body = json.loads(request.content.decode("utf-8"))
+            tool_msgs = [
+                m for m in (body.get("messages") or []) if m.get("role") == "tool"
+            ]
+            if not tool_msgs:
+                return httpx.Response(
+                    200,
+                    json={
+                        "message": {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": "search_entities",
+                                        "arguments": {"query": "edge"},
+                                    }
+                                }
+                            ],
+                        }
+                    },
+                )
+            return httpx.Response(
+                200, json={"message": {"role": "assistant", "content": "OK"}}
+            )
+        return httpx.Response(404, json={"error": "not found"})
+
+    def elder_handler(request: httpx.Request) -> httpx.Response:
+        tok = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        seen_downstream_scopes.append(
+            list(jwt.decode(tok, options={"verify_signature": False})["scope"])
+        )
+        return httpx.Response(200, json={"entities": []})
+
+    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+        ollama_handler
+    )
+    app.extensions["ai_researcher_elder_transport"] = httpx.MockTransport(elder_handler)
+    pu_email = "sec-portal-obs@example.com"
+    async with app.app_context():
+        pu_id = _create_test_portal_user(
+            app, email=pu_email, tenant_id=1, global_role=None, tenant_role="observer"
+        )
+        non_su_id = _create_test_identity(
+            app,
+            username="sec-empty-regular",
+            tenant_id=1,
+            portal_role="observer",
+            is_superuser=False,
+        )
+        legacy_portal_token = _encode_test_jwt(
+            app,
+            sub=str(pu_id),
+            tenant_id=1,
+            token_type="portal_user",
+            extra={"email": pu_email, "tenant_role": "observer", "global_role": None},
+        )
+        empty_non_su = _encode_test_jwt(
+            app,
+            sub=str(non_su_id),
+            tenant_id=1,
+            token_type="access",
+            roles=[],
+            scopes=[],
+            extra={"username": "sec-empty-regular"},
+        )
+        empty_su = _encode_test_jwt(
+            app,
+            sub="1",
+            tenant_id=1,
+            token_type="access",
+            roles=[],
+            scopes=[],
+            extra={"username": "admin@localhost.local"},
+        )
+        expected_catalog_sorted = sorted(get_service_researcher_read_scopes())
+
+    try:
+        portal_headers = {"Authorization": f"Bearer {legacy_portal_token}"}
+
+        cfg_resp = await async_client.get(
+            "/api/v1/search/ai-research/config", headers=portal_headers
+        )
+        assert cfg_resp.status_code == 200
+        run_resp = await async_client.post(
+            "/api/v1/search/ai-research",
+            headers=portal_headers,
+            json={"query": "edge"},
+        )
+        assert run_resp.status_code == 200
+        assert len(seen_downstream_scopes) == 1
+        assert seen_downstream_scopes[0] == sorted(
+            intersect_caller_read_scopes(role_scopes("observer"))
+        )
+        assert "users:read" not in seen_downstream_scopes[0]
+        assert "backup:read" not in seen_downstream_scopes[0]
+
+        non_su_headers = {"Authorization": f"Bearer {empty_non_su}"}
+        assert (
+            await async_client.get(
+                "/api/v1/search/ai-research/config", headers=non_su_headers
+            )
+        ).status_code == 403
+        assert (
+            await async_client.post(
+                "/api/v1/search/ai-research",
+                headers=non_su_headers,
+                json={"query": "edge"},
+            )
+        ).status_code == 403
+
+        su_headers = {"Authorization": f"Bearer {empty_su}"}
+        su_cfg = await async_client.get(
+            "/api/v1/search/ai-research/config", headers=su_headers
+        )
+        assert su_cfg.status_code == 200
+        su_run = await async_client.post(
+            "/api/v1/search/ai-research",
+            headers=su_headers,
+            json={"query": "edge"},
+        )
+        assert su_run.status_code == 200
+        assert seen_downstream_scopes[-1] == expected_catalog_sorted
+    finally:
+        async with app.app_context():
+            _delete_test_portal_user(app, pu_id)
+            _delete_test_identity(app, non_su_id)
         if prior_ollama_transport is sentinel:
             app.extensions.pop("ai_researcher_ollama_transport", None)
         else:

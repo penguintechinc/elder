@@ -225,6 +225,10 @@ def _register_before_request(app: Quart) -> None:
         token_type = payload.get("type")
         if token_type == "service_researcher":
             raw_scopes = payload.get("scope", [])
+            if isinstance(raw_scopes, str):
+                raw_scopes = raw_scopes.split()
+            elif not isinstance(raw_scopes, list):
+                raw_scopes = []
             g.claims = {
                 "sub": sub,
                 "tenant": payload.get("tenant", ""),
@@ -233,12 +237,42 @@ def _register_before_request(app: Quart) -> None:
                 "identity_id": None,
                 "user_identity_id": None,
                 "type": "service_researcher",
+                "delegated_by": payload.get("delegated_by"),
+                "act": payload.get("act"),
             }
             return
         try:
             identity_id = int(sub)
         except (TypeError, ValueError):
             identity_id = None
+
+        raw_scopes = payload.get("scope", [])
+        if isinstance(raw_scopes, str):
+            scopes = [s for s in raw_scopes.split() if s]
+        elif isinstance(raw_scopes, (list, tuple, set)):
+            scopes = [s.strip() for s in raw_scopes if isinstance(s, str) and s.strip()]
+        else:
+            scopes = []
+
+        raw_roles = payload.get("roles", [])
+        if isinstance(raw_roles, str):
+            roles = [r for r in raw_roles.split() if r]
+        elif isinstance(raw_roles, (list, tuple, set)):
+            roles = [r.strip() for r in raw_roles if isinstance(r, str) and r.strip()]
+        else:
+            roles = []
+
+        if token_type == "portal_user":
+            from apps.api.auth.rbac import resolve_portal_effective_role, role_scopes
+
+            effective_role = resolve_portal_effective_role(
+                payload.get("global_role"), payload.get("tenant_role")
+            )
+            if not scopes:
+                scopes = role_scopes(effective_role)
+            if not roles:
+                roles = [effective_role]
+
         g.claims = {
             "sub": sub,
             # Portal-auth JWTs carry the tenant under `tenant_id`, not `tenant`.
@@ -246,8 +280,8 @@ def _register_before_request(app: Quart) -> None:
             # flows) read g.claims["tenant"], so map tenant_id through here —
             # otherwise every one of them 403s with "Tenant not found".
             "tenant": payload.get("tenant") or payload.get("tenant_id", ""),
-            "roles": payload.get("roles", []),
-            "scope": payload.get("scope", []),
+            "roles": roles,
+            "scope": scopes,
             # The subject IS the authenticated identity id; expose it under the
             # keys module handlers read (documents: identity_id, pages: user_identity_id).
             "identity_id": identity_id,

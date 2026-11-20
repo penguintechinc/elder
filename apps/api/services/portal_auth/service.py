@@ -494,11 +494,18 @@ class PortalAuthService:
         Returns:
             JWT claims dict
         """
+        from apps.api.auth.rbac import resolve_portal_effective_role, role_scopes
+
+        effective_role = resolve_portal_effective_role(
+            user.get("global_role"), user.get("tenant_role")
+        )
         return {
             "sub": str(user["id"]),
             "email": user["email"],
             "tenant_id": user["tenant_id"],
             "tenant_role": user.get("tenant_role"),
             "global_role": user.get("global_role"),
+            "roles": [effective_role],
+            "scope": role_scopes(effective_role),
             "type": "portal_user",
         }

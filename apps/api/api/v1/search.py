@@ -4,12 +4,15 @@
 
 import json
 import logging
+from typing import Any
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.auth.decorators import login_required
+from apps.api.auth.decorators import login_required, require_scope
+from apps.api.auth.jwt_handler import get_service_researcher_read_scopes
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.ai_researcher import (
+    AIResearchPermissionError,
     AIResearchValidationError,
     OllamaUnavailableError,
     get_ai_researcher_config,
@@ -590,8 +593,27 @@ def _resolve_request_tenant_id() -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _resolve_ai_research_caller() -> tuple[str, Any, str | None]:
+    """Extract caller_sub, caller_scopes, and caller_username from request context."""
+    user = getattr(g, "current_user", None)
+    claims = getattr(g, "claims", {}) or {}
+    caller_sub = str(
+        claims.get("sub") or (getattr(user, "id", "") if user is not None else "") or ""
+    ).strip()
+    caller_username = getattr(user, "username", None) if user is not None else None
+    caller_scopes = claims.get("scope", [])
+    if (
+        not caller_scopes
+        and user is not None
+        and getattr(user, "is_superuser", False) in (True, 1)
+    ):
+        caller_scopes = get_service_researcher_read_scopes()
+    return caller_sub, caller_scopes, caller_username
+
+
 @bp.route("/ai-research/config", methods=["GET"])
 @login_required
+@require_scope("ai:read")
 async def get_ai_research_config_endpoint():
     """Return AI Researcher model configuration, Ollama health, and enabled MCP tool count."""
     tenant_id = _resolve_request_tenant_id()
@@ -602,9 +624,14 @@ async def get_ai_research_config_endpoint():
             ),
             403,
         )
+    _, caller_scopes, _ = _resolve_ai_research_caller()
     try:
-        config = await get_ai_researcher_config(current_app, tenant_id)
+        config = await get_ai_researcher_config(
+            current_app, tenant_id, caller_scopes=caller_scopes
+        )
         return jsonify(config), 200
+    except AIResearchPermissionError as exc:
+        return jsonify({"error": "FORBIDDEN", "message": str(exc)}), 403
     except Exception as exc:
         return log_error_and_respond(
             logger, exc, "Failed to load AI Researcher configuration", 500
@@ -613,6 +640,7 @@ async def get_ai_research_config_endpoint():
 
 @bp.route("/ai-research", methods=["POST"])
 @login_required
+@require_scope("ai:read")
 async def run_ai_research_endpoint():
     """Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP."""
     user = getattr(g, "current_user", None)
@@ -636,6 +664,8 @@ async def run_ai_research_endpoint():
             403,
         )
 
+    caller_sub, caller_scopes, caller_username = _resolve_ai_research_caller()
+
     try:
         payload = await request.get_json(silent=True)
         if not isinstance(payload, dict):
@@ -658,11 +688,16 @@ async def run_ai_research_endpoint():
             current_app,
             tenant_id,
             query=str(query),
+            caller_sub=caller_sub,
+            caller_scopes=caller_scopes,
+            caller_username=caller_username,
             model=str(model) if isinstance(model, str) else None,
             history=history if isinstance(history, list) else None,
             max_steps=int(max_steps) if isinstance(max_steps, int) else None,
         )
         return jsonify(result), 200
+    except AIResearchPermissionError as exc:
+        return jsonify({"error": "FORBIDDEN", "message": str(exc)}), 403
     except AIResearchValidationError as exc:
         return jsonify({"error": "INVALID_REQUEST", "message": str(exc)}), 400
     except OllamaUnavailableError as exc:

@@ -29,10 +29,14 @@ def _is_valid_read_scope(scope: Any) -> bool:
 
 def get_service_researcher_read_scopes() -> list[str]:
     """Return the deduplicated, sorted catalog of strictly read-only scopes."""
-    from apps.api.auth.rbac import _OBSERVER_SCOPES
+    from apps.api.auth.rbac import _ADMIN_SCOPES, _EDITOR_SCOPES, _OBSERVER_SCOPES
     from apps.api.modules import MODULES
 
-    scopes: set[str] = {s for s in _OBSERVER_SCOPES if _is_valid_read_scope(s)}
+    scopes: set[str] = {
+        s
+        for s in (*_OBSERVER_SCOPES, *_EDITOR_SCOPES, *_ADMIN_SCOPES)
+        if _is_valid_read_scope(s)
+    }
     for manifest in MODULES:
         for scope in manifest.scopes:
             if _is_valid_read_scope(scope):
@@ -42,22 +46,27 @@ def get_service_researcher_read_scopes() -> list[str]:
 
 def generate_service_researcher_token(
     tenant_id: int,
-    scopes: list[str] | tuple[str, ...] | None = None,
+    scopes: list[str] | tuple[str, ...],
     ttl_seconds: int = 300,
+    *,
+    caller_sub: str,
+    caller_username: str | None = None,
 ) -> str:
     """Mint a short-lived, strictly read-only ``service_researcher`` JWT.
 
     Args:
         tenant_id: Positive tenant ID to bind this token to.
-        scopes: Optional explicit list of ``*:read`` scopes. Defaults to all
-            registered read-only module/observer scopes.
+        scopes: Required non-empty sequence of ``<resource>:read`` scopes
+            intersected with the calling user's own permissions.
         ttl_seconds: Lifetime in seconds (1..600, max 10 minutes).
+        caller_sub: Authenticated caller subject delegating this token.
+        caller_username: Optional authenticated caller username for audit trails.
 
     Returns:
         Signed JWT string.
 
     Raises:
-        ValueError: If tenant_id, ttl_seconds, or any requested scope is invalid.
+        ValueError: If tenant_id, ttl_seconds, caller_sub, or any scope is invalid.
     """
     if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id <= 0:
         raise ValueError("tenant_id must be a positive integer")
@@ -70,23 +79,34 @@ def generate_service_researcher_token(
         raise ValueError(
             f"service_researcher token TTL must be between 1 and {MAX_SERVICE_RESEARCHER_TTL_SECONDS} seconds"
         )
+    if isinstance(caller_sub, bool) or caller_sub is None:
+        raise ValueError("caller_sub must be a non-empty string")
+    caller_sub_clean = str(caller_sub).strip()
+    if not caller_sub_clean:
+        raise ValueError("caller_sub must be a non-empty string")
 
-    if scopes is None:
-        validated_scopes = get_service_researcher_read_scopes()
-    else:
-        validated_scopes = []
-        for s in scopes:
-            if not _is_valid_read_scope(s):
-                raise ValueError(
-                    f"service_researcher tokens only allow '<resource>:read' scopes, got: {s!r}"
-                )
-            validated_scopes.append(s.strip())
-        if not validated_scopes:
-            raise ValueError("At least one read-only scope is required")
+    if scopes is None or isinstance(scopes, (str, bytes)):
+        raise ValueError("scopes must be a non-empty sequence of read-only scopes")
+    raw_validated: list[str] = []
+    for s in scopes:
+        if not _is_valid_read_scope(s):
+            raise ValueError(
+                f"service_researcher tokens only allow '<resource>:read' scopes, got: {s!r}"
+            )
+        raw_validated.append(s.strip())
+    validated_scopes = sorted(set(raw_validated))
+    if not validated_scopes:
+        raise ValueError("At least one read-only scope is required")
+
+    act_claim: dict[str, str] = {"sub": caller_sub_clean}
+    if isinstance(caller_username, str) and caller_username.strip():
+        act_claim["username"] = caller_username.strip()
 
     now = datetime.now(UTC)
     payload = {
-        "sub": f"service-researcher:{tenant_id}",
+        "sub": f"service-researcher:{tenant_id}:{caller_sub_clean}",
+        "delegated_by": caller_sub_clean,
+        "act": act_claim,
         "username": f"service-researcher-{tenant_id}",
         "type": "service_researcher",
         "iat": now,
@@ -262,9 +282,17 @@ def verify_token(token: str) -> dict[str, Any] | None:
                 )
                 return None
 
+            delegated_by = payload.get("delegated_by")
+            if not isinstance(delegated_by, str) or not delegated_by.strip():
+                logger.warning(
+                    "Rejected service_researcher token: missing delegated_by claim"
+                )
+                return None
+
             payload["tenant"] = str(tenant_id)
             payload["roles"] = ["viewer"]
             payload["scope"] = [s.strip() for s in candidate_scopes]
+            payload["delegated_by"] = delegated_by.strip()
 
         return payload
     except jwt.ExpiredSignatureError:
@@ -350,14 +378,28 @@ def get_current_user() -> Any:
             read_scopes = [
                 s for s in (payload.get("scope") or []) if _is_valid_read_scope(s)
             ]
-            if tenant_id <= 0 or not read_scopes:
+            delegated_by_raw = payload.get("delegated_by")
+            if (
+                tenant_id <= 0
+                or not read_scopes
+                or not isinstance(delegated_by_raw, str)
+                or not delegated_by_raw.strip()
+            ):
                 logger.warning(
-                    "Rejected service_researcher token with invalid tenant or scopes"
+                    "Rejected service_researcher token with invalid tenant, scopes, or delegated_by"
                 )
                 return None
+            delegated_by = delegated_by_raw.strip()
+            act = payload.get("act")
 
             class ServiceResearcherIdentity:
-                def __init__(self, tid: int, scopes: list[str]) -> None:
+                def __init__(
+                    self,
+                    tid: int,
+                    scopes: list[str],
+                    delegator: str,
+                    act_claim: Any,
+                ) -> None:
                     self.id = 0
                     self.username = f"service-researcher-{tid}"
                     self.email = None
@@ -368,11 +410,15 @@ def get_current_user() -> Any:
                     self.portal_role = "viewer"
                     self.token_type = "service_researcher"
                     self.scopes = scopes
+                    self.delegated_by = delegator
+                    self.act = act_claim
 
                 def get(self, key: str, default: Any = None) -> Any:
                     return getattr(self, key, default)
 
-            service_identity = ServiceResearcherIdentity(tenant_id, read_scopes)
+            service_identity = ServiceResearcherIdentity(
+                tenant_id, read_scopes, delegated_by, act
+            )
             g.current_user = service_identity
             return service_identity
 
