@@ -42,18 +42,20 @@ readonly VALUES_FILE="${VALUES_FILE:-k8s/helm/elder/alpha.yml}"
 readonly REGISTRY="${REGISTRY:-localhost:32000}"
 
 # Services with their build contexts and Dockerfile paths (relative to
-# PROJECT_ROOT). All four Dockerfiles COPY paths relative to the repo root
-# (e.g. `COPY services/svc-scanning ...`), so all four need repo root as build context.
+# PROJECT_ROOT). All service Dockerfiles COPY paths relative to the repo root
+# (e.g. `COPY services/svc-scanning ...`), so all need repo root as build context.
 declare -A SERVICE_DOCKERFILE=(
     ["api"]="apps/api/Dockerfile"
     ["worker"]="apps/worker/Dockerfile"
     ["svc-scanning"]="services/svc-scanning/Dockerfile"
+    ["svc-integrations"]="services/svc-integrations/Dockerfile"
     ["web"]="web/Dockerfile"
 )
 declare -A SERVICE_CONTEXT=(
     ["api"]="."
     ["worker"]="."
     ["svc-scanning"]="."
+    ["svc-integrations"]="."
     ["web"]="."
 )
 
@@ -229,6 +231,7 @@ do_deploy() {
             --set "web.image.tag=${TAG}" \
             --set "worker.image.tag=${TAG}" \
             --set "svc-scanning.image.tag=${TAG}" \
+            --set "svc-integrations.image.tag=${TAG}" \
             --dry-run --debug
         return 0
     fi
@@ -241,6 +244,7 @@ do_deploy() {
         --set "web.image.tag=${TAG}" \
         --set "worker.image.tag=${TAG}" \
         --set "svc-scanning.image.tag=${TAG}" \
+        --set "svc-integrations.image.tag=${TAG}" \
         --force-conflicts \
         --wait --timeout 300s; then
         print_error "Failed to apply Helm release"
@@ -349,10 +353,11 @@ ENVIRONMENT:
     REGISTRY:       ${REGISTRY}
 
 SERVICES:
-    api          (apps/api, build context: repo root)
-    worker       (apps/worker, build context: repo root)
-    svc-scanning (services/svc-scanning, build context: repo root)
-    web          (web, build context: repo root)
+    api              (apps/api, build context: repo root)
+    worker           (apps/worker, build context: repo root)
+    svc-scanning     (services/svc-scanning, build context: repo root)
+    svc-integrations (services/svc-integrations, build context: repo root)
+    web              (web, build context: repo root)
 
 EXAMPLES:
     # Full build and deploy

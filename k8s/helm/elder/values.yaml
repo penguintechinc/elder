@@ -36,8 +36,8 @@ modules:
 
 # OpenTelemetry (Phase 0.5) — ungated/Free observability; all services export to SigNoz via OTLP.
 # Rendered into the elder-otel ConfigMap (OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL), consumed via
-# envFrom by the api, worker, and svc-scanning workloads. OTEL_SERVICE_NAME is set per-component
-# (elder-api/elder-worker in Deployment, svc-scanning in CronJob).
+# envFrom by the api, worker, svc-scanning, and svc-integrations workloads. OTEL_SERVICE_NAME is
+# set per-component (elder-api/elder-worker in Deployment, svc-scanning/svc-integrations in CronJob).
 otel:
   enabled: true
   endpoint: "http://signoz-otel-collector:4318"
@@ -382,6 +382,43 @@ svc-scanning:
         - ALL
       add:
         - NET_RAW
+
+# Integrations Service (Rust data-plane CronJob)
+svc-integrations:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 55
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  image:
+    repository: elder-svc-integrations
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    ELDER_API_URL: "http://elder-api:5000"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    INTEGRATIONS_MAX_CONCURRENCY: "8"
+    INTEGRATIONS_JOB_TIMEOUT_SECONDS: "120"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  tmpStorage:
+    sizeLimit: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
 
 # Worker Service
 worker:

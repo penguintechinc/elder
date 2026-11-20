@@ -4,8 +4,8 @@ FROM rust:1.98-slim-bookworm@sha256:ff521445a372125ed4f76e1453a1f8098f2d05332d16
 WORKDIR /build
 
 COPY Cargo.toml Cargo.lock ./
-COPY crates/elder-svc-common crates/elder-svc-common
-COPY services/svc-scanning services/svc-scanning
+COPY crates crates
+COPY services services
 
 RUN cargo build --release --locked -p svc-scanning
 

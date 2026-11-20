@@ -65,6 +65,7 @@ updates:
       - "/apps/mcp"
       - "/apps/worker"
       - "/services/svc-scanning"
+      - "/services/svc-integrations"
       - "/tests"
       - "/web"
     schedule:

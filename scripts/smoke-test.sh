@@ -220,7 +220,7 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
         }
 
         # Build and push/load each service
-        for svc in api web svc-scanning worker; do
+        for svc in api web svc-scanning svc-integrations worker; do
             log_info "Building ${svc}..."
             case "$svc" in
                 api)
@@ -247,13 +247,13 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
                         exit 1
                     fi
                     ;;
-                svc-scanning)
-                    if docker build -t elder-svc-scanning:alpha-latest \
+                svc-scanning|svc-integrations)
+                    if docker build -t "elder-${svc}:alpha-latest" \
                         $PLATFORM_ARG \
-                        -f services/svc-scanning/Dockerfile --no-cache .; then
-                        _push_or_load "elder-svc-scanning:alpha-latest" || { record_fail "Failed to deploy svc-scanning image"; exit 1; }
+                        -f "services/${svc}/Dockerfile" --no-cache .; then
+                        _push_or_load "elder-${svc}:alpha-latest" || { record_fail "Failed to deploy ${svc} image"; exit 1; }
                     else
-                        record_fail "Failed to build svc-scanning image"
+                        record_fail "Failed to build ${svc} image"
                         exit 1
                     fi
                     ;;
@@ -620,15 +620,17 @@ fi
 # ALPHA-ONLY TESTS (K8s pod tests)
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
-    # Step 6: svc-scanning CronJob Check
+    # Step 6: Rust CronJob Checks
     log_info ""
-    log_info "Step 6: svc-scanning CronJob Status..."
+    log_info "Step 6: Rust CronJob Status..."
 
-    if kubectl --context $K8S_CONTEXT get cronjob elder-svc-scanning -n elder >/dev/null 2>&1; then
-        record_pass "svc-scanning CronJob exists"
-    else
-        log_warn "svc-scanning CronJob not found (may be expected for dev setup)"
-    fi
+    for cron_svc in svc-scanning svc-integrations; do
+        if kubectl --context "$K8S_CONTEXT" get cronjob "elder-${cron_svc}" -n elder >/dev/null 2>&1; then
+            record_pass "${cron_svc} CronJob exists"
+        else
+            log_warn "${cron_svc} CronJob not found (may be expected for dev setup)"
+        fi
+    done
 
     # Step 7: Worker Pod Test and Health Check
     log_info ""

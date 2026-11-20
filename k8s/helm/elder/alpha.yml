@@ -210,6 +210,39 @@ svc-scanning:
   screenshotStorage:
     sizeLimit: "500Mi"
 
+# Integrations Service (Rust CronJob)
+svc-integrations:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  image:
+    repository: elder-svc-integrations
+    tag: alpha-latest
+    pullPolicy: Always
+  env:
+    ELDER_API_URL: "http://elder-api:5000"
+    LOG_FORMAT: "json"
+    RUST_LOG: "debug"
+    INTEGRATIONS_MAX_CONCURRENCY: "8"
+    INTEGRATIONS_JOB_TIMEOUT_SECONDS: "120"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  tmpStorage:
+    sizeLimit: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
 # Worker Service - Single replica for alpha
 worker:
   enabled: true

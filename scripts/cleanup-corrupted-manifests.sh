@@ -141,6 +141,7 @@ CORRECT_PACKAGES=(
   "elder-envoy"
   "elder-scanner"
   "elder-svc-scanning"
+  "elder-svc-integrations"
   "elder-worker"
 )
 
