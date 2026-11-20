@@ -1350,19 +1350,19 @@ function InboundScopeSelector({
                       className="mt-0.5 w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500 shrink-0"
                       data-testid={`inbound-scope-${opt.scope}`}
                     />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
+                    <span className="min-w-0 flex-1 block">
+                      <span className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-slate-200">
                           {opt.label}
                         </span>
                         <code className="text-[11px] font-mono text-slate-400 bg-slate-950/70 px-1.5 py-0.5 rounded">
                           {opt.scope}
                         </code>
-                      </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      </span>
+                      <span className="block text-xs text-slate-400 mt-0.5">
                         {opt.description}
-                      </p>
-                    </div>
+                      </span>
+                    </span>
                   </label>
                 ))}
               </div>

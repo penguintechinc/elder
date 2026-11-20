@@ -623,6 +623,8 @@ def _exec_issue(
         db.commit()
         return 201, "created", {"resource": "issues", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(db, db.issues, target_id, tenant_id)
     if not existing:
         return _err(404, f"Issue {target_id} not found in tenant")
@@ -758,7 +760,7 @@ def _exec_entity(
         fields["sub_type"] = sub_t
     if "status" in data and data["status"] is not None:
         st, err = _safe_str(data["status"], 64)
-        if err or (st or "").lower() not in ("active", "inactive"):
+        if err or st is None or st.lower() not in ("active", "inactive"):
             return _err(400, "status must be active or inactive")
         fields["status"] = st.lower()
     if "metadata" in data:
@@ -791,6 +793,8 @@ def _exec_entity(
         db.commit()
         return 201, "created", {"resource": "entities", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(
         db, db.entities, target_id, tenant_id, org_fk="organization_id"
     )
@@ -870,6 +874,8 @@ def _exec_data_store(
         db.commit()
         return 201, "created", {"resource": "data_stores", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(db, db.data_stores, target_id, tenant_id)
     if not existing:
         return _err(404, f"Data store {target_id} not found in tenant")
@@ -937,6 +943,8 @@ def _exec_service(
         db.commit()
         return 201, "created", {"resource": "services", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(db, db.services, target_id, tenant_id)
     if not existing:
         return _err(404, f"Service {target_id} not found in tenant")
@@ -1007,6 +1015,8 @@ def _exec_software(
         db.commit()
         return 201, "created", {"resource": "software", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(db, db.software, target_id, tenant_id)
     if not existing:
         return _err(404, f"Software {target_id} not found in tenant")
@@ -1097,6 +1107,8 @@ def _exec_ai_resource(
         db.commit()
         return 201, "created", {"resource": "ai_resources", "id": new_id}
 
+    if target_id is None:
+        return _err(400, "Valid resource_id is required")
     existing = get_tenant_scoped(db, db.ai_resources, target_id, tenant_id)
     if not existing:
         return _err(404, f"AI resource {target_id} not found in tenant")
