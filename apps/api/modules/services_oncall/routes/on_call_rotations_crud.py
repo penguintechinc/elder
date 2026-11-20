@@ -298,6 +298,25 @@ async def create_rotation():
         insert_data.update(schedule_data)
 
         rotation_id = db.on_call_rotations.insert(**insert_data)
+
+        # Auto-add all active human identities in the selected organization
+        if scope_type == "organization" and data.get("organization_id"):
+            human_identities = db(
+                (db.identities.tenant_id == tenant_id)
+                & (db.identities.organization_id == data["organization_id"])
+                & (db.identities.is_active == True)  # noqa: E712
+                & (db.identities.identity_type.belongs(["human", "HUMAN"]))
+            ).select(orderby=db.identities.id)
+            now = datetime.datetime.now(datetime.UTC)
+            for idx, ident in enumerate(human_identities):
+                db.on_call_rotation_participants.insert(
+                    rotation_id=rotation_id,
+                    identity_id=ident.id,
+                    order_index=idx,
+                    is_active=True,
+                    created_at=now,
+                )
+
         db.commit()
 
         # Post-insert fetch of the row we just created. rotation_id is
