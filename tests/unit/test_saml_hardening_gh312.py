@@ -37,9 +37,11 @@ from apps.api.services.sso.idp_validation import (
     validate_x509_certificate,
 )
 
-# RFC 5737 TEST-NET-3 public IPs so penguin_limiter's skip_private_ips does not bypass.
+# RFC 5737 TEST-NET public IPs so penguin_limiter's skip_private_ips does not bypass.
+# Each rate-limit test uses its own IP so shared CI Redis counters cannot collide.
 PUBLIC_IP_1 = "203.0.113.10"
 PUBLIC_IP_2 = "203.0.113.11"
+PUBLIC_IP_3 = "198.51.100.10"
 
 
 def _make_pem_cert(*, days_from_now: int = 365, cn: str = "idp.example.test") -> str:
@@ -260,8 +262,24 @@ async def saml_world(app):
         db.commit()
 
 
+def _clear_saml_rate_limit_state(app) -> None:
+    """Clear per-route rate-limiter cache and any Redis counters for SAML login."""
+    app.extensions.pop("route_rate_limiters", None)
+    redis_client = getattr(app, "redis_client", None)
+    if redis_client is not None:
+        keys = list(redis_client.scan_iter(match="*elder_saml_login*"))
+        if keys:
+            redis_client.delete(*keys)
+
+
 class TestSamlLoginRateLimit:
     """regression: gh-312 -- per-route rate limit on SAML login initiation."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_rate_limit_counters(self, app):
+        _clear_saml_rate_limit_state(app)
+        yield
+        _clear_saml_rate_limit_state(app)
 
     @pytest.mark.asyncio
     async def test_saml_login_enforces_rate_limit_and_returns_429(
@@ -269,7 +287,6 @@ class TestSamlLoginRateLimit:
     ):
         monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", True)
         monkeypatch.setitem(app.config, "SAML_LOGIN_RATELIMIT", "2/minute")
-        app.extensions.pop("route_rate_limiters", None)
 
         headers = {"X-Forwarded-For": PUBLIC_IP_1}
         url = f"/api/v1/sso/saml/login/{saml_world['t_ok']}"
@@ -294,9 +311,8 @@ class TestSamlLoginRateLimit:
     ):
         monkeypatch.setitem(app.config, "RATELIMIT_ENABLED", True)
         monkeypatch.setitem(app.config, "SAML_LOGIN_RATELIMIT", "1/minute")
-        app.extensions.pop("route_rate_limiters", None)
 
-        headers = {"X-Forwarded-For": PUBLIC_IP_1}
+        headers = {"X-Forwarded-For": PUBLIC_IP_3}
         r1 = await async_client.get("/api/v1/sso/saml/login/9999999", headers=headers)
         r2 = await async_client.get("/api/v1/sso/saml/login/9999998", headers=headers)
 
