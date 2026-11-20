@@ -1,4 +1,5 @@
-import { useState, useMemo, type FormEvent } from "react";
+import { useState, useMemo, useEffect, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -31,6 +32,7 @@ import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
 import NetworkTopologyGraph from "@/components/NetworkTopologyGraph";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import type { FormField } from "@/types/form";
 
 interface Organization {
@@ -48,6 +50,7 @@ interface NetworkResource {
   location?: string;
   is_active: boolean;
   organization_id: number;
+  village_id?: string | null;
 }
 
 interface TopologyConnection {
@@ -167,6 +170,8 @@ export default function Networking() {
   const [createVlanId, setCreateVlanId] = useState("");
   const [createRegion, setCreateRegion] = useState("");
   const [createLocation, setCreateLocation] = useState("");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   const resetCreateForm = () => {
@@ -209,8 +214,32 @@ export default function Networking() {
   const { data: allNetworks } = useQuery({
     queryKey: ["allNetworks"],
     queryFn: () => api.listNetworks({}),
-    enabled: showCreateConnectionModal || showCreateModal,
+    enabled:
+      showCreateConnectionModal || showCreateModal || Boolean(highlightId),
   });
+
+  useEffect(() => {
+    if (!highlightId || selectedOrg) return;
+    const list = (allNetworks?.networks || []) as NetworkResource[];
+    const match = list.find(
+      (n) => String(n.id) === highlightId || n.village_id === highlightId,
+    );
+    if (match) {
+      setSelectedOrg(match.organization_id);
+      setActiveTab("Networks");
+      setSelectedNetworkType("all");
+    }
+  }, [highlightId, selectedOrg, allNetworks?.networks]);
+
+  useEffect(() => {
+    if (!highlightId || !networks?.networks?.length) return;
+    const match = (networks.networks as NetworkResource[]).find(
+      (n) => String(n.id) === highlightId || n.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`network-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, networks?.networks]);
 
   const { data: ipamPrefixesData, isLoading: ipamPrefixesLoading } = useQuery({
     queryKey: ["ipam-prefixes", createOrgId],
@@ -725,71 +754,92 @@ export default function Networking() {
                       selectedNetworkType === "all" ||
                       network.network_type === selectedNetworkType,
                   )
-                  .map((network: NetworkResource) => (
-                    <Card key={network.id}>
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {(() => {
-                              const TypeIcon =
-                                NETWORK_TYPE_ICONS[network.network_type] ||
-                                Network;
-                              return (
-                                <TypeIcon className="w-5 h-5 text-primary-400" />
-                              );
-                            })()}
-                            <div>
-                              <h3 className="text-lg font-semibold text-white">
-                                {network.name}
-                              </h3>
-                              <p className="text-sm text-slate-400">
-                                {
-                                  NETWORK_TYPES.find(
-                                    (t) => t.value === network.network_type,
-                                  )?.label
-                                }
-                              </p>
+                  .map((network: NetworkResource) => {
+                    const isHighlighted = Boolean(
+                      highlightId &&
+                        (String(network.id) === highlightId ||
+                          network.village_id === highlightId),
+                    );
+                    return (
+                      <Card
+                        key={network.id}
+                        id={`network-${network.id}`}
+                        data-highlighted={isHighlighted ? "true" : undefined}
+                        className={
+                          isHighlighted
+                            ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                            : undefined
+                        }
+                      >
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              {(() => {
+                                const TypeIcon =
+                                  NETWORK_TYPE_ICONS[network.network_type] ||
+                                  Network;
+                                return (
+                                  <TypeIcon className="w-5 h-5 text-primary-400" />
+                                );
+                              })()}
+                              <div>
+                                <h3 className="text-lg font-semibold text-white">
+                                  {network.name}
+                                </h3>
+                                <p className="text-sm text-slate-400">
+                                  {
+                                    NETWORK_TYPES.find(
+                                      (t) => t.value === network.network_type,
+                                    )?.label
+                                  }
+                                </p>
+                              </div>
                             </div>
+                            <span
+                              className={`px-2 py-1 text-xs font-medium rounded ${
+                                network.is_active
+                                  ? "bg-green-500/20 text-green-400"
+                                  : "bg-slate-500/20 text-slate-400"
+                              }`}
+                            >
+                              {network.is_active ? "Active" : "Inactive"}
+                            </span>
                           </div>
-                          <span
-                            className={`px-2 py-1 text-xs font-medium rounded ${
-                              network.is_active
-                                ? "bg-green-500/20 text-green-400"
-                                : "bg-slate-500/20 text-slate-400"
-                            }`}
-                          >
-                            {network.is_active ? "Active" : "Inactive"}
-                          </span>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        {network.description && (
-                          <p className="text-sm text-slate-400 mb-3">
-                            {network.description}
-                          </p>
-                        )}
-                        {network.region && (
-                          <p className="text-sm text-slate-500">
-                            Region: {network.region}
-                          </p>
-                        )}
-                        {network.location && (
-                          <p className="text-sm text-slate-500">
-                            Location: {network.location}
-                          </p>
-                        )}
-                        <div className="flex gap-2 mt-4">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => deleteMutation.mutate(network.id)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                        </CardHeader>
+                        <CardContent>
+                          {network.village_id && (
+                            <div className="mb-3">
+                              <VillageIdBadge villageId={network.village_id} />
+                            </div>
+                          )}
+                          {network.description && (
+                            <p className="text-sm text-slate-400 mb-3">
+                              {network.description}
+                            </p>
+                          )}
+                          {network.region && (
+                            <p className="text-sm text-slate-500">
+                              Region: {network.region}
+                            </p>
+                          )}
+                          {network.location && (
+                            <p className="text-sm text-slate-500">
+                              Location: {network.location}
+                            </p>
+                          )}
+                          <div className="flex gap-2 mt-4">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => deleteMutation.mutate(network.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
               </div>
             </>
           )}

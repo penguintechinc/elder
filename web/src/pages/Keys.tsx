@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -17,6 +18,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import {
   FormModalBuilder,
   FormField,
@@ -29,6 +31,7 @@ interface KeyProvider {
   provider_type: string;
   enabled: boolean;
   organization_id: number;
+  village_id?: string | null;
 }
 
 interface KeyProvidersResponse {
@@ -55,12 +58,25 @@ export default function Keys() {
   const [showEncryptModal, setShowEncryptModal] = useState(false);
   const [showDecryptModal, setShowDecryptModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<number | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["keyProviders"],
     queryFn: () => api.getKeyProviders() as Promise<KeyProvidersResponse>,
   });
+
+  useEffect(() => {
+    const providers = data?.providers || [];
+    if (!highlightId || !providers.length) return;
+    const match = providers.find(
+      (p) => String(p.id) === highlightId || p.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`key-provider-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.providers]);
 
   const testMutation = useMutation({
     mutationFn: (id: number) => api.testKeyProvider(id),
@@ -120,78 +136,99 @@ export default function Keys() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {data?.providers?.map((provider: KeyProvider) => (
-            <Card key={provider.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Key className="w-5 h-5 text-primary-400" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">
-                        {provider.name}
-                      </h3>
-                      <p className="text-sm text-slate-400">
-                        {
-                          PROVIDER_TYPES.find(
-                            (t) => t.value === provider.provider_type,
-                          )?.label
-                        }
-                      </p>
+          {data?.providers?.map((provider: KeyProvider) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(provider.id) === highlightId ||
+                  provider.village_id === highlightId),
+            );
+            return (
+              <Card
+                key={provider.id}
+                id={`key-provider-${provider.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : undefined
+                }
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Key className="w-5 h-5 text-primary-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">
+                          {provider.name}
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          {
+                            PROVIDER_TYPES.find(
+                              (t) => t.value === provider.provider_type,
+                            )?.label
+                          }
+                        </p>
+                      </div>
                     </div>
+                    <span
+                      className={`px-2 py-1 text-xs font-medium rounded ${
+                        provider.enabled
+                          ? "bg-green-500/20 text-green-400"
+                          : "bg-slate-500/20 text-slate-400"
+                      }`}
+                    >
+                      {provider.enabled ? "Enabled" : "Disabled"}
+                    </span>
                   </div>
-                  <span
-                    className={`px-2 py-1 text-xs font-medium rounded ${
-                      provider.enabled
-                        ? "bg-green-500/20 text-green-400"
-                        : "bg-slate-500/20 text-slate-400"
-                    }`}
-                  >
-                    {provider.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedProvider(provider.id);
-                      setShowEncryptModal(true);
-                    }}
-                  >
-                    <Lock className="w-4 h-4 mr-2" />
-                    Encrypt
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      setSelectedProvider(provider.id);
-                      setShowDecryptModal(true);
-                    }}
-                  >
-                    <Unlock className="w-4 h-4 mr-2" />
-                    Decrypt
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => testMutation.mutate(provider.id)}
-                  >
-                    <TestTube className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => deleteMutation.mutate(provider.id)}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardHeader>
+                <CardContent>
+                  {provider.village_id && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={provider.village_id} />
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedProvider(provider.id);
+                        setShowEncryptModal(true);
+                      }}
+                    >
+                      <Lock className="w-4 h-4 mr-2" />
+                      Encrypt
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setSelectedProvider(provider.id);
+                        setShowDecryptModal(true);
+                      }}
+                    >
+                      <Unlock className="w-4 h-4 mr-2" />
+                      Decrypt
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => testMutation.mutate(provider.id)}
+                    >
+                      <TestTube className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => deleteMutation.mutate(provider.id)}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 

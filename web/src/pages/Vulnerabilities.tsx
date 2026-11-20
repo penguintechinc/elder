@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search, Calendar, Plus, Upload, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -10,6 +11,7 @@ import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
 import CsvImportModal from "@/components/CsvImportModal";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 interface AffectedEntity {
   parent_type: string;
@@ -27,6 +29,7 @@ interface Vulnerability {
   description: string;
   affected_versions: string[];
   affected_entities: AffectedEntity[];
+  village_id?: string | null;
 }
 
 interface VulnerabilitiesResponse {
@@ -88,6 +91,8 @@ export default function Vulnerabilities() {
     useState<Vulnerability | null>(null);
   const [assignParentType, setAssignParentType] = useState<string>("service");
   const [assignParentId, setAssignParentId] = useState<string | number>("");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   // Fetch services and software for assignment dropdowns
@@ -151,7 +156,9 @@ export default function Vulnerabilities() {
       setNewDescription("");
       setNewPublishedAt("");
     },
-    onError: (err: { response?: { data?: { message?: string; error?: string } } }) => {
+    onError: (err: {
+      response?: { data?: { message?: string; error?: string } };
+    }) => {
       toast.error(
         err?.response?.data?.message ||
           err?.response?.data?.error ||
@@ -175,6 +182,16 @@ export default function Vulnerabilities() {
   });
 
   const items = data?.items || [];
+  useEffect(() => {
+    const list = data?.items || [];
+    if (!highlightId || !list.length) return;
+    const match = list.find(
+      (v) => String(v.id) === highlightId || v.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`vulnerability-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
   const stats = {
     total: data?.total ?? items.length,
     critical: items.filter((v) => v.severity === "critical").length,
@@ -363,102 +380,122 @@ export default function Vulnerabilities() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data?.items?.map((vuln: Vulnerability, idx: number) => (
-                    <tr
-                      key={vuln.id}
-                      className={`border-b border-slate-700 hover:bg-slate-800/50 transition-colors ${
-                        idx % 2 === 0 ? "bg-slate-900/30" : ""
-                      }`}
-                    >
-                      <td className="px-6 py-4">
-                        <a
-                          href={`https://cve.mitre.org/cgi-bin/cvename.cgi?name=${vuln.cve_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <span className="text-primary-400 hover:text-primary-300 font-mono text-sm">
-                            {vuln.cve_id}
-                          </span>
-                        </a>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${getSeverityColor(vuln.severity)}`}
-                        >
-                          {vuln.severity.charAt(0).toUpperCase() +
-                            vuln.severity.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div>
-                          <div className="text-white text-sm font-medium">
-                            {vuln.component}
-                          </div>
-                          <div className="text-slate-400 text-xs mt-1">
-                            {vuln.description}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {vuln.affected_entities?.map(
-                            (entity: AffectedEntity, i: number) => (
-                              <span
-                                key={i}
-                                className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                  entity.parent_type === "service"
-                                    ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                                    : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
-                                }`}
-                              >
-                                {entity.parent_name}
+                  {data?.items?.map((vuln: Vulnerability, idx: number) => {
+                    const isHighlighted = Boolean(
+                      highlightId &&
+                        (String(vuln.id) === highlightId ||
+                          vuln.village_id === highlightId),
+                    );
+                    return (
+                      <tr
+                        key={vuln.id}
+                        id={`vulnerability-${vuln.id}`}
+                        data-highlighted={isHighlighted ? "true" : undefined}
+                        className={`border-b border-slate-700 hover:bg-slate-800/50 transition-colors ${
+                          isHighlighted
+                            ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+                            : idx % 2 === 0
+                              ? "bg-slate-900/30"
+                              : ""
+                        }`}
+                      >
+                        <td className="px-6 py-4">
+                          <div>
+                            <a
+                              href={`https://cve.mitre.org/cgi-bin/cvename.cgi?name=${vuln.cve_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <span className="text-primary-400 hover:text-primary-300 font-mono text-sm">
+                                {vuln.cve_id}
                               </span>
-                            ),
-                          ) || (
-                            <span className="text-slate-500 text-xs">—</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-slate-400 text-xs font-mono">
-                          {vuln.affected_entities
-                            ?.map((e: AffectedEntity) => e.source_file)
-                            .filter(Boolean)
-                            .join(", ") || "—"}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(vuln.status)}`}
-                        >
-                          {vuln.status
-                            .replace("_", " ")
-                            .charAt(0)
-                            .toUpperCase() +
-                            vuln.status.replace("_", " ").slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2 text-slate-400 text-sm">
-                          <Calendar className="w-4 h-4" />
-                          {formatDate(vuln.published_date)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => {
-                            setSelectedVulnerability(vuln);
-                            setAssignParentId("");
-                            setAssignModalOpen(true);
-                          }}
-                          className="px-3 py-1 text-xs font-medium rounded bg-primary-600/20 text-primary-400 hover:bg-primary-600/30 transition-colors flex items-center gap-1"
-                        >
-                          <Plus className="w-3 h-3" />
-                          Assign
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            </a>
+                            {vuln.village_id && (
+                              <div className="mt-1">
+                                <VillageIdBadge villageId={vuln.village_id} />
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getSeverityColor(vuln.severity)}`}
+                          >
+                            {vuln.severity.charAt(0).toUpperCase() +
+                              vuln.severity.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-white text-sm font-medium">
+                              {vuln.component}
+                            </div>
+                            <div className="text-slate-400 text-xs mt-1">
+                              {vuln.description}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {vuln.affected_entities?.map(
+                              (entity: AffectedEntity, i: number) => (
+                                <span
+                                  key={i}
+                                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                    entity.parent_type === "service"
+                                      ? "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                                      : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                                  }`}
+                                >
+                                  {entity.parent_name}
+                                </span>
+                              ),
+                            ) || (
+                              <span className="text-slate-500 text-xs">—</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-slate-400 text-xs font-mono">
+                            {vuln.affected_entities
+                              ?.map((e: AffectedEntity) => e.source_file)
+                              .filter(Boolean)
+                              .join(", ") || "—"}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(vuln.status)}`}
+                          >
+                            {vuln.status
+                              .replace("_", " ")
+                              .charAt(0)
+                              .toUpperCase() +
+                              vuln.status.replace("_", " ").slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-2 text-slate-400 text-sm">
+                            <Calendar className="w-4 h-4" />
+                            {formatDate(vuln.published_date)}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => {
+                              setSelectedVulnerability(vuln);
+                              setAssignParentId("");
+                              setAssignModalOpen(true);
+                            }}
+                            className="px-3 py-1 text-xs font-medium rounded bg-primary-600/20 text-primary-400 hover:bg-primary-600/30 transition-colors flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            Assign
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -470,9 +507,14 @@ export default function Vulnerabilities() {
       {assignModalOpen && selectedVulnerability && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              Assign {selectedVulnerability.cve_id}
-            </h3>
+            <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+              <h3 className="text-lg font-semibold text-white">
+                Assign {selectedVulnerability.cve_id}
+              </h3>
+              {selectedVulnerability.village_id && (
+                <VillageIdBadge villageId={selectedVulnerability.village_id} />
+              )}
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault();

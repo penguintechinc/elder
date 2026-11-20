@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from "react";
-import { Link, useInRouterContext } from "react-router-dom";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import { Link, useInRouterContext, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -26,6 +26,7 @@ import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
 import AssigneePicker, { AssigneeValue } from "@/components/AssigneePicker";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { ISSUE_TYPES, issueTypeLabel } from "@/lib/constants/issueTypes";
 import { Organization } from "@/types";
 
@@ -39,6 +40,7 @@ interface WebhookConfig {
   filter_issue_type?: string;
   filter_assignee_type?: "identity" | "org_unit";
   filter_assignee_id?: number;
+  village_id?: string | null;
 }
 
 interface WebhooksResponse {
@@ -61,6 +63,7 @@ interface InboundWebhookConfig {
   last_received_at?: string | null;
   receive_count: number;
   created_at?: string | null;
+  village_id?: string | null;
 }
 
 interface InboundScopeOption {
@@ -225,31 +228,39 @@ const EVENT_TYPES = [
   { value: "admin_user.created", label: "Admin User Created" },
 ];
 
+function WebhooksWithRouter() {
+  const [searchParams] = useSearchParams();
+  return <WebhooksContent searchParams={searchParams} />;
+}
+
 export default function Webhooks() {
+  const inRouter = useInRouterContext();
+  if (inRouter) {
+    return <WebhooksWithRouter />;
+  }
+  const fallbackParams = new URLSearchParams(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+  return <WebhooksContent searchParams={fallbackParams} />;
+}
+
+function WebhooksContent({ searchParams }: { searchParams: URLSearchParams }) {
   const initialQuery = (() => {
-    if (typeof window === "undefined") {
-      return {
-        tab: "inbound" as const,
-        openCreate: false,
-        streamId: undefined as number | undefined,
-        streamName: undefined as string | undefined,
-      };
-    }
-    const params = new URLSearchParams(window.location.search);
-    const rawTab = params.get("tab");
-    const parsedStreamId = Number(params.get("stream_id"));
+    const rawTab = searchParams.get("tab");
+    const parsedStreamId = Number(searchParams.get("stream_id"));
     return {
       tab: (rawTab === "outbound" ? "outbound" : "inbound") as
         | "inbound"
         | "outbound",
-      openCreate: params.get("create") === "1" && rawTab !== "outbound",
+      openCreate: searchParams.get("create") === "1" && rawTab !== "outbound",
       streamId:
         Number.isFinite(parsedStreamId) && parsedStreamId > 0
           ? parsedStreamId
           : undefined,
-      streamName: params.get("stream_name") || undefined,
+      streamName: searchParams.get("stream_name") || undefined,
     };
   })();
+  const highlightId = searchParams.get("highlight");
 
   const [activeTab, setActiveTab] = useState<"inbound" | "outbound">(
     initialQuery.tab,
@@ -276,6 +287,7 @@ export default function Webhooks() {
   } | null>(null);
   const [eventsWebhook, setEventsWebhook] =
     useState<InboundWebhookConfig | null>(null);
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: profile } = useQuery({
@@ -300,6 +312,49 @@ export default function Webhooks() {
         : Promise.resolve({ inbound_webhooks: [], count: 0 }),
     enabled: isAdmin,
   });
+
+  useEffect(() => {
+    if (!highlightId || appliedHighlightRef.current === highlightId) return;
+    const inboundList = inboundData?.inbound_webhooks || [];
+    const outboundList = data?.webhooks || [];
+    const inboundMatch = inboundList.find(
+      (h) => String(h.id) === highlightId || h.village_id === highlightId,
+    );
+    const outboundMatch = outboundList.find(
+      (w) => String(w.id) === highlightId || w.village_id === highlightId,
+    );
+    const preferOutbound = searchParams.get("tab") === "outbound";
+    const target =
+      preferOutbound && outboundMatch
+        ? {
+            tab: "outbound" as const,
+            id: `outbound-webhook-${outboundMatch.id}`,
+          }
+        : inboundMatch
+          ? {
+              tab: "inbound" as const,
+              id: `inbound-webhook-${inboundMatch.id}`,
+            }
+          : outboundMatch
+            ? {
+                tab: "outbound" as const,
+                id: `outbound-webhook-${outboundMatch.id}`,
+              }
+            : null;
+    if (!target) return;
+    appliedHighlightRef.current = highlightId;
+    setActiveTab(target.tab);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(target.id)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [
+    highlightId,
+    searchParams,
+    inboundData?.inbound_webhooks,
+    data?.webhooks,
+  ]);
 
   const testMutation = useMutation({
     mutationFn: (id: number) => api.testWebhook(id),
@@ -462,8 +517,22 @@ export default function Webhooks() {
             <div className="space-y-4">
               {inboundData.inbound_webhooks.map((hook) => {
                 const fullUrl = `${window.location.origin}/api/v1/webhooks/receive/${hook.slug}`;
+                const isHighlighted = Boolean(
+                  highlightId &&
+                    (String(hook.id) === highlightId ||
+                      hook.village_id === highlightId),
+                );
                 return (
-                  <Card key={hook.id}>
+                  <Card
+                    key={hook.id}
+                    id={`inbound-webhook-${hook.id}`}
+                    data-highlighted={isHighlighted ? "true" : undefined}
+                    className={
+                      isHighlighted
+                        ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                        : undefined
+                    }
+                  >
                     <CardContent>
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
@@ -479,6 +548,9 @@ export default function Webhooks() {
                             <span className="px-2 py-0.5 text-xs font-medium rounded bg-primary-500/20 text-primary-300">
                               {hook.auth_type === "basic" ? "Basic" : "Bearer"}
                             </span>
+                            {hook.village_id && (
+                              <VillageIdBadge villageId={hook.village_id} />
+                            )}
                             {hook.stream_id && (
                               <SafeLink
                                 to={`/streams/${hook.stream_id}`}
@@ -637,68 +709,87 @@ export default function Webhooks() {
             </Card>
           ) : (
             <div className="space-y-4">
-              {data?.webhooks?.map((webhook: WebhookConfig) => (
-                <Card key={webhook.id}>
-                  <CardContent>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          {webhook.is_active ? (
-                            <CheckCircle className="w-5 h-5 text-green-400" />
-                          ) : (
-                            <XCircle className="w-5 h-5 text-slate-500" />
-                          )}
-                          <h3 className="text-lg font-semibold text-white">
-                            {webhook.name}
-                          </h3>
+              {data?.webhooks?.map((webhook: WebhookConfig) => {
+                const isHighlighted = Boolean(
+                  highlightId &&
+                    (String(webhook.id) === highlightId ||
+                      webhook.village_id === highlightId),
+                );
+                return (
+                  <Card
+                    key={webhook.id}
+                    id={`outbound-webhook-${webhook.id}`}
+                    data-highlighted={isHighlighted ? "true" : undefined}
+                    className={
+                      isHighlighted
+                        ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                        : undefined
+                    }
+                  >
+                    <CardContent>
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2 flex-wrap">
+                            {webhook.is_active ? (
+                              <CheckCircle className="w-5 h-5 text-green-400" />
+                            ) : (
+                              <XCircle className="w-5 h-5 text-slate-500" />
+                            )}
+                            <h3 className="text-lg font-semibold text-white">
+                              {webhook.name}
+                            </h3>
+                            {webhook.village_id && (
+                              <VillageIdBadge villageId={webhook.village_id} />
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-400 mb-3 font-mono">
+                            {webhook.url}
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            {webhook.events?.map((event: string) => (
+                              <span
+                                key={event}
+                                className="px-2 py-1 text-xs bg-primary-500/20 text-primary-400 rounded"
+                              >
+                                {event}
+                              </span>
+                            ))}
+                            {webhook.filter_issue_type && (
+                              <span className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded">
+                                type={issueTypeLabel(webhook.filter_issue_type)}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm text-slate-400 mb-3 font-mono">
-                          {webhook.url}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {webhook.events?.map((event: string) => (
-                            <span
-                              key={event}
-                              className="px-2 py-1 text-xs bg-primary-500/20 text-primary-400 rounded"
-                            >
-                              {event}
-                            </span>
-                          ))}
-                          {webhook.filter_issue_type && (
-                            <span className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded">
-                              type={issueTypeLabel(webhook.filter_issue_type)}
-                            </span>
-                          )}
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Edit webhook"
+                            onClick={() => setEditingWebhook(webhook)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => testMutation.mutate(webhook.id)}
+                          >
+                            <TestTube className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => deleteMutation.mutate(webhook.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Edit webhook"
-                          onClick={() => setEditingWebhook(webhook)}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => testMutation.mutate(webhook.id)}
-                        >
-                          <TestTube className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => deleteMutation.mutate(webhook.id)}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1867,10 +1958,15 @@ function RevealInboundCredentialsModal({
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">
-              Inbound Webhook Credentials — {webhook.name}
-            </h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-semibold text-white">
+                Inbound Webhook Credentials — {webhook.name}
+              </h2>
+              {webhook.village_id && (
+                <VillageIdBadge villageId={webhook.village_id} />
+              )}
+            </div>
             <Button size="sm" variant="ghost" onClick={onClose}>
               <X className="w-4 h-4" />
             </Button>
@@ -2035,10 +2131,15 @@ function InboundEventsModal({
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-3xl max-h-[85vh] overflow-y-auto">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">
-              Recent Events — {webhook.name}
-            </h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-semibold text-white">
+                Recent Events — {webhook.name}
+              </h2>
+              {webhook.village_id && (
+                <VillageIdBadge villageId={webhook.village_id} />
+              )}
+            </div>
             <Button size="sm" variant="ghost" onClick={onClose}>
               <X className="w-4 h-4" />
             </Button>

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -28,6 +29,7 @@ import ModalFormBuilder from "@/components/ModalFormBuilder";
 import { FormField } from "@/types/form";
 import GroupMembershipManager from "@/components/GroupMembershipManager";
 import AccessReviewManager from "@/components/AccessReviewManager";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { getStatusColor } from "@/lib/colorHelpers";
 import { IDENTITY_TYPES } from "@/lib/constants/identityTypes";
 
@@ -662,8 +664,31 @@ function IdentityRelationshipsTab() {
   );
 }
 
+function parseIamTab(raw: string | null): Tab {
+  switch (raw?.toLowerCase()) {
+    case "groups":
+    case "groups & roles":
+      return "Groups & Roles";
+    case "providers":
+      return "Providers";
+    case "approvals":
+    case "pending approvals":
+      return "Pending Approvals";
+    case "reviews":
+    case "access reviews":
+      return "Access Reviews";
+    case "relationships":
+      return "Relationships";
+    default:
+      return "All Identities";
+  }
+}
+
 export default function IAM() {
-  const [activeTab, setActiveTab] = useState<Tab>("All Identities");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const highlightId = searchParams.get("highlight");
+  const [activeTab, setActiveTab] = useState<Tab>(() => parseIamTab(tabParam));
   const [searchQuery, setSearchQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("");
@@ -677,7 +702,14 @@ export default function IAM() {
   const [modalType, setModalType] = useState<"identity" | "provider">(
     "identity",
   );
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(parseIamTab(tabParam));
+    }
+  }, [tabParam]);
 
   // Fetch pending approvals count
   const { data: pendingRequests } = useQuery({
@@ -1147,6 +1179,36 @@ export default function IAM() {
     return identities;
   };
 
+  useEffect(() => {
+    if (
+      !highlightId ||
+      activeTab !== "All Identities" ||
+      !localIdentities?.items?.length
+    ) {
+      return;
+    }
+    const match = localIdentities.items.find((identity) => {
+      const vid = (identity as { village_id?: string | null }).village_id;
+      return String(identity.id) === highlightId || vid === highlightId;
+    });
+    if (!match) return;
+    if (appliedHighlightRef.current !== highlightId) {
+      appliedHighlightRef.current = highlightId;
+      setSelectedIdentity({
+        ...match,
+        source: "local",
+        sourceLabel: "Local Database",
+        displayName: match.full_name || match.username,
+        email: match.email,
+        type: match.identity_type,
+        provider_id: null,
+      });
+      setShowDetailsModal(true);
+    }
+    const el = document.getElementById(`identity-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, activeTab, localIdentities?.items]);
+
   const getIdentityIcon = (type: string) => {
     const identityType = IDENTITY_TYPES.find((t) => t.value === type);
     if (identityType) {
@@ -1367,80 +1429,100 @@ export default function IAM() {
                 </CardContent>
               </Card>
             ) : (
-              filteredIdentities.map((identity) => (
-                <Card
-                  key={`${identity.source}-${identity.id}`}
-                  className="hover:border-primary-500/50 transition-colors cursor-pointer"
-                  onClick={() => {
-                    setSelectedIdentity(identity);
-                    setShowDetailsModal(true);
-                  }}
-                >
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-4 flex-1">
-                        <div className="mt-1">
-                          {getIdentityIcon(identity.type as string)}
-                        </div>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <h3 className="text-lg font-semibold text-white">
-                              {identity.displayName as string}
-                            </h3>
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded ${getIdentityTypeColor(identity.type as string)}`}
-                            >
-                              {IDENTITY_TYPES.find(
-                                (t) => t.value === identity.type,
-                              )?.label || (identity.type as string)}
-                            </span>
-                            <span
-                              className={`px-2 py-1 text-xs font-medium rounded ${getSourceBadge(identity.source as string)}`}
-                            >
-                              {identity.sourceLabel as string}
-                            </span>
+              filteredIdentities.map((identity) => {
+                const identityVillageId =
+                  typeof identity.village_id === "string"
+                    ? identity.village_id
+                    : null;
+                const isHighlighted = Boolean(
+                  highlightId &&
+                    (String(identity.id) === highlightId ||
+                      identityVillageId === highlightId),
+                );
+                return (
+                  <Card
+                    key={`${identity.source}-${identity.id}`}
+                    id={`identity-${String(identity.id)}`}
+                    data-highlighted={isHighlighted ? "true" : undefined}
+                    className={`hover:border-primary-500/50 transition-colors cursor-pointer ${
+                      isHighlighted
+                        ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                        : ""
+                    }`}
+                    onClick={() => {
+                      setSelectedIdentity(identity);
+                      setShowDetailsModal(true);
+                    }}
+                  >
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-4 flex-1">
+                          <div className="mt-1">
+                            {getIdentityIcon(identity.type as string)}
                           </div>
-                          {identity.email && (
-                            <p className="text-sm text-slate-400">
-                              {identity.email as string}
-                            </p>
-                          )}
-                          {identity.username &&
-                            identity.username !== identity.email && (
-                              <p className="text-sm text-slate-500">
-                                @{identity.username as string}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
+                              <h3 className="text-lg font-semibold text-white">
+                                {identity.displayName as string}
+                              </h3>
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded ${getIdentityTypeColor(identity.type as string)}`}
+                              >
+                                {IDENTITY_TYPES.find(
+                                  (t) => t.value === identity.type,
+                                )?.label || (identity.type as string)}
+                              </span>
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded ${getSourceBadge(identity.source as string)}`}
+                              >
+                                {identity.sourceLabel as string}
+                              </span>
+                              {identityVillageId && (
+                                <VillageIdBadge villageId={identityVillageId} />
+                              )}
+                            </div>
+                            {identity.email && (
+                              <p className="text-sm text-slate-400">
+                                {identity.email as string}
                               </p>
                             )}
+                            {identity.username &&
+                              identity.username !== identity.email && (
+                                <p className="text-sm text-slate-500">
+                                  @{identity.username as string}
+                                </p>
+                              )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedIdentity(identity);
+                              setShowDetailsModal(true);
+                            }}
+                          >
+                            View
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedIdentity(identity);
+                              setShowEditModal(true);
+                            }}
+                          >
+                            Edit
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedIdentity(identity);
-                            setShowDetailsModal(true);
-                          }}
-                        >
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedIdentity(identity);
-                            setShowEditModal(true);
-                          }}
-                        >
-                          Edit
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </div>
         </div>
@@ -1486,96 +1568,142 @@ export default function IAM() {
           </Card>
 
           {/* IAM Providers */}
-          {iamProviders?.providers?.map((provider) => (
-            <Card key={provider.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Cloud className="w-6 h-6 text-orange-400" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">
-                        {provider.name}
-                      </h3>
-                      <p className="text-sm text-slate-400">
-                        {PROVIDER_TYPES.find(
-                          (p) => p.value === provider.provider_type,
-                        )?.label || provider.provider_type}
-                      </p>
+          {iamProviders?.providers?.map((provider) => {
+            const providerVillageId =
+              (provider as { village_id?: string | null }).village_id ?? null;
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(provider.id) === highlightId ||
+                  providerVillageId === highlightId),
+            );
+            return (
+              <Card
+                key={provider.id}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : undefined
+                }
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Cloud className="w-6 h-6 text-orange-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">
+                          {provider.name}
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          {PROVIDER_TYPES.find(
+                            (p) => p.value === provider.provider_type,
+                          )?.label || provider.provider_type}
+                        </p>
+                      </div>
                     </div>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded ${getStatusColor(
+                        provider.enabled ? "active" : "inactive",
+                      )}`}
+                    >
+                      {provider.enabled ? "Enabled" : "Disabled"}
+                    </span>
                   </div>
-                  <span
-                    className={`px-3 py-1 text-xs font-medium rounded ${getStatusColor(
-                      provider.enabled ? "active" : "inactive",
-                    )}`}
-                  >
-                    {provider.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="ghost">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Sync
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    Configure
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          {/* Google Workspace Providers */}
-          {googleWorkspaceProviders?.providers?.map((provider) => (
-            <Card key={provider.id}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Cloud className="w-6 h-6 text-green-400" />
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">
-                        {provider.name}
-                      </h3>
-                      <p className="text-sm text-slate-400">Google Workspace</p>
-                    </div>
-                  </div>
-                  <span
-                    className={`px-3 py-1 text-xs font-medium rounded ${getStatusColor(
-                      provider.enabled ? "active" : "inactive",
-                    )}`}
-                  >
-                    {provider.enabled ? "Enabled" : "Disabled"}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2 text-sm mb-4">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Domain:</span>
-                    <span className="text-white">{provider.domain}</span>
-                  </div>
-                  {provider.last_sync_at && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Last Sync:</span>
-                      <span className="text-white">
-                        {new Date(provider.last_sync_at).toLocaleString()}
-                      </span>
+                </CardHeader>
+                <CardContent>
+                  {providerVillageId && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={providerVillageId} />
                     </div>
                   )}
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="ghost">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Sync
-                  </Button>
-                  <Button size="sm" variant="ghost">
-                    Configure
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost">
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Sync
+                    </Button>
+                    <Button size="sm" variant="ghost">
+                      Configure
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+
+          {/* Google Workspace Providers */}
+          {googleWorkspaceProviders?.providers?.map((provider) => {
+            const providerVillageId =
+              (provider as { village_id?: string | null }).village_id ?? null;
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(provider.id) === highlightId ||
+                  providerVillageId === highlightId),
+            );
+            return (
+              <Card
+                key={provider.id}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : undefined
+                }
+              >
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Cloud className="w-6 h-6 text-green-400" />
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">
+                          {provider.name}
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          Google Workspace
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded ${getStatusColor(
+                        provider.enabled ? "active" : "inactive",
+                      )}`}
+                    >
+                      {provider.enabled ? "Enabled" : "Disabled"}
+                    </span>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {providerVillageId && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={providerVillageId} />
+                    </div>
+                  )}
+                  <div className="space-y-2 text-sm mb-4">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Domain:</span>
+                      <span className="text-white">{provider.domain}</span>
+                    </div>
+                    {provider.last_sync_at && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Last Sync:</span>
+                        <span className="text-white">
+                          {new Date(provider.last_sync_at).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost">
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                      Sync
+                    </Button>
+                    <Button size="sm" variant="ghost">
+                      Configure
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
 
           {/* Add Provider Card */}
           <Card className="border-2 border-dashed border-slate-700 hover:border-primary-500/50 transition-colors">
@@ -1910,9 +2038,15 @@ export default function IAM() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <Card className="w-full max-w-2xl">
             <CardHeader>
-              <h2 className="text-xl font-semibold text-white">
-                Identity Details
-              </h2>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <h2 className="text-xl font-semibold text-white">
+                  Identity Details
+                </h2>
+                {typeof selectedIdentity.village_id === "string" &&
+                  selectedIdentity.village_id && (
+                    <VillageIdBadge villageId={selectedIdentity.village_id} />
+                  )}
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">

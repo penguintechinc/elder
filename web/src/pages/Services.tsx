@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -26,6 +27,7 @@ import ModalFormBuilder from "@/components/ModalFormBuilder";
 import SearchableSelect from "@/components/SearchableSelect";
 import { FormField } from "@/types/form";
 import OnCallBadge from "@/components/OnCallBadge";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 interface Organization {
   id: number;
@@ -44,6 +46,7 @@ interface Service {
   is_public?: boolean;
   domains?: string[];
   paths?: string[];
+  village_id?: string | null;
 }
 
 interface SBOMSchedule {
@@ -181,6 +184,9 @@ export default function Services() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [viewingService, setViewingService] = useState<Service | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
@@ -253,6 +259,20 @@ export default function Services() {
       deleteMutation.mutate(id);
     });
   };
+
+  useEffect(() => {
+    if (!highlightId || !data?.items?.length) return;
+    const match = (data.items as Service[]).find(
+      (s) => String(s.id) === highlightId || s.village_id === highlightId,
+    );
+    if (!match) return;
+    if (appliedHighlightRef.current !== highlightId) {
+      appliedHighlightRef.current = highlightId;
+      setViewingService(match);
+    }
+    const el = document.getElementById(`service-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
 
   const getLanguageColor = (language: string) => {
     switch (language) {
@@ -425,109 +445,128 @@ export default function Services() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((service: Service) => (
-            <Card
-              key={service.id}
-              className="cursor-pointer hover:border-primary-500/50 transition-colors"
-              onClick={() => setViewingService(service)}
-            >
-              <CardContent>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Server className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                    <h3 className="text-lg font-semibold text-white truncate">
-                      {service.name}
-                    </h3>
-                    {service.is_public ? (
-                      <span title="Public">
-                        <Globe className="w-4 h-4 text-green-400 flex-shrink-0" />
-                      </span>
-                    ) : (
-                      <span title="Private">
-                        <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingService(service);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(service.id, service.name);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {service.description && (
-                  <p className="text-sm text-slate-400 mb-3 line-clamp-2">
-                    {service.description}
-                  </p>
-                )}
-
-                <div className="flex flex-wrap gap-2 mb-3">
-                  <span
-                    className={`text-xs px-2 py-1 rounded ${getStatusColor(service.status)}`}
-                  >
-                    {service.status}
-                  </span>
-                  <span
-                    className={`text-xs px-2 py-1 rounded ${getLanguageColor(service.language)}`}
-                  >
-                    {service.language}
-                  </span>
-                  <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
-                    {service.deployment_method}
-                  </span>
-                </div>
-
-                {service.port && (
-                  <div className="text-xs text-slate-500 mb-3">
-                    Port: {service.port}
-                  </div>
-                )}
-
-                <div className="mb-3">
-                  <OnCallBadge
-                    scopeType="service"
-                    scopeId={service.id}
-                    compact
-                  />
-                </div>
-
-                {service.domains && service.domains.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {service.domains
-                      .slice(0, 2)
-                      .map((domain: string, idx: number) => (
-                        <span
-                          key={idx}
-                          className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400"
-                        >
-                          {domain}
+          {data?.items?.map((service: Service) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(service.id) === highlightId ||
+                  service.village_id === highlightId),
+            );
+            return (
+              <Card
+                key={service.id}
+                id={`service-${service.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={`cursor-pointer hover:border-primary-500/50 transition-colors ${
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : ""
+                }`}
+                onClick={() => setViewingService(service)}
+              >
+                <CardContent>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Server className="w-5 h-5 text-primary-400 flex-shrink-0" />
+                      <h3 className="text-lg font-semibold text-white truncate">
+                        {service.name}
+                      </h3>
+                      {service.is_public ? (
+                        <span title="Public">
+                          <Globe className="w-4 h-4 text-green-400 flex-shrink-0" />
                         </span>
-                      ))}
-                    {service.domains.length > 2 && (
-                      <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-400">
-                        +{service.domains.length - 2} more
-                      </span>
-                    )}
+                      ) : (
+                        <span title="Private">
+                          <Lock className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingService(service);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(service.id, service.name);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+
+                  {service.village_id && (
+                    <div className="mb-2">
+                      <VillageIdBadge villageId={service.village_id} />
+                    </div>
+                  )}
+
+                  {service.description && (
+                    <p className="text-sm text-slate-400 mb-3 line-clamp-2">
+                      {service.description}
+                    </p>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span
+                      className={`text-xs px-2 py-1 rounded ${getStatusColor(service.status)}`}
+                    >
+                      {service.status}
+                    </span>
+                    <span
+                      className={`text-xs px-2 py-1 rounded ${getLanguageColor(service.language)}`}
+                    >
+                      {service.language}
+                    </span>
+                    <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
+                      {service.deployment_method}
+                    </span>
+                  </div>
+
+                  {service.port && (
+                    <div className="text-xs text-slate-500 mb-3">
+                      Port: {service.port}
+                    </div>
+                  )}
+
+                  <div className="mb-3">
+                    <OnCallBadge
+                      scopeType="service"
+                      scopeId={service.id}
+                      compact
+                    />
+                  </div>
+
+                  {service.domains && service.domains.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {service.domains
+                        .slice(0, 2)
+                        .map((domain: string, idx: number) => (
+                          <span
+                            key={idx}
+                            className="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400"
+                          >
+                            {domain}
+                          </span>
+                        ))}
+                      {service.domains.length > 2 && (
+                        <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-400">
+                          +{service.domains.length - 2} more
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -895,7 +934,7 @@ function ServiceDetailsModal({
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Server className="w-5 h-5 text-primary-400" />
               <h2 className="text-xl font-semibold text-white">
                 {service.name}
@@ -908,6 +947,9 @@ function ServiceDetailsModal({
                 <span title="Private">
                   <Lock className="w-4 h-4 text-slate-400" />
                 </span>
+              )}
+              {service.village_id && (
+                <VillageIdBadge villageId={service.village_id} />
               )}
             </div>
             <button
