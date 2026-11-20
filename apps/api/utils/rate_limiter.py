@@ -69,6 +69,7 @@ PLATFORM_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/webhooks/receive/",
     "/api/v1/webhooks/inbound/receive/",
     "/api/v1/on-call/webhooks/",
+    "/api/v1/sync/webhooks/",
     "/api/v1/hooks/",
     "/api/v1/flows-hooks/",
 )
