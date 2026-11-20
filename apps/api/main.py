@@ -5,6 +5,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 
 import structlog
 from penguin_aaa.audit.emitter import Emitter
@@ -55,6 +56,23 @@ structlog.configure(
 logger = structlog.get_logger()
 
 
+def _resolve_app_version(configured_version: str | None) -> str:
+    """Resolve app version from .version when config falls back to placeholder."""
+    if configured_version and configured_version not in ("0.0.0", "0.1.0"):
+        return configured_version
+    for candidate in (
+        Path("/app/.version"),
+        Path(__file__).resolve().parents[2] / ".version",
+    ):
+        try:
+            text = candidate.read_text(encoding="utf-8").strip()
+            if text:
+                return text
+        except OSError:
+            continue
+    return configured_version or "0.0.0"
+
+
 def create_app(config_name: str = None) -> Quart:
     """
     Create and configure Quart application.
@@ -74,6 +92,7 @@ def create_app(config_name: str = None) -> Quart:
     config = get_config(config_name)
     app.config.from_object(config)
     config.init_app(app)
+    app.config["APP_VERSION"] = _resolve_app_version(app.config.get("APP_VERSION"))
 
     # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
     otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "elder-api"))

@@ -82,6 +82,7 @@ COPY --chown=elder:elder shared /app/shared
 COPY --chown=elder:elder requirements.txt /app/
 COPY --chown=elder:elder alembic.ini /app/
 COPY --chown=elder:elder alembic /app/alembic
+COPY --chown=elder:elder .version /app/.version
 
 # Expose ports
 EXPOSE 5000 50051
