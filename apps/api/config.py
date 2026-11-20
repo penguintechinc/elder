@@ -116,6 +116,10 @@ class Config:
     # Rate Limiting
     RATELIMIT_ENABLED = config("RATELIMIT_ENABLED", default=True, cast=bool)
     RATELIMIT_DEFAULT = config("RATELIMIT_DEFAULT", default="100/minute")
+    RATELIMIT_PLATFORM_DEFAULT = os.environ.get(
+        "RATELIMIT_PLATFORM_DEFAULT", "2000/minute"
+    )
+    RATELIMIT_ENDPOINT_OVERRIDES = os.environ.get("RATELIMIT_ENDPOINT_OVERRIDES", "")
     SAML_LOGIN_RATELIMIT = config("SAML_LOGIN_RATELIMIT", default="10/minute")
     RATELIMIT_STORAGE_URL = REDIS_URL
 
