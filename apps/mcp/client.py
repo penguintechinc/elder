@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import json as _json
+import logging
+import os
+import re
 import time
+from dataclasses import dataclass
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -59,6 +65,50 @@ def create_pooled_http_client(
     return httpx.AsyncClient(**kwargs)
 
 
+_log = logging.getLogger("hub-mcp.client")
+
+DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+_SECRET_RE = re.compile(
+    r"(?i)(bearer\s+|authorization[=:]\s*(?:bearer\s+)?|x-api-key[=:]\s*|"
+    r"(?:token|api[_-]?key|secret|password|jwt)=)[^\s&\"',;]+"
+)
+
+
+def max_response_bytes() -> int:
+    """Return the per-response upstream byte cap from ``MCP_MAX_RESPONSE_BYTES`` (default 4 MiB)."""
+    raw = os.getenv("MCP_MAX_RESPONSE_BYTES", "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_MAX_RESPONSE_BYTES
+    except ValueError:
+        return DEFAULT_MAX_RESPONSE_BYTES
+    return value if value > 0 else DEFAULT_MAX_RESPONSE_BYTES
+
+
+def mask_secrets(text: str) -> str:
+    """Redact bearer tokens, API keys and credential-like query values from log text."""
+    return _SECRET_RE.sub(lambda m: f"{m.group(1)}****", text)
+
+
+def public_error_message(status_code: int) -> str:
+    """Return a short, upstream-body-free message for a status code (never internal detail)."""
+    if status_code <= 0:
+        return "Upstream request failed"
+    try:
+        return HTTPStatus(status_code).phrase
+    except ValueError:
+        return "Upstream request failed"
+
+
+@dataclass(frozen=True)
+class _CappedResponse:
+    """Upstream response whose body was read with a hard byte cap."""
+
+    status_code: int
+    reason_phrase: str
+    body: bytes
+    too_large: bool
+
+
 class ElderAPIError(Exception):
     """Raised when the Elder API returns an HTTP 4xx/5xx or transport failure."""
 
@@ -74,22 +124,34 @@ class ElderAPIError(Exception):
         super().__init__(f"Elder API error {status_code}: {message}")
 
 
-def _extract_error_detail(resp: httpx.Response) -> tuple[str, Any]:
+class ElderResponseTooLargeError(ElderAPIError):
+    """Raised when an upstream response body exceeds ``MCP_MAX_RESPONSE_BYTES``."""
+
+    def __init__(self, limit: int) -> None:
+        super().__init__(
+            502,
+            f"Upstream response exceeded the {limit}-byte limit and was not returned; "
+            "narrow the request (filters, pagination) and retry",
+        )
+
+
+def _extract_error_detail(resp: _CappedResponse) -> tuple[str, Any]:
+    text = resp.body.decode("utf-8", errors="replace")
     try:
-        body = resp.json()
-        if isinstance(body, dict):
-            msg = str(
-                body.get("message")
-                or body.get("error")
-                or body.get("detail")
-                or resp.reason_phrase
-                or "Request failed"
-            )
-            return msg, body
-        return str(body), body
+        body = _json.loads(text)
     except ValueError:
-        text = resp.text.strip()
-        return (text[:300] or resp.reason_phrase or "Request failed"), text
+        stripped = text.strip()
+        return (stripped[:300] or resp.reason_phrase or "Request failed"), stripped
+    if isinstance(body, dict):
+        msg = str(
+            body.get("message")
+            or body.get("error")
+            or body.get("detail")
+            or resp.reason_phrase
+            or "Request failed"
+        )
+        return msg, body
+    return str(body), body
 
 
 def _inject_otel_trace_headers(headers: dict[str, str]) -> None:
@@ -213,55 +275,110 @@ class ElderClient:
         headers = self._build_request_headers(auth_headers)
 
         started = time.perf_counter()
+        limit = max_response_bytes()
         try:
-            resp = await client.request(
-                method,
-                path,
-                params=cleaned_params,
-                json=json,
-                headers=headers,
+            resp = await self._fetch_capped(
+                client, method, path, cleaned_params, json, headers, limit
             )
         except httpx.HTTPError as exc:
             _record_upstream_latency(
                 method, 0, (time.perf_counter() - started) * 1000.0
             )
-            raise ElderAPIError(0, f"Transport error calling {path}: {exc}") from exc
+            _log.warning(
+                "mcp_upstream_transport_error path=%s error=%s",
+                path,
+                mask_secrets(f"{type(exc).__name__}: {exc}"),
+            )
+            raise ElderAPIError(0, public_error_message(0)) from None
 
         if resp.status_code == 401:
             refreshed_headers = await self.session.handle_unauthorized()
             if refreshed_headers is not None:
                 retry_headers = self._build_request_headers(refreshed_headers)
                 try:
-                    resp = await client.request(
+                    resp = await self._fetch_capped(
+                        client,
                         method,
                         path,
-                        params=cleaned_params,
-                        json=json,
-                        headers=retry_headers,
+                        cleaned_params,
+                        json,
+                        retry_headers,
+                        limit,
                     )
                 except httpx.HTTPError as exc:
                     _record_upstream_latency(
                         method, 0, (time.perf_counter() - started) * 1000.0
                     )
-                    raise ElderAPIError(
-                        0, f"Transport error calling {path}: {exc}"
-                    ) from exc
+                    _log.warning(
+                        "mcp_upstream_transport_error path=%s error=%s",
+                        path,
+                        mask_secrets(f"{type(exc).__name__}: {exc}"),
+                    )
+                    raise ElderAPIError(0, public_error_message(0)) from None
 
         _record_upstream_latency(
             method, resp.status_code, (time.perf_counter() - started) * 1000.0
         )
 
+        if resp.too_large:
+            _log.warning(
+                "mcp_upstream_response_too_large path=%s status=%d limit=%d",
+                path,
+                resp.status_code,
+                limit,
+            )
+            raise ElderResponseTooLargeError(limit)
+
         if resp.status_code >= 400:
             msg, detail = _extract_error_detail(resp)
+            _log.warning(
+                "mcp_upstream_error path=%s status=%d detail=%s",
+                path,
+                resp.status_code,
+                mask_secrets(msg)[:300],
+            )
             raise ElderAPIError(resp.status_code, msg, detail=detail)
 
-        if resp.status_code == 204 or not resp.content:
+        if resp.status_code == 204 or not resp.body:
             return {"status": "ok", "status_code": resp.status_code}
 
+        text = resp.body.decode("utf-8", errors="replace")
         try:
-            return resp.json()
+            return _json.loads(text)
         except ValueError:
-            return {"raw": resp.text}
+            return {"raw": text}
+
+    @staticmethod
+    async def _fetch_capped(
+        client: httpx.AsyncClient,
+        method: str,
+        path: str,
+        params: dict[str, Any] | None,
+        json_body: Any | None,
+        headers: dict[str, str],
+        limit: int,
+    ) -> _CappedResponse:
+        """Stream an upstream response, stopping once ``limit`` decoded bytes are exceeded."""
+        async with client.stream(
+            method, path, params=params, json=json_body, headers=headers
+        ) as resp:
+            declared = resp.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > limit:
+                return _CappedResponse(
+                    resp.status_code, resp.reason_phrase, b"", too_large=True
+                )
+            chunks: list[bytes] = []
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > limit:
+                    return _CappedResponse(
+                        resp.status_code, resp.reason_phrase, b"", too_large=True
+                    )
+                chunks.append(chunk)
+            return _CappedResponse(
+                resp.status_code, resp.reason_phrase, b"".join(chunks), too_large=False
+            )
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """Send an authenticated GET request."""

@@ -111,11 +111,9 @@ def get_client() -> ElderClient:
         creds = extract_caller_credentials(req_headers)
         return _build_request_scoped_client(creds, transport=_hosted_transport)
 
-    ctx_creds = get_caller_credentials()
-    if ctx_creds is not None:
-        return _build_request_scoped_client(ctx_creds, transport=_hosted_transport)
-
-    if is_hosted_mode():
+    # Hosted mode fails closed: if the live request headers cannot be located we
+    # never fall back to ambient context credentials (cross-caller leak risk).
+    if is_hosted_mode() or get_caller_credentials() is not None:
         raise ElderAuthError("Caller authentication required in hosted HTTP/SSE mode")
 
     if _client is None:
@@ -242,9 +240,20 @@ def _build_mcp_wrapper(tool_def: ToolDefinition) -> Callable[..., Awaitable[Any]
 def register_all_tools(server: FastMCP) -> list[str]:
     """Register every tool from ``TOOL_REGISTRY`` on the given ``FastMCP`` instance."""
     registered: list[str] = []
+    supports_annotations = "annotations" in inspect.signature(server.tool).parameters
     for tool_def in TOOL_REGISTRY:
         wrapper = _build_mcp_wrapper(tool_def)
-        server.tool(name=tool_def.name, description=tool_def.description)(wrapper)
+        extra: dict[str, Any] = {}
+        if supports_annotations:
+            from mcp.types import ToolAnnotations
+
+            extra["annotations"] = ToolAnnotations(
+                readOnlyHint=tool_def.read_only,
+                destructiveHint=tool_def.destructive or None,
+            )
+        server.tool(name=tool_def.name, description=tool_def.description, **extra)(
+            wrapper
+        )
         registered.append(tool_def.name)
     return registered
 

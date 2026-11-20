@@ -302,8 +302,71 @@ def _append_sub_blueprints(
                 )
 
 
-def _is_catalog_eligible(path: str) -> bool:
-    return path.startswith("/api/") and "/internal/" not in path and ".." not in path
+_DENIED_ROUTE_SPECS: tuple[tuple[str, str], ...] = (
+    # Credential-establishing / unauthenticated auth routes.
+    ("GET", "/api/v1/auth/captcha-challenge"),
+    ("GET", "/api/v1/auth/guest-enabled"),
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/logout"),
+    ("POST", "/api/v1/auth/refresh"),
+    ("POST", "/api/v1/auth/register"),
+    ("POST", "/api/v1/portal-auth/login"),
+    ("POST", "/api/v1/portal-auth/logout"),
+    ("POST", "/api/v1/portal-auth/refresh"),
+    ("POST", "/api/v1/portal-auth/register"),
+    ("POST", "/api/v1/portal-auth/password/reset"),
+    ("POST", "/api/v1/portal-auth/mfa/verify"),
+    # SSO / SAML / OIDC browser-flow endpoints (unauthenticated or token-minting).
+    ("GET", "/api/v1/sso/saml/login/{}"),
+    ("POST", "/api/v1/sso/saml/acs/{}"),
+    ("GET", "/api/v1/sso/saml/slo/{}"),
+    ("POST", "/api/v1/sso/saml/slo/{}"),
+    ("GET", "/api/v1/sso/saml/metadata"),
+    ("GET", "/api/v1/sso/saml/metadata/{}"),
+    ("GET", "/api/v1/sso/oidc/authorize/{}"),
+    ("GET", "/api/v1/sso/oidc/callback"),
+    ("POST", "/api/v1/sso/oidc/refresh/{}"),
+    # Public share / public document routes (no caller credentials required).
+    ("GET", "/api/v1/diagrams/shared/{}"),
+    ("GET", "/api/v1/documents/public"),
+    ("GET", "/api/v1/documents/public/{}"),
+    # Inbound webhook trigger routes (secret-in-path or signature authenticated).
+    ("POST", "/api/v1/webhooks/receive/{}"),
+    ("POST", "/api/v1/flows-hooks/{}"),
+    ("POST", "/api/v1/sync/webhooks/{}/{}"),
+    ("POST", "/api/v1/on-call/webhooks/alertmanager/webhook"),
+    *(
+        (method, "/api/v1/hooks/{}")
+        for method in ("GET", "POST", "PUT", "PATCH", "DELETE")
+    ),
+    *(("GET", "/api/v1/hooks/{}/test"), ("POST", "/api/v1/hooks/{}/test")),
+)
+
+
+def _canonical_route(path: str) -> str:
+    """Normalize every ``{param}`` placeholder to ``{}`` for name-independent matching."""
+    return _PATH_PARAM_RE.sub("{}", path).rstrip("/") or "/"
+
+
+DENIED_ROUTES: frozenset[tuple[str, str]] = frozenset(_DENIED_ROUTE_SPECS)
+
+
+def is_route_denied(method: str, path: str) -> bool:
+    """Return True when a route is on the explicit never-invokable deny list.
+
+    The deny list blocks unauthenticated and credential-establishing routes so
+    hub-mcp can never act as a brute-force or session-minting proxy for hub-api.
+    """
+    return (str(method).upper(), _canonical_route(path)) in DENIED_ROUTES
+
+
+def _is_catalog_eligible(path: str, method: str | None = None) -> bool:
+    """Return True for non-internal ``/api/*`` routes that are not deny-listed."""
+    if not (path.startswith("/api/") and "/internal/" not in path and ".." not in path):
+        return False
+    if method is not None and is_route_denied(method, path):
+        return False
+    return True
 
 
 def _service_from_path(path: str) -> str:
@@ -369,7 +432,7 @@ def generate_catalog(
             if isinstance(bp_var, tuple) and bp_var[0] == "DIRECT":
                 _, method, rpath, fn_name, summary = bp_var
                 norm_path = _normalize_rule(rpath)
-                if _is_catalog_eligible(norm_path):
+                if _is_catalog_eligible(norm_path, method):
                     discovered.setdefault((method, norm_path), (fn_name, summary))
                 continue
             if not fpath.is_file():
@@ -380,7 +443,7 @@ def generate_catalog(
                 if r_bp != bp_var:
                     continue
                 norm_path = _normalize_rule(_join_paths(eff_prefix, rpath))
-                if _is_catalog_eligible(norm_path):
+                if _is_catalog_eligible(norm_path, method):
                     discovered.setdefault((method, norm_path), (fn_name, summary))
     else:
         for (method, path), details in oa_ops.items():
@@ -395,6 +458,8 @@ def generate_catalog(
     # First pass: compute base (service, operation_base)
     prelim: list[tuple[str, str, str, str, str, bool]] = []
     for (method, path), (raw_name, ast_summary) in sorted(discovered.items()):
+        if is_route_denied(method, path):
+            continue
         oa = oa_ops.get((method, path), {})
         oa_summary = str(oa.get("summary") or "").strip()
         if not oa_summary and oa.get("description"):
@@ -489,6 +554,8 @@ def _load_cached_catalog(resolved_path: str) -> tuple[APIOperation, ...]:
     ops: list[APIOperation] = []
     seen: set[tuple[str, str]] = set()
     for item in raw:
+        if is_route_denied(str(item["method"]), str(item["path"])):
+            continue
         key = (str(item["service"]), str(item["operation"]))
         if key in seen:
             raise ValueError(f"Duplicate catalog entry {key!r} in {path}")
@@ -614,8 +681,10 @@ def resolve_operation_path(
     path_params: dict[str, Any] | None = None,
 ) -> str:
     """Validate and substitute path parameters into a cataloged ``/api/...`` route."""
-    if not _is_catalog_eligible(op.path):
-        raise ValueError(f"Operation path is not eligible for invocation: {op.path!r}")
+    if not _is_catalog_eligible(op.path, op.method):
+        raise ValueError(
+            f"Operation {op.method} {op.path!r} is not eligible for invocation"
+        )
 
     provided = path_params or {}
     if not isinstance(provided, dict):

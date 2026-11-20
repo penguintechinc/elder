@@ -21,6 +21,15 @@ An MCP (Model Context Protocol) server exposing Elder's curated operational tool
 - `ELDER_API_KEY`: Elder API key (`X-API-Key`).
 - `ELDER_USERNAME` + `ELDER_PASSWORD`: Credentials for `/api/v1/auth/login`.
 
+## Hardening (hosted mode)
+
+- **Probes**: `/healthz` returns `{"status":"ok"}` and `/readyz` returns `{"status":"ok","ready":<bool>}`; no version, tool or operation counts.
+- **Deny list**: unauthenticated and credential-establishing hub-api routes (auth login/register/refresh/logout/captcha, portal-auth, SSO/SAML/OIDC browser flows, public share/document routes, inbound webhook/hook triggers) are excluded from the API catalog and rejected on direct invoke (`apps/mcp/catalog.py` `DENIED_ROUTES`).
+- **Destructive operations**: `invoke_api_operation`/`call_api_operation` reject `DELETE`, `PUT` and `PATCH` unless the call passes `confirm: true`; both tools advertise `destructiveHint: true` and `readOnlyHint: false`.
+- **Limits** (env, read per request): `MCP_REQUEST_TIMEOUT_S` (60), `MCP_MAX_TOOL_CALLS_PER_BATCH` (5), `MCP_MAX_BATCH_SIZE` (50), `MCP_MAX_CONCURRENT_PER_CALLER` (4, keyed by a credential hash, HTTP 429 beyond), `MCP_MAX_REQUEST_BYTES` (2 MiB), `MCP_MAX_RESPONSE_BYTES` (4 MiB upstream cap; larger responses return an `isError` too-large result).
+- **Errors**: callers receive the upstream status code and a short standard phrase only; upstream bodies and transport exception text stay in masked server logs.
+- **Metrics**: request metrics label the matched route rule (or `unmatched`), never the raw path.
+
 ## Tools
 
 - **90+ Curated Domain Tools**: Infrastructure entities, data stores, networks, organizations, geo, dependency graphs, issues, projects, milestones, helpdesk, vulnerabilities, SBOM, certificates, secrets metadata (never values), KMS keys, access reviews, on-call, IPAM, discovery, sync, webhooks, identities, backups, logs, documents, pages, diagrams, AI resources, streams, and flows.

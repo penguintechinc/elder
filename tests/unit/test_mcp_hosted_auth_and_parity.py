@@ -363,15 +363,12 @@ async def test_http_app_health_and_fail_closed_auth_ignores_env_token(
         hz = await client.get("/healthz")
         assert hz.status_code == 200
         hz_data = await hz.get_json()
-        assert hz_data["status"] == "ok"
-        assert hz_data["service"] == "hub-mcp"
-        assert hz_data["tools"] == len(TOOL_REGISTRY)
+        assert hz_data == {"status": "ok"}
 
         rz = await client.get("/readyz")
         assert rz.status_code == 200
         rz_data = await rz.get_json()
-        assert rz_data["status"] == "ok"
-        assert rz_data["catalog_operations"] >= 680
+        assert rz_data == {"status": "ok", "ready": True}
 
         for method, path, headers in (
             ("POST", "/mcp", {}),
@@ -594,7 +591,7 @@ async def test_http_app_mcp_jsonrpc_lifecycle_batch_and_errors(
             )
         ).get_json()
         catalog_summary = json.loads(res_read["result"]["contents"][0]["text"])
-        assert catalog_summary["total_operations"] >= 680
+        assert catalog_summary["total_operations"] >= 640
 
         res_missing = await (
             await client.post(
@@ -653,7 +650,10 @@ async def test_http_app_mcp_jsonrpc_lifecycle_batch_and_errors(
         assert batch_items[2]["result"]["isError"] is True
         err_403 = json.loads(batch_items[2]["result"]["content"][0]["text"])
         assert err_403["status_code"] == 403
-        assert "Missing scope" in err_403["error"]
+        # Upstream error bodies are never relayed: status code + short phrase only.
+        assert err_403["error"] == "Forbidden"
+        assert "entities:read" not in json.dumps(err_403)
+        assert "detail" not in err_403
 
         # 6. Batch of notifications only -> 202
         batch_notif = await client.post(
@@ -890,6 +890,12 @@ async def test_fastmcp_server_hosted_auth_middleware_and_get_client_fail_closed(
         if scope["type"] != "http":
             return
         # Execute a tool inside the middleware's context to verify get_client() isolation.
+        # Hosted mode resolves credentials only from the live request headers.
+        monkeypatch.setattr(
+            mcp_server,
+            "_extract_active_mcp_request_headers",
+            lambda: scope["headers"],
+        )
         c = mcp_server.get_client()
         try:
             await resources.resolve_village_id(c, "vid-1")
@@ -954,7 +960,7 @@ def test_api_catalog_completeness_determinism_and_no_collisions() -> None:
     loaded = load_catalog(force_reload=True)
     generated = generate_catalog()
     assert [op.to_dict() for op in loaded] == generated
-    assert 680 <= len(loaded) <= 715
+    assert 640 <= len(loaded) <= 715
 
     # Zero duplicate (service, operation)
     keys = [(op.service, op.operation) for op in loaded]
@@ -1029,7 +1035,7 @@ async def test_catalog_tools_encoding_traversal_rejection_and_api_errors() -> No
         session=session, transport=httpx.MockTransport(_handler)
     ) as client:
         svcs = await api_catalog.list_api_services(client)
-        assert svcs["total_operations"] >= 680
+        assert svcs["total_operations"] >= 640
 
         ops = await api_catalog.list_api_operations(
             client, service="licensing", method="get"
@@ -1159,7 +1165,7 @@ def test_standalone_catalog_and_tools_importable() -> None:
             "-c",
             (
                 "import catalog, registry, tools; "
-                "assert len(catalog.load_catalog()) >= 680; "
+                "assert len(catalog.load_catalog()) >= 640; "
                 "assert 'invoke_api_operation' in registry.TOOL_BY_NAME; "
                 "assert 'call_api_operation' in registry.TOOL_BY_NAME; "
                 "assert 'resolve_village_id' in registry.TOOL_BY_NAME"
@@ -1205,3 +1211,24 @@ async def test_http_app_rejects_oversized_batch_and_body_and_allows_preflight() 
             },
         )
         assert preflight.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_get_client_hosted_fails_closed_when_request_headers_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hosted get_client never falls back to ambient context credentials (fix 8)."""
+    _install_fake_fastmcp(monkeypatch)
+    sys.modules.pop("apps.mcp.server", None)
+    import apps.mcp.server as mcp_server
+
+    monkeypatch.setenv("ELDER_API_URL", "http://hub-api:5000")
+    monkeypatch.setenv("MCP_TRANSPORT", "streamable-http")
+    monkeypatch.setattr(mcp_server, "_extract_active_mcp_request_headers", lambda: None)
+
+    tokens = set_caller_context(CallerCredentials(access_token="tokX"), hosted=True)
+    try:
+        with pytest.raises(ElderAuthError):
+            mcp_server.get_client()
+    finally:
+        reset_caller_context(tokens)

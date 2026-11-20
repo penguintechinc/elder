@@ -57,6 +57,7 @@ class ToolDefinition:
     required_module: str | None
     endpoint_path: str
     handler: Callable[..., Awaitable[Any]]
+    destructive: bool = False
 
 
 def _int(description: str) -> dict[str, Any]:
@@ -1484,6 +1485,13 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
                 ),
                 "query_params": _obj("Optional query string parameters."),
                 "body": _obj("Optional JSON request body payload."),
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to run a state-changing DELETE, PUT or PATCH "
+                        "operation; rejected otherwise."
+                    ),
+                },
             },
             required=("service", "operation"),
         ),
@@ -1491,6 +1499,7 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
         required_module=None,
         endpoint_path="/api/v1/modules",
         handler=api_catalog.invoke_api_operation,
+        destructive=True,
     ),
     ToolDefinition(
         name="call_api_operation",
@@ -1504,6 +1513,13 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
                 ),
                 "query_params": _obj("Optional query string parameters."),
                 "body": _obj("Optional JSON request body payload."),
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to run a state-changing DELETE, PUT or PATCH "
+                        "operation; rejected otherwise."
+                    ),
+                },
             },
             required=("service", "operation"),
         ),
@@ -1511,6 +1527,7 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
         required_module=None,
         endpoint_path="/api/v1/modules",
         handler=api_catalog.call_api_operation,
+        destructive=True,
     ),
 )
 

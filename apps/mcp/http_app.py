@@ -6,6 +6,7 @@ Translates MCP Streamable HTTP JSON-RPC requests thinly into authenticated
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -43,7 +44,14 @@ if TYPE_CHECKING:
         set_caller_context,
     )
     from apps.mcp.catalog import list_services, load_catalog
-    from apps.mcp.client import ElderAPIError, ElderClient, create_pooled_http_client
+    from apps.mcp.client import (
+        ElderAPIError,
+        ElderClient,
+        ElderResponseTooLargeError,
+        create_pooled_http_client,
+        mask_secrets,
+        public_error_message,
+    )
     from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 else:
     try:
@@ -59,7 +67,10 @@ else:
         from apps.mcp.client import (
             ElderAPIError,
             ElderClient,
+            ElderResponseTooLargeError,
             create_pooled_http_client,
+            mask_secrets,
+            public_error_message,
         )
         from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
     except ImportError:
@@ -72,7 +83,14 @@ else:
             set_caller_context,
         )
         from catalog import list_services, load_catalog
-        from client import ElderAPIError, ElderClient, create_pooled_http_client
+        from client import (
+            ElderAPIError,
+            ElderClient,
+            ElderResponseTooLargeError,
+            create_pooled_http_client,
+            mask_secrets,
+            public_error_message,
+        )
         from registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 
 SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
@@ -85,6 +103,26 @@ DEFAULT_PROTOCOL_VERSION = "2025-03-26"
 _AUTH_EXEMPT_PATHS = frozenset({"/healthz", "/readyz"})
 MAX_REQUEST_BYTES = int(os.getenv("MCP_MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
 MAX_BATCH_SIZE = int(os.getenv("MCP_MAX_BATCH_SIZE", "50"))
+
+
+def _env_int(name: str, default: int) -> int:
+    """Read a positive integer env var at call time, falling back to ``default``."""
+    raw = (os.getenv(name) or "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _env_float(name: str, default: float) -> float:
+    """Read a positive float env var at call time, falling back to ``default``."""
+    raw = (os.getenv(name) or "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 def _resolve_app_version() -> str:
@@ -163,6 +201,15 @@ def _jsonrpc_error(
     if data is not None:
         err["data"] = data
     return {"jsonrpc": "2.0", "id": req_id, "error": err}
+
+
+def _tool_annotations(tool: Any) -> dict[str, bool]:
+    """Build MCP tool annotations; destructive tools declare ``destructiveHint`` true."""
+    annotations: dict[str, bool] = {"readOnlyHint": bool(tool.read_only)}
+    if getattr(tool, "destructive", False):
+        annotations["destructiveHint"] = True
+        annotations["readOnlyHint"] = False
+    return annotations
 
 
 def _mcp_tool_error_result(payload: dict[str, Any]) -> dict[str, Any]:
@@ -320,9 +367,10 @@ def create_app(
         elapsed_ms = (
             (time.perf_counter() - started) * 1000.0 if started is not None else 0.0
         )
+        rule = getattr(request.url_rule, "rule", None)
         attrs = {
             "method": request.method,
-            "path": request.path,
+            "path": rule if isinstance(rule, str) and rule else "unmatched",
             "status_code": response.status_code,
         }
         req_counter.add(1, attrs)
@@ -338,35 +386,14 @@ def create_app(
 
     @app.route("/healthz", methods=["GET"])
     async def healthz() -> tuple[Response, int]:
-        """Liveness probe (auth-exempt)."""
+        """Liveness probe (auth-exempt); returns no version, tool or catalog details."""
         otel_logger.info("healthz_checked")
-        return (
-            jsonify(
-                {
-                    "status": "ok",
-                    "service": "hub-mcp",
-                    "version": app.config["APP_VERSION"],
-                    "tools": len(TOOL_REGISTRY),
-                }
-            ),
-            200,
-        )
+        return jsonify({"status": "ok"}), 200
 
     @app.route("/readyz", methods=["GET"])
     async def readyz() -> tuple[Response, int]:
-        """Readiness probe (auth-exempt)."""
-        return (
-            jsonify(
-                {
-                    "status": "ok",
-                    "service": "hub-mcp",
-                    "version": app.config["APP_VERSION"],
-                    "tools": len(TOOL_REGISTRY),
-                    "catalog_operations": len(catalog_ops),
-                }
-            ),
-            200,
-        )
+        """Readiness probe (auth-exempt); returns only a boolean readiness flag."""
+        return jsonify({"status": "ok", "ready": bool(catalog_ops)}), 200
 
     async def _handle_tool_call(
         params: Any,
@@ -411,7 +438,7 @@ def create_app(
                     "mcp_tool_upstream_error",
                     tool=tool_name,
                     status_code=exc.status_code,
-                    message=exc.message,
+                    message=mask_secrets(exc.message)[:300],
                 )
                 otel_logger.warning(
                     "mcp_tool_upstream_error tool=%s status=%d",
@@ -419,18 +446,20 @@ def create_app(
                     exc.status_code,
                 )
                 err_payload: dict[str, Any] = {
-                    "error": exc.message,
+                    "error": (
+                        exc.message
+                        if isinstance(exc, ElderResponseTooLargeError)
+                        else public_error_message(exc.status_code)
+                    ),
                     "status_code": exc.status_code,
                 }
-                if isinstance(exc.detail, dict):
-                    err_payload["detail"] = exc.detail
                 return _mcp_tool_error_result(err_payload)
             except (ValueError, PermissionError, ElderAuthError) as exc:
                 status_label = "validation_error"
                 log.warning(
                     "mcp_tool_validation_error",
                     tool=tool_name,
-                    error=str(exc),
+                    error=mask_secrets(str(exc))[:300],
                 )
                 return _mcp_tool_error_result({"error": str(exc)})
             except Exception:
@@ -509,7 +538,7 @@ def create_app(
                     "name": tool.name,
                     "description": tool.description,
                     "inputSchema": tool.parameters_schema,
-                    "annotations": {"readOnlyHint": tool.read_only},
+                    "annotations": _tool_annotations(tool),
                 }
                 for tool in TOOL_REGISTRY
             ]
@@ -574,24 +603,69 @@ def create_app(
 
         return _jsonrpc_error(req_id, -32601, f"Method not found: {method}"), proto
 
+    in_flight: dict[str, int] = {}
+
+    def _protocol_error(code: int, message: str, status: int) -> tuple[Response, int]:
+        """Build a JSON-RPC error response carrying the negotiated protocol header."""
+        resp = jsonify(_jsonrpc_error(None, code, message))
+        resp.headers["MCP-Protocol-Version"] = _negotiate_protocol_version()
+        return resp, status
+
     @app.route("/mcp", methods=["POST"])
     async def mcp_post() -> Response | tuple[Response, int]:
-        """Handle single and batch MCP Streamable HTTP JSON-RPC 2.0 requests."""
+        """Handle single and batch MCP Streamable HTTP JSON-RPC 2.0 requests.
+
+        Enforces a per-request deadline, a per-batch tools/call cap and a
+        per-caller in-flight concurrency limit so one caller cannot exhaust
+        hub-mcp or hub-api.
+        """
+        caller_key = g.caller_credentials.credential_fingerprint()
+        max_in_flight = _env_int("MCP_MAX_CONCURRENT_PER_CALLER", 4)
+        if in_flight.get(caller_key, 0) >= max_in_flight:
+            log.warning("mcp_caller_concurrency_exceeded", limit=max_in_flight)
+            return _protocol_error(-32000, "Too many concurrent requests", 429)
+
+        in_flight[caller_key] = in_flight.get(caller_key, 0) + 1
+        try:
+            timeout_s = _env_float("MCP_REQUEST_TIMEOUT_S", 60.0)
+            try:
+                async with asyncio.timeout(timeout_s):
+                    return await _process_mcp_post()
+            except TimeoutError:
+                log.warning("mcp_request_timeout", timeout_s=timeout_s)
+                return _protocol_error(-32000, "Request timed out", 504)
+        finally:
+            remaining = in_flight.get(caller_key, 1) - 1
+            if remaining <= 0:
+                in_flight.pop(caller_key, None)
+            else:
+                in_flight[caller_key] = remaining
+
+    async def _process_mcp_post() -> Response | tuple[Response, int]:
+        """Parse and dispatch one single or batch JSON-RPC payload."""
         raw_body = await request.get_data()
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
-            resp = jsonify(_jsonrpc_error(None, -32700, "Parse error"))
-            resp.headers["MCP-Protocol-Version"] = _negotiate_protocol_version()
-            return resp, 400
+            return _protocol_error(-32700, "Parse error", 400)
 
         elder_client: ElderClient = g.elder_client
 
         if isinstance(payload, list):
             if not payload or len(payload) > MAX_BATCH_SIZE:
-                resp = jsonify(_jsonrpc_error(None, -32600, "Invalid Request"))
-                resp.headers["MCP-Protocol-Version"] = _negotiate_protocol_version()
-                return resp, 400
+                return _protocol_error(-32600, "Invalid Request", 400)
+            max_calls = _env_int("MCP_MAX_TOOL_CALLS_PER_BATCH", 5)
+            call_count = sum(
+                1
+                for item in payload
+                if isinstance(item, dict) and item.get("method") == "tools/call"
+            )
+            if call_count > max_calls:
+                return _protocol_error(
+                    -32600,
+                    f"Too many tools/call entries in batch (max {max_calls})",
+                    400,
+                )
             responses: list[dict[str, Any]] = []
             negotiated_proto = _negotiate_protocol_version()
             for item in payload:
@@ -608,9 +682,7 @@ def create_app(
             return resp, 200
 
         if not isinstance(payload, dict):
-            resp = jsonify(_jsonrpc_error(None, -32600, "Invalid Request"))
-            resp.headers["MCP-Protocol-Version"] = _negotiate_protocol_version()
-            return resp, 400
+            return _protocol_error(-32600, "Invalid Request", 400)
 
         reply, negotiated_proto = await _dispatch_jsonrpc(payload, elder_client)
         if reply is None:

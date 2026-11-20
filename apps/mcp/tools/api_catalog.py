@@ -29,6 +29,9 @@ else:
         from client import ElderClient
 
 
+CONFIRM_REQUIRED_METHODS = frozenset({"DELETE", "PUT", "PATCH"})
+
+
 async def list_api_services(client: ElderClient) -> dict[str, Any]:
     """List all cataloged Elder API service namespaces and operation counts."""
     _ = client
@@ -78,10 +81,20 @@ async def invoke_api_operation(
     path_params: dict[str, Any] | None = None,
     query_params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
+    confirm: bool | None = None,
 ) -> Any:
-    """Thinly invoke any cataloged ``hub-api`` REST operation using the caller's credentials."""
+    """Thinly invoke any cataloged ``hub-api`` REST operation using the caller's credentials.
+
+    State-changing DELETE/PUT/PATCH operations require an explicit ``confirm=true``.
+    """
     op = get_operation(service, operation)
     resolved_path = resolve_operation_path(op, path_params)
+
+    if op.method in CONFIRM_REQUIRED_METHODS and confirm is not True:
+        raise ValueError(
+            f"{op.method} operation {op.service}.{op.operation} changes or deletes data; "
+            "pass confirm=true to proceed"
+        )
 
     if query_params is not None and not isinstance(query_params, dict):
         raise ValueError("query_params must be a JSON object")
@@ -106,6 +119,7 @@ async def call_api_operation(
     path_params: dict[str, Any] | None = None,
     query_params: dict[str, Any] | None = None,
     body: dict[str, Any] | list[Any] | None = None,
+    confirm: bool | None = None,
 ) -> Any:
     """Alias for ``invoke_api_operation`` calling any cataloged ``hub-api`` operation."""
     return await invoke_api_operation(
@@ -115,4 +129,5 @@ async def call_api_operation(
         path_params=path_params,
         query_params=query_params,
         body=body,
+        confirm=confirm,
     )

@@ -259,15 +259,6 @@
   },
   {
     "service": "auth",
-    "operation": "captcha_challenge",
-    "method": "GET",
-    "path": "/api/v1/auth/captcha-challenge",
-    "path_params": [],
-    "summary": "Generate ALTCHA proof-of-work challenge.",
-    "has_body": false
-  },
-  {
-    "service": "auth",
     "operation": "change_password",
     "method": "POST",
     "path": "/api/v1/auth/change-password",
@@ -283,51 +274,6 @@
     "path_params": [],
     "summary": "Get current authenticated user information.",
     "has_body": false
-  },
-  {
-    "service": "auth",
-    "operation": "guest_enabled",
-    "method": "GET",
-    "path": "/api/v1/auth/guest-enabled",
-    "path_params": [],
-    "summary": "Check if guest login is enabled.",
-    "has_body": false
-  },
-  {
-    "service": "auth",
-    "operation": "login",
-    "method": "POST",
-    "path": "/api/v1/auth/login",
-    "path_params": [],
-    "summary": "Login with email and password (portal authentication).",
-    "has_body": true
-  },
-  {
-    "service": "auth",
-    "operation": "logout",
-    "method": "POST",
-    "path": "/api/v1/auth/logout",
-    "path_params": [],
-    "summary": "Logout current user.",
-    "has_body": true
-  },
-  {
-    "service": "auth",
-    "operation": "refresh_token",
-    "method": "POST",
-    "path": "/api/v1/auth/refresh",
-    "path_params": [],
-    "summary": "Refresh access token using refresh token.",
-    "has_body": true
-  },
-  {
-    "service": "auth",
-    "operation": "register",
-    "method": "POST",
-    "path": "/api/v1/auth/register",
-    "path_params": [],
-    "summary": "Register a new user (local authentication).",
-    "has_body": true
   },
   {
     "service": "backup",
@@ -1332,17 +1278,6 @@
   },
   {
     "service": "diagrams",
-    "operation": "get_shared_diagram",
-    "method": "GET",
-    "path": "/api/v1/diagrams/shared/{share_token}",
-    "path_params": [
-      "share_token"
-    ],
-    "summary": "Get a diagram via public share token (no auth required).",
-    "has_body": false
-  },
-  {
-    "service": "diagrams",
     "operation": "get_version",
     "method": "GET",
     "path": "/api/v1/diagrams/{diagram_id}/versions/{version_number}",
@@ -1621,17 +1556,6 @@
   },
   {
     "service": "documents",
-    "operation": "get_public_document",
-    "method": "GET",
-    "path": "/api/v1/documents/public/{slug}",
-    "path_params": [
-      "slug"
-    ],
-    "summary": "Get a public document by slug \u2014 no authentication required.",
-    "has_body": false
-  },
-  {
-    "service": "documents",
     "operation": "get_version",
     "method": "GET",
     "path": "/api/v1/documents/{doc_id}/versions/{version_number}",
@@ -1649,15 +1573,6 @@
     "path": "/api/v1/documents",
     "path_params": [],
     "summary": "List documents with optional filtering and pagination.",
-    "has_body": false
-  },
-  {
-    "service": "documents",
-    "operation": "list_public_documents",
-    "method": "GET",
-    "path": "/api/v1/documents/public",
-    "path_params": [],
-    "summary": "List public documents \u2014 no authentication required.",
     "has_body": false
   },
   {
@@ -2286,17 +2201,6 @@
     "has_body": true
   },
   {
-    "service": "flows-hooks",
-    "operation": "trigger_webhook",
-    "method": "POST",
-    "path": "/api/v1/flows-hooks/{webhook_id}",
-    "path_params": [
-      "webhook_id"
-    ],
-    "summary": "Trigger a pipeline promotion via webhook (public endpoint).",
-    "has_body": true
-  },
-  {
     "service": "geo",
     "operation": "create_location",
     "method": "POST",
@@ -2760,83 +2664,6 @@
       "group_id"
     ],
     "summary": "Update group ownership and settings.",
-    "has_body": true
-  },
-  {
-    "service": "hooks",
-    "operation": "delete_trigger_webhook",
-    "method": "DELETE",
-    "path": "/api/v1/hooks/{token}",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Trigger a stream execution via webhook.",
-    "has_body": false
-  },
-  {
-    "service": "hooks",
-    "operation": "get_test_webhook",
-    "method": "GET",
-    "path": "/api/v1/hooks/{token}/test",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Test a webhook without triggering execution.",
-    "has_body": false
-  },
-  {
-    "service": "hooks",
-    "operation": "get_trigger_webhook",
-    "method": "GET",
-    "path": "/api/v1/hooks/{token}",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Trigger a stream execution via webhook.",
-    "has_body": false
-  },
-  {
-    "service": "hooks",
-    "operation": "patch_trigger_webhook",
-    "method": "PATCH",
-    "path": "/api/v1/hooks/{token}",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Trigger a stream execution via webhook.",
-    "has_body": true
-  },
-  {
-    "service": "hooks",
-    "operation": "post_test_webhook",
-    "method": "POST",
-    "path": "/api/v1/hooks/{token}/test",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Test a webhook without triggering execution.",
-    "has_body": true
-  },
-  {
-    "service": "hooks",
-    "operation": "post_trigger_webhook",
-    "method": "POST",
-    "path": "/api/v1/hooks/{token}",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Trigger a stream execution via webhook.",
-    "has_body": true
-  },
-  {
-    "service": "hooks",
-    "operation": "put_trigger_webhook",
-    "method": "PUT",
-    "path": "/api/v1/hooks/{token}",
-    "path_params": [
-      "token"
-    ],
-    "summary": "Trigger a stream execution via webhook.",
     "has_body": true
   },
   {
@@ -4650,15 +4477,6 @@
   },
   {
     "service": "on-call",
-    "operation": "handle_alertmanager_webhook",
-    "method": "POST",
-    "path": "/api/v1/on-call/webhooks/alertmanager/webhook",
-    "path_params": [],
-    "summary": "Receive Prometheus AlertManager alerts and notify on-call rotations.",
-    "has_body": true
-  },
-  {
-    "service": "on-call",
     "operation": "list_escalations",
     "method": "GET",
     "path": "/api/v1/on-call/rotations/{rotation_id}/escalations",
@@ -4984,65 +4802,11 @@
   },
   {
     "service": "portal-auth",
-    "operation": "login",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/login",
-    "path_params": [],
-    "summary": "Authenticate a portal user.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
-    "operation": "logout",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/logout",
-    "path_params": [],
-    "summary": "Clear the SPA's HttpOnly auth cookies.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
-    "operation": "refresh_token",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/refresh",
-    "path_params": [],
-    "summary": "Refresh access token using refresh token.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
-    "operation": "register",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/register",
-    "path_params": [],
-    "summary": "Register a new portal user.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
-    "operation": "reset_password",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/password/reset",
-    "path_params": [],
-    "summary": "Initiate password reset.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
     "operation": "update_current_user",
     "method": "PATCH",
     "path": "/api/v1/portal-auth/me",
     "path_params": [],
     "summary": "Update current authenticated portal user info.",
-    "has_body": true
-  },
-  {
-    "service": "portal-auth",
-    "operation": "verify_mfa",
-    "method": "POST",
-    "path": "/api/v1/portal-auth/mfa/verify",
-    "path_params": [],
-    "summary": "Verify MFA code after initial authentication.",
     "has_body": true
   },
   {
@@ -5978,17 +5742,6 @@
   },
   {
     "service": "sso",
-    "operation": "get_saml_slo",
-    "method": "GET",
-    "path": "/api/v1/sso/saml/slo/{tenant_id}",
-    "path_params": [
-      "tenant_id"
-    ],
-    "summary": "SAML Single Logout endpoint.",
-    "has_body": false
-  },
-  {
-    "service": "sso",
     "operation": "get_scim_config",
     "method": "GET",
     "path": "/api/v1/sso/scim/config/{tenant_id}",
@@ -6000,51 +5753,11 @@
   },
   {
     "service": "sso",
-    "operation": "get_sp_metadata",
-    "method": "GET",
-    "path": "/api/v1/sso/saml/metadata",
-    "path_params": [],
-    "summary": "Get SAML Service Provider metadata.",
-    "has_body": false
-  },
-  {
-    "service": "sso",
-    "operation": "get_sp_metadata_by_tenant_id",
-    "method": "GET",
-    "path": "/api/v1/sso/saml/metadata/{tenant_id}",
-    "path_params": [
-      "tenant_id"
-    ],
-    "summary": "Get SAML Service Provider metadata.",
-    "has_body": false
-  },
-  {
-    "service": "sso",
     "operation": "list_idp_configs",
     "method": "GET",
     "path": "/api/v1/sso/idp",
     "path_params": [],
     "summary": "List IdP configurations the caller is allowed to see.",
-    "has_body": false
-  },
-  {
-    "service": "sso",
-    "operation": "oidc_authorize",
-    "method": "GET",
-    "path": "/api/v1/sso/oidc/authorize/{idp_id}",
-    "path_params": [
-      "idp_id"
-    ],
-    "summary": "Initiate OIDC authorization flow.",
-    "has_body": false
-  },
-  {
-    "service": "sso",
-    "operation": "oidc_callback",
-    "method": "GET",
-    "path": "/api/v1/sso/oidc/callback",
-    "path_params": [],
-    "summary": "Handle OIDC callback with authorization code.",
     "has_body": false
   },
   {
@@ -6060,17 +5773,6 @@
   },
   {
     "service": "sso",
-    "operation": "oidc_refresh",
-    "method": "POST",
-    "path": "/api/v1/sso/oidc/refresh/{idp_id}",
-    "path_params": [
-      "idp_id"
-    ],
-    "summary": "Refresh OIDC access token.",
-    "has_body": true
-  },
-  {
-    "service": "sso",
     "operation": "oidc_userinfo",
     "method": "GET",
     "path": "/api/v1/sso/oidc/userinfo/{idp_id}",
@@ -6082,17 +5784,6 @@
   },
   {
     "service": "sso",
-    "operation": "post_saml_slo",
-    "method": "POST",
-    "path": "/api/v1/sso/saml/slo/{tenant_id}",
-    "path_params": [
-      "tenant_id"
-    ],
-    "summary": "SAML Single Logout endpoint.",
-    "has_body": true
-  },
-  {
-    "service": "sso",
     "operation": "regenerate_scim_token",
     "method": "POST",
     "path": "/api/v1/sso/scim/config/{tenant_id}/regenerate-token",
@@ -6101,28 +5792,6 @@
     ],
     "summary": "Regenerate SCIM bearer token.",
     "has_body": true
-  },
-  {
-    "service": "sso",
-    "operation": "saml_acs",
-    "method": "POST",
-    "path": "/api/v1/sso/saml/acs/{tenant_id}",
-    "path_params": [
-      "tenant_id"
-    ],
-    "summary": "SAML Assertion Consumer Service endpoint.",
-    "has_body": true
-  },
-  {
-    "service": "sso",
-    "operation": "saml_login",
-    "method": "GET",
-    "path": "/api/v1/sso/saml/login/{tenant_id}",
-    "path_params": [
-      "tenant_id"
-    ],
-    "summary": "Initiate SAML SSO login.",
-    "has_body": false
   },
   {
     "service": "sso",
@@ -6510,7 +6179,7 @@
     "path_params": [
       "config_id"
     ],
-    "summary": "Delete sync configuration.",
+    "summary": "Delete sync configuration and dependent history/mappings/conflicts.",
     "has_body": false
   },
   {
@@ -6539,7 +6208,7 @@
     "method": "GET",
     "path": "/api/v1/sync/conflicts",
     "path_params": [],
-    "summary": "List unresolved sync conflicts.",
+    "summary": "List sync conflicts.",
     "has_body": false
   },
   {
@@ -6559,18 +6228,6 @@
     "path_params": [],
     "summary": "List sync mappings.",
     "has_body": false
-  },
-  {
-    "service": "sync",
-    "operation": "receive_sync_webhook",
-    "method": "POST",
-    "path": "/api/v1/sync/webhooks/{platform}/{config_id}",
-    "path_params": [
-      "platform",
-      "config_id"
-    ],
-    "summary": "Public platform webhook receiver protected by HMAC/token signature.",
-    "has_body": true
   },
   {
     "service": "sync",
@@ -6622,7 +6279,7 @@
     "path_params": [
       "config_id"
     ],
-    "summary": "Update sync configuration.",
+    "summary": "Update sync configuration while preserving redacted/omitted secrets.",
     "has_body": true
   },
   {
@@ -7177,17 +6834,6 @@
     "path_params": [],
     "summary": "List all webhooks for the caller's tenant.",
     "has_body": false
-  },
-  {
-    "service": "webhooks",
-    "operation": "receive_inbound_webhook",
-    "method": "POST",
-    "path": "/api/v1/webhooks/receive/{slug}",
-    "path_params": [
-      "slug"
-    ],
-    "summary": "Public inbound webhook receiver \u2014 requires Bearer/Basic auth & enforces granted scopes.",
-    "has_body": true
   },
   {
     "service": "webhooks",
