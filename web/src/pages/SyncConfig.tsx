@@ -1180,29 +1180,31 @@ export default function SyncConfig() {
                   {ALL_RESOURCE_TYPES.map((rt) => {
                     const checked = formState.resource_types.includes(rt.value);
                     return (
-                      <label
+                      <div
                         key={rt.value}
-                        htmlFor={`sync-rt-${rt.value}`}
-                        className="flex items-start gap-2.5 rounded-md border border-slate-800 bg-slate-900/70 p-2.5 cursor-pointer hover:border-slate-700"
+                        className="flex items-start gap-2.5 rounded-md border border-slate-800 bg-slate-900/70 p-2.5 hover:border-slate-700"
                       >
                         <input
                           id={`sync-rt-${rt.value}`}
                           type="checkbox"
                           checked={checked}
                           onChange={() => handleToggleResourceType(rt.value)}
-                          className="mt-0.5 rounded border-slate-600 bg-slate-950 text-yellow-500 focus:ring-yellow-500"
+                          className="mt-0.5 rounded border-slate-600 bg-slate-950 text-yellow-500 focus:ring-yellow-500 cursor-pointer"
                         />
                         <div>
-                          <span className="block text-sm font-medium text-white">
+                          <label
+                            htmlFor={`sync-rt-${rt.value}`}
+                            className="block text-sm font-medium text-white cursor-pointer"
+                          >
                             {rt.label}
-                          </span>
+                          </label>
                           <span className="block text-xs text-slate-400">
                             {formState.platform === "jira"
                               ? rt.jiraHint
                               : rt.githubHint}
                           </span>
                         </div>
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
