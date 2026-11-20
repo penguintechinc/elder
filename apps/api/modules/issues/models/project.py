@@ -59,7 +59,7 @@ class Milestone(Base, IDMixin, VillageIDMixin, TimestampMixin):
     closed_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class Label(Base, IDMixin, TimestampMixin):
+class Label(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Generic labels for cross-resource labeling."""
 
     __tablename__ = "labels"

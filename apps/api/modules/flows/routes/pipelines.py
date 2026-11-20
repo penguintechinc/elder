@@ -12,7 +12,7 @@ from quart import Blueprint, current_app, jsonify, request
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -222,7 +222,7 @@ async def create_pipeline():
             provider = "github"
 
     # Mint village_id in request context BEFORE threadpool (synchronous)
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     # Capture db in request context BEFORE threadpool
     db = current_app.db
@@ -553,7 +553,7 @@ async def duplicate_pipeline(pipeline_id: str):
         return ApiResponse.error("Identity not found", 403)
 
     # Mint village_id for new pipeline BEFORE threadpool (synchronous)
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     # Capture db in request context BEFORE threadpool
     db = current_app.db

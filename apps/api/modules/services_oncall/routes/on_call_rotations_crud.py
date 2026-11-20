@@ -284,11 +284,16 @@ async def create_rotation():
     elif schedule_type == "manual":
         pass  # Manual schedule has no special requirements
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         now = datetime.datetime.now(datetime.UTC)
         resolved_tenant_id = tenant_id or getattr(parent, "tenant_id", None)
         insert_data = {
             "tenant_id": resolved_tenant_id,
+            "village_id": mint_village_id(resolved_tenant_id, redis_client),
             "name": data["name"],
             "scope_type": scope_type,
             "schedule_type": schedule_type,

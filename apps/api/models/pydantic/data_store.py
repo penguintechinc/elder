@@ -22,6 +22,7 @@ class DataStoreLabelResponse(ImmutableModel):
     name: str
     color: str
     description: str | None = None
+    village_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

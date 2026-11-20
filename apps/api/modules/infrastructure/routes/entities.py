@@ -24,6 +24,7 @@ from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scop
 from apps.api.utils.validation_helpers import (
     validate_organization_and_get_tenant,
 )
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("entities", __name__)
 
@@ -141,6 +142,8 @@ async def create_entity(body: CreateEntityRequest):
         return error
 
     # Create entity in database
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create_in_db():
         now = datetime.now(UTC)
         entity_id = db.entities.insert(
@@ -154,6 +157,7 @@ async def create_entity(body: CreateEntityRequest):
             metadata=body.attributes,
             status="active",
             is_managed=False,
+            village_id=mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

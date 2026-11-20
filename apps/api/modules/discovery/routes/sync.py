@@ -255,7 +255,14 @@ async def create_sync_config():
     if isinstance(webhook_secret, str):
         webhook_secret = webhook_secret.strip() or None
 
+    redis_client = getattr(current_app, "redis_client", None)
+    from apps.api.utils.tenant_scoping import get_current_tenant_id
+
+    caller_tenant_id = get_current_tenant_id() or 1
+
     def inner():
+        from apps.api.utils.village_id import mint_village_id
+
         existing = db(db.sync_configs.name == name).select(limitby=(0, 1)).first()
         if existing:
             return None, f"Sync configuration '{name}' already exists", 409
@@ -272,6 +279,7 @@ async def create_sync_config():
             webhook_enabled=data.get("webhook_enabled", True),
             webhook_secret=webhook_secret,
             config_json=config_json,
+            village_id=mint_village_id(caller_tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

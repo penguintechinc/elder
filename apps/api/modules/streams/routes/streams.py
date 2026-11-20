@@ -14,7 +14,7 @@ from apps.api.common.licensing.enforce import check_limit
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -554,9 +554,8 @@ async def create_stream():
     if not name:
         return ApiResponse.error("Stream name is required", 400)
 
-    # Mint the hierarchical village_id in request context (generate_village_id
-    # needs current_app.redis_client, unavailable inside run_in_threadpool).
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    # Mint the hierarchical village_id in request context (falls back cleanly if Redis unavailable).
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     def create():
         now = datetime.now(UTC)
@@ -946,7 +945,7 @@ async def duplicate_stream(stream_id):
         return ApiResponse.error("Tenant or identity not found", 403)
 
     # Mint the hierarchical village_id in request context (see create_stream).
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     def duplicate():
         original = (

@@ -20,7 +20,7 @@ class LicensePolicyDTO(ImmutableModel):
     id: int
     tenant_id: int
     organization_id: int | None
-    village_id: str
+    village_id: str | None = None
     name: str
     description: str | None
     allowed_licenses: list[str] | None

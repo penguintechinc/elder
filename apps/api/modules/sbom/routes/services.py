@@ -150,13 +150,18 @@ async def create_service(body: CreateServiceRequest):
         if not identity:
             return ApiResponse.not_found("POC identity", body.poc_identity_id)
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create service
         now = datetime.now(UTC)
         service_id = db.services.insert(
             name=body.name,
             organization_id=body.organization_id,
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             port=body.port,
             status=body.status,
             is_public=body.is_public if body.is_public is not None else False,
@@ -170,6 +175,7 @@ async def create_service(body: CreateServiceRequest):
         if body.repository_url:
             db.sbom_scans.insert(
                 tenant_id=tenant_id,
+                village_id=mint_village_id(tenant_id, redis_client),
                 parent_type="service",
                 parent_id=service_id,
                 scan_type="git_clone",
@@ -426,9 +432,14 @@ async def trigger_service_sbom_scan(id: int):
     scan_type = data.get("scan_type", "git_clone")
     repository_branch = data.get("repository_branch")
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create_scan():
+        from apps.api.utils.village_id import mint_village_id
+
         scan_id = db.sbom_scans.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             parent_type="service",
             parent_id=id,
             scan_type=scan_type,

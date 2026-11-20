@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from quart import current_app
 
+from apps.api.utils.village_id import mint_village_id, resolve_tenant_id_for_org
+
 logger = logging.getLogger(__name__)
 
 
@@ -150,6 +152,7 @@ class NetworkingService:
                 )
                 return self.get_network(existing.id), False
 
+            tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
             network_id = self.db.networking_resources.insert(
                 name=name,
                 description=description,
@@ -163,6 +166,7 @@ class NetworkingService:
                 attributes=merged_attributes,
                 status_metadata=status_metadata or {},
                 tags=tags or [],
+                village_id=mint_village_id(tenant_id),
             )
 
             self.db.commit()
@@ -661,6 +665,7 @@ class NetworkingService:
             "is_active": network.get("is_active", True),
             "is_public": attrs.get("is_public", False),
             "status": status_meta.get("status"),
+            "village_id": getattr(network, "village_id", None),
             "created_at": (
                 network.created_at.isoformat() if network.created_at else None
             ),

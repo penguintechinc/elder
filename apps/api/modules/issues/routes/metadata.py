@@ -239,6 +239,8 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
             field = db.metadata_fields[existing.id]  # tenant-scope-exempt
         else:
             # Create new
+            from apps.api.utils.village_id import mint_village_id
+
             now = datetime.now(UTC)
             field_id = db.metadata_fields.insert(
                 field_key=body.key,
@@ -247,6 +249,7 @@ async def create_entity_metadata(id: int, body: CreateMetadataRequest):
                 resource_type="entity",
                 resource_id=id,
                 is_system=False,
+                village_id=mint_village_id(1),
                 created_at=now,
                 updated_at=now,
             )
@@ -566,6 +569,8 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
             field = db.metadata_fields[existing.id]  # tenant-scope-exempt
         else:
             # Create new
+            from apps.api.utils.village_id import mint_village_id
+
             field_id = db.metadata_fields.insert(
                 field_key=body.key,
                 field_value=value_str,
@@ -573,6 +578,7 @@ async def create_organization_metadata(id: int, body: CreateMetadataRequest):
                 resource_type="organization",
                 resource_id=id,
                 is_system=False,
+                village_id=mint_village_id(1),
             )
             db.commit()
             field = db.metadata_fields[field_id]  # tenant-scope-exempt

@@ -175,6 +175,12 @@ class GoogleWorkspaceService:
         if description is not None:
             creds_payload["_description"] = description
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
+        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
         now = datetime.now(UTC)
         provider_id = self.db.google_workspace_providers.insert(
             name=str(name).strip(),
@@ -183,6 +189,7 @@ class GoogleWorkspaceService:
             credentials_json=creds_payload,
             organization_id=organization_id,
             enabled=True,
+            village_id=mint_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

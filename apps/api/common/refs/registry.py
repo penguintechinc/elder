@@ -11,8 +11,11 @@ Types can be registered at startup via register() for extensibility by modules.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any
+
+from shared.utils.village_id import is_valid_village_id, parse_village_id
 
 if TYPE_CHECKING:
     from pydal.objects import Table
@@ -30,6 +33,8 @@ class ResolvableType:
         village_id_column: Column name for the village_id (default: "village_id")
         url_pattern: URL template for navigation (e.g., "/entities/{id}")
         title_column: Column name for resource display title (e.g., "name")
+        tenant_id_is_string: True when the table stores ``tenant_id`` as VARCHAR
+            rather than INTEGER (e.g. ``geo_regions``, ``geo_locations``).
     """
 
     type: str
@@ -39,7 +44,20 @@ class ResolvableType:
     village_id_column: str = "village_id"
     url_pattern: str = "/{type}/{id}"
     title_column: str = "name"
+    tenant_id_is_string: bool = False
 
+
+# Tables without a tenant_id or organization_id column whose village_id encodes
+# the owning tenant in its 8-hex-char prefix (TTTTTTTT-OOOOOOOOOOOOOOOO).
+_VID_PREFIX_SCOPED_TABLES = frozenset(
+    {
+        "identity_groups",
+        "backups",
+        "backup_jobs",
+        "sync_configs",
+        "issue_labels",
+    }
+)
 
 # Registry: all resolvable types (mutable, seeded at startup)
 _REGISTRY: dict[str, ResolvableType] = {}
@@ -64,8 +82,8 @@ def register(resolvable_type: ResolvableType) -> None:
 def _init_registry() -> None:
     """Initialize the registry with all known resolvable types.
 
-    Extracts types from RESOURCE_URL_MAP in the legacy lookup_village_id.py
-    and from actual database tables with village_id columns.
+    URL patterns match the exact React Router routes in ``web/src/App.tsx``
+    and ``web/src/modules/*/index.tsx``.
     """
     # Core tenant/org types
     register(
@@ -73,7 +91,7 @@ def _init_registry() -> None:
             type="tenant",
             module="tenant",
             table="tenants",
-            url_pattern="/tenants/{id}",
+            url_pattern="/admin/tenants/{id}",
             title_column="name",
         )
     )
@@ -87,7 +105,7 @@ def _init_registry() -> None:
         )
     )
 
-    # Infrastructure
+    # Infrastructure (entities covers compute/VMs/K8s/LXD/servers/devices)
     register(
         ResolvableType(
             type="entity",
@@ -97,25 +115,81 @@ def _init_registry() -> None:
             title_column="name",
         )
     )
+    register(
+        ResolvableType(
+            type="data_store",
+            module="infrastructure",
+            table="data_stores",
+            url_pattern="/data-inventory?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="networking_resource",
+            module="infrastructure",
+            table="networking_resources",
+            url_pattern="/networking?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="dependency",
+            module="infrastructure",
+            table="dependencies",
+            url_pattern="/dependencies?highlight={id}",
+            title_column="dependency_type",
+        )
+    )
+    register(
+        ResolvableType(
+            type="geo_region",
+            module="infrastructure",
+            table="geo_regions",
+            url_pattern="/map?region={id}",
+            title_column="name",
+            tenant_id_is_string=True,
+        )
+    )
+    register(
+        ResolvableType(
+            type="geo_location",
+            module="infrastructure",
+            table="geo_locations",
+            url_pattern="/map?location={id}",
+            title_column="name",
+            tenant_id_is_string=True,
+        )
+    )
 
-    # Identity
+    # Identity & IAM
     register(
         ResolvableType(
             type="identity",
             module="identity",
             table="identities",
-            url_pattern="/identities/{id}",
+            url_pattern="/iam?highlight={id}",
             title_column="email",
         )
     )
+    register(
+        ResolvableType(
+            type="identity_group",
+            module="identity",
+            table="identity_groups",
+            url_pattern="/iam?tab=groups&highlight={id}",
+            title_column="name",
+        )
+    )
 
-    # SBOM/Software
+    # SBOM / Software / Services / Vulnerabilities / License Policies
     register(
         ResolvableType(
             type="software",
             module="sbom",
             table="software",
-            url_pattern="/software/{id}",
+            url_pattern="/software?highlight={id}",
             title_column="name",
         )
     )
@@ -124,7 +198,63 @@ def _init_registry() -> None:
             type="service",
             module="sbom",
             table="services",
-            url_pattern="/services/{id}",
+            url_pattern="/services?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="vulnerability",
+            module="sbom",
+            table="vulnerabilities",
+            url_pattern="/vulnerabilities?highlight={id}",
+            title_column="cve_id",
+        )
+    )
+    register(
+        ResolvableType(
+            type="sbom_scan",
+            module="sbom",
+            table="sbom_scans",
+            url_pattern="/sbom?highlight={id}",
+            title_column="scan_type",
+        )
+    )
+    register(
+        ResolvableType(
+            type="sbom_component",
+            module="sbom",
+            table="sbom_components",
+            url_pattern="/sbom?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="sbom_scan_schedule",
+            module="sbom",
+            table="sbom_scan_schedules",
+            url_pattern="/sbom?highlight={id}",
+            title_column="schedule_cron",
+        )
+    )
+    register(
+        ResolvableType(
+            type="license_policy",
+            module="sbom",
+            table="license_policies",
+            url_pattern="/admin/license-policies?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Services & On-Call
+    register(
+        ResolvableType(
+            type="on_call_rotation",
+            module="services_oncall",
+            table="on_call_rotations",
+            url_pattern="/on-call-rotations?highlight={id}",
             title_column="name",
         )
     )
@@ -135,8 +265,8 @@ def _init_registry() -> None:
             type="ipam_prefix",
             module="ipam",
             table="ipam_prefixes",
-            url_pattern="/ipam/prefixes/{id}",
-            title_column="name",
+            url_pattern="/ipam?tab=prefixes&highlight={id}",
+            title_column="prefix",
         )
     )
     register(
@@ -144,7 +274,7 @@ def _init_registry() -> None:
             type="ipam_address",
             module="ipam",
             table="ipam_addresses",
-            url_pattern="/ipam/addresses/{id}",
+            url_pattern="/ipam?tab=addresses&highlight={id}",
             title_column="address",
         )
     )
@@ -153,12 +283,12 @@ def _init_registry() -> None:
             type="ipam_vlan",
             module="ipam",
             table="ipam_vlans",
-            url_pattern="/ipam/vlans/{id}",
-            title_column="vlan_name",
+            url_pattern="/ipam?tab=vlans&highlight={id}",
+            title_column="name",
         )
     )
 
-    # Issues
+    # Issues / Work Management
     register(
         ResolvableType(
             type="issue",
@@ -182,8 +312,26 @@ def _init_registry() -> None:
             type="milestone",
             module="issues",
             table="milestones",
-            url_pattern="/milestones/{id}",
+            url_pattern="/milestones?highlight={id}",
             title_column="title",
+        )
+    )
+    register(
+        ResolvableType(
+            type="label",
+            module="issues",
+            table="labels",
+            url_pattern="/labels?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="issue_label",
+            module="issues",
+            table="issue_labels",
+            url_pattern="/labels?highlight={id}",
+            title_column="name",
         )
     )
 
@@ -199,6 +347,15 @@ def _init_registry() -> None:
             title_column="title",
         )
     )
+    register(
+        ResolvableType(
+            type="doc_collection",
+            module="documents",
+            table="doc_collections",
+            url_pattern="/documents?collection={id}",
+            title_column="name",
+        )
+    )
 
     # Pages
     register(
@@ -209,6 +366,276 @@ def _init_registry() -> None:
             id_column="slug",
             url_pattern="/pages/{id}",
             title_column="title",
+        )
+    )
+
+    # Streams (automation playbooks)
+    register(
+        ResolvableType(
+            type="playbook",
+            module="streams",
+            table="stream_playbooks",
+            url_pattern="/streams/{id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="stream_template",
+            module="streams",
+            table="stream_templates",
+            url_pattern="/streams?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="stream_custom_module",
+            module="streams",
+            table="stream_custom_modules",
+            url_pattern="/streams?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Diagrams
+    register(
+        ResolvableType(
+            type="diagram",
+            module="diagrams",
+            table="dg_diagrams",
+            url_pattern="/diagrams/{id}",
+            title_column="title",
+        )
+    )
+    register(
+        ResolvableType(
+            type="dg_collection",
+            module="diagrams",
+            table="dg_collections",
+            url_pattern="/diagrams?collection={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="dg_template",
+            module="diagrams",
+            table="dg_templates",
+            url_pattern="/diagrams?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Flows (CI/CD)
+    register(
+        ResolvableType(
+            type="flow",
+            module="flows",
+            table="iceflows",
+            url_pattern="/flows/{id}",
+            title_column="name",
+        )
+    )
+
+    # Helpdesk
+    register(
+        ResolvableType(
+            type="ticket",
+            module="helpdesk",
+            table="hd_tickets",
+            url_pattern="/helpdesk/tickets/{id}",
+            title_column="subject",
+        )
+    )
+    register(
+        ResolvableType(
+            type="helpdesk_team",
+            module="helpdesk",
+            table="hd_teams",
+            url_pattern="/helpdesk/teams?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="hd_sla_policy",
+            module="helpdesk",
+            table="hd_sla_policies",
+            url_pattern="/helpdesk/sla-policies?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # AI Resources
+    register(
+        ResolvableType(
+            type="ai_resource",
+            module="ai",
+            table="ai_resources",
+            url_pattern="/ai?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Secrets, Keys & Certificates
+    register(
+        ResolvableType(
+            type="secret",
+            module="secrets",
+            table="secrets",
+            url_pattern="/secrets?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="builtin_secret",
+            module="secrets",
+            table="builtin_secrets",
+            url_pattern="/secrets?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="secret_provider",
+            module="secrets",
+            table="secret_providers",
+            url_pattern="/secrets?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="crypto_key",
+            module="secrets",
+            table="crypto_keys",
+            url_pattern="/keys?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="key_provider",
+            module="secrets",
+            table="key_providers",
+            url_pattern="/keys?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="certificate",
+            module="secrets",
+            table="certificates",
+            url_pattern="/certificates?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Webhooks & Backups
+    register(
+        ResolvableType(
+            type="webhook",
+            module="webhooks_alerting",
+            table="webhooks",
+            url_pattern="/webhooks?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="inbound_webhook",
+            module="webhooks_alerting",
+            table="inbound_webhooks",
+            url_pattern="/webhooks?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="backup",
+            module="backup",
+            table="backups",
+            url_pattern="/backups?highlight={id}",
+            title_column="filename",
+        )
+    )
+    register(
+        ResolvableType(
+            type="backup_job",
+            module="backup",
+            table="backup_jobs",
+            url_pattern="/backups?highlight={id}",
+            title_column="name",
+        )
+    )
+
+    # Access Reviews
+    register(
+        ResolvableType(
+            type="access_review",
+            module="access_reviews",
+            table="access_reviews",
+            url_pattern="/access-reviews?highlight={id}",
+            title_column="status",
+        )
+    )
+    register(
+        ResolvableType(
+            type="group_access_request",
+            module="access_reviews",
+            table="group_access_requests",
+            url_pattern="/access-reviews?highlight={id}",
+            title_column="reason",
+        )
+    )
+
+    # Discovery / Sync / Cloud / IAM Integrations
+    register(
+        ResolvableType(
+            type="discovery_job",
+            module="discovery",
+            table="discovery_jobs",
+            url_pattern="/admin/integrations?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="sync_config",
+            module="discovery",
+            table="sync_configs",
+            url_pattern="/admin/integrations?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="iam_provider",
+            module="discovery",
+            table="iam_providers",
+            url_pattern="/admin/integrations?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="google_workspace_provider",
+            module="discovery",
+            table="google_workspace_providers",
+            url_pattern="/admin/integrations?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="cloud_account",
+            module="discovery",
+            table="cloud_accounts",
+            url_pattern="/admin/integrations?highlight={id}",
+            title_column="name",
         )
     )
 
@@ -238,12 +665,106 @@ def get_type(type_name: str) -> ResolvableType | None:
     return _REGISTRY.get(type_name)
 
 
+def _extract_title(row: Any, resolvable: ResolvableType, resource_id: Any) -> str:
+    """Extract a human-readable display title from a resolved row."""
+    raw = getattr(row, resolvable.title_column, None)
+    if raw is not None and str(raw).strip():
+        return str(raw)
+    for fallback_col in (
+        "name",
+        "title",
+        "username",
+        "email",
+        "slug",
+        "filename",
+        "code",
+    ):
+        val = getattr(row, fallback_col, None)
+        if val is not None and str(val).strip():
+            return str(val)
+    return str(resource_id)
+
+
+def _parse_json_config(raw: Any) -> dict[str, Any]:
+    """Safely coerce a JSON/dict config column value to a dict."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def _get_table_safe(db: Any, table_name: str) -> Any | None:
+    """Safely fetch a table from a PyDAL/penguin-dal DB handle.
+
+    ``penguin_dal`` raises ``TableNotFoundError`` (not ``AttributeError``) when
+    accessing an uncreated/missing table, which bypasses ``hasattr()``.
+    """
+    try:
+        return getattr(db, table_name)
+    except Exception:
+        return None
+
+
+def _get_column_safe(table: Any, col_name: str) -> Any | None:
+    """Safely fetch a column from a PyDAL/penguin-dal table handle."""
+    try:
+        return getattr(table, col_name)
+    except Exception:
+        return None
+
+
+def _get_tenant_org_ids(db: Any, tenant_id: int) -> set[int]:
+    """Return all organization IDs belonging to ``tenant_id``."""
+    orgs = _get_table_safe(db, "organizations")
+    if orgs is None:
+        return set()
+    rows = db(orgs.tenant_id == tenant_id).select(orgs.id)
+    return {int(r.id) for r in rows if getattr(r, "id", None) is not None}
+
+
+def _get_tenant_string_values(db: Any, tenant_id: int) -> list[str]:
+    """Return allowed string tenant_id values for string-tenant tables (geo_*)."""
+    values = [str(tenant_id)]
+    tenants = _get_table_safe(db, "tenants")
+    if tenants is not None:
+        row = db(tenants.id == tenant_id).select(tenants.slug).first()
+        slug = getattr(row, "slug", None) if row else None
+        if slug and str(slug) not in values:
+            values.append(str(slug))
+    return values
+
+
+def _vid_matches_tenant_prefix(village_id: str, tenant_id: int) -> bool:
+    """Return True if ``village_id`` is well-formed and embeds ``tenant_id``."""
+    if not is_valid_village_id(village_id):
+        return False
+    return parse_village_id(village_id).tenant_id == tenant_id
+
+
 def resolve_by_village_id(
     db: Any, village_id: str, tenant_id: int | None = None
 ) -> dict[str, Any] | None:
-    """Resolve a village_id to its resource type and ID.
+    """Resolve a village_id to its resource type, ID, title, module, and table.
 
-    Searches all registered types for a matching village_id, scoped to tenant if provided.
+    Searches all registered types for a matching village_id, strictly scoped to
+    ``tenant_id``. Supports:
+    - Direct ``tenant_id`` integer columns
+    - ``tenants`` self-resolution (``table.id == tenant_id``)
+    - String ``tenant_id`` columns (``geo_regions``, ``geo_locations``)
+    - Organization-scoped tables (``entities``, ``networking_resources``,
+      ``secrets``, ``builtin_secrets``, ``crypto_keys``, ``cloud_accounts``,
+      etc.) via ``organizations.tenant_id == tenant_id``
+    - ``discovery_jobs`` via ``config_json["_organization_id"]`` in tenant orgs
+    - Tenantless global tables via the server-minted ``village_id`` tenant prefix
+
+    Fail-closed (regression: gh-237): when ``tenant_id is None``, immediately
+    returns ``None`` without querying any table.
 
     Args:
         db: PyDAL database instance
@@ -251,60 +772,143 @@ def resolve_by_village_id(
         tenant_id: Tenant ID for scoping (required for security)
 
     Returns:
-        Dict with type, id, table_name, or None if not found or tenant mismatch
+        Dict with ``type``, ``id``, ``table_name``, ``title``, ``module``,
+        or ``None`` if not found or tenant mismatch.
     """
+    if not village_id or not isinstance(village_id, str):
+        return None
+
+    # Fail-closed (regression: gh-237): no tenant_id means ownership of ANY row
+    # cannot be verified, so never resolve one -- skip every table rather than
+    # falling through to an unscoped query.
+    if tenant_id is None:
+        return None
+
+    tenant_org_ids_cache: set[int] | None = None
+    tenant_str_values_cache: list[str] | None = None
+
+    def get_org_ids() -> set[int]:
+        nonlocal tenant_org_ids_cache
+        if tenant_org_ids_cache is None:
+            tenant_org_ids_cache = _get_tenant_org_ids(db, tenant_id)
+        return tenant_org_ids_cache
+
+    def get_tenant_strs() -> list[str]:
+        nonlocal tenant_str_values_cache
+        if tenant_str_values_cache is None:
+            tenant_str_values_cache = _get_tenant_string_values(db, tenant_id)
+        return tenant_str_values_cache
+
     for type_name, resolvable in _REGISTRY.items():
-        # Check if table exists in database
-        if not hasattr(db, resolvable.table):
+        table = _get_table_safe(db, resolvable.table)
+        if table is None:
             continue
 
-        table: Table = getattr(db, resolvable.table)
-
-        # Check if table has village_id field
-        if not hasattr(table, resolvable.village_id_column):
+        village_id_field = _get_column_safe(table, resolvable.village_id_column)
+        if village_id_field is None:
             continue
 
-        # Build query with tenant scoping
-        village_id_field = getattr(table, resolvable.village_id_column)
+        tenant_col = _get_column_safe(table, "tenant_id")
+        org_col = _get_column_safe(table, "organization_id")
+        row = None
 
-        # Tenant scoping is mandatory for security
-        if tenant_id is not None:
-            if hasattr(table, "tenant_id"):
-                # Table has explicit tenant_id column
+        if type_name == "tenant":
+            # Special case: tenants table — a tenant can only resolve itself
+            row = (
+                db((village_id_field == village_id) & (table.id == tenant_id))
+                .select()
+                .first()
+            )
+        elif resolvable.tenant_id_is_string and tenant_col is not None:
+            allowed_strs = get_tenant_strs()
+            row = (
+                db(
+                    (village_id_field == village_id)
+                    & (tenant_col.belongs(allowed_strs))
+                )
+                .select()
+                .first()
+            )
+        elif tenant_col is not None:
+            # Table has explicit integer tenant_id column
+            row = (
+                db((village_id_field == village_id) & (tenant_col == tenant_id))
+                .select()
+                .first()
+            )
+            # Legacy rows on nullable-tenant_id tables (e.g. projects/milestones/webhooks)
+            # may still link tenancy through organization_id
+            if row is None and org_col is not None:
+                org_ids = get_org_ids()
+                if org_ids:
+                    row = (
+                        db(
+                            (village_id_field == village_id)
+                            & (tenant_col == None)  # noqa: E711
+                            & (org_col.belongs(list(org_ids)))
+                        )
+                        .select()
+                        .first()
+                    )
+        elif org_col is not None:
+            # Org-scoped tables (entities, networking_resources, secrets,
+            # builtin_secrets, crypto_keys, cloud_accounts, iam_providers, etc.)
+            org_ids = get_org_ids()
+            if org_ids:
                 row = (
                     db(
                         (village_id_field == village_id)
-                        & (table.tenant_id == tenant_id)
+                        & (org_col.belongs(list(org_ids)))
                     )
                     .select()
                     .first()
                 )
-            elif type_name == "tenant":
-                # Special case: tenants table — a tenant can only resolve itself
-                row = (
-                    db((village_id_field == village_id) & (table.id == tenant_id))
-                    .select()
-                    .first()
+        elif resolvable.table == "discovery_jobs":
+            # discovery_jobs stores _organization_id inside config_json
+            org_ids = get_org_ids()
+            if org_ids:
+                candidate = db(village_id_field == village_id).select().first()
+                if candidate is not None:
+                    cfg = _parse_json_config(getattr(candidate, "config_json", None))
+                    job_org_id = cfg.get("_organization_id")
+                    if job_org_id is not None:
+                        try:
+                            if int(job_org_id) in org_ids:
+                                row = candidate
+                        except (TypeError, ValueError):
+                            row = None
+        elif resolvable.table == "sync_configs":
+            candidate = db(village_id_field == village_id).select().first()
+            if candidate is not None:
+                cfg = _parse_json_config(getattr(candidate, "config_json", None))
+                cfg_org_id = cfg.get("elder_organization_id") or cfg.get(
+                    "organization_id"
                 )
-            else:
-                # Table has no tenant_id and is not the tenant table
-                # Cannot safely scope — skip this table
-                continue
+                if cfg_org_id is not None:
+                    try:
+                        if int(cfg_org_id) in get_org_ids():
+                            row = candidate
+                    except (TypeError, ValueError):
+                        row = None
+                elif _vid_matches_tenant_prefix(village_id, tenant_id):
+                    row = candidate
+        elif resolvable.table in _VID_PREFIX_SCOPED_TABLES:
+            # Global/tenantless tables: enforce strict tenant match via the
+            # server-minted 8-hex-char tenant prefix embedded in village_id
+            if _vid_matches_tenant_prefix(village_id, tenant_id):
+                row = db(village_id_field == village_id).select().first()
         else:
-            # Fail-closed (regression: gh-237): no tenant_id means ownership of
-            # ANY row cannot be verified, so never resolve one -- skip every
-            # table rather than falling through to an unscoped query. The
-            # previous version of this branch queried tables that DO have a
-            # tenant_id column (or the tenant table) WITHOUT filtering on it,
-            # which let a caller that omitted tenant_id (e.g. an unauthenticated
-            # endpoint) enumerate any tenant's resources by village_id.
+            # Cannot safely scope — skip this table
             continue
 
-        if row:
+        if row is not None:
+            resource_id = getattr(row, resolvable.id_column)
             return {
                 "type": type_name,
-                "id": getattr(row, resolvable.id_column),
+                "id": resource_id,
                 "table_name": resolvable.table,
+                "title": _extract_title(row, resolvable, resource_id),
+                "module": resolvable.module,
             }
 
     return None
@@ -334,42 +938,77 @@ def resolve_ref(
         return None
 
     # Check if table exists
-    if not hasattr(db, resolvable.table):
+    table = _get_table_safe(db, resolvable.table)
+    if table is None:
         return None
 
-    table: Table = getattr(db, resolvable.table)
-    id_field = getattr(table, resolvable.id_column)
+    id_field = _get_column_safe(table, resolvable.id_column)
+    if id_field is None:
+        return None
 
+    tenant_col = _get_column_safe(table, "tenant_id")
+    org_col = _get_column_safe(table, "organization_id")
+
+    # Guard integer PK columns against non-numeric strings (avoids PG syntax error)
+    query_id: Any = resource_id
+    if resolvable.id_column == "id" and isinstance(resource_id, str):
+        if not resource_id.isdigit():
+            return None
+        query_id = int(resource_id)
+
+    row = None
     # Tenant scoping is mandatory for security
     if tenant_id is not None:
-        if hasattr(table, "tenant_id"):
-            # Table has explicit tenant_id column (organizations, identities, software, etc.)
+        if type_name == "tenant":
+            row = db((id_field == query_id) & (table.id == tenant_id)).select().first()
+        elif resolvable.tenant_id_is_string and tenant_col is not None:
+            allowed_strs = _get_tenant_string_values(db, tenant_id)
             row = (
-                db((id_field == resource_id) & (table.tenant_id == tenant_id))
+                db((id_field == query_id) & (tenant_col.belongs(allowed_strs)))
                 .select()
                 .first()
             )
-        elif type_name == "tenant":
-            # Special case: tenants table — a tenant can only resolve itself
+        elif tenant_col is not None:
             row = (
-                db((id_field == resource_id) & (table.id == tenant_id)).select().first()
+                db((id_field == query_id) & (tenant_col == tenant_id)).select().first()
             )
+        elif org_col is not None:
+            org_ids = _get_tenant_org_ids(db, tenant_id)
+            if not org_ids:
+                return None
+            row = (
+                db((id_field == query_id) & (org_col.belongs(list(org_ids))))
+                .select()
+                .first()
+            )
+        elif resolvable.table == "discovery_jobs":
+            org_ids = _get_tenant_org_ids(db, tenant_id)
+            if not org_ids:
+                return None
+            candidate = db(id_field == query_id).select().first()
+            if candidate is not None:
+                cfg = _parse_json_config(getattr(candidate, "config_json", None))
+                job_org_id = cfg.get("_organization_id")
+                if job_org_id is not None:
+                    try:
+                        if int(job_org_id) in org_ids:
+                            row = candidate
+                    except (TypeError, ValueError):
+                        row = None
         else:
-            # Table has no tenant_id and is not the tenant table
-            # Cannot safely scope — return None to prevent cross-tenant leak
+            # Table has no tenant_id/organization_id — cannot safely scope by numeric id
             return None
     else:
         # No tenant_id provided — cannot safely scope unscopable tables
-        if hasattr(table, "tenant_id") or type_name == "tenant":
-            row = db(id_field == resource_id).select().first()
+        if tenant_col is not None or type_name == "tenant":
+            row = db(id_field == query_id).select().first()
         else:
-            # Cannot scope without tenant_id and no column available
             return None
 
     if not row:
         return None
 
-    title = getattr(row, resolvable.title_column, str(resource_id))
+    title = _extract_title(row, resolvable, resource_id)
     return {
         "id": resource_id,
         "title": title,

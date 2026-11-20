@@ -22,6 +22,7 @@ from apps.api.models.dataclasses import (
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +291,8 @@ async def create_dependency(body: CreateDependencyRequest):
         )
 
     # Check if resources exist and dependency doesn't already exist
+    redis_client = getattr(current_app, "redis_client", None)
+
     def validate_and_create():
         # Check if source resource exists
         source = get_resource(db, source_type, source_id)
@@ -329,6 +332,7 @@ async def create_dependency(body: CreateDependencyRequest):
         # Create dependency
         dep_id = db.dependencies.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             source_type=source_type,
             source_id=source_id,
             target_type=target_type,
@@ -519,6 +523,8 @@ async def create_bulk_dependencies():
         validated = BulkCreateDependenciesRequest(**request_data)
 
         # Validate and create dependencies
+        redis_client = getattr(current_app, "redis_client", None)
+
         def create_all():
             created_ids = []
             for i, dep_req in enumerate(validated.dependencies):
@@ -536,6 +542,7 @@ async def create_bulk_dependencies():
                 # Create dependency
                 dep_id = db.dependencies.insert(
                     tenant_id=tenant_id,
+                    village_id=mint_village_id(tenant_id, redis_client),
                     source_type=dep_req.source_type,
                     source_id=dep_req.source_id,
                     target_type=dep_req.target_type,

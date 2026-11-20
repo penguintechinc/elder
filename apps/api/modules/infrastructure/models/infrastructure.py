@@ -25,7 +25,7 @@ from apps.api.models.base import (
 )
 
 
-class NetworkingResource(Base, IDMixin, TimestampMixin):
+class NetworkingResource(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Networking resources (subnets, VPCs, firewalls, etc.)."""
 
     __tablename__ = "networking_resources"
@@ -117,7 +117,7 @@ class DataStoreLabel(Base, IDMixin):
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class GeoRegion(Base, IDMixin, TimestampMixin):
+class GeoRegion(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Geographic cloud/infrastructure regions."""
 
     __tablename__ = "geo_regions"
@@ -132,7 +132,7 @@ class GeoRegion(Base, IDMixin, TimestampMixin):
     is_active = Column(Boolean, nullable=False, default=True)
 
 
-class GeoLocation(Base, IDMixin, TimestampMixin):
+class GeoLocation(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Physical and logical geographic locations."""
 
     __tablename__ = "geo_locations"

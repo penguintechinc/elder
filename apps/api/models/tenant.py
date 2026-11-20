@@ -13,7 +13,7 @@ from sqlalchemy import (
     false,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class Tenant(Base, IDMixin, TimestampMixin):
@@ -49,7 +49,7 @@ class Tenant(Base, IDMixin, TimestampMixin):
     legal_hold = Column(Boolean, nullable=False, server_default=false())
 
 
-class PortalUser(Base, IDMixin, TimestampMixin):
+class PortalUser(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Enterprise portal user management.
 
     OPEN GRC QUESTION (PII tokenization finding, see fix/pii-tokenization,

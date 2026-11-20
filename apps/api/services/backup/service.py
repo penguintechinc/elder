@@ -296,6 +296,8 @@ class BackupService:
         if exclude_tables:
             config["exclude_tables"] = exclude_tables
 
+        from apps.api.utils.village_id import mint_village_id
+
         now = datetime.now(UTC)
         job_id = self.db.backup_jobs.insert(
             name=name,
@@ -311,6 +313,7 @@ class BackupService:
             s3_access_key=s3_access_key,
             s3_secret_key=s3_secret_key,
             s3_prefix=s3_prefix,
+            village_id=mint_village_id(1),
             created_at=now,
             updated_at=now,
         )
@@ -547,7 +550,10 @@ class BackupService:
                 except Exception as e:
                     logger.error(f"S3 upload failed, continuing with local backup: {e}")
 
+            from apps.api.utils.village_id import mint_village_id
+
             # Create backup record
+            backup_village_id = mint_village_id(1)
             backup_id = self.db.backups.insert(
                 job_id=job.id,
                 filename=filename,
@@ -560,6 +566,7 @@ class BackupService:
                 duration_seconds=duration_seconds,
                 s3_url=s3_url,
                 s3_key=s3_key,
+                village_id=backup_village_id,
                 created_at=start_time,
                 updated_at=end_time,
             )
@@ -572,6 +579,7 @@ class BackupService:
             result = {
                 "success": True,
                 "backup_id": backup_id,
+                "village_id": backup_village_id,
                 "filename": filename,
                 "file_size": file_size,
                 "record_count": total_records,
@@ -586,6 +594,8 @@ class BackupService:
             return result
 
         except Exception as e:
+            from apps.api.utils.village_id import mint_village_id
+
             # Record failed backup
             failed_time = datetime.now(UTC)
             backup_id = self.db.backups.insert(
@@ -593,6 +603,7 @@ class BackupService:
                 status="failed",
                 error_message=str(e),
                 started_at=failed_time,
+                village_id=mint_village_id(1),
                 created_at=failed_time,
                 updated_at=failed_time,
             )

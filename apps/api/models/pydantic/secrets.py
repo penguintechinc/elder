@@ -22,6 +22,7 @@ class SecretMetadataResponse(ImmutableModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     metadata: dict[str, Any] | None = None
+    village_id: str | None = None
 
 
 class SecretMetadataListResponse(ImmutableModel):
@@ -48,6 +49,7 @@ class SecretValueResponse(ImmutableModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     metadata: dict[str, Any] | None = None
+    village_id: str | None = None
 
 
 class DeleteSecretResponse(ImmutableModel):

@@ -618,11 +618,12 @@ class TestResolveByVillageIdFailClosedNoneTenant:
 
         # Sanity: the row DOES exist and resolves once correctly scoped.
         result = resolve_by_village_id(db, village_id, tenant_id=1)
-        assert result == {
-            "type": "identity",
-            "id": identity_id,
-            "table_name": "identities",
-        }
+        assert result is not None
+        assert result["type"] == "identity"
+        assert result["id"] == identity_id
+        assert result["table_name"] == "identities"
+        assert result["module"] == "identity"
+        assert result["title"]
 
 
 class TestLookupVillageIdEndpointAuthGate:

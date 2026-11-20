@@ -12,10 +12,10 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class SecretProvider(Base, IDMixin, TimestampMixin):
+class SecretProvider(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """External secret provider configuration."""
 
     __tablename__ = "secret_providers"
@@ -28,7 +28,7 @@ class SecretProvider(Base, IDMixin, TimestampMixin):
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class Secret(Base, IDMixin, TimestampMixin):
+class Secret(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Secrets from external providers."""
 
     __tablename__ = "secrets"
@@ -56,7 +56,7 @@ class SecretAccessLog(Base, IDMixin):
     accessed_at = Column(DateTime(timezone=True), nullable=False)
 
 
-class BuiltinSecret(Base, IDMixin, TimestampMixin):
+class BuiltinSecret(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """In-app encrypted secret storage."""
 
     __tablename__ = "builtin_secrets"
@@ -72,7 +72,7 @@ class BuiltinSecret(Base, IDMixin, TimestampMixin):
     expires_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class APIKey(Base, IDMixin, TimestampMixin):
+class APIKey(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """API keys for identity authentication."""
 
     __tablename__ = "api_keys"

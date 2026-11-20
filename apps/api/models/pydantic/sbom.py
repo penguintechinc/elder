@@ -20,7 +20,7 @@ class SBOMComponentDTO(BaseModel):
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None = None
     parent_type: str
     parent_id: int
     name: str
@@ -107,7 +107,7 @@ class SBOMScanDTO(BaseModel):
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None = None
     parent_type: str
     parent_id: int
     scan_type: str
@@ -177,7 +177,7 @@ class SBOMScanScheduleDTO(BaseModel):
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None = None
     parent_type: str
     parent_id: int
     schedule_cron: str
@@ -202,7 +202,7 @@ class VulnerabilityDTO(BaseModel):
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None = None
     cve_id: str
     aliases: list | None = None
     severity: str
@@ -269,7 +269,7 @@ class LicensePolicyDTO(BaseModel):
     id: int
     tenant_id: int
     organization_id: int | None = None
-    village_id: str
+    village_id: str | None = None
     name: str
     description: str | None = None
     allowed_licenses: list | None = None

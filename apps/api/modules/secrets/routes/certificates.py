@@ -238,7 +238,11 @@ async def create_certificate():
                 "Built-in Secret", data["private_key_secret_id"]
             )
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Parse dates
         issue_date = data.get("issue_date")
         expiration_date = data.get("expiration_date")
@@ -257,6 +261,7 @@ async def create_certificate():
 
         cert_id = db.certificates.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             name=data["name"],
             description=data.get("description"),
             organization_id=data["organization_id"],

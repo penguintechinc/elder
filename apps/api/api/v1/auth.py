@@ -23,6 +23,7 @@ from apps.api.services.webhooks.user_events import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
 bp = Blueprint("auth", __name__)
@@ -107,6 +108,7 @@ async def register():
             is_superuser=False,
             mfa_enabled=False,
             tenant_id=default_tenant_id,
+            village_id=mint_village_id(default_tenant_id),
             # NOT NULL columns with no DB-level server default — penguin-dal's
             # insert() does not apply SQLAlchemy Column(default=...) for
             # kwargs omitted entirely, so these must be supplied explicitly

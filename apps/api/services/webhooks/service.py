@@ -132,14 +132,11 @@ def _insert_webhook_with_unique_village_id(
 
     Mint-retry strategy against the shared per-tenant Redis village_id counter.
     """
-    from shared.utils.village_id import generate_village_id
+    from apps.api.utils.village_id import mint_village_id
 
     last_error: IntegrityError | None = None
     for _ in range(_MAX_VILLAGE_ID_MINT_ATTEMPTS):
-        if redis_client:
-            village_id = generate_village_id(tenant_id, redis_client)
-        else:
-            village_id = f"test-{uuid4().hex[:8]}"
+        village_id = mint_village_id(tenant_id, redis_client)
 
         try:
             return db.webhooks.insert(village_id=village_id, **insert_data)
@@ -857,7 +854,13 @@ class WebhookService:
         if not config or not isinstance(config, dict):
             raise Exception("Config must be a non-empty dictionary")
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
         now = datetime.now(UTC)
+        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
         rule_id = self.db.notification_rules.insert(
             name=name,
             channel=channel,
@@ -866,6 +869,7 @@ class WebhookService:
             organization_id=organization_id,
             description=description,
             enabled=True,
+            village_id=mint_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

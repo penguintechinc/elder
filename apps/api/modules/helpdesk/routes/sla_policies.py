@@ -67,6 +67,7 @@ async def list_sla_policies():
     policies = [
         {
             "id": r.id,
+            "village_id": getattr(r, "village_id", None),
             "name": r.name,
             "priority": r.priority,
             "first_response_hours": r.first_response_hours,
@@ -144,9 +145,14 @@ async def create_sla_policy():
     if first_response_hours <= 0 or resolution_hours <= 0:
         return ApiResponse.error("Hours must be positive integers", 400)
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         policy_id = db.hd_sla_policies.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             name=name,
             priority=priority,
             first_response_hours=first_response_hours,
@@ -162,6 +168,7 @@ async def create_sla_policy():
     return (
         {
             "id": policy_row.id,
+            "village_id": getattr(policy_row, "village_id", None),
             "name": policy_row.name,
             "priority": policy_row.priority,
             "first_response_hours": policy_row.first_response_hours,

@@ -117,6 +117,7 @@ class SecretsService:
 
             return {
                 "id": secret_id,
+                "village_id": getattr(secret, "village_id", None),
                 "name": secret.name,
                 "provider_path": secret.provider_path,
                 "secret_type": secret.secret_type,
@@ -167,6 +168,7 @@ class SecretsService:
         return [
             {
                 "id": s.id,
+                "village_id": getattr(s, "village_id", None),
                 "name": s.name,
                 "provider_path": s.provider_path,
                 "secret_type": s.secret_type,
@@ -224,7 +226,13 @@ class SecretsService:
         except SecretNotFoundException:
             raise ValueError(f"Secret at path '{provider_path}' not found in provider")
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
         # Create secret record
+        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
         secret_id = self.db.secrets.insert(
             name=name,
             provider_id=provider_id,
@@ -234,6 +242,7 @@ class SecretsService:
             organization_id=organization_id,
             parent_id=None,
             metadata=metadata or {},
+            village_id=mint_village_id(tenant_id),
             last_synced_at=datetime.now(UTC),
         )
         self.db.commit()
@@ -252,6 +261,7 @@ class SecretsService:
         secret = self.db.secrets[secret_id]
         return {
             "id": secret_id,
+            "village_id": getattr(secret, "village_id", None),
             "name": secret.name,
             "provider_path": secret.provider_path,
             "secret_type": secret.secret_type,
@@ -447,6 +457,7 @@ class SecretsService:
         return [
             {
                 "id": p.id,
+                "village_id": getattr(p, "village_id", None),
                 "name": p.name,
                 "provider": p.provider,
                 "organization_id": p.organization_id,
@@ -466,6 +477,7 @@ class SecretsService:
 
         return {
             "id": provider.id,
+            "village_id": getattr(provider, "village_id", None),
             "name": provider.name,
             "provider": provider.provider,
             "organization_id": provider.organization_id,
@@ -495,12 +507,19 @@ class SecretsService:
         except Exception as e:
             raise ValueError(f"Provider validation failed: {str(e)}")
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
+        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
         provider_id = self.db.secret_providers.insert(
             name=name,
             provider=provider_type,
             config_json=config_json,
             organization_id=organization_id,
             enabled=True,
+            village_id=mint_village_id(tenant_id),
         )
         self.db.commit()
 

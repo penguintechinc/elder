@@ -1076,15 +1076,9 @@ def _build_inbound_credentials(
 
 
 def _mint_inbound_village_id(tenant_id: int) -> str:
-    try:
-        from shared.utils.village_id import generate_village_id
+    from apps.api.utils.village_id import mint_village_id
 
-        redis_client = getattr(current_app, "redis", None)
-        if redis_client is not None:
-            return generate_village_id(tenant_id, redis_client)
-    except Exception:
-        pass
-    return f"wh-{secrets.token_hex(6)}"
+    return mint_village_id(tenant_id)
 
 
 @bp.route("/inbound/scopes", methods=["GET"])

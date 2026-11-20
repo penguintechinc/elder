@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional
 import redis
 
 from apps.api.services.audit.service import AuditService
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class AccessReviewService:
             redis_url = getattr(Config, "REDIS_URL", "redis://localhost:6379/0")
             self.redis_client = redis.from_url(redis_url)
 
-        return generate_village_id(tenant_id, self.redis_client)
+        return mint_village_id(tenant_id, self.redis_client)
 
     def _review_to_dict(self, review) -> dict[str, Any]:
         """Convert review record to dictionary."""

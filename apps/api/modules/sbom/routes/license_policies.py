@@ -240,11 +240,16 @@ async def create_policy():
     if req.action not in ["warn", "block"]:
         return ApiResponse.error("action must be 'warn' or 'block'", 400)
 
-    tenant_id = get_current_tenant_id()
+    tenant_id = get_current_tenant_id() or getattr(org, "tenant_id", None) or 1
+    redis_client = getattr(current_app, "redis_client", None)
 
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         now = datetime.now(UTC)
         policy_id = db.license_policies.insert(
+            tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             name=req.name,
             organization_id=req.organization_id,
             description=req.description,

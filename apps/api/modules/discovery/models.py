@@ -12,10 +12,10 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
-class CloudAccount(Base, IDMixin, TimestampMixin):
+class CloudAccount(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Cloud provider account for auto-discovery."""
 
     __tablename__ = "cloud_accounts"
@@ -27,7 +27,7 @@ class CloudAccount(Base, IDMixin, TimestampMixin):
     enabled = Column(Boolean, nullable=False)
 
 
-class DiscoveryJob(Base, IDMixin, TimestampMixin):
+class DiscoveryJob(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Discovery job configuration."""
 
     __tablename__ = "discovery_jobs"
@@ -60,7 +60,7 @@ class DiscoveryHistory(Base, IDMixin):
     results_json = Column(JSON, nullable=True)
 
 
-class SyncConfig(Base, IDMixin, TimestampMixin):
+class SyncConfig(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Sync configuration for external platforms."""
 
     __tablename__ = "sync_configs"
@@ -129,7 +129,7 @@ class SyncMapping(Base, IDMixin, TimestampMixin):
     external_updated_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class GoogleWorkspaceProvider(Base, IDMixin, TimestampMixin):
+class GoogleWorkspaceProvider(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Google Workspace provider configuration."""
 
     __tablename__ = "google_workspace_providers"
@@ -157,7 +157,7 @@ class GoogleWorkspaceProvider(Base, IDMixin, TimestampMixin):
     last_sync_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class IAMProvider(Base, IDMixin, TimestampMixin):
+class IAMProvider(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """IAM provider configuration for unified IAM model."""
 
     __tablename__ = "iam_providers"

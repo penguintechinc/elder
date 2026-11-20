@@ -181,8 +181,10 @@ async def create_ticket():
     category = data.get("category")
     tags = data.get("tags", [])
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
-        from shared.utils.village_id import generate_village_id
+        from apps.api.utils.village_id import mint_village_id
 
         # Cross-tenant IDOR guard: body-provided identities must be in this tenant
         if not identity_in_tenant(
@@ -193,8 +195,7 @@ async def create_ticket():
         now = datetime.now(UTC)
 
         # Generate village_id
-        redis_client = current_app.redis_client
-        village_id = generate_village_id(tenant_id, redis_client)
+        village_id = mint_village_id(tenant_id, redis_client)
 
         # Insert ticket
         ticket_id = db.hd_tickets.insert(

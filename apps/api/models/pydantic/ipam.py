@@ -54,6 +54,7 @@ class IPAMPrefixDTO(ImmutableModel):
     is_pool: bool
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 class IPAMAddressDTO(ImmutableModel):
@@ -84,6 +85,7 @@ class IPAMAddressDTO(ImmutableModel):
     dns_name: str | None = None
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 class IPAMVlanDTO(ImmutableModel):
@@ -114,6 +116,7 @@ class IPAMVlanDTO(ImmutableModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 class CreateIPAMPrefixRequest(RequestModel):

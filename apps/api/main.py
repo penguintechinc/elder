@@ -733,7 +733,8 @@ def _register_blueprints(app: Quart) -> None:
 
     # Special-prefix endpoints
     app.register_blueprint(lookup.bp, url_prefix="/lookup")
-    app.register_blueprint(lookup_village_id.bp, url_prefix="")
+    app.register_blueprint(lookup_village_id.bp, url_prefix=api_prefix)
+    app.register_blueprint(lookup_village_id.legacy_bp, url_prefix="")
 
     # Web UI blueprint (root routes)
     app.register_blueprint(web.bp, url_prefix="")

@@ -175,11 +175,16 @@ async def create_schedule():
     except Exception as e:
         return ApiResponse.error(f"Invalid cron expression: {str(e)}", 400)
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         now = datetime.datetime.now(datetime.UTC)
         # Create schedule record
         insert_data = {
             "tenant_id": tenant_id,
+            "village_id": mint_village_id(tenant_id, redis_client),
             "parent_type": parent_type,
             "parent_id": parent_id,
             "schedule_cron": schedule_cron,

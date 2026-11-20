@@ -141,9 +141,11 @@ async def create_collection():
     # Get parent_id if specified
     parent_id = data.get("parent_id")
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
         from apps.api.modules.documents.common import slugify
-        from shared.utils.village_id import generate_village_id
+        from apps.api.utils.village_id import mint_village_id
 
         # Validate parent exists and belongs to tenant
         if parent_id:
@@ -159,8 +161,7 @@ async def create_collection():
                 return "parent_not_found"
 
         now = datetime.now(UTC)
-        redis_client = current_app.redis_client
-        village_id = generate_village_id(tenant_id, redis_client)
+        village_id = mint_village_id(tenant_id, redis_client)
 
         # Generate or use provided slug
         slug = data.get("slug") or slugify(name)

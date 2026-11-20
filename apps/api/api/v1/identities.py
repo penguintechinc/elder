@@ -36,6 +36,7 @@ from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
 bp = Blueprint("identities", __name__)
@@ -107,6 +108,7 @@ def _identity_row_to_dto(row) -> IdentityDTO:
         last_seen_at=d.get("last_login_at"),
         created_at=d["created_at"],
         updated_at=d["updated_at"],
+        village_id=d.get("village_id"),
     )
 
 
@@ -291,10 +293,15 @@ async def create_identity(body: CreateIdentityRequest):
         if blocked is not None:
             return blocked
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def insert():
         now = datetime.now(UTC)
         identity_id = db.identities.insert(
-            created_at=now, updated_at=now, **insert_data
+            village_id=mint_village_id(tenant_id, redis_client),
+            created_at=now,
+            updated_at=now,
+            **insert_data,
         )
         db.commit()
         return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
@@ -556,6 +563,8 @@ async def create_group(body: CreateIdentityGroupRequest):
         201: Created group
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id() or 1
+    redis_client = getattr(current_app, "redis_client", None)
 
     # Create group
     def create():
@@ -569,6 +578,7 @@ async def create_group(body: CreateIdentityGroupRequest):
             name=body.name,
             description=body.description,
             is_active=body.is_active,
+            village_id=mint_village_id(tenant_id, redis_client),
         )
         db.commit()
 

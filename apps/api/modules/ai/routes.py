@@ -291,7 +291,11 @@ async def create_ai_resource(body: CreateAIResourceRequest):
         if not parent:
             return ApiResponse.not_found("Parent system", body.parent_system_id)
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         _ensure_ai_resources_table(db)
         now = datetime.now(UTC)
         resource_id = db.ai_resources.insert(
@@ -299,6 +303,7 @@ async def create_ai_resource(body: CreateAIResourceRequest):
             description=body.description,
             organization_id=body.organization_id,
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             resource_type=body.resource_type,
             provider=body.provider,
             model_name=body.model_name,

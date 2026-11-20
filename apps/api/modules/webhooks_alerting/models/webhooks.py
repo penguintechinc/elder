@@ -102,7 +102,7 @@ class WebhookDelivery(Base, IDMixin):
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class NotificationRule(Base, IDMixin, TimestampMixin):
+class NotificationRule(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Notification rules for various channels.
 
     NOTE: this model also drifts from its migration-011 schema (`event_types`/
