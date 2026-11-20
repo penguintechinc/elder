@@ -259,6 +259,14 @@ class TestPhaseZeroModules:
         discovery = next(m for m in MODULES if m.name == "discovery")
         assert "infrastructure" in discovery.depends_on
 
+    def test_issues_module_title_work_management(self):
+        """Test issues module uses Work Management title while preserving internal key/group."""
+        issues = next(m for m in MODULES if m.name == "issues")
+        assert issues.title == "Work Management"
+        assert issues.group == "issues"
+        assert issues.nav_id == "nav_issues"
+        assert "issues:read" in issues.scopes
+
     def test_phase_zero_count(self):
         """Test the registered-module count (bump when a module is added)."""
         # Phase 0 (9): infrastructure, ipam, sbom, services_oncall,

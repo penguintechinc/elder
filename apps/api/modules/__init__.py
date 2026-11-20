@@ -380,7 +380,7 @@ MODULES = (
     ),
     ModuleManifest(
         name="issues",
-        title="Issues & Project Tracking",
+        title="Work Management",
         license_feature=None,
         depends_on=(),
         blueprints=_issues_blueprints,

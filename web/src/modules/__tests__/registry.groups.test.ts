@@ -59,10 +59,27 @@ describe("Module Grouping (WIRED)", () => {
       .map((c) => c.header);
     expect(headers).toEqual([
       "Workstreams",
-      "Issues",
+      "Work Management",
       "Relationships",
       "Entities",
       "Documents",
     ]);
+  });
+
+  it("exposes Data Inventory under Entities and keeps Work Management key as group-issues", () => {
+    const all = new Set(MODULES.map((m) => m.id));
+    const nav = navFor(all);
+
+    const entities = nav.find((c) => c.header === "Entities");
+    const workMgmt = nav.find((c) => c.header === "Work Management");
+
+    expect(entities).toBeDefined();
+    expect(workMgmt).toBeDefined();
+    expect(workMgmt?.key).toBe("group-issues");
+
+    expect(entities?.items.map((i) => i.href)).toContain("/data-inventory");
+    expect(entities?.items.map((i) => i.name)).toContain("Data Inventory");
+    expect(workMgmt?.items.map((i) => i.href)).not.toContain("/data-inventory");
+    expect(workMgmt?.items.map((i) => i.name)).not.toContain("Data Inventory");
   });
 });

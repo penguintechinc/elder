@@ -62,7 +62,7 @@ export function routesFor(enabledModuleIds: Set<string>): RouteObject[] {
 /** The five WIRED pillars, in acronym order — this is the sidebar's top level. */
 const GROUP_ORDER: [string, string][] = [
   ["workstreams", "Workstreams"],
-  ["issues", "Issues"],
+  ["issues", "Work Management"],
   ["relationships", "Relationships"],
   ["entities", "Entities"],
   ["documents", "Documents"],
