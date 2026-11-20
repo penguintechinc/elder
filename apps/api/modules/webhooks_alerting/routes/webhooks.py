@@ -2,10 +2,19 @@
 
 # flake8: noqa: E501
 
+import base64
+import binascii
+import hmac
+import json
 import logging
+import secrets
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 from quart import Blueprint, current_app, g, jsonify, request
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import text
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.auth.decorators import admin_required, login_required, require_scope
 from apps.api.common.identity import identity_in_tenant
@@ -13,6 +22,7 @@ from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.webhooks import WebhookService
 from apps.api.services.webhooks.service import _UNSET
+from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
 logger = logging.getLogger(__name__)
 
@@ -761,3 +771,619 @@ async def broadcast_event():
 
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to process request", 400)
+
+
+# ===========================
+# Inbound (Receiving) Webhooks
+# ===========================
+
+_INBOUND_WEBHOOKS_SQLITE = """
+CREATE TABLE IF NOT EXISTS inbound_webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id INTEGER NOT NULL,
+    village_id VARCHAR(32) UNIQUE,
+    organization_id INTEGER,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    slug VARCHAR(64) NOT NULL UNIQUE,
+    auth_type VARCHAR(32) NOT NULL DEFAULT 'bearer',
+    bearer_token_hash VARCHAR(255),
+    bearer_token_preview VARCHAR(32),
+    basic_username VARCHAR(255),
+    basic_password_hash VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    stream_id INTEGER,
+    metadata JSON,
+    last_received_at DATETIME,
+    receive_count INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME,
+    updated_at DATETIME
+);
+"""
+
+_INBOUND_EVENTS_SQLITE = """
+CREATE TABLE IF NOT EXISTS inbound_webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inbound_webhook_id INTEGER NOT NULL,
+    tenant_id INTEGER,
+    source_ip VARCHAR(64),
+    headers JSON,
+    payload JSON,
+    status VARCHAR(32) NOT NULL DEFAULT 'received',
+    received_at DATETIME NOT NULL
+);
+"""
+
+_INBOUND_WEBHOOKS_PG = """
+CREATE TABLE IF NOT EXISTS inbound_webhooks (
+    id SERIAL PRIMARY KEY,
+    tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+    village_id VARCHAR(32) UNIQUE,
+    organization_id INTEGER REFERENCES organizations(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    slug VARCHAR(64) NOT NULL UNIQUE,
+    auth_type VARCHAR(32) NOT NULL DEFAULT 'bearer',
+    bearer_token_hash VARCHAR(255),
+    bearer_token_preview VARCHAR(32),
+    basic_username VARCHAR(255),
+    basic_password_hash VARCHAR(255),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    stream_id INTEGER,
+    metadata JSONB,
+    last_received_at TIMESTAMPTZ,
+    receive_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+);
+"""
+
+_INBOUND_EVENTS_PG = """
+CREATE TABLE IF NOT EXISTS inbound_webhook_events (
+    id SERIAL PRIMARY KEY,
+    inbound_webhook_id INTEGER NOT NULL REFERENCES inbound_webhooks(id) ON DELETE CASCADE,
+    tenant_id INTEGER,
+    source_ip VARCHAR(64),
+    headers JSONB,
+    payload JSONB,
+    status VARCHAR(32) NOT NULL DEFAULT 'received',
+    received_at TIMESTAMPTZ NOT NULL
+);
+"""
+
+
+def _ensure_inbound_tables(db: Any) -> None:
+    """Create inbound_webhooks and inbound_webhook_events if missing (Postgres & SQLite)."""
+    try:
+        engine = db.engine
+    except Exception:
+        engine = None
+    if engine is None:
+        return
+
+    inspector = sa_inspect(engine)
+    has_webhooks = inspector.has_table("inbound_webhooks")
+    has_events = inspector.has_table("inbound_webhook_events")
+    if not (has_webhooks and has_events):
+        is_sqlite = getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
+        with engine.begin() as conn:
+            if not has_webhooks:
+                conn.execute(
+                    text(
+                        _INBOUND_WEBHOOKS_SQLITE if is_sqlite else _INBOUND_WEBHOOKS_PG
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_inbound_webhooks_slug "
+                        "ON inbound_webhooks (slug);"
+                    )
+                )
+            if not has_events:
+                conn.execute(
+                    text(_INBOUND_EVENTS_SQLITE if is_sqlite else _INBOUND_EVENTS_PG)
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_inbound_webhook_id "
+                        "ON inbound_webhook_events (inbound_webhook_id);"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_tenant_id "
+                        "ON inbound_webhook_events (tenant_id);"
+                    )
+                )
+
+    metadata = getattr(db, "_metadata", None)
+    if metadata is not None:
+        missing = [
+            tbl
+            for tbl in ("inbound_webhooks", "inbound_webhook_events")
+            if tbl not in metadata.tables
+        ]
+        if missing:
+            metadata.reflect(bind=engine, only=missing)
+
+
+def _iso_dt(val: Any) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.isoformat()
+    return str(val)
+
+
+def _parse_json_col(val: Any) -> Any:
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except ValueError:
+            return val
+    return val
+
+
+def _serialize_inbound_webhook(row: Any) -> dict[str, Any]:
+    """Serialize an inbound_webhooks row without ever exposing credential hashes."""
+    slug = getattr(row, "slug", "")
+    raw_meta = getattr(row, "webhook_metadata", None)
+    if raw_meta is None:
+        raw_meta = getattr(row, "metadata", None)
+    return {
+        "id": row.id,
+        "tenant_id": row.tenant_id,
+        "organization_id": getattr(row, "organization_id", None),
+        "village_id": getattr(row, "village_id", None),
+        "name": row.name,
+        "description": getattr(row, "description", None),
+        "slug": slug,
+        "receive_path": f"/api/v1/webhooks/receive/{slug}",
+        "auth_type": getattr(row, "auth_type", "bearer"),
+        "bearer_token_preview": getattr(row, "bearer_token_preview", None),
+        "basic_username": getattr(row, "basic_username", None),
+        "is_active": bool(getattr(row, "is_active", True)),
+        "stream_id": getattr(row, "stream_id", None),
+        "metadata": _parse_json_col(raw_meta),
+        "last_received_at": _iso_dt(getattr(row, "last_received_at", None)),
+        "receive_count": int(getattr(row, "receive_count", 0) or 0),
+        "created_at": _iso_dt(getattr(row, "created_at", None)),
+        "updated_at": _iso_dt(getattr(row, "updated_at", None)),
+    }
+
+
+def _serialize_inbound_event(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "inbound_webhook_id": row.inbound_webhook_id,
+        "tenant_id": row.tenant_id,
+        "source_ip": getattr(row, "source_ip", None),
+        "headers": _parse_json_col(getattr(row, "headers", None)),
+        "payload": _parse_json_col(getattr(row, "payload", None)),
+        "status": getattr(row, "status", "received"),
+        "received_at": _iso_dt(getattr(row, "received_at", None)),
+    }
+
+
+def _build_inbound_credentials(
+    auth_type: str,
+    *,
+    bearer_token: str | None = None,
+    basic_username: str | None = None,
+    basic_password: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Generate/hash required inbound webhook credentials.
+
+    Returns (db_fields, one_time_credentials).
+    """
+    if auth_type == "bearer":
+        raw_token = (bearer_token or "").strip() or ("wh_" + secrets.token_urlsafe(32))
+        preview = (
+            f"{raw_token[:6]}...{raw_token[-4:]}"
+            if len(raw_token) > 10
+            else f"{raw_token[:3]}..."
+        )
+        db_fields = {
+            "bearer_token_hash": generate_password_hash(raw_token),
+            "bearer_token_preview": preview[:32],
+            "basic_username": None,
+            "basic_password_hash": None,
+        }
+        creds = {
+            "auth_type": "bearer",
+            "bearer_token": raw_token,
+        }
+        return db_fields, creds
+
+    username = (basic_username or "").strip() or ("wh_" + secrets.token_hex(6))
+    raw_password = (basic_password or "").strip() or secrets.token_urlsafe(24)
+    db_fields = {
+        "bearer_token_hash": None,
+        "bearer_token_preview": None,
+        "basic_username": username,
+        "basic_password_hash": generate_password_hash(raw_password),
+    }
+    creds = {
+        "auth_type": "basic",
+        "username": username,
+        "password": raw_password,
+    }
+    return db_fields, creds
+
+
+def _mint_inbound_village_id(tenant_id: int) -> str:
+    try:
+        from shared.utils.village_id import generate_village_id
+
+        redis_client = getattr(current_app, "redis", None)
+        if redis_client is not None:
+            return generate_village_id(tenant_id, redis_client)
+    except Exception:
+        pass
+    return f"wh-{secrets.token_hex(6)}"
+
+
+@bp.route("/inbound", methods=["GET"])
+@login_required
+@require_scope("webhooks:read")
+def list_inbound_webhooks():
+    """List all inbound webhooks for the caller's tenant."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+        rows = db(db.inbound_webhooks.tenant_id == tenant_id).select(
+            orderby=~db.inbound_webhooks.id
+        )
+        return (
+            jsonify(
+                {
+                    "inbound_webhooks": [_serialize_inbound_webhook(r) for r in rows],
+                    "count": len(rows),
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to list inbound webhooks", 500)
+
+
+@bp.route("/inbound", methods=["POST"])
+@admin_required
+async def create_inbound_webhook():
+    """Create a new inbound webhook with required Bearer or Basic authentication."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        data = await request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+
+        auth_type = (data.get("auth_type") or "bearer").strip().lower()
+        if auth_type not in ("bearer", "basic"):
+            return jsonify({"error": "auth_type must be 'bearer' or 'basic'"}), 400
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+
+        organization_id = data.get("organization_id")
+        if organization_id is not None and not _org_unit_in_tenant(
+            db, organization_id, tenant_id
+        ):
+            return jsonify({"error": "organization_id not found in tenant"}), 404
+
+        slug = secrets.token_urlsafe(18)
+        db_cred_fields, credentials = _build_inbound_credentials(
+            auth_type,
+            bearer_token=data.get("bearer_token"),
+            basic_username=data.get("basic_username"),
+            basic_password=data.get("basic_password"),
+        )
+
+        now = datetime.now(UTC)
+        record_id = db.inbound_webhooks.insert(
+            tenant_id=tenant_id,
+            village_id=_mint_inbound_village_id(tenant_id),
+            organization_id=organization_id,
+            name=name,
+            description=data.get("description"),
+            slug=slug,
+            auth_type=auth_type,
+            is_active=bool(data.get("is_active", True)),
+            stream_id=data.get("stream_id"),
+            metadata=data.get("metadata"),
+            receive_count=0,
+            created_at=now,
+            updated_at=now,
+            **db_cred_fields,
+        )
+        db.commit()
+
+        created = get_tenant_scoped(db, db.inbound_webhooks, record_id, tenant_id)
+        return (
+            jsonify(
+                {
+                    "webhook": _serialize_inbound_webhook(created),
+                    "credentials": credentials,
+                }
+            ),
+            201,
+        )
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to create inbound webhook", 400)
+
+
+@bp.route("/inbound/<int:webhook_id>/rotate-credentials", methods=["POST"])
+@admin_required
+def rotate_inbound_webhook_credentials(webhook_id: int):
+    """Regenerate credentials for an inbound webhook and return them once."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+        hook = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        if not hook:
+            return jsonify({"error": "Inbound webhook not found"}), 404
+
+        auth_type = (getattr(hook, "auth_type", None) or "bearer").lower()
+        if auth_type not in ("bearer", "basic"):
+            auth_type = "bearer"
+
+        db_cred_fields, credentials = _build_inbound_credentials(auth_type)
+        db(
+            (db.inbound_webhooks.id == webhook_id)
+            & (db.inbound_webhooks.tenant_id == tenant_id)
+        ).update(
+            updated_at=datetime.now(UTC),
+            **db_cred_fields,
+        )
+        db.commit()
+
+        updated = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        return (
+            jsonify(
+                {
+                    "webhook": _serialize_inbound_webhook(updated),
+                    "credentials": credentials,
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        return log_error_and_respond(
+            logger, e, "Failed to rotate inbound webhook credentials", 500
+        )
+
+
+@bp.route("/inbound/<int:webhook_id>", methods=["PUT"])
+@admin_required
+async def update_inbound_webhook(webhook_id: int):
+    """Update an inbound webhook's configuration or authentication type."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+        hook = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        if not hook:
+            return jsonify({"error": "Inbound webhook not found"}), 404
+
+        data = await request.get_json(silent=True) or {}
+        if not data:
+            return jsonify({"error": "Request body required"}), 400
+
+        updates: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        if "name" in data:
+            name = (data.get("name") or "").strip()
+            if not name:
+                return jsonify({"error": "name cannot be empty"}), 400
+            updates["name"] = name
+        if "description" in data:
+            updates["description"] = data.get("description")
+        if "is_active" in data:
+            updates["is_active"] = bool(data.get("is_active"))
+        if "stream_id" in data:
+            updates["stream_id"] = data.get("stream_id")
+        if "metadata" in data:
+            updates["metadata"] = data.get("metadata")
+
+        current_auth_type = (getattr(hook, "auth_type", None) or "bearer").lower()
+        new_auth_type = (data.get("auth_type") or current_auth_type).strip().lower()
+        if new_auth_type not in ("bearer", "basic"):
+            return jsonify({"error": "auth_type must be 'bearer' or 'basic'"}), 400
+
+        has_new_creds = any(
+            k in data and data.get(k)
+            for k in ("bearer_token", "basic_username", "basic_password")
+        )
+        credentials = None
+        if new_auth_type != current_auth_type or has_new_creds:
+            updates["auth_type"] = new_auth_type
+            db_cred_fields, credentials = _build_inbound_credentials(
+                new_auth_type,
+                bearer_token=data.get("bearer_token"),
+                basic_username=data.get("basic_username"),
+                basic_password=data.get("basic_password"),
+            )
+            updates.update(db_cred_fields)
+
+        db(
+            (db.inbound_webhooks.id == webhook_id)
+            & (db.inbound_webhooks.tenant_id == tenant_id)
+        ).update(**updates)
+        db.commit()
+
+        updated = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        resp_body: dict[str, Any] = {"webhook": _serialize_inbound_webhook(updated)}
+        if credentials is not None:
+            resp_body["credentials"] = credentials
+        return jsonify(resp_body), 200
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to update inbound webhook", 400)
+
+
+@bp.route("/inbound/<int:webhook_id>", methods=["DELETE"])
+@admin_required
+def delete_inbound_webhook(webhook_id: int):
+    """Delete an inbound webhook."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+        hook = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        if not hook:
+            return jsonify({"error": "Inbound webhook not found"}), 404
+
+        db(
+            (db.inbound_webhooks.id == webhook_id)
+            & (db.inbound_webhooks.tenant_id == tenant_id)
+        ).delete()
+        db.commit()
+        return jsonify({"deleted": True, "id": webhook_id}), 200
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to delete inbound webhook", 500)
+
+
+@bp.route("/inbound/<int:webhook_id>/events", methods=["GET"])
+@login_required
+@require_scope("webhooks:read")
+def list_inbound_webhook_events(webhook_id: int):
+    """List recent received events for an inbound webhook."""
+    try:
+        tenant_id = get_current_tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        db = current_app.db
+        _ensure_inbound_tables(db)
+        hook = get_tenant_scoped(db, db.inbound_webhooks, webhook_id, tenant_id)
+        if not hook:
+            return jsonify({"error": "Inbound webhook not found"}), 404
+
+        rows = db(
+            (db.inbound_webhook_events.inbound_webhook_id == webhook_id)
+            & (db.inbound_webhook_events.tenant_id == tenant_id)
+        ).select(orderby=~db.inbound_webhook_events.id, limitby=(0, 50))
+        return (
+            jsonify(
+                {
+                    "events": [_serialize_inbound_event(r) for r in rows],
+                    "count": len(rows),
+                }
+            ),
+            200,
+        )
+    except Exception as e:
+        return log_error_and_respond(
+            logger, e, "Failed to list inbound webhook events", 500
+        )
+
+
+def _verify_inbound_auth(hook: Any, auth_header: str) -> tuple[bool, str]:
+    """Verify required Bearer or Basic auth against an inbound webhook row."""
+    auth_type = (getattr(hook, "auth_type", None) or "bearer").lower()
+    if auth_type == "bearer":
+        challenge = 'Bearer realm="Elder Webhook"'
+        if not auth_header or not auth_header.lower().startswith("bearer "):
+            return False, challenge
+        token = auth_header[7:].strip()
+        token_hash = getattr(hook, "bearer_token_hash", None) or ""
+        if not token or not token_hash:
+            return False, challenge
+        return check_password_hash(token_hash, token), challenge
+
+    if auth_type == "basic":
+        challenge = 'Basic realm="Elder Webhook"'
+        if not auth_header or not auth_header.lower().startswith("basic "):
+            return False, challenge
+        encoded = auth_header[6:].strip()
+        try:
+            decoded = base64.b64decode(encoded, validate=True).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False, challenge
+        if ":" not in decoded:
+            return False, challenge
+        username, password = decoded.split(":", 1)
+        expected_user = getattr(hook, "basic_username", None) or ""
+        password_hash = getattr(hook, "basic_password_hash", None) or ""
+        if not expected_user or not password_hash:
+            return False, challenge
+        if not hmac.compare_digest(username, expected_user):
+            return False, challenge
+        return check_password_hash(password_hash, password), challenge
+
+    return False, 'Bearer realm="Elder Webhook"'
+
+
+@bp.route("/receive/<slug>", methods=["POST"])
+async def receive_inbound_webhook(slug: str):
+    """Public inbound webhook receiver — always requires Bearer or Basic auth."""
+    try:
+        db = current_app.db
+        _ensure_inbound_tables(db)
+
+        hook = (
+            db(
+                (db.inbound_webhooks.slug == slug)
+                & (db.inbound_webhooks.is_active == True)
+            )
+            .select()
+            .first()
+        )
+        if not hook:
+            return jsonify({"error": "Webhook not found"}), 404
+
+        auth_header = request.headers.get("Authorization", "")
+        ok, challenge = _verify_inbound_auth(hook, auth_header)
+        if not ok:
+            return (
+                jsonify({"error": "Authentication required"}),
+                401,
+                {"WWW-Authenticate": challenge},
+            )
+
+        payload = await request.get_json(silent=True)
+        if payload is None:
+            raw_body = (await request.get_data(as_text=True)) or ""
+            payload = {"raw": raw_body[:65536]} if raw_body else {}
+
+        redacted_headers: dict[str, str] = {}
+        for key, value in request.headers.items():
+            if key.lower() in ("authorization", "cookie", "x-api-key"):
+                redacted_headers[key] = "[REDACTED]"
+            else:
+                redacted_headers[key] = value
+
+        now = datetime.now(UTC)
+        event_id = db.inbound_webhook_events.insert(
+            inbound_webhook_id=hook.id,
+            tenant_id=hook.tenant_id,
+            source_ip=request.remote_addr,
+            headers=redacted_headers,
+            payload=payload,
+            status="received",
+            received_at=now,
+        )
+        db(db.inbound_webhooks.id == hook.id).update(
+            receive_count=(int(getattr(hook, "receive_count", 0) or 0) + 1),
+            last_received_at=now,
+        )
+        db.commit()
+
+        return jsonify({"status": "received", "event_id": event_id}), 202
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to receive webhook", 500)
