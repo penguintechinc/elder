@@ -33,8 +33,14 @@ const Map = lazy(() => import("./pages/Map"));
 // flag set by api.ts; the cookie itself is what the backend actually
 // enforces on every request, this is a UX-only redirect.
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    const intended = `${location.pathname}${location.search}`;
+    const loginTarget =
+      intended && intended !== "/"
+        ? `/login?next=${encodeURIComponent(intended)}`
+        : "/login";
+    return <Navigate to={loginTarget} replace />;
   }
 
   return <>{children}</>;
@@ -70,7 +76,12 @@ function RouteNotFound() {
     return <Navigate to="/" replace />;
   }
 
-  return <Navigate to="/login" replace />;
+  const intended = `${location.pathname}${location.search}`;
+  const loginTarget =
+    intended && intended !== "/" && location.pathname !== "/login"
+      ? `/login?next=${encodeURIComponent(intended)}`
+      : "/login";
+  return <Navigate to={loginTarget} replace />;
 }
 
 export default function App() {

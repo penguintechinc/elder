@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Diagram {
   id: number
@@ -13,6 +15,7 @@ interface Diagram {
   tags: string[]
   thumbnail_url?: string
   owner_identity_id: number
+  village_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -20,6 +23,8 @@ interface Diagram {
 export default function DiagramsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['diagrams'],
@@ -27,6 +32,15 @@ export default function DiagramsList() {
   })
 
   const diagrams: Diagram[] = response?.items || []
+
+  useEffect(() => {
+    if (!highlightId || diagrams.length === 0) return
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`diagram-${highlightId}`)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+  }, [highlightId, diagrams.length])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -99,10 +113,18 @@ export default function DiagramsList() {
         {/* Diagrams grid */}
         {!isLoading && diagrams.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {diagrams.map((diagram) => (
+            {diagrams.map((diagram) => {
+              const isHighlighted = highlightId === String(diagram.id)
+              return (
               <div
                 key={diagram.id}
-                className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden hover:border-amber-500 transition-colors"
+                id={`diagram-${diagram.id}`}
+                data-highlighted={isHighlighted ? 'true' : undefined}
+                className={`bg-slate-800 border rounded-lg overflow-hidden hover:border-amber-500 transition-colors ${
+                  isHighlighted
+                    ? 'ring-2 ring-amber-400 border-amber-400'
+                    : 'border-slate-700'
+                }`}
               >
                 {/* Thumbnail */}
                 <div className="aspect-video bg-slate-700 border-b border-slate-700 flex items-center justify-center">
@@ -144,10 +166,16 @@ export default function DiagramsList() {
                   )}
 
                   {/* Metadata */}
-                  <div className="flex items-center justify-between text-xs text-slate-500 mb-4 border-t border-slate-700 pt-3">
+                  <div className="flex items-center justify-between text-xs text-slate-500 mb-3 border-t border-slate-700 pt-3">
                     <span className="capitalize">{diagram.status}</span>
                     {diagram.is_public && <span className="text-blue-400">Public</span>}
                   </div>
+
+                  {diagram.village_id && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={diagram.village_id} compact />
+                    </div>
+                  )}
 
                   {/* Actions */}
                   <div className="flex gap-2">
@@ -168,7 +196,8 @@ export default function DiagramsList() {
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

@@ -50,6 +50,7 @@ import type {
   PlaybookValidationResult,
 } from "@/components/playbooks/types";
 import { computeUpstreamFields } from "@/components/playbooks/upstreamFields";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import api from "@/lib/api";
 
 const nodeTypes = { stream: PlaybookNodeCard };
@@ -504,10 +505,13 @@ export default function PlaybookEditor() {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold text-amber-400 truncate">
                   {streamData?.name || "Playbook Editor"}
                 </h1>
+                {streamData?.village_id && (
+                  <VillageIdBadge villageId={streamData.village_id} compact />
+                )}
                 {isDirty && (
                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-medium">
                     Unsaved changes

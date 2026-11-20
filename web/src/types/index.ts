@@ -5,7 +5,7 @@ export interface Organization {
   organization_type?: string;
   parent_id?: number;
   metadata?: Record<string, unknown>;
-  village_id?: string;
+  village_id?: string | null;
   village_segment?: string;
   tenant_id?: number;
   created_at: string;
@@ -74,7 +74,7 @@ export interface Entity {
   metadata?: EntityMetadata;
   tags?: EntityTags;
   is_active?: boolean;
-  village_id?: string;
+  village_id?: string | null;
   created_at: string;
   updated_at: string;
   organization?: Organization;
@@ -103,7 +103,7 @@ export interface Dependency {
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
-  village_id?: string;
+  village_id?: string | null;
 }
 
 export type DependencyType =
@@ -159,6 +159,7 @@ export interface Identity {
   auth_provider: "local" | "saml" | "oauth2" | "ldap";
   is_active: boolean;
   is_superuser: boolean;
+  village_id?: string | null;
   created_at: string;
   last_login_at?: string;
 }
@@ -167,6 +168,7 @@ export interface IdentityGroup {
   id: number;
   name: string;
   description?: string;
+  village_id?: string | null;
   created_at: string;
   member_count?: number;
 }
@@ -209,7 +211,7 @@ export interface Issue {
   organization_id?: number;
   assigned_to?: number;
   created_by?: number;
-  village_id?: string;
+  village_id?: string | null;
   tenant_id?: number;
   labels?: IssueLabel[];
   entity_links?: Entity[];
@@ -224,6 +226,7 @@ export interface IssueLabel {
   name: string;
   color: string;
   description?: string;
+  village_id?: string | null;
 }
 
 export interface ResourceRole {
@@ -235,6 +238,7 @@ export interface ResourceRole {
   granted_at: string;
   granted_by?: number;
   identity?: Identity;
+  village_id?: string | null;
 }
 
 export type ResourceRoleType = "maintainer" | "operator" | "viewer";
@@ -291,7 +295,7 @@ export interface Tenant {
   data_retention_days: number;
   storage_quota_gb: number;
   is_active: boolean;
-  village_id?: string;
+  village_id?: string | null;
   created_at: string;
   updated_at?: string;
   usage?: {
@@ -311,6 +315,7 @@ export interface PortalUser {
   is_active: boolean;
   email_verified: boolean;
   mfa_enabled: boolean;
+  village_id?: string | null;
   last_login_at?: string;
   created_at: string;
 }
@@ -458,4 +463,15 @@ export interface Software {
   git_url?: string;
   git_path?: string;
   release_shasum?: string;
+  village_id?: string | null;
+}
+
+export interface VillageIdResolution {
+  village_id: string;
+  resource_type: string;
+  resource_id: number | string;
+  title?: string | null;
+  module?: string | null;
+  redirect_url: string;
+  short_link?: string;
 }

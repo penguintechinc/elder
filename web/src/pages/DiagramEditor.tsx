@@ -25,6 +25,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { Save, Trash2, ArrowLeft, Users, Search, X } from "lucide-react";
 import api from "@/lib/api";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import {
   NodePropertyModal,
   EdgePropertyModal,
@@ -647,6 +648,9 @@ function DiagramEditorContent() {
           <h1 className="text-xl font-bold text-amber-400">
             {diagram?.title || "New Diagram"}
           </h1>
+          {diagram?.village_id && (
+            <VillageIdBadge villageId={diagram.village_id} compact />
+          )}
         </div>
 
         <div className="flex items-center gap-4">

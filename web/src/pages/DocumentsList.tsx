@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Trash2, Search, ChevronRight } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Document {
   id: number
-  village_id: string
+  village_id?: string | null
   title: string
   slug: string
   category?: string
@@ -21,7 +22,7 @@ interface Document {
 
 interface Collection {
   id: number
-  village_id: string
+  village_id?: string | null
   name: string
   slug: string
   description?: string
@@ -31,7 +32,13 @@ interface Collection {
   children: Collection[]
 }
 
-function CollectionTree({ collections }: { collections: Collection[] }) {
+function CollectionTree({
+  collections,
+  highlightedCollectionId,
+}: {
+  collections: Collection[]
+  highlightedCollectionId?: string | null
+}) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
 
   const toggleExpanded = (id: number) => {
@@ -47,20 +54,34 @@ function CollectionTree({ collections }: { collections: Collection[] }) {
   const renderCollection = (coll: Collection, depth: number = 0) => {
     const hasChildren = coll.children && coll.children.length > 0
     const isExpanded = expanded.has(coll.id)
+    const isHighlighted = highlightedCollectionId === String(coll.id)
 
     return (
       <div key={coll.id} style={{ marginLeft: `${depth * 16}px` }}>
-        <div className="flex items-center gap-1 p-2 hover:bg-slate-700 rounded cursor-pointer group">
-          {hasChildren && (
-            <button
-              onClick={() => toggleExpanded(coll.id)}
-              className="w-5 h-5 flex items-center justify-center"
-            >
-              <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-            </button>
+        <div
+          id={`doc-collection-${coll.id}`}
+          data-highlighted={isHighlighted ? 'true' : undefined}
+          className={`flex flex-col gap-1 p-2 hover:bg-slate-700 rounded cursor-pointer group ${
+            isHighlighted ? 'ring-1 ring-amber-400 bg-amber-500/10' : ''
+          }`}
+        >
+          <div className="flex items-center gap-1">
+            {hasChildren && (
+              <button
+                onClick={() => toggleExpanded(coll.id)}
+                className="w-5 h-5 flex items-center justify-center"
+              >
+                <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+              </button>
+            )}
+            {!hasChildren && <div className="w-5" />}
+            <span className="text-sm text-slate-300 flex-1 truncate">{coll.name}</span>
+          </div>
+          {coll.village_id && (
+            <div className="pl-6">
+              <VillageIdBadge villageId={coll.village_id} compact />
+            </div>
           )}
-          {!hasChildren && <div className="w-5" />}
-          <span className="text-sm text-slate-300 flex-1 truncate">{coll.name}</span>
         </div>
 
         {hasChildren && isExpanded && (
@@ -89,6 +110,8 @@ function CollectionTree({ collections }: { collections: Collection[] }) {
 export default function DocumentsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const highlightedCollectionId = searchParams.get('collection')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
 
@@ -109,6 +132,15 @@ export default function DocumentsList() {
 
   const documents: Document[] = documentsResponse?.items || []
   const collections: Collection[] = collectionsResponse?.collections || []
+
+  useEffect(() => {
+    if (!highlightedCollectionId || collections.length === 0) return
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`doc-collection-${highlightedCollectionId}`)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+  }, [highlightedCollectionId, collections.length])
 
   const deleteMutation = useMutation({
     mutationFn: (docId: number) => api.deleteDocument(docId),
@@ -138,7 +170,10 @@ export default function DocumentsList() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar */}
           <div className="lg:col-span-1">
-            <CollectionTree collections={collections} />
+            <CollectionTree
+              collections={collections}
+              highlightedCollectionId={highlightedCollectionId}
+            />
           </div>
 
           {/* Main content */}
@@ -228,6 +263,12 @@ export default function DocumentsList() {
                                 +{doc.tags.length - 3}
                               </span>
                             )}
+                          </div>
+                        )}
+
+                        {doc.village_id && (
+                          <div className="mt-2.5">
+                            <VillageIdBadge villageId={doc.village_id} compact />
                           </div>
                         )}
                       </div>

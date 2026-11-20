@@ -20,6 +20,7 @@ import Card, { CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { FormField } from "@/types/form";
 
 const PROJECT_STATUSES = [
@@ -37,6 +38,7 @@ interface Project {
   organization_id: number;
   start_date?: string;
   end_date?: string;
+  village_id?: string | null;
 }
 
 export default function Projects() {
@@ -375,6 +377,12 @@ export default function Projects() {
                 {project.end_date && (
                   <div className="text-xs text-slate-500">
                     Due: {new Date(project.end_date).toLocaleDateString()}
+                  </div>
+                )}
+
+                {project.village_id && (
+                  <div className="mt-3 pt-2 border-t border-slate-700/50">
+                    <VillageIdBadge villageId={project.village_id} compact />
                   </div>
                 )}
               </CardContent>

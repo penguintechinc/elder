@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -19,6 +20,7 @@ import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 interface Organization {
   id: number;
@@ -36,6 +38,7 @@ interface DataLabel {
   name: string;
   color: string;
   description?: string | null;
+  village_id?: string | null;
 }
 
 interface DataStore {
@@ -53,6 +56,7 @@ interface DataStore {
   poc_identity_id?: number;
   metadata?: Record<string, unknown> | null;
   labels?: DataLabel[];
+  village_id?: string | null;
 }
 
 const DATA_CLASSIFICATIONS = [
@@ -162,6 +166,9 @@ export default function DataStores() {
   const [viewingDataStore, setViewingDataStore] = useState<DataStore | null>(
     null,
   );
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const handledHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
@@ -213,6 +220,22 @@ export default function DataStores() {
     }
   }, [data, labelsData?.items, refetchLabels]);
 
+  // Honor ?highlight=<id> deep links (e.g. from /id/<villageId>)
+  useEffect(() => {
+    if (!highlightId || handledHighlightRef.current === highlightId) return;
+    const items: DataStore[] = data?.items || [];
+    const matched = items.find((ds) => String(ds.id) === highlightId);
+    if (!matched) return;
+    handledHighlightRef.current = highlightId;
+    setActiveTab("inventory");
+    setViewingDataStore(matched);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`data-store-${matched.id}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [highlightId, data?.items]);
+
   const allLabels: DataLabel[] = useMemo(
     () => labelsData?.items || [],
     [labelsData?.items],
@@ -220,9 +243,7 @@ export default function DataStores() {
 
   const createMutation = useMutation({
     mutationFn: (payload: Record<string, unknown>) =>
-      api.createDataStore(
-        payload as Parameters<typeof api.createDataStore>[0],
-      ),
+      api.createDataStore(payload as Parameters<typeof api.createDataStore>[0]),
     onSuccess: async () => {
       await invalidateCache.dataStores(queryClient);
       toast.success("Data store created successfully");
@@ -446,107 +467,125 @@ export default function DataStores() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {data?.items?.map((dataStore: DataStore) => (
-                <Card
-                  key={dataStore.id}
-                  className="cursor-pointer hover:border-primary-500/50 transition-colors"
-                  onClick={() => setViewingDataStore(dataStore)}
-                >
-                  <CardContent>
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <Database className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                        <h3 className="text-lg font-semibold text-white truncate">
-                          {dataStore.name}
-                        </h3>
-                      </div>
-                      <div className="flex gap-2 flex-shrink-0">
-                        <button
-                          type="button"
-                          aria-label={`Edit ${dataStore.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingDataStore(dataStore);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Delete ${dataStore.name}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(dataStore.id, dataStore.name);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {dataStore.description && (
-                      <p className="text-sm text-slate-400 mb-3 line-clamp-2">
-                        {dataStore.description}
-                      </p>
-                    )}
-
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span
-                        className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}
-                      >
-                        {DATA_CLASSIFICATIONS.find(
-                          (c) => c.value === dataStore.data_classification,
-                        )?.label || "Unknown"}
-                      </span>
-                      <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
-                        {STORAGE_TYPES.find(
-                          (t) => t.value === dataStore.storage_type,
-                        )?.label || dataStore.storage_type}
-                      </span>
-                    </div>
-
-                    {dataStore.labels && dataStore.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {dataStore.labels.map((lbl) => (
-                          <span
-                            key={lbl.id}
-                            className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border"
-                            style={{
-                              backgroundColor: `${lbl.color}20`,
-                              color: lbl.color,
-                              borderColor: `${lbl.color}40`,
+              {data?.items?.map((dataStore: DataStore) => {
+                const isHighlighted = highlightId === String(dataStore.id);
+                return (
+                  <Card
+                    key={dataStore.id}
+                    id={`data-store-${dataStore.id}`}
+                    data-highlighted={isHighlighted ? "true" : undefined}
+                    className={`cursor-pointer hover:border-primary-500/50 transition-colors ${
+                      isHighlighted
+                        ? "ring-2 ring-amber-400 border-amber-400 bg-amber-500/5"
+                        : ""
+                    }`}
+                    onClick={() => setViewingDataStore(dataStore)}
+                  >
+                    <CardContent>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Database className="w-5 h-5 text-primary-400 flex-shrink-0" />
+                          <h3 className="text-lg font-semibold text-white truncate">
+                            {dataStore.name}
+                          </h3>
+                        </div>
+                        <div className="flex gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            aria-label={`Edit ${dataStore.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingDataStore(dataStore);
                             }}
+                            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                           >
-                            <Tag className="w-3 h-3" />
-                            {lbl.name}
-                          </span>
-                        ))}
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${dataStore.name}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(dataStore.id, dataStore.name);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
-                    )}
 
-                    {dataStore.location_region && (
-                      <div className="text-xs text-slate-500 mb-1">
-                        Region:{" "}
-                        {REGIONS.find(
-                          (r) => r.value === dataStore.location_region,
-                        )?.label || dataStore.location_region}
+                      {dataStore.description && (
+                        <p className="text-sm text-slate-400 mb-3 line-clamp-2">
+                          {dataStore.description}
+                        </p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span
+                          className={`text-xs px-2 py-1 rounded ${getClassificationColor(dataStore.data_classification)}`}
+                        >
+                          {DATA_CLASSIFICATIONS.find(
+                            (c) => c.value === dataStore.data_classification,
+                          )?.label || "Unknown"}
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">
+                          {STORAGE_TYPES.find(
+                            (t) => t.value === dataStore.storage_type,
+                          )?.label || dataStore.storage_type}
+                        </span>
                       </div>
-                    )}
 
-                    {dataStore.compliance_framework &&
-                      dataStore.compliance_framework !== "none" && (
-                        <div className="text-xs text-slate-500">
-                          Compliance:{" "}
-                          {COMPLIANCE_FRAMEWORKS.find(
-                            (f) => f.value === dataStore.compliance_framework,
-                          )?.label || dataStore.compliance_framework}
+                      {dataStore.labels && dataStore.labels.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {dataStore.labels.map((lbl) => (
+                            <span
+                              key={lbl.id}
+                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded border"
+                              style={{
+                                backgroundColor: `${lbl.color}20`,
+                                color: lbl.color,
+                                borderColor: `${lbl.color}40`,
+                              }}
+                            >
+                              <Tag className="w-3 h-3" />
+                              {lbl.name}
+                            </span>
+                          ))}
                         </div>
                       )}
-                  </CardContent>
-                </Card>
-              ))}
+
+                      {dataStore.location_region && (
+                        <div className="text-xs text-slate-500 mb-1">
+                          Region:{" "}
+                          {REGIONS.find(
+                            (r) => r.value === dataStore.location_region,
+                          )?.label || dataStore.location_region}
+                        </div>
+                      )}
+
+                      {dataStore.compliance_framework &&
+                        dataStore.compliance_framework !== "none" && (
+                          <div className="text-xs text-slate-500">
+                            Compliance:{" "}
+                            {COMPLIANCE_FRAMEWORKS.find(
+                              (f) => f.value === dataStore.compliance_framework,
+                            )?.label || dataStore.compliance_framework}
+                          </div>
+                        )}
+
+                      {dataStore.village_id && (
+                        <div className="mt-3 pt-2 border-t border-slate-700/50">
+                          <VillageIdBadge
+                            villageId={dataStore.village_id}
+                            compact
+                          />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </>
@@ -817,9 +856,8 @@ function DataLabelsTab({ labels, onFilterByLabel }: DataLabelsTabProps) {
                       <button
                         type="button"
                         onClick={() =>
-                          confirmDelete(
-                            lbl.name,
-                            () => deleteLabelMutation.mutate(lbl.id),
+                          confirmDelete(lbl.name, () =>
+                            deleteLabelMutation.mutate(lbl.id),
                           )
                         }
                         className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
@@ -831,6 +869,11 @@ function DataLabelsTab({ labels, onFilterByLabel }: DataLabelsTabProps) {
                   </div>
                   {lbl.description && (
                     <p className="text-sm text-slate-400">{lbl.description}</p>
+                  )}
+                  {lbl.village_id && (
+                    <div>
+                      <VillageIdBadge villageId={lbl.village_id} compact />
+                    </div>
                   )}
                   <div className="pt-2 border-t border-slate-700/50">
                     <button
@@ -907,9 +950,7 @@ function DataStoreFormModal({
     () => initialData?.labels?.map((l) => l.id) || [],
   );
   const [metadataText, setMetadataText] = useState(() =>
-    initialData?.metadata
-      ? JSON.stringify(initialData.metadata, null, 2)
-      : "",
+    initialData?.metadata ? JSON.stringify(initialData.metadata, null, 2) : "",
   );
 
   const toggleLabel = (labelId: number) => {
@@ -1105,7 +1146,9 @@ function DataStoreFormModal({
                       type="button"
                       onClick={() => toggleLabel(lbl.id)}
                       className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border transition-all ${
-                        selected ? "ring-1 ring-white/40 font-medium" : "opacity-60 hover:opacity-100"
+                        selected
+                          ? "ring-1 ring-white/40 font-medium"
+                          : "opacity-60 hover:opacity-100"
                       }`}
                       style={{
                         backgroundColor: `${lbl.color}20`,
@@ -1233,6 +1276,15 @@ function DataStoreDetailModal({
               <p className="text-sm text-slate-400">{dataStore.description}</p>
             )}
 
+            {dataStore.village_id && (
+              <div>
+                <span className="text-xs text-slate-500 uppercase block mb-1">
+                  Village ID
+                </span>
+                <VillageIdBadge villageId={dataStore.village_id} />
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-slate-500 uppercase">
@@ -1306,7 +1358,9 @@ function DataStoreDetailModal({
                           : addLabelMutation.mutate(lbl.id)
                       }
                       className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border transition-all ${
-                        isAttached ? "font-medium" : "opacity-50 hover:opacity-100"
+                        isAttached
+                          ? "font-medium"
+                          : "opacity-50 hover:opacity-100"
                       }`}
                       style={{
                         backgroundColor: `${lbl.color}20`,
@@ -1326,16 +1380,17 @@ function DataStoreDetailModal({
               </div>
             </div>
 
-            {dataStore.metadata && Object.keys(dataStore.metadata).length > 0 && (
-              <div>
-                <span className="text-xs text-slate-500 uppercase block mb-1">
-                  Metadata
-                </span>
-                <pre className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-700 rounded-lg p-3 overflow-x-auto">
-                  {JSON.stringify(dataStore.metadata, null, 2)}
-                </pre>
-              </div>
-            )}
+            {dataStore.metadata &&
+              Object.keys(dataStore.metadata).length > 0 && (
+                <div>
+                  <span className="text-xs text-slate-500 uppercase block mb-1">
+                    Metadata
+                  </span>
+                  <pre className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-700 rounded-lg p-3 overflow-x-auto">
+                    {JSON.stringify(dataStore.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
 
             {dataStore.poc_identity_id && (
               <div>

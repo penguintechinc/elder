@@ -3,10 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Trash2, Search } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Page {
   id: number
-  village_id: string
+  village_id?: string | null
   title: string
   slug: string
   status: string
@@ -107,6 +108,7 @@ export default function PagesList() {
                   <th className="px-6 py-3 text-left text-sm font-semibold text-amber-400">Title</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-amber-400">Status</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-amber-400">Visibility</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-amber-400">Village ID</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-amber-400">Updated</th>
                   <th className="px-6 py-3 text-right text-sm font-semibold text-amber-400">Actions</th>
                 </tr>
@@ -135,6 +137,13 @@ export default function PagesList() {
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-300">
                       {page.is_public ? '🌐 Public' : page.visibility}
+                    </td>
+                    <td className="px-6 py-4">
+                      {page.village_id ? (
+                        <VillageIdBadge villageId={page.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500 text-sm">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-400">
                       {new Date(page.updated_at).toLocaleDateString()}

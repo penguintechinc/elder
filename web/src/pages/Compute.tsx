@@ -23,6 +23,7 @@ import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { normalizeTags } from "@/lib/entityTags";
 import type { Dependency, EntityMetadata, EntityTags } from "@/types";
 
@@ -40,6 +41,7 @@ interface ComputeEntity {
   created_at?: string;
   metadata?: EntityMetadata;
   tags?: EntityTags;
+  village_id?: string | null;
 }
 
 interface K8sService {
@@ -48,6 +50,7 @@ interface K8sService {
   port?: string;
   status?: string;
   deployment_method?: string;
+  village_id?: string | null;
 }
 
 interface NetworkResource {
@@ -56,6 +59,7 @@ interface NetworkResource {
   network_type?: string;
   region?: string;
   tags?: string[];
+  village_id?: string | null;
 }
 
 interface DataStoreResource {
@@ -65,6 +69,7 @@ interface DataStoreResource {
   storage_provider?: string;
   location_region?: string;
   tags?: string[];
+  village_id?: string | null;
 }
 
 interface IdentityResource {
@@ -74,6 +79,7 @@ interface IdentityResource {
   auth_provider?: string;
   identity_type?: string;
   is_active: boolean;
+  village_id?: string | null;
 }
 
 // ── Primary tabs ──────────────────────────────────────────────
@@ -311,6 +317,9 @@ function VMsTab() {
               Organization
             </th>
             <th className="text-left py-3 px-4 text-slate-400 font-medium">
+              Village ID
+            </th>
+            <th className="text-left py-3 px-4 text-slate-400 font-medium">
               Created
             </th>
           </tr>
@@ -355,6 +364,13 @@ function VMsTab() {
                 </td>
                 <td className="py-3 px-4 text-slate-300">
                   {vm.organization_id || "\u2014"}
+                </td>
+                <td className="py-3 px-4">
+                  {vm.village_id ? (
+                    <VillageIdBadge villageId={vm.village_id} compact />
+                  ) : (
+                    <span className="text-slate-500">{"\u2014"}</span>
+                  )}
                 </td>
                 <td className="py-3 px-4 text-slate-300">
                   {vm.created_at
@@ -600,7 +616,7 @@ function KubernetesTab() {
       </div>
 
       {clusterId && (
-        <div className="flex items-center gap-3 px-1 -mt-2">
+        <div className="flex flex-wrap items-center gap-3 px-1 -mt-2">
           <Ship className="h-4 w-4 text-amber-400 flex-shrink-0" />
           <span className="text-sm text-slate-300 truncate">
             Cluster:{" "}
@@ -608,6 +624,9 @@ function KubernetesTab() {
               {selectedCluster?.name || `#${clusterId}`}
             </span>
           </span>
+          {selectedCluster?.village_id && (
+            <VillageIdBadge villageId={selectedCluster.village_id} compact />
+          )}
           <button
             onClick={clearCluster}
             className="ml-auto flex-shrink-0 text-xs text-primary-400 hover:text-primary-300 transition-colors"
@@ -627,6 +646,9 @@ function KubernetesTab() {
               <p className="text-lg font-medium text-white">
                 {selectedCluster?.name || `Cluster #${clusterId}`}
               </p>
+              {selectedCluster?.village_id && (
+                <VillageIdBadge villageId={selectedCluster.village_id} />
+              )}
               <p className="text-sm text-center max-w-md">
                 Browse the Nodes, Pods, Deployments, or Services tabs above to
                 see this cluster&apos;s resources.
@@ -692,6 +714,14 @@ function KubernetesTab() {
                           ))}
                         </div>
                       )}
+                      {cluster.village_id && (
+                        <div className="pt-2 border-t border-slate-700/50">
+                          <VillageIdBadge
+                            villageId={cluster.village_id}
+                            compact
+                          />
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -730,6 +760,9 @@ function KubernetesTab() {
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Labels
+                  </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Status
@@ -773,9 +806,16 @@ function KubernetesTab() {
                               </span>
                             ))
                           ) : (
-                            <span className="text-slate-500">\u2014</span>
+                            <span className="text-slate-500">{"\u2014"}</span>
                           )}
                         </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        {node.village_id ? (
+                          <VillageIdBadge villageId={node.village_id} compact />
+                        ) : (
+                          <span className="text-slate-500">{"\u2014"}</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-1 text-xs rounded-full bg-green-900/50 text-green-400">
@@ -822,6 +862,9 @@ function KubernetesTab() {
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Labels
+                  </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Phase
@@ -874,9 +917,16 @@ function KubernetesTab() {
                               </span>
                             ))
                           ) : (
-                            <span className="text-slate-500">\u2014</span>
+                            <span className="text-slate-500">{"\u2014"}</span>
                           )}
                         </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        {pod.village_id ? (
+                          <VillageIdBadge villageId={pod.village_id} compact />
+                        ) : (
+                          <span className="text-slate-500">{"\u2014"}</span>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <span
@@ -976,6 +1026,11 @@ function KubernetesTab() {
                           ))}
                         </div>
                       )}
+                      {dep.village_id && (
+                        <div className="pt-2 border-t border-slate-700/50">
+                          <VillageIdBadge villageId={dep.village_id} compact />
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1009,6 +1064,9 @@ function KubernetesTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Deployment
                   </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1037,6 +1095,13 @@ function KubernetesTab() {
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {svc.deployment_method || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {svc.village_id ? (
+                        <VillageIdBadge villageId={svc.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1088,6 +1153,11 @@ function KubernetesTab() {
                         ))}
                       </div>
                     )}
+                    {ns.village_id && (
+                      <div className="pt-2 border-t border-slate-700/50">
+                        <VillageIdBadge villageId={ns.village_id} compact />
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1120,6 +1190,9 @@ function KubernetesTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Region
                   </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1140,6 +1213,13 @@ function KubernetesTab() {
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {ds.location_region || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {ds.village_id ? (
+                        <VillageIdBadge villageId={ds.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1174,6 +1254,9 @@ function KubernetesTab() {
                     Type
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Active
                   </th>
                 </tr>
@@ -1196,6 +1279,13 @@ function KubernetesTab() {
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {sa.identity_type || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {sa.village_id ? (
+                        <VillageIdBadge villageId={sa.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                     <td className="py-3 px-4">
                       <span
@@ -1388,6 +1478,9 @@ function LxdTab() {
                     Organization
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Created
                   </th>
                 </tr>
@@ -1404,6 +1497,13 @@ function LxdTab() {
                     <td className="py-3 px-4 text-slate-300">{c.sub_type}</td>
                     <td className="py-3 px-4 text-slate-300">
                       {c.organization_id || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {c.village_id ? (
+                        <VillageIdBadge villageId={c.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {c.created_at
@@ -1440,6 +1540,9 @@ function LxdTab() {
                     Organization
                   </th>
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Created
                   </th>
                 </tr>
@@ -1456,6 +1559,13 @@ function LxdTab() {
                     <td className="py-3 px-4 text-slate-300">{vm.sub_type}</td>
                     <td className="py-3 px-4 text-slate-300">
                       {vm.organization_id || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {vm.village_id ? (
+                        <VillageIdBadge villageId={vm.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {vm.created_at
@@ -1491,6 +1601,9 @@ function LxdTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Region
                   </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1507,6 +1620,13 @@ function LxdTab() {
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {s.location_region || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {s.village_id ? (
+                        <VillageIdBadge villageId={s.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1537,6 +1657,9 @@ function LxdTab() {
                   <th className="text-left py-3 px-4 text-slate-400 font-medium">
                     Region
                   </th>
+                  <th className="text-left py-3 px-4 text-slate-400 font-medium">
+                    Village ID
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1553,6 +1676,13 @@ function LxdTab() {
                     </td>
                     <td className="py-3 px-4 text-slate-300">
                       {n.region || "\u2014"}
+                    </td>
+                    <td className="py-3 px-4">
+                      {n.village_id ? (
+                        <VillageIdBadge villageId={n.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500">{"\u2014"}</span>
+                      )}
                     </td>
                   </tr>
                 ))}

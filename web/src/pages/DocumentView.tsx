@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Edit2, Trash2, Share2, Clock } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Version {
   id: number
@@ -171,10 +172,13 @@ export default function DocumentView() {
                 ))}
               </div>
             )}
-            <div className="flex gap-6">
+            <div className="flex flex-wrap items-center gap-6">
               <span>Created: {new Date(document.created_at).toLocaleDateString()}</span>
               {document.published_at && (
                 <span>Published: {new Date(document.published_at).toLocaleDateString()}</span>
+              )}
+              {document.village_id && (
+                <VillageIdBadge villageId={document.village_id} />
               )}
             </div>
           </div>
