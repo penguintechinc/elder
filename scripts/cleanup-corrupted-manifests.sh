@@ -135,6 +135,11 @@ echo ""
 # List of correct lowercase package names
 CORRECT_PACKAGES=(
   "elder"
+  "elder/hub-api"
+  "elder/hub-webui"
+  "elder/svc-scanner"
+  "elder/svc-integrations"
+  "elder/svc-worker"
   "elder-api"
   "elder-web"
   "elder-grpc"
@@ -178,6 +183,6 @@ else
   echo "1. Push new code with lowercase image names"
   echo "2. Trigger a new build via GitHub Actions"
   echo "3. Verify images with:"
-  echo "   docker pull --platform linux/amd64 ghcr.io/$ORG/elder-web:latest"
-  echo "   docker pull --platform linux/arm64 ghcr.io/$ORG/elder-web:latest"
+  echo "   docker pull --platform linux/amd64 ghcr.io/$ORG/elder/hub-webui:latest"
+  echo "   docker pull --platform linux/arm64 ghcr.io/$ORG/elder/hub-webui:latest"
 fi

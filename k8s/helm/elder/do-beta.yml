@@ -77,11 +77,11 @@ redis:
 # Elder Web UI - 1 replica on DO beta (no HA requirement for this temporary profile)
 # Image tag is the CI-built -beta tag for the remediated code at branch time;
 # override with `--set web.image.tag=...` if a newer -beta build exists.
-web:
+hub-webui:
   enabled: true
   replicaCount: 1
   image:
-    repository: ghcr.io/penguintechinc/elder-web
+    repository: ghcr.io/penguintechinc/elder/hub-webui
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   service:
@@ -101,11 +101,11 @@ web:
     enabled: false
 
 # Elder Flask API - 1 replica on DO beta
-api:
+hub-api:
   enabled: true
   replicaCount: 1
   image:
-    repository: ghcr.io/penguintechinc/elder-api
+    repository: ghcr.io/penguintechinc/elder/hub-api
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:
@@ -133,16 +133,16 @@ api:
     enabled: false
 
 # Scanning Service (Rust CronJob on DO beta)
-svc-scanning:
+svc-scanner:
   enabled: true
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: ghcr.io/penguintechinc/elder-svc-scanning
+    repository: ghcr.io/penguintechinc/elder/svc-scanner
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     SCREENSHOT_DIR: "/tmp/screenshots"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
@@ -163,11 +163,11 @@ svc-integrations:
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: ghcr.io/penguintechinc/elder-svc-integrations
+    repository: ghcr.io/penguintechinc/elder/svc-integrations
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
     INTEGRATIONS_MAX_CONCURRENCY: "8"
@@ -191,14 +191,15 @@ svc-integrations:
         - ALL
 
 # Worker Service - 1 replica on DO beta
-worker:
+svc-worker:
   enabled: true
   replicaCount: 1
   image:
-    repository: ghcr.io/penguintechinc/elder-worker
+    repository: ghcr.io/penguintechinc/elder/svc-worker
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
@@ -218,11 +219,11 @@ worker:
 
 # Flows Invoker Service - 1 replica on DO beta (dedicated isolated consumer,
 # no HA fan-out needed at this stage)
-flows-invoker:
+svc-flows-invoker:
   enabled: true
   replicaCount: 1
   image:
-    repository: ghcr.io/penguintechinc/elder-flows-invoker
+    repository: ghcr.io/penguintechinc/elder/svc-flows-invoker
     tag: 4.0.0.1783820850-beta
     pullPolicy: Always
   env:

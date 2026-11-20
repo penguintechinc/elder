@@ -5,7 +5,7 @@ members = [
     "crates/elder-int-workmgmt",
     "crates/elder-int-cloud",
     "crates/elder-int-identity",
-    "services/svc-scanning",
+    "services/svc-scanner",
     "services/svc-integrations",
 ]
 

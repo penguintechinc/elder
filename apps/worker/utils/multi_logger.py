@@ -83,7 +83,7 @@ class KillKrillHandler(logging.Handler):
                 "logger": record.name,
                 "message": record.getMessage(),
                 "correlation_id": getattr(record, "correlation_id", None),
-                "service": "elder-worker",
+                "service": "svc-worker",
                 "hostname": socket.gethostname(),
             }
 
@@ -212,7 +212,7 @@ def configure_multi_destination_logging() -> None:
 
             # Syslog uses standard format
             syslog_formatter = logging.Formatter(
-                "elder-worker[%(process)d]: [%(levelname)s] %(name)s [%(correlation_id)s]: %(message)s"
+                "svc-worker[%(process)d]: [%(levelname)s] %(name)s [%(correlation_id)s]: %(message)s"
             )
             syslog_handler.setFormatter(syslog_formatter)
             syslog_handler.addFilter(correlation_filter)

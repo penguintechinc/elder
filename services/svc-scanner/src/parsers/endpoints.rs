@@ -6,7 +6,7 @@ use std::path::Path;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-/// Discovered API endpoint serialized for `elder-api` SBOM scan submission.
+/// Discovered API endpoint serialized for `hub-api` SBOM scan submission.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveredEndpoint {
     pub framework: String,

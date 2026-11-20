@@ -174,7 +174,7 @@ class Config:
     # OpenTelemetry (Phase 0.5) — OTLP export to SigNoz, ungated/free
     OTEL_EXPORTER_OTLP_ENDPOINT = config("OTEL_EXPORTER_OTLP_ENDPOINT", default="")
     OTEL_EXPORTER_OTLP_PROTOCOL = config("OTEL_EXPORTER_OTLP_PROTOCOL", default="grpc")
-    OTEL_SERVICE_NAME = config("OTEL_SERVICE_NAME", default="elder-api")
+    OTEL_SERVICE_NAME = config("OTEL_SERVICE_NAME", default="hub-api")
 
     # Prometheus Metrics (legacy, migrating to OTel)
     METRICS_ENABLED = config("METRICS_ENABLED", default=True, cast=bool)

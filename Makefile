@@ -384,55 +384,55 @@ format-check: ## Check formatting without modifying files (ruff + prettier)
 build: docker-build ## Build all service containers
 
 docker-build: ## Build all service images locally
-	@echo "$(BLUE)Building elder-api...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-api:$(VERSION) \
+	@echo "$(BLUE)Building elder/hub-api...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/hub-api:$(VERSION) \
 		-f apps/api/Dockerfile .
-	@echo "$(BLUE)Building elder-web...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-web:$(VERSION) \
+	@echo "$(BLUE)Building elder/hub-webui...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/hub-webui:$(VERSION) \
 		-f web/Dockerfile .
-	@echo "$(BLUE)Building elder-svc-scanning...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-svc-scanning:$(VERSION) \
-		-f services/svc-scanning/Dockerfile .
-	@echo "$(BLUE)Building elder-svc-integrations...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-svc-integrations:$(VERSION) \
+	@echo "$(BLUE)Building elder/svc-scanner...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/svc-scanner:$(VERSION) \
+		-f services/svc-scanner/Dockerfile .
+	@echo "$(BLUE)Building elder/svc-integrations...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/svc-integrations:$(VERSION) \
 		-f services/svc-integrations/Dockerfile .
-	@echo "$(BLUE)Building elder-worker...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-worker:$(VERSION) \
+	@echo "$(BLUE)Building elder/svc-worker...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/svc-worker:$(VERSION) \
 		-f apps/worker/Dockerfile .
 	@echo "$(GREEN)All images built at $(VERSION)$(RESET)"
 
 docker-build-alpha: ## Build and push all service images to local registry (localhost:32000)
-	@echo "$(BLUE)Building elder-api → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-api:alpha-latest \
+	@echo "$(BLUE)Building elder/hub-api → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder/hub-api:alpha-latest \
 		--build-arg APP_VERSION=$(VERSION) \
 		-f apps/api/Dockerfile .
-	@docker push localhost:32000/elder-api:alpha-latest
-	@echo "$(BLUE)Building elder-web → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-web:alpha-latest \
+	@docker push localhost:32000/elder/hub-api:alpha-latest
+	@echo "$(BLUE)Building elder/hub-webui → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder/hub-webui:alpha-latest \
 		--build-arg VITE_VERSION=$(VERSION) \
 		--build-arg VITE_BUILD_TIME=$(shell date +%s) \
 		--build-arg VITE_API_URL=http://localhost:30081 \
 		-f web/Dockerfile .
-	@docker push localhost:32000/elder-web:alpha-latest
-	@echo "$(BLUE)Building elder-svc-scanning → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-svc-scanning:alpha-latest \
-		-f services/svc-scanning/Dockerfile .
-	@docker push localhost:32000/elder-svc-scanning:alpha-latest
-	@echo "$(BLUE)Building elder-svc-integrations → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-svc-integrations:alpha-latest \
+	@docker push localhost:32000/elder/hub-webui:alpha-latest
+	@echo "$(BLUE)Building elder/svc-scanner → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder/svc-scanner:alpha-latest \
+		-f services/svc-scanner/Dockerfile .
+	@docker push localhost:32000/elder/svc-scanner:alpha-latest
+	@echo "$(BLUE)Building elder/svc-integrations → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder/svc-integrations:alpha-latest \
 		-f services/svc-integrations/Dockerfile .
-	@docker push localhost:32000/elder-svc-integrations:alpha-latest
-	@echo "$(BLUE)Building elder-worker → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-worker:alpha-latest \
+	@docker push localhost:32000/elder/svc-integrations:alpha-latest
+	@echo "$(BLUE)Building elder/svc-worker → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder/svc-worker:alpha-latest \
 		--build-arg APP_VERSION=$(VERSION) \
 		-f apps/worker/Dockerfile .
-	@docker push localhost:32000/elder-worker:alpha-latest
+	@docker push localhost:32000/elder/svc-worker:alpha-latest
 	@echo "$(GREEN)All alpha images built and pushed at $(VERSION)$(RESET)"
 
 docker-push: ## Push all service images to ghcr.io (requires docker login)
-	@for svc in api web svc-scanning svc-integrations worker; do \
-		echo "$(BLUE)Pushing elder-$$svc...$(RESET)"; \
-		docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-$$svc:$(VERSION); \
+	@for svc in hub-api hub-webui svc-scanner svc-integrations svc-worker; do \
+		echo "$(BLUE)Pushing elder/$$svc...$(RESET)"; \
+		docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder/$$svc:$(VERSION); \
 	done
 	@echo "$(GREEN)All images pushed$(RESET)"
 

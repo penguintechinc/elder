@@ -1,4 +1,4 @@
-//! Resilient HTTP client for `elder-api` using `rustls-tls` and per-request JWTs.
+//! Resilient HTTP client for `hub-api` using `rustls-tls` and per-request JWTs.
 
 use std::time::Duration;
 
@@ -230,7 +230,7 @@ mod tests {
     }
 
     fn test_auth() -> ServiceTokenProvider {
-        ServiceTokenProvider::from_env_lookup("svc-scanning", vec!["discovery:read".into()], |k| {
+        ServiceTokenProvider::from_env_lookup("svc-scanner", vec!["discovery:read".into()], |k| {
             match k {
                 "JWT_SECRET_KEY" => Some("x".repeat(32)),
                 _ => None,
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn rejects_invalid_base_url() {
-        assert!(ElderApiClient::new("ftp://elder-api:5000", test_auth()).is_err());
+        assert!(ElderApiClient::new("ftp://hub-api:5000", test_auth()).is_err());
         assert!(ElderApiClient::new("http://", test_auth()).is_err());
     }
 }

@@ -29,22 +29,22 @@ jobs:
       max-parallel: 3
       matrix:
         service:
-          - name: api
+          - name: hub-api
             dockerfile: apps/api/Dockerfile
             context: .
-          - name: web
+          - name: hub-webui
             dockerfile: web/Dockerfile
             context: .
-          - name: svc-scanning
-            dockerfile: services/svc-scanning/Dockerfile
+          - name: svc-scanner
+            dockerfile: services/svc-scanner/Dockerfile
             context: .
           - name: svc-integrations
             dockerfile: services/svc-integrations/Dockerfile
             context: .
-          - name: worker
+          - name: svc-worker
             dockerfile: apps/worker/Dockerfile
             context: .
-          - name: flows-invoker
+          - name: svc-flows-invoker
             dockerfile: apps/flows_invoker/Dockerfile
             context: .
         platform:
@@ -106,7 +106,7 @@ jobs:
         platforms: ${{ matrix.platform }}
         push: ${{ github.event_name != 'pull_request' }}
         # Push to a platform-specific tag; merged in the next job
-        tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-${{ matrix.service.name }}:${{ steps.version.outputs.version }}-${{ steps.platform.outputs.suffix }}
+        tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/${{ matrix.service.name }}:${{ steps.version.outputs.version }}-${{ steps.platform.outputs.suffix }}
         # Scope cache per service+platform to prevent eviction
         cache-from: type=gha,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
         cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
@@ -128,7 +128,7 @@ jobs:
     strategy:
       max-parallel: 3
       matrix:
-        service: [api, web, svc-scanning, svc-integrations, worker, flows-invoker]
+        service: [hub-api, hub-webui, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
 
     steps:
     - name: Checkout code
@@ -169,7 +169,7 @@ jobs:
         REGISTRY: ${{ env.REGISTRY }}
         ORG: ${{ github.repository_owner }}
       run: |
-        IMAGE="${REGISTRY}/${ORG}/elder-${SERVICE}"
+        IMAGE="${REGISTRY}/${ORG}/elder/${SERVICE}"
         SRC_AMD64="${IMAGE}:${VERSION}-amd64"
         # SRC_ARM64="${IMAGE}:${VERSION}-arm64"  # Temporarily disabled
 
@@ -193,7 +193,7 @@ jobs:
 
         docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64"
 
-        echo "Merged multi-arch manifest for elder-${SERVICE} → ${TAGS[*]}"
+        echo "Merged multi-arch manifest for elder/${SERVICE} → ${TAGS[*]}"
         docker buildx imagetools inspect "${TAGS[0]}"
 
   # Release creation (triggered after manifests are merged)
@@ -228,8 +228,8 @@ jobs:
         {
           echo ""
           echo "### Docker Images"
-          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:${GITHUB_REF_NAME}\`"
-          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:${GITHUB_REF_NAME}\`"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/hub-api:${GITHUB_REF_NAME}\`"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/hub-webui:${GITHUB_REF_NAME}\`"
         } >> CHANGELOG.md
 
     - name: Create Release
@@ -251,6 +251,6 @@ jobs:
     strategy:
       max-parallel: 3
       matrix:
-        service: [api, web, svc-scanning, svc-integrations, worker, flows-invoker]
+        service: [hub-api, hub-webui, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
     steps:
     - run: echo "Container security scan disabled — see ci.yml for filesystem scan"

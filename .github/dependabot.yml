@@ -64,7 +64,7 @@ updates:
       - "/apps/flows_invoker"
       - "/apps/mcp"
       - "/apps/worker"
-      - "/services/svc-scanning"
+      - "/services/svc-scanner"
       - "/services/svc-integrations"
       - "/tests"
       - "/web"

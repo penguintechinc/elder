@@ -1,6 +1,6 @@
-{{- $componentConfig := index .Values "flows-invoker" }}
+{{- $componentConfig := index .Values "svc-flows-invoker" }}
 {{- if and $componentConfig.enabled ($componentConfig.networkPolicy).enabled }}
-# flows-invoker executes arbitrary user-defined CI commands inside a
+# svc-flows-invoker executes arbitrary user-defined CI commands inside a
 # process-level sandbox (see apps/flows_invoker/sandbox.py). Network
 # isolation is a second, independent layer of defense: deny all ingress
 # (it serves nothing) and deny all egress except the specific destinations
@@ -9,14 +9,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-flows-invoker-deny-ingress
+  name: svc-flows-invoker-deny-ingress
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "flows-invoker" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "svc-flows-invoker" .) | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "flows-invoker" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "svc-flows-invoker" .) | nindent 6 }}
   policyTypes:
     - Ingress
   ingress: []
@@ -24,14 +24,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-flows-invoker-restrict-egress
+  name: svc-flows-invoker-restrict-egress
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "flows-invoker" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "svc-flows-invoker" .) | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "flows-invoker" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "svc-flows-invoker" .) | nindent 6 }}
   policyTypes:
     - Egress
   egress:

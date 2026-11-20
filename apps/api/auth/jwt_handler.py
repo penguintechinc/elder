@@ -17,7 +17,7 @@ MAX_SERVICE_RESEARCHER_TTL_SECONDS = 600
 MAX_SERVICE_WORKER_TTL_SECONDS = 600
 
 SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
-    "svc-scanning": frozenset(
+    "svc-scanner": frozenset(
         {
             "discovery:read",
             "discovery:write",

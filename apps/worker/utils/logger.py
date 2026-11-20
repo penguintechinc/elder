@@ -16,7 +16,7 @@ def configure_logging() -> None:
     """Configure structured logging with structlog and OpenTelemetry (Phase 0.5)."""
 
     # Initialize OpenTelemetry (Phase 0.5)
-    otel = init_telemetry("elder-worker")
+    otel = init_telemetry("svc-worker")
 
     # Configure standard logging
     logging.basicConfig(

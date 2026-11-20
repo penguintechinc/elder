@@ -8,7 +8,7 @@ use roxmltree::Document;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Parsed software dependency component matching `elder-api`'s `/sbom/scans/<id>/results` schema.
+/// Parsed software dependency component matching `hub-api`'s `/sbom/scans/<id>/results` schema.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SbomComponent {
     pub name: String,

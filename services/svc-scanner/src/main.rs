@@ -1,4 +1,4 @@
-//! `svc-scanning`: stateless async Elder data-plane security scanner binary.
+//! `svc-scanner`: stateless async Elder data-plane security scanner binary.
 
 mod config;
 mod nvd;
@@ -29,7 +29,7 @@ use crate::scanners::sbom::{
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "svc-scanning",
+    name = "svc-scanner",
     version,
     about = "Elder stateless data-plane scanner worker"
 )]
@@ -84,11 +84,11 @@ struct CompleteDiscoveryJobRequest {
 async fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
 
-    let telemetry_cfg = match telemetry::TelemetryConfig::from_env("svc-scanning") {
+    let telemetry_cfg = match telemetry::TelemetryConfig::from_env("svc-scanner") {
         Ok(cfg) => cfg,
         Err(err) => {
             let fallback = telemetry::TelemetryConfig {
-                service_name: "svc-scanning".to_string(),
+                service_name: "svc-scanner".to_string(),
                 otlp_endpoint: None,
                 protocol: telemetry::OtlpProtocol::HttpProtobuf,
                 json_logs: true,
@@ -104,7 +104,7 @@ async fn main() -> std::process::ExitCode {
     let exit_code = match run_cli(cli).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
-            tracing::error!(error = %err, "svc-scanning exited with failure");
+            tracing::error!(error = %err, "svc-scanner exited with failure");
             std::process::ExitCode::FAILURE
         }
     };
@@ -132,7 +132,7 @@ fn run_healthcheck() -> Result<()> {
     let _client = ElderApiClient::new(&cfg.elder_api_url, auth)?;
     tracing::info!(
         elder_api_url = %cfg.elder_api_url,
-        "svc-scanning healthcheck passed"
+        "svc-scanner healthcheck passed"
     );
     Ok(())
 }
@@ -143,7 +143,7 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
     auth.validate()?;
 
     let client = Arc::new(ElderApiClient::new(&cfg.elder_api_url, auth)?);
-    let metrics = Arc::new(ServiceMetrics::new("svc-scanning", "svc_scanning"));
+    let metrics = Arc::new(ServiceMetrics::new("svc-scanner", "svc_scanner"));
     let poll_interval =
         Duration::from_secs(interval_override.unwrap_or(cfg.default_loop_interval_secs));
     let mut last_nvd_sync: Option<DateTime<Utc>> = None;
@@ -155,7 +155,7 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
 
     tracing::info!(
         interval_secs = poll_interval.as_secs(),
-        "Starting svc-scanning polling loop"
+        "Starting svc-scanner polling loop"
     );
 
     loop {
@@ -189,7 +189,7 @@ async fn run_cycle(
     last_nvd_sync: &mut Option<DateTime<Utc>>,
 ) -> Result<()> {
     let cycle_start = Instant::now();
-    let cycle_span = tracing::info_span!("svc_scanning.cycle");
+    let cycle_span = tracing::info_span!("svc_scanner.cycle");
 
     let res = async {
         // 1. Evaluate due SBOM schedules first so newly created pending scans are picked up in the same pass.
@@ -297,7 +297,7 @@ async fn run_discovery_job(
 ) {
     let start = Instant::now();
     let span = tracing::info_span!(
-        "svc_scanning.discovery_job",
+        "svc_scanner.discovery_job",
         job_id = job.id,
         provider = %job.provider
     );
@@ -378,7 +378,7 @@ async fn run_sbom_job(
 ) {
     let start = Instant::now();
     let span = tracing::info_span!(
-        "svc_scanning.sbom_scan",
+        "svc_scanner.sbom_scan",
         scan_id = scan.id,
         scan_type = %scan.scan_type
     );

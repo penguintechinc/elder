@@ -1,4 +1,4 @@
-//! Shared infrastructure for Elder Rust data-plane services (`svc-scanning`, `svc-integrations`).
+//! Shared infrastructure for Elder Rust data-plane services (`svc-scanner`, `svc-integrations`).
 
 pub mod auth;
 pub mod elder_client;

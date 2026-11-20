@@ -20,7 +20,7 @@ spec:
     timeouts:
       request: {{ .Values.gateway.timeouts.request | default "300s" }}
     backendRefs:
-    - name: {{ include "elder.fullname" . }}-api
+    - name: hub-api
       port: 5000
   - matches:
     - path:
@@ -29,11 +29,11 @@ spec:
     timeouts:
       request: {{ .Values.gateway.timeouts.request | default "300s" }}
     backendRefs:
-    - name: {{ include "elder.fullname" . }}-web
-      # Must match web.service.port (values.yaml) — container is
+    - name: hub-webui
+      # Must match hub-webui.service.port (values.yaml) — container is
       # nginx-unprivileged listening on 8080, not the old 3000.
       # Release audit finding #7.
-      port: {{ .Values.web.service.port }}
+      port: {{ (index .Values "hub-webui").service.port }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

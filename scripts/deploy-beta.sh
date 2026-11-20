@@ -34,12 +34,12 @@ usage() {
     echo "Deploy Elder images to beta cluster (ghcr.io/penguintechinc + dal2-beta)"
     echo ""
     echo "IMAGE:"
-    echo "  all       Build and deploy all images (default)"
-    echo "  api       Build and deploy only elder-api"
-    echo "  web       Build and deploy only elder-web"
-    echo "  svc-scanning      Build and deploy only elder-svc-scanning"
-    echo "  svc-integrations  Build and deploy only elder-svc-integrations"
-    echo "  worker    Build and deploy only elder-worker"
+    echo "  all               Build and deploy all images (default)"
+    echo "  hub-api           Build and deploy only elder/hub-api"
+    echo "  hub-webui         Build and deploy only elder/hub-webui"
+    echo "  svc-scanner       Build and deploy only elder/svc-scanner"
+    echo "  svc-integrations  Build and deploy only elder/svc-integrations"
+    echo "  svc-worker        Build and deploy only elder/svc-worker"
     echo ""
     echo "OPTIONS:"
     echo "  -h, --help         Show this help message"
@@ -86,7 +86,7 @@ while [[ $# -gt 0 ]]; do
             K8S_CONTEXT="$2"
             shift 2
             ;;
-        all|api|web|svc-scanning|svc-integrations|worker|flows-invoker)
+        all|hub-api|hub-webui|svc-scanner|svc-integrations|svc-worker|svc-flows-invoker)
             TARGET_IMAGE="$1"
             shift
             ;;
@@ -122,12 +122,12 @@ echo ""
 
 # Image configurations: name, dockerfile, context
 declare -A IMAGES
-IMAGES[api]="apps/api/Dockerfile:."
-IMAGES[web]="web/Dockerfile:."
-IMAGES[svc-scanning]="services/svc-scanning/Dockerfile:."
+IMAGES[hub-api]="apps/api/Dockerfile:."
+IMAGES[hub-webui]="web/Dockerfile:."
+IMAGES[svc-scanner]="services/svc-scanner/Dockerfile:."
 IMAGES[svc-integrations]="services/svc-integrations/Dockerfile:."
-IMAGES[worker]="apps/worker/Dockerfile:."
-IMAGES[flows-invoker]="apps/flows_invoker/Dockerfile:."
+IMAGES[svc-worker]="apps/worker/Dockerfile:."
+IMAGES[svc-flows-invoker]="apps/flows_invoker/Dockerfile:."
 
 build_and_push_image() {
     local name=$1
@@ -139,7 +139,7 @@ build_and_push_image() {
     fi
 
     IFS=':' read -r dockerfile context <<< "$config"
-    local image_name="elder-${name}"
+    local image_name="elder/${name}"
     local full_image="${REGISTRY}/${image_name}"
 
     log_info "Building ${image_name}..."
@@ -152,7 +152,7 @@ build_and_push_image() {
     )
 
     # Add service-specific build args
-    if [ "$name" = "web" ]; then
+    if [ "$name" = "hub-webui" ]; then
         build_args+=(--build-arg "VITE_VERSION=${VERSION}")
         build_args+=(--build-arg "VITE_BUILD_TIME=$(date +%s)")
 
@@ -165,7 +165,7 @@ build_and_push_image() {
             log_error "GitHub token not found at ~/code/.gh-token (required for web build)"
             return 1
         fi
-    elif [ "$name" = "api" ]; then
+    elif [ "$name" = "hub-api" ]; then
         build_args+=(--build-arg "APP_VERSION=${VERSION}")
     fi
 
@@ -195,15 +195,15 @@ helm_upgrade() {
         "${set_args[@]}"
 
     log_info "Waiting for rollout to complete..."
-    local services=("api" "web" "worker" "flows-invoker")
-    if [ "$TARGET_IMAGE" = "svc-scanning" ] || [ "$TARGET_IMAGE" = "svc-integrations" ]; then
+    local services=("hub-api" "hub-webui" "svc-worker" "svc-flows-invoker")
+    if [ "$TARGET_IMAGE" = "svc-scanner" ] || [ "$TARGET_IMAGE" = "svc-integrations" ]; then
         services=()
     elif [ "$TARGET_IMAGE" != "all" ]; then
         services=("$TARGET_IMAGE")
     fi
 
     for svc in "${services[@]}"; do
-        local deployment="elder-${svc}"
+        local deployment="${svc}"
         if kubectl --context="$K8S_CONTEXT" get deployment "$deployment" -n "$K8S_NAMESPACE" &>/dev/null; then
             kubectl --context="$K8S_CONTEXT" rollout status \
                 "deployment/${deployment}" \
@@ -212,10 +212,10 @@ helm_upgrade() {
         fi
     done
 
-    for cron_svc in svc-scanning svc-integrations; do
+    for cron_svc in svc-scanner svc-integrations; do
         if [ "$TARGET_IMAGE" = "all" ] || [ "$TARGET_IMAGE" = "$cron_svc" ]; then
-            kubectl --context="$K8S_CONTEXT" get cronjob "elder-${cron_svc}" -n "$K8S_NAMESPACE" &>/dev/null \
-                || log_warn "CronJob elder-${cron_svc} not found in ${K8S_NAMESPACE}"
+            kubectl --context="$K8S_CONTEXT" get cronjob "${cron_svc}" -n "$K8S_NAMESPACE" &>/dev/null \
+                || log_warn "CronJob ${cron_svc} not found in ${K8S_NAMESPACE}"
         fi
     done
 
@@ -224,7 +224,7 @@ helm_upgrade() {
 
 # Determine which images to build
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web" "svc-scanning" "svc-integrations" "worker" "flows-invoker")
+    TARGETS=("hub-api" "hub-webui" "svc-scanner" "svc-integrations" "svc-worker" "svc-flows-invoker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi
@@ -250,10 +250,10 @@ echo ""
 if [ "$ROLLOUT_ONLY" = false ]; then
     log_info "Deployed images:"
     for target in "${TARGETS[@]}"; do
-        log_info "  - ${REGISTRY}/elder-${target}:${BETA_TAG}"
+        log_info "  - ${REGISTRY}/elder/${target}:${BETA_TAG}"
     done
     echo ""
 fi
 log_info "To check status:"
 log_info "  kubectl --context=${K8S_CONTEXT} get pods -n ${K8S_NAMESPACE}"
-log_info "  kubectl --context=${K8S_CONTEXT} logs -f deployment/elder-api -n ${K8S_NAMESPACE}"
+log_info "  kubectl --context=${K8S_CONTEXT} logs -f deployment/hub-api -n ${K8S_NAMESPACE}"

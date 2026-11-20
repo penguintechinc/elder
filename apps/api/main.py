@@ -95,7 +95,7 @@ def create_app(config_name: str = None) -> Quart:
     app.config["APP_VERSION"] = _resolve_app_version(app.config.get("APP_VERSION"))
 
     # Initialize OpenTelemetry (Phase 0.5) — must be before logging/DB init
-    otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "elder-api"))
+    otel = init_telemetry(app.config.get("OTEL_SERVICE_NAME", "hub-api"))
     app.extensions["otel"] = otel
 
     # Setup logging (must be after OTel but before other initializations)

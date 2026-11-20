@@ -31,7 +31,7 @@ def _init_otel_metrics():
     """Initialize OTel metrics for worker sync/discovery operations."""
     from shared.observability import get_meter
 
-    meter = get_meter("elder-worker")
+    meter = get_meter("svc-worker")
 
     # Counters for job/sync execution and errors
     job_counter = meter.create_counter(
@@ -143,7 +143,7 @@ class WorkerService:
             return (
                 jsonify(
                     {
-                        "service": "elder-worker",
+                        "service": "svc-worker",
                         "running": self.running,
                         "integrations_owner": "svc-integrations",
                         "jobbus_connected": self.jobbus is not None,
@@ -284,7 +284,7 @@ class WorkerService:
         start_time = time.monotonic()
         status = "error"
 
-        tracer = get_tracer("elder-worker")
+        tracer = get_tracer("svc-worker")
         parent_context = envelope.extract_trace_context()
         with tracer.start_as_current_span(
             "worker.process_job",

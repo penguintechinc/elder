@@ -35,7 +35,7 @@ CONTEXT="local-alpha"
 NAMESPACE="elder"
 # Alpha exposes web+api via NodePort -- alpha.yml sets ingress.enabled=false
 # ("web/api reachable via NodePort instead"). The web container's nginx proxies
-# both /api/ and /healthz to elder-api:5000, so this one base URL covers the UI,
+# both /api/ and /healthz to hub-api:5000, so this one base URL covers the UI,
 # the API suite and the health checks. Override for other targets.
 BASE_URL="${BASE_URL:-http://localhost:30090}"
 DEPLOY=false
@@ -127,8 +127,8 @@ log_success "Pods healthy ($RUNNING running)"
 log_info "  Running per-service healthchecks..."
 HEALTH_FAILURES=0
 
-# svc-scanning & svc-integrations — CronJob presence (run on a 1-minute schedule; pods are transient Jobs)
-for cron_component in svc-scanning svc-integrations; do
+# svc-scanner & svc-integrations — CronJob presence (run on a 1-minute schedule; pods are transient Jobs)
+for cron_component in svc-scanner svc-integrations; do
     if kubectl --context "$CONTEXT" get cronjob -n "$NAMESPACE" -l "app.kubernetes.io/component=${cron_component}" -o name | grep -q cronjob; then
         log_success "  ${cron_component} CronJob: OK"
     else
@@ -138,7 +138,7 @@ for cron_component in svc-scanning svc-integrations; do
 done
 
 # Worker — hit its HTTP health endpoint (port matches HEALTH_CHECK_PORT in deployment, default 28000)
-WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+WORKER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=svc-worker -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
 if [[ -n "$WORKER_POD" ]]; then
     WORKER_HEALTH=$(kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$WORKER_POD" -- \
         python3 -c "import urllib.request; r=urllib.request.urlopen('http://localhost:28000/healthz',timeout=5); print(r.status)" 2>/dev/null || echo "ERR")

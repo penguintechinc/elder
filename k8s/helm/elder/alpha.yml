@@ -91,17 +91,17 @@ redis:
 #
 # SAME-ORIGIN: the container is a rootless nginx (web/Dockerfile,
 # web/nginx.conf) that serves the SPA AND reverse-proxies /api/* to the
-# elder-api Service (http://elder-api:5000) server-side. The browser only
+# hub-api Service (http://hub-api:5000) server-side. The browser only
 # ever talks to :30090 — this is what makes login work from a REMOTE
 # browser, not just one on the cluster host: the old setup baked an
 # absolute http://localhost:30091 API URL into the SPA, which only
 # resolved for a browser on the cluster host itself. nginx listens on 8080
 # (nginx-unprivileged default, non-root).
-web:
+hub-webui:
   enabled: true
   replicaCount: 1
   image:
-    repository: elder-web
+    repository: elder/hub-webui
     tag: alpha-latest
     pullPolicy: IfNotPresent
   service:
@@ -112,10 +112,10 @@ web:
   buildArgs:
     # Empty (relative) on purpose — see web/src/lib/api.ts: an empty
     # VITE_API_URL makes the SPA call a relative /api/v1 base, which nginx
-    # then proxies same-origin to elder-api. Do NOT set this to an
+    # then proxies same-origin to hub-api. Do NOT set this to an
     # absolute http://localhost:30091 URL again; that was the bug (worked
     # only from the cluster host, "Unable to connect" from every remote
-    # browser). 30091 (elder-api's NodePort) still exists for direct
+    # browser). 30091 (hub-api's NodePort) still exists for direct
     # debugging but the SPA must never call it directly.
     VITE_API_URL: ""
   resources:
@@ -134,11 +134,11 @@ web:
 
 # Elder Flask API - Single replica for alpha, exposed via fixed NodePort so
 # the browser (loaded from the web NodePort) can reach the API directly.
-api:
+hub-api:
   enabled: true
   replicaCount: 1
   image:
-    repository: elder-api
+    repository: elder/hub-api
     tag: alpha-latest
     # Always: so a same-tag redeploy still re-pulls (deploy-alpha.sh also uses a
     # fresh per-deploy tag, but this keeps manual redeploys correct too).
@@ -186,16 +186,16 @@ api:
     enabled: false
 
 # Scanning Service (Rust CronJob)
-svc-scanning:
+svc-scanner:
   enabled: true
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: elder-svc-scanning
+    repository: elder/svc-scanner
     tag: alpha-latest
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     SCREENSHOT_DIR: "/tmp/screenshots"
     LOG_FORMAT: "json"
     RUST_LOG: "debug"
@@ -216,11 +216,11 @@ svc-integrations:
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: elder-svc-integrations
+    repository: elder/svc-integrations
     tag: alpha-latest
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_FORMAT: "json"
     RUST_LOG: "debug"
     INTEGRATIONS_MAX_CONCURRENCY: "8"
@@ -244,14 +244,15 @@ svc-integrations:
         - ALL
 
 # Worker Service - Single replica for alpha
-worker:
+svc-worker:
   enabled: true
   replicaCount: 1
   image:
-    repository: elder-worker
+    repository: elder/svc-worker
     tag: alpha-latest
     pullPolicy: Always
   env:
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_LEVEL: DEBUG
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "false"
@@ -272,11 +273,11 @@ worker:
 # Flows Invoker Service - DISABLED for alpha: apps/flows-invoker has no
 # buildable image yet, so enabling it guarantees an ImagePullBackOff pod.
 # Re-enable once the service exists and deploy-alpha.sh builds it.
-flows-invoker:
+svc-flows-invoker:
   enabled: false
   replicaCount: 1
   image:
-    repository: elder-flows-invoker
+    repository: elder/svc-flows-invoker
     tag: alpha-latest
     pullPolicy: IfNotPresent
   env:
