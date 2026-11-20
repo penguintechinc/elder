@@ -175,10 +175,14 @@ export default function CsvImportModal({
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              <label
+                htmlFor="csv-upload-file"
+                className="block text-sm font-medium text-slate-300 mb-1.5"
+              >
                 Upload CSV File (.csv, max 5 MB / 1,000 rows)
               </label>
               <input
+                id="csv-upload-file"
                 type="file"
                 accept=".csv,text/csv"
                 onChange={(e) => {
@@ -191,10 +195,14 @@ export default function CsvImportModal({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              <label
+                htmlFor="csv-paste-text"
+                className="block text-sm font-medium text-slate-300 mb-1.5"
+              >
                 Or Paste CSV Content
               </label>
               <textarea
+                id="csv-paste-text"
                 value={csvText}
                 onChange={(e) => {
                   setCsvText(e.target.value);

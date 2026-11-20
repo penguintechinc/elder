@@ -659,10 +659,14 @@ export default function Vulnerabilities() {
                   onChange={(e) => setNewPublishedAt(e.target.value)}
                 />
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  <label
+                    htmlFor="vuln-description"
+                    className="block text-sm font-medium text-slate-300 mb-1.5"
+                  >
                     Description (Optional)
                   </label>
                   <textarea
+                    id="vuln-description"
                     value={newDescription}
                     onChange={(e) => setNewDescription(e.target.value)}
                     rows={3}
