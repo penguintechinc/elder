@@ -21,6 +21,7 @@ from quart import Blueprint, current_app, g, jsonify, request, websocket
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.common.flags.posthog_client import flag_enabled
+from apps.api.common.modules.licensing import is_bypass_domain
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
@@ -43,21 +44,22 @@ def _is_collaboration_enabled(app, identity_id: str) -> tuple[bool, str | None]:
         tuple: (enabled: bool, reason: Optional error message)
     """
     # Check license (layer 1)
-    try:
-        license_client = app.extensions.get("license_client")
-        if license_client:
-            try:
-                validation = license_client.validate()
-                # For now, treat collaboration as available if license is valid
-                # In future, can check specific feature entitlements
-                if not validation:
-                    return False, "License validation failed"
-            except Exception as e:
-                log.warning("license_check_failed_collab", error=str(e))
-                # Fail gracefully on license infra errors
-                pass
-    except Exception as e:
-        log.warning("license_client_not_available", error=str(e))
+    if not is_bypass_domain():
+        try:
+            license_client = app.extensions.get("license_client")
+            if license_client:
+                try:
+                    validation = license_client.validate()
+                    # For now, treat collaboration as available if license is valid
+                    # In future, can check specific feature entitlements
+                    if not validation:
+                        return False, "License validation failed"
+                except Exception as e:
+                    log.warning("license_check_failed_collab", error=str(e))
+                    # Fail gracefully on license infra errors
+                    pass
+        except Exception as e:
+            log.warning("license_client_not_available", error=str(e))
 
     # Check PostHog flag (layer 2)
     try:
