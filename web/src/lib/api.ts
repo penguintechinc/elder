@@ -3032,11 +3032,12 @@ class ApiClient {
   async createOnCallOverride(
     rotationId: number,
     data: {
-      override_participant_id: number;
-      override_start: string;
-      override_end: string;
+      override_identity_id: number;
+      original_identity_id?: number;
+      start_datetime: string;
+      end_datetime: string;
       reason?: string;
-      created_by?: number;
+      created_by_id?: number;
     },
   ) {
     const response = await this.client.post(
