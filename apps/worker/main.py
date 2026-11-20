@@ -18,6 +18,7 @@ from apps.worker.config.settings import settings
 from apps.worker.connectors.authentik_connector import AuthentikConnector
 from apps.worker.connectors.aws_connector import AWSConnector
 from apps.worker.connectors.base import BaseConnector, SyncResult
+from apps.worker.connectors.fleetdm_connector import FleetDMConnector
 from apps.worker.connectors.gcp_connector import GCPConnector
 from apps.worker.connectors.google_workspace_connector import GoogleWorkspaceConnector
 from apps.worker.connectors.ldap_connector import LDAPConnector
@@ -196,6 +197,7 @@ class WorkerService:
                             "okta_enabled": settings.okta_enabled,
                             "authentik_enabled": settings.authentik_enabled,
                             "lxd_enabled": settings.lxd_enabled,
+                            "fleetdm_enabled": settings.fleetdm_enabled,
                         },
                     }
                 ),
@@ -233,6 +235,10 @@ class WorkerService:
         if settings.lxd_enabled:
             logger.info("LXD connector enabled")
             self.connectors.append(LXDConnector())
+
+        if settings.fleetdm_enabled:
+            logger.info("FleetDM connector enabled")
+            self.connectors.append(FleetDMConnector())
 
         if not self.connectors:
             logger.warning("No connectors enabled! Check your configuration.")
@@ -797,6 +803,8 @@ class WorkerService:
                 interval = settings.authentik_sync_interval
             elif isinstance(connector, LXDConnector):
                 interval = settings.lxd_sync_interval
+            elif isinstance(connector, FleetDMConnector):
+                interval = settings.fleetdm_sync_interval
             else:
                 interval = 3600  # Default to 1 hour
 

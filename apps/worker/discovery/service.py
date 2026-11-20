@@ -29,6 +29,7 @@ CANONICAL_EDGE_TYPES: frozenset[str] = frozenset(
 from apps.worker.discovery.aws_discovery import AWSDiscoveryClient
 from apps.worker.discovery.azure_discovery import AzureDiscoveryClient
 from apps.worker.discovery.base import BaseDiscoveryProvider
+from apps.worker.discovery.fleetdm_discovery import FleetDMDiscoveryClient
 from apps.worker.discovery.gcp_discovery import GCPDiscoveryClient
 from apps.worker.discovery.k8s_discovery import KubernetesDiscoveryClient
 from apps.worker.discovery.vultr_discovery import VultrDiscoveryClient
@@ -85,6 +86,8 @@ class DiscoveryService:
             return KubernetesDiscoveryClient(config)
         elif provider_type == "vultr":
             return VultrDiscoveryClient(config)
+        elif provider_type == "fleetdm":
+            return FleetDMDiscoveryClient(config)
         else:
             raise Exception(f"Unsupported provider type: {provider_type}")
 
@@ -137,6 +140,7 @@ class DiscoveryService:
             "gcp",
             "azure",
             "kubernetes",
+            "fleetdm",
             "network",
             "http_screenshot",
             "banner",
@@ -384,7 +388,7 @@ class DiscoveryService:
 
     def _detect_provider_type(self, discovery_results: dict[str, Any]) -> str:
         """Detect cloud provider from discovery results."""
-        for category in ["compute", "storage", "network", "iam"]:
+        for category in ["compute", "storage", "network", "iam", "security"]:
             resources = discovery_results.get(category, [])
             if not resources:
                 continue
@@ -393,11 +397,15 @@ class DiscoveryService:
                 return "kubernetes"
             if rt.startswith("gce_") or rt.startswith("gcs_"):
                 return "gcp"
+            if rt.startswith("fleetdm_"):
+                return "fleetdm"
             prov = resources[0].get("provider", "")
             if prov == "aws":
                 return "aws"
             if prov == "gcp":
                 return "gcp"
+            if prov == "fleetdm":
+                return "fleetdm"
         return "unknown"
 
     # Provider root entity
@@ -410,6 +418,7 @@ class DiscoveryService:
             "kubernetes": "kubernetes_cluster",
             "aws": "aws_account",
             "gcp": "gcp_project",
+            "fleetdm": "fleetdm_server",
         }
         sub_type = sub_type_map.get(provider)
         if not sub_type:
@@ -1491,6 +1500,7 @@ class DiscoveryService:
             "network": "network",
             "database": "storage",
             "serverless": "compute",
+            "security": "security",
         }
 
         for category, resources in discovery_results.items():
@@ -1957,6 +1967,9 @@ class DiscoveryService:
                 "secret_access_key",
                 "credentials_json",
                 "token",
+                "api_token",
+                "api_key",
+                "fleetdm_api_token",
                 "client_secret",
                 "kubeconfig",
             ]

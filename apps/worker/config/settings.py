@@ -278,6 +278,36 @@ class Settings(BaseSettings):
         default=None,
         description="FleetDM API token for authentication",
     )
+    fleetdm_verify_ssl: bool = Field(
+        default=True,
+        description="Verify TLS certificates for FleetDM API",
+    )
+    fleetdm_sync_mdm: bool = Field(
+        default=True,
+        description="Sync FleetDM MDM configuration profiles and disk encryption status",
+    )
+    fleetdm_sync_labels: bool = Field(
+        default=True,
+        description="Sync FleetDM labels and custom/manual label host memberships",
+    )
+    fleetdm_sync_os_versions: bool = Field(
+        default=True,
+        description="Sync FleetDM operating system versions",
+    )
+    fleetdm_sync_scripts_reports: bool = Field(
+        default=True,
+        description="Sync FleetDM scripts, saved reports/queries, and custom host vitals",
+    )
+    fleetdm_sync_host_details: bool = Field(
+        default=False,
+        description="Fetch per-host certificates and profile status (extra API calls per host)",
+    )
+    fleetdm_per_page: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="FleetDM pagination page size",
+    )
     fleetdm_sync_interval: int = Field(
         default=3600,
         description="FleetDM sync interval in seconds (default: 1 hour)",

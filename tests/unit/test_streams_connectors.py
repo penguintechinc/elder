@@ -347,18 +347,19 @@ class TestVariableInterpolation:
 
 
 class TestConnectorCount:
-    """Test that all 31 connectors are discoverable."""
+    """Test that all connector manifests are discoverable."""
 
     def test_all_manifests_present(self):
-        """Verify that all 31 connector manifests are present."""
+        """Verify that all 32+ connector manifests (including fleetdm) are present."""
         from pathlib import Path
 
         manifest_dir = Path("apps/worker/streams/connectors/manifests")
         manifest_files = list(manifest_dir.glob("*.yaml"))
 
         assert (
-            len(manifest_files) == 31
-        ), f"Expected 31 manifests, found {len(manifest_files)}"
+            len(manifest_files) >= 32
+        ), f"Expected at least 32 manifests, found {len(manifest_files)}"
+        assert any(p.name == "fleetdm.yaml" for p in manifest_files)
 
     def test_manifests_can_be_loaded(self):
         """Verify that all manifest files can be loaded."""

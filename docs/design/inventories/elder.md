@@ -30,8 +30,8 @@ on-call rotations (CRUD/history/participants), shifts/overrides/escalation, curr
 outbound webhooks + delivery log, NotificationRule (event→channel; NOT a workflow engine — Flows module will be the workflow story), on-call alert webhooks.
 
 ## I. Worker connectors → `discovery` module task groups
-Wired: AWS, GCP, Google Workspace, LDAP, Okta (ENT), Authentik (ENT), LXD.
-⚠ NOT wired (half-built): iboss, fleetdm, vcenter, k8s connectors — decide wire/defer per connector.
+Wired: AWS, GCP, Google Workspace, LDAP, Okta (ENT), Authentik (ENT), LXD, FleetDM.
+⚠ NOT wired (half-built): iboss, vcenter, k8s connectors — decide wire/defer per connector.
 Issue-tracker two-way sync: GitHub, GitLab, Jira, OpenProject, Trello (webhook_handler + batch_scheduler + conflict_resolver).
 Cloud discovery executor: AWS, Azure, GCP, Vultr, K8s.
 Sync admin: sync API + SyncConfig/History/Conflict/Mapping models + SyncConfig.tsx.
@@ -51,7 +51,7 @@ audit (core) + audit_enterprise/retention (ENT → compliance/SIEM SKU), logs vi
 ## Fix-during-port flags
 1. Legacy organizations.py (SQLAlchemy) superseded by organizations_pydal.py — delete legacy.
 2. comments.py blueprint unregistered — register in issues module.
-3. Unwired connectors (iboss/fleetdm/vcenter/k8s) — decision per connector.
+3. Unwired connectors (iboss/vcenter/k8s) — decision per connector.
 4. AlertConfiguration model-only — wire or drop.
 5. Costs has no sidebar nav — add under Infrastructure.
 6. DTO duplication (dataclasses/schemas/pydantic overlap) — consolidate during module moves.
