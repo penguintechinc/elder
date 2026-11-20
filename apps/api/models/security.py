@@ -14,7 +14,7 @@ from sqlalchemy import (
     Text,
 )
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class Vulnerability(Base, IDMixin, TimestampMixin):
@@ -194,7 +194,7 @@ class Certificate(Base, IDMixin, TimestampMixin):
     village_id = Column(String(32), unique=True, nullable=True)
 
 
-class CryptoKey(Base, IDMixin, TimestampMixin):
+class CryptoKey(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Cryptographic key management."""
 
     __tablename__ = "crypto_keys"
@@ -211,7 +211,7 @@ class CryptoKey(Base, IDMixin, TimestampMixin):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class KeyProvider(Base, IDMixin, TimestampMixin):
+class KeyProvider(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """Key management provider configuration."""
 
     __tablename__ = "key_providers"

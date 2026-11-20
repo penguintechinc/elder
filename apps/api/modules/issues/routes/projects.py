@@ -22,6 +22,7 @@ from apps.api.modules.issues.routes.common import _tenant_id
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.tenant_scoping import get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("projects", __name__)
 
@@ -158,6 +159,8 @@ async def create_project():
     if not org:
         return jsonify({"error": "Organization not found"}), 404
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
         # Create project
         now = datetime.now(UTC)
@@ -167,6 +170,7 @@ async def create_project():
             status=data.get("status", "active"),
             organization_id=data["organization_id"],
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

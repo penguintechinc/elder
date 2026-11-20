@@ -43,6 +43,7 @@ def _role_response(row) -> ResourceRoleResponse:
         resource_id=row.resource_id,
         role=str(row.role or row.role_type).lower(),
         created_at=row.created_at,
+        village_id=getattr(row, "village_id", None),
     )
 
 
@@ -352,6 +353,8 @@ async def create_resource_role():
                 409,
             )
 
+        from apps.api.utils.village_id import mint_village_id
+
         # Create resource role. resource_type/role_type persist as the
         # uppercase Postgres enum member names; role_type is NOT NULL and was
         # previously never set (the insert 500'd on this constraint). The
@@ -363,6 +366,7 @@ async def create_resource_role():
             resource_id=req_data.resource_id,
             role=req_data.role,
             role_type=req_data.role.upper(),
+            village_id=mint_village_id(tenant_id or 1),
         )
         db.commit()
 

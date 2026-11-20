@@ -130,6 +130,7 @@ class GroupDTO(ImmutableModel):
     pending_request_count: int | None = Field(
         None, description="Number of pending access requests"
     )
+    village_id: str | None = Field(None, description="Universal Village ID")
 
 
 class AccessRequestDTO(ImmutableModel):
@@ -145,6 +146,7 @@ class AccessRequestDTO(ImmutableModel):
     )
     created_at: datetime = Field(description="Creation timestamp")
     updated_at: datetime = Field(description="Last update timestamp")
+    village_id: str | None = Field(None, description="Universal Village ID")
 
 
 class GroupMemberDTO(ImmutableModel):

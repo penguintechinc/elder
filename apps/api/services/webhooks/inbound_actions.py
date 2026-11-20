@@ -455,17 +455,10 @@ def _resolve_org_id(
 
 
 def _mint_village_id(tenant_id: int, prefix: str) -> str:
-    try:
-        from quart import current_app
+    from apps.api.utils.village_id import mint_village_id
 
-        from shared.utils.village_id import generate_village_id
-
-        redis_client = getattr(current_app, "redis", None)
-        if redis_client is not None:
-            return generate_village_id(tenant_id, redis_client)
-    except Exception:
-        pass
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
+    del prefix
+    return mint_village_id(tenant_id)
 
 
 def _ensure_ai_table(db: Any) -> None:

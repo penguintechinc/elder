@@ -305,10 +305,15 @@ async def create_scan():
             elif hasattr(parent, "git_url") and parent.git_url:
                 repository_url = parent.git_url
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create scan record with status=pending
         scan_id = db.sbom_scans.insert(
             tenant_id=effective_tenant_id,
+            village_id=mint_village_id(effective_tenant_id, redis_client),
             parent_type=parent_type,
             parent_id=parent_id,
             scan_type=body.scan_type,
@@ -652,9 +657,12 @@ async def submit_results(id: int):
                 components_updated += 1
                 component_ids.append(existing.id)
             else:
+                from apps.api.utils.village_id import mint_village_id
+
                 # Insert new component
                 comp_id = db.sbom_components.insert(
                     tenant_id=scan_tenant_id,
+                    village_id=mint_village_id(scan_tenant_id),
                     parent_type=scan.parent_type,
                     parent_id=scan.parent_id,
                     name=comp["name"],
@@ -802,9 +810,14 @@ async def submit_results(id: int):
                                 if existing_vuln:
                                     vuln_id = existing_vuln.id
                                 else:
+                                    from apps.api.utils.village_id import (
+                                        mint_village_id,
+                                    )
+
                                     # Insert new vulnerability
                                     vuln_id = db.vulnerabilities.insert(
                                         tenant_id=vuln_tenant_id,
+                                        village_id=mint_village_id(vuln_tenant_id),
                                         cve_id=vuln.cve_id,
                                         aliases=vuln.aliases,
                                         severity=vuln.severity,
@@ -953,10 +966,15 @@ async def upload_sbom():
         return ApiResponse.error("No components found in SBOM file", 400)
 
     # Create scan record and import components
+    redis_client = getattr(current_app, "redis_client", None)
+
     def import_components():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create scan record
         scan_id = db.sbom_scans.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             parent_type=parent_type,
             parent_id=parent_id,
             scan_type="sbom_import",
@@ -1011,6 +1029,7 @@ async def upload_sbom():
                 # Insert new component
                 db.sbom_components.insert(
                     tenant_id=tenant_id,
+                    village_id=mint_village_id(tenant_id, redis_client),
                     parent_type=parent_type,
                     parent_id=parent_id,
                     name=comp["name"],

@@ -203,7 +203,11 @@ async def create_prefix():
     if blocked is not None:
         return blocked
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create prefix
         now = datetime.now(UTC)
         prefix_id = db.ipam_prefixes.insert(
@@ -212,6 +216,7 @@ async def create_prefix():
             status=data.status,
             organization_id=data.organization_id,
             tenant_id=org.tenant_id,
+            village_id=mint_village_id(org.tenant_id, redis_client),
             parent_id=data.parent_id,
             vlan_id=data.vlan_id,
             is_pool=data.is_pool,
@@ -588,7 +593,11 @@ async def create_address():
     if blocked is not None:
         return blocked
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create address
         now = datetime.now(UTC)
         address_id = db.ipam_addresses.insert(
@@ -597,6 +606,7 @@ async def create_address():
             status=data.status,
             prefix_id=data.prefix_id,
             tenant_id=prefix.tenant_id,
+            village_id=mint_village_id(prefix.tenant_id, redis_client),
             dns_name=data.dns_name,
             created_at=now,
             updated_at=now,
@@ -918,7 +928,11 @@ async def create_vlan():
     if blocked is not None:
         return blocked
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         # Create VLAN
         now = datetime.now(UTC)
         vlan_id = db.ipam_vlans.insert(
@@ -928,6 +942,7 @@ async def create_vlan():
             status=data.status,
             organization_id=data.organization_id,
             tenant_id=org.tenant_id,
+            village_id=mint_village_id(org.tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

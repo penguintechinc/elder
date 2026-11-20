@@ -20,6 +20,7 @@ from apps.api.services.webhooks.user_events import (
     UserCreatedEvent,
     schedule_user_created_webhooks,
 )
+from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
 
@@ -118,6 +119,7 @@ class PortalAuthService:
         # Create user
         user_id = current_app.db.portal_users.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id),
             email=email.lower(),
             password_hash=password_hash,
             full_name=full_name,

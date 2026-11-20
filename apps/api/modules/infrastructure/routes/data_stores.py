@@ -30,6 +30,7 @@ from apps.api.utils.validation_helpers import (
     validate_required_fields,
     validate_resource_exists,
 )
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("data_stores", __name__)
 
@@ -298,6 +299,8 @@ async def create_data_store():
         if not identity:
             return ApiResponse.not_found("POC identity", data["poc_identity_id"])
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
         now = datetime.now(UTC)
         data_store_id = db.data_stores.insert(
@@ -305,6 +308,7 @@ async def create_data_store():
             description=data.get("description"),
             organization_id=data["organization_id"],
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             storage_type=data.get("storage_type", "other"),
             storage_provider=data.get("storage_provider"),
             location_region=data.get("location_region"),

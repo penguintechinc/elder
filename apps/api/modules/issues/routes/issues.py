@@ -33,7 +33,7 @@ from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_tenant_scoped
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 from shared.webhooks import send_issue_created_webhooks
 
 bp = Blueprint("issues", __name__)
@@ -109,15 +109,8 @@ def _resolve_assignee_type(
 
 
 def _mint_village_id(tenant_id: int, redis_client: Any | None) -> str:
-    """Mint a village_id via Redis, falling back to a random id in tests.
-
-    Mirrors the fallback used throughout the helpdesk routes (e.g.
-    `intake_forms.create_form`) for environments without a live Redis
-    connection, such as the unit test suite.
-    """
-    if redis_client:
-        return generate_village_id(tenant_id, redis_client)
-    return f"test-{uuid4().hex[:8]}"
+    """Mint a village_id via Redis, falling back cleanly to CSPRNG hex."""
+    return mint_village_id(tenant_id, redis_client)
 
 
 # ============================================================================
@@ -876,9 +869,9 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
     if not tenant_id:
         return jsonify({"error": "Tenant not found"}), 403
 
-    def create():
-        from shared.utils.village_id import generate_village_id
+    redis_client = getattr(current_app, "redis_client", None)
 
+    def create():
         # Verify issue exists and belongs to caller's tenant
         issue = get_tenant_scoped_issue(db, id, tenant_id)
         if not issue:
@@ -886,8 +879,7 @@ async def create_issue_comment(id: int, body: CreateIssueCommentRequest):
 
         # Create comment
         now = datetime.now(UTC)
-        redis_client = current_app.redis_client
-        village_id = generate_village_id(issue.tenant_id, redis_client)
+        village_id = mint_village_id(issue.tenant_id, redis_client)
         comment_id = db.issue_comments.insert(
             issue_id=id,
             author_id=g.current_user.id,
@@ -1024,6 +1016,8 @@ async def create_issue_label(body: CreateIssueLabelRequest):
         POST /api/v1/issues/labels
     """
     db = current_app.db
+    tenant_id = _tenant_id() or 1
+    redis_client = getattr(current_app, "redis_client", None)
 
     def create():
         # Check if label exists
@@ -1037,6 +1031,7 @@ async def create_issue_label(body: CreateIssueLabelRequest):
             name=body.name,
             color=body.color,
             description=body.description,
+            village_id=mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

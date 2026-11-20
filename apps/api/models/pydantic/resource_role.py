@@ -36,6 +36,7 @@ class ResourceRoleResponse(ImmutableModel):
     resource_id: int | None = Field(None, description="Resource ID")
     role: RoleType = Field(description="Role type (maintainer, operator, viewer)")
     created_at: datetime | None = Field(None, description="Creation timestamp")
+    village_id: str | None = Field(None, description="Universal Village ID")
 
 
 # ==================== Request Models ====================

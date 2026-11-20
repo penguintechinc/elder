@@ -425,7 +425,7 @@ class Issue(Base, IDMixin, VillageIDMixin, TimestampMixin):
         return datetime.now(UTC) > self.due_date
 
 
-class IssueLabel(Base, IDMixin, TimestampMixin):
+class IssueLabel(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Label for categorizing issues.
 

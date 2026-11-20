@@ -129,7 +129,7 @@ class HdTicketAttachment(Base, IDMixin, TimestampMixin):
     storage_path = Column(String(500), nullable=False)
 
 
-class HdSlaPolicy(Base, IDMixin, TenantScopedMixin):
+class HdSlaPolicy(Base, IDMixin, TenantScopedMixin, VillageIDMixin):
     """Service Level Agreement policies."""
 
     __tablename__ = "hd_sla_policies"

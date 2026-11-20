@@ -11,7 +11,7 @@ from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 from .diagrams import _get_tenant_id
 
@@ -166,7 +166,7 @@ async def create_template():
         return ApiResponse.validation_error("content", "is required")
 
     # Mint village_id in request context
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     def create_tmpl():
         now = datetime.now(UTC)

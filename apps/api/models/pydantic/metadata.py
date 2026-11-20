@@ -69,6 +69,7 @@ class MetadataFieldDTO(ImmutableModel):
     resource_id: int
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 class CreateMetadataFieldRequest(RequestModel):

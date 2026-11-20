@@ -127,6 +127,8 @@ class KeysService:
                 f"Invalid provider type: {provider_type}. Must be one of {valid_types}"
             )
 
+        from apps.api.utils.village_id import mint_village_id
+
         # Create provider
         now = datetime.now(UTC)
         provider_id = self.db.key_providers.insert(
@@ -135,6 +137,7 @@ class KeysService:
             enabled=True,
             config_json=config,
             description=description,
+            village_id=mint_village_id(1),
             created_at=now,
             updated_at=now,
         )
@@ -272,7 +275,15 @@ class KeysService:
         # Create key with provider
         key_data = client.create_key(key_name, key_type, key_spec, description, tags)
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
         # Register key in database
+        provider = self.db.key_providers[provider_id]
+        org_id = getattr(provider, "organization_id", None) if provider else None
+        tenant_id = resolve_tenant_id_for_org(self.db, org_id)
         now = datetime.now(UTC)
         key_id = self.db.crypto_keys.insert(
             key_provider_id=provider_id,
@@ -287,6 +298,7 @@ class KeysService:
                 "description": description,
                 "tags": tags or {},
             },
+            village_id=mint_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

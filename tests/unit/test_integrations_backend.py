@@ -23,6 +23,7 @@ def _create_integrations_db(db_path: str) -> DAL:
         "organizations",
         Field("name", "string"),
         Field("tenant_id", "integer"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -38,6 +39,7 @@ def _create_integrations_db(db_path: str) -> DAL:
         Field("credential_mapping", "json"),
         Field("last_run_at", "datetime"),
         Field("next_run_at", "datetime"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -61,6 +63,7 @@ def _create_integrations_db(db_path: str) -> DAL:
         Field("organization_id", "integer", notnull=True),
         Field("enabled", "boolean", notnull=True),
         Field("last_sync_at", "datetime"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -81,6 +84,7 @@ def _create_integrations_db(db_path: str) -> DAL:
         Field("organization_id", "integer", notnull=True),
         Field("enabled", "boolean", notnull=True),
         Field("last_sync_at", "datetime"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )

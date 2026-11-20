@@ -65,7 +65,7 @@ class BuiltinSecretsClient(SecretProviderClient):
             self.db(
                 (self.db.builtin_secrets.name == path)
                 & (self.db.builtin_secrets.organization_id == self.organization_id)
-                & (self.db.builtin_secrets.is_active is True)
+                & (self.db.builtin_secrets.is_active == True)  # noqa: E712
             )
             .select()
             .first()
@@ -113,6 +113,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                     version="1",  # Built-in secrets don't support versioning
                     created_at=row.created_at,
                     updated_at=row.updated_at,
+                    village_id=getattr(row, "village_id", None),
                     metadata={
                         "secret_type": row.secret_type,
                         "description": row.description,
@@ -134,6 +135,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                     version="1",
                     created_at=row.created_at,
                     updated_at=row.updated_at,
+                    village_id=getattr(row, "village_id", None),
                     metadata={
                         "secret_type": row.secret_type,
                         "description": row.description,
@@ -155,13 +157,14 @@ class BuiltinSecretsClient(SecretProviderClient):
         try:
             query = (
                 self.db.builtin_secrets.organization_id == self.organization_id
-            ) & (self.db.builtin_secrets.is_active is True)
+            ) & (self.db.builtin_secrets.is_active == True)  # noqa: E712
 
             if prefix:
                 query &= self.db.builtin_secrets.name.like(f"{prefix}%")
 
             rows = self.db(query).select(
                 self.db.builtin_secrets.name,
+                self.db.builtin_secrets.village_id,
                 self.db.builtin_secrets.secret_type,
                 self.db.builtin_secrets.description,
                 self.db.builtin_secrets.secret_json,
@@ -182,6 +185,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                         version="1",
                         created_at=row.created_at,
                         updated_at=row.updated_at,
+                        village_id=getattr(row, "village_id", None),
                         metadata={
                             "secret_type": row.secret_type,
                             "description": row.description,
@@ -227,7 +231,13 @@ class BuiltinSecretsClient(SecretProviderClient):
             except (json.JSONDecodeError, TypeError):
                 string_value = value
 
+            from apps.api.utils.village_id import (
+                mint_village_id,
+                resolve_tenant_id_for_org,
+            )
+
             # Create secret
+            tenant_id = resolve_tenant_id_for_org(self.db, self.organization_id)
             secret_id = self.db.builtin_secrets.insert(
                 name=path,
                 description=metadata.get("description", ""),
@@ -238,6 +248,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                 tags=metadata.get("tags", []),
                 expires_at=metadata.get("expires_at"),
                 is_active=True,
+                village_id=mint_village_id(tenant_id),
             )
 
             self.db.commit()
@@ -254,6 +265,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                 version="1",
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                village_id=getattr(row, "village_id", None),
                 metadata={
                     "secret_type": row.secret_type,
                     "description": row.description,
@@ -309,6 +321,7 @@ class BuiltinSecretsClient(SecretProviderClient):
                 version="1",
                 created_at=row.created_at,
                 updated_at=row.updated_at,
+                village_id=getattr(row, "village_id", None),
                 metadata={
                     "secret_type": row.secret_type,
                     "description": row.description,

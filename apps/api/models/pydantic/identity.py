@@ -153,6 +153,7 @@ class IdentityGroupDTO(ImmutableModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 # ==================== Identity Group Requests ====================

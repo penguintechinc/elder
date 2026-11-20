@@ -17,7 +17,7 @@ from apps.api.logging_config import log_error_and_respond
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams, commit_db
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -240,8 +240,8 @@ async def create_page():
     if not slug:
         return ApiResponse.error("title does not produce a valid slug", 400)
 
-    # Mint the village_id in request context (needs current_app.redis_client).
-    village_id = generate_village_id(tenant_id, current_app.redis_client)
+    # Mint the village_id in request context (falls back cleanly if Redis unavailable).
+    village_id = mint_village_id(tenant_id, getattr(current_app, "redis_client", None))
 
     # Check per-tenant slug uniqueness
     def create_and_rebuild():

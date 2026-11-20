@@ -24,6 +24,7 @@ from apps.api.services.webhooks.user_events import (
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
 
 logger = structlog.get_logger(__name__)
 bp = Blueprint("users", __name__)
@@ -144,6 +145,8 @@ async def create_user():
     )
 
     # Create user
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
         # Check if username exists
         existing = db(username_query).select().first()
@@ -169,7 +172,11 @@ async def create_user():
 
         now = datetime.now(UTC)
         user_id = db.identities.insert(
-            created_at=now, updated_at=now, tenant_id=tenant_id, **insert_data
+            created_at=now,
+            updated_at=now,
+            tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
+            **insert_data,
         )
         db.commit()
         user_row = db.identities[user_id]  # tenant-scope-exempt

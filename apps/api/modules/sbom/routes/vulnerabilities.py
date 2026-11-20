@@ -228,13 +228,18 @@ async def create_vulnerability():
                 "published_at must be a valid ISO-8601 date or datetime", 400
             )
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         existing = db(db.vulnerabilities.cve_id == cve_id).select().first()
         if existing:
             return None, True
         now = datetime.now(UTC)
         vuln_id = db.vulnerabilities.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             cve_id=cve_id,
             title=title,
             severity=severity,
@@ -385,9 +390,12 @@ async def sync_vulnerabilities():
 
                 for comp_id, vulns in results.items():
                     for vuln in vulns:
+                        from apps.api.utils.village_id import mint_village_id
+
                         # Sync vulnerability to DB
                         vuln_id = db.vulnerabilities.insert(
                             tenant_id=tenant_id,
+                            village_id=mint_village_id(tenant_id),
                             cve_id=vuln.cve_id,
                             aliases=vuln.aliases,
                             severity=vuln.severity,
@@ -784,8 +792,11 @@ async def assign_vulnerability(id: int):
         if existing_comp:
             comp_id = existing_comp.id
         else:
+            from apps.api.utils.village_id import mint_village_id
+
             comp_id = db.sbom_components.insert(
                 tenant_id=tenant_id,
+                village_id=mint_village_id(tenant_id),
                 parent_type=parent_type,
                 parent_id=parent_id,
                 name=parent.name,

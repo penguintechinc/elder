@@ -18,6 +18,7 @@ from apps.api.models.dataclasses import (
 )
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("api_keys", __name__)
 
@@ -122,12 +123,14 @@ async def create_api_key():
     full_key, key_hash, prefix = generate_api_key()
 
     # Prepare insert data
+    redis_client = getattr(current_app, "redis_client", None)
     insert_data = {
         "identity_id": user.id,
         "name": data["name"].strip(),
         "key_hash": key_hash,
         "prefix": prefix,
         "is_active": True,
+        "village_id": mint_village_id(getattr(user, "tenant_id", 1), redis_client),
     }
 
     # Optional expiration date
@@ -151,6 +154,7 @@ async def create_api_key():
         prefix=api_key_row.prefix,
         expires_at=api_key_row.expires_at,
         created_at=api_key_row.created_at,
+        village_id=getattr(api_key_row, "village_id", None),
     )
 
     return jsonify(asdict(response)), 201

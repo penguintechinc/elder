@@ -18,7 +18,7 @@ from apps.api.api.v1.portal_auth import portal_token_required
 from apps.api.common.licensing.enforce import check_limit
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
-from shared.utils.village_id import generate_village_id
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("tenants", __name__)
 
@@ -240,6 +240,7 @@ async def create_tenant():
         return blocked
 
     db = current_app.db
+    redis_client = getattr(current_app, "redis_client", None)
 
     def inner():
         # Check if slug already exists
@@ -264,17 +265,23 @@ async def create_tenant():
         )
         db.commit()
 
-        # Generate village_id for the tenant using its own ID
-        redis_client = redis.from_url(
-            current_app.config.get("REDIS_URL", "redis://localhost:6379/0")
-        )
-        village_id = generate_village_id(tenant_id, redis_client)
+        # Generate village_id for the tenant using its own ID (with CSPRNG fallback)
+        village_id = mint_village_id(tenant_id, redis_client)
 
         # Update tenant with village_id
         db(db.tenants.id == tenant_id).update(village_id=village_id)
         db.commit()
 
-        return {"id": tenant_id, "name": body.name, "slug": body.slug}, None, None
+        return (
+            {
+                "id": tenant_id,
+                "name": body.name,
+                "slug": body.slug,
+                "village_id": village_id,
+            },
+            None,
+            None,
+        )
 
     result, error, status = await run_in_threadpool(inner)
     if error:

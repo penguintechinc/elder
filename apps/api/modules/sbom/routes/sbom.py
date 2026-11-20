@@ -170,11 +170,16 @@ async def create_component():
     if not parent:
         return ApiResponse.not_found(data["parent_type"], data["parent_id"])
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         now = datetime.now(UTC)
         # Create component
         component_id = db.sbom_components.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             parent_type=data["parent_type"],
             parent_id=data["parent_id"],
             name=data["name"],

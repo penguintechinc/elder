@@ -69,6 +69,7 @@ async def list_teams():
     teams = [
         {
             "id": r.id,
+            "village_id": getattr(r, "village_id", None),
             "name": r.name,
             "description": r.description,
             "created_at": r.created_at.isoformat(),
@@ -126,15 +127,10 @@ async def create_team():
     redis_client = getattr(current_app, "redis_client", None)
 
     def create():
-        from shared.utils.village_id import generate_village_id
+        from apps.api.utils.village_id import mint_village_id
 
         now = datetime.now(UTC)
-        # Use redis_client if available, otherwise generate_village_id will handle it
-        if redis_client:
-            village_id = generate_village_id(tenant_id, redis_client)
-        else:
-            # Fallback for testing without redis
-            village_id = f"team-{uuid4().hex[:12]}"
+        village_id = mint_village_id(tenant_id, redis_client)
 
         team_id = db.hd_teams.insert(
             tenant_id=tenant_id,
@@ -152,6 +148,7 @@ async def create_team():
     return (
         {
             "id": team_row.id,
+            "village_id": getattr(team_row, "village_id", None),
             "name": team_row.name,
             "description": team_row.description,
             "created_at": team_row.created_at.isoformat(),
@@ -201,6 +198,7 @@ async def get_team(team_id: int):
 
         return {
             "id": team_row.id,
+            "village_id": getattr(team_row, "village_id", None),
             "name": team_row.name,
             "description": team_row.description,
             "members": member_data,

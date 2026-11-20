@@ -217,7 +217,13 @@ class DiscoveryService:
         if description is not None:
             job_config["_description"] = description
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
         # Create job
+        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
         now = datetime.now(UTC)
         resolved_interval = schedule_interval if schedule_interval is not None else 3600
         job_id = self.db.discovery_jobs.insert(
@@ -226,6 +232,7 @@ class DiscoveryService:
             enabled=enabled,
             config_json=job_config,
             schedule_interval=resolved_interval,
+            village_id=mint_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

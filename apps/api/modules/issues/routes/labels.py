@@ -18,6 +18,8 @@ from apps.api.models.dataclasses import (
 )
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.quart_validation import validated_request
+from apps.api.utils.tenant_scoping import get_current_tenant_id
+from apps.api.utils.village_id import mint_village_id
 
 bp = Blueprint("labels", __name__)
 
@@ -143,6 +145,8 @@ async def create_label(body: CreateLabelRequest):
         POST /api/v1/labels
     """
     db = current_app.db
+    tenant_id = get_current_tenant_id() or 1
+    redis_client = getattr(current_app, "redis_client", None)
 
     def create():
         # Check if label already exists
@@ -156,6 +160,7 @@ async def create_label(body: CreateLabelRequest):
             name=body.name,
             description=body.description,
             color=body.color,
+            village_id=mint_village_id(tenant_id, redis_client),
             created_at=now,
             updated_at=now,
         )

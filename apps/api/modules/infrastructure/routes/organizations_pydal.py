@@ -33,6 +33,7 @@ from apps.api.utils.pydal_helpers import (
 )
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,7 @@ async def list_organizations():
             db.organizations.slug,
             db.organizations.tenant_id,
             db.organizations.display_name,
+            db.organizations.village_id,
             orderby=db.organizations.name,
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
@@ -203,6 +205,10 @@ async def create_organization(body: CreateOrganizationRequest):
         if obj_blocked is not None:
             return obj_blocked
 
+        org_data["village_id"] = mint_village_id(
+            org_data["tenant_id"], getattr(current_app, "redis_client", None)
+        )
+
         org_id = await insert_record(db.organizations, **org_data)
         if not org_id:
             return log_error_and_respond(
@@ -244,6 +250,7 @@ async def create_organization(body: CreateOrganizationRequest):
                 settings=org_data.get("settings"),
                 tags=org_data.get("tags"),
                 metadata=org_data.get("metadata"),
+                village_id=org_data.get("village_id"),
             ), 201
 
         # Convert to DTO and return

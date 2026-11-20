@@ -35,6 +35,7 @@ class OrganizationDTO:
     settings: dict | None = None
     tags: list | None = None
     metadata: dict | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -96,6 +97,7 @@ class EntityDTO:
     last_seen_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -185,6 +187,7 @@ class IdentityDTO:
     is_service_account: bool = False
     metadata: dict | None = None
     last_seen_at: datetime | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -215,6 +218,7 @@ class IdentityAdminDTO:
     is_superuser: bool = False
     mfa_enabled: bool = False
     last_login_at: datetime | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -262,6 +266,7 @@ class IdentityGroupDTO:
     is_active: bool = True
     created_at: datetime = None
     updated_at: datetime = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -317,6 +322,7 @@ class ResourceRoleDTO:
     resource_id: int | None
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -411,6 +417,7 @@ class IssueLabelDTO:
     description: str | None
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -423,6 +430,7 @@ class IssueCommentDTO:
     content: str
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -469,6 +477,7 @@ class ProjectDTO:
     is_active: bool = True
     settings: dict | None = None
     created_by_id: int | None = None
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -511,6 +520,7 @@ class MilestoneDTO:
     closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -553,6 +563,7 @@ class MetadataFieldDTO:
     resource_id: int
     created_at: datetime
     updated_at: datetime
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -585,6 +596,7 @@ class APIKeyDTO:
     last_used_at: datetime | None = None
     expires_at: datetime | None = None
     is_active: bool = True
+    village_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -605,6 +617,7 @@ class CreateAPIKeyResponse:
     prefix: str
     expires_at: datetime | None
     created_at: datetime
+    village_id: str | None = None
 
 
 # ==================== Auth Requests/Responses ====================
@@ -695,6 +708,7 @@ class ServiceDTO:
     metadata: dict | None = None
     last_seen_at: datetime | None = None
     updated_at: datetime | None = None
+    village_id: str | None = None
 
 
 # ==================== Audit Logs ====================
@@ -725,7 +739,7 @@ class SBOMComponentDTO:
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None
     parent_type: str
     parent_id: int
     name: str
@@ -799,7 +813,7 @@ class SBOMScanDTO:
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None
     parent_type: str
     parent_id: int
     scan_type: str
@@ -839,7 +853,7 @@ class SBOMScanScheduleDTO:
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None
     parent_type: str
     parent_id: int
     schedule_cron: str
@@ -862,7 +876,7 @@ class VulnerabilityDTO:
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None
     cve_id: str
     aliases: list | None
     severity: str
@@ -910,7 +924,7 @@ class LicensePolicyDTO:
     id: int
     tenant_id: int
     organization_id: int | None
-    village_id: str
+    village_id: str | None
     name: str
     description: str | None
     allowed_licenses: list | None
@@ -955,7 +969,7 @@ class OnCallRotationDTO:
 
     id: int
     tenant_id: int
-    village_id: str
+    village_id: str | None
     name: str
     description: str | None
     is_active: bool

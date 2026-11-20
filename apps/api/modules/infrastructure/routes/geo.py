@@ -14,6 +14,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.logging_config import log_error_and_respond
+from apps.api.utils.village_id import mint_village_id
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,7 @@ def _serialize_region(row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "tenant_id": row.tenant_id,
+        "village_id": getattr(row, "village_id", None),
         "code": row.code,
         "name": row.name,
         "provider": row.provider,
@@ -159,6 +161,7 @@ def _serialize_location(row: Any) -> dict[str, Any]:
     return {
         "id": row.id,
         "tenant_id": row.tenant_id,
+        "village_id": getattr(row, "village_id", None),
         "organization_id": row.organization_id,
         "region_code": row.region_code,
         "name": row.name,
@@ -426,6 +429,7 @@ async def create_region():
 
         region_id = db.geo_regions.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id),
             code=code,
             name=name,
             provider=data.get("provider"),
@@ -675,6 +679,7 @@ async def create_location():
 
         location_id = db.geo_locations.insert(
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id),
             organization_id=data.get("organization_id"),
             region_code=data.get("region_code"),
             name=name,

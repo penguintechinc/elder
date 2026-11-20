@@ -21,6 +21,7 @@ class SecretValue:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     metadata: dict[str, Any] | None = None
+    village_id: str | None = None
 
     def mask(self) -> "SecretValue":
         """Return a masked version of this secret."""
@@ -38,6 +39,7 @@ class SecretValue:
             created_at=self.created_at,
             updated_at=self.updated_at,
             metadata=self.metadata,
+            village_id=self.village_id,
         )
 
 
@@ -52,6 +54,7 @@ class SecretMetadata:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     metadata: dict[str, Any] | None = None
+    village_id: str | None = None
 
 
 class SecretProviderClient(ABC):

@@ -36,6 +36,7 @@ class LabelDTO(ImmutableModel):
     color: str
     description: str | None = None
     created_at: datetime
+    village_id: str | None = None
 
 
 class CreateLabelRequest(RequestModel):

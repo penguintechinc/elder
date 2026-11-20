@@ -162,7 +162,13 @@ class IAMService:
         if description is not None:
             provider_config["_description"] = description
 
+        from apps.api.utils.village_id import (
+            mint_village_id,
+            resolve_tenant_id_for_org,
+        )
+
         # Create provider (matching live iam_providers columns)
+        tenant_id = resolve_tenant_id_for_org(self.db, resolved_org_id)
         now = datetime.now(UTC)
         provider_id = self.db.iam_providers.insert(
             name=name,
@@ -170,6 +176,7 @@ class IAMService:
             organization_id=resolved_org_id,
             enabled=True,
             config_json=provider_config,
+            village_id=mint_village_id(tenant_id),
             created_at=now,
             updated_at=now,
         )

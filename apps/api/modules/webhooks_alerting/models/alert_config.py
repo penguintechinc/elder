@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import JSON, Column, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class AlertDestinationType(enum.Enum):
@@ -20,7 +20,7 @@ class AlertDestinationType(enum.Enum):
     SLACK = "slack"
 
 
-class AlertConfiguration(Base, IDMixin, TimestampMixin):
+class AlertConfiguration(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Per-organization alert configuration.
 

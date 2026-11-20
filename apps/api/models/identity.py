@@ -18,7 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, relationship
 
-from apps.api.models.base import Base, IDMixin, TimestampMixin
+from apps.api.models.base import Base, IDMixin, TimestampMixin, VillageIDMixin
 
 
 class IdentityType(enum.Enum):
@@ -220,7 +220,7 @@ class Identity(Base, IDMixin, TimestampMixin):
         )
 
 
-class IdentityGroup(Base, IDMixin, TimestampMixin):
+class IdentityGroup(Base, IDMixin, VillageIDMixin, TimestampMixin):
     """
     Identity group model for teams and organizational groups.
 

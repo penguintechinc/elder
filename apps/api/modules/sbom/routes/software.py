@@ -156,7 +156,11 @@ async def create_software(body: CreateSoftwareRequest):
                 "Purchasing POC identity", body.purchasing_poc_id
             )
 
+    redis_client = getattr(current_app, "redis_client", None)
+
     def create():
+        from apps.api.utils.village_id import mint_village_id
+
         _ensure_software_columns(db)
         now = datetime.now(UTC)
         software_id = db.software.insert(
@@ -164,6 +168,7 @@ async def create_software(body: CreateSoftwareRequest):
             description=body.description,
             organization_id=body.organization_id,
             tenant_id=tenant_id,
+            village_id=mint_village_id(tenant_id, redis_client),
             purchasing_poc_id=body.purchasing_poc_id,
             license_url=body.license_url,
             access_url=body.access_url,

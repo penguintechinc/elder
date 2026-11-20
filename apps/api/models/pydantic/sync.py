@@ -45,6 +45,7 @@ class SyncConfigResponse(ImmutableModel):
     last_sync_at: datetime | None = None
     last_batch_sync_at: datetime | None = None
     config_json: dict[str, Any] | None = None
+    village_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -66,6 +67,7 @@ class SyncConfigResponse(ImmutableModel):
             last_sync_at=d.get("last_sync_at"),
             last_batch_sync_at=d.get("last_batch_sync_at"),
             config_json=redact_config_json(d.get("config_json")),
+            village_id=d.get("village_id"),
             created_at=d.get("created_at"),
             updated_at=d.get("updated_at"),
         )
