@@ -277,6 +277,12 @@ api:
     LOG_LEVEL: INFO
     SYSLOG_ENABLED: "false"
 
+    # Rate Limiting (set RATELIMIT_ENABLED: "false" when rate limiting is handled at the edge, e.g. Envoy/Cloudflare)
+    RATELIMIT_ENABLED: "true"
+    RATELIMIT_DEFAULT: "100/minute"
+    RATELIMIT_PLATFORM_DEFAULT: "2000/minute"
+    RATELIMIT_ENDPOINT_OVERRIDES: "{}"
+
     # Metrics
     METRICS_ENABLED: "true"
   resources:
