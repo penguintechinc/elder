@@ -30,7 +30,10 @@ import jwt
 import pytest
 import pytest_asyncio
 import requests
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from quart import current_app
 
 from apps.api.models.pydantic.idp import IdPConfigResponse, UpdateIdPConfigRequest
@@ -41,6 +44,25 @@ from apps.api.services.sso.idp_access import (
     IdPForbiddenError,
     IdPNotFoundError,
 )
+
+
+def _make_test_pem_cert(common_name: str) -> str:
+    """Generate a valid, non-expired self-signed X.509 PEM cert for CRUD tests."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    now = datetime.now(UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - timedelta(days=1))
+        .not_valid_after(now + timedelta(days=365))
+        .sign(key, hashes.SHA256())
+    )
+    return cert.public_bytes(serialization.Encoding.PEM).decode("utf-8")
+
 
 SECRET_B = "SECRET-B-oidc-client-secret"
 SECRET_G = "SECRET-G-oidc-client-secret"
@@ -524,25 +546,27 @@ class TestUpdateIdpConfig:
     async def test_own_tenant_saml_update_returns_certificate(
         self, async_client, world
     ):
+        rotated_cert = _make_test_pem_cert("cert-a-rotated.example.test")
         resp = await async_client.put(
             f"/api/v1/sso/idp/{world.a_saml}",
-            json={"certificate": "CERT-A-rotated"},
+            json={"certificate": rotated_cert},
             headers=world.auth("a_admin"),
         )
         assert resp.status_code == 200
-        assert (await resp.get_json())["certificate"] == "CERT-A-rotated"
+        assert (await resp.get_json())["certificate"] == rotated_cert
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "which,field_name,value",
+        "which,field_name,cn",
         [
-            ("b_saml", "certificate", "CERT-B-by-global-admin"),
-            ("g_saml", "certificate", "CERT-G-by-global-admin"),
+            ("b_saml", "certificate", "cert-b-by-global-admin.example.test"),
+            ("g_saml", "certificate", "cert-g-by-global-admin.example.test"),
         ],
     )
     async def test_global_admin_can_update_any_config(
-        self, app, async_client, world, which, field_name, value
+        self, app, async_client, world, which, field_name, cn
     ):
+        value = _make_test_pem_cert(cn)
         config_id = getattr(world, which)
         resp = await async_client.put(
             f"/api/v1/sso/idp/{config_id}",

@@ -18,14 +18,17 @@ into a full service outage (see finding #5).
 from __future__ import annotations
 
 import asyncio
+import functools
+import inspect
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from penguin_limiter.algorithms.sliding_window import SlidingWindow
 from penguin_limiter.config import RateLimitConfig
 from penguin_limiter.ip import should_rate_limit
 from penguin_limiter.storage.memory import MemoryStorage
-from quart import Quart, Response, g, jsonify, request
+from quart import Quart, Response, current_app, g, jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,85 @@ class RequestRateLimiter:
         return result.allowed, headers
 
 
+def _resolve_storage(app: Quart) -> tuple[Any, str]:
+    """Return ``(storage, backend_name)`` preferring the app's Redis client."""
+    redis_client: Any = getattr(app, "redis_client", None)
+    if redis_client is not None:
+        from penguin_limiter.storage.redis_store import RedisStorage
+
+        return RedisStorage(redis_client, key_prefix="elder_rl"), "redis"
+    return MemoryStorage(), "memory"
+
+
+def rate_limit(
+    spec: str,
+    *,
+    key_prefix: str = "elder_route",
+    config_key: str | None = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Per-route async-safe rate-limit decorator backed by penguin-limiter.
+
+    Enforces a tighter per-endpoint sliding-window limit on top of the
+    app-wide limiter (e.g. unauthenticated SAML login initiation, gh-312).
+    Respects ``app.config["RATELIMIT_ENABLED"]`` and fails OPEN on storage
+    errors.
+    """
+
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        is_async = inspect.iscoroutinefunction(fn)
+
+        @functools.wraps(fn)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            if not current_app.config.get("RATELIMIT_ENABLED", True):
+                return await fn(*args, **kwargs) if is_async else fn(*args, **kwargs)
+
+            effective_spec = (
+                current_app.config.get(config_key, spec) if config_key else spec
+            )
+            route_limiters: dict[tuple[str, str], RequestRateLimiter] = (
+                current_app.extensions.setdefault("route_rate_limiters", {})
+            )
+            cache_key = (key_prefix, str(effective_spec))
+            limiter = route_limiters.get(cache_key)
+            if limiter is None:
+                app_limiter = current_app.extensions.get("rate_limiter")
+                if app_limiter is not None:
+                    storage = app_limiter._storage
+                else:
+                    storage, _ = _resolve_storage(current_app)
+                try:
+                    config = RateLimitConfig.from_string(
+                        str(effective_spec), key_prefix=key_prefix
+                    )
+                except ValueError:
+                    logger.warning(
+                        f"rate_limiter_invalid_spec spec={effective_spec!r}; "
+                        f"using {spec}"
+                    )
+                    config = RateLimitConfig.from_string(spec, key_prefix=key_prefix)
+                limiter = RequestRateLimiter(config, storage)
+                route_limiters[cache_key] = limiter
+
+            allowed, headers = await limiter.check()
+            if not allowed:
+                response = jsonify(
+                    {"error": "Rate Limit Exceeded", "message": "Too many requests"}
+                )
+                response.status_code = 429
+                for header_key, header_val in headers.items():
+                    response.headers[header_key] = header_val
+                return response
+
+            if headers:
+                setattr(g, _HEADERS_G_KEY, headers)
+
+            return await fn(*args, **kwargs) if is_async else fn(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def init_rate_limiter(app: Quart) -> RequestRateLimiter | None:
     """Instantiate the limiter and wire it into `app`'s request lifecycle.
 
@@ -103,15 +185,7 @@ def init_rate_limiter(app: Quart) -> RequestRateLimiter | None:
 
     spec = app.config.get("RATELIMIT_DEFAULT", "100/minute")
 
-    storage: Any = getattr(app, "redis_client", None)
-    if storage is not None:
-        from penguin_limiter.storage.redis_store import RedisStorage
-
-        storage = RedisStorage(storage, key_prefix="elder_rl")
-        backend_name = "redis"
-    else:
-        storage = MemoryStorage()
-        backend_name = "memory"
+    storage, backend_name = _resolve_storage(app)
 
     try:
         config = RateLimitConfig.from_string(spec, key_prefix="elder")

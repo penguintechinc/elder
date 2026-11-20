@@ -50,16 +50,25 @@ class IdPTenantNotFoundError(IdPAccessError):
         self.tenant_id = tenant_id
 
 
-class IdPValidationError(IdPAccessError):
+class IdPValidationError(IdPAccessError, ValueError):
     """Domain-level validation failure on an IdP configuration field (400)."""
 
     def __init__(
-        self, field: str, message: str, error_type: str = "value_error"
+        self,
+        field: str,
+        message: str | None = None,
+        error_type: str = "value_error",
     ) -> None:
         """Record the failing field name and static error message (no user values)."""
-        super().__init__(message)
-        self.field = field
-        self.message = message
+        if message is None:
+            resolved_field = "configuration"
+            resolved_message = field
+        else:
+            resolved_field = field
+            resolved_message = message
+        super().__init__(resolved_message)
+        self.field = resolved_field
+        self.message = resolved_message
         self.error_type = error_type
 
 
