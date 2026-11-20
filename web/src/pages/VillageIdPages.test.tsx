@@ -394,6 +394,13 @@ describe("VillageIdBadge & ?highlight= support across infra/security pages", () 
     expect(
       container.querySelector('#ai-resource-501[data-highlighted="true"]'),
     ).not.toBeNull();
+
+    // Closing detail modal and switching to Providers tab must not snap back
+    fireEvent.click(screen.getByText("Close"));
+    fireEvent.click(screen.getByRole("button", { name: "Providers" }));
+    await waitFor(() => {
+      expect(screen.getByText(/AI Providers \(/)).toBeTruthy();
+    });
   });
 
   it("Secrets renders VillageIdBadge on provider cards & secret list modal and highlights on ?highlight=", async () => {
@@ -499,6 +506,12 @@ describe("VillageIdBadge & ?highlight= support across infra/security pages", () 
     expect(
       container.querySelector('#outbound-webhook-902[data-highlighted="true"]'),
     ).not.toBeNull();
+
+    // Switching back to Inbound tab must not snap back to Outbound
+    fireEvent.click(screen.getByText("Inbound (Receiving)"));
+    await waitFor(() => {
+      expect(screen.getByText("Create Inbound Webhook")).toBeTruthy();
+    });
   });
 
   it("Vulnerabilities, OnCallRotations, Dependencies, Keys, Certificates, Backups, LicensePolicies, and Integrations render VillageIdBadge and highlight cleanly", async () => {

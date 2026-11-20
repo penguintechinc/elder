@@ -442,7 +442,7 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
   );
 
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightId || appliedHighlightRef.current === highlightId) return;
     const match =
       resources.find(
         (r) => String(r.id) === highlightId || r.village_id === highlightId,
@@ -451,16 +451,15 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
         (r) => String(r.id) === highlightId || r.village_id === highlightId,
       );
     if (!match) return;
-    if (activeType === "providers") {
-      setActiveType("");
-    }
-    if (appliedHighlightRef.current !== highlightId) {
-      appliedHighlightRef.current = highlightId;
-      setViewingResource(match);
-    }
-    const el = document.getElementById(`ai-resource-${match.id}`);
-    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-  }, [highlightId, resources, allResources, activeType]);
+    appliedHighlightRef.current = highlightId;
+    setActiveType((prev) => (prev === "providers" ? "" : prev));
+    setViewingResource(match);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`ai-resource-${match.id}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [highlightId, resources, allResources]);
 
   const providerOptions = useMemo(() => {
     const set = new Set<string>(COMMON_PROVIDERS);

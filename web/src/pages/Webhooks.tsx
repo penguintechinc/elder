@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Link, useInRouterContext, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -287,6 +287,7 @@ function WebhooksContent({ searchParams }: { searchParams: URLSearchParams }) {
   } | null>(null);
   const [eventsWebhook, setEventsWebhook] =
     useState<InboundWebhookConfig | null>(null);
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: profile } = useQuery({
@@ -313,7 +314,7 @@ function WebhooksContent({ searchParams }: { searchParams: URLSearchParams }) {
   });
 
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightId || appliedHighlightRef.current === highlightId) return;
     const inboundList = inboundData?.inbound_webhooks || [];
     const outboundList = data?.webhooks || [];
     const inboundMatch = inboundList.find(
@@ -322,18 +323,38 @@ function WebhooksContent({ searchParams }: { searchParams: URLSearchParams }) {
     const outboundMatch = outboundList.find(
       (w) => String(w.id) === highlightId || w.village_id === highlightId,
     );
-    if (inboundMatch) {
-      if (activeTab !== "inbound") setActiveTab("inbound");
+    const preferOutbound = searchParams.get("tab") === "outbound";
+    const target =
+      preferOutbound && outboundMatch
+        ? {
+            tab: "outbound" as const,
+            id: `outbound-webhook-${outboundMatch.id}`,
+          }
+        : inboundMatch
+          ? {
+              tab: "inbound" as const,
+              id: `inbound-webhook-${inboundMatch.id}`,
+            }
+          : outboundMatch
+            ? {
+                tab: "outbound" as const,
+                id: `outbound-webhook-${outboundMatch.id}`,
+              }
+            : null;
+    if (!target) return;
+    appliedHighlightRef.current = highlightId;
+    setActiveTab(target.tab);
+    requestAnimationFrame(() => {
       document
-        .getElementById(`inbound-webhook-${inboundMatch.id}`)
+        .getElementById(target.id)
         ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    } else if (outboundMatch) {
-      if (activeTab !== "outbound") setActiveTab("outbound");
-      document
-        .getElementById(`outbound-webhook-${outboundMatch.id}`)
-        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-    }
-  }, [highlightId, inboundData?.inbound_webhooks, data?.webhooks, activeTab]);
+    });
+  }, [
+    highlightId,
+    searchParams,
+    inboundData?.inbound_webhooks,
+    data?.webhooks,
+  ]);
 
   const testMutation = useMutation({
     mutationFn: (id: number) => api.testWebhook(id),
