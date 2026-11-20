@@ -18,7 +18,7 @@ from apps.api.auth.jwt_handler import (
 def _mint_worker_token(
     app,
     *,
-    sub: str = "svc-scanning",
+    sub: str = "svc-scanner",
     token_type: str = "service_worker",
     tenant: str | int | bool | None = "system",
     scope: list[str] | str | None = None,
@@ -113,17 +113,17 @@ class TestVerifyServiceWorkerToken:
     """Direct validation of ``service_worker`` JWT claims in ``verify_token``."""
 
     @pytest.mark.asyncio
-    async def test_valid_svc_scanning_system_token(self, app):
+    async def test_valid_svc_scanner_system_token(self, app):
         async with app.app_context():
             token = _mint_worker_token(
                 app,
-                sub="svc-scanning",
+                sub="svc-scanner",
                 tenant="system",
                 scope=["discovery:read", "sbom:write", "vulnerabilities:write"],
             )
             payload = verify_token(token)
             assert payload is not None
-            assert payload["sub"] == "svc-scanning"
+            assert payload["sub"] == "svc-scanner"
             assert payload["type"] == "service_worker"
             assert payload["tenant"] == "system"
             assert payload["roles"] == ["service_worker"]
@@ -184,7 +184,7 @@ class TestVerifyServiceWorkerToken:
             empty = _mint_worker_token(app, scope=[])
             wildcard = _mint_worker_token(app, scope=["*"])
             other_service_scope = _mint_worker_token(
-                app, sub="svc-scanning", scope=["entities:write"]
+                app, sub="svc-scanner", scope=["entities:write"]
             )
             other_service_vuln = _mint_worker_token(
                 app, sub="svc-integrations", scope=["vulnerabilities:write"]
@@ -210,7 +210,7 @@ class TestVerifyServiceWorkerToken:
             user = get_current_user()
             assert isinstance(user, ServiceWorkerIdentity)
             assert user.id == 0
-            assert user.username == "svc-scanning"
+            assert user.username == "svc-scanner"
             assert user.tenant_id is None
             assert user.portal_role == "service_worker"
             assert user.token_type == "service_worker"
@@ -258,7 +258,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
         job_ignored = _create_discovery_job(db, org_a, provider="aws")
         job_inactive = _create_discovery_job(db, org_inactive, provider="network")
 
-        worker_token = _mint_worker_token(app, sub="svc-scanning", tenant="system")
+        worker_token = _mint_worker_token(app, sub="svc-scanner", tenant="system")
         headers = {"Authorization": f"Bearer {worker_token}"}
 
         resp = await async_client.get("/api/v1/discovery/jobs/pending", headers=headers)
@@ -346,7 +346,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
         )
         db.commit()
 
-        worker_token = _mint_worker_token(app, sub="svc-scanning", tenant="system")
+        worker_token = _mint_worker_token(app, sub="svc-scanner", tenant="system")
         headers = {"Authorization": f"Bearer {worker_token}"}
 
         resp = await async_client.get("/api/v1/sbom/scans/pending", headers=headers)
@@ -417,7 +417,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
         )
         db.commit()
 
-        worker_token = _mint_worker_token(app, sub="svc-scanning", tenant="system")
+        worker_token = _mint_worker_token(app, sub="svc-scanner", tenant="system")
         headers = {"Authorization": f"Bearer {worker_token}"}
 
         due_resp = await async_client.get("/api/v1/sbom/schedules/due", headers=headers)
@@ -452,7 +452,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
 
     @pytest.mark.asyncio
     @patch("apps.api.services.sbom.vulnerability.nvd_sync.NVDSyncService")
-    async def test_nvd_sync_allows_svc_scanning_rejects_integrations_and_observer(
+    async def test_nvd_sync_allows_svc_scanner_rejects_integrations_and_observer(
         self, mock_nvd_cls, async_client, app, generate_token
     ):
         mock_nvd = AsyncMock()
@@ -461,7 +461,7 @@ class TestServiceWorkerRoutesCrossTenantAndIsolation:
         )
         mock_nvd_cls.return_value = mock_nvd
 
-        scan_token = _mint_worker_token(app, sub="svc-scanning", tenant="system")
+        scan_token = _mint_worker_token(app, sub="svc-scanner", tenant="system")
         ok_resp = await async_client.post(
             "/api/v1/vulnerabilities/nvd-sync",
             headers={"Authorization": f"Bearer {scan_token}"},

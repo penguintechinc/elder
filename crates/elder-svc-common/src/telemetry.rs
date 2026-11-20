@@ -454,15 +454,15 @@ mod tests {
 
     #[test]
     fn parses_telemetry_env_defaults_and_overrides() {
-        let default_cfg = TelemetryConfig::from_env_lookup("svc-scanning", lookup_from(&[]))
+        let default_cfg = TelemetryConfig::from_env_lookup("svc-scanner", lookup_from(&[]))
             .expect("default config");
-        assert_eq!(default_cfg.service_name, "svc-scanning");
+        assert_eq!(default_cfg.service_name, "svc-scanner");
         assert_eq!(default_cfg.otlp_endpoint, None);
         assert_eq!(default_cfg.protocol, OtlpProtocol::HttpProtobuf);
         assert!(default_cfg.json_logs);
 
         let http_cfg = TelemetryConfig::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             lookup_from(&[
                 ("OTEL_SERVICE_NAME", "custom-svc"),
                 (
@@ -479,7 +479,7 @@ mod tests {
         assert!(!http_cfg.json_logs);
 
         let grpc_inferred = TelemetryConfig::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             lookup_from(&[("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4317")]),
         )
         .expect("grpc inferred");
@@ -489,19 +489,19 @@ mod tests {
     #[test]
     fn rejects_invalid_protocol_or_log_format() {
         let bad_proto = TelemetryConfig::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             lookup_from(&[("OTEL_EXPORTER_OTLP_PROTOCOL", "soap")]),
         );
         assert!(matches!(bad_proto, Err(CommonError::Config(_))));
 
         let bad_log =
-            TelemetryConfig::from_env_lookup("svc-scanning", lookup_from(&[("LOG_FORMAT", "xml")]));
+            TelemetryConfig::from_env_lookup("svc-scanner", lookup_from(&[("LOG_FORMAT", "xml")]));
         assert!(matches!(bad_log, Err(CommonError::Config(_))));
     }
 
     #[tokio::test]
     async fn init_and_shutdown_without_collector_succeeds() {
-        let cfg = TelemetryConfig::from_env_lookup("svc-scanning", lookup_from(&[])).expect("cfg");
+        let cfg = TelemetryConfig::from_env_lookup("svc-scanner", lookup_from(&[])).expect("cfg");
         let guard = init(&cfg);
         let metrics = ServiceMetrics::new("test", "test");
         metrics.record_run(true, 0.01);

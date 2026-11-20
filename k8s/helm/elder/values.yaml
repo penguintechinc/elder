@@ -36,8 +36,8 @@ modules:
 
 # OpenTelemetry (Phase 0.5) — ungated/Free observability; all services export to SigNoz via OTLP.
 # Rendered into the elder-otel ConfigMap (OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL), consumed via
-# envFrom by the api, worker, svc-scanning, and svc-integrations workloads. OTEL_SERVICE_NAME is
-# set per-component (elder-api/elder-worker in Deployment, svc-scanning/svc-integrations in CronJob).
+# envFrom by the hub-api, svc-worker, svc-scanner, and svc-integrations workloads. OTEL_SERVICE_NAME is
+# set per-component (hub-api/svc-worker in Deployment, svc-scanner/svc-integrations in CronJob).
 otel:
   enabled: true
   endpoint: "http://signoz-otel-collector:4318"
@@ -141,10 +141,10 @@ redis:
         - ALL
 
 # Elder Web UI
-web:
+hub-webui:
   enabled: true
   image:
-    repository: elder-web
+    repository: elder/hub-webui
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -168,7 +168,7 @@ web:
       cpu: "500m"
   healthcheck:
     enabled: true
-    # readiness path: proxied through nginx to elder-api's /healthz (see
+    # readiness path: proxied through nginx to hub-api's /healthz (see
     # web/nginx.conf `location /healthz`), so readiness correctly reflects
     # the API dependency's availability and pulls this pod out of the
     # Service when the API is down.
@@ -204,10 +204,10 @@ web:
         - ALL
 
 # Elder Flask API
-api:
+hub-api:
   enabled: true
   image:
-    repository: elder-api
+    repository: elder/hub-api
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -334,7 +334,7 @@ api:
         - ALL
 
 # Scanning Service (Rust data-plane CronJob)
-svc-scanning:
+svc-scanner:
   enabled: true
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
@@ -343,11 +343,11 @@ svc-scanning:
   activeDeadlineSeconds: 300
   ttlSecondsAfterFinished: 600
   image:
-    repository: elder-svc-scanning
+    repository: elder/svc-scanner
     tag: latest
     pullPolicy: IfNotPresent
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     SCREENSHOT_DIR: "/tmp/screenshots"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
@@ -367,11 +367,9 @@ svc-scanning:
     sizeLimit: "1Gi"
   tmpStorage:
     sizeLimit: "512Mi"
-  # ROOT CAPABILITY EXCEPTION (approved): masscan (services/svc-scanning/src/scanners/network.rs)
-  # requires CAP_NET_RAW for raw-socket SYN scanning. Process still runs as
-  # non-root UID 1000 with every other capability dropped and a read-only
-  # root filesystem. See services/svc-scanning/Dockerfile for the matching Docker-side
-  # documentation of this exception.
+  # Runs unprivileged under PodSecurity Admission `restricted` (capabilities
+  # dropped to ALL). Network discovery defaults to native async `tcp_connect`;
+  # raw-socket `masscan` SYN scans require opting in on a non-restricted namespace.
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -380,8 +378,6 @@ svc-scanning:
     capabilities:
       drop:
         - ALL
-      add:
-        - NET_RAW
 
 # Integrations Service (Rust data-plane CronJob)
 svc-integrations:
@@ -393,11 +389,11 @@ svc-integrations:
   activeDeadlineSeconds: 300
   ttlSecondsAfterFinished: 600
   image:
-    repository: elder-svc-integrations
+    repository: elder/svc-integrations
     tag: latest
     pullPolicy: IfNotPresent
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
     INTEGRATIONS_MAX_CONCURRENCY: "8"
@@ -421,10 +417,10 @@ svc-integrations:
         - ALL
 
 # Worker Service
-worker:
+svc-worker:
   enabled: true
   image:
-    repository: elder-worker
+    repository: elder/svc-worker
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 1
@@ -434,7 +430,7 @@ worker:
     targetPort: 28000
   env:
     # Elder API Configuration
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     ELDER_API_KEY: ""
 
     # Database (direct access for discovery jobs)
@@ -534,10 +530,10 @@ worker:
 # sandbox (see apps/flows_invoker/sandbox.py). No HTTP port; health is
 # checked via a native Python exec probe. Deliberately network-isolated —
 # see templates/networkpolicy-flows-invoker.yaml.
-flows-invoker:
+svc-flows-invoker:
   enabled: true
   image:
-    repository: elder-flows-invoker
+    repository: elder/svc-flows-invoker
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 1
@@ -593,11 +589,11 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-          service: web
+          service: hub-webui
           port: 8080
         - path: /api
           pathType: Prefix
-          service: api
+          service: hub-api
           port: 5000
   tls:
     - secretName: elder-tls

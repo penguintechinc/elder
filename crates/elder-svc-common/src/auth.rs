@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{CommonError, Result};
 
-/// Hard cap enforced by `elder-api` on `service_worker` JWT lifetime (seconds).
+/// Hard cap enforced by `hub-api` on `service_worker` JWT lifetime (seconds).
 pub const MAX_SERVICE_WORKER_TTL_SECONDS: i64 = 600;
 
 /// Default short-lived JWT lifetime minted per request/window (seconds).
@@ -18,9 +18,9 @@ pub const MIN_JWT_SECRET_BYTES: usize = 16;
 /// Claims included in every Elder `service_worker` JWT.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceWorkerClaims {
-    /// Service identity subject (e.g. `"svc-scanning"`, `"svc-integrations"`).
+    /// Service identity subject (e.g. `"svc-scanner"`, `"svc-integrations"`).
     pub sub: String,
-    /// Fixed token discriminator validated by `elder-api`.
+    /// Fixed token discriminator validated by `hub-api`.
     #[serde(rename = "type")]
     pub token_type: String,
     /// Target tenant (`"system"` for cross-tenant platform workers, or positive tenant id).
@@ -40,7 +40,7 @@ pub struct ServiceWorkerClaims {
 /// Configuration used when minting `service_worker` HS256 JWTs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServiceAuthConfig {
-    /// Subject (`"svc-scanning"` or `"svc-integrations"`).
+    /// Subject (`"svc-scanner"` or `"svc-integrations"`).
     pub sub: String,
     /// Tenant claim (`"system"` or positive numeric string).
     pub tenant: String,
@@ -256,7 +256,7 @@ mod tests {
     fn mints_hs256_jwt_with_expected_claims_and_ttl() {
         let key = "x".repeat(32);
         let provider = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["discovery:read".into(), "sbom:write".into()],
             lookup_from(&[("JWT_SECRET_KEY", &key)]),
         )
@@ -273,7 +273,7 @@ mod tests {
         )
         .expect("token should decode");
 
-        assert_eq!(decoded.claims.sub, "svc-scanning");
+        assert_eq!(decoded.claims.sub, "svc-scanner");
         assert_eq!(decoded.claims.token_type, "service_worker");
         assert_eq!(decoded.claims.tenant, "system");
         assert_eq!(decoded.claims.scope, vec!["discovery:read", "sbom:write"]);
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(decoded.claims.tenant, "42");
 
         let static_provider = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["discovery:read".into()],
             lookup_from(&[("ELDER_API_TOKEN", "static-runner-token")]),
         )
@@ -321,14 +321,14 @@ mod tests {
     #[test]
     fn fails_loudly_when_auth_missing_or_secret_too_short_or_ttl_exceeded() {
         let missing = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["discovery:read".into()],
             lookup_from(&[]),
         );
         assert!(matches!(missing, Err(CommonError::Auth(_))));
 
         let short_secret = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["discovery:read".into()],
             lookup_from(&[("JWT_SECRET_KEY", "too-short")]),
         );
@@ -336,7 +336,7 @@ mod tests {
 
         let key = "x".repeat(32);
         let over_ttl = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["discovery:read".into()],
             lookup_from(&[
                 ("JWT_SECRET_KEY", &key),

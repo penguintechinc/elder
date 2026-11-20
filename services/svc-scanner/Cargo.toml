@@ -1,12 +1,12 @@
 [package]
-name = "svc-scanning"
+name = "svc-scanner"
 version = "0.1.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 description = "Stateless Elder data-plane security scanner worker (discovery, banner, HTTP screenshot, SBOM, NVD sync)"
 
 [[bin]]
-name = "svc-scanning"
+name = "svc-scanner"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,12 +1,13 @@
-{{- $svc := index .Values "svc-scanning" -}}
+{{- $hubApi := index .Values "hub-api" -}}
+{{- $svc := index .Values "svc-scanner" -}}
 {{- if $svc.enabled }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "elder.fullname" . }}-svc-scanning
+  name: svc-scanner
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "svc-scanning" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "svc-scanner" .) | nindent 4 }}
 spec:
   schedule: {{ $svc.schedule | default "* * * * *" | quote }}
   concurrencyPolicy: {{ $svc.concurrencyPolicy | default "Forbid" }}
@@ -16,7 +17,7 @@ spec:
   jobTemplate:
     metadata:
       labels:
-        {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 8 }}
+        {{- include "elder.componentSelectorLabels" (list "svc-scanner" .) | nindent 8 }}
     spec:
       backoffLimit: {{ $svc.backoffLimit | default 1 }}
       activeDeadlineSeconds: {{ $svc.activeDeadlineSeconds | default 300 }}
@@ -24,7 +25,7 @@ spec:
       template:
         metadata:
           labels:
-            {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 12 }}
+            {{- include "elder.componentSelectorLabels" (list "svc-scanner" .) | nindent 12 }}
         spec:
           {{- with .Values.global.imagePullSecrets }}
           imagePullSecrets:
@@ -35,9 +36,9 @@ spec:
           securityContext:
             {{- toYaml .Values.podSecurityContext | nindent 12 }}
           containers:
-          - name: svc-scanning
-            image: {{ include "elder.image" (list "svc-scanning" .) }}
-            imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-scanning" .) }}
+          - name: svc-scanner
+            image: {{ include "elder.image" (list "svc-scanner" .) }}
+            imagePullPolicy: {{ include "elder.imagePullPolicy" (list "svc-scanner" .) }}
             args: ["run", "--once"]
             {{- if .Values.otel.enabled }}
             envFrom:
@@ -51,10 +52,10 @@ spec:
             {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_SERVICE_NAME
-              value: "svc-scanning"
+              value: "svc-scanner"
             {{- end }}
             - name: JWT_SECRET_KEY
-              value: {{ (.Values.api.env).JWT_SECRET_KEY | default ((.Values.api.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
             resources:
               {{- toYaml $svc.resources | nindent 14 }}
             volumeMounts:
@@ -94,7 +95,7 @@ spec:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ include "elder.fullname" . }}-svc-integrations
+  name: svc-integrations
   namespace: {{ .Values.namespace }}
   labels:
     {{- include "elder.componentLabels" (list "svc-integrations" .) | nindent 4 }}
@@ -145,7 +146,7 @@ spec:
               value: "svc-integrations"
             {{- end }}
             - name: JWT_SECRET_KEY
-              value: {{ (.Values.api.env).JWT_SECRET_KEY | default ((.Values.api.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
+              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
             resources:
               {{- toYaml $int.resources | nindent 14 }}
             volumeMounts:

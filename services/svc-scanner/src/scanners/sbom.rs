@@ -326,7 +326,7 @@ pub fn scan_workspace(root: &Path) -> (Vec<SbomComponent>, Vec<DiscoveredEndpoin
     (components, endpoints, files_scanned)
 }
 
-/// Completed or failed SBOM scan outcome submitted to `elder-api`.
+/// Completed or failed SBOM scan outcome submitted to `hub-api`.
 pub struct SbomScanOutcome<'a> {
     pub success: bool,
     pub components: &'a [SbomComponent],
@@ -337,7 +337,7 @@ pub struct SbomScanOutcome<'a> {
     pub endpoints: &'a [DiscoveredEndpoint],
 }
 
-/// Submit completed or failed SBOM scan results back to `elder-api`.
+/// Submit completed or failed SBOM scan results back to `hub-api`.
 pub async fn report_sbom_result(
     client: &ElderApiClient,
     scan_id: i64,
@@ -359,7 +359,7 @@ pub async fn report_sbom_result(
     Ok(())
 }
 
-/// Fetch due SBOM schedules from `elder-api`, create pending scans, and advance `next_run_at`.
+/// Fetch due SBOM schedules from `hub-api`, create pending scans, and advance `next_run_at`.
 pub async fn process_due_schedules(client: &ElderApiClient) -> Result<usize> {
     let due: Vec<DueSbomSchedule> = client.get_json("/api/v1/sbom/schedules/due").await?;
     let mut triggered = 0usize;
@@ -522,7 +522,7 @@ mod tests {
         });
 
         let auth = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["sbom:read".into(), "sbom:write".into()],
             |k| match k {
                 "JWT_SECRET_KEY" => Some("x".repeat(32)),

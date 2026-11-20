@@ -15,7 +15,7 @@ policies selecting a pod, so folding it into the broader same-namespace/
 DNS/datastore allows here would silently widen that deliberate lockdown.
 */}}
 {{- if .Values.networkPolicy.enabled }}
-{{- $notFlowsInvoker := list (dict "key" "app.kubernetes.io/component" "operator" "NotIn" "values" (list "flows-invoker")) }}
+{{- $notFlowsInvoker := list (dict "key" "app.kubernetes.io/component" "operator" "NotIn" "values" (list "svc-flows-invoker")) }}
 ---
 # Baseline: deny all ingress + egress for every pod in the namespace unless
 # a more specific allow policy below (or flows-invoker's own policy) grants it.
@@ -156,11 +156,11 @@ metadata:
   name: {{ include "elder.fullname" . }}-allow-ollama-egress
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "hub-api" .) | nindent 4 }}
 spec:
   endpointSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 6 }}
   egress:
     - toEndpoints:
         - matchLabels:
@@ -171,65 +171,65 @@ spec:
               protocol: TCP
 ---
 # Cross-namespace ingress: only the Cilium Gateway (httproute.yaml) reaches
-# web/api from outside this namespace, scoped to each component's own
+# hub-webui/hub-api from outside this namespace, scoped to each component's own
 # declared serving port(s) only (security.md: "External ingress scoped to
 # the pod's actual serving port(s) only").
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-web
+  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-hub-webui
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "web" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "hub-webui" .) | nindent 4 }}
 spec:
   endpointSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "web" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "hub-webui" .) | nindent 6 }}
   ingress:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.gatewayNamespace | default "gateway" }}
       toPorts:
         - ports:
-            - port: {{ .Values.web.service.targetPort | quote }}
+            - port: {{ (index .Values "hub-webui").service.targetPort | quote }}
               protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-api
+  name: {{ include "elder.fullname" . }}-allow-gateway-ingress-hub-api
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "hub-api" .) | nindent 4 }}
 spec:
   endpointSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 6 }}
   ingress:
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.gatewayNamespace | default "gateway" }}
       toPorts:
         - ports:
-            - port: {{ .Values.api.service.targetPort | quote }}
+            - port: {{ (index .Values "hub-api").service.targetPort | quote }}
               protocol: TCP
-            - port: {{ .Values.api.service.grpcPort | quote }}
+            - port: {{ (index .Values "hub-api").service.grpcPort | quote }}
               protocol: TCP
 ---
-# Egress strictly for svc-scanning CronJob pods: HTTPS git clone, HTTP
+# Egress strictly for svc-scanner CronJob pods: HTTPS git clone, HTTP
 # screenshots, and active network/banner probing while blocking cloud IMDS
 # metadata (169.254.169.254/32) and permitting zero external ingress.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-allow-svc-scanning-egress
+  name: {{ include "elder.fullname" . }}-allow-svc-scanner-egress
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "svc-scanning" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "svc-scanner" .) | nindent 4 }}
 spec:
   endpointSelector:
     matchLabels:
-      {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 6 }}
+      {{- include "elder.componentSelectorLabels" (list "svc-scanner" .) | nindent 6 }}
   egress:
     - toCIDRSet:
         - cidr: 0.0.0.0/0

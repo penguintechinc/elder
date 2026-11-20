@@ -32,7 +32,7 @@ spec:
             pathType: {{ .pathType }}
             backend:
               service:
-                name: {{ include "elder.fullname" $ }}-{{ .service }}
+                name: {{ .service }}
                 port:
                   number: {{ .port }}
           {{- end }}

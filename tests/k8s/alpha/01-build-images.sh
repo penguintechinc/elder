@@ -28,9 +28,9 @@ if command -v docker &> /dev/null; then
             docker build -t "$PROJECT_NAME/$component:test" -f "$component/Dockerfile" .
         fi
     done
-    if [ -f "services/svc-scanning/Dockerfile" ]; then
-        echo "Building svc-scanning image..."
-        docker build -t "$PROJECT_NAME/svc-scanning:test" -f "services/svc-scanning/Dockerfile" .
+    if [ -f "services/svc-scanner/Dockerfile" ]; then
+        echo "Building svc-scanner image..."
+        docker build -t "$PROJECT_NAME/svc-scanner:test" -f "services/svc-scanner/Dockerfile" .
     fi
     if [ -f "services/svc-integrations/Dockerfile" ]; then
         echo "Building svc-integrations image..."

@@ -135,7 +135,7 @@ pub async fn run_http_screenshot_scan(
         .connect_timeout(timeout)
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::limited(5))
-        .user_agent("elder-svc-scanning/0.1")
+        .user_agent("elder-svc-scanner/0.1")
         .build()?;
 
     let sem = Arc::new(Semaphore::new(MAX_CONCURRENCY));

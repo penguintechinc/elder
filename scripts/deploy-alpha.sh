@@ -45,18 +45,18 @@ readonly REGISTRY="${REGISTRY:-localhost:32000}"
 # PROJECT_ROOT). All service Dockerfiles COPY paths relative to the repo root
 # (e.g. `COPY services/svc-scanning ...`), so all need repo root as build context.
 declare -A SERVICE_DOCKERFILE=(
-    ["api"]="apps/api/Dockerfile"
-    ["worker"]="apps/worker/Dockerfile"
-    ["svc-scanning"]="services/svc-scanning/Dockerfile"
+    ["hub-api"]="apps/api/Dockerfile"
+    ["svc-worker"]="apps/worker/Dockerfile"
+    ["svc-scanner"]="services/svc-scanner/Dockerfile"
     ["svc-integrations"]="services/svc-integrations/Dockerfile"
-    ["web"]="web/Dockerfile"
+    ["hub-webui"]="web/Dockerfile"
 )
 declare -A SERVICE_CONTEXT=(
-    ["api"]="."
-    ["worker"]="."
-    ["svc-scanning"]="."
+    ["hub-api"]="."
+    ["svc-worker"]="."
+    ["svc-scanner"]="."
     ["svc-integrations"]="."
-    ["web"]="."
+    ["hub-webui"]="."
 )
 
 APP_VERSION="$(cat "${PROJECT_ROOT}/.version" 2>/dev/null || echo "0.0.0.0")"
@@ -169,18 +169,18 @@ build_and_push() {
         return 0
     fi
 
-    local image_name="${REGISTRY}/${APP_NAME}-${service}:${tag}"
+    local image_name="${REGISTRY}/${APP_NAME}/${service}:${tag}"
 
     print_info "Building image: ${image_name}"
     local build_args=(--build-arg "APP_VERSION=${APP_VERSION}")
-    if [[ "${service}" == "web" ]]; then
+    if [[ "${service}" == "hub-webui" ]]; then
         build_args=(
             --build-arg "VITE_VERSION=${APP_VERSION}"
             --build-arg "VITE_BUILD_TIME=$(date +%s)"
             # Empty (relative) on purpose — nginx (web/nginx.conf) proxies
-            # /api/* same-origin to the elder-api Service inside the
+            # /api/* same-origin to the hub-api Service inside the
             # container, so the SPA never calls the API's NodePort (30091)
-            # directly. See k8s/helm/elder/alpha.yml web.buildArgs.VITE_API_URL
+            # directly. See k8s/helm/elder/alpha.yml hub-webui.buildArgs.VITE_API_URL
             # for the source of truth this must match. Setting this to an
             # absolute http://localhost:30091 URL again reintroduces the bug
             # where login only worked from a browser on the cluster host.
@@ -227,10 +227,10 @@ do_deploy() {
             --namespace "${NAMESPACE}" \
             --create-namespace \
             --values "${PROJECT_ROOT}/${VALUES_FILE}" \
-            --set "api.image.tag=${TAG}" \
-            --set "web.image.tag=${TAG}" \
-            --set "worker.image.tag=${TAG}" \
-            --set "svc-scanning.image.tag=${TAG}" \
+            --set "hub-api.image.tag=${TAG}" \
+            --set "hub-webui.image.tag=${TAG}" \
+            --set "svc-worker.image.tag=${TAG}" \
+            --set "svc-scanner.image.tag=${TAG}" \
             --set "svc-integrations.image.tag=${TAG}" \
             --dry-run --debug
         return 0
@@ -240,10 +240,10 @@ do_deploy() {
         --namespace "${NAMESPACE}" \
         --create-namespace \
         --values "${PROJECT_ROOT}/${VALUES_FILE}" \
-        --set "api.image.tag=${TAG}" \
-        --set "web.image.tag=${TAG}" \
-        --set "worker.image.tag=${TAG}" \
-        --set "svc-scanning.image.tag=${TAG}" \
+        --set "hub-api.image.tag=${TAG}" \
+        --set "hub-webui.image.tag=${TAG}" \
+        --set "svc-worker.image.tag=${TAG}" \
+        --set "svc-scanner.image.tag=${TAG}" \
         --set "svc-integrations.image.tag=${TAG}" \
         --force-conflicts \
         --wait --timeout 300s; then
@@ -353,11 +353,11 @@ ENVIRONMENT:
     REGISTRY:       ${REGISTRY}
 
 SERVICES:
-    api              (apps/api, build context: repo root)
-    worker           (apps/worker, build context: repo root)
-    svc-scanning     (services/svc-scanning, build context: repo root)
+    hub-api          (apps/api, build context: repo root)
+    svc-worker       (apps/worker, build context: repo root)
+    svc-scanner      (services/svc-scanner, build context: repo root)
     svc-integrations (services/svc-integrations, build context: repo root)
-    web              (web, build context: repo root)
+    hub-webui        (web, build context: repo root)
 
 EXAMPLES:
     # Full build and deploy
@@ -367,7 +367,7 @@ EXAMPLES:
     $(basename "$0") --skip-build
 
     # Build and deploy only one service
-    $(basename "$0") --service api
+    $(basename "$0") --service hub-api
 
     # Preview what would be applied
     $(basename "$0") --skip-build --dry-run

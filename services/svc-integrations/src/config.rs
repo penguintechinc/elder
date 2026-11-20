@@ -33,7 +33,7 @@ pub fn svc_integrations_scopes() -> Vec<String> {
 /// Validated runtime settings for `svc-integrations`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntegrationsConfig {
-    /// Base URL for `elder-api` (e.g. `http://elder-api:5000`).
+    /// Base URL for `hub-api` (e.g. `http://hub-api:5000`).
     pub elder_api_url: String,
     /// Polling interval in seconds for `--loop` mode (`INTEGRATIONS_INTERVAL_SECONDS`, default 60).
     pub interval_seconds: u64,
@@ -137,10 +137,10 @@ mod tests {
     fn loads_defaults_and_custom_bounds() {
         let cfg = IntegrationsConfig::from_env_lookup(lookup_from(&[(
             "ELDER_API_URL",
-            "http://elder-api:5000",
+            "http://hub-api:5000",
         )]))
         .expect("default config");
-        assert_eq!(cfg.elder_api_url, "http://elder-api:5000");
+        assert_eq!(cfg.elder_api_url, "http://hub-api:5000");
         assert_eq!(cfg.interval_seconds, 60);
         assert_eq!(cfg.max_concurrency, 8);
         assert_eq!(cfg.job_timeout_seconds, 120);
@@ -162,16 +162,16 @@ mod tests {
         assert!(IntegrationsConfig::from_env_lookup(lookup_from(&[])).is_err());
         assert!(IntegrationsConfig::from_env_lookup(lookup_from(&[(
             "ELDER_API_URL",
-            "elder-api:5000"
+            "hub-api:5000"
         )]))
         .is_err());
         assert!(IntegrationsConfig::from_env_lookup(lookup_from(&[
-            ("ELDER_API_URL", "http://elder-api:5000"),
+            ("ELDER_API_URL", "http://hub-api:5000"),
             ("INTEGRATIONS_MAX_CONCURRENCY", "0"),
         ]))
         .is_err());
         assert!(IntegrationsConfig::from_env_lookup(lookup_from(&[
-            ("ELDER_API_URL", "http://elder-api:5000"),
+            ("ELDER_API_URL", "http://hub-api:5000"),
             ("INTEGRATIONS_JOB_TIMEOUT_SECONDS", "1"),
         ]))
         .is_err());

@@ -1,11 +1,11 @@
-{{- range $component := list "postgres" "redis" "web" "api" "worker" "flows-invoker" }}
+{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "svc-worker" "svc-flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  name: {{ include "elder.componentResourceName" (list $component $) }}
   namespace: {{ $.Values.namespace }}
   labels:
     {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
@@ -34,8 +34,8 @@ spec:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
-        {{- $hasModules := or (eq $component "api") (eq $component "worker") }}
-        {{- $isOtelComponent := or (eq $component "api") (eq $component "worker") }}
+        {{- $hasModules := or (eq $component "hub-api") (eq $component "svc-worker") }}
+        {{- $isOtelComponent := or (eq $component "hub-api") (eq $component "svc-worker") }}
         {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
         {{- if or $hasModules $hasOtel }}
         envFrom:
@@ -48,7 +48,7 @@ spec:
             name: elder-otel
         {{- end }}
         {{- end }}
-        {{- $needsPodName := or (eq $component "worker") (eq $component "flows-invoker") }}
+        {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
         {{- if or $componentConfig.env $hasOtel $needsPodName }}
         env:
         {{- range $key, $value := $componentConfig.env }}
@@ -57,7 +57,7 @@ spec:
         {{- end }}
         {{- if $hasOtel }}
         - name: OTEL_SERVICE_NAME
-          value: {{ printf "elder-%s" $component | quote }}
+          value: {{ $component | quote }}
         {{- end }}
         {{- if $needsPodName }}
         - name: POD_NAME
@@ -66,7 +66,7 @@ spec:
               fieldPath: metadata.name
         {{- end }}
         {{- end }}
-        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "web") (eq $component "api") (eq $component "worker") }}
+        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "hub-webui") (eq $component "hub-api") (eq $component "svc-worker") }}
         ports:
         {{- if eq $component "postgres" }}
         - name: postgres
@@ -76,18 +76,18 @@ spec:
         - name: redis
           containerPort: 6379
           protocol: TCP
-        {{- else if eq $component "web" }}
+        {{- else if eq $component "hub-webui" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
-        {{- else if eq $component "api" }}
+        {{- else if eq $component "hub-api" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
         - name: grpc
           containerPort: {{ $componentConfig.service.grpcPort }}
           protocol: TCP
-        {{- else if eq $component "worker" }}
+        {{- else if eq $component "svc-worker" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
@@ -95,17 +95,17 @@ spec:
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
-        {{- $isHttpProbe := or (eq $component "web") (eq $component "api") (eq $component "worker") }}
+        {{- $isHttpProbe := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "svc-worker") }}
         {{/* Release audit finding #6: liveness must be a lighter,
              dependency-free self-check while readiness gates traffic on
              dependency availability — previously identical for
-             web/api/worker.
+             hub-webui/hub-api/svc-worker.
              livenessPath falls back to the readiness path when a
-             component has no separate self-only endpoint (api/worker);
-             web overrides it to "/" (see values.yaml). `dig` safely
+             component has no separate self-only endpoint (hub-api/svc-worker);
+             hub-webui overrides it to "/" (see values.yaml). `dig` safely
              returns the readiness-equivalent default when no
              `healthcheck.liveness` override block is set, so
-             postgres/redis/flows-invoker render identically to before. */}}
+             postgres/redis/svc-flows-invoker render identically to before. */}}
         {{- $livenessPath := $componentConfig.healthcheck.livenessPath | default $componentConfig.healthcheck.path }}
         livenessProbe:
           {{- if $isHttpProbe }}
@@ -123,7 +123,7 @@ spec:
             command:
             - redis-cli
             - ping
-          {{- else if eq $component "flows-invoker" }}
+          {{- else if eq $component "svc-flows-invoker" }}
           # No HTTP server in this service (pure Redis Streams consumer) —
           # health is verified via a native Python exec probe.
           exec:
@@ -151,7 +151,7 @@ spec:
             command:
             - redis-cli
             - ping
-          {{- else if eq $component "flows-invoker" }}
+          {{- else if eq $component "svc-flows-invoker" }}
           exec:
             command:
             - python3
@@ -165,7 +165,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "svc-flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -179,21 +179,21 @@ spec:
           mountPath: /data
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "api" }}
+        {{- else if eq $component "hub-api" }}
         - name: instance-dir
           mountPath: /app/instance
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "worker" }}
+        {{- else if eq $component "svc-worker" }}
         - name: credentials
           mountPath: /var/run/secrets/elder
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "web" }}
+        {{- else if eq $component "hub-webui" }}
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "flows-invoker" }}
+        {{- else if eq $component "svc-flows-invoker" }}
         - name: workspace
           mountPath: /workspace
         - name: tmp
@@ -206,24 +206,24 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "worker") (eq $component "api") (eq $component "web") (eq $component "flows-invoker") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "svc-flows-invoker") }}
       volumes:
-      {{- if eq $component "api" }}
+      {{- if eq $component "hub-api" }}
       - name: instance-dir
         emptyDir: {}
       - name: tmp
         emptyDir: {}
-      {{- else if eq $component "worker" }}
+      {{- else if eq $component "svc-worker" }}
       - name: credentials
         secret:
-          secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
+          secretName: {{ ($componentConfig.credentialsSecret).name | default "svc-worker-credentials" }}
           optional: true
       - name: tmp
         emptyDir: {}
-      {{- else if eq $component "web" }}
+      {{- else if eq $component "hub-webui" }}
       - name: tmp
         emptyDir: {}
-      {{- else if eq $component "flows-invoker" }}
+      {{- else if eq $component "svc-flows-invoker" }}
       - name: workspace
         emptyDir: {}
       - name: tmp
@@ -260,7 +260,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "worker") }}
+{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "svc-worker") }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

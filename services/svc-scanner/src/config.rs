@@ -1,10 +1,10 @@
-//! Runtime configuration for `svc-scanning` parsed from environment variables.
+//! Runtime configuration for `svc-scanner` parsed from environment variables.
 
 use std::path::PathBuf;
 
 use elder_svc_common::{CommonError, Result, ServiceTokenProvider};
 
-/// Allowed scopes requested by `svc-scanning` (`elder-api` allowlist).
+/// Allowed scopes requested by `svc-scanner` (`hub-api` allowlist).
 pub const SVC_SCANNING_SCOPES: &[&str] = &[
     "discovery:read",
     "discovery:write",
@@ -13,10 +13,10 @@ pub const SVC_SCANNING_SCOPES: &[&str] = &[
     "vulnerabilities:write",
 ];
 
-/// Validated runtime settings for `svc-scanning`.
+/// Validated runtime settings for `svc-scanner`.
 #[derive(Debug, Clone)]
 pub struct ScanningConfig {
-    /// Base URL for `elder-api` (e.g. `http://elder-api:5000`).
+    /// Base URL for `hub-api` (e.g. `http://hub-api:5000`).
     pub elder_api_url: String,
     /// `masscan` packet transmit rate (packets/sec).
     pub masscan_rate: u32,
@@ -103,13 +103,13 @@ impl ScanningConfig {
         })
     }
 
-    /// Build a `ServiceTokenProvider` configured with `svc-scanning` scopes.
+    /// Build a `ServiceTokenProvider` configured with `svc-scanner` scopes.
     pub fn build_auth_provider(&self) -> Result<ServiceTokenProvider> {
         let scopes = SVC_SCANNING_SCOPES
             .iter()
             .map(|s| (*s).to_string())
             .collect();
-        ServiceTokenProvider::from_env("svc-scanning", scopes)
+        ServiceTokenProvider::from_env("svc-scanner", scopes)
     }
 }
 
@@ -160,14 +160,14 @@ mod tests {
     #[test]
     fn loads_defaults_and_custom_bounds() {
         let cfg = ScanningConfig::from_env_lookup(lookup_from(&[
-            ("ELDER_API_URL", "http://elder-api:5000"),
+            ("ELDER_API_URL", "http://hub-api:5000"),
             ("SCANNER_MASSCAN_RATE", "2500"),
             ("SCANNER_MAX_CONCURRENT_JOBS", "8"),
             ("NVD_SYNC_ENABLED", "false"),
         ]))
         .expect("valid config");
 
-        assert_eq!(cfg.elder_api_url, "http://elder-api:5000");
+        assert_eq!(cfg.elder_api_url, "http://hub-api:5000");
         assert_eq!(cfg.masscan_rate, 2500);
         assert_eq!(cfg.max_concurrent_jobs, 8);
         assert_eq!(cfg.job_timeout_secs, 300);
@@ -177,13 +177,12 @@ mod tests {
     #[test]
     fn rejects_missing_url_and_out_of_range_values() {
         assert!(ScanningConfig::from_env_lookup(lookup_from(&[])).is_err());
-        assert!(ScanningConfig::from_env_lookup(lookup_from(&[(
-            "ELDER_API_URL",
-            "elder-api:5000"
-        )]))
-        .is_err());
+        assert!(
+            ScanningConfig::from_env_lookup(lookup_from(&[("ELDER_API_URL", "hub-api:5000")]))
+                .is_err()
+        );
         assert!(ScanningConfig::from_env_lookup(lookup_from(&[
-            ("ELDER_API_URL", "http://elder-api:5000"),
+            ("ELDER_API_URL", "http://hub-api:5000"),
             ("SCANNER_MAX_CONCURRENT_JOBS", "0")
         ]))
         .is_err());

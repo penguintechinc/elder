@@ -200,10 +200,10 @@ class TestIntegrationsInternalAuth:
         user_id = _seed_identity(db, tid, org_id)
 
         wrong_sub_valid_scope = _service_worker_token(
-            app, sub="svc-scanning", scope=["discovery:read"]
+            app, sub="svc-scanner", scope=["discovery:read"]
         )
         wrong_sub_forged_scope = _service_worker_token(
-            app, sub="svc-scanning", scope=["integrations:sync"]
+            app, sub="svc-scanner", scope=["integrations:sync"]
         )
         wrong_tenant = _service_worker_token(app, tenant="1")
         wrong_type_user = _encode_jwt(

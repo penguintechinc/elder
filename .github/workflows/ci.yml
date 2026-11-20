@@ -319,7 +319,7 @@ jobs:
         platforms: linux/amd64
         push: false
         load: true
-        tags: elder-api:ci-test
+        tags: elder/hub-api:ci-test
         cache-from: type=gha,scope=api-amd64
         cache-to: type=gha,mode=max,scope=api-amd64
         build-args: |
@@ -327,7 +327,7 @@ jobs:
           GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
     - name: Smoke test — import check
-      run: docker run --rm elder-api:ci-test python3 -c "import apps.api.main; print('Import OK')"
+      run: docker run --rm elder/hub-api:ci-test python3 -c "import apps.api.main; print('Import OK')"
 
   rust-check:
     runs-on: ubuntu-24.04
@@ -366,21 +366,21 @@ jobs:
     - name: Docker build + healthcheck smoke (Rust services)
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
-    - name: Build svc-scanning image and run healthcheck
+    - name: Build svc-scanner image and run healthcheck
       run: |
-        docker build -f services/svc-scanning/Dockerfile -t elder-svc-scanning:ci-test .
+        docker build -f services/svc-scanner/Dockerfile -t elder/svc-scanner:ci-test .
         docker run --rm \
           -e ELDER_API_URL=http://localhost:5000 \
           -e JWT_SECRET_KEY=ci-test-secret-key-at-least-32-bytes \
-          elder-svc-scanning:ci-test healthcheck
+          elder/svc-scanner:ci-test healthcheck
 
     - name: Build svc-integrations image and run healthcheck
       run: |
-        docker build -f services/svc-integrations/Dockerfile -t elder-svc-integrations:ci-test .
+        docker build -f services/svc-integrations/Dockerfile -t elder/svc-integrations:ci-test .
         docker run --rm \
           -e ELDER_API_URL=http://localhost:5000 \
           -e JWT_SECRET_KEY=ci-test-secret-key-at-least-32-bytes \
-          elder-svc-integrations:ci-test healthcheck
+          elder/svc-integrations:ci-test healthcheck
 
   security:
     runs-on: ubuntu-latest
@@ -536,7 +536,7 @@ jobs:
         - Python Integration: ${R_INTEGRATION}
         - Web Build: ${R_WEB}
         - Web A11y Lint: ${R_A11Y}
-        - Rust (svc-scanning, svc-integrations): ${R_RUST}
+        - Rust (svc-scanner, svc-integrations): ${R_RUST}
         - Docker Smoke: ${R_DOCKER}
         - Security: ${R_SECURITY}
         - License: ${R_LICENSE}

@@ -1,4 +1,4 @@
-//! Active scanner engines invoked by `svc-scanning`.
+//! Active scanner engines invoked by `svc-scanner`.
 
 pub mod banner;
 pub mod http_screenshot;

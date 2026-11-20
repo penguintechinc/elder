@@ -7,7 +7,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY services services
 
-RUN cargo build --release --locked -p svc-scanning
+RUN cargo build --release --locked -p svc-scanner
 
 # Runtime stage
 FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
@@ -27,16 +27,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder --chown=1000:1000 /build/target/release/svc-scanning /app/svc-scanning
+COPY --from=builder --chown=1000:1000 /build/target/release/svc-scanner /app/svc-scanner
 
-# ROOT CAPABILITY EXCEPTION (approved): masscan requires CAP_NET_RAW for
-# raw-socket SYN scanning (granted via Kubernetes securityContext
-# capabilities.add: [NET_RAW]). The svc-scanning process runs as non-root
-# UID 1000 with read-only rootfs and all other capabilities dropped.
+# Runs unprivileged as UID 1000 with read-only rootfs and all capabilities
+# dropped (compatible with Kubernetes PodSecurity Admission `restricted`).
 USER 1000:1000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["/app/svc-scanning", "healthcheck"]
+    CMD ["/app/svc-scanner", "healthcheck"]
 
-ENTRYPOINT ["/app/svc-scanning"]
+ENTRYPOINT ["/app/svc-scanner"]
 CMD ["run", "--once"]

@@ -1,14 +1,14 @@
 {{/*
 Tetragon runtime-execution allowlist (enforced Sigkill, not observe-only) —
 release audit finding #3. Scoped per pod/service, not one global policy
-(devops-kubernetes.md Cluster Security Baseline) — api/worker run
-python3, web runs nginx (NOT node: web/Dockerfile's runtime stage is
+(devops-kubernetes.md Cluster Security Baseline) — hub-api/svc-worker run
+python3, hub-webui runs nginx (NOT node: web/Dockerfile's runtime stage is
 nginxinc/nginx-unprivileged; node only exists in the discarded npm-build
-stage), svc-scanning runs the compiled Rust binary plus masscan, git,
+stage), svc-scanner runs the compiled Rust binary plus git
 and Chromium headless binaries without any shell wrapper, and
 svc-integrations runs strictly the compiled Rust binary without any shell wrapper.
 
-flows-invoker is intentionally NOT covered: executing arbitrary
+svc-flows-invoker is intentionally NOT covered: executing arbitrary
 user-defined CI commands inside a process sandbox (apps/flows_invoker/
 sandbox.py) is its actual product feature, not a compromise indicator —
 this policy would break normal operation. Isolation there comes from the
@@ -28,7 +28,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: ["api", "worker"]
+        values: ["hub-api", "svc-worker"]
   kprobes:
     - call: "sys_execve"
       syscall: true
@@ -48,11 +48,11 @@ spec:
 apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-exec-allowlist-svc-scanning
+  name: {{ include "elder.fullname" . }}-exec-allowlist-svc-scanner
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/component: svc-scanning
+      app.kubernetes.io/component: svc-scanner
   kprobes:
     - call: "sys_execve"
       syscall: true
@@ -64,7 +64,7 @@ spec:
             - index: 0
               operator: "NotEquals"
               values:
-                - "/app/svc-scanning"
+                - "/app/svc-scanner"
                 - "/usr/bin/masscan"
                 - "/usr/bin/git"
                 - "/usr/lib/git-core/git"
@@ -101,11 +101,11 @@ spec:
 apiVersion: cilium.io/v1alpha1
 kind: TracingPolicy
 metadata:
-  name: {{ include "elder.fullname" . }}-exec-allowlist-web
+  name: {{ include "elder.fullname" . }}-exec-allowlist-hub-webui
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/component: web
+      app.kubernetes.io/component: hub-webui
   kprobes:
     - call: "sys_execve"
       syscall: true

@@ -1,4 +1,4 @@
-{{- range $component := list "postgres" "redis" "web" "api" "worker" }}
+{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "svc-worker" }}
 {{- $componentConfig := index $.Values $component }}
 {{- if $componentConfig.enabled }}
 {{- if $componentConfig.service }}
@@ -6,7 +6,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  name: {{ include "elder.componentResourceName" (list $component $) }}
   namespace: {{ $.Values.namespace }}
   labels:
     {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
@@ -23,7 +23,7 @@ spec:
     targetPort: 6379
     protocol: TCP
     name: redis
-  {{- else if eq $component "web" }}
+  {{- else if eq $component "hub-webui" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
@@ -31,7 +31,7 @@ spec:
     {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
     nodePort: {{ $componentConfig.service.nodePort }}
     {{- end }}
-  {{- else if eq $component "api" }}
+  {{- else if eq $component "hub-api" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
@@ -43,7 +43,7 @@ spec:
     targetPort: {{ $componentConfig.service.grpcPort }}
     protocol: TCP
     name: grpc
-  {{- else if eq $component "worker" }}
+  {{- else if eq $component "svc-worker" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
     protocol: TCP
@@ -55,15 +55,16 @@ spec:
 {{- end }}
 {{- end }}
 
-{{- if not .Values.api.service }}
+{{- $hubApi := index .Values "hub-api" -}}
+{{- if not $hubApi.service }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "elder.fullname" . }}-api
+  name: hub-api
   namespace: {{ .Values.namespace }}
   labels:
-    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+    {{- include "elder.componentLabels" (list "hub-api" .) | nindent 4 }}
 spec:
   type: ClusterIP
   ports:
@@ -76,5 +77,5 @@ spec:
     protocol: TCP
     name: grpc
   selector:
-    {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 4 }}
+    {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 4 }}
 {{- end }}

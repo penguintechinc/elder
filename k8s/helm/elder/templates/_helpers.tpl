@@ -80,17 +80,33 @@ app.kubernetes.io/component: {{ $component }}
 {{- end }}
 
 {{/*
+Resource name helper for components.
+Postgres and Redis keep the `<release>-postgres` / `<release>-redis` prefix so
+existing cluster PVCs and DATABASE_URL/REDIS_URL DNS names stay intact; app
+workloads use their exact standard service name (`hub-webui`, `hub-api`,
+`svc-worker`, `svc-scanner`, `svc-integrations`, `svc-flows-invoker`).
+*/}}
+{{- define "elder.componentResourceName" -}}
+{{- $component := index . 0 -}}
+{{- $context := index . 1 -}}
+{{- if or (eq $component "postgres") (eq $component "redis") -}}
+{{- printf "%s-%s" (include "elder.fullname" $context) $component | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $component | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Image name helper.
 global.imageRegistry only applies to the PenguinTech-built app images
-(web/api/svc-scanning/svc-integrations/worker/flows-invoker) — postgres and redis are external
-upstream images (pgvector/pgvector, redis) that must keep pulling from their
-own registry (docker.io) regardless of the local alpha registry override,
-otherwise setting global.imageRegistry: localhost:32000 breaks them.
+(hub-webui/hub-api/svc-scanner/svc-integrations/svc-worker/svc-flows-invoker) —
+postgres and redis are external upstream images (pgvector/pgvector, redis) that
+must keep pulling from their own registry (docker.io).
 */}}
 {{- define "elder.image" -}}
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
-{{- $isAppImage := or (eq $component "web") (eq $component "api") (eq $component "svc-scanning") (eq $component "svc-integrations") (eq $component "worker") (eq $component "flows-invoker") -}}
+{{- $isAppImage := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "svc-scanner") (eq $component "svc-integrations") (eq $component "svc-worker") (eq $component "svc-flows-invoker") -}}
 {{- $registry := "" -}}
 {{- if $isAppImage -}}
 {{- $registry = $context.Values.global.imageRegistry -}}

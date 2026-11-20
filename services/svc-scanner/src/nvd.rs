@@ -1,4 +1,4 @@
-//! Periodic NVD CVE enrichment sync trigger against `elder-api`.
+//! Periodic NVD CVE enrichment sync trigger against `hub-api`.
 
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ pub fn should_trigger_sync(
     now.signed_duration_since(prev) >= window
 }
 
-/// Query sync backlog from `elder-api` and trigger enrichment when needed.
+/// Query sync backlog from `hub-api` and trigger enrichment when needed.
 pub async fn maybe_trigger_nvd_sync(
     client: &ElderApiClient,
     last_sync_at: &mut Option<DateTime<Utc>>,
@@ -112,7 +112,7 @@ mod tests {
 
     fn test_client(base_url: String) -> ElderApiClient {
         let auth = ServiceTokenProvider::from_env_lookup(
-            "svc-scanning",
+            "svc-scanner",
             vec!["sbom:read".into(), "vulnerabilities:write".into()],
             |k| match k {
                 "JWT_SECRET_KEY" => Some("x".repeat(32)),

@@ -63,11 +63,11 @@ redis:
     storageClass: "longhorn"
 
 # Elder Web UI - 2 replicas for beta
-web:
+hub-webui:
   enabled: true
   replicaCount: 2
   image:
-    repository: ghcr.io/penguintechinc/elder-web
+    repository: ghcr.io/penguintechinc/elder/hub-webui
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   # Explicit here (matches the corrected base values.yaml default) — container
@@ -92,11 +92,11 @@ web:
     targetCPUUtilizationPercentage: 70
 
 # Elder Flask API - 2 replicas for beta
-api:
+hub-api:
   enabled: true
   replicaCount: 2
   image:
-    repository: ghcr.io/penguintechinc/elder-api
+    repository: ghcr.io/penguintechinc/elder/hub-api
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
@@ -126,16 +126,16 @@ api:
     targetCPUUtilizationPercentage: 70
 
 # Scanning Service (Rust CronJob)
-svc-scanning:
+svc-scanner:
   enabled: true
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: ghcr.io/penguintechinc/elder-svc-scanning
+    repository: ghcr.io/penguintechinc/elder/svc-scanner
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     SCREENSHOT_DIR: "/tmp/screenshots"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
@@ -156,11 +156,11 @@ svc-integrations:
   schedule: "* * * * *"
   concurrencyPolicy: Forbid
   image:
-    repository: ghcr.io/penguintechinc/elder-svc-integrations
+    repository: ghcr.io/penguintechinc/elder/svc-integrations
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
-    ELDER_API_URL: "http://elder-api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_FORMAT: "json"
     RUST_LOG: "info"
     INTEGRATIONS_MAX_CONCURRENCY: "8"
@@ -184,14 +184,15 @@ svc-integrations:
         - ALL
 
 # Worker Service - 2 replicas for beta
-worker:
+svc-worker:
   enabled: true
   replicaCount: 2
   image:
-    repository: ghcr.io/penguintechinc/elder-worker
+    repository: ghcr.io/penguintechinc/elder/svc-worker
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
+    ELDER_API_URL: "http://hub-api:5000"
     LOG_LEVEL: INFO
     LOG_FORMAT: json
     SYNC_ON_STARTUP: "true"
@@ -212,11 +213,11 @@ worker:
 # Flows Invoker Service - Single replica for beta (dedicated isolated consumer,
 # no HA fan-out needed at this stage — Redis consumer groups still parallelize
 # safely if replicaCount is raised later)
-flows-invoker:
+svc-flows-invoker:
   enabled: true
   replicaCount: 1
   image:
-    repository: ghcr.io/penguintechinc/elder-flows-invoker
+    repository: ghcr.io/penguintechinc/elder/svc-flows-invoker
     tag: 3.2.1.1776737340-beta
     pullPolicy: Always
   env:
@@ -251,11 +252,11 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-          service: web
+          service: hub-webui
           port: 8080
         - path: /api
           pathType: Prefix
-          service: api
+          service: hub-api
           port: 5000
   tls:
     - secretName: penguintech-cloud-wildcard-tls
