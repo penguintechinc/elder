@@ -261,7 +261,7 @@ export default function DataStores() {
   });
 
   const handleDelete = (id: number, name: string) => {
-    confirmDelete(name, () => deleteMutation.mutate(id), "data store");
+    confirmDelete(name, () => deleteMutation.mutate(id));
   };
 
   const regionOptions = useMemo(() => {
@@ -816,7 +816,6 @@ function DataLabelsTab({ labels, onFilterByLabel }: DataLabelsTabProps) {
                           confirmDelete(
                             lbl.name,
                             () => deleteLabelMutation.mutate(lbl.id),
-                            "data label",
                           )
                         }
                         className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
