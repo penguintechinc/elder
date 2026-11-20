@@ -60,33 +60,31 @@ async def list_participants(rotation_id: int):
 
         total = db(query).count()
         rows = db(query).select(
-            db.on_call_rotation_participants.ALL,
-            db.identities.username,
-            db.identities.email,
-            join=db.identities.on(
-                db.on_call_rotation_participants.identity_id == db.identities.id
-            ),
             orderby=db.on_call_rotation_participants.order_index,
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
+        ident_ids = [r.identity_id for r in rows]
+        identities_by_id = {}
+        if ident_ids:
+            for ident in db(db.identities.id.belongs(ident_ids)).select():
+                identities_by_id[ident.id] = ident
 
-        return total, rows
+        return total, rows, identities_by_id
 
-    total, rows = await run_in_threadpool(get_participants)
+    total, rows, identities_by_id = await run_in_threadpool(get_participants)
 
     pages = pagination.calculate_pages(total)
     items = []
 
-    for row in rows:
-        participant = row.on_call_rotation_participants
-        identity = row.identities
+    for participant in rows:
+        identity = identities_by_id.get(participant.identity_id)
         items.append(
             {
                 "id": participant.id,
                 "rotation_id": participant.rotation_id,
                 "identity_id": participant.identity_id,
-                "identity_name": identity.username,
-                "identity_email": identity.email,
+                "identity_name": identity.username if identity else None,
+                "identity_email": identity.email if identity else None,
                 "order_index": participant.order_index,
                 "is_active": participant.is_active,
                 "start_date": participant.start_date,

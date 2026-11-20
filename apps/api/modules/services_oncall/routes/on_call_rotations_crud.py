@@ -248,8 +248,18 @@ async def create_rotation():
                 "rotation_length_days and rotation_start_date required for weekly schedule",
                 400,
             )
+        raw_start = data["rotation_start_date"]
+        if isinstance(raw_start, str):
+            try:
+                parsed_start = datetime.date.fromisoformat(raw_start.strip()[:10])
+            except ValueError:
+                return ApiResponse.error(
+                    "rotation_start_date must be a valid ISO date (YYYY-MM-DD)", 400
+                )
+        else:
+            parsed_start = raw_start
         schedule_data["rotation_length_days"] = data["rotation_length_days"]
-        schedule_data["rotation_start_date"] = data["rotation_start_date"]
+        schedule_data["rotation_start_date"] = parsed_start
 
     elif schedule_type == "cron":
         if not data.get("schedule_cron"):
@@ -305,7 +315,7 @@ async def create_rotation():
                 (db.identities.tenant_id == tenant_id)
                 & (db.identities.organization_id == data["organization_id"])
                 & (db.identities.is_active == True)  # noqa: E712
-                & (db.identities.identity_type.belongs(["human", "HUMAN"]))
+                & (db.identities.identity_type == "human")
             ).select(orderby=db.identities.id)
             now = datetime.datetime.now(datetime.UTC)
             for idx, ident in enumerate(human_identities):
@@ -315,6 +325,7 @@ async def create_rotation():
                     order_index=idx,
                     is_active=True,
                     created_at=now,
+                    updated_at=now,
                 )
 
         db.commit()
@@ -363,27 +374,26 @@ async def get_rotation(rotation_id: int):
         # Get participants with identity info
         participant_rows = db(
             db.on_call_rotation_participants.rotation_id == rotation_id
-        ).select(
-            db.on_call_rotation_participants.ALL,
-            db.identities.username,
-            db.identities.email,
-            join=db.identities.on(
-                db.on_call_rotation_participants.identity_id == db.identities.id
-            ),
-            orderby=db.on_call_rotation_participants.order_index,
-        )
+        ).select(orderby=db.on_call_rotation_participants.order_index)
+
+        identity_ids = [
+            p.identity_id for p in participant_rows if p.identity_id is not None
+        ]
+        identities_by_id = {}
+        if identity_ids:
+            for ident in db(db.identities.id.belongs(identity_ids)).select():
+                identities_by_id[ident.id] = ident
 
         participants = []
-        for row in participant_rows:
-            participant = row.on_call_rotation_participants
-            identity = row.identities
+        for participant in participant_rows:
+            identity = identities_by_id.get(participant.identity_id)
             participants.append(
                 {
                     "id": participant.id,
                     "rotation_id": participant.rotation_id,
                     "identity_id": participant.identity_id,
-                    "identity_name": identity.username,
-                    "identity_email": identity.email,
+                    "identity_name": identity.username if identity else None,
+                    "identity_email": identity.email if identity else None,
                     "order_index": participant.order_index,
                     "is_active": participant.is_active,
                     "start_date": participant.start_date,
