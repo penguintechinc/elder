@@ -36,6 +36,7 @@ import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
 import AssigneePicker, { AssigneeValue } from "@/components/AssigneePicker";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 /** Convert snake_case/UPPERCASE status or priority to Title Case display format */
 function formatStatusLabel(value: string | null | undefined): string {
@@ -259,6 +260,12 @@ export default function Issues() {
                               <Tag className="w-3 h-3" />
                               {issue.labels.length} label(s)
                             </span>
+                          )}
+                          {issue.village_id && (
+                            <VillageIdBadge
+                              villageId={issue.village_id}
+                              compact
+                            />
                           )}
                         </div>
                       </div>

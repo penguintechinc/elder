@@ -3021,8 +3021,18 @@ class ApiClient {
   }
 
   // Village ID Resolution
-  async resolveVillageId(villageId: string) {
-    const response = await this.client.get(`/id/${villageId}`);
+  async resolveVillageId(villageId: string): Promise<{
+    village_id: string;
+    resource_type: string;
+    resource_id: number | string;
+    title?: string | null;
+    module?: string | null;
+    redirect_url: string;
+    short_link?: string;
+  }> {
+    const response = await this.client.get(
+      `/id/${encodeURIComponent(villageId)}`,
+    );
     return response.data;
   }
 

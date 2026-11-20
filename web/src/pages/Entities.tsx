@@ -120,10 +120,10 @@ export default function Entities() {
                     {entity.description}
                   </p>
                 )}
-                <div className="flex items-center justify-between text-xs text-slate-500 mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 mt-4">
                   <span>ID: {entity.id}</span>
                   {entity.village_id && (
-                    <VillageIdBadge villageId={entity.village_id} />
+                    <VillageIdBadge villageId={entity.village_id} compact />
                   )}
                 </div>
               </CardContent>

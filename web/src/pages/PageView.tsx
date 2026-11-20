@@ -2,6 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Edit2, Trash2, LinkIcon } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Backlink {
   source_module: string
@@ -136,10 +137,13 @@ export default function PageView() {
 
           {/* Metadata */}
           <div className="mt-6 space-y-2 text-sm text-slate-400">
-            <div className="flex gap-6">
+            <div className="flex flex-wrap items-center gap-6">
               <span>Created: {new Date(page.created_at).toLocaleDateString()}</span>
               {page.published_at && (
                 <span>Published: {new Date(page.published_at).toLocaleDateString()}</span>
+              )}
+              {page.village_id && (
+                <VillageIdBadge villageId={page.village_id} />
               )}
             </div>
           </div>

@@ -8,7 +8,6 @@ import {
   ArrowRight,
   Plus,
   X,
-  Copy,
   MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -18,6 +17,7 @@ import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { normalizeTags } from "@/lib/entityTags";
 
 interface MetadataField {
@@ -300,25 +300,8 @@ export default function EntityDetail() {
                     <dt className="text-sm font-medium text-slate-400">
                       Village ID
                     </dt>
-                    <dd className="mt-1 flex items-center gap-2">
-                      <a
-                        href={`/id/${entity.village_id}`}
-                        className="text-sm text-primary-400 hover:text-primary-300 font-mono"
-                      >
-                        {entity.village_id}
-                      </a>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(
-                            `${window.location.origin}/id/${entity.village_id}`,
-                          );
-                          toast.success("Village ID URL copied to clipboard");
-                        }}
-                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                        title="Copy shareable link"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                    <dd className="mt-1">
+                      <VillageIdBadge villageId={entity.village_id} />
                     </dd>
                   </div>
                 )}

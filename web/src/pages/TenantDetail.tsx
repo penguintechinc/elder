@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
-import { ArrowLeft, Building2, Users, Database, Shield, Edit, Trash2, Copy, Plus } from 'lucide-react'
+import { ArrowLeft, Building2, Users, Database, Shield, Edit, Trash2, Plus } from 'lucide-react'
 import api from '@/lib/api'
 import Button from '@/components/Button'
 import Input from '@/components/Input'
 import Card, { CardHeader, CardContent } from '@/components/Card'
 import CreateIdentityModal from '@/components/CreateIdentityModal'
+import VillageIdBadge from '@/components/VillageIdBadge'
 import type { PortalUser } from '@/types'
 
 interface ApiError {
@@ -236,23 +237,8 @@ export default function TenantDetail() {
             {tenant.village_id && (
               <div>
                 <dt className="text-sm font-medium text-slate-400">Village ID</dt>
-                <dd className="mt-1 flex items-center gap-2">
-                  <a
-                    href={`/id/${tenant.village_id}`}
-                    className="text-sm text-primary-400 hover:text-primary-300 font-mono"
-                  >
-                    {tenant.village_id}
-                  </a>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/id/${tenant.village_id}`)
-                      toast.success('Village ID URL copied to clipboard')
-                    }}
-                    className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                    title="Copy shareable link"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
+                <dd className="mt-1">
+                  <VillageIdBadge villageId={tenant.village_id} />
                 </dd>
               </div>
             )}

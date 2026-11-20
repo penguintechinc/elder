@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Trash2, MessageSquare, Tag, User, Link as LinkIcon,
-  Send, X, Plus, Copy, ListTree
+  Send, X, Plus, ListTree
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
@@ -15,6 +15,7 @@ import Card, { CardHeader, CardContent } from '@/components/Card'
 import Input from '@/components/Input'
 import Select from '@/components/Select'
 import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
+import VillageIdBadge from '@/components/VillageIdBadge'
 import { CreateIssueModal } from '@/pages/Issues'
 
 interface IssueComment {
@@ -375,23 +376,8 @@ export default function IssueDetail() {
               {issue.village_id && (
                 <div className="mt-4 pt-4 border-t border-slate-700">
                   <dt className="text-sm font-medium text-slate-400">Village ID</dt>
-                  <dd className="mt-1 flex items-center gap-2">
-                    <a
-                      href={`/id/${issue.village_id}`}
-                      className="text-sm text-primary-400 hover:text-primary-300 font-mono"
-                    >
-                      {issue.village_id}
-                    </a>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(`${window.location.origin}/id/${issue.village_id}`)
-                        toast.success('Village ID URL copied to clipboard')
-                      }}
-                      className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                      title="Copy shareable link"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
+                  <dd className="mt-1">
+                    <VillageIdBadge villageId={issue.village_id} />
                   </dd>
                 </div>
               )}

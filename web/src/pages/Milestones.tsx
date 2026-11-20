@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -21,6 +21,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { FormField } from "@/types/form";
 
 const MILESTONE_STATUSES = [
@@ -37,6 +38,7 @@ interface Milestone {
   project_id?: number;
   due_date?: string;
   created_at: string;
+  village_id?: string | null;
 }
 
 interface Project {
@@ -81,6 +83,9 @@ export default function Milestones() {
   const [viewingMilestone, setViewingMilestone] = useState<Milestone | null>(
     null,
   );
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const handledHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const {
@@ -115,6 +120,21 @@ export default function Milestones() {
     queryKey: ["organizations-all"],
     queryFn: () => api.getOrganizations({ per_page: 1000 }),
   });
+
+  // Honor ?highlight=<id> deep links (e.g. from /id/<villageId>)
+  useEffect(() => {
+    if (!highlightId || handledHighlightRef.current === highlightId) return;
+    const items: Milestone[] = data?.items || [];
+    const matched = items.find((m) => String(m.id) === highlightId);
+    if (!matched) return;
+    handledHighlightRef.current = highlightId;
+    setViewingMilestone(matched);
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`milestone-${matched.id}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [highlightId, data?.items]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteMilestone(id),
@@ -454,100 +474,115 @@ export default function Milestones() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((milestone: Milestone) => (
-            <Card
-              key={milestone.id}
-              className="cursor-pointer hover:border-slate-600 transition-colors"
-              onClick={() => setViewingMilestone(milestone)}
-            >
-              <CardContent>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Flag
-                      className={`w-5 h-5 flex-shrink-0 ${
-                        isOverdue(milestone.due_date, milestone.status)
-                          ? "text-red-400"
-                          : "text-primary-400"
-                      }`}
-                    />
-                    <h3 className="text-lg font-semibold text-white truncate">
-                      {milestone.title}
-                    </h3>
-                  </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      aria-label={`Edit ${milestone.title}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingMilestone(milestone);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Delete ${milestone.title}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(milestone.id, milestone.title);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {milestone.description && (
-                  <p className="text-sm text-slate-400 mb-3 line-clamp-2">
-                    {milestone.description}
-                  </p>
-                )}
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-xs px-2 py-1 rounded ${getStatusColor(milestone.status)}`}
-                    >
-                      {milestone.status}
-                    </span>
-                    {milestone.due_date && (
-                      <div
-                        className={`flex items-center gap-1 text-xs ${
+          {data?.items?.map((milestone: Milestone) => {
+            const isHighlighted = highlightId === String(milestone.id);
+            return (
+              <Card
+                key={milestone.id}
+                id={`milestone-${milestone.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={`cursor-pointer hover:border-slate-600 transition-colors ${
+                  isHighlighted
+                    ? "ring-2 ring-amber-400 border-amber-400 bg-amber-500/5"
+                    : ""
+                }`}
+                onClick={() => setViewingMilestone(milestone)}
+              >
+                <CardContent>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Flag
+                        className={`w-5 h-5 flex-shrink-0 ${
                           isOverdue(milestone.due_date, milestone.status)
-                            ? "text-red-400 font-semibold"
-                            : "text-slate-500"
+                            ? "text-red-400"
+                            : "text-primary-400"
                         }`}
+                      />
+                      <h3 className="text-lg font-semibold text-white truncate">
+                        {milestone.title}
+                      </h3>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        aria-label={`Edit ${milestone.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingMilestone(milestone);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                       >
-                        <Calendar className="w-3 h-3" />
-                        {new Date(milestone.due_date).toLocaleDateString()}
-                        {isOverdue(milestone.due_date, milestone.status) &&
-                          " (Overdue)"}
-                      </div>
-                    )}
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${milestone.title}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(milestone.id, milestone.title);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
-                  {milestone.project_id && (
-                    <div className="text-xs text-slate-500">
-                      Project:{" "}
-                      {projects?.items?.find(
-                        (p: Project) => p.id === milestone.project_id,
-                      )?.name || milestone.project_id}
-                    </div>
+                  {milestone.description && (
+                    <p className="text-sm text-slate-400 mb-3 line-clamp-2">
+                      {milestone.description}
+                    </p>
                   )}
 
-                  <div className="pt-2 border-t border-slate-700/50 flex items-center justify-between">
-                    <span className="text-xs text-primary-400 font-medium inline-flex items-center gap-1">
-                      View Issues
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-xs px-2 py-1 rounded ${getStatusColor(milestone.status)}`}
+                      >
+                        {milestone.status}
+                      </span>
+                      {milestone.due_date && (
+                        <div
+                          className={`flex items-center gap-1 text-xs ${
+                            isOverdue(milestone.due_date, milestone.status)
+                              ? "text-red-400 font-semibold"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          <Calendar className="w-3 h-3" />
+                          {new Date(milestone.due_date).toLocaleDateString()}
+                          {isOverdue(milestone.due_date, milestone.status) &&
+                            " (Overdue)"}
+                        </div>
+                      )}
+                    </div>
+
+                    {milestone.project_id && (
+                      <div className="text-xs text-slate-500">
+                        Project:{" "}
+                        {projects?.items?.find(
+                          (p: Project) => p.id === milestone.project_id,
+                        )?.name || milestone.project_id}
+                      </div>
+                    )}
+
+                    <div className="pt-2 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs text-primary-400 font-medium inline-flex items-center gap-1">
+                        View Issues
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                      {milestone.village_id && (
+                        <VillageIdBadge
+                          villageId={milestone.village_id}
+                          compact
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -608,6 +643,11 @@ export default function Milestones() {
                   <p className="text-sm text-slate-400 mt-1 line-clamp-2">
                     {viewingMilestone.description}
                   </p>
+                )}
+                {viewingMilestone.village_id && (
+                  <div className="mt-2">
+                    <VillageIdBadge villageId={viewingMilestone.village_id} />
+                  </div>
                 )}
               </div>
               <button

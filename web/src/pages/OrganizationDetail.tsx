@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Edit, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, Box, Users, Copy, Plus } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, Box, Users, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import type { Organization, Entity } from '@/types'
@@ -11,6 +11,7 @@ import Input from '@/components/Input'
 import { NetworkGraph } from '@/components/NetworkGraph'
 import CreateIdentityModal from '@/components/CreateIdentityModal'
 import OnCallBadge from '@/components/OnCallBadge'
+import VillageIdBadge from '@/components/VillageIdBadge'
 import { ORGANIZATION_TYPES } from '@/lib/constants/organizationTypes'
 
 interface TreeNode {
@@ -527,23 +528,8 @@ export default function OrganizationDetail() {
                 {organization.village_id && (
                   <div>
                     <dt className="text-sm font-medium text-slate-400">Village ID</dt>
-                    <dd className="mt-1 flex items-center gap-2">
-                      <a
-                        href={`/id/${organization.village_id}`}
-                        className="text-sm text-primary-400 hover:text-primary-300 font-mono"
-                      >
-                        {organization.village_id}
-                      </a>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/id/${organization.village_id}`)
-                          toast.success('Village ID URL copied to clipboard')
-                        }}
-                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                        title="Copy shareable link"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                    <dd className="mt-1">
+                      <VillageIdBadge villageId={organization.village_id} />
                     </dd>
                   </div>
                 )}

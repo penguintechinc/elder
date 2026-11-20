@@ -13,6 +13,7 @@ import Card, { CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import {
   FormModalBuilder,
   FormField,
@@ -302,6 +303,11 @@ export default function Organizations() {
                   <span>ID: {org.id}</span>
                   <span>{new Date(org.created_at).toLocaleDateString()}</span>
                 </div>
+                {org.village_id && (
+                  <div className="mt-3 pt-2 border-t border-slate-700/50">
+                    <VillageIdBadge villageId={org.village_id} compact />
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}

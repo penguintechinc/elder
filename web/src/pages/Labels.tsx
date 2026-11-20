@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Edit, Trash2, Tag, GitBranch } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,6 +9,7 @@ import Button from "@/components/Button";
 import Card, { CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { FormField } from "@/types/form";
 
 // Form fields for label creation/edit
@@ -41,6 +42,8 @@ export default function Labels() {
   const [search, setSearch] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingLabel, setEditingLabel] = useState<IssueLabel | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
@@ -135,6 +138,16 @@ export default function Labels() {
     );
   });
 
+  // Honor ?highlight=<id> deep links (e.g. from /id/<villageId>)
+  useEffect(() => {
+    if (!highlightId || !filteredLabels?.length) return;
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`label-${highlightId}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    });
+  }, [highlightId, filteredLabels?.length]);
+
   // Edit form fields with current values as defaults
   const editFields: FormField[] = useMemo(() => {
     if (!editingLabel) return labelFields;
@@ -222,59 +235,76 @@ export default function Labels() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredLabels?.map((label: IssueLabel) => (
-            <Card key={label.id}>
-              <CardContent>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Tag
-                      className="w-5 h-5 flex-shrink-0"
-                      style={{ color: label.color || "#64748b" }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <h3
-                        className="text-lg font-semibold truncate"
-                        style={{ color: label.color || "#ffffff" }}
+          {filteredLabels?.map((label: IssueLabel) => {
+            const isHighlighted = highlightId === String(label.id);
+            return (
+              <Card
+                key={label.id}
+                id={`label-${label.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-amber-400 border-amber-400 bg-amber-500/5"
+                    : undefined
+                }
+              >
+                <CardContent>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Tag
+                        className="w-5 h-5 flex-shrink-0"
+                        style={{ color: label.color || "#64748b" }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <h3
+                          className="text-lg font-semibold truncate"
+                          style={{ color: label.color || "#ffffff" }}
+                        >
+                          {label.name}
+                        </h3>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => setEditingLabel(label)}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                       >
-                        {label.name}
-                      </h3>
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(label.id, label.name)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={() => setEditingLabel(label)}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                  {label.description && (
+                    <p className="text-sm text-slate-400 mb-3">
+                      {label.description}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span
+                      className="inline-block px-2 py-1 rounded"
+                      style={{
+                        backgroundColor: `${label.color || "#64748b"}20`,
+                        color: label.color || "#64748b",
+                      }}
                     >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(label.id, label.name)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                      {label.name}
+                    </span>
+                    <span>ID: {label.id}</span>
                   </div>
-                </div>
-                {label.description && (
-                  <p className="text-sm text-slate-400 mb-3">
-                    {label.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span
-                    className="inline-block px-2 py-1 rounded"
-                    style={{
-                      backgroundColor: `${label.color || "#64748b"}20`,
-                      color: label.color || "#64748b",
-                    }}
-                  >
-                    {label.name}
-                  </span>
-                  <span>ID: {label.id}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  {label.village_id && (
+                    <div className="mt-3 pt-2 border-t border-slate-700/50">
+                      <VillageIdBadge villageId={label.village_id} compact />
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 

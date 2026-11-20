@@ -16,6 +16,7 @@ import Button from "@/components/Button";
 import Input from "@/components/Input";
 import Card, { CardContent } from "@/components/Card";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import type { FormField } from "@/types/form";
 import type { Tenant } from "@/types";
 
@@ -322,6 +323,14 @@ export default function Tenants() {
                       <p className="text-sm text-slate-400">
                         {tenant.slug} {tenant.domain && `• ${tenant.domain}`}
                       </p>
+                      {tenant.village_id && (
+                        <div className="mt-1.5">
+                          <VillageIdBadge
+                            villageId={tenant.village_id}
+                            compact
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-4">

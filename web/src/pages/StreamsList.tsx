@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Plus, Copy, Trash2 } from 'lucide-react'
 import api from '@/lib/api'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface Stream {
   id: number
@@ -10,6 +12,7 @@ interface Stream {
   trigger_type?: string
   is_enabled: boolean
   execution_count: number
+  village_id?: string | null
   created_at: string
   updated_at: string
 }
@@ -17,6 +20,8 @@ interface Stream {
 export default function StreamsList() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['streams'],
@@ -24,6 +29,15 @@ export default function StreamsList() {
   })
 
   const streams: Stream[] = response?.data || []
+
+  useEffect(() => {
+    if (!highlightId || streams.length === 0) return
+    requestAnimationFrame(() => {
+      document
+        .getElementById(`stream-${highlightId}`)
+        ?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+    })
+  }, [highlightId, streams.length])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -107,16 +121,33 @@ export default function StreamsList() {
                   <th className="text-left px-6 py-3 text-amber-400 font-semibold">Name</th>
                   <th className="text-left px-6 py-3 text-amber-400 font-semibold">Trigger</th>
                   <th className="text-left px-6 py-3 text-amber-400 font-semibold">Executions</th>
+                  <th className="text-left px-6 py-3 text-amber-400 font-semibold">Village ID</th>
                   <th className="text-left px-6 py-3 text-amber-400 font-semibold">Status</th>
                   <th className="text-right px-6 py-3 text-amber-400 font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {streams.map((stream) => (
-                  <tr key={stream.id} className="border-b border-slate-700 hover:bg-slate-700 transition-colors">
+                {streams.map((stream) => {
+                  const isHighlighted = highlightId === String(stream.id)
+                  return (
+                  <tr
+                    key={stream.id}
+                    id={`stream-${stream.id}`}
+                    data-highlighted={isHighlighted ? 'true' : undefined}
+                    className={`border-b border-slate-700 hover:bg-slate-700 transition-colors ${
+                      isHighlighted ? 'bg-amber-500/10 ring-1 ring-inset ring-amber-400' : ''
+                    }`}
+                  >
                     <td className="px-6 py-4 text-amber-400 font-medium">{stream.name}</td>
                     <td className="px-6 py-4 text-slate-300 text-sm">{stream.trigger_type || '-'}</td>
                     <td className="px-6 py-4 text-slate-300 text-sm">{stream.execution_count}</td>
+                    <td className="px-6 py-4">
+                      {stream.village_id ? (
+                        <VillageIdBadge villageId={stream.village_id} compact />
+                      ) : (
+                        <span className="text-slate-500 text-sm">-</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${
                         stream.is_enabled
@@ -151,7 +182,8 @@ export default function StreamsList() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

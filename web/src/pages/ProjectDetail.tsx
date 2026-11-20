@@ -6,6 +6,7 @@ import api from '@/lib/api'
 import { Issue } from '@/types'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 type ViewMode = 'list' | 'calendar' | 'gantt'
 
@@ -16,6 +17,7 @@ interface ProjectData {
   status: string
   start_date?: string
   end_date?: string
+  village_id?: string | null
 }
 
 export default function ProjectDetail() {
@@ -120,6 +122,9 @@ export default function ProjectDetail() {
             )}
           </div>
           <div className="flex gap-2 items-center">
+            {project.village_id && (
+              <VillageIdBadge villageId={project.village_id} />
+            )}
             <span className={`text-xs px-3 py-1.5 rounded ${getStatusColor(project.status)}`}>
               {project.status.replace('_', ' ')}
             </span>
@@ -226,6 +231,9 @@ function IssuesList({ issues, getPriorityColor, issueStatusColor }: { issues: Is
                     <span className="text-xs px-2 py-1 rounded bg-slate-500/20 text-slate-400">
                       {issue.issue_type}
                     </span>
+                  )}
+                  {issue.village_id && (
+                    <VillageIdBadge villageId={issue.village_id} compact />
                   )}
                 </div>
               </div>
