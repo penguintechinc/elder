@@ -101,7 +101,7 @@ def init_rate_limiter(app: Quart) -> RequestRateLimiter | None:
         logger.info("rate_limiter_disabled")
         return None
 
-    spec = app.config.get("RATELIMIT_DEFAULT", "100/hour")
+    spec = app.config.get("RATELIMIT_DEFAULT", "100/minute")
 
     storage: Any = getattr(app, "redis_client", None)
     if storage is not None:
@@ -116,8 +116,8 @@ def init_rate_limiter(app: Quart) -> RequestRateLimiter | None:
     try:
         config = RateLimitConfig.from_string(spec, key_prefix="elder")
     except ValueError:
-        logger.warning(f"rate_limiter_invalid_spec spec={spec!r}; using 100/hour")
-        config = RateLimitConfig.from_string("100/hour", key_prefix="elder")
+        logger.warning(f"rate_limiter_invalid_spec spec={spec!r}; using 100/minute")
+        config = RateLimitConfig.from_string("100/minute", key_prefix="elder")
 
     limiter = RequestRateLimiter(config, storage)
 
