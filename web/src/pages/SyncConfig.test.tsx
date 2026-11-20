@@ -22,7 +22,7 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
-const SAMPLE_GITHUB_CONFIG: SyncConfigItem = {
+const SAMPLE_GITHUB_APP_CONFIG: SyncConfigItem = {
   id: 1,
   name: "Core GitHub Repo",
   platform: "github",
@@ -36,12 +36,40 @@ const SAMPLE_GITHUB_CONFIG: SyncConfigItem = {
   last_sync_at: "2026-11-20T12:00:00Z",
   last_batch_sync_at: "2026-11-20T12:00:00Z",
   config_json: {
+    auth_mode: "github_app",
     owner: "penguintechinc",
     repo_name: "elder",
-    api_token: "***REDACTED***",
+    app_id: "112233",
+    installation_id: "445566",
+    private_key: "***REDACTED***",
     elder_organization_id: 1,
     resource_types: ["project", "milestone", "label", "issue"],
     direction: "bidirectional",
+  },
+  created_at: "2026-11-20T10:00:00Z",
+  updated_at: "2026-11-20T12:00:00Z",
+};
+
+const SAMPLE_LEGACY_PAT_CONFIG: SyncConfigItem = {
+  id: 2,
+  name: "Legacy PAT Repo",
+  platform: "github",
+  enabled: true,
+  sync_interval: 300,
+  batch_fallback_enabled: true,
+  batch_size: 100,
+  two_way_create: false,
+  webhook_enabled: true,
+  has_webhook_secret: false,
+  last_sync_at: null,
+  last_batch_sync_at: null,
+  config_json: {
+    owner: "penguintechinc",
+    repo_name: "legacy-repo",
+    api_token: "***REDACTED***",
+    elder_organization_id: 1,
+    resource_types: ["issue"],
+    direction: "pull",
   },
   created_at: "2026-11-20T10:00:00Z",
   updated_at: "2026-11-20T12:00:00Z",
@@ -64,7 +92,7 @@ describe("SyncConfig", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.getSyncConfigs).mockResolvedValue({
-      configs: [SAMPLE_GITHUB_CONFIG],
+      configs: [SAMPLE_GITHUB_APP_CONFIG],
     });
     vi.mocked(api.getSyncStatus).mockResolvedValue({
       configs: { total: 1, enabled: 1 },
@@ -77,11 +105,19 @@ describe("SyncConfig", () => {
     });
   });
 
-  it("renders summary cards, existing config, and resource navigation links", async () => {
+  it("renders summary cards, auth mode badges, and resource navigation links", async () => {
+    vi.mocked(api.getSyncConfigs).mockResolvedValue({
+      configs: [SAMPLE_GITHUB_APP_CONFIG, SAMPLE_LEGACY_PAT_CONFIG],
+    });
+
     renderSyncConfig();
 
     expect(await screen.findByText("Core GitHub Repo")).toBeTruthy();
+    expect(screen.getByText("Legacy PAT Repo")).toBeTruthy();
     expect(screen.getByText("penguintechinc/elder")).toBeTruthy();
+    expect(screen.getByText("penguintechinc/legacy-repo")).toBeTruthy();
+    expect(screen.getByText("GitHub App")).toBeTruthy();
+    expect(screen.getByText("PAT (Legacy)")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Issues" }).getAttribute("href"),
@@ -97,9 +133,9 @@ describe("SyncConfig", () => {
     ).toBe("/labels");
   });
 
-  it("creates a GitHub integration across issues, milestones, projects, and labels", async () => {
+  it("defaults new GitHub integrations to GitHub App and submits auth_mode github_app", async () => {
     vi.mocked(api.createSyncConfig).mockResolvedValue({
-      config: { ...SAMPLE_GITHUB_CONFIG, id: 2, name: "Infra GitHub" },
+      config: { ...SAMPLE_GITHUB_APP_CONFIG, id: 3, name: "Infra GitHub App" },
     });
 
     renderSyncConfig();
@@ -107,8 +143,81 @@ describe("SyncConfig", () => {
 
     fireEvent.click(screen.getByTestId("add-sync-config-btn"));
 
+    const appRadio = screen.getByTestId("github-auth-mode-app");
+    const patRadio = screen.getByTestId("github-auth-mode-pat");
+    expect(appRadio.getAttribute("aria-checked")).toBe("true");
+    expect(patRadio.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByText(/Required GitHub App Permissions/)).toBeTruthy();
+    expect(screen.queryByTestId("github-pat-deprecation-banner")).toBeNull();
+
     fireEvent.change(screen.getByLabelText("Integration Name *"), {
-      target: { value: "Infra GitHub" },
+      target: { value: "Infra GitHub App" },
+    });
+    fireEvent.change(screen.getByLabelText("Owner / Organization *"), {
+      target: { value: "penguintechinc" },
+    });
+    fireEvent.change(screen.getByLabelText("Repository Name *"), {
+      target: { value: "infra" },
+    });
+    fireEvent.change(screen.getByLabelText("App ID *"), {
+      target: { value: "998877" },
+    });
+    fireEvent.change(screen.getByLabelText("Installation ID *"), {
+      target: { value: "554433" },
+    });
+    const samplePem = [
+      "-----BEGIN RSA",
+      "PRIVATE KEY-----\nTESTKEY\n-----END RSA",
+      "PRIVATE KEY-----",
+    ].join(" ");
+    fireEvent.change(screen.getByLabelText(/Private Key \(PEM\)/), {
+      target: { value: samplePem },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Integration" }));
+
+    await waitFor(() => {
+      expect(api.createSyncConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Infra GitHub App",
+          platform: "github",
+          config_json: expect.objectContaining({
+            auth_mode: "github_app",
+            owner: "penguintechinc",
+            repo_name: "infra",
+            app_id: "998877",
+            installation_id: "554433",
+            private_key: samplePem,
+            elder_organization_id: 1,
+            resource_types: ["project", "milestone", "label", "issue"],
+            direction: "bidirectional",
+          }),
+        }),
+      );
+    });
+  });
+
+  it("shows PAT deprecation nudge when PAT mode is toggled and submits auth_mode pat", async () => {
+    vi.mocked(api.createSyncConfig).mockResolvedValue({
+      config: { ...SAMPLE_LEGACY_PAT_CONFIG, id: 4, name: "Infra PAT" },
+    });
+
+    renderSyncConfig();
+    await screen.findByText("Core GitHub Repo");
+
+    fireEvent.click(screen.getByTestId("add-sync-config-btn"));
+    fireEvent.click(screen.getByTestId("github-auth-mode-pat"));
+
+    expect(
+      screen.getByTestId("github-auth-mode-pat").getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByTestId("github-pat-deprecation-banner")).toBeTruthy();
+    expect(
+      screen.getByText(/Personal Access Tokens are legacy and not recommended/),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Integration Name *"), {
+      target: { value: "Infra PAT" },
     });
     fireEvent.change(screen.getByLabelText("Owner / Organization *"), {
       target: { value: "penguintechinc" },
@@ -125,26 +234,78 @@ describe("SyncConfig", () => {
     await waitFor(() => {
       expect(api.createSyncConfig).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: "Infra GitHub",
+          name: "Infra PAT",
           platform: "github",
           config_json: expect.objectContaining({
+            auth_mode: "pat",
             owner: "penguintechinc",
             repo_name: "infra",
             api_token: "github_pat_secret",
-            elder_organization_id: 1,
-            resource_types: ["project", "milestone", "label", "issue"],
-            direction: "bidirectional",
           }),
         }),
       );
     });
   });
 
+  it("supports .pem file upload and editing GitHub App config without overwriting redacted private key", async () => {
+    vi.mocked(api.updateSyncConfig).mockResolvedValue({
+      config: { ...SAMPLE_GITHUB_APP_CONFIG, name: "Core GitHub Renamed" },
+    });
+
+    renderSyncConfig();
+    await screen.findByText("Core GitHub Repo");
+
+    // 1. Upload .pem file in Create modal
+    fireEvent.click(screen.getByTestId("add-sync-config-btn"));
+    const pemContent = [
+      "-----BEGIN",
+      "PRIVATE KEY-----\nUPLOADED_PEM\n-----END",
+      "PRIVATE KEY-----",
+    ].join(" ");
+    const pemFile = new File([pemContent], "elder-app.pem", {
+      type: "application/x-pem-file",
+    });
+    Object.defineProperty(pemFile, "text", {
+      value: vi.fn().mockResolvedValue(pemContent),
+    });
+    fireEvent.change(screen.getByLabelText("Upload .pem file"), {
+      target: { files: [pemFile] },
+    });
+
+    await waitFor(() => {
+      const textarea = screen.getByLabelText(
+        /Private Key \(PEM\)/,
+      ) as HTMLTextAreaElement;
+      expect(textarea.value).toBe(pemContent);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Close modal" }));
+
+    // 2. Edit existing GitHub App config without entering a new private key
+    fireEvent.click(
+      screen.getByRole("button", { name: "Edit Core GitHub Repo" }),
+    );
+    fireEvent.change(screen.getByLabelText("Integration Name *"), {
+      target: { value: "Core GitHub Renamed" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => {
+      expect(api.updateSyncConfig).toHaveBeenCalledTimes(1);
+    });
+    const [, updatePayload] = vi.mocked(api.updateSyncConfig).mock.calls[0];
+    expect(updatePayload.name).toBe("Core GitHub Renamed");
+    expect(updatePayload.config_json?.auth_mode).toBe("github_app");
+    expect(updatePayload.config_json?.app_id).toBe("112233");
+    expect(updatePayload.config_json?.installation_id).toBe("445566");
+    expect(updatePayload.config_json).not.toHaveProperty("private_key");
+  });
+
   it("creates a Jira Cloud integration with components label mode", async () => {
     vi.mocked(api.createSyncConfig).mockResolvedValue({
       config: {
-        ...SAMPLE_GITHUB_CONFIG,
-        id: 3,
+        ...SAMPLE_GITHUB_APP_CONFIG,
+        id: 5,
         name: "Engineering Jira",
         platform: "jira",
       },
@@ -200,6 +361,7 @@ describe("SyncConfig", () => {
       connected: true,
       success: true,
       platform: "github",
+      auth_mode: "github_app",
       repository: {
         full_name: "penguintechinc/elder",
         default_branch: "main",

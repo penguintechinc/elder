@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,12 +18,15 @@ import {
   History,
   Link2,
   ShieldCheck,
+  Upload,
+  KeyRound,
 } from "lucide-react";
 import api, {
   type SyncConfigItem,
   type SyncPlatform,
   type SyncResourceType,
   type SyncDirection,
+  type GitHubAuthMode,
   type SyncTestResult,
   type SyncTriggerResult,
   type CreateSyncConfigPayload,
@@ -91,6 +94,10 @@ interface FormState {
   resource_types: SyncResourceType[];
   direction: SyncDirection;
   // GitHub
+  github_auth_mode: GitHubAuthMode;
+  app_id: string;
+  installation_id: string;
+  private_key: string;
   owner: string;
   repo_name: string;
   base_url: string;
@@ -121,6 +128,10 @@ const INITIAL_FORM: FormState = {
   elder_organization_id: "",
   resource_types: ["project", "milestone", "label", "issue"],
   direction: "bidirectional",
+  github_auth_mode: "github_app",
+  app_id: "",
+  installation_id: "",
+  private_key: "",
   owner: "",
   repo_name: "",
   base_url: "",
@@ -135,6 +146,18 @@ const INITIAL_FORM: FormState = {
   project_id: "",
   api_key: "",
 };
+
+function resolveGitHubAuthMode(json: Record<string, unknown>): GitHubAuthMode {
+  const raw = String(json.auth_mode || "")
+    .trim()
+    .toLowerCase();
+  if (raw === "pat") return "pat";
+  if (raw === "github_app") return "github_app";
+  if (json.app_id || json.installation_id || json.private_key) {
+    return "github_app";
+  }
+  return "pat";
+}
 
 function configToFormState(cfg: SyncConfigItem): FormState {
   const json = (cfg.config_json || {}) as Record<string, unknown>;
@@ -168,6 +191,12 @@ function configToFormState(cfg: SyncConfigItem): FormState {
         ? rawResources
         : ["project", "milestone", "label", "issue"],
     direction,
+    github_auth_mode:
+      cfg.platform === "github" ? resolveGitHubAuthMode(json) : "github_app",
+    app_id: json.app_id != null ? String(json.app_id) : "",
+    installation_id:
+      json.installation_id != null ? String(json.installation_id) : "",
+    private_key: "",
     owner: String(json.owner || json.org_name || ""),
     repo_name: String(json.repo_name || ""),
     base_url: String(json.base_url || ""),
@@ -209,6 +238,7 @@ export default function SyncConfig() {
   );
   const [formState, setFormState] = useState<FormState>(INITIAL_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const pemFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [selectedConfig, setSelectedConfig] = useState<SyncConfigItem | null>(
     null,
@@ -411,6 +441,30 @@ export default function SyncConfig() {
     });
   };
 
+  const handlePemFileUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const content =
+        typeof file.text === "function"
+          ? await file.text()
+          : await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ""));
+              reader.onerror = () =>
+                reject(reader.error || new Error("Failed to read PEM file"));
+              reader.readAsText(file);
+            });
+      setFormState((p) => ({ ...p, private_key: content.trim() }));
+      setFormError(null);
+    } catch {
+      setFormError("Unable to read the selected .pem private key file.");
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -423,6 +477,15 @@ export default function SyncConfig() {
       setFormError("Select at least one resource type to sync.");
       return;
     }
+
+    const editingJson = (editingConfig?.config_json || {}) as Record<
+      string,
+      unknown
+    >;
+    const hasSavedPrivateKey = Boolean(
+      editingConfig && editingJson.private_key,
+    );
+    const hasSavedApiToken = Boolean(editingConfig && editingJson.api_token);
 
     const configJson: Record<string, unknown> = {
       resource_types: formState.resource_types,
@@ -442,22 +505,47 @@ export default function SyncConfig() {
         );
         return;
       }
-      if (!editingConfig && !formState.api_token.trim()) {
-        setFormError(
-          "GitHub API Token is required when creating an integration.",
-        );
-        return;
-      }
       configJson.owner = formState.owner.trim();
       configJson.repo_name = formState.repo_name.trim();
+      configJson.auth_mode = formState.github_auth_mode;
       if (formState.base_url.trim()) {
         configJson.base_url = formState.base_url.trim();
       }
       if (formState.graphql_url.trim()) {
         configJson.graphql_url = formState.graphql_url.trim();
       }
-      if (formState.api_token.trim()) {
-        configJson.api_token = formState.api_token.trim();
+
+      if (formState.github_auth_mode === "github_app") {
+        if (!formState.app_id.trim()) {
+          setFormError("GitHub App ID is required.");
+          return;
+        }
+        const instTrimmed = formState.installation_id.trim();
+        if (!/^\d+$/.test(instTrimmed) || Number(instTrimmed) <= 0) {
+          setFormError(
+            "GitHub App Installation ID must be a positive integer.",
+          );
+          return;
+        }
+        if (!hasSavedPrivateKey && !formState.private_key.trim()) {
+          setFormError("GitHub App Private Key (PEM) is required.");
+          return;
+        }
+        configJson.app_id = formState.app_id.trim();
+        configJson.installation_id = instTrimmed;
+        if (formState.private_key.trim()) {
+          configJson.private_key = formState.private_key.trim();
+        }
+      } else {
+        if (!hasSavedApiToken && !formState.api_token.trim()) {
+          setFormError(
+            "GitHub Personal Access Token is required when using PAT mode.",
+          );
+          return;
+        }
+        if (formState.api_token.trim()) {
+          configJson.api_token = formState.api_token.trim();
+        }
       }
     } else if (formState.platform === "jira") {
       if (
@@ -543,7 +631,7 @@ export default function SyncConfig() {
       const res: SyncTestResult = await api.testSyncConfig(cfg.id);
       if (res.connected) {
         const targetInfo = res.repository?.full_name
-          ? `Connected to GitHub repository ${res.repository.full_name} (default branch: ${res.repository.default_branch ?? "unknown"})`
+          ? `Connected to GitHub repository ${res.repository.full_name} (default branch: ${res.repository.default_branch ?? "unknown"})${res.auth_mode === "github_app" ? " via GitHub App" : ""}`
           : res.project?.key
             ? `Connected to Jira project ${res.project.key} (${res.project.name ?? ""})`
             : `Connected to ${PLATFORM_LABELS[cfg.platform]}`;
@@ -861,6 +949,16 @@ export default function SyncConfig() {
                       <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-slate-800 text-yellow-400 border border-slate-700">
                         {PLATFORM_LABELS[cfg.platform] ?? cfg.platform}
                       </span>
+                      {cfg.platform === "github" &&
+                        (resolveGitHubAuthMode(json) === "github_app" ? (
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-700/60">
+                            GitHub App
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-950/60 text-amber-300 border border-amber-700/60">
+                            PAT (Legacy)
+                          </span>
+                        ))}
                       <span
                         className={`px-2 py-0.5 text-xs font-medium rounded-full border ${
                           cfg.enabled
@@ -1211,132 +1309,386 @@ export default function SyncConfig() {
               </div>
 
               {/* GitHub Credentials & Target */}
-              {formState.platform === "github" && (
-                <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-white">
-                      GitHub REST (2022-11-28) & Projects v2 GraphQL
-                    </h3>
-                    <span className="text-xs text-slate-400">
-                      Requires repo & project scopes
-                    </span>
-                  </div>
+              {formState.platform === "github" &&
+                (() => {
+                  const editingJson = (editingConfig?.config_json ||
+                    {}) as Record<string, unknown>;
+                  const hasSavedPrivateKey = Boolean(
+                    editingConfig && editingJson.private_key,
+                  );
+                  const hasSavedApiToken = Boolean(
+                    editingConfig && editingJson.api_token,
+                  );
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor="github-owner"
-                        className="block text-sm font-medium text-yellow-500 mb-1.5"
-                      >
-                        Owner / Organization *
-                      </label>
-                      <input
-                        id="github-owner"
-                        type="text"
-                        value={formState.owner}
-                        onChange={(e) =>
-                          setFormState((p) => ({ ...p, owner: e.target.value }))
-                        }
-                        placeholder="e.g., penguintechinc"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
-                      />
+                  return (
+                    <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold text-white">
+                          GitHub REST (2022-11-28) & Projects v2 GraphQL
+                        </h3>
+                        <span className="text-xs text-slate-400">
+                          {formState.github_auth_mode === "github_app"
+                            ? "Installation-scoped RS256 App Auth"
+                            : "Legacy Personal Access Token"}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label
+                            htmlFor="github-owner"
+                            className="block text-sm font-medium text-yellow-500 mb-1.5"
+                          >
+                            Owner / Organization *
+                          </label>
+                          <input
+                            id="github-owner"
+                            type="text"
+                            value={formState.owner}
+                            onChange={(e) =>
+                              setFormState((p) => ({
+                                ...p,
+                                owner: e.target.value,
+                              }))
+                            }
+                            placeholder="e.g., penguintechinc"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="github-repo"
+                            className="block text-sm font-medium text-yellow-500 mb-1.5"
+                          >
+                            Repository Name *
+                          </label>
+                          <input
+                            id="github-repo"
+                            type="text"
+                            value={formState.repo_name}
+                            onChange={(e) =>
+                              setFormState((p) => ({
+                                ...p,
+                                repo_name: e.target.value,
+                              }))
+                            }
+                            placeholder="e.g., elder"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
+
+                      {/* GitHub Auth Mode Selector */}
+                      <div className="space-y-2">
+                        <p
+                          id="github-auth-mode-label"
+                          className="block text-sm font-medium text-yellow-500"
+                        >
+                          Authentication Method
+                        </p>
+                        <div
+                          role="radiogroup"
+                          aria-labelledby="github-auth-mode-label"
+                          className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+                        >
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={
+                              formState.github_auth_mode === "github_app"
+                            }
+                            data-testid="github-auth-mode-app"
+                            onClick={() =>
+                              setFormState((p) => ({
+                                ...p,
+                                github_auth_mode: "github_app",
+                              }))
+                            }
+                            className={`text-left rounded-lg border p-3 transition-colors ${
+                              formState.github_auth_mode === "github_app"
+                                ? "border-emerald-500/70 bg-emerald-950/30 text-white"
+                                : "border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold flex items-center gap-1.5">
+                                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                                GitHub App (Recommended)
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-400">
+                              Short-lived installation tokens (1h), fine-grained
+                              repo & Projects v2 permissions
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={formState.github_auth_mode === "pat"}
+                            data-testid="github-auth-mode-pat"
+                            onClick={() =>
+                              setFormState((p) => ({
+                                ...p,
+                                github_auth_mode: "pat",
+                              }))
+                            }
+                            className={`text-left rounded-lg border p-3 transition-colors ${
+                              formState.github_auth_mode === "pat"
+                                ? "border-amber-500/70 bg-amber-950/30 text-white"
+                                : "border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-semibold flex items-center gap-1.5">
+                                <KeyRound className="w-4 h-4 text-amber-400" />
+                                Personal Access Token (Legacy / Not Recommended)
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-400">
+                              Static user-bound token; use only for legacy
+                              setups
+                            </p>
+                          </button>
+                        </div>
+                      </div>
+
+                      {formState.github_auth_mode === "github_app" ? (
+                        <div className="space-y-4">
+                          <div className="rounded-lg border border-emerald-800/50 bg-emerald-950/20 p-3 text-xs text-slate-300 space-y-1.5">
+                            <p className="font-semibold text-emerald-300">
+                              Required GitHub App Permissions
+                            </p>
+                            <ul className="list-disc pl-5 space-y-0.5 text-slate-300">
+                              <li>
+                                <strong>Repository → Issues:</strong> Read &amp;
+                                write (issues, labels, milestones)
+                              </li>
+                              <li>
+                                <strong>Repository → Metadata:</strong>{" "}
+                                Read-only
+                              </li>
+                              <li>
+                                <strong>Organization → Projects:</strong> Read
+                                &amp; write (for Projects v2)
+                              </li>
+                            </ul>
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                            <div>
+                              <label
+                                htmlFor="github-app-id"
+                                className="block text-sm font-medium text-yellow-500 mb-1.5"
+                              >
+                                App ID *
+                              </label>
+                              <input
+                                id="github-app-id"
+                                type="text"
+                                value={formState.app_id}
+                                onChange={(e) =>
+                                  setFormState((p) => ({
+                                    ...p,
+                                    app_id: e.target.value,
+                                  }))
+                                }
+                                placeholder="e.g., 123456"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                              />
+                            </div>
+
+                            <div>
+                              <label
+                                htmlFor="github-installation-id"
+                                className="block text-sm font-medium text-yellow-500 mb-1.5"
+                              >
+                                Installation ID *
+                              </label>
+                              <input
+                                id="github-installation-id"
+                                type="text"
+                                inputMode="numeric"
+                                value={formState.installation_id}
+                                onChange={(e) =>
+                                  setFormState((p) => ({
+                                    ...p,
+                                    installation_id: e.target.value,
+                                  }))
+                                }
+                                placeholder="e.g., 98765432"
+                                className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label
+                                htmlFor="github-private-key"
+                                className="block text-sm font-medium text-yellow-500"
+                              >
+                                Private Key (PEM){" "}
+                                {hasSavedPrivateKey
+                                  ? "(leave blank to keep saved)"
+                                  : "*"}
+                              </label>
+                              <div>
+                                <input
+                                  ref={pemFileInputRef}
+                                  id="github-pem-file"
+                                  type="file"
+                                  accept=".pem,application/x-pem-file,text/plain"
+                                  aria-label="Upload .pem file"
+                                  className="hidden"
+                                  onChange={handlePemFileUpload}
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    pemFileInputRef.current?.click()
+                                  }
+                                >
+                                  <Upload className="w-3.5 h-3.5 mr-1.5" />
+                                  Upload .pem file
+                                </Button>
+                              </div>
+                            </div>
+                            <textarea
+                              id="github-private-key"
+                              rows={4}
+                              value={formState.private_key}
+                              onChange={(e) =>
+                                setFormState((p) => ({
+                                  ...p,
+                                  private_key: e.target.value,
+                                }))
+                              }
+                              placeholder={
+                                hasSavedPrivateKey
+                                  ? "***REDACTED***"
+                                  : "Paste your GitHub App PEM private key (PKCS#1 or PKCS#8)"
+                              }
+                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          <div
+                            role="note"
+                            data-testid="github-pat-deprecation-banner"
+                            className="rounded-lg border border-amber-600/60 bg-amber-950/40 p-3 text-xs text-amber-200 flex items-start gap-2.5"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                            <div className="space-y-1">
+                              <p className="font-semibold text-amber-300">
+                                Personal Access Tokens are legacy and not
+                                recommended
+                              </p>
+                              <p>
+                                PATs are long-lived credentials tied to an
+                                individual user account. Migrate to a{" "}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setFormState((p) => ({
+                                      ...p,
+                                      github_auth_mode: "github_app",
+                                    }))
+                                  }
+                                  className="underline font-medium text-amber-100 hover:text-white"
+                                >
+                                  GitHub App
+                                </button>{" "}
+                                for short-lived installation tokens and
+                                fine-grained permissions.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label
+                              htmlFor="github-token"
+                              className="block text-sm font-medium text-yellow-500 mb-1.5"
+                            >
+                              GitHub Personal Access Token{" "}
+                              {hasSavedApiToken
+                                ? "(leave blank to keep saved)"
+                                : "*"}
+                            </label>
+                            <input
+                              id="github-token"
+                              type="password"
+                              value={formState.api_token}
+                              onChange={(e) =>
+                                setFormState((p) => ({
+                                  ...p,
+                                  api_token: e.target.value,
+                                }))
+                              }
+                              placeholder={
+                                hasSavedApiToken
+                                  ? "***REDACTED***"
+                                  : "github_pat_..."
+                              }
+                              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label
+                            htmlFor="github-base-url"
+                            className="block text-sm font-medium text-slate-300 mb-1.5"
+                          >
+                            API Base URL (optional, GHES)
+                          </label>
+                          <input
+                            id="github-base-url"
+                            type="text"
+                            value={formState.base_url}
+                            onChange={(e) =>
+                              setFormState((p) => ({
+                                ...p,
+                                base_url: e.target.value,
+                              }))
+                            }
+                            placeholder="https://api.github.com"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label
+                            htmlFor="github-graphql-url"
+                            className="block text-sm font-medium text-slate-300 mb-1.5"
+                          >
+                            GraphQL URL (optional, Projects v2)
+                          </label>
+                          <input
+                            id="github-graphql-url"
+                            type="text"
+                            value={formState.graphql_url}
+                            onChange={(e) =>
+                              setFormState((p) => ({
+                                ...p,
+                                graphql_url: e.target.value,
+                              }))
+                            }
+                            placeholder="https://api.github.com/graphql"
+                            className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
-
-                    <div>
-                      <label
-                        htmlFor="github-repo"
-                        className="block text-sm font-medium text-yellow-500 mb-1.5"
-                      >
-                        Repository Name *
-                      </label>
-                      <input
-                        id="github-repo"
-                        type="text"
-                        value={formState.repo_name}
-                        onChange={(e) =>
-                          setFormState((p) => ({
-                            ...p,
-                            repo_name: e.target.value,
-                          }))
-                        }
-                        placeholder="e.g., elder"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="github-token"
-                      className="block text-sm font-medium text-yellow-500 mb-1.5"
-                    >
-                      GitHub Personal Access Token{" "}
-                      {editingConfig ? "(leave blank to keep saved)" : "*"}
-                    </label>
-                    <input
-                      id="github-token"
-                      type="password"
-                      value={formState.api_token}
-                      onChange={(e) =>
-                        setFormState((p) => ({
-                          ...p,
-                          api_token: e.target.value,
-                        }))
-                      }
-                      placeholder={
-                        editingConfig ? "***REDACTED***" : "github_pat_..."
-                      }
-                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor="github-base-url"
-                        className="block text-sm font-medium text-slate-300 mb-1.5"
-                      >
-                        API Base URL (optional, GHES)
-                      </label>
-                      <input
-                        id="github-base-url"
-                        type="text"
-                        value={formState.base_url}
-                        onChange={(e) =>
-                          setFormState((p) => ({
-                            ...p,
-                            base_url: e.target.value,
-                          }))
-                        }
-                        placeholder="https://api.github.com"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor="github-graphql-url"
-                        className="block text-sm font-medium text-slate-300 mb-1.5"
-                      >
-                        GraphQL URL (optional, Projects v2)
-                      </label>
-                      <input
-                        id="github-graphql-url"
-                        type="text"
-                        value={formState.graphql_url}
-                        onChange={(e) =>
-                          setFormState((p) => ({
-                            ...p,
-                            graphql_url: e.target.value,
-                          }))
-                        }
-                        placeholder="https://api.github.com/graphql"
-                        className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
+                  );
+                })()}
 
               {/* Jira Cloud Credentials & Target */}
               {formState.platform === "jira" && (

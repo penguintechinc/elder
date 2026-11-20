@@ -5,15 +5,23 @@ Implements two-way synchronization between Elder and GitHub:
 - Projects ↔ GitHub Projects v2 (GraphQL API v4)
 - Milestones ↔ GitHub Milestones (REST API 2022-11-28)
 - Labels ↔ GitHub Labels (REST API 2022-11-28)
+Supports GitHub App installation access tokens (RS256 JWT via ``cryptography``)
+and legacy Personal Access Token (PAT) authentication.
 """
 
 # flake8: noqa: E501
 
-from datetime import UTC, date, datetime
+import base64
+import json
+import threading
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
 import httpx
+from cryptography.exceptions import UnsupportedAlgorithm
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from penguin_dal import DAL
 
 from apps.worker.sync.base import (
@@ -29,6 +37,10 @@ from apps.worker.sync.conflict_resolver import ConflictResolver
 
 _GITHUB_API_VERSION = "2022-11-28"
 _DEFAULT_LABEL_COLOR = "#808080"
+_TOKEN_REFRESH_BUFFER = timedelta(minutes=5)
+_APP_JWT_IAT_DRIFT_SECONDS = 60
+_APP_JWT_EXPIRY_SECONDS = 9 * 60
+VALID_GITHUB_AUTH_MODES = frozenset({"github_app", "pat"})
 
 _PROJECTS_ORG_QUERY = """
 query($owner: String!, $cursor: String) {
@@ -214,6 +226,85 @@ def _compute_graphql_url(base_url: str, explicit_graphql_url: str | None) -> str
     return f"{normalized}/graphql"
 
 
+def _b64url_encode(data: bytes) -> str:
+    """Encode bytes using unpadded URL-safe base64 (RFC 7515)."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def normalize_pem_private_key(raw_key: str) -> str:
+    """Normalize line endings and literal ``\\n`` escapes in a PEM private key."""
+    cleaned = raw_key.strip()
+    if not cleaned:
+        return ""
+    cleaned = cleaned.replace("\\r\\n", "\n").replace("\\n", "\n")
+    cleaned = cleaned.replace("\r\n", "\n").replace("\r", "\n")
+    return cleaned
+
+
+def load_github_app_private_key(raw_key: Any) -> rsa.RSAPrivateKey:
+    """Load and validate an unencrypted RSA PEM private key (PKCS#1 or PKCS#8)."""
+    if not isinstance(raw_key, str):
+        raise ValueError("GitHub App private_key must be a PEM-formatted string")
+    normalized = normalize_pem_private_key(raw_key)
+    if not normalized:
+        raise ValueError("GitHub App private_key is required")
+    try:
+        loaded = serialization.load_pem_private_key(
+            normalized.encode("utf-8"),
+            password=None,
+        )
+    except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
+        raise ValueError(
+            "GitHub App private_key is not a valid unencrypted PEM private key"
+        ) from exc
+    if not isinstance(loaded, rsa.RSAPrivateKey):
+        raise ValueError(
+            "GitHub App private_key must be an RSA private key for RS256 signing"
+        )
+    return loaded
+
+
+def parse_installation_id(value: Any) -> int | None:
+    """Parse a positive integer GitHub App installation ID from int or numeric str."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isascii() and stripped.isdigit():
+            parsed = int(stripped)
+            return parsed if parsed > 0 else None
+    return None
+
+
+def resolve_github_auth_mode(config: dict[str, Any]) -> str:
+    """Determine GitHub authentication mode (``github_app`` or ``pat``).
+
+    Defaults to ``github_app`` when ``app_id``, ``installation_id``, or
+    ``private_key`` is configured; falls back to ``pat`` when only
+    ``api_token`` (or no app settings) is present.
+    """
+    raw_mode = config.get("auth_mode")
+    if raw_mode is not None:
+        if not isinstance(raw_mode, str):
+            raise ValueError("GitHub auth_mode must be 'github_app' or 'pat'")
+        stripped_mode = raw_mode.strip().lower()
+        if stripped_mode:
+            if stripped_mode not in VALID_GITHUB_AUTH_MODES:
+                raise ValueError(
+                    f"Unsupported GitHub auth_mode '{stripped_mode}'; "
+                    "must be 'github_app' or 'pat'"
+                )
+            return stripped_mode
+
+    for key in ("app_id", "installation_id", "private_key"):
+        val = config.get(key)
+        if val is not None and not isinstance(val, bool) and str(val).strip():
+            return "github_app"
+    return "pat"
+
+
 class GitHubSyncClient(BaseSyncClient):
     """GitHub-specific sync client implementation.
 
@@ -231,8 +322,10 @@ class GitHubSyncClient(BaseSyncClient):
         """Initialize GitHub sync client.
 
         Args:
-            config: GitHub configuration with ``api_token``, ``owner`` (or
-                ``org_name``), ``repo_name``, and optional ``base_url``/``graphql_url``
+            config: GitHub configuration with ``owner`` (or ``org_name``),
+                ``repo_name``, GitHub App credentials (``app_id``,
+                ``installation_id``, ``private_key``) or legacy ``api_token``,
+                and optional ``auth_mode``/``base_url``/``graphql_url``
             db: penguin-dal database instance
             sync_config_id: Sync configuration ID
             logger: Logger instance
@@ -244,6 +337,39 @@ class GitHubSyncClient(BaseSyncClient):
             sync_config_id=sync_config_id,
             logger=logger,
         )
+
+        self._auth_mode_error: str | None = None
+        try:
+            self.auth_mode = resolve_github_auth_mode(config)
+        except ValueError as exc:
+            self.auth_mode = (
+                str(config.get("auth_mode") or "").strip().lower() or "invalid"
+            )
+            self._auth_mode_error = str(exc)
+
+        raw_app_id = config.get("app_id")
+        if raw_app_id is None or isinstance(raw_app_id, bool):
+            self.app_id: str | None = None
+        elif isinstance(raw_app_id, int):
+            self.app_id = str(raw_app_id) if raw_app_id > 0 else None
+        else:
+            self.app_id = str(raw_app_id).strip() or None
+
+        self.installation_id: int | None = parse_installation_id(
+            config.get("installation_id")
+        )
+        raw_pk = config.get("private_key")
+        self._private_key_invalid_type = raw_pk is not None and not isinstance(
+            raw_pk, str
+        )
+        self._private_key_pem: str | None = (
+            raw_pk.strip() if isinstance(raw_pk, str) and raw_pk.strip() else None
+        )
+        self._private_key: rsa.RSAPrivateKey | None = None
+        self._installation_token: str | None = None
+        self._token_expires_at: datetime | None = None
+        self._token_permissions: dict[str, Any] | None = None
+        self._token_lock = threading.Lock()
 
         self.api_token = (config.get("api_token") or "").strip() or None
         owner = (config.get("owner") or config.get("org_name") or "").strip() or None
@@ -257,13 +383,16 @@ class GitHubSyncClient(BaseSyncClient):
             self.base_url, config.get("graphql_url")
         )
 
+        default_headers: dict[str, str] = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+        }
+        if self.auth_mode == "pat":
+            default_headers["Authorization"] = f"Bearer {self.api_token or ''}"
+
         self.client = httpx.Client(
             base_url=self.base_url,
-            headers={
-                "Authorization": f"Bearer {self.api_token or ''}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": _GITHUB_API_VERSION,
-            },
+            headers=default_headers,
             timeout=30.0,
         )
 
@@ -275,13 +404,132 @@ class GitHubSyncClient(BaseSyncClient):
             raise ValueError("GitHub owner and repo_name must be configured")
         return f"/repos/{quote(self.owner, safe='')}/{quote(self.repo_name, safe='')}{suffix}"
 
-    def validate_config(self) -> bool:
-        """Validate GitHub configuration.
+    def _load_private_key(self) -> rsa.RSAPrivateKey:
+        """Load and cache the parsed RSA private key for GitHub App JWT signing."""
+        if self._private_key is None:
+            if self._private_key_invalid_type:
+                raise ValueError(
+                    "GitHub App private_key must be a PEM-formatted string"
+                )
+            self._private_key = load_github_app_private_key(self._private_key_pem or "")
+        return self._private_key
 
-        Requires ``api_token``, ``owner`` (or ``org_name``), and ``repo_name``.
-        """
-        if not self.api_token:
-            self.logger.error("GitHub API token is required")
+    def _generate_app_jwt(self, now: datetime | None = None) -> str:
+        """Sign a short-lived RS256 GitHub App JWT using ``cryptography`` directly."""
+        if not self.app_id:
+            raise ValueError("GitHub App ID is required to sign an App JWT")
+        private_key = self._load_private_key()
+        current = now or datetime.now(UTC)
+        now_ts = int(current.timestamp())
+        header = {"alg": "RS256", "typ": "JWT"}
+        payload = {
+            "iss": str(self.app_id),
+            "iat": now_ts - _APP_JWT_IAT_DRIFT_SECONDS,
+            "exp": now_ts + _APP_JWT_EXPIRY_SECONDS,
+        }
+        header_b64 = _b64url_encode(
+            json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        )
+        payload_b64 = _b64url_encode(
+            json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        )
+        signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+        signature = private_key.sign(
+            signing_input,
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+        return f"{header_b64}.{payload_b64}.{_b64url_encode(signature)}"
+
+    def _mint_installation_token(self) -> str:
+        """Exchange an App JWT for a GitHub App installation access token."""
+        if self.installation_id is None or self.installation_id <= 0:
+            raise ValueError("GitHub App installation_id must be a positive integer")
+        app_jwt = self._generate_app_jwt()
+        response = self.client.post(
+            f"/app/installations/{self.installation_id}/access_tokens",
+            headers={
+                "Authorization": f"Bearer {app_jwt}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+            },
+        )
+        if response.status_code not in {200, 201}:
+            detail = ""
+            try:
+                body = response.json()
+                if isinstance(body, dict) and body.get("message"):
+                    detail = f": {body['message']}"
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"GitHub App installation token exchange failed "
+                f"(HTTP {response.status_code}){detail}"
+            )
+        data = response.json()
+        if not isinstance(data, dict) or not str(data.get("token") or "").strip():
+            raise RuntimeError("GitHub App installation token response missing 'token'")
+
+        token = str(data["token"]).strip()
+        expires_at = _parse_datetime(data.get("expires_at"))
+        if expires_at is None:
+            expires_at = datetime.now(UTC) + timedelta(hours=1)
+
+        permissions = data.get("permissions")
+        self._installation_token = token
+        self._token_expires_at = expires_at
+        self._token_permissions = (
+            dict(permissions) if isinstance(permissions, dict) else None
+        )
+        self.client.headers["Authorization"] = f"Bearer {token}"
+        return token
+
+    def _get_auth_token(self, force_refresh: bool = False) -> str:
+        """Return a valid Bearer token for the configured GitHub auth mode."""
+        if self._auth_mode_error:
+            raise ValueError(self._auth_mode_error)
+        if self.auth_mode == "pat":
+            if not self.api_token:
+                raise ValueError("GitHub API token is required")
+            return self.api_token
+        if self.auth_mode != "github_app":
+            raise ValueError(f"Unsupported GitHub auth_mode: {self.auth_mode!r}")
+
+        with self._token_lock:
+            now = datetime.now(UTC)
+            if (
+                not force_refresh
+                and self._installation_token is not None
+                and self._token_expires_at is not None
+                and (self._token_expires_at - now) > _TOKEN_REFRESH_BUFFER
+            ):
+                return self._installation_token
+            return self._mint_installation_token()
+
+    def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        """Execute an authenticated GitHub HTTP request with 401 token refresh."""
+        extra_headers = dict(kwargs.pop("headers", None) or {})
+        token = self._get_auth_token()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": _GITHUB_API_VERSION,
+            **extra_headers,
+        }
+        response = self.client.request(method, url, headers=headers, **kwargs)
+        if response.status_code == 401 and self.auth_mode == "github_app":
+            refreshed_token = self._get_auth_token(force_refresh=True)
+            retry_headers = {
+                **headers,
+                "Authorization": f"Bearer {refreshed_token}",
+            }
+            response = self.client.request(method, url, headers=retry_headers, **kwargs)
+        return response
+
+    def validate_config(self) -> bool:
+        """Validate GitHub configuration for ``github_app`` or ``pat`` mode."""
+        if self._auth_mode_error:
+            self.logger.error(self._auth_mode_error)
             return False
         if not self.owner:
             self.logger.error("GitHub owner or org_name is required")
@@ -289,35 +537,82 @@ class GitHubSyncClient(BaseSyncClient):
         if not self.repo_name:
             self.logger.error("GitHub repository name is required")
             return False
-        return True
+        if self.auth_mode == "github_app":
+            if not self.app_id:
+                self.logger.error("GitHub App ID is required")
+                return False
+            if self.installation_id is None or self.installation_id <= 0:
+                self.logger.error(
+                    "GitHub App installation_id must be a positive integer"
+                )
+                return False
+            if not self._private_key_pem and not self._private_key_invalid_type:
+                self.logger.error("GitHub App private_key is required")
+                return False
+            try:
+                self._load_private_key()
+            except ValueError as exc:
+                self.logger.error(f"Invalid GitHub App private_key: {exc}")
+                return False
+            return True
+        if self.auth_mode == "pat":
+            if not self.api_token:
+                self.logger.error("GitHub API token is required")
+                return False
+            return True
+        self.logger.error(f"Unsupported GitHub auth_mode: {self.auth_mode!r}")
+        return False
 
     def test_connection_detail(self) -> dict[str, Any]:
         """Test connection to GitHub repository and return structured details."""
         if not self.validate_config():
+            err = (
+                "Missing or invalid required GitHub App configuration "
+                "(app_id, installation_id, private_key, owner, repo_name)"
+                if self.auth_mode == "github_app"
+                else "Missing required GitHub configuration (api_token, owner, repo_name)"
+            )
             return {
                 "connected": False,
                 "success": False,
                 "platform": "github",
-                "error": "Missing required GitHub configuration (api_token, owner, repo_name)",
+                "auth_mode": self.auth_mode,
+                "error": err,
             }
 
         try:
-            response = self.client.get(self._repo_path())
+            if self.auth_mode == "github_app":
+                self._get_auth_token(force_refresh=True)
+
+            response = self._request("GET", self._repo_path())
             if response.status_code == 200:
                 repo_data = response.json()
-                return {
+                repo_full_name = repo_data.get("full_name")
+                result: dict[str, Any] = {
                     "connected": True,
                     "success": True,
                     "platform": "github",
+                    "auth_mode": self.auth_mode,
                     "status_code": 200,
+                    "repo_full_name": repo_full_name,
                     "repository": {
-                        "full_name": repo_data.get("full_name"),
+                        "full_name": repo_full_name,
                         "private": repo_data.get("private"),
                         "default_branch": repo_data.get("default_branch"),
                         "html_url": repo_data.get("html_url"),
                         "open_issues_count": repo_data.get("open_issues_count"),
                     },
                 }
+                if self.auth_mode == "github_app":
+                    result["token_expires_at"] = (
+                        self._token_expires_at.isoformat()
+                        if self._token_expires_at
+                        else None
+                    )
+                    result["permissions"] = self._token_permissions
+                elif isinstance(repo_data.get("permissions"), dict):
+                    result["permissions"] = repo_data.get("permissions")
+                return result
 
             error_msg = f"GitHub API returned HTTP {response.status_code}"
             try:
@@ -331,6 +626,7 @@ class GitHubSyncClient(BaseSyncClient):
                 "connected": False,
                 "success": False,
                 "platform": "github",
+                "auth_mode": self.auth_mode,
                 "status_code": response.status_code,
                 "error": error_msg,
             }
@@ -340,6 +636,7 @@ class GitHubSyncClient(BaseSyncClient):
                 "connected": False,
                 "success": False,
                 "platform": "github",
+                "auth_mode": self.auth_mode,
                 "error": str(e),
             }
 
@@ -513,7 +810,8 @@ class GitHubSyncClient(BaseSyncClient):
                 github_data["milestone"] = int(ms_mapping.external_id)
 
         if operation.operation_type == "create" and mapping is None:
-            response = self.client.post(
+            response = self._request(
+                "POST",
                 self._repo_path("/issues"),
                 json=github_data,
             )
@@ -548,7 +846,8 @@ class GitHubSyncClient(BaseSyncClient):
                 errors=["No mapping found for issue update"],
             )
 
-        response = self.client.patch(
+        response = self._request(
+            "PATCH",
             self._repo_path(f"/issues/{mapping.external_id}"),
             json=github_data,
         )
@@ -933,8 +1232,10 @@ class GitHubSyncClient(BaseSyncClient):
                     payload["due_on"] = due_on
 
                 if operation.operation_type == "create" and mapping is None:
-                    resp = self.client.post(
-                        self._repo_path("/milestones"), json=payload
+                    resp = self._request(
+                        "POST",
+                        self._repo_path("/milestones"),
+                        json=payload,
                     )
                     if resp.status_code == 201:
                         gh_ms = resp.json()
@@ -971,7 +1272,8 @@ class GitHubSyncClient(BaseSyncClient):
                         errors=["No mapping found for milestone update"],
                     )
 
-                resp = self.client.patch(
+                resp = self._request(
+                    "PATCH",
                     self._repo_path(f"/milestones/{mapping.external_id}"),
                     json=payload,
                 )
@@ -1135,7 +1437,9 @@ class GitHubSyncClient(BaseSyncClient):
                         "color": color,
                         "description": description,
                     }
-                    resp = self.client.post(self._repo_path("/labels"), json=payload)
+                    resp = self._request(
+                        "POST", self._repo_path("/labels"), json=payload
+                    )
                     if resp.status_code == 201:
                         gh_lbl = resp.json()
                         new_map = self._upsert_mapping(
@@ -1156,8 +1460,9 @@ class GitHubSyncClient(BaseSyncClient):
 
                     if resp.status_code == 422 and "already_exists" in resp.text:
                         encoded = quote(name, safe="")
-                        self.client.get(self._repo_path(f"/labels/{encoded}"))
-                        patch_resp = self.client.patch(
+                        self._request("GET", self._repo_path(f"/labels/{encoded}"))
+                        patch_resp = self._request(
+                            "PATCH",
                             self._repo_path(f"/labels/{encoded}"),
                             json={
                                 "new_name": name,
@@ -1207,7 +1512,8 @@ class GitHubSyncClient(BaseSyncClient):
                     )
 
                 encoded_ext = quote(mapping.external_id, safe="")
-                resp = self.client.patch(
+                resp = self._request(
+                    "PATCH",
                     self._repo_path(f"/labels/{encoded_ext}"),
                     json={
                         "new_name": name,
@@ -1284,7 +1590,8 @@ class GitHubSyncClient(BaseSyncClient):
         self, query: str, variables: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """Execute a GraphQL query or mutation against ``self.graphql_url``."""
-        resp = self.client.post(
+        resp = self._request(
+            "POST",
             self.graphql_url,
             json={"query": query, "variables": variables or {}},
         )
@@ -1663,7 +1970,9 @@ class GitHubSyncClient(BaseSyncClient):
         while True:
             params["page"] = page
             try:
-                response = self.client.get(self._repo_path("/issues"), params=params)
+                response = self._request(
+                    "GET", self._repo_path("/issues"), params=params
+                )
                 if response.status_code != 200:
                     errors.append(f"GitHub API error: {response.status_code}")
                     total_failed += 1
@@ -1791,7 +2100,8 @@ class GitHubSyncClient(BaseSyncClient):
 
         while True:
             try:
-                response = self.client.get(
+                response = self._request(
+                    "GET",
                     self._repo_path("/milestones"),
                     params={"state": "all", "per_page": 100, "page": page},
                 )
@@ -1896,7 +2206,8 @@ class GitHubSyncClient(BaseSyncClient):
 
         while True:
             try:
-                response = self.client.get(
+                response = self._request(
+                    "GET",
                     self._repo_path("/labels"),
                     params={"per_page": 100, "page": page},
                 )
