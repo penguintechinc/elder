@@ -30,7 +30,7 @@ const navigation: MenuCategory[] = [
       { name: 'Labels', href: '/labels', icon: Tag },
       { name: 'Milestones', href: '/milestones', icon: Flag },
       { name: 'Projects', href: '/projects', icon: FolderKanban },
-      { name: 'Data Stores', href: '/data-stores', icon: HardDrive },
+      { name: 'Data Inventory', href: '/data-inventory', icon: HardDrive },
     ],
   },
 ]
@@ -44,6 +44,7 @@ const routes: RouteObject[] = [
   { path: 'projects/:id', element: <ProjectDetail /> },
   { path: 'milestones', element: <Milestones /> },
   { path: 'labels', element: <Labels /> },
+  { path: 'data-inventory', element: <DataStores /> },
   { path: 'data-stores', element: <DataStores /> },
 ]
 

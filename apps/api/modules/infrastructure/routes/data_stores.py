@@ -58,6 +58,111 @@ VALID_STORAGE_TYPES = [
 # Valid data classifications
 VALID_DATA_CLASSIFICATIONS = ["public", "internal", "confidential", "restricted"]
 
+PRESEED_DATA_LABELS = (
+    ("PHI", "#a855f7", "Protected Health Information (HIPAA)"),
+    ("PII", "#3b82f6", "Personally Identifiable Information"),
+    ("FedRAMP", "#06b6d4", "Federal Risk and Authorization Management Program"),
+    ("NYDFS", "#f59e0b", "NYDFS 23 NYCRR 500 Cybersecurity Regulation"),
+    ("SOX", "#10b981", "Sarbanes-Oxley Act compliance data"),
+    ("PCI", "#ec4899", "Payment Card Industry Data Security Standard"),
+)
+
+
+def _ensure_preseeded_data_labels(db):
+    """Idempotently ensure default compliance/sensitivity data labels exist."""
+    existing_rows = db(db.issue_labels.id > 0).select()
+    by_name = {
+        (row.name or "").strip().lower(): row for row in existing_rows if row.name
+    }
+    now = datetime.now(UTC)
+    created = False
+    for name, color, description in PRESEED_DATA_LABELS:
+        if name.lower() not in by_name:
+            label_id = db.issue_labels.insert(
+                name=name,
+                color=color,
+                description=description,
+                created_at=now,
+                updated_at=now,
+            )
+            by_name[name.lower()] = db.issue_labels[label_id]  # tenant-scope-exempt
+            created = True
+    if created:
+        db.commit()
+    return by_name
+
+
+def _sync_data_store_labels(db, data_store_id: int, label_ids: list[int]) -> list:
+    """Replace a data store's label assignments with the validated label_ids."""
+    unique_ids = list(dict.fromkeys(int(lid) for lid in label_ids))
+    valid_labels = []
+    if unique_ids:
+        rows = db(db.issue_labels.id.belongs(unique_ids)).select()
+        valid_by_id = {r.id: r for r in rows}
+        valid_labels = [valid_by_id[lid] for lid in unique_ids if lid in valid_by_id]
+
+    db(db.data_store_labels.data_store_id == data_store_id).delete()
+    now = datetime.now(UTC)
+    for label in valid_labels:
+        db.data_store_labels.insert(
+            data_store_id=data_store_id,
+            label_id=label.id,
+            created_at=now,
+        )
+    return valid_labels
+
+
+def _hydrate_data_store_labels(db, rows, labels_by_name=None):
+    """Load DataStoreLabelResponse lists for a batch of data_store rows."""
+    if not rows:
+        return {}
+    store_ids = [r.id for r in rows]
+    links = db(db.data_store_labels.data_store_id.belongs(store_ids)).select()
+    label_ids = list({link.label_id for link in links})
+    labels_by_id = {}
+    if label_ids:
+        for lbl in db(db.issue_labels.id.belongs(label_ids)).select():
+            labels_by_id[lbl.id] = lbl
+
+    result: dict[int, list[DataStoreLabelResponse]] = {sid: [] for sid in store_ids}
+    seen_per_store: dict[int, set[int]] = {sid: set() for sid in store_ids}
+    for link in links:
+        lbl = labels_by_id.get(link.label_id)
+        if lbl and lbl.id not in seen_per_store[link.data_store_id]:
+            result[link.data_store_id].append(
+                DataStoreLabelResponse.model_validate(lbl)
+            )
+            seen_per_store[link.data_store_id].add(lbl.id)
+
+    # Convert legacy boolean sensitivity flags (contains_pii/phi/pci) into labels
+    if labels_by_name:
+        flag_to_label = (
+            ("contains_pii", "pii"),
+            ("contains_phi", "phi"),
+            ("contains_pci", "pci"),
+        )
+        now = datetime.now(UTC)
+        inserted_legacy = False
+        for row in rows:
+            for attr, lname in flag_to_label:
+                if getattr(row, attr, False):
+                    lbl = labels_by_name.get(lname)
+                    if lbl and lbl.id not in seen_per_store[row.id]:
+                        db.data_store_labels.insert(
+                            data_store_id=row.id,
+                            label_id=lbl.id,
+                            created_at=now,
+                        )
+                        result[row.id].append(
+                            DataStoreLabelResponse.model_validate(lbl)
+                        )
+                        seen_per_store[row.id].add(lbl.id)
+                        inserted_legacy = True
+        if inserted_legacy:
+            db.commit()
+
+    return result
+
 
 @bp.route("", methods=["GET"])
 @login_required
@@ -69,8 +174,14 @@ async def list_data_stores():
     pagination = PaginationParams.from_request()
 
     def get_data_stores():
+        labels_by_name = _ensure_preseeded_data_labels(db)
         query = db.data_stores.id > 0
 
+        if request.args.get("search"):
+            term = f"%{request.args.get('search', '').strip()}%"
+            query &= (db.data_stores.name.ilike(term)) | (
+                db.data_stores.description.ilike(term)
+            )
         if request.args.get("organization_id"):
             query &= db.data_stores.organization_id == request.args.get(
                 "organization_id", type=int
@@ -103,19 +214,39 @@ async def list_data_stores():
             query &= db.data_stores.poc_identity_id == request.args.get(
                 "poc_identity_id", type=int
             )
+        label_id_param = request.args.get("label_id", type=int)
+        label_name_param = (request.args.get("label") or "").strip().lower()
+        if not label_id_param and label_name_param:
+            matched_label = labels_by_name.get(label_name_param)
+            if matched_label:
+                label_id_param = matched_label.id
+            else:
+                return 0, [], {}
+        if label_id_param:
+            link_rows = db(db.data_store_labels.label_id == label_id_param).select()
+            matching_ids = [lr.data_store_id for lr in link_rows]
+            if not matching_ids:
+                return 0, [], {}
+            query &= db.data_stores.id.belongs(matching_ids)
 
         total = db(query).count()
         rows = db(query).select(
             orderby=~db.data_stores.created_at,
             limitby=(pagination.offset, pagination.offset + pagination.per_page),
         )
-        return total, rows
+        labels_map = _hydrate_data_store_labels(db, rows, labels_by_name)
+        return total, rows, labels_map
 
-    total, rows = await run_in_threadpool(get_data_stores)
+    total, rows, labels_map = await run_in_threadpool(get_data_stores)
     pages = pagination.calculate_pages(total)
 
     return DataStoreListResponse(
-        items=[DataStoreResponse.model_validate(row) for row in rows],
+        items=[
+            DataStoreResponse.model_validate(row).model_copy(
+                update={"labels": labels_map.get(row.id, [])}
+            )
+            for row in rows
+        ],
         total=total,
         page=pagination.page,
         per_page=pagination.per_page,
@@ -198,11 +329,27 @@ async def create_data_store():
             updated_at=now,
         )
         db.commit()
+        if isinstance(data.get("label_ids"), list):
+            synced_labels = _sync_data_store_labels(
+                db, data_store_id, data["label_ids"]
+            )
+            synced_names = {(l.name or "").strip().lower() for l in synced_labels}
+            db(db.data_stores.id == data_store_id).update(
+                contains_pii=("pii" in synced_names),
+                contains_phi=("phi" in synced_names),
+                contains_pci=("pci" in synced_names),
+            )
+            db.commit()
+        else:
+            synced_labels = []
         # tenant_id resolved from the validated organization above (gh-237)
-        return get_tenant_scoped(db, db.data_stores, data_store_id, tenant_id)
+        row = get_tenant_scoped(db, db.data_stores, data_store_id, tenant_id)
+        return row, [DataStoreLabelResponse.model_validate(l) for l in synced_labels]
 
-    data_store = await run_in_threadpool(create)
-    return DataStoreResponse.model_validate(data_store), 201
+    data_store, synced_labels = await run_in_threadpool(create)
+    return DataStoreResponse.model_validate(data_store).model_copy(
+        update={"labels": synced_labels}
+    ), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])
@@ -310,18 +457,31 @@ async def update_data_store(id: int):
             update_dict["organization_id"] = data["organization_id"]
             update_dict["tenant_id"] = org_tenant_id
 
+        if isinstance(data.get("label_ids"), list):
+            synced_labels = _sync_data_store_labels(db, id, data["label_ids"])
+            synced_names = {(l.name or "").strip().lower() for l in synced_labels}
+            update_dict["contains_pii"] = "pii" in synced_names
+            update_dict["contains_phi"] = "phi" in synced_names
+            update_dict["contains_pci"] = "pci" in synced_names
+
         if update_dict:
             db(db.data_stores.id == id).update(**update_dict)
             db.commit()
 
-        return get_tenant_scoped(db, db.data_stores, id, tenant_id)
+        row = get_tenant_scoped(db, db.data_stores, id, tenant_id)
+        if not row:
+            return None, []
+        labels_map = _hydrate_data_store_labels(db, [row])
+        return row, labels_map.get(row.id, [])
 
-    data_store = await run_in_threadpool(update)
+    data_store, store_labels = await run_in_threadpool(update)
 
     if not data_store:
         return ApiResponse.not_found("Data store", id)
 
-    return DataStoreResponse.model_validate(data_store), 200
+    return DataStoreResponse.model_validate(data_store).model_copy(
+        update={"labels": store_labels}
+    ), 200
 
 
 @bp.route("/<int:id>", methods=["DELETE"])
