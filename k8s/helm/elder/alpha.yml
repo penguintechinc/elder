@@ -185,30 +185,25 @@ api:
   podDisruptionBudget:
     enabled: false
 
-# Scanner Service - Single replica for alpha
-scanner:
+# Scanning Service (Rust CronJob)
+svc-scanning:
   enabled: true
-  replicaCount: 1
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
   image:
-    repository: elder-scanner
+    repository: elder-svc-scanning
     tag: alpha-latest
-    # Always (not IfNotPresent): tag is mutable (`alpha-latest`) and the node
-    # already had a pre-fix image cached under this exact tag (missing the
-    # `COPY shared /app/shared` layer -> ModuleNotFoundError: shared). With
-    # IfNotPresent, kubelet only checks whether the tag exists locally, never
-    # re-checks the registry digest, so a `docker push` alone never reaches
-    # the node. Confirmed stale via pod imageID vs `docker push` digest
-    # mismatch. Scoped to scanner only since it's the one whose Dockerfile
-    # changed this session.
     pullPolicy: Always
   env:
-    SCANNER_POLL_INTERVAL: "600"
-    LOG_LEVEL: DEBUG
     ELDER_API_URL: "http://elder-api:5000"
+    SCREENSHOT_DIR: "/tmp/screenshots"
+    LOG_FORMAT: "json"
+    RUST_LOG: "debug"
+    SCANNER_JOB_TIMEOUT_SECONDS: "300"
   resources:
     requests:
-      memory: "128Mi"
-      cpu: "100m"
+      memory: "64Mi"
+      cpu: "50m"
     limits:
       memory: "512Mi"
       cpu: "500m"

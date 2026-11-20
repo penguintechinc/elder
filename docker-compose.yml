@@ -171,30 +171,34 @@ services:
       - ./alembic:/app/alembic
       - pydal_migrations:/app/instance
 
-  # Scanner Service for local network scans
-  scanner:
+  # Scanning Service (Rust data-plane worker in loop mode for local dev)
+  svc-scanning:
     build:
-      context: ./apps/scanner
-      dockerfile: Dockerfile
-      args:
-        SCANNER_POLL_INTERVAL: ${SCANNER_POLL_INTERVAL:-300}
-    container_name: elder-scanner
+      context: .
+      dockerfile: services/svc-scanning/Dockerfile
+    container_name: elder-svc-scanning
+    command: ["run", "--loop", "--interval", "60"]
     environment:
-      - SCANNER_POLL_INTERVAL=${SCANNER_POLL_INTERVAL:-300}
       - ELDER_API_URL=http://api:5000
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-dev-jwt-secret-key-change-in-production}
       - ELDER_API_TOKEN=${SCANNER_API_TOKEN:-}
-      - SCREENSHOT_DIR=/app/screenshots
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - SCREENSHOT_DIR=/tmp/screenshots
+      - LOG_FORMAT=json
+      - RUST_LOG=${LOG_LEVEL:-info}
     depends_on:
       api:
         condition: service_healthy
+    cap_drop:
+      - ALL
     cap_add:
-      - NET_ADMIN  # Required for masscan raw sockets
+      - NET_RAW  # Required for masscan raw sockets
+    read_only: true
     restart: unless-stopped
     networks:
       - elder-network
     tmpfs:
-      - /app/screenshots:size=1G
+      - /tmp:size=512M
+      - /tmp/screenshots:size=1G
 
   # Prometheus + Grafana were removed here -- they scraped a `/metrics`
   # endpoint this app has never exposed and shipped dashboards/alert rules

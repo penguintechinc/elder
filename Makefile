@@ -11,7 +11,7 @@
         db-migrate db-create-migration db-downgrade db-reset db-shell db-backup \
         deploy-alpha deploy-beta \
         helm-lint helm-template \
-        lock lock-api lock-dev lock-worker lock-scanner lock-mcp \
+        lock lock-api lock-dev lock-worker lock-mcp \
         license-validate license-check-features license-check-deps \
         clean clean-docker \
         version version-bump-patch version-bump-minor version-bump-major \
@@ -127,7 +127,7 @@ verify-venv: ## Fail if .venv is missing, wrong Python version, or missing dev t
 # ── Dependency Compilation ─────────────────────────────────────────────
 # uv (https://github.com/astral-sh/uv) is a fast, modern Python package installer
 # Replaces pip-compile with faster resolution and native hash pinning
-lock: lock-api lock-dev lock-worker lock-scanner lock-mcp ## Compile all lockfiles (uv pip compile with hashes)
+lock: lock-api lock-dev lock-worker lock-mcp ## Compile all lockfiles (uv pip compile with hashes)
 	@echo "$(GREEN)All lockfiles compiled with uv$(RESET)"
 
 lock-api: ## Compile root requirements.txt (uv pip compile --generate-hashes)
@@ -153,14 +153,6 @@ lock-worker: ## Compile apps/worker/requirements.txt (uv pip compile --generate-
 		uv pip compile --generate-hashes --no-emit-package pip apps/worker/requirements.in -o apps/worker/requirements.txt && \
 		chown $$(id -u):$$(id -g) apps/worker/requirements.txt"
 	@echo "$(GREEN)apps/worker/requirements.txt compiled$(RESET)"
-
-lock-scanner: ## Compile apps/scanner/requirements.txt (uv pip compile --generate-hashes)
-	@echo "$(BLUE)Compiling apps/scanner/requirements.txt...$(RESET)"
-	@docker run --rm -v $(PWD):/app -w /app python:3.13-slim-bookworm bash -c "\
-		pip install --quiet uv==0.11.28 && \
-		uv pip compile --generate-hashes --no-emit-package pip apps/scanner/requirements.in -o apps/scanner/requirements.txt && \
-		chown $$(id -u):$$(id -g) apps/scanner/requirements.txt"
-	@echo "$(GREEN)apps/scanner/requirements.txt compiled$(RESET)"
 
 lock-mcp: ## Compile apps/mcp/requirements.txt (uv pip compile --generate-hashes)
 	@echo "$(BLUE)Compiling apps/mcp/requirements.txt...$(RESET)"
@@ -290,7 +282,9 @@ test-security: ## Run all security scans (bandit, pip-audit, npm audit, hadolint
 	@echo "$(BLUE)[4/8] hadolint — Dockerfile linting...$(RESET)"
 	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/api/Dockerfile
 	@docker run --rm -i hadolint/hadolint:2.12.0 < web/Dockerfile
-	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/scanner/Dockerfile
+	@for df in services/*/Dockerfile; do \
+		[ -f "$$df" ] && docker run --rm -i hadolint/hadolint:2.12.0 < "$$df"; \
+	done
 	@docker run --rm -i hadolint/hadolint:2.12.0 < apps/worker/Dockerfile
 	@echo "$(BLUE)[5/8] gitleaks — secret scan (git history)...$(RESET)"
 	@docker run --rm -v $(PWD):/repo \
@@ -396,9 +390,9 @@ docker-build: ## Build all four service images locally
 	@echo "$(BLUE)Building elder-web...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-web:$(VERSION) \
 		-f web/Dockerfile .
-	@echo "$(BLUE)Building elder-scanner...$(RESET)"
-	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-scanner:$(VERSION) \
-		-f apps/scanner/Dockerfile apps/scanner
+	@echo "$(BLUE)Building elder-svc-scanning...$(RESET)"
+	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-svc-scanning:$(VERSION) \
+		-f services/svc-scanning/Dockerfile .
 	@echo "$(BLUE)Building elder-worker...$(RESET)"
 	@docker build -t $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-worker:$(VERSION) \
 		-f apps/worker/Dockerfile .
@@ -417,11 +411,10 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 		--build-arg VITE_API_URL=http://localhost:30081 \
 		-f web/Dockerfile .
 	@docker push localhost:32000/elder-web:alpha-latest
-	@echo "$(BLUE)Building elder-scanner → localhost:32000...$(RESET)"
-	@docker build -t localhost:32000/elder-scanner:alpha-latest \
-		--build-arg APP_VERSION=$(VERSION) \
-		-f apps/scanner/Dockerfile apps/scanner
-	@docker push localhost:32000/elder-scanner:alpha-latest
+	@echo "$(BLUE)Building elder-svc-scanning → localhost:32000...$(RESET)"
+	@docker build -t localhost:32000/elder-svc-scanning:alpha-latest \
+		-f services/svc-scanning/Dockerfile .
+	@docker push localhost:32000/elder-svc-scanning:alpha-latest
 	@echo "$(BLUE)Building elder-worker → localhost:32000...$(RESET)"
 	@docker build -t localhost:32000/elder-worker:alpha-latest \
 		--build-arg APP_VERSION=$(VERSION) \
@@ -430,7 +423,7 @@ docker-build-alpha: ## Build and push all service images to local registry (loca
 	@echo "$(GREEN)All alpha images built and pushed at $(VERSION)$(RESET)"
 
 docker-push: ## Push all service images to ghcr.io (requires docker login)
-	@for svc in api web scanner worker; do \
+	@for svc in api web svc-scanning worker; do \
 		echo "$(BLUE)Pushing elder-$$svc...$(RESET)"; \
 		docker push $(DOCKER_REGISTRY)/$(DOCKER_ORG)/elder-$$svc:$(VERSION); \
 	done
@@ -536,11 +529,11 @@ LICENSE_ALLOW := MIT;MIT License;MIT-0;MIT No Attribution;BSD License;BSD;BSD-2-
 #   License classifier, so pip-licenses reports UNKNOWN. Ignore it specifically.
 LICENSE_IGNORE_PKGS := google-crc32c
 # App dependency trees scanned in addition to the root venv.
-LICENSE_APP_REQS := apps/worker/requirements.txt apps/scanner/requirements.txt apps/mcp/requirements.txt
+LICENSE_APP_REQS := apps/worker/requirements.txt apps/mcp/requirements.txt
 license-check-deps: ## Flag AGPL/GPL-incompatible OSS dependency licenses (Python + npm)
 	@echo "$(BLUE)[1/3] pip-licenses — root Python dependency licenses ($(VENV))...$(RESET)"
 	@$(VENV)/bin/pip-licenses --allow-only="$(LICENSE_ALLOW)" --ignore-packages $(LICENSE_IGNORE_PKGS)
-	@echo "$(BLUE)[2/3] pip-licenses — app dependency trees (worker/scanner/mcp)...$(RESET)"
+	@echo "$(BLUE)[2/3] pip-licenses — app dependency trees (worker/mcp)...$(RESET)"
 	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	for req in $(LICENSE_APP_REQS); do \
 		if [ ! -f "$$req" ]; then echo "$(YELLOW)  skip (missing): $$req$(RESET)"; continue; fi; \

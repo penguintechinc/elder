@@ -210,6 +210,7 @@ def _register_before_request(app: Quart) -> None:
     @app.before_request
     async def populate_claims():
         from apps.api.auth.jwt_handler import (
+            SERVICE_WORKER_ALLOWED_SCOPES,
             _is_valid_read_scope,
             get_token_from_header,
             verify_token,
@@ -239,6 +240,19 @@ def _register_before_request(app: Quart) -> None:
                 "type": "service_researcher",
                 "delegated_by": payload.get("delegated_by"),
                 "act": payload.get("act"),
+            }
+            return
+        if token_type == "service_worker":
+            allowed = SERVICE_WORKER_ALLOWED_SCOPES.get(sub, frozenset())
+            raw_scopes = payload.get("scope", [])
+            g.claims = {
+                "sub": sub,
+                "tenant": payload.get("tenant", ""),
+                "roles": ["service_worker"],
+                "scope": [s for s in raw_scopes if s in allowed],
+                "identity_id": None,
+                "user_identity_id": None,
+                "type": "service_worker",
             }
             return
         try:
@@ -403,6 +417,9 @@ def _register_before_request(app: Quart) -> None:
             # Layer 3: Check if module is enabled for this tenant
             claims = getattr(g, "claims", {}) or {}
             tenant_str = claims.get("tenant", "")
+
+            if tenant_str == "system" and claims.get("type") == "service_worker":
+                return
 
             if tenant_str:
                 # Tenant is present; check if module is enabled for them

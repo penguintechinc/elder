@@ -158,6 +158,8 @@ class CreateSBOMScanRequest(BaseModel):
             "manifest",
             "lockfile",
             "repository",
+            "git_clone",
+            "git_api",
             "container",
             "binary",
             "source",

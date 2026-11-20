@@ -354,8 +354,11 @@ def resource_role_required(required_role: str, resource_param: str = "id") -> Ca
             if not user:
                 return jsonify({"error": "Authentication required"}), 401
 
-            # Superusers bypass resource role checks
-            if user.is_superuser:
+            # Superusers and verified service_worker tokens bypass per-identity resource_roles rows
+            if user.is_superuser or (
+                getattr(user, "token_type", None) == "service_worker"
+                and (getattr(g, "claims", {}) or {}).get("type") == "service_worker"
+            ):
                 g.current_user = user
                 if inspect.iscoroutinefunction(f):
                     return await f(*args, **kwargs)
@@ -453,12 +456,15 @@ def admin_required(f):
     return role_required("admin")(f)
 
 
-def role_required(allowed_roles):
+def role_required(allowed_roles, *, allow_service_worker_scopes: tuple[str, ...] = ()):
     """
     Decorator to require specific portal roles for an endpoint.
 
     Args:
         allowed_roles: String or list of allowed portal roles ('admin', 'editor', 'observer')
+        allow_service_worker_scopes: Optional scopes permitting an authenticated
+            ``service_worker`` token to access this route when all listed scopes
+            are present in ``g.claims["scope"]``.
 
     Usage:
         @bp.route('/admin-only')
@@ -492,6 +498,19 @@ def role_required(allowed_roles):
                     return await f(*args, **kwargs)
                 else:
                     return f(*args, **kwargs)
+
+            if (
+                allow_service_worker_scopes
+                and getattr(user, "token_type", None) == "service_worker"
+                and (getattr(g, "claims", {}) or {}).get("type") == "service_worker"
+            ):
+                granted_scopes = set((getattr(g, "claims", {}) or {}).get("scope", []))
+                if all(s in granted_scopes for s in allow_service_worker_scopes):
+                    g.current_user = user
+                    if inspect.iscoroutinefunction(f):
+                        return await f(*args, **kwargs)
+                    else:
+                        return f(*args, **kwargs)
 
             # Check portal role
             user_role = user.get("portal_role", "observer")

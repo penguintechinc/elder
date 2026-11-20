@@ -22,12 +22,16 @@ if command -v docker &> /dev/null; then
     fi
 
     # Build component-specific images
-    for component in manager api backend proxy webui scanner; do
+    for component in manager api backend proxy webui; do
         if [ -f "$component/Dockerfile" ]; then
             echo "Building $component image..."
             docker build -t "$PROJECT_NAME/$component:test" -f "$component/Dockerfile" .
         fi
     done
+    if [ -f "services/svc-scanning/Dockerfile" ]; then
+        echo "Building svc-scanning image..."
+        docker build -t "$PROJECT_NAME/svc-scanning:test" -f "services/svc-scanning/Dockerfile" .
+    fi
 
     echo "Docker images built successfully"
 else

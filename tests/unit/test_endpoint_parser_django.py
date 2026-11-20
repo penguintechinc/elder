@@ -6,7 +6,7 @@ and DRF router registrations with various configurations and edge cases.
 
 import pytest
 
-from apps.scanner.parsers.endpoint_parser_django import DjangoEndpointParser
+from apps.api.services.sbom.parsers.endpoint_parser_django import DjangoEndpointParser
 
 
 class TestDjangoEndpointParser:

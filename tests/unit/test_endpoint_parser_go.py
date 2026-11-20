@@ -2,7 +2,7 @@
 
 import unittest
 
-from apps.scanner.parsers.endpoint_parser_go import GoEndpointParser
+from apps.api.services.sbom.parsers.endpoint_parser_go import GoEndpointParser
 
 
 class TestGoEndpointParser(unittest.TestCase):

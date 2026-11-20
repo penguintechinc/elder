@@ -4,6 +4,7 @@
 
 import fnmatch
 from dataclasses import asdict
+from datetime import UTC, datetime
 
 import structlog
 from pydantic import ValidationError
@@ -14,6 +15,7 @@ from apps.api.auth.decorators import (
     require_scope,
     resource_role_required,
 )
+from apps.api.auth.jwt_handler import is_system_service_worker
 from apps.api.models.dataclasses import (
     PaginatedResponse,
     SBOMScanDTO,
@@ -250,19 +252,36 @@ async def create_scan():
         POST /api/v1/sbom/scans
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
 
     # Validate request body using Pydantic
     try:
-        body = validate_body(CreateSBOMScanRequest)
+        body = await validate_body(CreateSBOMScanRequest)
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
     parent_type = body.parent_type
     parent_id = body.parent_id
 
-    # Validate parent exists and belongs to caller's tenant (gh-237)
+    # Validate parent exists and belongs to caller's tenant (gh-237), or
+    # resolve authoritative parent tenant when invoked by system service_worker.
     def validate_parent():
+        if system_worker:
+            if parent_type == "service":
+                row = db.services[parent_id]  # tenant-scope-exempt: JWT worker
+            elif parent_type == "software":
+                row = db.software[parent_id]  # tenant-scope-exempt: JWT worker
+            else:
+                return None
+            if not row:
+                return None
+            active_tenant = (
+                db((db.tenants.id == row.tenant_id) & (db.tenants.is_active == True))  # noqa: E712
+                .select(db.tenants.id)
+                .first()
+            )
+            return row if active_tenant else None
         if parent_type == "service":
             return get_tenant_scoped(db, db.services, parent_id, tenant_id)
         elif parent_type == "software":
@@ -273,22 +292,23 @@ async def create_scan():
     if not parent:
         return ApiResponse.not_found(parent_type, parent_id)
 
+    effective_tenant_id = parent.tenant_id if system_worker else tenant_id
+
     # Get repository_url from parent if not provided
     repository_url = body.repository_url
     if not repository_url:
         if parent_type == "service" and parent.repository_url:
             repository_url = parent.repository_url
-        elif (
-            parent_type == "software"
-            and hasattr(parent, "repository_url")
-            and parent.repository_url
-        ):
-            repository_url = parent.repository_url
+        elif parent_type == "software":
+            if hasattr(parent, "repository_url") and parent.repository_url:
+                repository_url = parent.repository_url
+            elif hasattr(parent, "git_url") and parent.git_url:
+                repository_url = parent.git_url
 
     def create():
         # Create scan record with status=pending
         scan_id = db.sbom_scans.insert(
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant_id,
             parent_type=parent_type,
             parent_id=parent_id,
             scan_type=body.scan_type,
@@ -302,7 +322,7 @@ async def create_scan():
         )
         db.commit()
 
-        return get_tenant_scoped(db, db.sbom_scans, scan_id, tenant_id)
+        return get_tenant_scoped(db, db.sbom_scans, scan_id, effective_tenant_id)
 
     scan = await run_in_threadpool(create)
 
@@ -399,9 +419,24 @@ async def get_pending_scans():
         GET /api/v1/sbom/scans/pending
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
+    if not system_worker and not tenant_id:
+        return ApiResponse.error("Invalid or missing tenant claim", 400)
 
     def get_scans():
+        if system_worker:
+            active_tenant_ids = [
+                r.id
+                for r in db(db.tenants.is_active == True).select(db.tenants.id)  # noqa: E712
+            ]
+            if not active_tenant_ids:
+                return []
+            query = (db.sbom_scans.status == "pending") & (
+                db.sbom_scans.tenant_id.belongs(active_tenant_ids)
+            )
+            return db(query).select(orderby=db.sbom_scans.created_at)
+
         # gh-237: scope to caller's tenant -- this endpoint previously
         # returned every tenant's pending scans (including resolved
         # scanner credential tokens below) to any caller with sbom:read.
@@ -416,19 +451,19 @@ async def get_pending_scans():
     # Convert to DTOs
     items = from_pydal_rows(rows, SBOMScanDTO)
 
-    # Resolve credentials for each scan and add to response
+    # Resolve credentials for each scan using that row's OWN tenant_id
+    # (never cross-tenant) and add to response.
     scan_dicts = []
-    for item in items:
+    for row, item in zip(rows, items, strict=True):
         scan_dict = asdict(item)
 
-        # Resolve credential if present
         if item.credential_type and item.credential_id:
             token = _resolve_credential(
                 db,
                 item.credential_type,
                 item.credential_id,
-                item.credential_mapping or {},
-                tenant_id,
+                getattr(row, "credential_mapping", None) or {},
+                row.tenant_id,
             )
             if token:
                 scan_dict["_resolved_token"] = token
@@ -465,12 +500,23 @@ async def start_scan(id: int):
         POST /api/v1/sbom/scans/1/start
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
 
-    # Validate scan exists and belongs to caller's tenant (gh-237)
-    scan = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
-    )
+    def resolve_scan():
+        if system_worker:
+            row = db.sbom_scans[id]  # tenant-scope-exempt: JWT worker
+            if not row:
+                return None
+            active_tenant = (
+                db((db.tenants.id == row.tenant_id) & (db.tenants.is_active == True))  # noqa: E712
+                .select(db.tenants.id)
+                .first()
+            )
+            return row if active_tenant else None
+        return get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+
+    scan = await run_in_threadpool(resolve_scan)
     if not scan:
         return ApiResponse.not_found("SBOM Scan", id)
 
@@ -479,9 +525,11 @@ async def start_scan(id: int):
         return ApiResponse.error(f"Scan is not pending (status: {scan.status})", 400)
 
     def mark_running():
-        db.sbom_scans[id] = dict(  # tenant-scope-exempt: verified above
+        db(
+            (db.sbom_scans.id == id) & (db.sbom_scans.tenant_id == scan.tenant_id)
+        ).update(
             status="running",
-            started_at=request.utcnow,
+            started_at=datetime.now(UTC),
         )
         db.commit()
         return db.sbom_scans[id]  # tenant-scope-exempt: verified above
@@ -529,21 +577,33 @@ async def submit_results(id: int):
         }
     """
     db = current_app.db
+    system_worker = is_system_service_worker()
     tenant_id = get_current_tenant_id()
 
     # Validate request body using Pydantic
     try:
-        body = validate_body(SubmitSBOMResultsRequest)
+        body = await validate_body(SubmitSBOMResultsRequest)
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
-    # Validate scan exists and belongs to caller's tenant (gh-237)
-    scan = await run_in_threadpool(
-        lambda: get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
-    )
+    def resolve_scan():
+        if system_worker:
+            row = db.sbom_scans[id]  # tenant-scope-exempt: JWT worker
+            if not row:
+                return None
+            active_tenant = (
+                db((db.tenants.id == row.tenant_id) & (db.tenants.is_active == True))  # noqa: E712
+                .select(db.tenants.id)
+                .first()
+            )
+            return row if active_tenant else None
+        return get_tenant_scoped(db, db.sbom_scans, id, tenant_id)
+
+    scan = await run_in_threadpool(resolve_scan)
     if not scan:
         return ApiResponse.not_found("SBOM Scan", id)
 
+    scan_tenant_id = scan.tenant_id
     success = body.success
     components = body.components or []
     files_scanned = body.files_scanned or []
@@ -552,9 +612,11 @@ async def submit_results(id: int):
     scan_duration_ms = body.scan_duration_ms
 
     def process_results():
-        # Get existing components for this parent
-        existing_query = (db.sbom_components.parent_type == scan.parent_type) & (
-            db.sbom_components.parent_id == scan.parent_id
+        # Get existing components for this parent within the scan's tenant
+        existing_query = (
+            (db.sbom_components.parent_type == scan.parent_type)
+            & (db.sbom_components.parent_id == scan.parent_id)
+            & (db.sbom_components.tenant_id == scan_tenant_id)
         )
         existing_components = db(existing_query).select()
         existing_map = {(c.name, c.version): c for c in existing_components}
@@ -571,25 +633,28 @@ async def submit_results(id: int):
                 # Update existing component: resolved via existing_query,
                 # itself scoped to the already-verified scan's parent
                 existing = existing_map[key]
-                db.sbom_components[existing.id] = {  # tenant-scope-exempt: see above
-                    "package_type": comp.get("package_type"),
-                    "purl": comp.get("purl"),
-                    "scope": comp.get("scope", "runtime"),
-                    "direct": comp.get("direct", True),
-                    "license_id": comp.get("license_id"),
-                    "license_name": comp.get("license_name"),
-                    "source_file": comp.get("source_file"),
-                    "repository_url": comp.get("repository_url"),
-                    "homepage_url": comp.get("homepage_url"),
-                    "description": comp.get("description"),
-                    "metadata": comp.get("metadata"),
-                }
+                db(
+                    (db.sbom_components.id == existing.id)
+                    & (db.sbom_components.tenant_id == scan_tenant_id)
+                ).update(
+                    package_type=comp.get("package_type"),
+                    purl=comp.get("purl"),
+                    scope=comp.get("scope", "runtime"),
+                    direct=comp.get("direct", True),
+                    license_id=comp.get("license_id"),
+                    license_name=comp.get("license_name"),
+                    source_file=comp.get("source_file"),
+                    repository_url=comp.get("repository_url"),
+                    homepage_url=comp.get("homepage_url"),
+                    description=comp.get("description"),
+                    metadata=comp.get("metadata"),
+                )
                 components_updated += 1
                 component_ids.append(existing.id)
             else:
                 # Insert new component
                 comp_id = db.sbom_components.insert(
-                    tenant_id=tenant_id,
+                    tenant_id=scan_tenant_id,
                     parent_type=scan.parent_type,
                     parent_id=scan.parent_id,
                     name=comp["name"],
@@ -598,6 +663,7 @@ async def submit_results(id: int):
                     package_type=comp["package_type"],
                     scope=comp.get("scope", "runtime"),
                     direct=comp.get("direct", True),
+                    is_active=True,
                     license_id=comp.get("license_id"),
                     license_name=comp.get("license_name"),
                     source_file=comp.get("source_file"),
@@ -657,7 +723,9 @@ async def submit_results(id: int):
 
         # Update scan record
         status = "completed" if success else "failed"
-        db.sbom_scans[id] = dict(  # tenant-scope-exempt: verified above
+        db(
+            (db.sbom_scans.id == id) & (db.sbom_scans.tenant_id == scan_tenant_id)
+        ).update(
             status=status,
             files_scanned=files_scanned,
             commit_hash=commit_hash,
@@ -666,7 +734,7 @@ async def submit_results(id: int):
             components_updated=components_updated,
             error_message=error_message,
             scan_duration_ms=scan_duration_ms,
-            completed_at=request.utcnow,
+            completed_at=datetime.now(UTC),
         )
 
         db.commit()
@@ -712,7 +780,9 @@ async def submit_results(id: int):
 
                     # Save results to database
                     def save_vulnerabilities():
-                        tenant_id = current_app.config.get("DEFAULT_TENANT_ID", 1)
+                        vuln_tenant_id = scan_tenant_id or current_app.config.get(
+                            "DEFAULT_TENANT_ID", 1
+                        )
 
                         for comp_id, vulns in results.items():
                             for vuln in vulns:
@@ -720,7 +790,10 @@ async def submit_results(id: int):
                                 existing_vuln = (
                                     db(
                                         (db.vulnerabilities.cve_id == vuln.cve_id)
-                                        & (db.vulnerabilities.tenant_id == tenant_id)
+                                        & (
+                                            db.vulnerabilities.tenant_id
+                                            == vuln_tenant_id
+                                        )
                                     )
                                     .select()
                                     .first()
@@ -731,7 +804,7 @@ async def submit_results(id: int):
                                 else:
                                     # Insert new vulnerability
                                     vuln_id = db.vulnerabilities.insert(
-                                        tenant_id=tenant_id,
+                                        tenant_id=vuln_tenant_id,
                                         cve_id=vuln.cve_id,
                                         aliases=vuln.aliases,
                                         severity=vuln.severity,
@@ -765,7 +838,7 @@ async def submit_results(id: int):
                                 if not existing_link:
                                     # Create component-vulnerability link
                                     db.component_vulnerabilities.insert(
-                                        tenant_id=tenant_id,
+                                        tenant_id=vuln_tenant_id,
                                         component_id=comp_id,
                                         vulnerability_id=vuln_id,
                                         status="open",
@@ -831,7 +904,7 @@ async def upload_sbom():
 
     # Validate request body using Pydantic
     try:
-        body = validate_body(UploadSBOMRequest)
+        body = await validate_body(UploadSBOMRequest)
     except ValidationError as e:
         return ValidationErrorResponse.from_pydantic_error(e)
 
@@ -893,7 +966,7 @@ async def upload_sbom():
             components_added=0,
             components_updated=0,
             components_removed=0,
-            started_at=request.utcnow,
+            started_at=datetime.now(UTC),
         )
 
         # Get existing components for this parent
@@ -914,22 +987,25 @@ async def upload_sbom():
                 # Update existing component: resolved via existing_query,
                 # itself scoped to the already-verified parent
                 existing = existing_map[key]
-                db.sbom_components[existing.id] = {  # tenant-scope-exempt: see above
-                    "package_type": comp.get("package_type"),
-                    "purl": comp.get("purl"),
-                    "scope": comp.get("scope", "runtime"),
-                    "direct": comp.get("direct", True),
-                    "license_id": comp.get("license_id"),
-                    "license_name": comp.get("license_name"),
-                    "license_url": comp.get("license_url"),
-                    "source_file": filename,
-                    "repository_url": comp.get("repository_url"),
-                    "homepage_url": comp.get("homepage_url"),
-                    "description": comp.get("description"),
-                    "hash_sha256": comp.get("hash_sha256"),
-                    "hash_sha512": comp.get("hash_sha512"),
-                    "metadata": comp.get("metadata"),
-                }
+                db(
+                    (db.sbom_components.id == existing.id)
+                    & (db.sbom_components.tenant_id == tenant_id)
+                ).update(
+                    package_type=comp.get("package_type"),
+                    purl=comp.get("purl"),
+                    scope=comp.get("scope", "runtime"),
+                    direct=comp.get("direct", True),
+                    license_id=comp.get("license_id"),
+                    license_name=comp.get("license_name"),
+                    license_url=comp.get("license_url"),
+                    source_file=filename,
+                    repository_url=comp.get("repository_url"),
+                    homepage_url=comp.get("homepage_url"),
+                    description=comp.get("description"),
+                    hash_sha256=comp.get("hash_sha256"),
+                    hash_sha512=comp.get("hash_sha512"),
+                    metadata=comp.get("metadata"),
+                )
                 components_updated += 1
             else:
                 # Insert new component
@@ -943,6 +1019,7 @@ async def upload_sbom():
                     package_type=comp.get("package_type", "unknown"),
                     scope=comp.get("scope", "runtime"),
                     direct=comp.get("direct", True),
+                    is_active=True,
                     license_id=comp.get("license_id"),
                     license_name=comp.get("license_name"),
                     license_url=comp.get("license_url"),
@@ -957,11 +1034,13 @@ async def upload_sbom():
                 components_added += 1
 
         # Update scan record (tenant-scope-exempt: scan_id from insert above)
-        db.sbom_scans[scan_id] = dict(  # tenant-scope-exempt: see above
+        db(
+            (db.sbom_scans.id == scan_id) & (db.sbom_scans.tenant_id == tenant_id)
+        ).update(
             status="completed",
             components_added=components_added,
             components_updated=components_updated,
-            completed_at=request.utcnow,
+            completed_at=datetime.now(UTC),
         )
 
         db.commit()

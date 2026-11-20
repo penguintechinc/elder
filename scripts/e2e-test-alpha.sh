@@ -127,17 +127,12 @@ log_success "Pods healthy ($RUNNING running)"
 log_info "  Running per-service healthchecks..."
 HEALTH_FAILURES=0
 
-# Scanner — exec python healthcheck.py inside the container
-SCANNER_POD=$(kubectl --context "$CONTEXT" get pod -n "$NAMESPACE" -l app.kubernetes.io/component=scanner -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-if [[ -n "$SCANNER_POD" ]]; then
-    if kubectl --context "$CONTEXT" exec -n "$NAMESPACE" "$SCANNER_POD" -- python healthcheck.py >/dev/null 2>&1; then
-        log_success "  Scanner healthcheck: OK"
-    else
-        log_error "  Scanner healthcheck: FAILED"
-        HEALTH_FAILURES=$((HEALTH_FAILURES + 1))
-    fi
+# svc-scanning — CronJob presence (runs on a 1-minute schedule; pods are transient Jobs)
+if kubectl --context "$CONTEXT" get cronjob -n "$NAMESPACE" -l app.kubernetes.io/component=svc-scanning -o name | grep -q cronjob; then
+    log_success "  svc-scanning CronJob: OK"
 else
-    log_warn "  Scanner pod not found — skipping healthcheck"
+    log_error "  svc-scanning CronJob: MISSING"
+    HEALTH_FAILURES=$((HEALTH_FAILURES + 1))
 fi
 
 # Worker — hit its HTTP health endpoint (port matches HEALTH_CHECK_PORT in deployment, default 28000)

@@ -78,19 +78,3 @@ spec:
   selector:
     {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 4 }}
 {{- end }}
-
-{{- if and (not .Values.scanner.service) .Values.scanner.enabled }}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "elder.fullname" . }}-scanner
-  namespace: {{ .Values.namespace }}
-  labels:
-    {{- include "elder.componentLabels" (list "scanner" .) | nindent 4 }}
-spec:
-  type: ClusterIP
-  clusterIP: None
-  selector:
-    {{- include "elder.componentSelectorLabels" (list "scanner" .) | nindent 4 }}
-{{- end }}

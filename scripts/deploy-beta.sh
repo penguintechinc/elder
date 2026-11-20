@@ -37,7 +37,7 @@ usage() {
     echo "  all       Build and deploy all images (default)"
     echo "  api       Build and deploy only elder-api"
     echo "  web       Build and deploy only elder-web"
-    echo "  scanner   Build and deploy only elder-scanner"
+    echo "  svc-scanning  Build and deploy only elder-svc-scanning"
     echo "  worker    Build and deploy only elder-worker"
     echo ""
     echo "OPTIONS:"
@@ -85,7 +85,7 @@ while [[ $# -gt 0 ]]; do
             K8S_CONTEXT="$2"
             shift 2
             ;;
-        all|api|web|scanner|worker)
+        all|api|web|svc-scanning|worker|flows-invoker)
             TARGET_IMAGE="$1"
             shift
             ;;
@@ -123,7 +123,7 @@ echo ""
 declare -A IMAGES
 IMAGES[api]="apps/api/Dockerfile:."
 IMAGES[web]="web/Dockerfile:."
-IMAGES[scanner]="apps/scanner/Dockerfile:apps/scanner"
+IMAGES[svc-scanning]="services/svc-scanning/Dockerfile:."
 IMAGES[worker]="apps/worker/Dockerfile:."
 IMAGES[flows-invoker]="apps/flows_invoker/Dockerfile:."
 
@@ -193,9 +193,11 @@ helm_upgrade() {
         "${set_args[@]}"
 
     log_info "Waiting for rollout to complete..."
-    local services=("api" "web" "scanner" "worker" "flows-invoker")
-    if [ "$TARGET_IMAGE" != "all" ]; then
+    local services=("api" "web" "worker" "flows-invoker")
+    if [ "$TARGET_IMAGE" != "all" ] && [ "$TARGET_IMAGE" != "svc-scanning" ]; then
         services=("$TARGET_IMAGE")
+    elif [ "$TARGET_IMAGE" = "svc-scanning" ]; then
+        services=()
     fi
 
     for svc in "${services[@]}"; do
@@ -208,12 +210,17 @@ helm_upgrade() {
         fi
     done
 
+    if [ "$TARGET_IMAGE" = "all" ] || [ "$TARGET_IMAGE" = "svc-scanning" ]; then
+        kubectl --context="$K8S_CONTEXT" get cronjob elder-svc-scanning -n "$K8S_NAMESPACE" &>/dev/null \
+            || log_warn "CronJob elder-svc-scanning not found in ${K8S_NAMESPACE}"
+    fi
+
     log_success "Helm upgrade complete"
 }
 
 # Determine which images to build
 if [ "$TARGET_IMAGE" = "all" ]; then
-    TARGETS=("api" "web" "scanner" "worker" "flows-invoker")
+    TARGETS=("api" "web" "svc-scanning" "worker" "flows-invoker")
 else
     TARGETS=("$TARGET_IMAGE")
 fi

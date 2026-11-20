@@ -215,4 +215,25 @@ spec:
               protocol: TCP
             - port: {{ .Values.api.service.grpcPort | quote }}
               protocol: TCP
+---
+# Egress strictly for svc-scanning CronJob pods: HTTPS git clone, HTTP
+# screenshots, and active network/banner probing while blocking cloud IMDS
+# metadata (169.254.169.254/32) and permitting zero external ingress.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-svc-scanning-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "svc-scanning" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "svc-scanning" .) | nindent 6 }}
+  egress:
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except:
+            - 169.254.169.254/32
+        - cidr: ::/0
 {{- end }}
