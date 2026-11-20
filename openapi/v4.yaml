@@ -6,6 +6,161 @@
 # request/response schemas; other routes appear as bare paths.
 components:
   schemas:
+    AIResourceDTO:
+      additionalProperties: false
+      description: Immutable AI resource data transfer object.
+      properties:
+        agreement_level:
+          anyOf:
+          - enum:
+            - user
+            - team
+            - enterprise
+            type: string
+          - type: 'null'
+          default: null
+          title: Agreement Level
+        budget_monthly:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+          title: Budget Monthly
+        cost_per_10m_tokens:
+          anyOf:
+          - type: number
+          - type: 'null'
+          default: null
+          title: Cost Per 10M Tokens
+        created_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Created At
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Description
+        endpoint_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Endpoint Url
+        id:
+          title: Id
+          type: integer
+        is_active:
+          title: Is Active
+          type: boolean
+        metadata:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          default: null
+          title: Metadata
+        model_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Model Name
+        name:
+          title: Name
+          type: string
+        notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Notes
+        organization_id:
+          title: Organization Id
+          type: integer
+        owner_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Owner Id
+        parent_system_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Parent System Id
+        plan_info:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Plan Info
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Provider
+        resource_type:
+          enum:
+          - llm
+          - ai_gateway
+          - mcp_server
+          title: Resource Type
+          type: string
+        seats:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Seats
+        status:
+          enum:
+          - pending_review
+          - allowed
+          - restricted
+          - not_allowed
+          title: Status
+          type: string
+        tags:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          title: Tags
+        tenant_id:
+          title: Tenant Id
+          type: integer
+        updated_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          default: null
+          title: Updated At
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
+      required:
+      - id
+      - tenant_id
+      - name
+      - organization_id
+      - resource_type
+      - status
+      - is_active
+      title: AIResourceDTO
+      type: object
     AuditRetentionPolicyResponse:
       additionalProperties: false
       description: A single audit log retention policy.
@@ -493,6 +648,12 @@ components:
           - type: 'null'
           default: null
           title: Updated At
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
       required:
       - id
       - name
@@ -606,6 +767,12 @@ components:
           - type: 'null'
           default: null
           title: Is Active
+        labels:
+          default: []
+          items:
+            $ref: '#/components/schemas/DataStoreLabelResponse'
+          title: Labels
+          type: array
         last_access_audit:
           anyOf:
           - format: date-time
@@ -893,6 +1060,12 @@ components:
         username:
           title: Username
           type: string
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
       required:
       - id
       - username
@@ -939,6 +1112,12 @@ components:
           format: date-time
           title: Updated At
           type: string
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
       required:
       - id
       - name
@@ -946,6 +1125,90 @@ components:
       - created_at
       - updated_at
       title: IdentityGroupDTO
+      type: object
+    LicenseFeaturesDTO:
+      description: Feature entitlement flags derived from the resolved deployment tier.
+      properties:
+        access_reviews:
+          title: Access Reviews
+          type: boolean
+        audit_logging:
+          title: Audit Logging
+          type: boolean
+        compliance_reports:
+          title: Compliance Reports
+          type: boolean
+        enterprise_integrations:
+          title: Enterprise Integrations
+          type: boolean
+        google_oauth_sso:
+          title: Google Oauth Sso
+          type: boolean
+        multi_tenancy:
+          title: Multi Tenancy
+          type: boolean
+        portal_users:
+          title: Portal Users
+          type: boolean
+        saml_sso:
+          title: Saml Sso
+          type: boolean
+        scim_provisioning:
+          title: Scim Provisioning
+          type: boolean
+      required:
+      - multi_tenancy
+      - portal_users
+      - saml_sso
+      - scim_provisioning
+      - audit_logging
+      - compliance_reports
+      - access_reviews
+      - enterprise_integrations
+      - google_oauth_sso
+      title: LicenseFeaturesDTO
+      type: object
+    LicenseLimitsDTO:
+      description: Resolved scale limits (``None`` indicates unlimited).
+      properties:
+        max_global_admins:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Global Admins
+        max_nodes_per_type:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Nodes Per Type
+        max_objects:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Objects
+        max_teams:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Teams
+        max_tenant_admins:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Tenant Admins
+        max_tenants:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Tenants
+      required:
+      - max_global_admins
+      - max_tenant_admins
+      - max_teams
+      - max_tenants
+      - max_objects
+      - max_nodes_per_type
+      title: LicenseLimitsDTO
       type: object
     LicensePolicyDTO:
       additionalProperties: false
@@ -1001,13 +1264,15 @@ components:
           - type: 'null'
           title: Updated At
         village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
           title: Village Id
-          type: string
       required:
       - id
       - tenant_id
       - organization_id
-      - village_id
       - name
       - description
       - allowed_licenses
@@ -1121,6 +1386,12 @@ components:
           format: date-time
           title: Updated At
           type: string
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
       required:
       - id
       - name
@@ -1173,6 +1444,12 @@ components:
           - type: 'null'
           default: null
           title: Version
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
       required:
       - name
       - path
@@ -1187,15 +1464,23 @@ components:
         \ tenant ID\n    name: Software product name (1-255 chars)\n    description: Optional detailed\
         \ description\n    organization_id: Associated organization ID\n    purchasing_poc_id: Optional\
         \ purchasing point of contact identity ID\n    license_url: Optional URL to license documentation\n\
-        \    version: Optional software version\n    business_purpose: Optional business purpose/justification\n\
-        \    software_type: Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional\
-        \ number of purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n\
-        \    renewal_date: Optional license renewal date\n    vendor: Optional software vendor name\n\
-        \    support_contact: Optional support contact information\n    notes: Optional additional notes\n\
-        \    tags: Optional list of classification tags\n    is_active: Active status flag\n    created_at:\
-        \ Creation timestamp\n    updated_at: Last update timestamp\n    village_id: Optional unique hierarchical\
-        \ identifier"
+        \    access_url: Optional URL to access the software\n    parent_system_id: Optional parent system\
+        \ entity ID\n    git_url: Optional Git repository URL\n    git_path: Optional Git path for monorepos\n\
+        \    release_shasum: Optional SHA checksum for the release\n    version: Optional software version\n\
+        \    business_purpose: Optional business purpose/justification\n    software_type: Type classification\
+        \ (e.g., 'commercial', 'open-source')\n    seats: Optional number of purchased licenses/seats\n\
+        \    cost_monthly: Optional monthly cost in currency units\n    renewal_date: Optional license\
+        \ renewal date\n    vendor: Optional software vendor name\n    support_contact: Optional support\
+        \ contact information\n    notes: Optional additional notes\n    tags: Optional list of classification\
+        \ tags\n    is_active: Active status flag\n    created_at: Creation timestamp\n    updated_at:\
+        \ Last update timestamp\n    village_id: Optional unique hierarchical identifier"
       properties:
+        access_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Access Url
         business_purpose:
           anyOf:
           - type: string
@@ -1218,6 +1503,18 @@ components:
           - type: 'null'
           default: null
           title: Description
+        git_path:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Git Path
+        git_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Git Url
         id:
           title: Id
           type: integer
@@ -1242,12 +1539,24 @@ components:
         organization_id:
           title: Organization Id
           type: integer
+        parent_system_id:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          default: null
+          title: Parent System Id
         purchasing_poc_id:
           anyOf:
           - type: integer
           - type: 'null'
           default: null
           title: Purchasing Poc Id
+        release_shasum:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Release Shasum
         renewal_date:
           anyOf:
           - format: date
@@ -1381,6 +1690,12 @@ components:
           - type: 'null'
           default: null
           title: Updated At
+        village_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          default: null
+          title: Village Id
         webhook_enabled:
           title: Webhook Enabled
           type: boolean
@@ -1556,6 +1871,563 @@ paths:
           type: integer
       responses: {}
       summary: Get all members to review in a review.
+  /api/v1/ai/resources:
+    get:
+      description: ''
+      operationId: get_list_ai_resources
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                description: Paginated list of AI resources.
+                properties:
+                  items:
+                    items:
+                      $ref: '#/components/schemas/AIResourceDTO'
+                    title: Items
+                    type: array
+                  page:
+                    title: Page
+                    type: integer
+                  pages:
+                    title: Pages
+                    type: integer
+                  per_page:
+                    title: Per Page
+                    type: integer
+                  total:
+                    title: Total
+                    type: integer
+                required:
+                - items
+                - total
+                - page
+                - per_page
+                - pages
+                title: AIResourceListResponse
+                type: object
+          description: Paginated list of AI resources.
+      summary: List AI resources with optional filtering and pagination.
+    post:
+      description: ''
+      operationId: post_create_ai_resource
+      parameters: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                description: Immutable AI resource data transfer object.
+                properties:
+                  agreement_level:
+                    anyOf:
+                    - enum:
+                      - user
+                      - team
+                      - enterprise
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Agreement Level
+                  budget_monthly:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Budget Monthly
+                  cost_per_10m_tokens:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Cost Per 10M Tokens
+                  created_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Created At
+                  description:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Description
+                  endpoint_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Endpoint Url
+                  id:
+                    title: Id
+                    type: integer
+                  is_active:
+                    title: Is Active
+                    type: boolean
+                  metadata:
+                    anyOf:
+                    - additionalProperties: true
+                      type: object
+                    - type: 'null'
+                    default: null
+                    title: Metadata
+                  model_name:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Model Name
+                  name:
+                    title: Name
+                    type: string
+                  notes:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Notes
+                  organization_id:
+                    title: Organization Id
+                    type: integer
+                  owner_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Owner Id
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
+                  plan_info:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Plan Info
+                  provider:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Provider
+                  resource_type:
+                    enum:
+                    - llm
+                    - ai_gateway
+                    - mcp_server
+                    title: Resource Type
+                    type: string
+                  seats:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Seats
+                  status:
+                    enum:
+                    - pending_review
+                    - allowed
+                    - restricted
+                    - not_allowed
+                    title: Status
+                    type: string
+                  tags:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Tags
+                  tenant_id:
+                    title: Tenant Id
+                    type: integer
+                  updated_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Updated At
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
+                required:
+                - id
+                - tenant_id
+                - name
+                - organization_id
+                - resource_type
+                - status
+                - is_active
+                title: AIResourceDTO
+                type: object
+          description: Immutable AI resource data transfer object.
+      summary: Create a new AI resource.
+  /api/v1/ai/resources/{id}:
+    delete:
+      description: ''
+      operationId: delete_delete_ai_resource
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Delete an AI resource.
+    get:
+      description: ''
+      operationId: get_get_ai_resource
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                description: Immutable AI resource data transfer object.
+                properties:
+                  agreement_level:
+                    anyOf:
+                    - enum:
+                      - user
+                      - team
+                      - enterprise
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Agreement Level
+                  budget_monthly:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Budget Monthly
+                  cost_per_10m_tokens:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Cost Per 10M Tokens
+                  created_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Created At
+                  description:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Description
+                  endpoint_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Endpoint Url
+                  id:
+                    title: Id
+                    type: integer
+                  is_active:
+                    title: Is Active
+                    type: boolean
+                  metadata:
+                    anyOf:
+                    - additionalProperties: true
+                      type: object
+                    - type: 'null'
+                    default: null
+                    title: Metadata
+                  model_name:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Model Name
+                  name:
+                    title: Name
+                    type: string
+                  notes:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Notes
+                  organization_id:
+                    title: Organization Id
+                    type: integer
+                  owner_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Owner Id
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
+                  plan_info:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Plan Info
+                  provider:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Provider
+                  resource_type:
+                    enum:
+                    - llm
+                    - ai_gateway
+                    - mcp_server
+                    title: Resource Type
+                    type: string
+                  seats:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Seats
+                  status:
+                    enum:
+                    - pending_review
+                    - allowed
+                    - restricted
+                    - not_allowed
+                    title: Status
+                    type: string
+                  tags:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Tags
+                  tenant_id:
+                    title: Tenant Id
+                    type: integer
+                  updated_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Updated At
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
+                required:
+                - id
+                - tenant_id
+                - name
+                - organization_id
+                - resource_type
+                - status
+                - is_active
+                title: AIResourceDTO
+                type: object
+          description: Immutable AI resource data transfer object.
+      summary: Get a single AI resource by ID.
+    put:
+      description: ''
+      operationId: put_update_ai_resource
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                additionalProperties: false
+                description: Immutable AI resource data transfer object.
+                properties:
+                  agreement_level:
+                    anyOf:
+                    - enum:
+                      - user
+                      - team
+                      - enterprise
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Agreement Level
+                  budget_monthly:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Budget Monthly
+                  cost_per_10m_tokens:
+                    anyOf:
+                    - type: number
+                    - type: 'null'
+                    default: null
+                    title: Cost Per 10M Tokens
+                  created_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Created At
+                  description:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Description
+                  endpoint_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Endpoint Url
+                  id:
+                    title: Id
+                    type: integer
+                  is_active:
+                    title: Is Active
+                    type: boolean
+                  metadata:
+                    anyOf:
+                    - additionalProperties: true
+                      type: object
+                    - type: 'null'
+                    default: null
+                    title: Metadata
+                  model_name:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Model Name
+                  name:
+                    title: Name
+                    type: string
+                  notes:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Notes
+                  organization_id:
+                    title: Organization Id
+                    type: integer
+                  owner_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Owner Id
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
+                  plan_info:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Plan Info
+                  provider:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Provider
+                  resource_type:
+                    enum:
+                    - llm
+                    - ai_gateway
+                    - mcp_server
+                    title: Resource Type
+                    type: string
+                  seats:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Seats
+                  status:
+                    enum:
+                    - pending_review
+                    - allowed
+                    - restricted
+                    - not_allowed
+                    title: Status
+                    type: string
+                  tags:
+                    anyOf:
+                    - items:
+                        type: string
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Tags
+                  tenant_id:
+                    title: Tenant Id
+                    type: integer
+                  updated_at:
+                    anyOf:
+                    - format: date-time
+                      type: string
+                    - type: 'null'
+                    default: null
+                    title: Updated At
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
+                required:
+                - id
+                - tenant_id
+                - name
+                - organization_id
+                - resource_type
+                - status
+                - is_active
+                title: AIResourceDTO
+                type: object
+          description: Immutable AI resource data transfer object.
+      summary: Update an existing AI resource.
   /api/v1/api-keys:
     get:
       description: ''
@@ -2137,6 +3009,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Version
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - name
                 - path
@@ -2271,6 +3149,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Version
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - name
                 - is_masked
@@ -2334,6 +3218,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Version
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - name
                 - path
@@ -2395,6 +3285,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Version
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - name
                 - path
@@ -3686,7 +4582,7 @@ paths:
           type: integer
       responses: {}
       summary: Trigger a manual cost sync.
-  /api/v1/costs/{resource_id}:
+  /api/v1/costs/{resource_type}/{resource_id}:
     get:
       description: ''
       operationId: get_get_resource_costs
@@ -3874,6 +4770,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Is Active
+                  labels:
+                    default: []
+                    items:
+                      $ref: '#/components/schemas/DataStoreLabelResponse'
+                    title: Labels
+                    type: array
                   last_access_audit:
                     anyOf:
                     - format: date-time
@@ -4095,6 +4997,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Is Active
+                  labels:
+                    default: []
+                    items:
+                      $ref: '#/components/schemas/DataStoreLabelResponse'
+                    title: Labels
+                    type: array
                   last_access_audit:
                     anyOf:
                     - format: date-time
@@ -4304,6 +5212,12 @@ paths:
                     - type: 'null'
                     default: null
                     title: Is Active
+                  labels:
+                    default: []
+                    items:
+                      $ref: '#/components/schemas/DataStoreLabelResponse'
+                    title: Labels
+                    type: array
                   last_access_audit:
                     anyOf:
                     - format: date-time
@@ -4518,7 +5432,7 @@ paths:
       parameters: []
       responses: {}
       summary: Create multiple dependencies at once.
-  /api/v1/dependencies/resource/{resource_id}:
+  /api/v1/dependencies/resource/{resource_type}/{resource_id}:
     get:
       description: "\nPath Parameters:\n    - resource_type: Type of resource (entity, identity, project,\
         \ etc.)\n    - resource_id: Resource ID\n\nQuery Parameters:\n    - direction: 'outgoing', 'incoming',\
@@ -5253,7 +6167,11 @@ paths:
     get:
       description: "\nThis endpoint is called by the scanner container to fetch jobs ready to run.\nJobs\
         \ are considered pending if they have schedule_interval=0 (one-time run)\nand haven't been run\
-        \ yet, or scheduled jobs that are due.\n\nReturns:\n    200: List of pending jobs"
+        \ yet, or scheduled jobs that are due.\n\nregression: gh-237 -- this route previously had no auth\
+        \ at all and\nreturned EVERY tenant's pending jobs (including provider config) to an\nunauthenticated\
+        \ caller. Now requires discovery:read and filters results\nto jobs whose organization_id belongs\
+        \ to the caller's tenant.\n\nReturns:\n    200: List of pending jobs (caller's tenant only)\n\
+        \    401: Authentication required"
       operationId: get_get_pending_jobs
       parameters: []
       responses: {}
@@ -5297,9 +6215,13 @@ paths:
       summary: Update discovery job configuration.
   /api/v1/discovery/jobs/{job_id}/complete:
     post:
-      description: "\nCalled by the scanner service when a job finishes.\n\nRequest body:\n    {\n   \
-        \     \"success\": true,\n        \"results\": {...},\n        \"error_message\": null\n    }\n\
-        \nReturns:\n    200: Results recorded\n    404: Job not found"
+      description: "\nCalled by the scanner service when a job finishes.\n\nregression: gh-237 -- this\
+        \ route previously had no auth at all, letting\nany caller submit arbitrary results for any tenant's\
+        \ job (arbitrary\nwrite). Now requires discovery:write and verifies job_id belongs to the\ncaller's\
+        \ tenant via organization_id before mutating it.\n\nRequest body:\n    {\n        \"success\"\
+        : true,\n        \"results\": {...},\n        \"error_message\": null\n    }\n\nReturns:\n   \
+        \ 200: Results recorded\n    400: Request body required\n    401: Authentication required\n  \
+        \  404: Job not found (including jobs belonging to another tenant)"
       operationId: post_complete_job
       parameters:
       - in: path
@@ -5340,8 +6262,11 @@ paths:
       summary: Manually trigger a discovery job.
   /api/v1/discovery/jobs/{job_id}/start:
     post:
-      description: "\nCalled by the scanner service when it picks up a job.\n\nReturns:\n    200: Job\
-        \ marked as running\n    404: Job not found"
+      description: "\nCalled by the scanner service when it picks up a job.\n\nregression: gh-237 -- this\
+        \ route previously had no auth at all, letting\nany caller mark any tenant's job as running (arbitrary\
+        \ write). Now\nrequires discovery:write and verifies job_id belongs to the caller's\ntenant via\
+        \ organization_id before mutating it.\n\nReturns:\n    200: Job marked as running\n    401: Authentication\
+        \ required\n    404: Job not found (including jobs belonging to another tenant)"
       operationId: post_start_job
       parameters:
       - in: path
@@ -6241,6 +7166,85 @@ paths:
           type: string
       responses: {}
       summary: Enable a pipeline.
+  /api/v1/geo/geocode:
+    post:
+      description: ''
+      operationId: post_geocode_location
+      parameters: []
+      responses: {}
+      summary: Geocode a human-readable location query into latitude/longitude.
+  /api/v1/geo/locations:
+    get:
+      description: ''
+      operationId: get_list_locations
+      parameters: []
+      responses: {}
+      summary: List geographic locations for the current tenant.
+    post:
+      description: ''
+      operationId: post_create_location
+      parameters: []
+      responses: {}
+      summary: Create a geographic location, auto-geocoding coordinates when omitted.
+  /api/v1/geo/locations/{location_id}:
+    delete:
+      description: ''
+      operationId: delete_delete_location
+      parameters:
+      - in: path
+        name: location_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Delete a geographic location scoped to the current tenant.
+    put:
+      description: ''
+      operationId: put_update_location
+      parameters:
+      - in: path
+        name: location_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update a geographic location scoped to the current tenant.
+  /api/v1/geo/regions:
+    get:
+      description: ''
+      operationId: get_list_regions
+      parameters: []
+      responses: {}
+      summary: List geographic regions for the current tenant.
+    post:
+      description: ''
+      operationId: post_create_region
+      parameters: []
+      responses: {}
+      summary: Create a geographic region.
+  /api/v1/geo/regions/{region_id}:
+    delete:
+      description: ''
+      operationId: delete_delete_region
+      parameters:
+      - in: path
+        name: region_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Delete a geographic region scoped to the current tenant.
+    put:
+      description: ''
+      operationId: put_update_region
+      parameters:
+      - in: path
+        name: region_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update a geographic region scoped to the current tenant.
   /api/v1/google-workspace/providers:
     get:
       description: "\nQuery params:\n    - organization_id: Filter by organization\n\nReturns:\n    200:\
@@ -7091,7 +8095,7 @@ paths:
   /api/v1/iam/providers:
     get:
       description: "\nQuery params:\n    - enabled_only: Only return enabled providers (default: false)\n\
-        \nReturns:\n    200: List of providers"
+        \    - organization_id: Optional organization ID filter\n\nReturns:\n    200: List of providers"
       operationId: get_list_providers
       parameters: []
       responses: {}
@@ -7644,6 +8648,18 @@ paths:
           type: string
       responses: {}
       summary: Attach policy to user.
+  /api/v1/id/{village_id}:
+    get:
+      description: ''
+      operationId: get_lookup_village_id
+      parameters:
+      - in: path
+        name: village_id
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Resolve a village_id at ``GET /api/v1/id/<village_id>``.
   /api/v1/identities:
     get:
       description: "\nQuery Parameters:\n    - page: Page number (default: 1)\n    - per_page: Items per\
@@ -7784,6 +8800,12 @@ paths:
                   username:
                     title: Username
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - username
@@ -7883,6 +8905,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -7990,6 +9018,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -8054,6 +9088,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -8118,6 +9158,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -8241,6 +9287,12 @@ paths:
                   username:
                     title: Username
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - username
@@ -8355,6 +9407,12 @@ paths:
                   username:
                     title: Username
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - username
@@ -8469,6 +9527,12 @@ paths:
                   username:
                     title: Username
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - username
@@ -8479,6 +9543,104 @@ paths:
                 type: object
           description: Immutable Identity data transfer object.
       summary: Update identity.
+  /api/v1/import/templates:
+    get:
+      description: ''
+      operationId: get_list_csv_templates
+      parameters: []
+      responses: {}
+      summary: Return all supported CSV import templates and their exact column rules.
+  /api/v1/import/templates/{resource}/download:
+    get:
+      description: ''
+      operationId: get_download_csv_template
+      parameters:
+      - in: path
+        name: resource
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Download an exact CSV template with header row and example row.
+  /api/v1/import/{resource}:
+    post:
+      description: ''
+      operationId: post_import_csv_resource
+      parameters:
+      - in: path
+        name: resource
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: Validate an exact CSV against the resource template (max 1000 rows) and import.
+  /api/v1/integrations/internal/discovery/{job_id}/complete:
+    post:
+      description: ''
+      operationId: post_complete_discovery_job
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Persist discovered resources and finalize a discovery job execution.
+  /api/v1/integrations/internal/discovery/{job_id}/start:
+    post:
+      description: ''
+      operationId: post_start_discovery_job
+      parameters:
+      - in: path
+        name: job_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Record the start of a discovery job execution in ``discovery_history``.
+  /api/v1/integrations/internal/google-workspace/{provider_id}/apply:
+    post:
+      description: ''
+      operationId: post_apply_google_workspace_sync
+      parameters:
+      - in: path
+        name: provider_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Persist synced Google Workspace directory users, groups, and memberships.
+  /api/v1/integrations/internal/iam/{provider_id}/apply:
+    post:
+      description: ''
+      operationId: post_apply_iam_sync
+      parameters:
+      - in: path
+        name: provider_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Persist synced IAM users, groups, roles, and memberships for a provider.
+  /api/v1/integrations/internal/pending:
+    get:
+      description: ''
+      operationId: get_get_pending_integrations
+      parameters: []
+      responses: {}
+      summary: Return due discovery jobs, sync configs, IAM providers, and GWS providers.
+  /api/v1/integrations/internal/sync/{config_id}/apply:
+    post:
+      description: ''
+      operationId: post_apply_sync_results
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Apply pulled issues, pushed mappings, conflicts, and history for a sync config.
   /api/v1/ipam/addresses:
     get:
       description: "\nQuery Parameters:\n    - prefix_id: Filter by prefix\n    - status: Filter by status\
@@ -8990,6 +10152,51 @@ paths:
           type: integer
       responses: {}
       summary: Remove a project link from an issue.
+  /api/v1/issues/{id}/resources:
+    get:
+      description: "\nPath Parameters:\n    - id: Issue ID\n\nReturns:\n    200: List of resource links\n\
+        \    403: Tenant not found\n    404: Issue not found"
+      operationId: get_list_issue_resource_links
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: List resource links for an issue.
+    post:
+      description: "\nPath Parameters:\n    - id: Issue ID\n\nRequest Body:\n    {\n        \"resource_type\"\
+        : \"device\",\n        \"resource_id\": 42\n    }\n\nReturns:\n    200: Resource already linked\n\
+        \    201: Resource link created\n    400: Invalid request\n    403: Tenant not found\n    404:\
+        \ Issue not found"
+      operationId: post_create_issue_resource_link
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Link a generic resource to an issue.
+  /api/v1/issues/{id}/resources/{link_id}:
+    delete:
+      description: "\nPath Parameters:\n    - id: Issue ID\n    - link_id: Link ID\n\nReturns:\n    204:\
+        \ Link removed\n    403: Tenant not found\n    404: Issue or link not found"
+      operationId: delete_delete_issue_resource_link
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: integer
+      - in: path
+        name: link_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Remove a resource link from an issue.
   /api/v1/keys:
     get:
       description: "\nQuery params:\n    - provider_id: Filter by key provider\n    - key_type: Filter\
@@ -9391,13 +10598,15 @@ paths:
                     - type: 'null'
                     title: Updated At
                   village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
                     title: Village Id
-                    type: string
                 required:
                 - id
                 - tenant_id
                 - organization_id
-                - village_id
                 - name
                 - description
                 - allowed_licenses
@@ -9514,13 +10723,15 @@ paths:
                     - type: 'null'
                     title: Updated At
                   village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
                     title: Village Id
-                    type: string
                 required:
                 - id
                 - tenant_id
                 - organization_id
-                - village_id
                 - name
                 - description
                 - allowed_licenses
@@ -9607,13 +10818,15 @@ paths:
                     - type: 'null'
                     title: Updated At
                   village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
                     title: Village Id
-                    type: string
                 required:
                 - id
                 - tenant_id
                 - organization_id
-                - village_id
                 - name
                 - description
                 - allowed_licenses
@@ -9626,6 +10839,47 @@ paths:
                 type: object
           description: Immutable License Policy data transfer object.
       summary: Update a license policy.
+  /api/v1/licensing/status:
+    get:
+      description: ''
+      operationId: get_get_licensing_status
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                description: Response DTO for ``GET /api/v1/licensing/status``.
+                properties:
+                  bypass_domain:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    title: Bypass Domain
+                  domain_bypass:
+                    title: Domain Bypass
+                    type: boolean
+                  features:
+                    $ref: '#/components/schemas/LicenseFeaturesDTO'
+                  limits:
+                    $ref: '#/components/schemas/LicenseLimitsDTO'
+                  status:
+                    title: Status
+                    type: string
+                  tier:
+                    title: Tier
+                    type: string
+                required:
+                - tier
+                - status
+                - domain_bypass
+                - bypass_domain
+                - limits
+                - features
+                title: LicenseStatusResponse
+                type: object
+          description: Response DTO for ``GET /api/v1/licensing/status``.
+      summary: Return the effective license tier, domain-bypass state, limits, and features.
   /api/v1/logs:
     get:
       description: "\nReturns:\n    200: List of log lines and total count\n    404: Log file not found\n\
@@ -10775,6 +12029,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -10919,6 +12179,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -11051,6 +12317,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -11183,6 +12455,12 @@ paths:
                     format: date-time
                     title: Updated At
                     type: string
+                  village_id:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Village Id
                 required:
                 - id
                 - name
@@ -11282,39 +12560,6 @@ paths:
       parameters: []
       responses: {}
       summary: Create a new page.
-  /api/v1/pages/{collection_id}:
-    delete:
-      description: "\nReturns:\n    204: No content\n    404: Page or collection not found"
-      operationId: delete_detach_collection
-      parameters:
-      - in: path
-        name: slug
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: collection_id
-        required: true
-        schema:
-          type: integer
-      responses: {}
-      summary: Detach a document collection from a page.
-    post:
-      description: "\nReturns:\n    200: Success\n    404: Page or collection not found"
-      operationId: post_attach_collection
-      parameters:
-      - in: path
-        name: slug
-        required: true
-        schema:
-          type: string
-      - in: path
-        name: collection_id
-        required: true
-        schema:
-          type: integer
-      responses: {}
-      summary: Attach a document collection to a page.
   /api/v1/pages/{slug}:
     delete:
       description: "\nReturns:\n    204: No content\n    404: Not found"
@@ -11364,6 +12609,39 @@ paths:
           type: string
       responses: {}
       summary: Get all pages that reference this page via wiki-links.
+  /api/v1/pages/{slug}/collections/{collection_id}:
+    delete:
+      description: "\nReturns:\n    204: No content\n    404: Page or collection not found"
+      operationId: delete_detach_collection
+      parameters:
+      - in: path
+        name: slug
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: collection_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Detach a document collection from a page.
+    post:
+      description: "\nReturns:\n    200: Success\n    404: Page or collection not found"
+      operationId: post_attach_collection
+      parameters:
+      - in: path
+        name: slug
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: collection_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Attach a document collection to a page.
   /api/v1/portal-auth/login:
     post:
       description: "\nRequest body:\n    tenant: str - Tenant slug (or use tenant_id)\n    email: str\
@@ -11983,6 +13261,20 @@ paths:
       parameters: []
       responses: {}
       summary: Advanced search across all resources.
+  /api/v1/search/ai-research:
+    post:
+      description: ''
+      operationId: post_run_ai_research_endpoint
+      parameters: []
+      responses: {}
+      summary: Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP.
+  /api/v1/search/ai-research/config:
+    get:
+      description: ''
+      operationId: get_get_ai_research_config_endpoint
+      parameters: []
+      responses: {}
+      summary: Return AI Researcher model configuration, Ollama health, and enabled MCP tool count.
   /api/v1/search/analytics/popular:
     get:
       description: "\nQuery params:\n    - limit: Maximum results (default: 10)\n\nReturns:\n    200:\
@@ -12449,7 +13741,10 @@ paths:
                   \    tenant_id: Associated tenant ID\n    name: Software product name (1-255 chars)\n\
                   \    description: Optional detailed description\n    organization_id: Associated organization\
                   \ ID\n    purchasing_poc_id: Optional purchasing point of contact identity ID\n    license_url:\
-                  \ Optional URL to license documentation\n    version: Optional software version\n  \
+                  \ Optional URL to license documentation\n    access_url: Optional URL to access the\
+                  \ software\n    parent_system_id: Optional parent system entity ID\n    git_url: Optional\
+                  \ Git repository URL\n    git_path: Optional Git path for monorepos\n    release_shasum:\
+                  \ Optional SHA checksum for the release\n    version: Optional software version\n  \
                   \  business_purpose: Optional business purpose/justification\n    software_type: Type\
                   \ classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of\
                   \ purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n\
@@ -12459,6 +13754,12 @@ paths:
                   \ status flag\n    created_at: Creation timestamp\n    updated_at: Last update timestamp\n\
                   \    village_id: Optional unique hierarchical identifier"
                 properties:
+                  access_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Access Url
                   business_purpose:
                     anyOf:
                     - type: string
@@ -12481,6 +13782,18 @@ paths:
                     - type: 'null'
                     default: null
                     title: Description
+                  git_path:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Path
+                  git_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Url
                   id:
                     title: Id
                     type: integer
@@ -12505,12 +13818,24 @@ paths:
                   organization_id:
                     title: Organization Id
                     type: integer
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
                   purchasing_poc_id:
                     anyOf:
                     - type: integer
                     - type: 'null'
                     default: null
                     title: Purchasing Poc Id
+                  release_shasum:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Release Shasum
                   renewal_date:
                     anyOf:
                     - format: date
@@ -12584,14 +13909,17 @@ paths:
             \ tenant ID\n    name: Software product name (1-255 chars)\n    description: Optional detailed\
             \ description\n    organization_id: Associated organization ID\n    purchasing_poc_id: Optional\
             \ purchasing point of contact identity ID\n    license_url: Optional URL to license documentation\n\
-            \    version: Optional software version\n    business_purpose: Optional business purpose/justification\n\
-            \    software_type: Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional\
-            \ number of purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency\
-            \ units\n    renewal_date: Optional license renewal date\n    vendor: Optional software vendor\
-            \ name\n    support_contact: Optional support contact information\n    notes: Optional additional\
-            \ notes\n    tags: Optional list of classification tags\n    is_active: Active status flag\n\
-            \    created_at: Creation timestamp\n    updated_at: Last update timestamp\n    village_id:\
-            \ Optional unique hierarchical identifier"
+            \    access_url: Optional URL to access the software\n    parent_system_id: Optional parent\
+            \ system entity ID\n    git_url: Optional Git repository URL\n    git_path: Optional Git path\
+            \ for monorepos\n    release_shasum: Optional SHA checksum for the release\n    version: Optional\
+            \ software version\n    business_purpose: Optional business purpose/justification\n    software_type:\
+            \ Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of purchased\
+            \ licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n    renewal_date:\
+            \ Optional license renewal date\n    vendor: Optional software vendor name\n    support_contact:\
+            \ Optional support contact information\n    notes: Optional additional notes\n    tags: Optional\
+            \ list of classification tags\n    is_active: Active status flag\n    created_at: Creation\
+            \ timestamp\n    updated_at: Last update timestamp\n    village_id: Optional unique hierarchical\
+            \ identifier"
       summary: Create a new software entry.
   /api/v1/software/{id}:
     delete:
@@ -12626,7 +13954,10 @@ paths:
                   \    tenant_id: Associated tenant ID\n    name: Software product name (1-255 chars)\n\
                   \    description: Optional detailed description\n    organization_id: Associated organization\
                   \ ID\n    purchasing_poc_id: Optional purchasing point of contact identity ID\n    license_url:\
-                  \ Optional URL to license documentation\n    version: Optional software version\n  \
+                  \ Optional URL to license documentation\n    access_url: Optional URL to access the\
+                  \ software\n    parent_system_id: Optional parent system entity ID\n    git_url: Optional\
+                  \ Git repository URL\n    git_path: Optional Git path for monorepos\n    release_shasum:\
+                  \ Optional SHA checksum for the release\n    version: Optional software version\n  \
                   \  business_purpose: Optional business purpose/justification\n    software_type: Type\
                   \ classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of\
                   \ purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n\
@@ -12636,6 +13967,12 @@ paths:
                   \ status flag\n    created_at: Creation timestamp\n    updated_at: Last update timestamp\n\
                   \    village_id: Optional unique hierarchical identifier"
                 properties:
+                  access_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Access Url
                   business_purpose:
                     anyOf:
                     - type: string
@@ -12658,6 +13995,18 @@ paths:
                     - type: 'null'
                     default: null
                     title: Description
+                  git_path:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Path
+                  git_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Url
                   id:
                     title: Id
                     type: integer
@@ -12682,12 +14031,24 @@ paths:
                   organization_id:
                     title: Organization Id
                     type: integer
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
                   purchasing_poc_id:
                     anyOf:
                     - type: integer
                     - type: 'null'
                     default: null
                     title: Purchasing Poc Id
+                  release_shasum:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Release Shasum
                   renewal_date:
                     anyOf:
                     - format: date
@@ -12761,14 +14122,17 @@ paths:
             \ tenant ID\n    name: Software product name (1-255 chars)\n    description: Optional detailed\
             \ description\n    organization_id: Associated organization ID\n    purchasing_poc_id: Optional\
             \ purchasing point of contact identity ID\n    license_url: Optional URL to license documentation\n\
-            \    version: Optional software version\n    business_purpose: Optional business purpose/justification\n\
-            \    software_type: Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional\
-            \ number of purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency\
-            \ units\n    renewal_date: Optional license renewal date\n    vendor: Optional software vendor\
-            \ name\n    support_contact: Optional support contact information\n    notes: Optional additional\
-            \ notes\n    tags: Optional list of classification tags\n    is_active: Active status flag\n\
-            \    created_at: Creation timestamp\n    updated_at: Last update timestamp\n    village_id:\
-            \ Optional unique hierarchical identifier"
+            \    access_url: Optional URL to access the software\n    parent_system_id: Optional parent\
+            \ system entity ID\n    git_url: Optional Git repository URL\n    git_path: Optional Git path\
+            \ for monorepos\n    release_shasum: Optional SHA checksum for the release\n    version: Optional\
+            \ software version\n    business_purpose: Optional business purpose/justification\n    software_type:\
+            \ Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of purchased\
+            \ licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n    renewal_date:\
+            \ Optional license renewal date\n    vendor: Optional software vendor name\n    support_contact:\
+            \ Optional support contact information\n    notes: Optional additional notes\n    tags: Optional\
+            \ list of classification tags\n    is_active: Active status flag\n    created_at: Creation\
+            \ timestamp\n    updated_at: Last update timestamp\n    village_id: Optional unique hierarchical\
+            \ identifier"
       summary: Get a single software entry by ID.
     put:
       description: ''
@@ -12791,7 +14155,10 @@ paths:
                   \    tenant_id: Associated tenant ID\n    name: Software product name (1-255 chars)\n\
                   \    description: Optional detailed description\n    organization_id: Associated organization\
                   \ ID\n    purchasing_poc_id: Optional purchasing point of contact identity ID\n    license_url:\
-                  \ Optional URL to license documentation\n    version: Optional software version\n  \
+                  \ Optional URL to license documentation\n    access_url: Optional URL to access the\
+                  \ software\n    parent_system_id: Optional parent system entity ID\n    git_url: Optional\
+                  \ Git repository URL\n    git_path: Optional Git path for monorepos\n    release_shasum:\
+                  \ Optional SHA checksum for the release\n    version: Optional software version\n  \
                   \  business_purpose: Optional business purpose/justification\n    software_type: Type\
                   \ classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of\
                   \ purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n\
@@ -12801,6 +14168,12 @@ paths:
                   \ status flag\n    created_at: Creation timestamp\n    updated_at: Last update timestamp\n\
                   \    village_id: Optional unique hierarchical identifier"
                 properties:
+                  access_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Access Url
                   business_purpose:
                     anyOf:
                     - type: string
@@ -12823,6 +14196,18 @@ paths:
                     - type: 'null'
                     default: null
                     title: Description
+                  git_path:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Path
+                  git_url:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Git Url
                   id:
                     title: Id
                     type: integer
@@ -12847,12 +14232,24 @@ paths:
                   organization_id:
                     title: Organization Id
                     type: integer
+                  parent_system_id:
+                    anyOf:
+                    - type: integer
+                    - type: 'null'
+                    default: null
+                    title: Parent System Id
                   purchasing_poc_id:
                     anyOf:
                     - type: integer
                     - type: 'null'
                     default: null
                     title: Purchasing Poc Id
+                  release_shasum:
+                    anyOf:
+                    - type: string
+                    - type: 'null'
+                    default: null
+                    title: Release Shasum
                   renewal_date:
                     anyOf:
                     - format: date
@@ -12926,14 +14323,17 @@ paths:
             \ tenant ID\n    name: Software product name (1-255 chars)\n    description: Optional detailed\
             \ description\n    organization_id: Associated organization ID\n    purchasing_poc_id: Optional\
             \ purchasing point of contact identity ID\n    license_url: Optional URL to license documentation\n\
-            \    version: Optional software version\n    business_purpose: Optional business purpose/justification\n\
-            \    software_type: Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional\
-            \ number of purchased licenses/seats\n    cost_monthly: Optional monthly cost in currency\
-            \ units\n    renewal_date: Optional license renewal date\n    vendor: Optional software vendor\
-            \ name\n    support_contact: Optional support contact information\n    notes: Optional additional\
-            \ notes\n    tags: Optional list of classification tags\n    is_active: Active status flag\n\
-            \    created_at: Creation timestamp\n    updated_at: Last update timestamp\n    village_id:\
-            \ Optional unique hierarchical identifier"
+            \    access_url: Optional URL to access the software\n    parent_system_id: Optional parent\
+            \ system entity ID\n    git_url: Optional Git repository URL\n    git_path: Optional Git path\
+            \ for monorepos\n    release_shasum: Optional SHA checksum for the release\n    version: Optional\
+            \ software version\n    business_purpose: Optional business purpose/justification\n    software_type:\
+            \ Type classification (e.g., 'commercial', 'open-source')\n    seats: Optional number of purchased\
+            \ licenses/seats\n    cost_monthly: Optional monthly cost in currency units\n    renewal_date:\
+            \ Optional license renewal date\n    vendor: Optional software vendor name\n    support_contact:\
+            \ Optional support contact information\n    notes: Optional additional notes\n    tags: Optional\
+            \ list of classification tags\n    is_active: Active status flag\n    created_at: Creation\
+            \ timestamp\n    updated_at: Last update timestamp\n    village_id: Optional unique hierarchical\
+            \ identifier"
       summary: Update a software entry.
   /api/v1/software/{id}/sbom:
     get:
@@ -13333,6 +14733,30 @@ paths:
                 type: object
           description: Error body (400 validation, 403, 404) -- never contains request values.
         '403':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+        '404':
           content:
             application/json:
               schema:
@@ -13837,7 +15261,11 @@ paths:
       summary: SAML Assertion Consumer Service endpoint.
   /api/v1/sso/saml/login/{tenant_id}:
     get:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Redirect to IdP or error"
+      description: "\nRate-limited per IP (default ``10/minute``, configurable via\n``SAML_LOGIN_RATELIMIT``).\
+        \ Returns one uniform 404 body for every\nunavailable state (unknown tenant, no active SAML IdP,\
+        \ missing/non-HTTPS\nSSO URL, or expired/invalid IdP certificate) so callers cannot enumerate\n\
+        tenants (gh-312).\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    200: IdP SSO URL to redirect\
+        \ to\n    404: SAML SSO login is not available for this organization\n    429: Rate limit exceeded"
       operationId: get_saml_login
       parameters:
       - in: path
@@ -13845,7 +15273,31 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
+      responses:
+        '404':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
       summary: Initiate SAML SSO login.
   /api/v1/sso/saml/metadata:
     get:
@@ -13868,7 +15320,12 @@ paths:
       summary: Get SAML Service Provider metadata.
   /api/v1/sso/saml/slo/{tenant_id}:
     get:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Logout confirmation"
+      description: "\nElder issues stateless JWTs and does not maintain SAML IdP\n``SessionIndex`` state,\
+        \ so neither SP-initiated nor IdP-initiated SAML\nSingle Logout can securely terminate or verify\
+        \ federated sessions here.\nUsers should log out locally via ``POST /api/v1/auth/logout`` (or\n\
+        ``POST /api/v1/portal/auth/logout`` for portal sessions) and sign out of\ntheir identity provider\
+        \ separately (gh-312).\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    501: SAML Single Logout\
+        \ is not supported"
       operationId: get_saml_slo
       parameters:
       - in: path
@@ -13876,10 +15333,39 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: SAML Single Logout endpoint.
+      responses:
+        '501':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+      summary: SAML Single Logout (SLO) endpoint -- intentionally unsupported (501).
     post:
-      description: "\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    Logout confirmation"
+      description: "\nElder issues stateless JWTs and does not maintain SAML IdP\n``SessionIndex`` state,\
+        \ so neither SP-initiated nor IdP-initiated SAML\nSingle Logout can securely terminate or verify\
+        \ federated sessions here.\nUsers should log out locally via ``POST /api/v1/auth/logout`` (or\n\
+        ``POST /api/v1/portal/auth/logout`` for portal sessions) and sign out of\ntheir identity provider\
+        \ separately (gh-312).\n\nArgs:\n    tenant_id: Tenant ID\n\nReturns:\n    501: SAML Single Logout\
+        \ is not supported"
       operationId: post_saml_slo
       parameters:
       - in: path
@@ -13887,8 +15373,32 @@ paths:
         required: true
         schema:
           type: integer
-      responses: {}
-      summary: SAML Single Logout endpoint.
+      responses:
+        '501':
+          content:
+            application/json:
+              schema:
+                description: Error body (400 validation, 403, 404) -- never contains request values.
+                properties:
+                  error:
+                    title: Error
+                    type: string
+                  validation_errors:
+                    anyOf:
+                    - items:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      type: array
+                    - type: 'null'
+                    default: null
+                    title: Validation Errors
+                required:
+                - error
+                title: IdPErrorResponse
+                type: object
+          description: Error body (400 validation, 403, 404) -- never contains request values.
+      summary: SAML Single Logout (SLO) endpoint -- intentionally unsupported (501).
   /api/v1/sso/scim/config:
     post:
       description: "\nRequest body:\n    tenant_id: int - Tenant ID (admin only)\n\nReturns:\n    SCIM\
@@ -14081,6 +15591,13 @@ paths:
       parameters: []
       responses: {}
       summary: Get pending approvals for current user.
+  /api/v1/streams/node-catalog:
+    get:
+      description: ''
+      operationId: get_get_stream_node_catalog
+      parameters: []
+      responses: {}
+      summary: List generic and Elder playbook nodes with live tenant/route availability.
   /api/v1/streams/{stream_id}:
     delete:
       description: "\nArgs:\n    stream_id: Stream identifier\n\nReturns:\n    200: Success response\n\
@@ -14106,13 +15623,31 @@ paths:
           type: integer
       responses: {}
       summary: Get a specific stream by ID.
+    patch:
+      description: "\nArgs:\n    stream_id: Stream identifier\n\nRequest body:\n    {\n        \"name\"\
+        : \"optional string\",\n        \"description\": \"optional string\",\n        \"trigger_type\"\
+        : \"optional string\",\n        \"tags\": \"optional array\",\n        \"status\": \"optional\
+        \ string\",\n        \"is_enabled\": \"optional boolean\",\n        \"is_public\": \"optional\
+        \ boolean\",\n        \"canvas_data\": \"optional object (creates new version & syncs nodes/edges)\"\
+        \n    }\n\nReturns:\n    200: Updated stream object\n    404: Stream not found\n    403: Access\
+        \ denied"
+      operationId: patch_update_stream
+      parameters:
+      - in: path
+        name: stream_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update a stream.
     put:
       description: "\nArgs:\n    stream_id: Stream identifier\n\nRequest body:\n    {\n        \"name\"\
         : \"optional string\",\n        \"description\": \"optional string\",\n        \"trigger_type\"\
         : \"optional string\",\n        \"tags\": \"optional array\",\n        \"status\": \"optional\
         \ string\",\n        \"is_enabled\": \"optional boolean\",\n        \"is_public\": \"optional\
-        \ boolean\",\n        \"canvas_data\": \"optional object (creates new version)\"\n    }\n\nReturns:\n\
-        \    200: Updated stream object\n    404: Stream not found\n    403: Access denied"
+        \ boolean\",\n        \"canvas_data\": \"optional object (creates new version & syncs nodes/edges)\"\
+        \n    }\n\nReturns:\n    200: Updated stream object\n    404: Stream not found\n    403: Access\
+        \ denied"
       operationId: put_update_stream
       parameters:
       - in: path
@@ -14168,7 +15703,8 @@ paths:
       description: "\nCreates an execution record and queues the task for processing.\n\nArgs:\n    stream_id:\
         \ Stream identifier\n\nRequest body:\n    {\n        \"input_data\": \"optional object\",\n  \
         \      \"dry_run\": \"optional boolean\"\n    }\n\nReturns:\n    202: Execution queued\n    404:\
-        \ Stream not found\n    403: Access denied"
+        \ Stream not found\n    403: Access denied or disabled/unlicensed module\n    400: Playbook validation\
+        \ error"
       operationId: post_execute_stream
       parameters:
       - in: path
@@ -14287,6 +15823,18 @@ paths:
           type: string
       responses: {}
       summary: Update metadata for a specific node.
+  /api/v1/streams/{stream_id}/validate:
+    post:
+      description: ''
+      operationId: post_validate_stream
+      parameters:
+      - in: path
+        name: stream_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Validate playbook graph, node types, module availability, and config.
   /api/v1/streams/{stream_id}/webhooks:
     get:
       description: "\nArgs:\n    stream_id: Stream identifier\n\nReturns:\n    200: List of webhooks\n\
@@ -14415,7 +15963,7 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Delete sync configuration.
+      summary: Delete sync configuration and dependent history/mappings/conflicts.
     get:
       description: ''
       operationId: get_get_sync_config
@@ -14455,7 +16003,7 @@ paths:
         schema:
           type: integer
       responses: {}
-      summary: Delete sync configuration.
+      summary: Delete sync configuration and dependent history/mappings/conflicts.
     patch:
       description: ''
       operationId: patch_update_sync_config
@@ -14484,20 +16032,66 @@ paths:
           description: 'Single sync configuration wrapped in a `config` key (matches existing
 
             API shape: `{"config": {...}}`).'
-      summary: Update sync configuration.
+      summary: Update sync configuration while preserving redacted/omitted secrets.
+  /api/v1/sync/configs/{config_id}/test:
+    options:
+      description: ''
+      operationId: options_test_sync_config
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Test connectivity and authentication for a sync configuration.
+    post:
+      description: ''
+      operationId: post_test_sync_config
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Test connectivity and authentication for a sync configuration.
+  /api/v1/sync/configs/{config_id}/trigger:
+    options:
+      description: ''
+      operationId: options_trigger_sync_config
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Manually trigger batch synchronization for a configuration.
+    post:
+      description: ''
+      operationId: post_trigger_sync_config
+      parameters:
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Manually trigger batch synchronization for a configuration.
   /api/v1/sync/conflicts:
     get:
       description: ''
       operationId: get_list_sync_conflicts
       parameters: []
       responses: {}
-      summary: List unresolved sync conflicts.
+      summary: List sync conflicts.
     options:
       description: ''
       operationId: options_list_sync_conflicts
       parameters: []
       responses: {}
-      summary: List unresolved sync conflicts.
+      summary: List sync conflicts.
   /api/v1/sync/conflicts/{conflict_id}/resolve:
     options:
       description: ''
@@ -14588,6 +16182,39 @@ paths:
       parameters: []
       responses: {}
       summary: Get overall sync status summary.
+  /api/v1/sync/webhooks/{platform}/{config_id}:
+    options:
+      description: ''
+      operationId: options_receive_sync_webhook
+      parameters:
+      - in: path
+        name: platform
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Public platform webhook receiver protected by HMAC/token signature.
+    post:
+      description: ''
+      operationId: post_receive_sync_webhook
+      parameters:
+      - in: path
+        name: platform
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: config_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Public platform webhook receiver protected by HMAC/token signature.
   /api/v1/tenants:
     get:
       description: "\nRequires global admin or support role.\n\nQuery params:\n    is_active: bool - Filter\
@@ -14776,6 +16403,12 @@ paths:
       parameters: []
       responses: {}
       summary: List vulnerabilities with optional filtering.
+    post:
+      description: ''
+      operationId: post_create_vulnerability
+      parameters: []
+      responses: {}
+      summary: Manually create a vulnerability entry.
   /api/v1/vulnerabilities/component-vulnerabilities/{id}:
     patch:
       description: "\nRequires maintainer role.\n\nPath Parameters:\n    - id: Component vulnerability\
@@ -14892,6 +16525,73 @@ paths:
       parameters: []
       responses: {}
       summary: Broadcast an event to all applicable webhooks and notification rules
+  /api/v1/webhooks/inbound:
+    get:
+      description: ''
+      operationId: get_list_inbound_webhooks
+      parameters: []
+      responses: {}
+      summary: List all inbound webhooks for the caller's tenant.
+    post:
+      description: ''
+      operationId: post_create_inbound_webhook
+      parameters: []
+      responses: {}
+      summary: Create a new inbound webhook with required Bearer/Basic auth and permission scopes.
+  /api/v1/webhooks/inbound/scopes:
+    get:
+      description: ''
+      operationId: get_list_inbound_webhook_scopes
+      parameters: []
+      responses: {}
+      summary: Return the catalog of available OAuth2-like scopes for inbound webhooks.
+  /api/v1/webhooks/inbound/{webhook_id}:
+    delete:
+      description: ''
+      operationId: delete_delete_inbound_webhook
+      parameters:
+      - in: path
+        name: webhook_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Delete an inbound webhook.
+    put:
+      description: ''
+      operationId: put_update_inbound_webhook
+      parameters:
+      - in: path
+        name: webhook_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Update an inbound webhook's configuration or authentication type.
+  /api/v1/webhooks/inbound/{webhook_id}/events:
+    get:
+      description: ''
+      operationId: get_list_inbound_webhook_events
+      parameters:
+      - in: path
+        name: webhook_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: List recent received events for an inbound webhook.
+  /api/v1/webhooks/inbound/{webhook_id}/rotate-credentials:
+    post:
+      description: ''
+      operationId: post_rotate_inbound_webhook_credentials
+      parameters:
+      - in: path
+        name: webhook_id
+        required: true
+        schema:
+          type: integer
+      responses: {}
+      summary: Regenerate credentials for an inbound webhook and return them once.
   /api/v1/webhooks/notification-rules:
     get:
       description: "\nQuery params:\n    - organization_id: Filter by organization\n    - channel: Filter\
@@ -14960,6 +16660,18 @@ paths:
           type: integer
       responses: {}
       summary: Test a notification rule.
+  /api/v1/webhooks/receive/{slug}:
+    post:
+      description: ''
+      operationId: post_receive_inbound_webhook
+      parameters:
+      - in: path
+        name: slug
+        required: true
+        schema:
+          type: string
+      responses: {}
+      summary: "Public inbound webhook receiver \u2014 requires Bearer/Basic auth & enforces granted scopes."
   /api/v1/webhooks/{webhook_id}:
     delete:
       description: "\nReturns:\n    200: Webhook deleted\n    403: Tenant not found\n    404: Webhook\
@@ -15107,13 +16819,8 @@ paths:
       summary: Health check endpoint.
   /id/{village_id}:
     get:
-      description: "\nUses the cross-reference registry to resolve village_id to resource\ntype, ID, and\
-        \ navigation URL. Maintains backward compatibility.\n\nPath Parameters:\n    - village_id: The\
-        \ village_id to lookup (25-char format: TTTTTTTT-OOOOOOOOOOOOOOOO)\n\nReturns:\n    200: Resource\
-        \ found with type, ID, and redirect URL\n    404: Resource not found\n\nExample:\n    GET /id/0000002a-000000000000f3c1\n\
-        \    {\n        \"village_id\": \"0000002a-000000000000f3c1\",\n        \"resource_type\": \"\
-        entity\",\n        \"resource_id\": 123,\n        \"redirect_url\": \"/entities/123\"\n    }"
-      operationId: get_lookup_village_id
+      description: ''
+      operationId: get_lookup_village_id_legacy
       parameters:
       - in: path
         name: village_id
@@ -15121,7 +16828,7 @@ paths:
         schema:
           type: string
       responses: {}
-      summary: Lookup a resource by its village_id (registry-driven).
+      summary: Resolve a village_id at ``GET /id/<village_id>`` (backward compatibility).
   /issues:
     get:
       description: ''
@@ -15164,9 +16871,13 @@ paths:
       summary: Logout user.
   /lookup/batch:
     post:
-      description: "\nPublic endpoint - no authentication required.\n\nNOTE: Original used unique_ids\
-        \ (64-bit). Currently uses regular ids.\n\nRequest Body:\n    {\n        \"ids\": [1, 2, 3, ...]\n\
-        \    }\n\nReturns:\n    200: Array of entity details (up to 100 entities)\n    400: Invalid request\n\
+      description: "\nregression: gh-237 -- same unauthenticated cross-tenant leak as\n``lookup_entity``\
+        \ above, batched. Requires auth and scopes every id to\nthe caller's tenant; ids belonging to\
+        \ another tenant (or that don't\nexist) come back ``found: false`` exactly like a nonexistent\
+        \ id -- never\ndistinguishable from \"doesn't exist\", so a caller can't use this to\nenumerate\
+        \ other tenants' entity ids.\n\nNOTE: Original used unique_ids (64-bit). Currently uses regular\
+        \ ids.\n\nRequest Body:\n    {\n        \"ids\": [1, 2, 3, ...]\n    }\n\nReturns:\n    200: Array\
+        \ of entity details (up to 100 entities)\n    400: Invalid request\n    401: Authentication required\n\
         \nExample:\n    POST /lookup/batch\n    {\n        \"ids\": [42, 43]\n    }\n\n    Response:\n\
         \    {\n        \"results\": [\n            {\n                \"id\": 42,\n                \"\
         found\": true,\n                \"entity\": { ... }\n            },\n            {\n         \
@@ -15178,15 +16889,19 @@ paths:
       summary: Lookup multiple entities by IDs in a single request.
   /lookup/{entity_id}:
     get:
-      description: "\nPublic endpoint - no authentication required.\nReturns entity type and details (not\
-        \ including children/dependencies).\n\nNOTE: Original used unique_id (64-bit). Currently uses\
-        \ regular id.\n\nPath Parameters:\n    - entity_id: Entity identifier\n\nReturns:\n    200: Entity\
-        \ details in JSON format\n    404: Entity not found\n\nExample:\n    GET /lookup/42\n    {\n \
-        \       \"id\": 42,\n        \"name\": \"Web Server 01\",\n        \"description\": \"Primary\
-        \ web server\",\n        \"entity_type\": \"compute\",\n        \"organization_id\": 1,\n    \
-        \    \"attributes\": {\n            \"hostname\": \"web-01.example.com\",\n            \"ip\"\
-        : \"10.0.1.5\",\n            \"os\": \"Ubuntu 22.04\"\n        },\n        \"created_at\": \"\
-        2024-10-23T10:00:00Z\",\n        \"updated_at\": \"2024-10-23T15:30:00Z\"\n    }"
+      description: "\nregression: gh-237 -- this route previously had no auth at all and\nreturned entity\
+        \ attributes (hostname/IP/OS) for ANY tenant to an\nunauthenticated caller. Now requires a valid\
+        \ JWT (``infrastructure:read``\nscope) and scopes the lookup to the caller's tenant via\n``get_tenant_scoped()``\
+        \ (entities have no ``tenant_id`` column of their\nown, only ``organization_id`` -- resolved through\
+        \ ``organizations``).\n\nNOTE: Original used unique_id (64-bit). Currently uses regular id.\n\n\
+        Path Parameters:\n    - entity_id: Entity identifier\n\nReturns:\n    200: Entity details in JSON\
+        \ format\n    401: Authentication required\n    404: Entity not found (including entities belonging\
+        \ to another tenant)\n\nExample:\n    GET /lookup/42\n    {\n        \"id\": 42,\n        \"name\"\
+        : \"Web Server 01\",\n        \"description\": \"Primary web server\",\n        \"entity_type\"\
+        : \"compute\",\n        \"organization_id\": 1,\n        \"attributes\": {\n            \"hostname\"\
+        : \"web-01.example.com\",\n            \"ip\": \"10.0.1.5\",\n            \"os\": \"Ubuntu 22.04\"\
+        \n        },\n        \"created_at\": \"2024-10-23T10:00:00Z\",\n        \"updated_at\": \"2024-10-23T15:30:00Z\"\
+        \n    }"
       operationId: get_lookup_entity
       parameters:
       - in: path
