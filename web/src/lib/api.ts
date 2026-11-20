@@ -56,6 +56,7 @@ export type SyncPlatform =
 
 export type SyncResourceType = "issue" | "milestone" | "project" | "label";
 export type SyncDirection = "pull" | "push" | "bidirectional";
+export type GitHubAuthMode = "github_app" | "pat";
 
 export interface SyncConfigItem {
   id: number;
@@ -127,6 +128,10 @@ export interface SyncTestResult {
   connected: boolean;
   success: boolean;
   platform: string;
+  auth_mode?: GitHubAuthMode | string;
+  repo_full_name?: string;
+  token_expires_at?: string | null;
+  permissions?: Record<string, string> | null;
   status_code?: number;
   error?: string;
   repository?: {

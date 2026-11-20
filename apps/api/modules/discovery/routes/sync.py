@@ -32,7 +32,12 @@ from apps.worker.sync.base import (
     SyncStatus,
 )
 from apps.worker.sync.conflict_resolver import ConflictResolver
-from apps.worker.sync.platforms.github_client import GitHubSyncClient
+from apps.worker.sync.platforms.github_client import (
+    GitHubSyncClient,
+    load_github_app_private_key,
+    parse_installation_id,
+    resolve_github_auth_mode,
+)
 from apps.worker.sync.platforms.gitlab_client import GitLabSyncClient
 from apps.worker.sync.platforms.jira_client import JiraSyncClient
 from apps.worker.sync.platforms.openproject_client import OpenProjectSyncClient
@@ -99,16 +104,47 @@ def _validate_platform_config(
         return "config_json.direction must be one of: pull, push, bidirectional"
 
     if platform == "github":
-        api_token = str(config_json.get("api_token") or "").strip()
         owner = str(
             config_json.get("owner") or config_json.get("org_name") or ""
         ).strip()
         repo_name = str(config_json.get("repo_name") or "").strip()
-        if not api_token or not owner or not repo_name:
-            return (
-                "GitHub config_json requires api_token, owner (or org_name), "
-                "and repo_name"
-            )
+        if not owner or not repo_name:
+            return "GitHub config_json requires owner (or org_name) and repo_name"
+
+        try:
+            auth_mode = resolve_github_auth_mode(config_json)
+        except ValueError as exc:
+            return str(exc)
+
+        if auth_mode == "github_app":
+            raw_app_id = config_json.get("app_id")
+            if (
+                raw_app_id is None
+                or isinstance(raw_app_id, bool)
+                or (isinstance(raw_app_id, int) and raw_app_id <= 0)
+                or not str(raw_app_id).strip()
+            ):
+                return "GitHub App config_json requires a non-empty app_id"
+
+            if parse_installation_id(config_json.get("installation_id")) is None:
+                return (
+                    "GitHub App config_json requires a positive integer installation_id"
+                )
+
+            raw_private_key = config_json.get("private_key")
+            if _is_blank_or_redacted(raw_private_key):
+                return "GitHub App config_json requires a valid PEM private_key"
+            try:
+                load_github_app_private_key(raw_private_key)
+            except ValueError as exc:
+                return str(exc)
+        else:
+            api_token = config_json.get("api_token")
+            if _is_blank_or_redacted(api_token) or not str(api_token).strip():
+                return (
+                    "GitHub PAT config_json requires api_token, owner (or org_name), "
+                    "and repo_name"
+                )
 
     elif platform == "jira":
         api_token = str(config_json.get("api_token") or "").strip()
