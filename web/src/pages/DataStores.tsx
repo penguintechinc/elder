@@ -261,9 +261,7 @@ export default function DataStores() {
   });
 
   const handleDelete = (id: number, name: string) => {
-    if (confirmDelete(name, "data store")) {
-      deleteMutation.mutate(id);
-    }
+    confirmDelete(name, () => deleteMutation.mutate(id), "data store");
   };
 
   const regionOptions = useMemo(() => {
@@ -814,11 +812,13 @@ function DataLabelsTab({ labels, onFilterByLabel }: DataLabelsTabProps) {
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          if (confirmDelete(lbl.name, "data label")) {
-                            deleteLabelMutation.mutate(lbl.id);
-                          }
-                        }}
+                        onClick={() =>
+                          confirmDelete(
+                            lbl.name,
+                            () => deleteLabelMutation.mutate(lbl.id),
+                            "data label",
+                          )
+                        }
                         className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                         aria-label={`Delete label ${lbl.name}`}
                       >
