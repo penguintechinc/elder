@@ -1,0 +1,7270 @@
+[
+  {
+    "service": "access-reviews",
+    "operation": "complete_review",
+    "method": "POST",
+    "path": "/api/v1/access-reviews/{review_id}/complete",
+    "path_params": [
+      "review_id"
+    ],
+    "summary": "Complete and apply review decisions.",
+    "has_body": true
+  },
+  {
+    "service": "access-reviews",
+    "operation": "create_review",
+    "method": "POST",
+    "path": "/api/v1/access-reviews",
+    "path_params": [],
+    "summary": "Create an ad-hoc access review (admin only).",
+    "has_body": true
+  },
+  {
+    "service": "access-reviews",
+    "operation": "get_my_reviews",
+    "method": "GET",
+    "path": "/api/v1/access-reviews/my-reviews",
+    "path_params": [],
+    "summary": "Get reviews assigned to current user.",
+    "has_body": false
+  },
+  {
+    "service": "access-reviews",
+    "operation": "get_review",
+    "method": "GET",
+    "path": "/api/v1/access-reviews/{review_id}",
+    "path_params": [
+      "review_id"
+    ],
+    "summary": "Get review details with progress statistics.",
+    "has_body": false
+  },
+  {
+    "service": "access-reviews",
+    "operation": "get_review_items",
+    "method": "GET",
+    "path": "/api/v1/access-reviews/{review_id}/items",
+    "path_params": [
+      "review_id"
+    ],
+    "summary": "Get all members to review in a review.",
+    "has_body": false
+  },
+  {
+    "service": "access-reviews",
+    "operation": "list_reviews",
+    "method": "GET",
+    "path": "/api/v1/access-reviews",
+    "path_params": [],
+    "summary": "List access reviews with filters.",
+    "has_body": false
+  },
+  {
+    "service": "access-reviews",
+    "operation": "submit_decisions",
+    "method": "POST",
+    "path": "/api/v1/access-reviews/{review_id}/decisions",
+    "path_params": [
+      "review_id"
+    ],
+    "summary": "Submit review decision for member(s).",
+    "has_body": true
+  },
+  {
+    "service": "ai",
+    "operation": "create_ai_resource",
+    "method": "POST",
+    "path": "/api/v1/ai/resources",
+    "path_params": [],
+    "summary": "Create a new AI resource.",
+    "has_body": true
+  },
+  {
+    "service": "ai",
+    "operation": "delete_ai_resource",
+    "method": "DELETE",
+    "path": "/api/v1/ai/resources/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an AI resource.",
+    "has_body": false
+  },
+  {
+    "service": "ai",
+    "operation": "get_ai_resource",
+    "method": "GET",
+    "path": "/api/v1/ai/resources/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single AI resource by ID.",
+    "has_body": false
+  },
+  {
+    "service": "ai",
+    "operation": "list_ai_resources",
+    "method": "GET",
+    "path": "/api/v1/ai/resources",
+    "path_params": [],
+    "summary": "List AI resources with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "ai",
+    "operation": "update_ai_resource",
+    "method": "PUT",
+    "path": "/api/v1/ai/resources/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an existing AI resource.",
+    "has_body": true
+  },
+  {
+    "service": "api-keys",
+    "operation": "create_api_key",
+    "method": "POST",
+    "path": "/api/v1/api-keys",
+    "path_params": [],
+    "summary": "Create a new API key for the current user.",
+    "has_body": true
+  },
+  {
+    "service": "api-keys",
+    "operation": "delete_api_key",
+    "method": "DELETE",
+    "path": "/api/v1/api-keys/{key_id}",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Delete (revoke) an API key.",
+    "has_body": false
+  },
+  {
+    "service": "api-keys",
+    "operation": "list_api_keys",
+    "method": "GET",
+    "path": "/api/v1/api-keys",
+    "path_params": [],
+    "summary": "List all API keys for the current user.",
+    "has_body": false
+  },
+  {
+    "service": "audit",
+    "operation": "cleanup_audit_logs",
+    "method": "POST",
+    "path": "/api/v1/audit/cleanup",
+    "path_params": [],
+    "summary": "Clean up old audit logs based on retention policies.",
+    "has_body": true
+  },
+  {
+    "service": "audit",
+    "operation": "create_retention_policy",
+    "method": "POST",
+    "path": "/api/v1/audit/retention-policies",
+    "path_params": [],
+    "summary": "Create audit retention policy.",
+    "has_body": true
+  },
+  {
+    "service": "audit",
+    "operation": "delete_retention_policy",
+    "method": "DELETE",
+    "path": "/api/v1/audit/retention-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Delete retention policy.",
+    "has_body": false
+  },
+  {
+    "service": "audit",
+    "operation": "get_retention_policy",
+    "method": "GET",
+    "path": "/api/v1/audit/retention-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Get retention policy details.",
+    "has_body": false
+  },
+  {
+    "service": "audit",
+    "operation": "list_retention_policies",
+    "method": "GET",
+    "path": "/api/v1/audit/retention-policies",
+    "path_params": [],
+    "summary": "List all audit retention policies.",
+    "has_body": false
+  },
+  {
+    "service": "audit",
+    "operation": "update_retention_policy",
+    "method": "PUT",
+    "path": "/api/v1/audit/retention-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Update retention policy.",
+    "has_body": true
+  },
+  {
+    "service": "audit-enterprise",
+    "operation": "cleanup_old_logs",
+    "method": "POST",
+    "path": "/api/v1/audit-enterprise/cleanup",
+    "path_params": [],
+    "summary": "Clean up audit logs older than retention period.",
+    "has_body": true
+  },
+  {
+    "service": "audit-enterprise",
+    "operation": "export_logs",
+    "method": "GET",
+    "path": "/api/v1/audit-enterprise/export",
+    "path_params": [],
+    "summary": "Export audit logs for compliance archival.",
+    "has_body": false
+  },
+  {
+    "service": "audit-enterprise",
+    "operation": "get_compliance_report",
+    "method": "GET",
+    "path": "/api/v1/audit-enterprise/reports/{report_type}",
+    "path_params": [
+      "report_type"
+    ],
+    "summary": "Generate a compliance report.",
+    "has_body": false
+  },
+  {
+    "service": "audit-enterprise",
+    "operation": "get_retention_policy",
+    "method": "GET",
+    "path": "/api/v1/audit-enterprise/retention",
+    "path_params": [],
+    "summary": "Get audit log retention policy for a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "audit-enterprise",
+    "operation": "query_logs",
+    "method": "GET",
+    "path": "/api/v1/audit-enterprise/logs",
+    "path_params": [],
+    "summary": "Query audit logs with filters.",
+    "has_body": false
+  },
+  {
+    "service": "auth",
+    "operation": "captcha_challenge",
+    "method": "GET",
+    "path": "/api/v1/auth/captcha-challenge",
+    "path_params": [],
+    "summary": "Generate ALTCHA proof-of-work challenge.",
+    "has_body": false
+  },
+  {
+    "service": "auth",
+    "operation": "change_password",
+    "method": "POST",
+    "path": "/api/v1/auth/change-password",
+    "path_params": [],
+    "summary": "Change current user's password.",
+    "has_body": true
+  },
+  {
+    "service": "auth",
+    "operation": "get_current_user_info",
+    "method": "GET",
+    "path": "/api/v1/auth/me",
+    "path_params": [],
+    "summary": "Get current authenticated user information.",
+    "has_body": false
+  },
+  {
+    "service": "auth",
+    "operation": "guest_enabled",
+    "method": "GET",
+    "path": "/api/v1/auth/guest-enabled",
+    "path_params": [],
+    "summary": "Check if guest login is enabled.",
+    "has_body": false
+  },
+  {
+    "service": "auth",
+    "operation": "login",
+    "method": "POST",
+    "path": "/api/v1/auth/login",
+    "path_params": [],
+    "summary": "Login with email and password (portal authentication).",
+    "has_body": true
+  },
+  {
+    "service": "auth",
+    "operation": "logout",
+    "method": "POST",
+    "path": "/api/v1/auth/logout",
+    "path_params": [],
+    "summary": "Logout current user.",
+    "has_body": true
+  },
+  {
+    "service": "auth",
+    "operation": "refresh_token",
+    "method": "POST",
+    "path": "/api/v1/auth/refresh",
+    "path_params": [],
+    "summary": "Refresh access token using refresh token.",
+    "has_body": true
+  },
+  {
+    "service": "auth",
+    "operation": "register",
+    "method": "POST",
+    "path": "/api/v1/auth/register",
+    "path_params": [],
+    "summary": "Register a new user (local authentication).",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "create_backup_job",
+    "method": "POST",
+    "path": "/api/v1/backup/jobs",
+    "path_params": [],
+    "summary": "Create a new backup job.",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "delete_backup",
+    "method": "DELETE",
+    "path": "/api/v1/backup/{backup_id}",
+    "path_params": [
+      "backup_id"
+    ],
+    "summary": "Delete backup file.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "delete_backup_job",
+    "method": "DELETE",
+    "path": "/api/v1/backup/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Delete backup job.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "download_backup",
+    "method": "GET",
+    "path": "/api/v1/backup/{backup_id}/download",
+    "path_params": [
+      "backup_id"
+    ],
+    "summary": "Download backup file.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "download_export",
+    "method": "GET",
+    "path": "/api/v1/backup/export/{filename}/download",
+    "path_params": [
+      "filename"
+    ],
+    "summary": "Download exported data.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "export_data",
+    "method": "POST",
+    "path": "/api/v1/backup/export",
+    "path_params": [],
+    "summary": "Export data to various formats.",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "get_backup",
+    "method": "GET",
+    "path": "/api/v1/backup/{backup_id}",
+    "path_params": [
+      "backup_id"
+    ],
+    "summary": "Get backup details.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "get_backup_job",
+    "method": "GET",
+    "path": "/api/v1/backup/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Get backup job details.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "get_backup_stats",
+    "method": "GET",
+    "path": "/api/v1/backup/stats",
+    "path_params": [],
+    "summary": "Get backup and storage statistics.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "import_data",
+    "method": "POST",
+    "path": "/api/v1/backup/import",
+    "path_params": [],
+    "summary": "Import data from file.",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "list_backup_jobs",
+    "method": "GET",
+    "path": "/api/v1/backup/jobs",
+    "path_params": [],
+    "summary": "List all backup jobs.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "list_backups",
+    "method": "GET",
+    "path": "/api/v1/backup",
+    "path_params": [],
+    "summary": "List all backups.",
+    "has_body": false
+  },
+  {
+    "service": "backup",
+    "operation": "restore_backup",
+    "method": "POST",
+    "path": "/api/v1/backup/{backup_id}/restore",
+    "path_params": [
+      "backup_id"
+    ],
+    "summary": "Restore from backup.",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "run_backup_job",
+    "method": "POST",
+    "path": "/api/v1/backup/jobs/{job_id}/run",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Manually trigger a backup job.",
+    "has_body": true
+  },
+  {
+    "service": "backup",
+    "operation": "update_backup_job",
+    "method": "PUT",
+    "path": "/api/v1/backup/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Update backup job configuration.",
+    "has_body": true
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "create_secret",
+    "method": "POST",
+    "path": "/api/v1/builtin-secrets",
+    "path_params": [],
+    "summary": "Create a new built-in secret.",
+    "has_body": true
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "delete_secret",
+    "method": "DELETE",
+    "path": "/api/v1/builtin-secrets/{secret_path}",
+    "path_params": [
+      "secret_path"
+    ],
+    "summary": "Delete a built-in secret.",
+    "has_body": false
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "get_secret",
+    "method": "GET",
+    "path": "/api/v1/builtin-secrets/{secret_path}",
+    "path_params": [
+      "secret_path"
+    ],
+    "summary": "Get a built-in secret by path.",
+    "has_body": false
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "list_secrets",
+    "method": "GET",
+    "path": "/api/v1/builtin-secrets",
+    "path_params": [],
+    "summary": "List built-in secrets for an organization.",
+    "has_body": false
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "patch_update_secret",
+    "method": "PATCH",
+    "path": "/api/v1/builtin-secrets/{secret_path}",
+    "path_params": [
+      "secret_path"
+    ],
+    "summary": "Update a built-in secret.",
+    "has_body": true
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "put_update_secret",
+    "method": "PUT",
+    "path": "/api/v1/builtin-secrets/{secret_path}",
+    "path_params": [
+      "secret_path"
+    ],
+    "summary": "Update a built-in secret.",
+    "has_body": true
+  },
+  {
+    "service": "builtin-secrets",
+    "operation": "test_connection",
+    "method": "POST",
+    "path": "/api/v1/builtin-secrets/test-connection",
+    "path_params": [],
+    "summary": "Test built-in secrets database connection.",
+    "has_body": true
+  },
+  {
+    "service": "canned-responses",
+    "operation": "create_canned_response",
+    "method": "POST",
+    "path": "/api/v1/canned-responses",
+    "path_params": [],
+    "summary": "Create a new canned response.",
+    "has_body": true
+  },
+  {
+    "service": "canned-responses",
+    "operation": "delete_canned_response",
+    "method": "DELETE",
+    "path": "/api/v1/canned-responses/{response_id}",
+    "path_params": [
+      "response_id"
+    ],
+    "summary": "Delete a canned response.",
+    "has_body": false
+  },
+  {
+    "service": "canned-responses",
+    "operation": "list_canned_responses",
+    "method": "GET",
+    "path": "/api/v1/canned-responses",
+    "path_params": [],
+    "summary": "List canned responses with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "canned-responses",
+    "operation": "update_canned_response",
+    "method": "PUT",
+    "path": "/api/v1/canned-responses/{response_id}",
+    "path_params": [
+      "response_id"
+    ],
+    "summary": "Update canned response properties.",
+    "has_body": true
+  },
+  {
+    "service": "certificates",
+    "operation": "create_certificate",
+    "method": "POST",
+    "path": "/api/v1/certificates",
+    "path_params": [],
+    "summary": "Create a new certificate entry.",
+    "has_body": true
+  },
+  {
+    "service": "certificates",
+    "operation": "delete_certificate",
+    "method": "DELETE",
+    "path": "/api/v1/certificates/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a certificate entry.",
+    "has_body": false
+  },
+  {
+    "service": "certificates",
+    "operation": "get_certificate",
+    "method": "GET",
+    "path": "/api/v1/certificates/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single certificate entry by ID.",
+    "has_body": false
+  },
+  {
+    "service": "certificates",
+    "operation": "list_certificates",
+    "method": "GET",
+    "path": "/api/v1/certificates",
+    "path_params": [],
+    "summary": "List certificates with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "certificates",
+    "operation": "update_certificate",
+    "method": "PUT",
+    "path": "/api/v1/certificates/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a certificate entry.",
+    "has_body": true
+  },
+  {
+    "service": "collections",
+    "operation": "attach_document_to_collection",
+    "method": "POST",
+    "path": "/api/v1/collections/{coll_id}/documents/{doc_id}",
+    "path_params": [
+      "coll_id",
+      "doc_id"
+    ],
+    "summary": "Attach a document to a collection.",
+    "has_body": true
+  },
+  {
+    "service": "collections",
+    "operation": "create_collection",
+    "method": "POST",
+    "path": "/api/v1/collections",
+    "path_params": [],
+    "summary": "Create a new collection.",
+    "has_body": true
+  },
+  {
+    "service": "collections",
+    "operation": "delete_collection",
+    "method": "DELETE",
+    "path": "/api/v1/collections/{coll_id}",
+    "path_params": [
+      "coll_id"
+    ],
+    "summary": "Delete a collection.",
+    "has_body": false
+  },
+  {
+    "service": "collections",
+    "operation": "detach_document_from_collection",
+    "method": "DELETE",
+    "path": "/api/v1/collections/{coll_id}/documents/{doc_id}",
+    "path_params": [
+      "coll_id",
+      "doc_id"
+    ],
+    "summary": "Detach a document from a collection.",
+    "has_body": false
+  },
+  {
+    "service": "collections",
+    "operation": "get_collection",
+    "method": "GET",
+    "path": "/api/v1/collections/{coll_id}",
+    "path_params": [
+      "coll_id"
+    ],
+    "summary": "Get a single collection by ID.",
+    "has_body": false
+  },
+  {
+    "service": "collections",
+    "operation": "list_collections",
+    "method": "GET",
+    "path": "/api/v1/collections",
+    "path_params": [],
+    "summary": "List document collections as a hierarchical tree.",
+    "has_body": false
+  },
+  {
+    "service": "collections",
+    "operation": "update_collection",
+    "method": "PATCH",
+    "path": "/api/v1/collections/{coll_id}",
+    "path_params": [
+      "coll_id"
+    ],
+    "summary": "Update a collection.",
+    "has_body": true
+  },
+  {
+    "service": "costs",
+    "operation": "create_sync_job",
+    "method": "POST",
+    "path": "/api/v1/costs/sync-jobs",
+    "path_params": [],
+    "summary": "Create a cost sync job.",
+    "has_body": true
+  },
+  {
+    "service": "costs",
+    "operation": "get_resource_costs",
+    "method": "GET",
+    "path": "/api/v1/costs/{resource_type}/{resource_id}",
+    "path_params": [
+      "resource_type",
+      "resource_id"
+    ],
+    "summary": "Get cost data for a specific resource.",
+    "has_body": false
+  },
+  {
+    "service": "costs",
+    "operation": "list_sync_jobs",
+    "method": "GET",
+    "path": "/api/v1/costs/sync-jobs",
+    "path_params": [],
+    "summary": "List cost sync jobs.",
+    "has_body": false
+  },
+  {
+    "service": "costs",
+    "operation": "run_sync_job",
+    "method": "POST",
+    "path": "/api/v1/costs/sync-jobs/{job_id}/run",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Trigger a manual cost sync.",
+    "has_body": true
+  },
+  {
+    "service": "costs",
+    "operation": "update_resource_costs",
+    "method": "POST",
+    "path": "/api/v1/costs/{resource_type}/{resource_id}",
+    "path_params": [
+      "resource_type",
+      "resource_id"
+    ],
+    "summary": "Create or update cost entry for a resource.",
+    "has_body": true
+  },
+  {
+    "service": "dashboard",
+    "operation": "dashboard_stats",
+    "method": "GET",
+    "path": "/api/v1/dashboard/stats",
+    "path_params": [],
+    "summary": "Get ticket metrics and dashboard statistics.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "add_data_store_label",
+    "method": "POST",
+    "path": "/api/v1/data-stores/{id}/labels",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Add a label to a data store.",
+    "has_body": true
+  },
+  {
+    "service": "data-stores",
+    "operation": "create_data_store",
+    "method": "POST",
+    "path": "/api/v1/data-stores",
+    "path_params": [],
+    "summary": "Create a new data store entry.",
+    "has_body": true
+  },
+  {
+    "service": "data-stores",
+    "operation": "delete_data_store",
+    "method": "DELETE",
+    "path": "/api/v1/data-stores/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a data store entry.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "get_data_store",
+    "method": "GET",
+    "path": "/api/v1/data-stores/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single data store entry by ID.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "get_data_store_labels",
+    "method": "GET",
+    "path": "/api/v1/data-stores/{id}/labels",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get labels for a data store.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "list_data_stores",
+    "method": "GET",
+    "path": "/api/v1/data-stores",
+    "path_params": [],
+    "summary": "List data stores with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "remove_data_store_label",
+    "method": "DELETE",
+    "path": "/api/v1/data-stores/{id}/labels/{label_id}",
+    "path_params": [
+      "id",
+      "label_id"
+    ],
+    "summary": "Remove a label from a data store.",
+    "has_body": false
+  },
+  {
+    "service": "data-stores",
+    "operation": "update_data_store",
+    "method": "PUT",
+    "path": "/api/v1/data-stores/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a data store entry.",
+    "has_body": true
+  },
+  {
+    "service": "dependencies",
+    "operation": "create_bulk_dependencies",
+    "method": "POST",
+    "path": "/api/v1/dependencies/bulk",
+    "path_params": [],
+    "summary": "Create multiple dependencies at once.",
+    "has_body": true
+  },
+  {
+    "service": "dependencies",
+    "operation": "create_dependency",
+    "method": "POST",
+    "path": "/api/v1/dependencies",
+    "path_params": [],
+    "summary": "Create a new dependency relationship between any resource types.",
+    "has_body": true
+  },
+  {
+    "service": "dependencies",
+    "operation": "delete_bulk_dependencies",
+    "method": "DELETE",
+    "path": "/api/v1/dependencies/bulk",
+    "path_params": [],
+    "summary": "Delete multiple dependencies at once.",
+    "has_body": false
+  },
+  {
+    "service": "dependencies",
+    "operation": "delete_dependency",
+    "method": "DELETE",
+    "path": "/api/v1/dependencies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a dependency relationship.",
+    "has_body": false
+  },
+  {
+    "service": "dependencies",
+    "operation": "get_dependency",
+    "method": "GET",
+    "path": "/api/v1/dependencies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single dependency by ID.",
+    "has_body": false
+  },
+  {
+    "service": "dependencies",
+    "operation": "get_resource_dependencies",
+    "method": "GET",
+    "path": "/api/v1/dependencies/resource/{resource_type}/{resource_id}",
+    "path_params": [
+      "resource_type",
+      "resource_id"
+    ],
+    "summary": "Get all dependencies for a specific resource.",
+    "has_body": false
+  },
+  {
+    "service": "dependencies",
+    "operation": "list_dependencies",
+    "method": "GET",
+    "path": "/api/v1/dependencies",
+    "path_params": [],
+    "summary": "List all dependencies with pagination and filtering.",
+    "has_body": false
+  },
+  {
+    "service": "dependencies",
+    "operation": "patch_update_dependency",
+    "method": "PATCH",
+    "path": "/api/v1/dependencies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
+    "has_body": true
+  },
+  {
+    "service": "dependencies",
+    "operation": "put_update_dependency",
+    "method": "PUT",
+    "path": "/api/v1/dependencies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
+    "has_body": true
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "add_item",
+    "method": "POST",
+    "path": "/api/v1/diagram-collections/{collection_id}/items",
+    "path_params": [
+      "collection_id"
+    ],
+    "summary": "Add a diagram to a collection.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "create_collection",
+    "method": "POST",
+    "path": "/api/v1/diagram-collections",
+    "path_params": [],
+    "summary": "Create a new collection.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "delete_collection",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-collections/{collection_id}",
+    "path_params": [
+      "collection_id"
+    ],
+    "summary": "Delete a collection and its items.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "get_collection",
+    "method": "GET",
+    "path": "/api/v1/diagram-collections/{collection_id}",
+    "path_params": [
+      "collection_id"
+    ],
+    "summary": "Get a collection by ID with its items.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "list_collections",
+    "method": "GET",
+    "path": "/api/v1/diagram-collections",
+    "path_params": [],
+    "summary": "List diagram collections with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "remove_item",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-collections/{collection_id}/items/{diagram_id}",
+    "path_params": [
+      "collection_id",
+      "diagram_id"
+    ],
+    "summary": "Remove a diagram from a collection.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-collections",
+    "operation": "update_collection",
+    "method": "PATCH",
+    "path": "/api/v1/diagram-collections/{collection_id}",
+    "path_params": [
+      "collection_id"
+    ],
+    "summary": "Update a collection.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "add_shape",
+    "method": "POST",
+    "path": "/api/v1/diagram-libraries/{library_id}/shapes",
+    "path_params": [
+      "library_id"
+    ],
+    "summary": "Add a shape to a library (owner only).",
+    "has_body": true
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "create_library",
+    "method": "POST",
+    "path": "/api/v1/diagram-libraries",
+    "path_params": [],
+    "summary": "Create a new shape library.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "delete_library",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-libraries/{library_id}",
+    "path_params": [
+      "library_id"
+    ],
+    "summary": "Delete library (owner only).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "get_library",
+    "method": "GET",
+    "path": "/api/v1/diagram-libraries/{library_id}",
+    "path_params": [
+      "library_id"
+    ],
+    "summary": "Get a specific library by ID with all its shapes.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "list_libraries",
+    "method": "GET",
+    "path": "/api/v1/diagram-libraries",
+    "path_params": [],
+    "summary": "List shape libraries (tenant-scoped, paginated).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "remove_shape",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-libraries/{library_id}/shapes/{shape_id}",
+    "path_params": [
+      "library_id",
+      "shape_id"
+    ],
+    "summary": "Remove a shape from a library (owner only).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-libraries",
+    "operation": "update_library",
+    "method": "PATCH",
+    "path": "/api/v1/diagram-libraries/{library_id}",
+    "path_params": [
+      "library_id"
+    ],
+    "summary": "Update library (owner only).",
+    "has_body": true
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "create_provider",
+    "method": "POST",
+    "path": "/api/v1/diagram-storage",
+    "path_params": [],
+    "summary": "Create a new storage provider.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "delete_provider",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-storage/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Delete storage provider (owner only).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "get_provider",
+    "method": "GET",
+    "path": "/api/v1/diagram-storage/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Get a specific storage provider.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "list_providers",
+    "method": "GET",
+    "path": "/api/v1/diagram-storage",
+    "path_params": [],
+    "summary": "List storage providers (tenant-scoped, paginated).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "test_provider",
+    "method": "POST",
+    "path": "/api/v1/diagram-storage/{provider_id}/test",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Test storage provider configuration (owner only).",
+    "has_body": true
+  },
+  {
+    "service": "diagram-storage",
+    "operation": "update_provider",
+    "method": "PATCH",
+    "path": "/api/v1/diagram-storage/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Update storage provider (owner only).",
+    "has_body": true
+  },
+  {
+    "service": "diagram-templates",
+    "operation": "create_template",
+    "method": "POST",
+    "path": "/api/v1/diagram-templates",
+    "path_params": [],
+    "summary": "Create a new diagram template.",
+    "has_body": true
+  },
+  {
+    "service": "diagram-templates",
+    "operation": "delete_template",
+    "method": "DELETE",
+    "path": "/api/v1/diagram-templates/{template_id}",
+    "path_params": [
+      "template_id"
+    ],
+    "summary": "Delete template (creator only).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-templates",
+    "operation": "get_template",
+    "method": "GET",
+    "path": "/api/v1/diagram-templates/{template_id}",
+    "path_params": [
+      "template_id"
+    ],
+    "summary": "Get a specific template by ID.",
+    "has_body": false
+  },
+  {
+    "service": "diagram-templates",
+    "operation": "list_templates",
+    "method": "GET",
+    "path": "/api/v1/diagram-templates",
+    "path_params": [],
+    "summary": "List diagram templates (tenant-scoped, paginated).",
+    "has_body": false
+  },
+  {
+    "service": "diagram-templates",
+    "operation": "update_template",
+    "method": "PATCH",
+    "path": "/api/v1/diagram-templates/{template_id}",
+    "path_params": [
+      "template_id"
+    ],
+    "summary": "Update template (creator only).",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "add_reply",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/comments/{comment_id}/replies",
+    "path_params": [
+      "diagram_id",
+      "comment_id"
+    ],
+    "summary": "Add a reply to a comment.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "create_comment",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/comments",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Create a comment on a diagram.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "create_diagram",
+    "method": "POST",
+    "path": "/api/v1/diagrams",
+    "path_params": [],
+    "summary": "Create a new diagram.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "create_share",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/shares",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Create a share for a diagram.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "delete_comment",
+    "method": "DELETE",
+    "path": "/api/v1/diagrams/{diagram_id}/comments/{comment_id}",
+    "path_params": [
+      "diagram_id",
+      "comment_id"
+    ],
+    "summary": "Delete comment (author or diagram editor only).",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "delete_diagram",
+    "method": "DELETE",
+    "path": "/api/v1/diagrams/{diagram_id}",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Delete a diagram and cascade delete its versions.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "export_json",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/export/json",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Export diagram as JSON (latest version).",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "export_raster",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/export/{fmt}",
+    "path_params": [
+      "diagram_id",
+      "fmt"
+    ],
+    "summary": "Export diagram as raster format (PNG, PDF).",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "export_svg",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/export/svg",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Export diagram as SVG (latest version, dependency-free rendering).",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "get_diagram",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Get a diagram by ID with latest version content.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "get_shared_diagram",
+    "method": "GET",
+    "path": "/api/v1/diagrams/shared/{share_token}",
+    "path_params": [
+      "share_token"
+    ],
+    "summary": "Get a diagram via public share token (no auth required).",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "get_version",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/versions/{version_number}",
+    "path_params": [
+      "diagram_id",
+      "version_number"
+    ],
+    "summary": "Get a specific version of a diagram.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "issue_collab_ticket",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/collab/ticket",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Issue a short-lived ticket for WebSocket authentication.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "list_comments",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/comments",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "List comments on a diagram (paginated) with nested replies.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "list_diagrams",
+    "method": "GET",
+    "path": "/api/v1/diagrams",
+    "path_params": [],
+    "summary": "List diagrams with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "list_shares",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/shares",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "List shares for a diagram.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "list_versions",
+    "method": "GET",
+    "path": "/api/v1/diagrams/{diagram_id}/versions",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "List all versions of a diagram.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "restore_version",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/versions/{version_number}/restore",
+    "path_params": [
+      "diagram_id",
+      "version_number"
+    ],
+    "summary": "Restore a diagram from a specific version.",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "revoke_share",
+    "method": "DELETE",
+    "path": "/api/v1/diagrams/{diagram_id}/shares/{share_id}",
+    "path_params": [
+      "diagram_id",
+      "share_id"
+    ],
+    "summary": "Revoke a share.",
+    "has_body": false
+  },
+  {
+    "service": "diagrams",
+    "operation": "save_version",
+    "method": "POST",
+    "path": "/api/v1/diagrams/{diagram_id}/versions",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Save a new version of diagram content (nodes + edges).",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "update_comment",
+    "method": "PATCH",
+    "path": "/api/v1/diagrams/{diagram_id}/comments/{comment_id}",
+    "path_params": [
+      "diagram_id",
+      "comment_id"
+    ],
+    "summary": "Update comment (author or diagram editor only).",
+    "has_body": true
+  },
+  {
+    "service": "diagrams",
+    "operation": "update_diagram",
+    "method": "PATCH",
+    "path": "/api/v1/diagrams/{diagram_id}",
+    "path_params": [
+      "diagram_id"
+    ],
+    "summary": "Update diagram metadata (not content).",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "complete_job",
+    "method": "POST",
+    "path": "/api/v1/discovery/jobs/{job_id}/complete",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Submit job results and mark as completed.",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "create_discovery_job",
+    "method": "POST",
+    "path": "/api/v1/discovery/jobs",
+    "path_params": [],
+    "summary": "Create a new discovery job.",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "delete_discovery_job",
+    "method": "DELETE",
+    "path": "/api/v1/discovery/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Delete discovery job.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "get_all_discovery_history",
+    "method": "GET",
+    "path": "/api/v1/discovery/history",
+    "path_params": [],
+    "summary": "Get all discovery execution history.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "get_discovery_job",
+    "method": "GET",
+    "path": "/api/v1/discovery/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Get discovery job details.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "get_discovery_job_history",
+    "method": "GET",
+    "path": "/api/v1/discovery/jobs/{job_id}/history",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Get discovery job execution history.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "get_pending_jobs",
+    "method": "GET",
+    "path": "/api/v1/discovery/jobs/pending",
+    "path_params": [],
+    "summary": "Get pending scan jobs for the scanner service.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "list_discovery_jobs",
+    "method": "GET",
+    "path": "/api/v1/discovery/jobs",
+    "path_params": [],
+    "summary": "List all discovery jobs.",
+    "has_body": false
+  },
+  {
+    "service": "discovery",
+    "operation": "run_discovery_job",
+    "method": "POST",
+    "path": "/api/v1/discovery/jobs/{job_id}/run",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Manually trigger a discovery job.",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "start_job",
+    "method": "POST",
+    "path": "/api/v1/discovery/jobs/{job_id}/start",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Mark a job as running.",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "test_discovery_job",
+    "method": "POST",
+    "path": "/api/v1/discovery/jobs/{job_id}/test",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Test discovery job connectivity.",
+    "has_body": true
+  },
+  {
+    "service": "discovery",
+    "operation": "update_discovery_job",
+    "method": "PUT",
+    "path": "/api/v1/discovery/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "summary": "Update discovery job configuration.",
+    "has_body": true
+  },
+  {
+    "service": "documents",
+    "operation": "create_document",
+    "method": "POST",
+    "path": "/api/v1/documents",
+    "path_params": [],
+    "summary": "Create a new document.",
+    "has_body": true
+  },
+  {
+    "service": "documents",
+    "operation": "delete_document",
+    "method": "DELETE",
+    "path": "/api/v1/documents/{doc_id}",
+    "path_params": [
+      "doc_id"
+    ],
+    "summary": "Delete a document.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "get_document",
+    "method": "GET",
+    "path": "/api/v1/documents/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Get a document by slug.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "get_public_document",
+    "method": "GET",
+    "path": "/api/v1/documents/public/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Get a public document by slug \u2014 no authentication required.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "get_version",
+    "method": "GET",
+    "path": "/api/v1/documents/{doc_id}/versions/{version_number}",
+    "path_params": [
+      "doc_id",
+      "version_number"
+    ],
+    "summary": "Get a specific version of a document.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "list_documents",
+    "method": "GET",
+    "path": "/api/v1/documents",
+    "path_params": [],
+    "summary": "List documents with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "list_public_documents",
+    "method": "GET",
+    "path": "/api/v1/documents/public",
+    "path_params": [],
+    "summary": "List public documents \u2014 no authentication required.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "list_versions",
+    "method": "GET",
+    "path": "/api/v1/documents/{doc_id}/versions",
+    "path_params": [
+      "doc_id"
+    ],
+    "summary": "List all versions of a document.",
+    "has_body": false
+  },
+  {
+    "service": "documents",
+    "operation": "publish_document",
+    "method": "POST",
+    "path": "/api/v1/documents/{doc_id}/publish",
+    "path_params": [
+      "doc_id"
+    ],
+    "summary": "Publish a document (set status=published, set published_at).",
+    "has_body": true
+  },
+  {
+    "service": "documents",
+    "operation": "restore_version",
+    "method": "POST",
+    "path": "/api/v1/documents/{doc_id}/versions/{version_number}/restore",
+    "path_params": [
+      "doc_id",
+      "version_number"
+    ],
+    "summary": "Restore a document from a specific version.",
+    "has_body": true
+  },
+  {
+    "service": "documents",
+    "operation": "update_document",
+    "method": "PATCH",
+    "path": "/api/v1/documents/{doc_id}",
+    "path_params": [
+      "doc_id"
+    ],
+    "summary": "Update a document.",
+    "has_body": true
+  },
+  {
+    "service": "entities",
+    "operation": "create_entity",
+    "method": "POST",
+    "path": "/api/v1/entities",
+    "path_params": [],
+    "summary": "Create a new entity.",
+    "has_body": true
+  },
+  {
+    "service": "entities",
+    "operation": "delete_entity",
+    "method": "DELETE",
+    "path": "/api/v1/entities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an entity.",
+    "has_body": false
+  },
+  {
+    "service": "entities",
+    "operation": "get_entity",
+    "method": "GET",
+    "path": "/api/v1/entities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single entity by ID.",
+    "has_body": false
+  },
+  {
+    "service": "entities",
+    "operation": "get_entity_dependencies",
+    "method": "GET",
+    "path": "/api/v1/entities/{id}/dependencies",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get all dependencies for an entity.",
+    "has_body": false
+  },
+  {
+    "service": "entities",
+    "operation": "list_entities",
+    "method": "GET",
+    "path": "/api/v1/entities",
+    "path_params": [],
+    "summary": "List all entities with pagination and filtering.",
+    "has_body": false
+  },
+  {
+    "service": "entities",
+    "operation": "patch_update_entity",
+    "method": "PATCH",
+    "path": "/api/v1/entities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an entity (full edit support).",
+    "has_body": true
+  },
+  {
+    "service": "entities",
+    "operation": "put_update_entity",
+    "method": "PUT",
+    "path": "/api/v1/entities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an entity (full edit support).",
+    "has_body": true
+  },
+  {
+    "service": "entities",
+    "operation": "update_entity_attributes",
+    "method": "PATCH",
+    "path": "/api/v1/entities/{id}/attributes",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update entity attributes (JSON field for type-specific fields).",
+    "has_body": true
+  },
+  {
+    "service": "entity-types",
+    "operation": "get_entity_type",
+    "method": "GET",
+    "path": "/api/v1/entity-types/{entity_type}",
+    "path_params": [
+      "entity_type"
+    ],
+    "summary": "Get details for a specific entity type including all sub-types.",
+    "has_body": false
+  },
+  {
+    "service": "entity-types",
+    "operation": "get_subtype_metadata_template",
+    "method": "GET",
+    "path": "/api/v1/entity-types/{entity_type}/{sub_type}/metadata",
+    "path_params": [
+      "entity_type",
+      "sub_type"
+    ],
+    "summary": "Get default metadata template for a specific sub-type.",
+    "has_body": false
+  },
+  {
+    "service": "entity-types",
+    "operation": "get_type_metadata_templates",
+    "method": "GET",
+    "path": "/api/v1/entity-types/{entity_type}/metadata",
+    "path_params": [
+      "entity_type"
+    ],
+    "summary": "Get default metadata templates for all sub-types of an entity type.",
+    "has_body": false
+  },
+  {
+    "service": "entity-types",
+    "operation": "list_entity_types",
+    "method": "GET",
+    "path": "/api/v1/entity-types",
+    "path_params": [],
+    "summary": "List all entity types with their sub-types.",
+    "has_body": false
+  },
+  {
+    "service": "entity-types",
+    "operation": "list_subtypes",
+    "method": "GET",
+    "path": "/api/v1/entity-types/{entity_type}/subtypes",
+    "path_params": [
+      "entity_type"
+    ],
+    "summary": "List all sub-types for a given entity type.",
+    "has_body": false
+  },
+  {
+    "service": "entity-types",
+    "operation": "validate_entity_type",
+    "method": "POST",
+    "path": "/api/v1/entity-types/validate",
+    "path_params": [],
+    "summary": "Validate an entity type and sub-type combination.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "add_approver",
+    "method": "POST",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/approvers",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Add an approver to a stage. Requires flows:admin (defines who approves).",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "add_call",
+    "method": "POST",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/calls",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Add an external-service call to a stage.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "add_test",
+    "method": "POST",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/tests",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Add a test to a stage.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "approve_promotion",
+    "method": "POST",
+    "path": "/api/v1/flows/promotions/{promotion_id}/approve",
+    "path_params": [
+      "promotion_id"
+    ],
+    "summary": "Approve a promotion.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "create_credential",
+    "method": "POST",
+    "path": "/api/v1/flows/credentials",
+    "path_params": [],
+    "summary": "Create a new credential.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "create_pipeline",
+    "method": "POST",
+    "path": "/api/v1/flows",
+    "path_params": [],
+    "summary": "Create a new pipeline.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "create_stage",
+    "method": "POST",
+    "path": "/api/v1/flows/{flow_id}/stages",
+    "path_params": [
+      "flow_id"
+    ],
+    "summary": "Create a new stage for a flow.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "delete_call",
+    "method": "DELETE",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/calls/{call_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "call_id"
+    ],
+    "summary": "Delete a stage call.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "delete_credential",
+    "method": "DELETE",
+    "path": "/api/v1/flows/credentials/{credential_id}",
+    "path_params": [
+      "credential_id"
+    ],
+    "summary": "Delete credential.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "delete_pipeline",
+    "method": "DELETE",
+    "path": "/api/v1/flows/{pipeline_id}",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Delete pipeline and all related resources (cascade).",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "delete_stage",
+    "method": "DELETE",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Delete a stage from a flow.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "delete_test",
+    "method": "DELETE",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/tests/{test_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "test_id"
+    ],
+    "summary": "Delete a stage test.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "disable_pipeline",
+    "method": "PUT",
+    "path": "/api/v1/flows/{pipeline_id}/disable",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Disable a pipeline.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "duplicate_pipeline",
+    "method": "POST",
+    "path": "/api/v1/flows/{pipeline_id}/duplicate",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Duplicate a pipeline including all stages.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "enable_pipeline",
+    "method": "PUT",
+    "path": "/api/v1/flows/{pipeline_id}/enable",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Enable a pipeline.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "execute_promotion",
+    "method": "POST",
+    "path": "/api/v1/flows/promotions/{promotion_id}/execute",
+    "path_params": [
+      "promotion_id"
+    ],
+    "summary": "Trigger CI/CD execution for a promotion (enqueues a flows-invoker job).",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "get_call",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/calls/{call_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "call_id"
+    ],
+    "summary": "Get a single stage call.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_credential",
+    "method": "GET",
+    "path": "/api/v1/flows/credentials/{credential_id}",
+    "path_params": [
+      "credential_id"
+    ],
+    "summary": "Get credential details (token never returned).",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_pipeline",
+    "method": "GET",
+    "path": "/api/v1/flows/{pipeline_id}",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Get pipeline details with stages and metadata.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_promotion",
+    "method": "GET",
+    "path": "/api/v1/flows/promotions/{promotion_id}",
+    "path_params": [
+      "promotion_id"
+    ],
+    "summary": "Get promotion details.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_review",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/reviews",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Get the Darwin AI review config for a stage (404 if unconfigured).",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_stage",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Get stage details.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "get_test",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/tests/{test_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "test_id"
+    ],
+    "summary": "Get a single stage test.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_approvers",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/approvers",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "List approvers configured for a stage.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_calls",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/calls",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "List external-service calls configured for a stage.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_credentials",
+    "method": "GET",
+    "path": "/api/v1/flows/credentials",
+    "path_params": [],
+    "summary": "List all credentials for current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_pipelines",
+    "method": "GET",
+    "path": "/api/v1/flows",
+    "path_params": [],
+    "summary": "List all pipelines for current tenant with pagination and filtering.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_promotions",
+    "method": "GET",
+    "path": "/api/v1/flows/promotions",
+    "path_params": [],
+    "summary": "List all promotions for current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_stages",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages",
+    "path_params": [
+      "flow_id"
+    ],
+    "summary": "List all stages for a flow.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "list_tests",
+    "method": "GET",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/tests",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "List tests configured for a stage.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "reject_promotion",
+    "method": "POST",
+    "path": "/api/v1/flows/promotions/{promotion_id}/reject",
+    "path_params": [
+      "promotion_id"
+    ],
+    "summary": "Reject a promotion.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "remove_approver",
+    "method": "DELETE",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/approvers/{approver_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "approver_id"
+    ],
+    "summary": "Remove an approver from a stage. Requires flows:admin.",
+    "has_body": false
+  },
+  {
+    "service": "flows",
+    "operation": "update_call",
+    "method": "PUT",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/calls/{call_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "call_id"
+    ],
+    "summary": "Update a stage call.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "update_credential",
+    "method": "PUT",
+    "path": "/api/v1/flows/credentials/{credential_id}",
+    "path_params": [
+      "credential_id"
+    ],
+    "summary": "Update credential configuration.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "update_pipeline",
+    "method": "PUT",
+    "path": "/api/v1/flows/{pipeline_id}",
+    "path_params": [
+      "pipeline_id"
+    ],
+    "summary": "Update pipeline configuration.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "update_review",
+    "method": "PUT",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/reviews",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Upsert the Darwin AI review config for a stage (one per stage).",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "update_stage",
+    "method": "PUT",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id"
+    ],
+    "summary": "Update stage configuration.",
+    "has_body": true
+  },
+  {
+    "service": "flows",
+    "operation": "update_test",
+    "method": "PUT",
+    "path": "/api/v1/flows/{flow_id}/stages/{stage_id}/tests/{test_id}",
+    "path_params": [
+      "flow_id",
+      "stage_id",
+      "test_id"
+    ],
+    "summary": "Update a stage test.",
+    "has_body": true
+  },
+  {
+    "service": "flows-hooks",
+    "operation": "trigger_webhook",
+    "method": "POST",
+    "path": "/api/v1/flows-hooks/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Trigger a pipeline promotion via webhook (public endpoint).",
+    "has_body": true
+  },
+  {
+    "service": "geo",
+    "operation": "create_location",
+    "method": "POST",
+    "path": "/api/v1/geo/locations",
+    "path_params": [],
+    "summary": "Create a geographic location, auto-geocoding coordinates when omitted.",
+    "has_body": true
+  },
+  {
+    "service": "geo",
+    "operation": "create_region",
+    "method": "POST",
+    "path": "/api/v1/geo/regions",
+    "path_params": [],
+    "summary": "Create a geographic region.",
+    "has_body": true
+  },
+  {
+    "service": "geo",
+    "operation": "delete_location",
+    "method": "DELETE",
+    "path": "/api/v1/geo/locations/{location_id}",
+    "path_params": [
+      "location_id"
+    ],
+    "summary": "Delete a geographic location scoped to the current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "geo",
+    "operation": "delete_region",
+    "method": "DELETE",
+    "path": "/api/v1/geo/regions/{region_id}",
+    "path_params": [
+      "region_id"
+    ],
+    "summary": "Delete a geographic region scoped to the current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "geo",
+    "operation": "geocode_location",
+    "method": "POST",
+    "path": "/api/v1/geo/geocode",
+    "path_params": [],
+    "summary": "Geocode a human-readable location query into latitude/longitude.",
+    "has_body": true
+  },
+  {
+    "service": "geo",
+    "operation": "list_locations",
+    "method": "GET",
+    "path": "/api/v1/geo/locations",
+    "path_params": [],
+    "summary": "List geographic locations for the current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "geo",
+    "operation": "list_regions",
+    "method": "GET",
+    "path": "/api/v1/geo/regions",
+    "path_params": [],
+    "summary": "List geographic regions for the current tenant.",
+    "has_body": false
+  },
+  {
+    "service": "geo",
+    "operation": "update_location",
+    "method": "PUT",
+    "path": "/api/v1/geo/locations/{location_id}",
+    "path_params": [
+      "location_id"
+    ],
+    "summary": "Update a geographic location scoped to the current tenant.",
+    "has_body": true
+  },
+  {
+    "service": "geo",
+    "operation": "update_region",
+    "method": "PUT",
+    "path": "/api/v1/geo/regions/{region_id}",
+    "path_params": [
+      "region_id"
+    ],
+    "summary": "Update a geographic region scoped to the current tenant.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "add_group_member",
+    "method": "POST",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}/members",
+    "path_params": [
+      "provider_id",
+      "group_key"
+    ],
+    "summary": "Add member to group.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "create_group",
+    "method": "POST",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create Google Workspace group.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "create_provider",
+    "method": "POST",
+    "path": "/api/v1/google-workspace/providers",
+    "path_params": [],
+    "summary": "Create Google Workspace provider.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "create_user",
+    "method": "POST",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/users",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create Google Workspace user.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "delete_group",
+    "method": "DELETE",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}",
+    "path_params": [
+      "provider_id",
+      "group_key"
+    ],
+    "summary": "Delete Google Workspace group.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "delete_provider",
+    "method": "DELETE",
+    "path": "/api/v1/google-workspace/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Delete provider.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "delete_user",
+    "method": "DELETE",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/users/{user_key}",
+    "path_params": [
+      "provider_id",
+      "user_key"
+    ],
+    "summary": "Delete Google Workspace user.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "get_group",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}",
+    "path_params": [
+      "provider_id",
+      "group_key"
+    ],
+    "summary": "Get group details.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "get_provider",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Get provider details.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "get_user",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/users/{user_key}",
+    "path_params": [
+      "provider_id",
+      "user_key"
+    ],
+    "summary": "Get user details.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "list_group_members",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}/members",
+    "path_params": [
+      "provider_id",
+      "group_key"
+    ],
+    "summary": "List group members.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "list_groups",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List Google Workspace groups.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "list_providers",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers",
+    "path_params": [],
+    "summary": "List Google Workspace providers.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "list_users",
+    "method": "GET",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/users",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List Google Workspace users.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "remove_group_member",
+    "method": "DELETE",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}/members/{member_email}",
+    "path_params": [
+      "provider_id",
+      "group_key",
+      "member_email"
+    ],
+    "summary": "Remove member from group.",
+    "has_body": false
+  },
+  {
+    "service": "google-workspace",
+    "operation": "test_provider",
+    "method": "POST",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/test",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Test provider connectivity.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "update_provider",
+    "method": "PUT",
+    "path": "/api/v1/google-workspace/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Update provider configuration.",
+    "has_body": true
+  },
+  {
+    "service": "google-workspace",
+    "operation": "update_user",
+    "method": "PUT",
+    "path": "/api/v1/google-workspace/providers/{provider_id}/users/{user_key}",
+    "path_params": [
+      "provider_id",
+      "user_key"
+    ],
+    "summary": "Update user details.",
+    "has_body": true
+  },
+  {
+    "service": "graph",
+    "operation": "analyze_graph",
+    "method": "GET",
+    "path": "/api/v1/graph/analyze",
+    "path_params": [],
+    "summary": "Analyze dependency graph and return insights.",
+    "has_body": false
+  },
+  {
+    "service": "graph",
+    "operation": "find_path",
+    "method": "GET",
+    "path": "/api/v1/graph/path",
+    "path_params": [],
+    "summary": "Find dependency path between two entities.",
+    "has_body": false
+  },
+  {
+    "service": "graph",
+    "operation": "get_graph",
+    "method": "GET",
+    "path": "/api/v1/graph",
+    "path_params": [],
+    "summary": "Get full dependency graph or filtered subgraph.",
+    "has_body": false
+  },
+  {
+    "service": "graph",
+    "operation": "get_map",
+    "method": "GET",
+    "path": "/api/v1/graph/map",
+    "path_params": [],
+    "summary": "Get global map of all resources and relationships for visualization.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "add_group_member",
+    "method": "POST",
+    "path": "/api/v1/group-membership/groups/{group_id}/members",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "Directly add a member to a group (admin/owner only).",
+    "has_body": true
+  },
+  {
+    "service": "group-membership",
+    "operation": "approve_request",
+    "method": "POST",
+    "path": "/api/v1/group-membership/requests/{request_id}/approve",
+    "path_params": [
+      "request_id"
+    ],
+    "summary": "Approve an access request.",
+    "has_body": true
+  },
+  {
+    "service": "group-membership",
+    "operation": "bulk_approve_requests",
+    "method": "POST",
+    "path": "/api/v1/group-membership/requests/bulk-approve",
+    "path_params": [],
+    "summary": "Bulk approve multiple requests.",
+    "has_body": true
+  },
+  {
+    "service": "group-membership",
+    "operation": "cancel_request",
+    "method": "DELETE",
+    "path": "/api/v1/group-membership/requests/{request_id}",
+    "path_params": [
+      "request_id"
+    ],
+    "summary": "Cancel own access request.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "create_access_request",
+    "method": "POST",
+    "path": "/api/v1/group-membership/groups/{group_id}/requests",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "Create an access request for a group.",
+    "has_body": true
+  },
+  {
+    "service": "group-membership",
+    "operation": "deny_request",
+    "method": "POST",
+    "path": "/api/v1/group-membership/requests/{request_id}/deny",
+    "path_params": [
+      "request_id"
+    ],
+    "summary": "Deny an access request.",
+    "has_body": true
+  },
+  {
+    "service": "group-membership",
+    "operation": "get_group",
+    "method": "GET",
+    "path": "/api/v1/group-membership/groups/{group_id}",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "Get group details with ownership and member info.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "list_group_members",
+    "method": "GET",
+    "path": "/api/v1/group-membership/groups/{group_id}/members",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "List members of a group.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "list_group_requests",
+    "method": "GET",
+    "path": "/api/v1/group-membership/groups/{group_id}/requests",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "List access requests for a group (owners only).",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "list_groups",
+    "method": "GET",
+    "path": "/api/v1/group-membership/groups",
+    "path_params": [],
+    "summary": "List all groups with ownership and member info.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "list_pending_requests",
+    "method": "GET",
+    "path": "/api/v1/group-membership/requests/pending",
+    "path_params": [],
+    "summary": "List all pending requests for groups owned by current user.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "remove_group_member",
+    "method": "DELETE",
+    "path": "/api/v1/group-membership/groups/{group_id}/members/{identity_id}",
+    "path_params": [
+      "group_id",
+      "identity_id"
+    ],
+    "summary": "Remove a member from a group.",
+    "has_body": false
+  },
+  {
+    "service": "group-membership",
+    "operation": "update_group",
+    "method": "PATCH",
+    "path": "/api/v1/group-membership/groups/{group_id}",
+    "path_params": [
+      "group_id"
+    ],
+    "summary": "Update group ownership and settings.",
+    "has_body": true
+  },
+  {
+    "service": "hooks",
+    "operation": "delete_trigger_webhook",
+    "method": "DELETE",
+    "path": "/api/v1/hooks/{token}",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Trigger a stream execution via webhook.",
+    "has_body": false
+  },
+  {
+    "service": "hooks",
+    "operation": "get_test_webhook",
+    "method": "GET",
+    "path": "/api/v1/hooks/{token}/test",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Test a webhook without triggering execution.",
+    "has_body": false
+  },
+  {
+    "service": "hooks",
+    "operation": "get_trigger_webhook",
+    "method": "GET",
+    "path": "/api/v1/hooks/{token}",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Trigger a stream execution via webhook.",
+    "has_body": false
+  },
+  {
+    "service": "hooks",
+    "operation": "patch_trigger_webhook",
+    "method": "PATCH",
+    "path": "/api/v1/hooks/{token}",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Trigger a stream execution via webhook.",
+    "has_body": true
+  },
+  {
+    "service": "hooks",
+    "operation": "post_test_webhook",
+    "method": "POST",
+    "path": "/api/v1/hooks/{token}/test",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Test a webhook without triggering execution.",
+    "has_body": true
+  },
+  {
+    "service": "hooks",
+    "operation": "post_trigger_webhook",
+    "method": "POST",
+    "path": "/api/v1/hooks/{token}",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Trigger a stream execution via webhook.",
+    "has_body": true
+  },
+  {
+    "service": "hooks",
+    "operation": "put_trigger_webhook",
+    "method": "PUT",
+    "path": "/api/v1/hooks/{token}",
+    "path_params": [
+      "token"
+    ],
+    "summary": "Trigger a stream execution via webhook.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "add_user_to_group",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/groups/{group_id}/users/{user_id}",
+    "path_params": [
+      "provider_id",
+      "group_id",
+      "user_id"
+    ],
+    "summary": "Add user to group.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "attach_policy_to_role",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "role_id",
+      "policy_id"
+    ],
+    "summary": "Attach policy to role.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "attach_policy_to_user",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "user_id",
+      "policy_id"
+    ],
+    "summary": "Attach policy to user.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_access_key",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/access-keys",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "Create access key for user.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_group",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/groups",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create a new group.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_policy",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/policies",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create a new policy.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_provider",
+    "method": "POST",
+    "path": "/api/v1/iam/providers",
+    "path_params": [],
+    "summary": "Create a new IAM provider.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_role",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/roles",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create a new role.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "create_user",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/users",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Create a new user.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "delete_access_key",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/access-keys/{key_id}",
+    "path_params": [
+      "provider_id",
+      "user_id",
+      "key_id"
+    ],
+    "summary": "Delete access key.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "delete_group",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/groups/{group_id}",
+    "path_params": [
+      "provider_id",
+      "group_id"
+    ],
+    "summary": "Delete group.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "delete_policy",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "policy_id"
+    ],
+    "summary": "Delete policy.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "delete_provider",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Delete an IAM provider.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "delete_role",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}",
+    "path_params": [
+      "provider_id",
+      "role_id"
+    ],
+    "summary": "Delete role.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "delete_user",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "Delete user.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "detach_policy_from_role",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "role_id",
+      "policy_id"
+    ],
+    "summary": "Detach policy from role.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "detach_policy_from_user",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "user_id",
+      "policy_id"
+    ],
+    "summary": "Detach policy from user.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "get_policy",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/policies/{policy_id}",
+    "path_params": [
+      "provider_id",
+      "policy_id"
+    ],
+    "summary": "Get policy details.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "get_provider",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Get a specific provider details.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "get_role",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}",
+    "path_params": [
+      "provider_id",
+      "role_id"
+    ],
+    "summary": "Get role details.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "get_user",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "Get user details.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_access_keys",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/access-keys",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "List access keys for user.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_groups",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/groups",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List groups from provider.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_policies",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/policies",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List policies from provider.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_providers",
+    "method": "GET",
+    "path": "/api/v1/iam/providers",
+    "path_params": [],
+    "summary": "List all IAM providers.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_role_policies",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}/policies",
+    "path_params": [
+      "provider_id",
+      "role_id"
+    ],
+    "summary": "List policies attached to role.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_roles",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/roles",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List roles from provider.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_user_policies",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}/policies",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "List policies attached to user.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "list_users",
+    "method": "GET",
+    "path": "/api/v1/iam/providers/{provider_id}/users",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "List users from provider.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "remove_user_from_group",
+    "method": "DELETE",
+    "path": "/api/v1/iam/providers/{provider_id}/groups/{group_id}/users/{user_id}",
+    "path_params": [
+      "provider_id",
+      "group_id",
+      "user_id"
+    ],
+    "summary": "Remove user from group.",
+    "has_body": false
+  },
+  {
+    "service": "iam",
+    "operation": "sync_provider",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/sync",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Sync resources from provider to database.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "test_provider",
+    "method": "POST",
+    "path": "/api/v1/iam/providers/{provider_id}/test",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Test provider connectivity.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "update_provider",
+    "method": "PUT",
+    "path": "/api/v1/iam/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Update provider configuration.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "update_role",
+    "method": "PUT",
+    "path": "/api/v1/iam/providers/{provider_id}/roles/{role_id}",
+    "path_params": [
+      "provider_id",
+      "role_id"
+    ],
+    "summary": "Update role.",
+    "has_body": true
+  },
+  {
+    "service": "iam",
+    "operation": "update_user",
+    "method": "PUT",
+    "path": "/api/v1/iam/providers/{provider_id}/users/{user_id}",
+    "path_params": [
+      "provider_id",
+      "user_id"
+    ],
+    "summary": "Update user.",
+    "has_body": true
+  },
+  {
+    "service": "id",
+    "operation": "lookup_village_id",
+    "method": "GET",
+    "path": "/api/v1/id/{village_id}",
+    "path_params": [
+      "village_id"
+    ],
+    "summary": "Resolve a village_id at ``GET /api/v1/id/<village_id>``.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "add_group_member",
+    "method": "POST",
+    "path": "/api/v1/identities/groups/{group_id}/members/{identity_id}",
+    "path_params": [
+      "group_id",
+      "identity_id"
+    ],
+    "summary": "Add identity to group.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "create_group",
+    "method": "POST",
+    "path": "/api/v1/identities/groups",
+    "path_params": [],
+    "summary": "Create a new identity group.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "create_identity",
+    "method": "POST",
+    "path": "/api/v1/identities",
+    "path_params": [],
+    "summary": "Create a new identity/user.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "delete_group",
+    "method": "DELETE",
+    "path": "/api/v1/identities/groups/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete identity group.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "delete_identity",
+    "method": "DELETE",
+    "path": "/api/v1/identities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete identity.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "get_group",
+    "method": "GET",
+    "path": "/api/v1/identities/groups/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get identity group by ID.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "get_identity",
+    "method": "GET",
+    "path": "/api/v1/identities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get identity by ID.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "list_groups",
+    "method": "GET",
+    "path": "/api/v1/identities/groups",
+    "path_params": [],
+    "summary": "List all identity groups.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "list_identities",
+    "method": "GET",
+    "path": "/api/v1/identities",
+    "path_params": [],
+    "summary": "List all identities with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "identities",
+    "operation": "patch_update_group",
+    "method": "PATCH",
+    "path": "/api/v1/identities/groups/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update identity group.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "patch_update_identity",
+    "method": "PATCH",
+    "path": "/api/v1/identities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update identity.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "put_update_group",
+    "method": "PUT",
+    "path": "/api/v1/identities/groups/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update identity group.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "put_update_identity",
+    "method": "PUT",
+    "path": "/api/v1/identities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update identity.",
+    "has_body": true
+  },
+  {
+    "service": "identities",
+    "operation": "remove_group_member",
+    "method": "DELETE",
+    "path": "/api/v1/identities/groups/{group_id}/members/{identity_id}",
+    "path_params": [
+      "group_id",
+      "identity_id"
+    ],
+    "summary": "Remove identity from group.",
+    "has_body": false
+  },
+  {
+    "service": "import",
+    "operation": "download_csv_template",
+    "method": "GET",
+    "path": "/api/v1/import/templates/{resource}/download",
+    "path_params": [
+      "resource"
+    ],
+    "summary": "Download an exact CSV template with header row and example row.",
+    "has_body": false
+  },
+  {
+    "service": "import",
+    "operation": "import_csv_resource",
+    "method": "POST",
+    "path": "/api/v1/import/{resource}",
+    "path_params": [
+      "resource"
+    ],
+    "summary": "Validate an exact CSV against the resource template (max 1000 rows) and import.",
+    "has_body": true
+  },
+  {
+    "service": "import",
+    "operation": "list_csv_templates",
+    "method": "GET",
+    "path": "/api/v1/import/templates",
+    "path_params": [],
+    "summary": "Return all supported CSV import templates and their exact column rules.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "create_address",
+    "method": "POST",
+    "path": "/api/v1/ipam/addresses",
+    "path_params": [],
+    "summary": "Create a new IPAM address.",
+    "has_body": true
+  },
+  {
+    "service": "ipam",
+    "operation": "create_prefix",
+    "method": "POST",
+    "path": "/api/v1/ipam/prefixes",
+    "path_params": [],
+    "summary": "Create a new IPAM prefix.",
+    "has_body": true
+  },
+  {
+    "service": "ipam",
+    "operation": "create_vlan",
+    "method": "POST",
+    "path": "/api/v1/ipam/vlans",
+    "path_params": [],
+    "summary": "Create a new IPAM VLAN.",
+    "has_body": true
+  },
+  {
+    "service": "ipam",
+    "operation": "delete_address",
+    "method": "DELETE",
+    "path": "/api/v1/ipam/addresses/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an IPAM address.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "delete_prefix",
+    "method": "DELETE",
+    "path": "/api/v1/ipam/prefixes/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an IPAM prefix.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "delete_vlan",
+    "method": "DELETE",
+    "path": "/api/v1/ipam/vlans/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an IPAM VLAN.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "get_address",
+    "method": "GET",
+    "path": "/api/v1/ipam/addresses/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single IPAM address by ID.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "get_prefix",
+    "method": "GET",
+    "path": "/api/v1/ipam/prefixes/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single IPAM prefix by ID.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "get_prefix_tree",
+    "method": "GET",
+    "path": "/api/v1/ipam/prefixes/{id}/tree",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get an IPAM prefix with all children (hierarchical tree).",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "get_vlan",
+    "method": "GET",
+    "path": "/api/v1/ipam/vlans/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single IPAM VLAN by ID.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "list_addresses",
+    "method": "GET",
+    "path": "/api/v1/ipam/addresses",
+    "path_params": [],
+    "summary": "List IPAM addresses with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "list_prefixes",
+    "method": "GET",
+    "path": "/api/v1/ipam/prefixes",
+    "path_params": [],
+    "summary": "List IPAM prefixes with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "list_vlans",
+    "method": "GET",
+    "path": "/api/v1/ipam/vlans",
+    "path_params": [],
+    "summary": "List IPAM VLANs with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "ipam",
+    "operation": "update_address",
+    "method": "PUT",
+    "path": "/api/v1/ipam/addresses/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an IPAM address.",
+    "has_body": true
+  },
+  {
+    "service": "ipam",
+    "operation": "update_prefix",
+    "method": "PUT",
+    "path": "/api/v1/ipam/prefixes/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an IPAM prefix.",
+    "has_body": true
+  },
+  {
+    "service": "ipam",
+    "operation": "update_vlan",
+    "method": "PUT",
+    "path": "/api/v1/ipam/vlans/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an IPAM VLAN.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "add_issue_label",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/labels",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Add a label to an issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "create_issue",
+    "method": "POST",
+    "path": "/api/v1/issues",
+    "path_params": [],
+    "summary": "Create a new issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "create_issue_comment",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/comments",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Add a comment to an issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "create_issue_entity_link",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/links",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Link an entity to an issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "create_issue_label",
+    "method": "POST",
+    "path": "/api/v1/issues/labels",
+    "path_params": [],
+    "summary": "Create a new issue label.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "create_issue_resource_link",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/resources",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Link a generic resource to an issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "delete_issue",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "delete_issue_comment",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/comments/{comment_id}",
+    "path_params": [
+      "id",
+      "comment_id"
+    ],
+    "summary": "Delete a comment from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "delete_issue_entity_link",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/links/{link_id}",
+    "path_params": [
+      "id",
+      "link_id"
+    ],
+    "summary": "Remove an entity link from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "delete_issue_entity_link_by_entity",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/links/by-entity/{entity_id}",
+    "path_params": [
+      "id",
+      "entity_id"
+    ],
+    "summary": "Remove an entity link from an issue by entity ID.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "delete_issue_resource_link",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/resources/{link_id}",
+    "path_params": [
+      "id",
+      "link_id"
+    ],
+    "summary": "Remove a resource link from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "get_issue",
+    "method": "GET",
+    "path": "/api/v1/issues/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single issue by ID.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "link_issue_to_milestone",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/milestones",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Link an issue to a milestone.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "link_issue_to_project",
+    "method": "POST",
+    "path": "/api/v1/issues/{id}/projects",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Link an issue to a project.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "list_issue_comments",
+    "method": "GET",
+    "path": "/api/v1/issues/{id}/comments",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List comments for an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "list_issue_entity_links",
+    "method": "GET",
+    "path": "/api/v1/issues/{id}/links",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List entity links for an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "list_issue_labels",
+    "method": "GET",
+    "path": "/api/v1/issues/labels",
+    "path_params": [],
+    "summary": "List all available issue labels.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "list_issue_labels_for_issue",
+    "method": "GET",
+    "path": "/api/v1/issues/{id}/labels",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List all labels assigned to a specific issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "list_issue_resource_links",
+    "method": "GET",
+    "path": "/api/v1/issues/{id}/resources",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List resource links for an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "list_issues",
+    "method": "GET",
+    "path": "/api/v1/issues",
+    "path_params": [],
+    "summary": "List issues with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "remove_issue_label",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/labels/{label_id}",
+    "path_params": [
+      "id",
+      "label_id"
+    ],
+    "summary": "Remove a label from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "unlink_issue_from_milestone",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/milestones/{milestone_id}",
+    "path_params": [
+      "id",
+      "milestone_id"
+    ],
+    "summary": "Remove a milestone link from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "unlink_issue_from_project",
+    "method": "DELETE",
+    "path": "/api/v1/issues/{id}/projects/{project_id}",
+    "path_params": [
+      "id",
+      "project_id"
+    ],
+    "summary": "Remove a project link from an issue.",
+    "has_body": false
+  },
+  {
+    "service": "issues",
+    "operation": "update_issue",
+    "method": "PATCH",
+    "path": "/api/v1/issues/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an issue.",
+    "has_body": true
+  },
+  {
+    "service": "issues",
+    "operation": "update_issue_comment",
+    "method": "PATCH",
+    "path": "/api/v1/issues/{id}/comments/{comment_id}",
+    "path_params": [
+      "id",
+      "comment_id"
+    ],
+    "summary": "Update a comment on an issue.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "create_key",
+    "method": "POST",
+    "path": "/api/v1/keys",
+    "path_params": [],
+    "summary": "Create a new encryption key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "create_key_provider",
+    "method": "POST",
+    "path": "/api/v1/keys/providers",
+    "path_params": [],
+    "summary": "Register a new key provider.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "decrypt_data",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/decrypt",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Decrypt data using this key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "delete_key",
+    "method": "DELETE",
+    "path": "/api/v1/keys/{key_id}",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Schedule key deletion.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "delete_key_provider",
+    "method": "DELETE",
+    "path": "/api/v1/keys/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Delete key provider.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "disable_key",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/disable",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Disable a key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "enable_key",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/enable",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Enable a disabled key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "encrypt_data",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/encrypt",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Encrypt data using this key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "generate_data_key",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/generate-data-key",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Generate a data encryption key.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "get_key",
+    "method": "GET",
+    "path": "/api/v1/keys/{key_id}",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Get a specific key details.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "get_key_access_log",
+    "method": "GET",
+    "path": "/api/v1/keys/{key_id}/access-log",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Get access log for a key.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "get_key_provider",
+    "method": "GET",
+    "path": "/api/v1/keys/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Get key provider details.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "list_key_providers",
+    "method": "GET",
+    "path": "/api/v1/keys/providers",
+    "path_params": [],
+    "summary": "List all key providers.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "list_keys",
+    "method": "GET",
+    "path": "/api/v1/keys",
+    "path_params": [],
+    "summary": "List all keys accessible by current user/organization.",
+    "has_body": false
+  },
+  {
+    "service": "keys",
+    "operation": "rotate_key",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/rotate",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Rotate a key (enable automatic rotation or rotate immediately).",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "sign_data",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/sign",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Sign data using this key (asymmetric keys only).",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "test_key_provider",
+    "method": "POST",
+    "path": "/api/v1/keys/providers/{provider_id}/test",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Test provider connectivity.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "update_key_provider",
+    "method": "PUT",
+    "path": "/api/v1/keys/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Update key provider configuration.",
+    "has_body": true
+  },
+  {
+    "service": "keys",
+    "operation": "verify_signature",
+    "method": "POST",
+    "path": "/api/v1/keys/{key_id}/verify",
+    "path_params": [
+      "key_id"
+    ],
+    "summary": "Verify a message signature (asymmetric keys only).",
+    "has_body": true
+  },
+  {
+    "service": "labels",
+    "operation": "create_label",
+    "method": "POST",
+    "path": "/api/v1/labels",
+    "path_params": [],
+    "summary": "Create a new label.",
+    "has_body": true
+  },
+  {
+    "service": "labels",
+    "operation": "delete_label",
+    "method": "DELETE",
+    "path": "/api/v1/labels/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a label.",
+    "has_body": false
+  },
+  {
+    "service": "labels",
+    "operation": "get_label",
+    "method": "GET",
+    "path": "/api/v1/labels/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single label by ID.",
+    "has_body": false
+  },
+  {
+    "service": "labels",
+    "operation": "list_labels",
+    "method": "GET",
+    "path": "/api/v1/labels",
+    "path_params": [],
+    "summary": "List all labels with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "labels",
+    "operation": "update_label",
+    "method": "PUT",
+    "path": "/api/v1/labels/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a label.",
+    "has_body": true
+  },
+  {
+    "service": "license-policies",
+    "operation": "check_components",
+    "method": "POST",
+    "path": "/api/v1/license-policies/check",
+    "path_params": [],
+    "summary": "Check components against all active license policies.",
+    "has_body": true
+  },
+  {
+    "service": "license-policies",
+    "operation": "create_policy",
+    "method": "POST",
+    "path": "/api/v1/license-policies",
+    "path_params": [],
+    "summary": "Create a new license policy.",
+    "has_body": true
+  },
+  {
+    "service": "license-policies",
+    "operation": "delete_policy",
+    "method": "DELETE",
+    "path": "/api/v1/license-policies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a license policy.",
+    "has_body": false
+  },
+  {
+    "service": "license-policies",
+    "operation": "get_policy",
+    "method": "GET",
+    "path": "/api/v1/license-policies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single license policy by ID.",
+    "has_body": false
+  },
+  {
+    "service": "license-policies",
+    "operation": "list_policies",
+    "method": "GET",
+    "path": "/api/v1/license-policies",
+    "path_params": [],
+    "summary": "List license policies with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "license-policies",
+    "operation": "update_policy",
+    "method": "PUT",
+    "path": "/api/v1/license-policies/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a license policy.",
+    "has_body": true
+  },
+  {
+    "service": "licensing",
+    "operation": "get_licensing_status",
+    "method": "GET",
+    "path": "/api/v1/licensing/status",
+    "path_params": [],
+    "summary": "Return the effective license tier, domain-bypass state, limits, and features.",
+    "has_body": false
+  },
+  {
+    "service": "logs",
+    "operation": "get_logs",
+    "method": "GET",
+    "path": "/api/v1/logs",
+    "path_params": [],
+    "summary": "Get last 100 log lines (global admin only).",
+    "has_body": false
+  },
+  {
+    "service": "logs",
+    "operation": "search_logs",
+    "method": "GET",
+    "path": "/api/v1/logs/search",
+    "path_params": [],
+    "summary": "Search logs, return last 100 matches (global admin only).",
+    "has_body": false
+  },
+  {
+    "service": "metadata",
+    "operation": "create_entity_metadata",
+    "method": "POST",
+    "path": "/api/v1/metadata/entities/{id}/metadata",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Create or update a metadata field for an entity.",
+    "has_body": true
+  },
+  {
+    "service": "metadata",
+    "operation": "create_organization_metadata",
+    "method": "POST",
+    "path": "/api/v1/metadata/organizations/{id}/metadata",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Create or update a metadata field for an organization.",
+    "has_body": true
+  },
+  {
+    "service": "metadata",
+    "operation": "delete_entity_metadata",
+    "method": "DELETE",
+    "path": "/api/v1/metadata/entities/{id}/metadata/{field_key}",
+    "path_params": [
+      "id",
+      "field_key"
+    ],
+    "summary": "Delete a metadata field from an entity.",
+    "has_body": false
+  },
+  {
+    "service": "metadata",
+    "operation": "delete_organization_metadata",
+    "method": "DELETE",
+    "path": "/api/v1/metadata/organizations/{id}/metadata/{field_key}",
+    "path_params": [
+      "id",
+      "field_key"
+    ],
+    "summary": "Delete a metadata field from an organization.",
+    "has_body": false
+  },
+  {
+    "service": "metadata",
+    "operation": "get_entity_metadata",
+    "method": "GET",
+    "path": "/api/v1/metadata/entities/{id}/metadata",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get all metadata for an entity.",
+    "has_body": false
+  },
+  {
+    "service": "metadata",
+    "operation": "get_organization_metadata",
+    "method": "GET",
+    "path": "/api/v1/metadata/organizations/{id}/metadata",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get all metadata for an organization.",
+    "has_body": false
+  },
+  {
+    "service": "metadata",
+    "operation": "update_entity_metadata",
+    "method": "PATCH",
+    "path": "/api/v1/metadata/entities/{id}/metadata/{field_key}",
+    "path_params": [
+      "id",
+      "field_key"
+    ],
+    "summary": "Update a metadata field for an entity.",
+    "has_body": true
+  },
+  {
+    "service": "metadata",
+    "operation": "update_organization_metadata",
+    "method": "PATCH",
+    "path": "/api/v1/metadata/organizations/{id}/metadata/{field_key}",
+    "path_params": [
+      "id",
+      "field_key"
+    ],
+    "summary": "Update a metadata field for an organization.",
+    "has_body": true
+  },
+  {
+    "service": "milestones",
+    "operation": "create_milestone",
+    "method": "POST",
+    "path": "/api/v1/milestones",
+    "path_params": [],
+    "summary": "Create a new milestone.",
+    "has_body": true
+  },
+  {
+    "service": "milestones",
+    "operation": "delete_milestone",
+    "method": "DELETE",
+    "path": "/api/v1/milestones/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a milestone.",
+    "has_body": false
+  },
+  {
+    "service": "milestones",
+    "operation": "get_milestone",
+    "method": "GET",
+    "path": "/api/v1/milestones/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single milestone by ID.",
+    "has_body": false
+  },
+  {
+    "service": "milestones",
+    "operation": "get_milestone_issues",
+    "method": "GET",
+    "path": "/api/v1/milestones/{id}/issues",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get all issues linked to a milestone.",
+    "has_body": false
+  },
+  {
+    "service": "milestones",
+    "operation": "list_milestones",
+    "method": "GET",
+    "path": "/api/v1/milestones",
+    "path_params": [],
+    "summary": "List milestones with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "milestones",
+    "operation": "update_milestone",
+    "method": "PUT",
+    "path": "/api/v1/milestones/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a milestone.",
+    "has_body": true
+  },
+  {
+    "service": "modules",
+    "operation": "list_modules",
+    "method": "GET",
+    "path": "/api/v1/modules",
+    "path_params": [],
+    "summary": "Get list of available modules with status, licensing, and capabilities.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "create_entity_mapping",
+    "method": "POST",
+    "path": "/api/v1/networking/mappings",
+    "path_params": [],
+    "summary": "Map an entity to a network.",
+    "has_body": true
+  },
+  {
+    "service": "networking",
+    "operation": "create_network",
+    "method": "POST",
+    "path": "/api/v1/networking/networks",
+    "path_params": [],
+    "summary": "Create a new networking resource.",
+    "has_body": true
+  },
+  {
+    "service": "networking",
+    "operation": "create_topology_connection",
+    "method": "POST",
+    "path": "/api/v1/networking/topology/connections",
+    "path_params": [],
+    "summary": "Create a network topology connection.",
+    "has_body": true
+  },
+  {
+    "service": "networking",
+    "operation": "delete_entity_mapping",
+    "method": "DELETE",
+    "path": "/api/v1/networking/mappings/{mapping_id}",
+    "path_params": [
+      "mapping_id"
+    ],
+    "summary": "Delete an entity-network mapping.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "delete_network",
+    "method": "DELETE",
+    "path": "/api/v1/networking/networks/{network_id}",
+    "path_params": [
+      "network_id"
+    ],
+    "summary": "Delete networking resource.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "delete_topology_connection",
+    "method": "DELETE",
+    "path": "/api/v1/networking/topology/connections/{connection_id}",
+    "path_params": [
+      "connection_id"
+    ],
+    "summary": "Delete a topology connection.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "get_entity_mapping",
+    "method": "GET",
+    "path": "/api/v1/networking/mappings/{mapping_id}",
+    "path_params": [
+      "mapping_id"
+    ],
+    "summary": "Get entity-network mapping by ID.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "get_network",
+    "method": "GET",
+    "path": "/api/v1/networking/networks/{network_id}",
+    "path_params": [
+      "network_id"
+    ],
+    "summary": "Get networking resource by ID.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "get_topology_connection",
+    "method": "GET",
+    "path": "/api/v1/networking/topology/connections/{connection_id}",
+    "path_params": [
+      "connection_id"
+    ],
+    "summary": "Get topology connection by ID.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "get_topology_graph",
+    "method": "GET",
+    "path": "/api/v1/networking/topology/graph",
+    "path_params": [],
+    "summary": "Get network topology as a graph for visualization.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "list_entity_mappings",
+    "method": "GET",
+    "path": "/api/v1/networking/mappings",
+    "path_params": [],
+    "summary": "List entity-network mappings.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "list_networks",
+    "method": "GET",
+    "path": "/api/v1/networking/networks",
+    "path_params": [],
+    "summary": "List networking resources with filters.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "list_topology_connections",
+    "method": "GET",
+    "path": "/api/v1/networking/topology/connections",
+    "path_params": [],
+    "summary": "List topology connections.",
+    "has_body": false
+  },
+  {
+    "service": "networking",
+    "operation": "patch_update_network",
+    "method": "PATCH",
+    "path": "/api/v1/networking/networks/{network_id}",
+    "path_params": [
+      "network_id"
+    ],
+    "summary": "Update networking resource.",
+    "has_body": true
+  },
+  {
+    "service": "networking",
+    "operation": "put_update_network",
+    "method": "PUT",
+    "path": "/api/v1/networking/networks/{network_id}",
+    "path_params": [
+      "network_id"
+    ],
+    "summary": "Update networking resource.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "add_participant",
+    "method": "POST",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/participants",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Add a participant to a rotation.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "create_escalation",
+    "method": "POST",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/escalations",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Create an escalation policy for a rotation.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "create_override",
+    "method": "POST",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/overrides",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Create an override for a rotation.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "create_rotation",
+    "method": "POST",
+    "path": "/api/v1/on-call/rotations",
+    "path_params": [],
+    "summary": "Create a new on-call rotation.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "delete_escalation",
+    "method": "DELETE",
+    "path": "/api/v1/on-call/rotations/escalations/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Delete an escalation policy.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "delete_override",
+    "method": "DELETE",
+    "path": "/api/v1/on-call/rotations/overrides/{override_id}",
+    "path_params": [
+      "override_id"
+    ],
+    "summary": "Delete an override.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "delete_rotation",
+    "method": "DELETE",
+    "path": "/api/v1/on-call/rotations/{rotation_id}",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Delete an on-call rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "get_current_oncall_for_org",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/current/organization/{org_id}",
+    "path_params": [
+      "org_id"
+    ],
+    "summary": "Get current on-call person for all rotations in an organization.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "get_current_oncall_for_service",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/current/service/{service_id}",
+    "path_params": [
+      "service_id"
+    ],
+    "summary": "Get current on-call person for all rotations associated with a service.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "get_rotation",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/{rotation_id}",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Get a single on-call rotation with participants and current on-call.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "get_shift_history",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/history",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Get shift history for a rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "handle_alertmanager_webhook",
+    "method": "POST",
+    "path": "/api/v1/on-call/webhooks/alertmanager/webhook",
+    "path_params": [],
+    "summary": "Receive Prometheus AlertManager alerts and notify on-call rotations.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "list_escalations",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/escalations",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "List escalation policies for a rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "list_overrides",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/overrides",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "List all overrides for a rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "list_participants",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/participants",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "List all participants in a rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "list_rotations",
+    "method": "GET",
+    "path": "/api/v1/on-call/rotations",
+    "path_params": [],
+    "summary": "List on-call rotations with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "remove_participant",
+    "method": "DELETE",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/participants/{participant_id}",
+    "path_params": [
+      "rotation_id",
+      "participant_id"
+    ],
+    "summary": "Remove a participant from a rotation.",
+    "has_body": false
+  },
+  {
+    "service": "on-call",
+    "operation": "update_escalation",
+    "method": "PUT",
+    "path": "/api/v1/on-call/rotations/escalations/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Update an escalation policy.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "update_override",
+    "method": "PUT",
+    "path": "/api/v1/on-call/rotations/overrides/{override_id}",
+    "path_params": [
+      "override_id"
+    ],
+    "summary": "Update an override.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "update_participant",
+    "method": "PUT",
+    "path": "/api/v1/on-call/rotations/{rotation_id}/participants/{participant_id}",
+    "path_params": [
+      "rotation_id",
+      "participant_id"
+    ],
+    "summary": "Update a rotation participant.",
+    "has_body": true
+  },
+  {
+    "service": "on-call",
+    "operation": "update_rotation",
+    "method": "PUT",
+    "path": "/api/v1/on-call/rotations/{rotation_id}",
+    "path_params": [
+      "rotation_id"
+    ],
+    "summary": "Update an on-call rotation.",
+    "has_body": true
+  },
+  {
+    "service": "organizations",
+    "operation": "create_organization",
+    "method": "POST",
+    "path": "/api/v1/organizations",
+    "path_params": [],
+    "summary": "Create a new Organization Unit (OU).",
+    "has_body": true
+  },
+  {
+    "service": "organizations",
+    "operation": "delete_organization",
+    "method": "DELETE",
+    "path": "/api/v1/organizations/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an Organization Unit (OU).",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "get_organization",
+    "method": "GET",
+    "path": "/api/v1/organizations/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single Organization Unit (OU) by ID.",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "get_organization_children",
+    "method": "GET",
+    "path": "/api/v1/organizations/{id}/children",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get all child organizations scoped to the caller's tenant.",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "get_organization_graph",
+    "method": "GET",
+    "path": "/api/v1/organizations/{id}/graph",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get relationship graph for an organization and its nearby entities.",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "get_organization_tree_stats",
+    "method": "GET",
+    "path": "/api/v1/organizations/{org_id}/tree-stats",
+    "path_params": [
+      "org_id"
+    ],
+    "summary": "Get recursive statistics for an organization and all its descendants.",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "list_organizations",
+    "method": "GET",
+    "path": "/api/v1/organizations",
+    "path_params": [],
+    "summary": "List all Organization Units (OUs) with pagination and filtering.",
+    "has_body": false
+  },
+  {
+    "service": "organizations",
+    "operation": "patch_update_organization",
+    "method": "PATCH",
+    "path": "/api/v1/organizations/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an Organization Unit (OU).",
+    "has_body": true
+  },
+  {
+    "service": "organizations",
+    "operation": "put_update_organization",
+    "method": "PUT",
+    "path": "/api/v1/organizations/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an Organization Unit (OU).",
+    "has_body": true
+  },
+  {
+    "service": "pages",
+    "operation": "attach_collection",
+    "method": "POST",
+    "path": "/api/v1/pages/{slug}/collections/{collection_id}",
+    "path_params": [
+      "slug",
+      "collection_id"
+    ],
+    "summary": "Attach a document collection to a page.",
+    "has_body": true
+  },
+  {
+    "service": "pages",
+    "operation": "create_page",
+    "method": "POST",
+    "path": "/api/v1/pages",
+    "path_params": [],
+    "summary": "Create a new page.",
+    "has_body": true
+  },
+  {
+    "service": "pages",
+    "operation": "delete_page",
+    "method": "DELETE",
+    "path": "/api/v1/pages/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Delete page by slug (admin only).",
+    "has_body": false
+  },
+  {
+    "service": "pages",
+    "operation": "detach_collection",
+    "method": "DELETE",
+    "path": "/api/v1/pages/{slug}/collections/{collection_id}",
+    "path_params": [
+      "slug",
+      "collection_id"
+    ],
+    "summary": "Detach a document collection from a page.",
+    "has_body": false
+  },
+  {
+    "service": "pages",
+    "operation": "get_backlinks",
+    "method": "GET",
+    "path": "/api/v1/pages/{slug}/backlinks",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Get all pages that reference this page via wiki-links.",
+    "has_body": false
+  },
+  {
+    "service": "pages",
+    "operation": "get_page_by_slug",
+    "method": "GET",
+    "path": "/api/v1/pages/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Get page by slug with visibility ACL.",
+    "has_body": false
+  },
+  {
+    "service": "pages",
+    "operation": "list_pages",
+    "method": "GET",
+    "path": "/api/v1/pages",
+    "path_params": [],
+    "summary": "List pages with optional filtering, visibility ACL, and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "pages",
+    "operation": "update_page",
+    "method": "PUT",
+    "path": "/api/v1/pages/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Update page by slug.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "assign_org_role",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/org-assignments",
+    "path_params": [],
+    "summary": "Assign a portal user to an organization with a role.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "change_password",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/password/change",
+    "path_params": [],
+    "summary": "Change password for the authenticated user.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "disable_mfa",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/mfa/disable",
+    "path_params": [],
+    "summary": "Disable MFA for the authenticated user.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "enable_mfa",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/mfa/enable",
+    "path_params": [],
+    "summary": "Enable MFA for the authenticated user.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "get_current_user",
+    "method": "GET",
+    "path": "/api/v1/portal-auth/me",
+    "path_params": [],
+    "summary": "Get current authenticated portal user info.",
+    "has_body": false
+  },
+  {
+    "service": "portal-auth",
+    "operation": "login",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/login",
+    "path_params": [],
+    "summary": "Authenticate a portal user.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "logout",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/logout",
+    "path_params": [],
+    "summary": "Clear the SPA's HttpOnly auth cookies.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "refresh_token",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/refresh",
+    "path_params": [],
+    "summary": "Refresh access token using refresh token.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "register",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/register",
+    "path_params": [],
+    "summary": "Register a new portal user.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "reset_password",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/password/reset",
+    "path_params": [],
+    "summary": "Initiate password reset.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "update_current_user",
+    "method": "PATCH",
+    "path": "/api/v1/portal-auth/me",
+    "path_params": [],
+    "summary": "Update current authenticated portal user info.",
+    "has_body": true
+  },
+  {
+    "service": "portal-auth",
+    "operation": "verify_mfa",
+    "method": "POST",
+    "path": "/api/v1/portal-auth/mfa/verify",
+    "path_params": [],
+    "summary": "Verify MFA code after initial authentication.",
+    "has_body": true
+  },
+  {
+    "service": "privacy",
+    "operation": "erase_my_data",
+    "method": "POST",
+    "path": "/api/v1/privacy/me/erase",
+    "path_params": [],
+    "summary": "GDPR Art. 17 right-to-erasure: anonymize the caller's own PII.",
+    "has_body": true
+  },
+  {
+    "service": "privacy",
+    "operation": "export_my_data",
+    "method": "GET",
+    "path": "/api/v1/privacy/me/export",
+    "path_params": [],
+    "summary": "GDPR Art. 15 / CCPA right-to-know: export the caller's own data as JSON.",
+    "has_body": false
+  },
+  {
+    "service": "privacy",
+    "operation": "set_my_consent",
+    "method": "POST",
+    "path": "/api/v1/privacy/me/consent",
+    "path_params": [],
+    "summary": "CCPA/CPRA \"Do Not Sell or Share\" opt-out + consent withdrawal (per-user flag).",
+    "has_body": true
+  },
+  {
+    "service": "privacy-admin",
+    "operation": "bulk_erase",
+    "method": "POST",
+    "path": "/api/v1/privacy-admin/bulk-erase",
+    "path_params": [],
+    "summary": "Bulk right-to-erasure across many identities in one call (Enterprise).",
+    "has_body": true
+  },
+  {
+    "service": "privacy-admin",
+    "operation": "list_dsar_requests",
+    "method": "GET",
+    "path": "/api/v1/privacy-admin/requests",
+    "path_params": [],
+    "summary": "List DSAR self-service + bulk activity for the admin's own tenant (Enterprise).",
+    "has_body": false
+  },
+  {
+    "service": "profile",
+    "operation": "get_profile",
+    "method": "GET",
+    "path": "/api/v1/profile/me",
+    "path_params": [],
+    "summary": "Get current user's profile information.",
+    "has_body": false
+  },
+  {
+    "service": "profile",
+    "operation": "update_profile",
+    "method": "PATCH",
+    "path": "/api/v1/profile/me",
+    "path_params": [],
+    "summary": "Update current user's profile information.",
+    "has_body": true
+  },
+  {
+    "service": "projects",
+    "operation": "create_project",
+    "method": "POST",
+    "path": "/api/v1/projects",
+    "path_params": [],
+    "summary": "Create a new project.",
+    "has_body": true
+  },
+  {
+    "service": "projects",
+    "operation": "delete_project",
+    "method": "DELETE",
+    "path": "/api/v1/projects/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a project.",
+    "has_body": false
+  },
+  {
+    "service": "projects",
+    "operation": "get_project",
+    "method": "GET",
+    "path": "/api/v1/projects/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single project by ID.",
+    "has_body": false
+  },
+  {
+    "service": "projects",
+    "operation": "list_projects",
+    "method": "GET",
+    "path": "/api/v1/projects",
+    "path_params": [],
+    "summary": "List projects with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "projects",
+    "operation": "update_project",
+    "method": "PUT",
+    "path": "/api/v1/projects/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a project.",
+    "has_body": true
+  },
+  {
+    "service": "refs",
+    "operation": "get_backlinks",
+    "method": "GET",
+    "path": "/api/v1/refs/backlinks",
+    "path_params": [],
+    "summary": "Get all references pointing to a target resource.",
+    "has_body": false
+  },
+  {
+    "service": "refs",
+    "operation": "resolve_reference",
+    "method": "GET",
+    "path": "/api/v1/refs/resolve",
+    "path_params": [],
+    "summary": "Resolve a reference by village_id or module:type:id.",
+    "has_body": false
+  },
+  {
+    "service": "resource-roles",
+    "operation": "create_resource_role",
+    "method": "POST",
+    "path": "/api/v1/resource-roles",
+    "path_params": [],
+    "summary": "Grant a resource role to an identity or group.",
+    "has_body": true
+  },
+  {
+    "service": "resource-roles",
+    "operation": "list_entity_roles",
+    "method": "GET",
+    "path": "/api/v1/resource-roles/entities/{id}/roles",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List all resource roles for an entity.",
+    "has_body": false
+  },
+  {
+    "service": "resource-roles",
+    "operation": "list_identity_resource_roles",
+    "method": "GET",
+    "path": "/api/v1/resource-roles/identities/{id}/resource-roles",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List all resource roles assigned to an identity.",
+    "has_body": false
+  },
+  {
+    "service": "resource-roles",
+    "operation": "list_organization_roles",
+    "method": "GET",
+    "path": "/api/v1/resource-roles/organizations/{id}/roles",
+    "path_params": [
+      "id"
+    ],
+    "summary": "List all resource roles for an organization.",
+    "has_body": false
+  },
+  {
+    "service": "resource-roles",
+    "operation": "list_resource_roles",
+    "method": "GET",
+    "path": "/api/v1/resource-roles",
+    "path_params": [],
+    "summary": "List resource role assignments with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "resource-roles",
+    "operation": "revoke_resource_role",
+    "method": "DELETE",
+    "path": "/api/v1/resource-roles/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Revoke a resource role.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "create_component",
+    "method": "POST",
+    "path": "/api/v1/sbom/components",
+    "path_params": [],
+    "summary": "Create a new SBOM component.",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "create_scan",
+    "method": "POST",
+    "path": "/api/v1/sbom/scans",
+    "path_params": [],
+    "summary": "Create/trigger a new SBOM scan.",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "create_schedule",
+    "method": "POST",
+    "path": "/api/v1/sbom/schedules",
+    "path_params": [],
+    "summary": "Create a new SBOM scan schedule.",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "delete_component",
+    "method": "DELETE",
+    "path": "/api/v1/sbom/components/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an SBOM component.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "delete_scan",
+    "method": "DELETE",
+    "path": "/api/v1/sbom/scans/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an SBOM scan record.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "delete_schedule",
+    "method": "DELETE",
+    "path": "/api/v1/sbom/schedules/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete an SBOM scan schedule.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_component",
+    "method": "GET",
+    "path": "/api/v1/sbom/components/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single SBOM component by ID.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_component_vulnerabilities",
+    "method": "GET",
+    "path": "/api/v1/sbom/components/{id}/vulnerabilities",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get vulnerabilities affecting a specific SBOM component.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_due_schedules",
+    "method": "GET",
+    "path": "/api/v1/sbom/schedules/due",
+    "path_params": [],
+    "summary": "Get due SBOM scan schedules (for scanner worker).",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_pending_scans",
+    "method": "GET",
+    "path": "/api/v1/sbom/scans/pending",
+    "path_params": [],
+    "summary": "Get pending SBOM scans (for scanner worker).",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_scan",
+    "method": "GET",
+    "path": "/api/v1/sbom/scans/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single SBOM scan by ID.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "get_schedule",
+    "method": "GET",
+    "path": "/api/v1/sbom/schedules/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single SBOM scan schedule by ID.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "list_components",
+    "method": "GET",
+    "path": "/api/v1/sbom/components",
+    "path_params": [],
+    "summary": "List SBOM components with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "list_scans",
+    "method": "GET",
+    "path": "/api/v1/sbom/scans",
+    "path_params": [],
+    "summary": "List SBOM scans with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "list_schedules",
+    "method": "GET",
+    "path": "/api/v1/sbom/schedules",
+    "path_params": [],
+    "summary": "List SBOM scan schedules with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "sbom",
+    "operation": "start_scan",
+    "method": "POST",
+    "path": "/api/v1/sbom/scans/{id}/start",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Mark an SBOM scan as running (for scanner worker).",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "submit_results",
+    "method": "POST",
+    "path": "/api/v1/sbom/scans/{id}/results",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Submit SBOM scan results (for scanner worker).",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "update_component",
+    "method": "PUT",
+    "path": "/api/v1/sbom/components/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an SBOM component.",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "update_schedule",
+    "method": "PUT",
+    "path": "/api/v1/sbom/schedules/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update an SBOM scan schedule.",
+    "has_body": true
+  },
+  {
+    "service": "sbom",
+    "operation": "upload_sbom",
+    "method": "POST",
+    "path": "/api/v1/sbom/scans/upload",
+    "path_params": [],
+    "summary": "Upload and import an SBOM file (CycloneDX or SPDX).",
+    "has_body": true
+  },
+  {
+    "service": "search",
+    "operation": "create_saved_search",
+    "method": "POST",
+    "path": "/api/v1/search/saved",
+    "path_params": [],
+    "summary": "Save a search query.",
+    "has_body": true
+  },
+  {
+    "service": "search",
+    "operation": "delete_saved_search",
+    "method": "DELETE",
+    "path": "/api/v1/search/saved/{search_id}",
+    "path_params": [
+      "search_id"
+    ],
+    "summary": "Delete saved search.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "execute_saved_search",
+    "method": "GET",
+    "path": "/api/v1/search/saved/{search_id}/execute",
+    "path_params": [
+      "search_id"
+    ],
+    "summary": "Execute a saved search.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "get_ai_research_config",
+    "method": "GET",
+    "path": "/api/v1/search/ai-research/config",
+    "path_params": [],
+    "summary": "Return AI Researcher model configuration, Ollama health, and enabled MCP tool count.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "get_popular_searches",
+    "method": "GET",
+    "path": "/api/v1/search/analytics/popular",
+    "path_params": [],
+    "summary": "Get most popular/frequent searches.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "get_saved_search",
+    "method": "GET",
+    "path": "/api/v1/search/saved/{search_id}",
+    "path_params": [
+      "search_id"
+    ],
+    "summary": "Get saved search details.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "list_saved_searches",
+    "method": "GET",
+    "path": "/api/v1/search/saved",
+    "path_params": [],
+    "summary": "List user's saved searches.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "run_ai_research",
+    "method": "POST",
+    "path": "/api/v1/search/ai-research",
+    "path_params": [],
+    "summary": "Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP.",
+    "has_body": true
+  },
+  {
+    "service": "search",
+    "operation": "search_all",
+    "method": "GET",
+    "path": "/api/v1/search",
+    "path_params": [],
+    "summary": "Advanced search across all resources.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "search_entities",
+    "method": "GET",
+    "path": "/api/v1/search/entities",
+    "path_params": [],
+    "summary": "Search entities with advanced filters.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "search_graph",
+    "method": "POST",
+    "path": "/api/v1/search/graph",
+    "path_params": [],
+    "summary": "Graph-based search for entities and dependencies.",
+    "has_body": true
+  },
+  {
+    "service": "search",
+    "operation": "search_issues",
+    "method": "GET",
+    "path": "/api/v1/search/issues",
+    "path_params": [],
+    "summary": "Search issues with advanced filters.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "search_organizations",
+    "method": "GET",
+    "path": "/api/v1/search/organizations",
+    "path_params": [],
+    "summary": "Search organizations.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "search_suggestions",
+    "method": "GET",
+    "path": "/api/v1/search/suggest",
+    "path_params": [],
+    "summary": "Get search suggestions/autocomplete.",
+    "has_body": false
+  },
+  {
+    "service": "search",
+    "operation": "update_saved_search",
+    "method": "PUT",
+    "path": "/api/v1/search/saved/{search_id}",
+    "path_params": [
+      "search_id"
+    ],
+    "summary": "Update saved search.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "create_secret",
+    "method": "POST",
+    "path": "/api/v1/secrets",
+    "path_params": [],
+    "summary": "Register a new secret from a provider.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "create_secret_provider",
+    "method": "POST",
+    "path": "/api/v1/secrets/providers",
+    "path_params": [],
+    "summary": "Register a new secret provider.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "delete_secret",
+    "method": "DELETE",
+    "path": "/api/v1/secrets/{secret_id}",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Remove secret registration (does not delete from provider).",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "delete_secret_provider",
+    "method": "DELETE",
+    "path": "/api/v1/secrets/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Delete secret provider.",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "get_secret",
+    "method": "GET",
+    "path": "/api/v1/secrets/{secret_id}",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Get a specific secret (masked by default).",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "get_secret_access_log",
+    "method": "GET",
+    "path": "/api/v1/secrets/{secret_id}/access-log",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Get access log for a secret.",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "get_secret_provider",
+    "method": "GET",
+    "path": "/api/v1/secrets/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Get secret provider details.",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "list_secret_providers",
+    "method": "GET",
+    "path": "/api/v1/secrets/providers",
+    "path_params": [],
+    "summary": "List all secret providers.",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "list_secrets",
+    "method": "GET",
+    "path": "/api/v1/secrets",
+    "path_params": [],
+    "summary": "List all secrets accessible by current user/organization.",
+    "has_body": false
+  },
+  {
+    "service": "secrets",
+    "operation": "sync_secret",
+    "method": "POST",
+    "path": "/api/v1/secrets/{secret_id}/sync",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Force sync secret metadata from provider.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "sync_secret_provider",
+    "method": "POST",
+    "path": "/api/v1/secrets/providers/{provider_id}/sync",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Sync all secrets from provider.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "test_secret_provider",
+    "method": "POST",
+    "path": "/api/v1/secrets/providers/{provider_id}/test",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Test provider connection.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "unmask_secret",
+    "method": "POST",
+    "path": "/api/v1/secrets/{secret_id}/unmask",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Unmask a secret and retrieve its actual value.",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "update_secret",
+    "method": "PUT",
+    "path": "/api/v1/secrets/{secret_id}",
+    "path_params": [
+      "secret_id"
+    ],
+    "summary": "Update secret metadata (not the actual value in provider).",
+    "has_body": true
+  },
+  {
+    "service": "secrets",
+    "operation": "update_secret_provider",
+    "method": "PUT",
+    "path": "/api/v1/secrets/providers/{provider_id}",
+    "path_params": [
+      "provider_id"
+    ],
+    "summary": "Update secret provider configuration.",
+    "has_body": true
+  },
+  {
+    "service": "services",
+    "operation": "create_service",
+    "method": "POST",
+    "path": "/api/v1/services",
+    "path_params": [],
+    "summary": "Create a new service.",
+    "has_body": true
+  },
+  {
+    "service": "services",
+    "operation": "delete_service",
+    "method": "DELETE",
+    "path": "/api/v1/services/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a service.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "export_service_sbom",
+    "method": "GET",
+    "path": "/api/v1/services/{id}/sbom/export",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Export service SBOM in standard format.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "get_service",
+    "method": "GET",
+    "path": "/api/v1/services/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single service by ID.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "get_service_sbom",
+    "method": "GET",
+    "path": "/api/v1/services/{id}/sbom",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get SBOM components for a service.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "list_service_endpoints",
+    "method": "GET",
+    "path": "/api/v1/services/endpoints",
+    "path_params": [],
+    "summary": "List all service endpoints across services.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "list_services",
+    "method": "GET",
+    "path": "/api/v1/services",
+    "path_params": [],
+    "summary": "List services with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "services",
+    "operation": "trigger_service_sbom_scan",
+    "method": "POST",
+    "path": "/api/v1/services/{id}/sbom/scan",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Trigger an SBOM scan for a service.",
+    "has_body": true
+  },
+  {
+    "service": "services",
+    "operation": "update_service",
+    "method": "PUT",
+    "path": "/api/v1/services/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a service.",
+    "has_body": true
+  },
+  {
+    "service": "sla-policies",
+    "operation": "create_sla_policy",
+    "method": "POST",
+    "path": "/api/v1/sla-policies",
+    "path_params": [],
+    "summary": "Create a new SLA policy.",
+    "has_body": true
+  },
+  {
+    "service": "sla-policies",
+    "operation": "delete_sla_policy",
+    "method": "DELETE",
+    "path": "/api/v1/sla-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Delete an SLA policy.",
+    "has_body": false
+  },
+  {
+    "service": "sla-policies",
+    "operation": "list_sla_policies",
+    "method": "GET",
+    "path": "/api/v1/sla-policies",
+    "path_params": [],
+    "summary": "List SLA policies with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "sla-policies",
+    "operation": "update_sla_policy",
+    "method": "PUT",
+    "path": "/api/v1/sla-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "summary": "Update SLA policy properties.",
+    "has_body": true
+  },
+  {
+    "service": "software",
+    "operation": "create_software",
+    "method": "POST",
+    "path": "/api/v1/software",
+    "path_params": [],
+    "summary": "Create a new software entry.",
+    "has_body": true
+  },
+  {
+    "service": "software",
+    "operation": "delete_software",
+    "method": "DELETE",
+    "path": "/api/v1/software/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Delete a software entry.",
+    "has_body": false
+  },
+  {
+    "service": "software",
+    "operation": "export_software_sbom",
+    "method": "GET",
+    "path": "/api/v1/software/{id}/sbom/export",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Export software SBOM in standard format.",
+    "has_body": false
+  },
+  {
+    "service": "software",
+    "operation": "get_software",
+    "method": "GET",
+    "path": "/api/v1/software/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single software entry by ID.",
+    "has_body": false
+  },
+  {
+    "service": "software",
+    "operation": "get_software_sbom",
+    "method": "GET",
+    "path": "/api/v1/software/{id}/sbom",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get SBOM components for a software.",
+    "has_body": false
+  },
+  {
+    "service": "software",
+    "operation": "list_software",
+    "method": "GET",
+    "path": "/api/v1/software",
+    "path_params": [],
+    "summary": "List software with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "software",
+    "operation": "update_software",
+    "method": "PUT",
+    "path": "/api/v1/software/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update a software entry.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "create_idp_config",
+    "method": "POST",
+    "path": "/api/v1/sso/idp",
+    "path_params": [],
+    "summary": "Create a new IdP configuration.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "create_scim_config",
+    "method": "POST",
+    "path": "/api/v1/sso/scim/config",
+    "path_params": [],
+    "summary": "Create SCIM configuration for a tenant.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "delete_idp_config",
+    "method": "DELETE",
+    "path": "/api/v1/sso/idp/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Delete an IdP configuration the caller owns.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "get_saml_slo",
+    "method": "GET",
+    "path": "/api/v1/sso/saml/slo/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "SAML Single Logout endpoint.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "get_scim_config",
+    "method": "GET",
+    "path": "/api/v1/sso/scim/config/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Get SCIM configuration for a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "get_sp_metadata",
+    "method": "GET",
+    "path": "/api/v1/sso/saml/metadata",
+    "path_params": [],
+    "summary": "Get SAML Service Provider metadata.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "get_sp_metadata_by_tenant_id",
+    "method": "GET",
+    "path": "/api/v1/sso/saml/metadata/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Get SAML Service Provider metadata.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "list_idp_configs",
+    "method": "GET",
+    "path": "/api/v1/sso/idp",
+    "path_params": [],
+    "summary": "List IdP configurations the caller is allowed to see.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "oidc_authorize",
+    "method": "GET",
+    "path": "/api/v1/sso/oidc/authorize/{idp_id}",
+    "path_params": [
+      "idp_id"
+    ],
+    "summary": "Initiate OIDC authorization flow.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "oidc_callback",
+    "method": "GET",
+    "path": "/api/v1/sso/oidc/callback",
+    "path_params": [],
+    "summary": "Handle OIDC callback with authorization code.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "oidc_logout",
+    "method": "POST",
+    "path": "/api/v1/sso/oidc/logout/{idp_id}",
+    "path_params": [
+      "idp_id"
+    ],
+    "summary": "Initiate OIDC logout (RP-Initiated Logout).",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "oidc_refresh",
+    "method": "POST",
+    "path": "/api/v1/sso/oidc/refresh/{idp_id}",
+    "path_params": [
+      "idp_id"
+    ],
+    "summary": "Refresh OIDC access token.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "oidc_userinfo",
+    "method": "GET",
+    "path": "/api/v1/sso/oidc/userinfo/{idp_id}",
+    "path_params": [
+      "idp_id"
+    ],
+    "summary": "Get current user info from OIDC userinfo endpoint.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "post_saml_slo",
+    "method": "POST",
+    "path": "/api/v1/sso/saml/slo/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "SAML Single Logout endpoint.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "regenerate_scim_token",
+    "method": "POST",
+    "path": "/api/v1/sso/scim/config/{tenant_id}/regenerate-token",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Regenerate SCIM bearer token.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "saml_acs",
+    "method": "POST",
+    "path": "/api/v1/sso/saml/acs/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "SAML Assertion Consumer Service endpoint.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "saml_login",
+    "method": "GET",
+    "path": "/api/v1/sso/saml/login/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Initiate SAML SSO login.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "scim_create_user",
+    "method": "POST",
+    "path": "/api/v1/sso/scim/{tenant_id}/Users",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "SCIM 2.0 - Create user.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "scim_delete_user",
+    "method": "DELETE",
+    "path": "/api/v1/sso/scim/{tenant_id}/Users/{user_id}",
+    "path_params": [
+      "tenant_id",
+      "user_id"
+    ],
+    "summary": "SCIM 2.0 - Delete user.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "scim_get_user",
+    "method": "GET",
+    "path": "/api/v1/sso/scim/{tenant_id}/Users/{user_id}",
+    "path_params": [
+      "tenant_id",
+      "user_id"
+    ],
+    "summary": "SCIM 2.0 - Get user.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "scim_list_users",
+    "method": "GET",
+    "path": "/api/v1/sso/scim/{tenant_id}/Users",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "SCIM 2.0 - List users.",
+    "has_body": false
+  },
+  {
+    "service": "sso",
+    "operation": "scim_update_user",
+    "method": "PUT",
+    "path": "/api/v1/sso/scim/{tenant_id}/Users/{user_id}",
+    "path_params": [
+      "tenant_id",
+      "user_id"
+    ],
+    "summary": "SCIM 2.0 - Replace user.",
+    "has_body": true
+  },
+  {
+    "service": "sso",
+    "operation": "update_idp_config",
+    "method": "PUT",
+    "path": "/api/v1/sso/idp/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Update an IdP configuration the caller owns.",
+    "has_body": true
+  },
+  {
+    "service": "status",
+    "operation": "api_status",
+    "method": "GET",
+    "path": "/api/v1/status",
+    "path_params": [],
+    "summary": "API status endpoint for console version checks.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "acquire_lock",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/lock",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Acquire an editor lock for a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "approve_execution",
+    "method": "POST",
+    "path": "/api/v1/streams/executions/{execution_id}/approve",
+    "path_params": [
+      "execution_id"
+    ],
+    "summary": "Approve a paused stream execution.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "create_approval_gate",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/approval-gates",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Create a new approval gate for a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "create_stream",
+    "method": "POST",
+    "path": "/api/v1/streams",
+    "path_params": [],
+    "summary": "Create a new stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "create_webhook",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/webhooks",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Create a webhook for a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "delete_stream",
+    "method": "DELETE",
+    "path": "/api/v1/streams/{stream_id}",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Delete a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "delete_webhook",
+    "method": "DELETE",
+    "path": "/api/v1/streams/{stream_id}/webhooks/{webhook_id}",
+    "path_params": [
+      "stream_id",
+      "webhook_id"
+    ],
+    "summary": "Delete a webhook.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "duplicate_stream",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/duplicate",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Duplicate a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "execute_stream",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/execute",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Manually execute a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "get_approval_status",
+    "method": "GET",
+    "path": "/api/v1/streams/executions/{execution_id}/approval-status",
+    "path_params": [
+      "execution_id"
+    ],
+    "summary": "Get approval status for an execution.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_execution",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/executions/{execution_id}",
+    "path_params": [
+      "stream_id",
+      "execution_id"
+    ],
+    "summary": "Get details of a specific execution.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_lock_status",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/lock",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Get the current editor lock status for a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_my_approvals",
+    "method": "GET",
+    "path": "/api/v1/streams/my-approvals",
+    "path_params": [],
+    "summary": "Get pending approvals for current user.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_node_metadata",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/nodes/{node_id}/metadata",
+    "path_params": [
+      "stream_id",
+      "node_id"
+    ],
+    "summary": "Get metadata for a specific node.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_stream",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Get a specific stream by ID.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "get_stream_node_catalog",
+    "method": "GET",
+    "path": "/api/v1/streams/node-catalog",
+    "path_params": [],
+    "summary": "List generic and Elder playbook nodes with live tenant/route availability.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "list_all_executions",
+    "method": "GET",
+    "path": "/api/v1/streams/executions",
+    "path_params": [],
+    "summary": "List execution history across all streams for the tenant (global view).",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "list_approval_gates",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/approval-gates",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "List all approval gates for a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "list_executions",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/executions",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "List execution history for a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "list_streams",
+    "method": "GET",
+    "path": "/api/v1/streams",
+    "path_params": [],
+    "summary": "List streams with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "list_webhooks",
+    "method": "GET",
+    "path": "/api/v1/streams/{stream_id}/webhooks",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "List webhooks for a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "patch_update_stream",
+    "method": "PATCH",
+    "path": "/api/v1/streams/{stream_id}",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Update a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "put_update_stream",
+    "method": "PUT",
+    "path": "/api/v1/streams/{stream_id}",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Update a stream.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "reject_execution",
+    "method": "POST",
+    "path": "/api/v1/streams/executions/{execution_id}/reject",
+    "path_params": [
+      "execution_id"
+    ],
+    "summary": "Reject a paused stream execution.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "release_lock",
+    "method": "DELETE",
+    "path": "/api/v1/streams/{stream_id}/lock",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Release an editor lock for a stream.",
+    "has_body": false
+  },
+  {
+    "service": "streams",
+    "operation": "update_node_metadata",
+    "method": "PUT",
+    "path": "/api/v1/streams/{stream_id}/nodes/{node_id}/metadata",
+    "path_params": [
+      "stream_id",
+      "node_id"
+    ],
+    "summary": "Update metadata for a specific node.",
+    "has_body": true
+  },
+  {
+    "service": "streams",
+    "operation": "validate_stream",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/validate",
+    "path_params": [
+      "stream_id"
+    ],
+    "summary": "Validate playbook graph, node types, module availability, and config.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "create_sync_config",
+    "method": "POST",
+    "path": "/api/v1/sync/configs",
+    "path_params": [],
+    "summary": "Create a new sync configuration.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "delete_sync_config",
+    "method": "DELETE",
+    "path": "/api/v1/sync/configs/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Delete sync configuration.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "get_sync_config",
+    "method": "GET",
+    "path": "/api/v1/sync/configs/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Get sync configuration details.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "list_sync_configs",
+    "method": "GET",
+    "path": "/api/v1/sync/configs",
+    "path_params": [],
+    "summary": "List all sync configurations.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "list_sync_conflicts",
+    "method": "GET",
+    "path": "/api/v1/sync/conflicts",
+    "path_params": [],
+    "summary": "List unresolved sync conflicts.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "list_sync_history",
+    "method": "GET",
+    "path": "/api/v1/sync/history",
+    "path_params": [],
+    "summary": "List sync history with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "list_sync_mappings",
+    "method": "GET",
+    "path": "/api/v1/sync/mappings",
+    "path_params": [],
+    "summary": "List sync mappings.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "receive_sync_webhook",
+    "method": "POST",
+    "path": "/api/v1/sync/webhooks/{platform}/{config_id}",
+    "path_params": [
+      "platform",
+      "config_id"
+    ],
+    "summary": "Public platform webhook receiver protected by HMAC/token signature.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "resolve_conflict",
+    "method": "POST",
+    "path": "/api/v1/sync/conflicts/{conflict_id}/resolve",
+    "path_params": [
+      "conflict_id"
+    ],
+    "summary": "Resolve a sync conflict manually.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "sync_status",
+    "method": "GET",
+    "path": "/api/v1/sync/status",
+    "path_params": [],
+    "summary": "Get overall sync status summary.",
+    "has_body": false
+  },
+  {
+    "service": "sync",
+    "operation": "test_sync_config",
+    "method": "POST",
+    "path": "/api/v1/sync/configs/{config_id}/test",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Test connectivity and authentication for a sync configuration.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "trigger_sync_config",
+    "method": "POST",
+    "path": "/api/v1/sync/configs/{config_id}/trigger",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Manually trigger batch synchronization for a configuration.",
+    "has_body": true
+  },
+  {
+    "service": "sync",
+    "operation": "update_sync_config",
+    "method": "PATCH",
+    "path": "/api/v1/sync/configs/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "summary": "Update sync configuration.",
+    "has_body": true
+  },
+  {
+    "service": "teams",
+    "operation": "add_team_member",
+    "method": "POST",
+    "path": "/api/v1/teams/{team_id}/members",
+    "path_params": [
+      "team_id"
+    ],
+    "summary": "Add a member to a team.",
+    "has_body": true
+  },
+  {
+    "service": "teams",
+    "operation": "create_team",
+    "method": "POST",
+    "path": "/api/v1/teams",
+    "path_params": [],
+    "summary": "Create a new team.",
+    "has_body": true
+  },
+  {
+    "service": "teams",
+    "operation": "get_team",
+    "method": "GET",
+    "path": "/api/v1/teams/{team_id}",
+    "path_params": [
+      "team_id"
+    ],
+    "summary": "Get team detail with members.",
+    "has_body": false
+  },
+  {
+    "service": "teams",
+    "operation": "list_teams",
+    "method": "GET",
+    "path": "/api/v1/teams",
+    "path_params": [],
+    "summary": "List teams with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "teams",
+    "operation": "remove_team_member",
+    "method": "DELETE",
+    "path": "/api/v1/teams/{team_id}/members/{identity_id}",
+    "path_params": [
+      "team_id",
+      "identity_id"
+    ],
+    "summary": "Remove a member from a team.",
+    "has_body": false
+  },
+  {
+    "service": "teams",
+    "operation": "update_team",
+    "method": "PUT",
+    "path": "/api/v1/teams/{team_id}",
+    "path_params": [
+      "team_id"
+    ],
+    "summary": "Update team properties.",
+    "has_body": true
+  },
+  {
+    "service": "tenants",
+    "operation": "create_tenant",
+    "method": "POST",
+    "path": "/api/v1/tenants",
+    "path_params": [],
+    "summary": "Create a new tenant.",
+    "has_body": true
+  },
+  {
+    "service": "tenants",
+    "operation": "delete_tenant",
+    "method": "DELETE",
+    "path": "/api/v1/tenants/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Delete a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "delete_tenant_user",
+    "method": "DELETE",
+    "path": "/api/v1/tenants/{tenant_id}/users/{user_id}",
+    "path_params": [
+      "tenant_id",
+      "user_id"
+    ],
+    "summary": "Delete a portal user from a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "get_tenant",
+    "method": "GET",
+    "path": "/api/v1/tenants/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Get a tenant by ID.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "get_tenant_stats",
+    "method": "GET",
+    "path": "/api/v1/tenants/{tenant_id}/stats",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Get usage statistics for a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "list_tenant_modules",
+    "method": "GET",
+    "path": "/api/v1/tenants/{tenant_id}/modules",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "List all module enablement states for a specific tenant.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "list_tenant_users",
+    "method": "GET",
+    "path": "/api/v1/tenants/{tenant_id}/users",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "List all portal users in a tenant.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "list_tenants",
+    "method": "GET",
+    "path": "/api/v1/tenants",
+    "path_params": [],
+    "summary": "List all tenants.",
+    "has_body": false
+  },
+  {
+    "service": "tenants",
+    "operation": "set_tenant_module",
+    "method": "PUT",
+    "path": "/api/v1/tenants/{tenant_id}/modules",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Set module enablement state for a tenant.",
+    "has_body": true
+  },
+  {
+    "service": "tenants",
+    "operation": "update_tenant",
+    "method": "PUT",
+    "path": "/api/v1/tenants/{tenant_id}",
+    "path_params": [
+      "tenant_id"
+    ],
+    "summary": "Update a tenant.",
+    "has_body": true
+  },
+  {
+    "service": "tenants",
+    "operation": "update_tenant_user",
+    "method": "PUT",
+    "path": "/api/v1/tenants/{tenant_id}/users/{user_id}",
+    "path_params": [
+      "tenant_id",
+      "user_id"
+    ],
+    "summary": "Update a portal user in a tenant.",
+    "has_body": true
+  },
+  {
+    "service": "tickets",
+    "operation": "add_message",
+    "method": "POST",
+    "path": "/api/v1/tickets/{ticket_id}/messages",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Add a message to a ticket.",
+    "has_body": true
+  },
+  {
+    "service": "tickets",
+    "operation": "assign_ticket",
+    "method": "POST",
+    "path": "/api/v1/tickets/{ticket_id}/assign",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Assign a ticket to a user.",
+    "has_body": true
+  },
+  {
+    "service": "tickets",
+    "operation": "create_ticket",
+    "method": "POST",
+    "path": "/api/v1/tickets",
+    "path_params": [],
+    "summary": "Create a new ticket.",
+    "has_body": true
+  },
+  {
+    "service": "tickets",
+    "operation": "delete_ticket",
+    "method": "DELETE",
+    "path": "/api/v1/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Delete a ticket.",
+    "has_body": false
+  },
+  {
+    "service": "tickets",
+    "operation": "get_ticket",
+    "method": "GET",
+    "path": "/api/v1/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Get a single ticket by ID.",
+    "has_body": false
+  },
+  {
+    "service": "tickets",
+    "operation": "list_messages",
+    "method": "GET",
+    "path": "/api/v1/tickets/{ticket_id}/messages",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "List messages for a ticket with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "tickets",
+    "operation": "list_tickets",
+    "method": "GET",
+    "path": "/api/v1/tickets",
+    "path_params": [],
+    "summary": "List tickets with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "tickets",
+    "operation": "merge_tickets",
+    "method": "POST",
+    "path": "/api/v1/tickets/{ticket_id}/merge",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Merge two tickets (keep primary, mark secondary as merged).",
+    "has_body": true
+  },
+  {
+    "service": "tickets",
+    "operation": "update_ticket",
+    "method": "PATCH",
+    "path": "/api/v1/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "summary": "Update a ticket.",
+    "has_body": true
+  },
+  {
+    "service": "users",
+    "operation": "create_user",
+    "method": "POST",
+    "path": "/api/v1/users",
+    "path_params": [],
+    "summary": "Create a new user (admin only).",
+    "has_body": true
+  },
+  {
+    "service": "users",
+    "operation": "delete_user",
+    "method": "DELETE",
+    "path": "/api/v1/users/{user_id}",
+    "path_params": [
+      "user_id"
+    ],
+    "summary": "Delete a user (admin only).",
+    "has_body": false
+  },
+  {
+    "service": "users",
+    "operation": "list_users",
+    "method": "GET",
+    "path": "/api/v1/users",
+    "path_params": [],
+    "summary": "List all users (admin only).",
+    "has_body": false
+  },
+  {
+    "service": "users",
+    "operation": "update_user",
+    "method": "PATCH",
+    "path": "/api/v1/users/{user_id}",
+    "path_params": [
+      "user_id"
+    ],
+    "summary": "Update a user (admin only).",
+    "has_body": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "assign_vulnerability",
+    "method": "POST",
+    "path": "/api/v1/vulnerabilities/{id}/assign",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Assign a vulnerability to a service or software.",
+    "has_body": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "create_vulnerability",
+    "method": "POST",
+    "path": "/api/v1/vulnerabilities",
+    "path_params": [],
+    "summary": "Manually create a vulnerability entry.",
+    "has_body": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "get_dashboard",
+    "method": "GET",
+    "path": "/api/v1/vulnerabilities/dashboard",
+    "path_params": [],
+    "summary": "Get vulnerability dashboard summary statistics.",
+    "has_body": false
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "get_nvd_sync_status",
+    "method": "GET",
+    "path": "/api/v1/vulnerabilities/nvd-sync/status",
+    "path_params": [],
+    "summary": "Get NVD sync status - how many vulnerabilities need syncing.",
+    "has_body": false
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "get_vulnerability",
+    "method": "GET",
+    "path": "/api/v1/vulnerabilities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Get a single vulnerability by ID.",
+    "has_body": false
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "list_vulnerabilities",
+    "method": "GET",
+    "path": "/api/v1/vulnerabilities",
+    "path_params": [],
+    "summary": "List vulnerabilities with optional filtering.",
+    "has_body": false
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "sync_vulnerabilities",
+    "method": "POST",
+    "path": "/api/v1/vulnerabilities/sync",
+    "path_params": [],
+    "summary": "Trigger vulnerability sync from OSV.dev and NVD.",
+    "has_body": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "trigger_nvd_sync",
+    "method": "POST",
+    "path": "/api/v1/vulnerabilities/nvd-sync",
+    "path_params": [],
+    "summary": "Trigger NVD sync to enrich vulnerability CVSS data.",
+    "has_body": true
+  },
+  {
+    "service": "vulnerabilities",
+    "operation": "update_component_vulnerability",
+    "method": "PATCH",
+    "path": "/api/v1/vulnerabilities/component-vulnerabilities/{id}",
+    "path_params": [
+      "id"
+    ],
+    "summary": "Update component-vulnerability link status.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "broadcast_event",
+    "method": "POST",
+    "path": "/api/v1/webhooks/broadcast",
+    "path_params": [],
+    "summary": "Broadcast an event to all applicable webhooks and notification rules",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "create_inbound_webhook",
+    "method": "POST",
+    "path": "/api/v1/webhooks/inbound",
+    "path_params": [],
+    "summary": "Create a new inbound webhook with required Bearer/Basic auth and permission scopes.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "create_notification_rule",
+    "method": "POST",
+    "path": "/api/v1/webhooks/notification-rules",
+    "path_params": [],
+    "summary": "Create a new notification rule.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "create_webhook",
+    "method": "POST",
+    "path": "/api/v1/webhooks",
+    "path_params": [],
+    "summary": "Create a new webhook for the caller's tenant.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "delete_inbound_webhook",
+    "method": "DELETE",
+    "path": "/api/v1/webhooks/inbound/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Delete an inbound webhook.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "delete_notification_rule",
+    "method": "DELETE",
+    "path": "/api/v1/webhooks/notification-rules/{rule_id}",
+    "path_params": [
+      "rule_id"
+    ],
+    "summary": "Delete notification rule.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "delete_webhook",
+    "method": "DELETE",
+    "path": "/api/v1/webhooks/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Delete a webhook (must belong to the caller's tenant).",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "get_notification_rule",
+    "method": "GET",
+    "path": "/api/v1/webhooks/notification-rules/{rule_id}",
+    "path_params": [
+      "rule_id"
+    ],
+    "summary": "Get notification rule details, scoped to caller's tenant.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "get_webhook",
+    "method": "GET",
+    "path": "/api/v1/webhooks/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Get webhook details (must belong to the caller's tenant).",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "get_webhook_deliveries",
+    "method": "GET",
+    "path": "/api/v1/webhooks/{webhook_id}/deliveries",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Get webhook delivery history (must belong to the caller's tenant).",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_inbound_webhook_events",
+    "method": "GET",
+    "path": "/api/v1/webhooks/inbound/{webhook_id}/events",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "List recent received events for an inbound webhook.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_inbound_webhook_scopes",
+    "method": "GET",
+    "path": "/api/v1/webhooks/inbound/scopes",
+    "path_params": [],
+    "summary": "Return the catalog of available OAuth2-like scopes for inbound webhooks.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_inbound_webhooks",
+    "method": "GET",
+    "path": "/api/v1/webhooks/inbound",
+    "path_params": [],
+    "summary": "List all inbound webhooks for the caller's tenant.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_notification_rules",
+    "method": "GET",
+    "path": "/api/v1/webhooks/notification-rules",
+    "path_params": [],
+    "summary": "List all notification rules scoped to caller's tenant.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_webhooks",
+    "method": "GET",
+    "path": "/api/v1/webhooks",
+    "path_params": [],
+    "summary": "List all webhooks for the caller's tenant.",
+    "has_body": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "receive_inbound_webhook",
+    "method": "POST",
+    "path": "/api/v1/webhooks/receive/{slug}",
+    "path_params": [
+      "slug"
+    ],
+    "summary": "Public inbound webhook receiver \u2014 requires Bearer/Basic auth & enforces granted scopes.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "redeliver_webhook",
+    "method": "POST",
+    "path": "/api/v1/webhooks/{webhook_id}/deliveries/{delivery_id}/redeliver",
+    "path_params": [
+      "webhook_id",
+      "delivery_id"
+    ],
+    "summary": "Retry a failed webhook delivery (must belong to the caller's tenant).",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "rotate_inbound_webhook_credentials",
+    "method": "POST",
+    "path": "/api/v1/webhooks/inbound/{webhook_id}/rotate-credentials",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Regenerate credentials for an inbound webhook and return them once.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "test_notification_rule",
+    "method": "POST",
+    "path": "/api/v1/webhooks/notification-rules/{rule_id}/test",
+    "path_params": [
+      "rule_id"
+    ],
+    "summary": "Test a notification rule.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "test_webhook",
+    "method": "POST",
+    "path": "/api/v1/webhooks/{webhook_id}/test",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Send a test event to webhook (must belong to the caller's tenant).",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "update_inbound_webhook",
+    "method": "PUT",
+    "path": "/api/v1/webhooks/inbound/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Update an inbound webhook's configuration or authentication type.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "update_notification_rule",
+    "method": "PUT",
+    "path": "/api/v1/webhooks/notification-rules/{rule_id}",
+    "path_params": [
+      "rule_id"
+    ],
+    "summary": "Update notification rule.",
+    "has_body": true
+  },
+  {
+    "service": "webhooks",
+    "operation": "update_webhook",
+    "method": "PUT",
+    "path": "/api/v1/webhooks/{webhook_id}",
+    "path_params": [
+      "webhook_id"
+    ],
+    "summary": "Update webhook configuration (must belong to the caller's tenant).",
+    "has_body": true
+  }
+]

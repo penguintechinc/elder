@@ -1,155 +1,103 @@
-# Elder MCP Server
+# Elder MCP Server (`hub-mcp`)
 
-An MCP (Model Context Protocol) server that allows AI agents (Claude, etc.) to query and manage Elder's entity, relationship, and resource data via authenticated REST API calls.
+An MCP (Model Context Protocol) server exposing Elder's curated operational tools plus 1:1 API-first parity with `hub-api` via authenticated REST proxy calls.
 
 ## Architecture
 
-- **Transport**: stdio (standard MCP pattern for local AI agent integration)
-- **Auth**: OAuth2 Bearer tokens (JWT) with 24-hour max TTL
-- **Proxy Pattern**: All tool calls make authenticated HTTPX requests to the Elder REST API
-- **Permission Enforcement**: Handled at the API layer; MCP server proxies the Bearer token
+- **Hosted HTTP Service (`hub-mcp`)**: Lightweight Python 3.13 + Quart ASGI server (`apps/mcp/http_app.py`, `apps/mcp/start.py`) implementing MCP Streamable HTTP (`POST /mcp`, `GET /mcp`, `DELETE /mcp`) plus `/healthz` and `/readyz` probes with zero direct database or Redis dependencies.
+- **Local CLI/IDE Mode**: `FastMCP` stdio transport (`apps/mcp/server.py`) sharing the exact same `TOOL_REGISTRY`, catalog tools, and `execute_tool` layer.
+- **Per-Caller Auth & Tenant Isolation**: Hosted HTTP/SSE mode fails closed with HTTP `401` on missing/malformed `Authorization: Bearer <jwt>` or `X-API-Key: <key>` headers, never falls back to process environment tokens, and forwards per-caller credentials over a cookie-free pooled `httpx.AsyncClient` so `hub-api` enforces RBAC and tenant scoping.
+- **Observability**: Uses `shared.logging.configure_logging_from_env("hub-mcp")` (sanitized structured JSON logs) and `shared.observability` OpenTelemetry signals (traces, counters/histograms, and OTLP logs).
 
 ## Environment Variables
 
-**Required:**
-- `ELDER_API_URL`: Base URL of Elder API (e.g., `http://localhost:8000`)
+- `ELDER_API_URL` (alias for `ELDER_URL`): Base URL of `hub-api` (default `http://localhost:5000`; `http://hub-api:5000` in container image).
+- `MCP_HOST` / `MCP_PORT`: Bind address and port for hosted mode (defaults: `0.0.0.0:8080` in `start.py`, `127.0.0.1:8080` in `server.py`).
+- `MCP_TRANSPORT`: `stdio` (default for `server.py`), `streamable-http`, or `sse`.
+- `MCP_CORS_ORIGINS`: Comma-separated allowed CORS origins for browser/IDE clients.
 
-**Authentication (choose one):**
-- `ELDER_API_TOKEN`: Pre-issued Bearer token (recommended for service accounts)
-- `ELDER_USERNAME` + `ELDER_PASSWORD`: Credentials for login (uses `/api/v1/auth/login` to obtain token)
-
-**Examples:**
-
-```bash
-# Using pre-issued token
-export ELDER_API_URL=http://localhost:8000
-export ELDER_API_TOKEN=eyJhbGc...
-
-# Using credentials (server logs in on startup)
-export ELDER_API_URL=http://localhost:8000
-export ELDER_USERNAME=user@example.com
-export ELDER_PASSWORD=password123
-```
+**Local `stdio` mode only** (ignored in hosted HTTP/SSE mode):
+- `ELDER_API_TOKEN`: Pre-issued Bearer JWT token.
+- `ELDER_API_KEY`: Elder API key (`X-API-Key`).
+- `ELDER_USERNAME` + `ELDER_PASSWORD`: Credentials for `/api/v1/auth/login`.
 
 ## Tools
 
-### Entity Tools
+- **90+ Curated Domain Tools**: Infrastructure entities, data stores, networks, organizations, geo, dependency graphs, issues, projects, milestones, helpdesk, vulnerabilities, SBOM, certificates, secrets metadata (never values), KMS keys, access reviews, on-call, IPAM, discovery, sync, webhooks, identities, backups, logs, documents, pages, diagrams, AI resources, streams, and flows.
+- **Village ID Lookup**: `lookup_village_id` (`GET /id/{village_id}`) and `resolve_village_id` (`GET /api/v1/id/{village_id}`).
+- **Full `hub-api` Catalog Parity (`apps/mcp/api_catalog.json`)**:
+  - `list_api_services`: List all Elder API service namespaces and operation counts.
+  - `list_api_operations`: Search/filter all cataloged non-internal `/api/*` operations.
+  - `describe_api_operation`: Inspect HTTP method, path template, path parameters, and summary.
+  - `invoke_api_operation` / `call_api_operation`: Invoke any cataloged non-internal `/api/*` endpoint with strict path-parameter validation and traversal/SSRF blocking.
 
-- **`search_entities`**: Find entities by name, type, and organization
-- **`get_entity`**: Fetch full entity details including metadata
-- **`update_entity`**: Update entity name, description, or metadata (partial)
+## Using Elder MCP from Claude Code and other desktop clients
 
-### Relationship Tools
+One implementation (`hub-mcp`) serves both in-cluster AI Researcher/Associate (as an MCP client) and end users on their desktop, so tool behaviour never diverges. Every call runs with **your own Elder credentials**; `hub-api` enforces your RBAC scopes and tenant, so you only see and change what your Elder account allows. Tenant is derived from your token by `hub-api` and can never be overridden through MCP.
 
-- **`get_entity_relationships`**: List all inbound/outbound relationships for an entity
-- **`search_relationships`**: Find relationships by source, target, and type
-- **`create_relationship`**: Create a new relationship between entities
-- **`delete_relationship`**: Remove a relationship by ID
+### Get a credential
 
-### Resource Query Tools (Read-Only)
+- **API key** (recommended for desktop): Elder UI > Settings > API Keys (`/api/v1/api-keys`), create a key with only the scopes you need (for example `entities:read`). Sent as `X-API-Key`.
+- **Bearer JWT**: obtain via your normal Elder login (`POST /api/v1/auth/login`) or OIDC; short-lived, sent as `Authorization: Bearer <token>`.
 
-- **`list_organizations`**: List all organizations with optional name filter
-- **`get_organization`**: Fetch organization details by ID
-- **`list_identities`**: List users and service accounts with filtering
-- **`search_services`**: Find services by name and organization
+Never put tokens in command arguments, committed files, or `.mcp.json` literals; use environment variables.
 
-## Error Handling
+### With Claude AI (stdio, local process)
 
-All tools return JSON-formatted responses. Errors include:
-
-- **Session Expired**: "Elder session expired. Restart the MCP server to re-authenticate."
-- **Permission Denied**: API returns 403
-- **Not Found**: API returns 404
-- **Validation Errors**: Tool parameter validation failures
-
-## Security
-
-- **Non-Root Container**: Runs as `appuser` (uid 1000)
-- **Rootless Filesystem**: Read-only root filesystem compatible with Kubernetes security contexts
-- **Token TTL**: Hard maximum 24 hours from login time; tool calls fail gracefully on expiry
-- **No Secrets Hardcoded**: All credentials from environment variables only
-
-## Running the Server
-
-### Locally (development)
+Runs `apps/mcp/server.py` on your machine; credentials come from the environment (stdio mode only).
 
 ```bash
-cd /Users/penguinz/code/elder/apps/mcp
-pip install -r requirements.txt
-export ELDER_API_URL=http://localhost:8000
-export ELDER_API_TOKEN=<token>
-python3 -m apps.mcp.server
+export ELDER_API_URL=https://elder.example.com   # your hub-api base URL
+export ELDER_API_TOKEN=...                        # or ELDER_API_KEY=...
+claude mcp add elder -- python3 -m apps.mcp.server
 ```
 
-### In Docker
+The server exposes all tools to the AI agent with full authentication context.
+
+### Hosted / remote (Streamable HTTP, no local process)
+
+Point the client at a deployed `hub-mcp` (`https://<host>/mcp`). Each request must carry credentials; missing or malformed credentials return HTTP 401 and the server never falls back to its own environment.
 
 ```bash
-docker build -t elder-mcp:latest apps/mcp/
-docker run --rm \
-  -e ELDER_API_URL=http://host.docker.internal:8000 \
-  -e ELDER_API_TOKEN=<token> \
-  elder-mcp:latest
+claude mcp add --transport http elder https://<host>/mcp \
+  --header "Authorization: Bearer $ELDER_API_TOKEN"
+# or with an API key:
+claude mcp add --transport http elder https://<host>/mcp \
+  --header "X-API-Key: $ELDER_API_KEY"
 ```
 
-### With Claude AI
+Example project `.mcp.json` (secrets expanded from your shell, none stored):
 
-Configure in Claude Code or other AI tools to use this MCP server via stdio transport. The server will expose all tools to the AI agent with full authentication context.
-
-## File Structure
-
-```
-apps/mcp/
-├── requirements.in            # Direct dependencies
-├── requirements.txt           # Pinned with hashes (pip-compile output)
-├── Dockerfile                 # Multi-stage, rootless, bookworm-based
-├── auth.py                    # JWT token management, session lifecycle
-├── client.py                  # Async HTTPX client wrapper
-├── server.py                  # MCP server definition and tools
-└── tools/
-    ├── __init__.py
-    ├── entities.py            # Entity CRUD operations
-    ├── relationships.py       # Relationship CRUD operations
-    └── resources.py           # Resource queries (read-only)
+```json
+{
+  "mcpServers": {
+    "elder": {
+      "type": "http",
+      "url": "${ELDER_MCP_URL:-https://elder.example.com/mcp}",
+      "headers": { "Authorization": "Bearer ${ELDER_API_TOKEN}" }
+    }
+  }
+}
 ```
 
-## Design Patterns
+Operational limits: request body capped at 2 MiB (`MCP_MAX_REQUEST_BYTES`), JSON-RPC batches capped at 50 (`MCP_MAX_BATCH_SIZE`). The API catalog tools only call paths under `/api/` on `ELDER_API_URL` and your credentials are never sent anywhere else. Serve hosted mode behind TLS only.
 
-### Session Management
+Note: `docs/CONNECTORS.md` lists `http://api:4000` while the Helm chart uses `http://elder-api:5000` for the API service; set `ELDER_API_URL` to whichever matches your deployment.
 
-- `ElderSession`: Holds token and expiry time; validates before each request
-- Token expiry extracted from JWT `exp` claim, capped at 24h from login
-- Tools fail with clear error message when session expires
-
-### Client Pattern
-
-- `ElderClient`: Thin async HTTPX wrapper
-- All methods check `session.is_valid()` before making requests
-- HTTP error codes mapped to `ValueError` (4xx) or `httpx.HTTPError` (5xx)
-
-### Tool Return Format
-
-- All tools return JSON-formatted strings (MCP requirement)
-- Success: Full response object from Elder API as pretty-printed JSON
-- Error: `{"error": "message"}` object
-
-## Testing
-
-To verify the server can authenticate and make API calls:
+## Building & Running
 
 ```bash
-export ELDER_API_URL=http://localhost:8000
-export ELDER_API_TOKEN=<valid-token>
-python3 -c "
-import asyncio
-from apps.mcp.auth import ElderSession
+# Build hub-mcp image from repository root context
+docker build -f apps/mcp/Dockerfile -t elder-hub-mcp:local .
 
-async def test():
-    session = await ElderSession.from_credentials(
-        'http://localhost:8000', 'user@example.com', 'password'
-    )
-    print(f'Token valid: {session.is_valid()}')
-    print(f'Expires at: {session.expires_at}')
+# Run hosted HTTP service
+docker run --rm --read-only -p 8080:8080 \
+  -e ELDER_API_URL=http://host.docker.internal:5000 \
+  elder-hub-mcp:local
+```
 
-asyncio.run(test())
-"
+Regenerate the deterministic `hub-api` catalog after adding API endpoints:
+
+```bash
+python3 -m apps.mcp.catalog
 ```
