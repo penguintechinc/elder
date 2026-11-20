@@ -113,7 +113,7 @@ class DataStoreLabel(Base, IDMixin):
     __tablename__ = "data_store_labels"
 
     data_store_id = Column(Integer, ForeignKey("data_stores.id"), nullable=False)
-    label_id = Column(Integer, ForeignKey("labels.id"), nullable=False)
+    label_id = Column(Integer, ForeignKey("issue_labels.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=True)
 
 
