@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timezone
 
+import structlog
 from quart import Blueprint, current_app, g, jsonify, request
 from quart_schema import validate_response
 from werkzeug.security import generate_password_hash
@@ -25,12 +26,18 @@ from apps.api.models.pydantic.identity import (
     UpdateIdentityGroupRequest,
     UpdateIdentityRequest,
 )
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    extract_actor_id,
+    schedule_user_created_webhooks,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
 from apps.api.utils.quart_validation import validated_request
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("identities", __name__)
 
 
@@ -293,6 +300,32 @@ async def create_identity(body: CreateIdentityRequest):
         return get_tenant_scoped(db, db.identities, identity_id, tenant_id)
 
     identity = await run_in_threadpool(insert)
+
+    if identity and getattr(identity, "tenant_id", None):
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=identity.id,
+                    tenant_id=identity.tenant_id,
+                    user_source="identity",
+                    identity_type=identity.identity_type or body.identity_type,
+                    auth_provider=identity.auth_provider or body.auth_provider,
+                    is_superuser=bool(identity.is_superuser),
+                    portal_role=identity.portal_role,
+                    organization_id=getattr(identity, "organization_id", None),
+                    is_active=bool(identity.is_active),
+                    actor_id=extract_actor_id(getattr(g, "current_user", None)),
+                ),
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail create_identity
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=identity.id,
+                error=str(exc)[:200],
+            )
 
     identity_dto = _identity_row_to_dto(identity)
     return identity_dto, 201

@@ -5,6 +5,7 @@
 from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
+import structlog
 from quart import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash
 
@@ -15,10 +16,16 @@ from apps.api.models.dataclasses import (
     PaginatedResponse,
     from_pydal_rows,
 )
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    extract_actor_id,
+    schedule_user_created_webhooks,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_tenant_scoped
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("users", __name__)
 
 
@@ -122,6 +129,9 @@ async def create_user():
         "is_active": data.get("is_active", True),
         "is_superuser": data.get("is_superuser", False),
         "mfa_enabled": data.get("mfa_enabled", False),
+        # NOT NULL column with no DB-level server_default (penguin-dal
+        # omits SQLAlchemy Column(default=...) when kwargs are absent).
+        "must_change_password": bool(data.get("must_change_password", False)),
         "tenant_id": data.get("tenant_id"),  # Optional from request body
     }
 
@@ -169,6 +179,32 @@ async def create_user():
 
     if error:
         return jsonify({"error": error}), status
+
+    if user_row and getattr(user_row, "tenant_id", None):
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_row.id,
+                    tenant_id=user_row.tenant_id,
+                    user_source="identity",
+                    identity_type=user_row.identity_type or "human",
+                    auth_provider=user_row.auth_provider or "local",
+                    is_superuser=bool(user_row.is_superuser),
+                    portal_role=user_row.portal_role,
+                    organization_id=user_row.organization_id,
+                    is_active=bool(user_row.is_active),
+                    actor_id=extract_actor_id(getattr(g, "current_user", None)),
+                ),
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail create_user
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_row.id,
+                error=str(exc)[:200],
+            )
 
     # Convert to DTO -- IdentityAdminDTO (not IdentityDTO), since this
     # admin-only response includes is_superuser/portal_role.

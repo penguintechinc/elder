@@ -221,6 +221,8 @@ const EVENT_TYPES = [
   { value: "issue.updated", label: "Issue Updated" },
   { value: "issue.closed", label: "Issue Closed" },
   { value: "issue.assigned", label: "Issue Assigned" },
+  { value: "user.created", label: "User Created" },
+  { value: "admin_user.created", label: "Admin User Created" },
 ];
 
 export default function Webhooks() {
