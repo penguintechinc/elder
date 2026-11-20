@@ -285,6 +285,11 @@ api:
 
     # Metrics
     METRICS_ENABLED: "true"
+    # AI Researcher (Ollama + in-process / loopback Elder MCP calls)
+    OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
+    AI_RESEARCHER_MODEL: "gemma4:e4b"
+    AI_RESEARCHER_MAX_STEPS: "6"
+    ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
   resources:
     requests:
       memory: "512Mi"

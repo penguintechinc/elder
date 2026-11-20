@@ -9,6 +9,12 @@ from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required
 from apps.api.logging_config import log_error_and_respond
+from apps.api.services.ai_researcher import (
+    AIResearchValidationError,
+    OllamaUnavailableError,
+    get_ai_researcher_config,
+    run_ai_research,
+)
 from apps.api.services.search import SearchService
 from apps.api.utils.api_responses import ApiResponse
 
@@ -562,3 +568,104 @@ def search_suggestions():
     except Exception as e:
         db.rollback()  # Rollback on error
         return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+# ===========================
+# AI Researcher Endpoints
+# ===========================
+
+
+def _resolve_request_tenant_id() -> int | None:
+    """Resolve authenticated tenant ID from current_user or verified JWT claims."""
+    user = getattr(g, "current_user", None)
+    raw_tenant = getattr(user, "tenant_id", None) if user is not None else None
+    if raw_tenant is None:
+        raw_tenant = (getattr(g, "claims", {}) or {}).get("tenant")
+    if isinstance(raw_tenant, bool) or raw_tenant is None or raw_tenant == "":
+        return None
+    try:
+        parsed = int(str(raw_tenant).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+@bp.route("/ai-research/config", methods=["GET"])
+@login_required
+async def get_ai_research_config_endpoint():
+    """Return AI Researcher model configuration, Ollama health, and enabled MCP tool count."""
+    tenant_id = _resolve_request_tenant_id()
+    if tenant_id is None:
+        return (
+            jsonify(
+                {"error": "TENANT_REQUIRED", "message": "Tenant context is required"}
+            ),
+            403,
+        )
+    try:
+        config = await get_ai_researcher_config(current_app, tenant_id)
+        return jsonify(config), 200
+    except Exception as exc:
+        return log_error_and_respond(
+            logger, exc, "Failed to load AI Researcher configuration", 500
+        )
+
+
+@bp.route("/ai-research", methods=["POST"])
+@login_required
+async def run_ai_research_endpoint():
+    """Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP."""
+    user = getattr(g, "current_user", None)
+    if getattr(user, "token_type", None) == "service_researcher":
+        return (
+            jsonify(
+                {
+                    "error": "FORBIDDEN",
+                    "message": "service_researcher tokens cannot invoke AI research recursively",
+                }
+            ),
+            403,
+        )
+
+    tenant_id = _resolve_request_tenant_id()
+    if tenant_id is None:
+        return (
+            jsonify(
+                {"error": "TENANT_REQUIRED", "message": "Tenant context is required"}
+            ),
+            403,
+        )
+
+    try:
+        payload = await request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return (
+                jsonify(
+                    {
+                        "error": "INVALID_REQUEST",
+                        "message": "Request body must be a JSON object",
+                    }
+                ),
+                400,
+            )
+
+        query = payload.get("query") or payload.get("q") or ""
+        model = payload.get("model")
+        history = payload.get("history")
+        max_steps = payload.get("max_steps")
+
+        result = await run_ai_research(
+            current_app,
+            tenant_id,
+            query=str(query),
+            model=str(model) if isinstance(model, str) else None,
+            history=history if isinstance(history, list) else None,
+            max_steps=int(max_steps) if isinstance(max_steps, int) else None,
+        )
+        return jsonify(result), 200
+    except AIResearchValidationError as exc:
+        return jsonify({"error": "INVALID_REQUEST", "message": str(exc)}), 400
+    except OllamaUnavailableError as exc:
+        return jsonify({"error": "OLLAMA_UNAVAILABLE", "message": str(exc)}), 503
+    except Exception as exc:
+        return log_error_and_respond(logger, exc, "AI Researcher execution failed", 500)

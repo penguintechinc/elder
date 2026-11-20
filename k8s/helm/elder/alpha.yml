@@ -169,6 +169,10 @@ api:
     DB_HOST: elder-postgres
     DB_PASSWORD: elder_dev_password
     REDIS_URL: "redis://elder-redis:6379/0"
+    OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
+    AI_RESEARCHER_MODEL: "gemma4:e4b"
+    AI_RESEARCHER_MAX_STEPS: "6"
+    ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
   resources:
     requests:
       memory: "256Mi"

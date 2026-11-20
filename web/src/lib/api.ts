@@ -3997,6 +3997,66 @@ class ApiClient {
     });
     return response.data;
   }
+
+  async getAIResearcherConfig(): Promise<AIResearcherConfig> {
+    const response = await this.client.get("/search/ai-research/config");
+    return response.data;
+  }
+
+  async runAIResearch(payload: AIResearchRequest): Promise<AIResearchResponse> {
+    const response = await this.client.post("/search/ai-research", payload, {
+      timeout: 120000,
+    });
+    return response.data;
+  }
+}
+
+export interface AIResearcherConfig {
+  default_model: string;
+  available_models: string[];
+  mcp_tool_count: number;
+  enabled_modules: string[];
+  max_steps: number;
+  ollama_reachable: boolean;
+  ollama_error: string | null;
+}
+
+export interface AIResearchHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AIResearchRequest {
+  query: string;
+  model?: string;
+  history?: AIResearchHistoryMessage[];
+  max_steps?: number;
+}
+
+export interface AIResearchStep {
+  step: number;
+  tool: string;
+  endpoint?: string | null;
+  arguments: Record<string, unknown>;
+  status: "ok" | "error";
+  result_preview?: string;
+  error?: string;
+}
+
+export interface AIResearchCitation {
+  resource_type: string;
+  id: number | string;
+  name: string;
+  url: string;
+}
+
+export interface AIResearchResponse {
+  answer: string;
+  model: string;
+  steps: AIResearchStep[];
+  citations: AIResearchCitation[];
+  tool_count: number;
+  enabled_modules: string[];
 }
 
 export const api = new ApiClient();
