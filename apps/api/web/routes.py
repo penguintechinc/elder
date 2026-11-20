@@ -11,6 +11,7 @@ from apps.api.auth.web_auth import (
     get_web_user,
     web_login_required,
 )
+from apps.api.common.modules.licensing import is_bypass_domain
 from apps.api.licensing_fallback import get_license_client
 
 bp = Blueprint("web", __name__)
@@ -25,12 +26,15 @@ def get_template_context():
     }
 
     if user is not None:
-        try:
-            license_client = get_license_client()
-            validation = license_client.validate()
-            context["license_tier"] = validation.tier
-        except Exception:
-            context["license_tier"] = "community"
+        if is_bypass_domain():
+            context["license_tier"] = "enterprise"
+        else:
+            try:
+                license_client = get_license_client()
+                validation = license_client.validate()
+                context["license_tier"] = validation.tier
+            except Exception:
+                context["license_tier"] = "community"
 
     return context
 

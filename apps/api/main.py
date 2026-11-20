@@ -674,6 +674,7 @@ def _register_blueprints(app: Quart) -> None:
         backup,
         csv_import,
         identities,
+        licensing,
         logs,
         lookup,
         lookup_village_id,
@@ -705,6 +706,7 @@ def _register_blueprints(app: Quart) -> None:
     app.register_blueprint(tenant_modules.bp, url_prefix=f"{api_prefix}")
     app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
     app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
+    app.register_blueprint(licensing.bp, url_prefix=f"{api_prefix}/licensing")
 
     # Self-service DSAR (Free+) and its Enterprise-gated admin convenience
     # layer -- see docs/compliance and apps/api/services/privacy.

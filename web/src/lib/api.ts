@@ -4207,6 +4207,42 @@ class ApiClient {
     });
     return response.data;
   }
+
+  // Licensing
+  async getLicenseStatus(): Promise<LicenseStatus> {
+    const response = await this.client.get("/licensing/status");
+    return response.data;
+  }
+}
+
+export interface LicenseLimits {
+  max_global_admins: number | null;
+  max_tenant_admins: number | null;
+  max_teams: number | null;
+  max_tenants: number | null;
+  max_objects: number | null;
+  max_nodes_per_type: number | null;
+}
+
+export interface LicenseFeatures {
+  multi_tenancy: boolean;
+  portal_users: boolean;
+  saml_sso: boolean;
+  scim_provisioning: boolean;
+  audit_logging: boolean;
+  compliance_reports: boolean;
+  access_reviews: boolean;
+  enterprise_integrations: boolean;
+  google_oauth_sso: boolean;
+}
+
+export interface LicenseStatus {
+  tier: "free" | "professional" | "enterprise" | string;
+  status: string;
+  domain_bypass: boolean;
+  bypass_domain: string | null;
+  limits: LicenseLimits;
+  features: LicenseFeatures;
 }
 
 export interface AIResearcherConfig {
