@@ -12,6 +12,7 @@ import { getStatusColor, getPriorityColor } from '@/lib/colorHelpers'
 import { SUPPORT_ISSUE_TYPE } from '@/lib/constants/issueTypes'
 import Button from '@/components/Button'
 import Card, { CardHeader, CardContent } from '@/components/Card'
+import Input from '@/components/Input'
 import Select from '@/components/Select'
 import AssigneePicker, { AssigneeValue } from '@/components/AssigneePicker'
 import { CreateIssueModal } from '@/pages/Issues'
@@ -31,6 +32,8 @@ interface IssueUpdatePayload {
   priority?: IssuePriority
   assignee_id?: number | null
   assignee_type?: IssueAssigneeType
+  start_date?: string | null
+  end_date?: string | null
 }
 
 /** Convert snake_case/UPPERCASE status or priority to Title Case display format */
@@ -540,6 +543,41 @@ export default function IssueDetail() {
                     : null
                 }
                 onChange={handleAssigneeChange}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Schedule */}
+          <Card>
+            <CardHeader>
+              <h3 className="text-lg font-semibold text-white">Schedule</h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Input
+                label="Start Date"
+                type="date"
+                value={issue.start_date ? issue.start_date.slice(0, 10) : ''}
+                onChange={(e) => {
+                  const val = e.target.value || null
+                  if (val && issue.end_date && val > issue.end_date.slice(0, 10)) {
+                    toast.error('Start date must be on or before end date')
+                    return
+                  }
+                  updateMutation.mutate({ start_date: val })
+                }}
+              />
+              <Input
+                label="End Date"
+                type="date"
+                value={issue.end_date ? issue.end_date.slice(0, 10) : ''}
+                onChange={(e) => {
+                  const val = e.target.value || null
+                  if (val && issue.start_date && val < issue.start_date.slice(0, 10)) {
+                    toast.error('End date must be on or after start date')
+                    return
+                  }
+                  updateMutation.mutate({ end_date: val })
+                }}
               />
             </CardContent>
           </Card>

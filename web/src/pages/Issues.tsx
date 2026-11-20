@@ -362,6 +362,8 @@ export function CreateIssueModal({
   const [isIncident, setIsIncident] = useState(false);
   const [channel, setChannel] = useState("");
   const [category, setCategory] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
@@ -520,6 +522,8 @@ export function CreateIssueModal({
       channel?: string;
       category?: string;
       parent_issue_id?: number;
+      start_date?: string;
+      end_date?: string;
     }) => {
       console.log("[CreateIssueModal] Submit", {
         title: data.title,
@@ -639,6 +643,10 @@ export function CreateIssueModal({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !organizationId) return;
+    if (startDate && endDate && endDate < startDate) {
+      toast.error("End date must be on or after start date");
+      return;
+    }
     createMutation.mutate({
       title: title.trim(),
       description: description.trim() || undefined,
@@ -661,6 +669,8 @@ export function CreateIssueModal({
         (selectedParentIssueId
           ? parseInt(selectedParentIssueId, 10)
           : undefined),
+      start_date: startDate || undefined,
+      end_date: endDate || undefined,
     });
   };
 
@@ -940,6 +950,22 @@ export function CreateIssueModal({
                   ariaLabel="Milestone"
                 />
               </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Start Date (Optional)"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              <Input
+                label="End Date (Optional)"
+                type="date"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
             </div>
 
             {!parentIssueId && (

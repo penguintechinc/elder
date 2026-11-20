@@ -802,6 +802,8 @@ class ApiClient {
     channel?: string;
     category?: string;
     parent_issue_id?: number;
+    start_date?: string;
+    end_date?: string;
   }) {
     const response = await this.client.post("/issues", data);
     return response.data;
@@ -825,6 +827,8 @@ class ApiClient {
       channel: string;
       category: string;
       parent_issue_id: number;
+      start_date: string | null;
+      end_date: string | null;
     }>,
   ) {
     const response = await this.client.patch(`/issues/${id}`, data);
