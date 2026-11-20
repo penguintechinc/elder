@@ -3,8 +3,8 @@
 # flake8: noqa: E501
 
 import logging
-from datetime import UTC, datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 from penguin_dal import Row
@@ -12,6 +12,95 @@ from quart import current_app, g, request
 from werkzeug.security import check_password_hash
 
 logger = logging.getLogger(__name__)
+
+MAX_SERVICE_RESEARCHER_TTL_SECONDS = 600
+
+
+def _is_valid_read_scope(scope: Any) -> bool:
+    """Return True if *scope* is a strictly read-only ``<resource>:read`` claim."""
+    if not isinstance(scope, str):
+        return False
+    cleaned = scope.strip()
+    if ":" not in cleaned:
+        return False
+    resource, action = cleaned.split(":", 1)
+    return bool(resource) and resource != "*" and action == "read"
+
+
+def get_service_researcher_read_scopes() -> list[str]:
+    """Return the deduplicated, sorted catalog of strictly read-only scopes."""
+    from apps.api.auth.rbac import _OBSERVER_SCOPES
+    from apps.api.modules import MODULES
+
+    scopes: set[str] = {s for s in _OBSERVER_SCOPES if _is_valid_read_scope(s)}
+    for manifest in MODULES:
+        for scope in manifest.scopes:
+            if _is_valid_read_scope(scope):
+                scopes.add(scope)
+    return sorted(scopes)
+
+
+def generate_service_researcher_token(
+    tenant_id: int,
+    scopes: list[str] | tuple[str, ...] | None = None,
+    ttl_seconds: int = 300,
+) -> str:
+    """Mint a short-lived, strictly read-only ``service_researcher`` JWT.
+
+    Args:
+        tenant_id: Positive tenant ID to bind this token to.
+        scopes: Optional explicit list of ``*:read`` scopes. Defaults to all
+            registered read-only module/observer scopes.
+        ttl_seconds: Lifetime in seconds (1..600, max 10 minutes).
+
+    Returns:
+        Signed JWT string.
+
+    Raises:
+        ValueError: If tenant_id, ttl_seconds, or any requested scope is invalid.
+    """
+    if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id <= 0:
+        raise ValueError("tenant_id must be a positive integer")
+    if (
+        isinstance(ttl_seconds, bool)
+        or not isinstance(ttl_seconds, int)
+        or ttl_seconds <= 0
+        or ttl_seconds > MAX_SERVICE_RESEARCHER_TTL_SECONDS
+    ):
+        raise ValueError(
+            f"service_researcher token TTL must be between 1 and {MAX_SERVICE_RESEARCHER_TTL_SECONDS} seconds"
+        )
+
+    if scopes is None:
+        validated_scopes = get_service_researcher_read_scopes()
+    else:
+        validated_scopes = []
+        for s in scopes:
+            if not _is_valid_read_scope(s):
+                raise ValueError(
+                    f"service_researcher tokens only allow '<resource>:read' scopes, got: {s!r}"
+                )
+            validated_scopes.append(s.strip())
+        if not validated_scopes:
+            raise ValueError("At least one read-only scope is required")
+
+    now = datetime.now(UTC)
+    payload = {
+        "sub": f"service-researcher:{tenant_id}",
+        "username": f"service-researcher-{tenant_id}",
+        "type": "service_researcher",
+        "iat": now,
+        "exp": now + timedelta(seconds=ttl_seconds),
+        "tenant": str(tenant_id),
+        "roles": ["viewer"],
+        "scope": validated_scopes,
+        "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
+        "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
+    }
+
+    secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
+    algorithm = current_app.config["JWT_ALGORITHM"]
+    return jwt.encode(payload, secret, algorithm=algorithm)
 
 
 def generate_token(identity: Row, token_type: str = "access") -> str:
@@ -114,6 +203,69 @@ def verify_token(token: str) -> dict[str, Any] | None:
             logger.warning("Rejected token: audience mismatch")
             return None
 
+        if payload.get("type") == "service_researcher":
+            if token_issuer != expected_issuer or token_audience != expected_audience:
+                logger.warning(
+                    "Rejected service_researcher token: missing or invalid iss/aud"
+                )
+                return None
+
+            exp_raw = payload.get("exp")
+            if isinstance(exp_raw, bool) or not isinstance(exp_raw, int | float):
+                logger.warning(
+                    "Rejected service_researcher token: missing or invalid exp"
+                )
+                return None
+            now_ts = datetime.now(UTC).timestamp()
+            if float(exp_raw) - now_ts > MAX_SERVICE_RESEARCHER_TTL_SECONDS:
+                logger.warning(
+                    "Rejected service_researcher token: TTL exceeds 10 minutes"
+                )
+                return None
+            iat_raw = payload.get("iat")
+            if iat_raw is not None:
+                if isinstance(iat_raw, bool) or not isinstance(iat_raw, int | float):
+                    logger.warning("Rejected service_researcher token: invalid iat")
+                    return None
+                if float(exp_raw) - float(iat_raw) > MAX_SERVICE_RESEARCHER_TTL_SECONDS:
+                    logger.warning(
+                        "Rejected service_researcher token: issued lifetime exceeds 10 minutes"
+                    )
+                    return None
+
+            tenant_raw = payload.get("tenant")
+            if isinstance(tenant_raw, bool) or tenant_raw is None:
+                logger.warning("Rejected service_researcher token: missing tenant")
+                return None
+            try:
+                tenant_id = int(str(tenant_raw).strip())
+            except (TypeError, ValueError):
+                logger.warning("Rejected service_researcher token: non-integer tenant")
+                return None
+            if tenant_id <= 0:
+                logger.warning("Rejected service_researcher token: non-positive tenant")
+                return None
+
+            raw_scopes = payload.get("scope")
+            if isinstance(raw_scopes, str):
+                candidate_scopes = raw_scopes.split()
+            elif isinstance(raw_scopes, list):
+                candidate_scopes = raw_scopes
+            else:
+                logger.warning("Rejected service_researcher token: invalid scope claim")
+                return None
+            if not candidate_scopes or not all(
+                _is_valid_read_scope(s) for s in candidate_scopes
+            ):
+                logger.warning(
+                    "Rejected service_researcher token: non-read or empty scope claim"
+                )
+                return None
+
+            payload["tenant"] = str(tenant_id)
+            payload["roles"] = ["viewer"]
+            payload["scope"] = [s.strip() for s in candidate_scopes]
+
         return payload
     except jwt.ExpiredSignatureError:
         logger.warning("Token expired")
@@ -160,15 +312,15 @@ def get_token_from_header() -> str | None:
     return cookie_token
 
 
-def get_current_user() -> Row | None:
+def get_current_user() -> Any:
     """
     Get current authenticated user from request context.
 
-    Supports both identity tokens (API/service auth) and portal_user tokens (web UI auth).
-    For portal_user tokens, creates a synthetic identity-like object for compatibility.
+    Supports identity tokens, portal_user tokens (web UI auth), and read-only
+    service_researcher tokens. For synthetic users, returns an identity-like object.
 
     Returns:
-        PyDAL Row representing identity or None
+        Identity row, synthetic identity object, or None
     """
     logger.debug("=== get_current_user called ===")
 
@@ -192,6 +344,38 @@ def get_current_user() -> Row | None:
     db = current_app.db
 
     try:
+        token_type = payload.get("type", "access")
+        if token_type == "service_researcher":
+            tenant_id = int(str(payload["tenant"]).strip())
+            read_scopes = [
+                s for s in (payload.get("scope") or []) if _is_valid_read_scope(s)
+            ]
+            if tenant_id <= 0 or not read_scopes:
+                logger.warning(
+                    "Rejected service_researcher token with invalid tenant or scopes"
+                )
+                return None
+
+            class ServiceResearcherIdentity:
+                def __init__(self, tid: int, scopes: list[str]) -> None:
+                    self.id = 0
+                    self.username = f"service-researcher-{tid}"
+                    self.email = None
+                    self.display_name = "AI Researcher (Read-Only Service)"
+                    self.is_active = True
+                    self.is_superuser = False
+                    self.tenant_id = tid
+                    self.portal_role = "viewer"
+                    self.token_type = "service_researcher"
+                    self.scopes = scopes
+
+                def get(self, key: str, default: Any = None) -> Any:
+                    return getattr(self, key, default)
+
+            service_identity = ServiceResearcherIdentity(tenant_id, read_scopes)
+            g.current_user = service_identity
+            return service_identity
+
         user_id = int(payload["sub"])  # Convert string back to integer
         token_type = payload.get("type", "access")
 

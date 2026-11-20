@@ -209,7 +209,11 @@ def _register_before_request(app: Quart) -> None:
 
     @app.before_request
     async def populate_claims():
-        from apps.api.auth.jwt_handler import get_token_from_header, verify_token
+        from apps.api.auth.jwt_handler import (
+            _is_valid_read_scope,
+            get_token_from_header,
+            verify_token,
+        )
 
         token = get_token_from_header()
         if not token:
@@ -218,6 +222,19 @@ def _register_before_request(app: Quart) -> None:
         if not payload:
             return
         sub = payload.get("sub", "")
+        token_type = payload.get("type")
+        if token_type == "service_researcher":
+            raw_scopes = payload.get("scope", [])
+            g.claims = {
+                "sub": sub,
+                "tenant": payload.get("tenant", ""),
+                "roles": ["viewer"],
+                "scope": [s for s in raw_scopes if _is_valid_read_scope(s)],
+                "identity_id": None,
+                "user_identity_id": None,
+                "type": "service_researcher",
+            }
+            return
         try:
             identity_id = int(sub)
         except (TypeError, ValueError):

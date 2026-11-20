@@ -184,6 +184,20 @@ class Config:
     API_PAGINATION_DEFAULT = config("API_PAGINATION_DEFAULT", default=50, cast=int)
     API_PAGINATION_MAX = config("API_PAGINATION_MAX", default=1000, cast=int)
 
+    # AI Researcher (Ollama + Elder MCP)
+    OLLAMA_URL = config(
+        "OLLAMA_URL", default="http://ollama.waddleai.svc.cluster.local:11434"
+    )
+    AI_RESEARCHER_MODEL = config("AI_RESEARCHER_MODEL", default="gemma4:e4b")
+    AI_RESEARCHER_MAX_STEPS = config("AI_RESEARCHER_MAX_STEPS", default=6, cast=int)
+    AI_RESEARCHER_TIMEOUT_SECONDS = config(
+        "AI_RESEARCHER_TIMEOUT_SECONDS", default=60.0, cast=float
+    )
+    ELDER_INTERNAL_API_URL = config(
+        "ELDER_INTERNAL_API_URL", default="http://127.0.0.1:5000"
+    )
+    AI_RESEARCHER_SERVICE_TOKEN = config("AI_RESEARCHER_SERVICE_TOKEN", default="")
+
     # WebSocket
     WEBSOCKET_ENABLED = config("WEBSOCKET_ENABLED", default=True, cast=bool)
 

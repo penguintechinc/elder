@@ -149,6 +149,27 @@ spec:
             - port: "443"
               protocol: TCP
 ---
+# Egress from API pod to WaddleAI Ollama inference service on port 11434.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-allow-ollama-egress
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "api" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "api" .) | nindent 6 }}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.ollamaNamespace | default "waddleai" }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.ollamaPort | default 11434 | quote }}
+              protocol: TCP
+---
 # Cross-namespace ingress: only the Cilium Gateway (httproute.yaml) reaches
 # web/api from outside this namespace, scoped to each component's own
 # declared serving port(s) only (security.md: "External ingress scoped to
