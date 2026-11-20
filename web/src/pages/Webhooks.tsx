@@ -1338,33 +1338,40 @@ function InboundScopeSelector({
                 {category}
               </div>
               <div className="grid grid-cols-1 gap-1.5">
-                {items.map((opt) => (
-                  <label
-                    key={opt.scope}
-                    className="flex items-start gap-2.5 cursor-pointer rounded p-1.5 hover:bg-slate-800/70 transition-colors"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedScopes.includes(opt.scope)}
-                      onChange={() => toggleScope(opt.scope)}
-                      className="mt-0.5 w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500 shrink-0"
-                      data-testid={`inbound-scope-${opt.scope}`}
-                    />
-                    <span className="min-w-0 flex-1 block">
-                      <span className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium text-slate-200">
-                          {opt.label}
-                        </span>
-                        <code className="text-[11px] font-mono text-slate-400 bg-slate-950/70 px-1.5 py-0.5 rounded">
-                          {opt.scope}
-                        </code>
-                      </span>
-                      <span className="block text-xs text-slate-400 mt-0.5">
-                        {opt.description}
-                      </span>
-                    </span>
-                  </label>
-                ))}
+                {items.map((opt) => {
+                  const checkboxId = `inbound-scope-input-${opt.scope}`;
+                  return (
+                    <div
+                      key={opt.scope}
+                      className="flex items-start gap-2.5 rounded p-1.5 hover:bg-slate-800/70 transition-colors"
+                    >
+                      <input
+                        id={checkboxId}
+                        type="checkbox"
+                        checked={selectedScopes.includes(opt.scope)}
+                        onChange={() => toggleScope(opt.scope)}
+                        className="mt-0.5 w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500 shrink-0 cursor-pointer"
+                        data-testid={`inbound-scope-${opt.scope}`}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <label
+                            htmlFor={checkboxId}
+                            className="text-sm font-medium text-slate-200 cursor-pointer"
+                          >
+                            {opt.label}
+                          </label>
+                          <code className="text-[11px] font-mono text-slate-400 bg-slate-950/70 px-1.5 py-0.5 rounded">
+                            {opt.scope}
+                          </code>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {opt.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
