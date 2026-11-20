@@ -522,6 +522,8 @@ export function CreateIssueModal({
       channel?: string;
       category?: string;
       parent_issue_id?: number;
+      start_date?: string;
+      end_date?: string;
     }) => {
       console.log("[CreateIssueModal] Submit", {
         title: data.title,

@@ -32,6 +32,8 @@ interface IssueUpdatePayload {
   priority?: IssuePriority
   assignee_id?: number | null
   assignee_type?: IssueAssigneeType
+  start_date?: string | null
+  end_date?: string | null
 }
 
 /** Convert snake_case/UPPERCASE status or priority to Title Case display format */
