@@ -1734,8 +1734,13 @@ class ApiClient {
   }
 
   // Inbound (Receiving) Webhooks
-  async getInboundWebhooks() {
-    const response = await this.client.get("/webhooks/inbound");
+  async getInboundWebhookScopes() {
+    const response = await this.client.get("/webhooks/inbound/scopes");
+    return response.data;
+  }
+
+  async getInboundWebhooks(params?: { stream_id?: number }) {
+    const response = await this.client.get("/webhooks/inbound", { params });
     return response.data;
   }
 
@@ -1746,7 +1751,9 @@ class ApiClient {
     bearer_token?: string;
     basic_username?: string;
     basic_password?: string;
+    organization_id?: number | null;
     stream_id?: number;
+    scopes?: string[];
     is_active?: boolean;
     metadata?: Record<string, unknown>;
   }) {
@@ -1763,7 +1770,9 @@ class ApiClient {
       bearer_token: string;
       basic_username: string;
       basic_password: string;
+      organization_id: number | null;
       stream_id: number | null;
+      scopes: string[];
       is_active: boolean;
       metadata: Record<string, unknown>;
     }>,

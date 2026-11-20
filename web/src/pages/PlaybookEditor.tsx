@@ -19,7 +19,14 @@ import {
   Position,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Save, Play, ArrowLeft, Trash2 } from "lucide-react";
+import {
+  Save,
+  Play,
+  ArrowLeft,
+  Trash2,
+  Webhook,
+  ExternalLink,
+} from "lucide-react";
 import api from "@/lib/api";
 import {
   NodePropertyModal,
@@ -123,6 +130,30 @@ export default function PlaybookEditor() {
     enabled: !!id,
   });
 
+  const { data: linkedInboundData } = useQuery({
+    queryKey: ["inbound-webhooks", { streamId: id }],
+    queryFn: () =>
+      id
+        ? (api.getInboundWebhooks({ stream_id: Number(id) }) as Promise<{
+            inbound_webhooks?: Array<{
+              id: number;
+              name: string;
+              receive_path: string;
+              scopes?: string[];
+              is_active: boolean;
+            }>;
+          }>)
+        : Promise.resolve({ inbound_webhooks: [] }),
+    enabled: !!id,
+  });
+
+  const openIncomingWebhookSoftLink = () => {
+    const streamName = encodeURIComponent(streamData?.name || `Playbook ${id}`);
+    navigate(
+      `/webhooks?tab=inbound&create=1&stream_id=${id}&stream_name=${streamName}`,
+    );
+  };
+
   useEffect(() => {
     if (streamData?.nodes) setNodes(streamData.nodes);
     if (streamData?.edges) setEdges(streamData.edges);
@@ -201,6 +232,20 @@ export default function PlaybookEditor() {
           </div>
           <div className="flex gap-3">
             <button
+              type="button"
+              onClick={openIncomingWebhookSoftLink}
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-amber-300 border border-slate-600 px-3 py-2 rounded-lg text-sm font-semibold transition-colors"
+              title="Create an authenticated Incoming Webhook with playbook trigger permissions"
+            >
+              <Webhook className="w-4 h-4" />
+              Incoming Webhook
+              {linkedInboundData?.inbound_webhooks?.length ? (
+                <span className="ml-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-300">
+                  {linkedInboundData.inbound_webhooks.length}
+                </span>
+              ) : null}
+            </button>
+            <button
               onClick={() => executeMutation.mutate()}
               disabled={executeMutation.isPending || isLoading}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-green-500 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
@@ -223,6 +268,55 @@ export default function PlaybookEditor() {
       <div className="flex flex-1 overflow-hidden">
         {/* Node Palette */}
         <div className="w-64 bg-slate-800 border-r border-slate-700 p-4 overflow-y-auto">
+          <div className="mb-6">
+            <h3 className="text-amber-400 font-semibold mb-3">Triggers</h3>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={openIncomingWebhookSoftLink}
+                className="w-full flex items-center justify-between bg-slate-700 hover:bg-slate-600 text-amber-300 text-sm px-3 py-2 rounded transition-colors text-left border border-amber-500/30"
+              >
+                <span className="flex items-center gap-2">
+                  <Webhook className="w-4 h-4 shrink-0" />
+                  Incoming Webhook
+                </span>
+                <ExternalLink className="w-3.5 h-3.5 opacity-75 shrink-0" />
+              </button>
+              {linkedInboundData?.inbound_webhooks?.length ? (
+                <div className="space-y-1.5 pt-1">
+                  {linkedInboundData.inbound_webhooks.map((wh) => (
+                    <button
+                      key={wh.id}
+                      type="button"
+                      onClick={() => navigate("/webhooks?tab=inbound")}
+                      className="w-full text-left px-2.5 py-1.5 rounded bg-slate-900/70 hover:bg-slate-900 border border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center justify-between text-xs text-slate-200 font-medium">
+                        <span className="truncate">{wh.name}</span>
+                        <span
+                          className={
+                            wh.is_active ? "text-emerald-400" : "text-slate-500"
+                          }
+                        >
+                          {wh.is_active ? "Active" : "Off"}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400 truncate">
+                        {wh.receive_path}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Opens Inbound Webhooks pre-linked to this playbook with{" "}
+                  <code className="text-amber-300">playbooks:trigger</code>{" "}
+                  scope.
+                </p>
+              )}
+            </div>
+          </div>
+
           <div className="mb-6">
             <h3 className="text-amber-400 font-semibold mb-3">Actions</h3>
             <div className="space-y-2">

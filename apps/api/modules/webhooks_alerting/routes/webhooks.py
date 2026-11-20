@@ -21,6 +21,13 @@ from apps.api.common.identity import identity_in_tenant
 from apps.api.common.licensing.enforce import check_limit
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.webhooks import WebhookService
+from apps.api.services.webhooks.inbound_actions import (
+    INBOUND_WEBHOOK_SCOPES,
+    execute_inbound_action,
+    normalize_stored_scopes,
+    resolve_inbound_action,
+    validate_inbound_scopes,
+)
 from apps.api.services.webhooks.service import _UNSET
 from apps.api.utils.tenant_scoping import get_current_tenant_id, get_tenant_scoped
 
@@ -793,6 +800,7 @@ CREATE TABLE IF NOT EXISTS inbound_webhooks (
     basic_password_hash VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT 1,
     stream_id INTEGER,
+    scopes JSON,
     metadata JSON,
     last_received_at DATETIME,
     receive_count INTEGER NOT NULL DEFAULT 0,
@@ -809,6 +817,8 @@ CREATE TABLE IF NOT EXISTS inbound_webhook_events (
     source_ip VARCHAR(64),
     headers JSON,
     payload JSON,
+    action VARCHAR(64),
+    action_result JSON,
     status VARCHAR(32) NOT NULL DEFAULT 'received',
     received_at DATETIME NOT NULL
 );
@@ -830,6 +840,7 @@ CREATE TABLE IF NOT EXISTS inbound_webhooks (
     basic_password_hash VARCHAR(255),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     stream_id INTEGER,
+    scopes JSONB,
     metadata JSONB,
     last_received_at TIMESTAMPTZ,
     receive_count INTEGER NOT NULL DEFAULT 0,
@@ -846,6 +857,8 @@ CREATE TABLE IF NOT EXISTS inbound_webhook_events (
     source_ip VARCHAR(64),
     headers JSONB,
     payload JSONB,
+    action VARCHAR(64),
+    action_result JSONB,
     status VARCHAR(32) NOT NULL DEFAULT 'received',
     received_at TIMESTAMPTZ NOT NULL
 );
@@ -853,7 +866,7 @@ CREATE TABLE IF NOT EXISTS inbound_webhook_events (
 
 
 def _ensure_inbound_tables(db: Any) -> None:
-    """Create inbound_webhooks and inbound_webhook_events if missing (Postgres & SQLite)."""
+    """Create or migrate inbound_webhooks and inbound_webhook_events (Postgres & SQLite)."""
     try:
         engine = db.engine
     except Exception:
@@ -864,47 +877,75 @@ def _ensure_inbound_tables(db: Any) -> None:
     inspector = sa_inspect(engine)
     has_webhooks = inspector.has_table("inbound_webhooks")
     has_events = inspector.has_table("inbound_webhook_events")
-    if not (has_webhooks and has_events):
-        is_sqlite = getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
-        with engine.begin() as conn:
-            if not has_webhooks:
+    is_sqlite = getattr(getattr(engine, "dialect", None), "name", "") == "sqlite"
+    json_col_type = "JSON" if is_sqlite else "JSONB"
+    altered = False
+
+    with engine.begin() as conn:
+        if not has_webhooks:
+            conn.execute(
+                text(_INBOUND_WEBHOOKS_SQLITE if is_sqlite else _INBOUND_WEBHOOKS_PG)
+            )
+            conn.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS ix_inbound_webhooks_slug "
+                    "ON inbound_webhooks (slug);"
+                )
+            )
+        else:
+            wh_cols = {c["name"] for c in inspector.get_columns("inbound_webhooks")}
+            if "scopes" not in wh_cols:
                 conn.execute(
                     text(
-                        _INBOUND_WEBHOOKS_SQLITE if is_sqlite else _INBOUND_WEBHOOKS_PG
+                        f"ALTER TABLE inbound_webhooks ADD COLUMN scopes {json_col_type}"
                     )
                 )
+                altered = True
+
+        if not has_events:
+            conn.execute(
+                text(_INBOUND_EVENTS_SQLITE if is_sqlite else _INBOUND_EVENTS_PG)
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_inbound_webhook_id "
+                    "ON inbound_webhook_events (inbound_webhook_id);"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_tenant_id "
+                    "ON inbound_webhook_events (tenant_id);"
+                )
+            )
+        else:
+            ev_cols = {
+                c["name"] for c in inspector.get_columns("inbound_webhook_events")
+            }
+            if "action" not in ev_cols:
                 conn.execute(
                     text(
-                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_inbound_webhooks_slug "
-                        "ON inbound_webhooks (slug);"
+                        "ALTER TABLE inbound_webhook_events ADD COLUMN action VARCHAR(64)"
                     )
                 )
-            if not has_events:
-                conn.execute(
-                    text(_INBOUND_EVENTS_SQLITE if is_sqlite else _INBOUND_EVENTS_PG)
-                )
+                altered = True
+            if "action_result" not in ev_cols:
                 conn.execute(
                     text(
-                        "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_inbound_webhook_id "
-                        "ON inbound_webhook_events (inbound_webhook_id);"
+                        f"ALTER TABLE inbound_webhook_events ADD COLUMN action_result {json_col_type}"
                     )
                 )
-                conn.execute(
-                    text(
-                        "CREATE INDEX IF NOT EXISTS ix_inbound_webhook_events_tenant_id "
-                        "ON inbound_webhook_events (tenant_id);"
-                    )
-                )
+                altered = True
 
     metadata = getattr(db, "_metadata", None)
     if metadata is not None:
-        missing = [
+        to_reflect = [
             tbl
             for tbl in ("inbound_webhooks", "inbound_webhook_events")
-            if tbl not in metadata.tables
+            if altered or tbl not in metadata.tables
         ]
-        if missing:
-            metadata.reflect(bind=engine, only=missing)
+        if to_reflect:
+            metadata.reflect(bind=engine, only=to_reflect, extend_existing=True)
 
 
 def _iso_dt(val: Any) -> str | None:
@@ -944,6 +985,7 @@ def _serialize_inbound_webhook(row: Any) -> dict[str, Any]:
         "basic_username": getattr(row, "basic_username", None),
         "is_active": bool(getattr(row, "is_active", True)),
         "stream_id": getattr(row, "stream_id", None),
+        "scopes": normalize_stored_scopes(getattr(row, "scopes", None)),
         "metadata": _parse_json_col(raw_meta),
         "last_received_at": _iso_dt(getattr(row, "last_received_at", None)),
         "receive_count": int(getattr(row, "receive_count", 0) or 0),
@@ -960,9 +1002,31 @@ def _serialize_inbound_event(row: Any) -> dict[str, Any]:
         "source_ip": getattr(row, "source_ip", None),
         "headers": _parse_json_col(getattr(row, "headers", None)),
         "payload": _parse_json_col(getattr(row, "payload", None)),
+        "action": getattr(row, "action", None),
+        "action_result": _parse_json_col(getattr(row, "action_result", None)),
         "status": getattr(row, "status", "received"),
         "received_at": _iso_dt(getattr(row, "received_at", None)),
     }
+
+
+def _stream_in_tenant(db: Any, stream_id: int | None, tenant_id: int) -> bool:
+    """Return True if stream_id is None or belongs to tenant_id."""
+    if stream_id is None:
+        return True
+    if isinstance(stream_id, bool) or not isinstance(stream_id, int) or stream_id <= 0:
+        return False
+    engine = getattr(db, "engine", None)
+    if engine is not None and not sa_inspect(engine).has_table("stream_playbooks"):
+        return True
+    return (
+        db(
+            (db.stream_playbooks.id == stream_id)
+            & (db.stream_playbooks.tenant_id == tenant_id)
+        )
+        .select(db.stream_playbooks.id)
+        .first()
+        is not None
+    )
 
 
 def _build_inbound_credentials(
@@ -1023,6 +1087,14 @@ def _mint_inbound_village_id(tenant_id: int) -> str:
     return f"wh-{secrets.token_hex(6)}"
 
 
+@bp.route("/inbound/scopes", methods=["GET"])
+@login_required
+@require_scope("webhooks:read")
+def list_inbound_webhook_scopes():
+    """Return the catalog of available OAuth2-like scopes for inbound webhooks."""
+    return jsonify({"scopes": INBOUND_WEBHOOK_SCOPES}), 200
+
+
 @bp.route("/inbound", methods=["GET"])
 @login_required
 @require_scope("webhooks:read")
@@ -1035,9 +1107,13 @@ def list_inbound_webhooks():
 
         db = current_app.db
         _ensure_inbound_tables(db)
-        rows = db(db.inbound_webhooks.tenant_id == tenant_id).select(
-            orderby=~db.inbound_webhooks.id
-        )
+        query = db.inbound_webhooks.tenant_id == tenant_id
+        if request.args.get("stream_id") is not None:
+            stream_id = request.args.get("stream_id", type=int)
+            if stream_id is None or stream_id <= 0:
+                return jsonify({"error": "stream_id must be a positive integer"}), 400
+            query &= db.inbound_webhooks.stream_id == stream_id
+        rows = db(query).select(orderby=~db.inbound_webhooks.id)
         return (
             jsonify(
                 {
@@ -1054,7 +1130,7 @@ def list_inbound_webhooks():
 @bp.route("/inbound", methods=["POST"])
 @admin_required
 async def create_inbound_webhook():
-    """Create a new inbound webhook with required Bearer or Basic authentication."""
+    """Create a new inbound webhook with required Bearer/Basic auth and permission scopes."""
     try:
         tenant_id = get_current_tenant_id()
         if not tenant_id:
@@ -1069,6 +1145,13 @@ async def create_inbound_webhook():
         if auth_type not in ("bearer", "basic"):
             return jsonify({"error": "auth_type must be 'bearer' or 'basic'"}), 400
 
+        stream_id = data.get("stream_id")
+        scopes, scopes_err = validate_inbound_scopes(
+            data.get("scopes"), has_stream_id=bool(stream_id)
+        )
+        if scopes_err:
+            return jsonify({"error": scopes_err}), 400
+
         db = current_app.db
         _ensure_inbound_tables(db)
 
@@ -1077,6 +1160,9 @@ async def create_inbound_webhook():
             db, organization_id, tenant_id
         ):
             return jsonify({"error": "organization_id not found in tenant"}), 404
+
+        if not _stream_in_tenant(db, stream_id, tenant_id):
+            return jsonify({"error": "stream_id not found in tenant"}), 404
 
         slug = secrets.token_urlsafe(18)
         db_cred_fields, credentials = _build_inbound_credentials(
@@ -1096,7 +1182,8 @@ async def create_inbound_webhook():
             slug=slug,
             auth_type=auth_type,
             is_active=bool(data.get("is_active", True)),
-            stream_id=data.get("stream_id"),
+            stream_id=stream_id,
+            scopes=scopes,
             metadata=data.get("metadata"),
             receive_count=0,
             created_at=now,
@@ -1193,8 +1280,26 @@ async def update_inbound_webhook(webhook_id: int):
             updates["description"] = data.get("description")
         if "is_active" in data:
             updates["is_active"] = bool(data.get("is_active"))
+        if "organization_id" in data:
+            org_id = data.get("organization_id")
+            if org_id is not None and not _org_unit_in_tenant(db, org_id, tenant_id):
+                return jsonify({"error": "organization_id not found in tenant"}), 404
+            updates["organization_id"] = org_id
         if "stream_id" in data:
-            updates["stream_id"] = data.get("stream_id")
+            next_stream_id = data.get("stream_id")
+            if not _stream_in_tenant(db, next_stream_id, tenant_id):
+                return jsonify({"error": "stream_id not found in tenant"}), 404
+            updates["stream_id"] = next_stream_id
+        if "scopes" in data:
+            effective_stream = updates.get(
+                "stream_id", getattr(hook, "stream_id", None)
+            )
+            scopes, scopes_err = validate_inbound_scopes(
+                data.get("scopes"), has_stream_id=bool(effective_stream)
+            )
+            if scopes_err:
+                return jsonify({"error": scopes_err}), 400
+            updates["scopes"] = scopes
         if "metadata" in data:
             updates["metadata"] = data.get("metadata")
 
@@ -1329,9 +1434,19 @@ def _verify_inbound_auth(hook: Any, auth_header: str) -> tuple[bool, str]:
     return False, 'Bearer realm="Elder Webhook"'
 
 
+def _resolve_source_ip() -> str | None:
+    cf_ip = (request.headers.get("CF-Connecting-IP") or "").strip()
+    if cf_ip:
+        return cf_ip[:64]
+    xff = (request.headers.get("X-Forwarded-For") or "").split(",")[0].strip()
+    if xff:
+        return xff[:64]
+    return request.remote_addr
+
+
 @bp.route("/receive/<slug>", methods=["POST"])
 async def receive_inbound_webhook(slug: str):
-    """Public inbound webhook receiver — always requires Bearer or Basic auth."""
+    """Public inbound webhook receiver — requires Bearer/Basic auth & enforces granted scopes."""
     try:
         db = current_app.db
         _ensure_inbound_tables(db)
@@ -1369,13 +1484,75 @@ async def receive_inbound_webhook(slug: str):
                 redacted_headers[key] = value
 
         now = datetime.now(UTC)
+        source_ip = _resolve_source_ip()
+        granted_scopes = normalize_stored_scopes(getattr(hook, "scopes", None))
+        required_scope, action_spec, parse_err = resolve_inbound_action(hook, payload)
+
+        if parse_err or action_spec is None:
+            err_result = {"error": parse_err or "Invalid webhook action"}
+            event_id = db.inbound_webhook_events.insert(
+                inbound_webhook_id=hook.id,
+                tenant_id=hook.tenant_id,
+                source_ip=source_ip,
+                headers=redacted_headers,
+                payload=payload,
+                action=None,
+                action_result=err_result,
+                status="invalid",
+                received_at=now,
+            )
+            db(db.inbound_webhooks.id == hook.id).update(
+                receive_count=(int(getattr(hook, "receive_count", 0) or 0) + 1),
+                last_received_at=now,
+            )
+            db.commit()
+            return (
+                jsonify({"error": err_result["error"], "event_id": event_id}),
+                400,
+            )
+
+        if required_scope not in granted_scopes:
+            err_result = {"error": f"Webhook lacks required scope: {required_scope}"}
+            event_id = db.inbound_webhook_events.insert(
+                inbound_webhook_id=hook.id,
+                tenant_id=hook.tenant_id,
+                source_ip=source_ip,
+                headers=redacted_headers,
+                payload=payload,
+                action=required_scope,
+                action_result=err_result,
+                status="forbidden",
+                received_at=now,
+            )
+            db(db.inbound_webhooks.id == hook.id).update(
+                receive_count=(int(getattr(hook, "receive_count", 0) or 0) + 1),
+                last_received_at=now,
+            )
+            db.commit()
+            return (
+                jsonify(
+                    {
+                        "error": err_result["error"],
+                        "required_scope": required_scope,
+                        "event_id": event_id,
+                    }
+                ),
+                403,
+            )
+
+        http_status, event_status, action_result = execute_inbound_action(
+            db, hook, required_scope, action_spec, source_ip
+        )
+
         event_id = db.inbound_webhook_events.insert(
             inbound_webhook_id=hook.id,
             tenant_id=hook.tenant_id,
-            source_ip=request.remote_addr,
+            source_ip=source_ip,
             headers=redacted_headers,
             payload=payload,
-            status="received",
+            action=required_scope,
+            action_result=action_result,
+            status=event_status,
             received_at=now,
         )
         db(db.inbound_webhooks.id == hook.id).update(
@@ -1384,6 +1561,14 @@ async def receive_inbound_webhook(slug: str):
         )
         db.commit()
 
-        return jsonify({"status": "received", "event_id": event_id}), 202
+        response_body: dict[str, Any] = {
+            "status": event_status,
+            "event_id": event_id,
+            "action": required_scope,
+            "result": action_result,
+        }
+        if "error" in action_result:
+            response_body["error"] = action_result["error"]
+        return jsonify(response_body), http_status
     except Exception as e:
         return log_error_and_respond(logger, e, "Failed to receive webhook", 500)

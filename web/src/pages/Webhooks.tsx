@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { Link, useInRouterContext } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -55,11 +55,128 @@ interface InboundWebhookConfig {
   bearer_token_preview?: string | null;
   basic_username?: string | null;
   is_active: boolean;
+  organization_id?: number | null;
   stream_id?: number | null;
+  scopes?: string[];
   last_received_at?: string | null;
   receive_count: number;
   created_at?: string | null;
 }
+
+interface InboundScopeOption {
+  scope: string;
+  label: string;
+  category: string;
+  description: string;
+}
+
+const FALLBACK_INBOUND_SCOPES: InboundScopeOption[] = [
+  {
+    scope: "events:log",
+    label: "Log Events",
+    category: "General",
+    description:
+      "Receive and record incoming webhook payloads in the audit event log.",
+  },
+  {
+    scope: "playbooks:trigger",
+    label: "Trigger Playbooks",
+    category: "Automation",
+    description:
+      "Start linked or requested Stream playbook executions with the incoming payload.",
+  },
+  {
+    scope: "issues:create",
+    label: "Create Issues",
+    category: "Issues",
+    description: "Create new issues or incidents scoped to this tenant.",
+  },
+  {
+    scope: "issues:update",
+    label: "Update Issues",
+    category: "Issues",
+    description:
+      "Update existing issues (status, priority, description, metadata) in this tenant.",
+  },
+  {
+    scope: "vulnerabilities:create",
+    label: "Create Vulnerabilities",
+    category: "Security",
+    description: "Create new CVE/vulnerability records scoped to this tenant.",
+  },
+  {
+    scope: "vulnerabilities:update",
+    label: "Update Vulnerabilities",
+    category: "Security",
+    description:
+      "Update existing vulnerabilities (by id or cve_id) in this tenant.",
+  },
+  {
+    scope: "entities:create",
+    label: "Create Entities",
+    category: "Infrastructure",
+    description:
+      "Create new infrastructure entities in an organization of this tenant.",
+  },
+  {
+    scope: "entities:update",
+    label: "Update Entities",
+    category: "Infrastructure",
+    description: "Update existing infrastructure entities in this tenant.",
+  },
+  {
+    scope: "data_stores:create",
+    label: "Create Data Inventory",
+    category: "Infrastructure",
+    description:
+      "Create new data inventory records in an organization of this tenant.",
+  },
+  {
+    scope: "data_stores:update",
+    label: "Update Data Inventory",
+    category: "Infrastructure",
+    description: "Update existing data inventory records in this tenant.",
+  },
+  {
+    scope: "services:create",
+    label: "Create Services",
+    category: "Services & Software",
+    description:
+      "Create new tracked services in an organization of this tenant.",
+  },
+  {
+    scope: "services:update",
+    label: "Update Services",
+    category: "Services & Software",
+    description: "Update existing tracked services in this tenant.",
+  },
+  {
+    scope: "software:create",
+    label: "Create Software",
+    category: "Services & Software",
+    description:
+      "Create new software inventory entries in an organization of this tenant.",
+  },
+  {
+    scope: "software:update",
+    label: "Update Software",
+    category: "Services & Software",
+    description: "Update existing software inventory entries in this tenant.",
+  },
+  {
+    scope: "ai_resources:create",
+    label: "Create AI Resources",
+    category: "AI",
+    description:
+      "Create new AI resource records in an organization of this tenant.",
+  },
+  {
+    scope: "ai_resources:update",
+    label: "Update AI Resources",
+    category: "AI",
+    description: "Update existing AI resource records in this tenant.",
+  },
+];
 
 interface InboundWebhooksResponse {
   inbound_webhooks: InboundWebhookConfig[];
@@ -79,6 +196,8 @@ interface InboundWebhookEvent {
   source_ip?: string | null;
   headers?: Record<string, string> | null;
   payload?: unknown;
+  action?: string | null;
+  action_result?: Record<string, unknown> | null;
   status: string;
   received_at: string;
 }
@@ -105,12 +224,50 @@ const EVENT_TYPES = [
 ];
 
 export default function Webhooks() {
-  const [activeTab, setActiveTab] = useState<"inbound" | "outbound">("inbound");
+  const initialQuery = (() => {
+    if (typeof window === "undefined") {
+      return {
+        tab: "inbound" as const,
+        openCreate: false,
+        streamId: undefined as number | undefined,
+        streamName: undefined as string | undefined,
+      };
+    }
+    const params = new URLSearchParams(window.location.search);
+    const rawTab = params.get("tab");
+    const parsedStreamId = Number(params.get("stream_id"));
+    return {
+      tab: (rawTab === "outbound" ? "outbound" : "inbound") as
+        | "inbound"
+        | "outbound",
+      openCreate: params.get("create") === "1" && rawTab !== "outbound",
+      streamId:
+        Number.isFinite(parsedStreamId) && parsedStreamId > 0
+          ? parsedStreamId
+          : undefined,
+      streamName: params.get("stream_name") || undefined,
+    };
+  })();
+
+  const [activeTab, setActiveTab] = useState<"inbound" | "outbound">(
+    initialQuery.tab,
+  );
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showCreateInboundModal, setShowCreateInboundModal] = useState(false);
+  const [showCreateInboundModal, setShowCreateInboundModal] = useState(
+    initialQuery.openCreate,
+  );
+  const [prefillStream] = useState<{
+    streamId?: number;
+    streamName?: string;
+  }>({
+    streamId: initialQuery.streamId,
+    streamName: initialQuery.streamName,
+  });
   const [editingWebhook, setEditingWebhook] = useState<WebhookConfig | null>(
     null,
   );
+  const [editingInboundWebhook, setEditingInboundWebhook] =
+    useState<InboundWebhookConfig | null>(null);
   const [revealedCredentials, setRevealedCredentials] = useState<{
     webhook: InboundWebhookConfig;
     credentials: InboundCredentials;
@@ -135,7 +292,10 @@ export default function Webhooks() {
 
   const { data: inboundData, isLoading: inboundLoading } = useQuery({
     queryKey: ["inbound-webhooks"],
-    queryFn: () => api.getInboundWebhooks() as Promise<InboundWebhooksResponse>,
+    queryFn: () =>
+      typeof api.getInboundWebhooks === "function"
+        ? (api.getInboundWebhooks() as Promise<InboundWebhooksResponse>)
+        : Promise.resolve({ inbound_webhooks: [], count: 0 }),
     enabled: isAdmin,
   });
 
@@ -318,9 +478,12 @@ export default function Webhooks() {
                               {hook.auth_type === "basic" ? "Basic" : "Bearer"}
                             </span>
                             {hook.stream_id && (
-                              <span className="px-2 py-0.5 text-xs rounded bg-slate-700 text-slate-300">
+                              <SafeLink
+                                to={`/streams/${hook.stream_id}`}
+                                className="px-2 py-0.5 text-xs rounded bg-slate-700 hover:bg-slate-600 text-amber-300 transition-colors"
+                              >
                                 Playbook #{hook.stream_id}
-                              </span>
+                              </SafeLink>
                             )}
                           </div>
                           {hook.description && (
@@ -328,6 +491,25 @@ export default function Webhooks() {
                               {hook.description}
                             </p>
                           )}
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {(hook.scopes?.length
+                              ? hook.scopes
+                              : ["events:log"]
+                            ).map((sc) => (
+                              <span
+                                key={sc}
+                                className={`px-2 py-0.5 text-xs font-mono rounded ${
+                                  sc === "events:log"
+                                    ? "bg-slate-800 text-slate-300 border border-slate-700"
+                                    : sc === "playbooks:trigger"
+                                      ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                                      : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                }`}
+                              >
+                                {sc}
+                              </span>
+                            ))}
+                          </div>
                           <div className="flex items-center gap-2 mb-2">
                             <code className="text-xs text-slate-300 bg-slate-900/80 px-2.5 py-1 rounded font-mono truncate max-w-xl">
                               {fullUrl}
@@ -362,6 +544,14 @@ export default function Webhooks() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Edit Inbound Webhook"
+                            onClick={() => setEditingInboundWebhook(hook)}
+                          >
+                            <Edit className="w-4 h-4" />
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
@@ -417,12 +607,12 @@ export default function Webhooks() {
           <div className="px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-700 text-sm text-slate-300">
             Need multi-step outbound workflows, retries, or transformations?
             Build them in{" "}
-            <Link
+            <SafeLink
               to="/streams"
               className="text-primary-400 hover:text-primary-300 underline"
             >
               Playbooks
-            </Link>
+            </SafeLink>
             .
           </div>
 
@@ -514,6 +704,8 @@ export default function Webhooks() {
 
       {showCreateInboundModal && (
         <CreateInboundWebhookModal
+          initialStreamId={prefillStream.streamId}
+          initialStreamName={prefillStream.streamName}
           onClose={() => setShowCreateInboundModal(false)}
           onSuccess={async (res) => {
             await queryClient.invalidateQueries({
@@ -522,6 +714,20 @@ export default function Webhooks() {
             });
             setShowCreateInboundModal(false);
             setRevealedCredentials(res);
+          }}
+        />
+      )}
+
+      {editingInboundWebhook && (
+        <EditInboundWebhookModal
+          webhook={editingInboundWebhook}
+          onClose={() => setEditingInboundWebhook(null)}
+          onSuccess={async () => {
+            await queryClient.invalidateQueries({
+              queryKey: ["inbound-webhooks"],
+              refetchType: "all",
+            });
+            setEditingInboundWebhook(null);
           }}
         />
       )}
@@ -931,23 +1137,274 @@ function EditWebhookModal({
   );
 }
 
+interface StreamOption {
+  id: number;
+  name: string;
+}
+
+const SCOPE_CATEGORY_ORDER = [
+  "General",
+  "Automation",
+  "Issues",
+  "Security",
+  "Infrastructure",
+  "Services & Software",
+  "AI",
+];
+
+function SafeLink({
+  to,
+  className,
+  children,
+}: {
+  to: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const inRouter = useInRouterContext();
+  if (inRouter) {
+    return (
+      <Link to={to} className={className}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={to} className={className}>
+      {children}
+    </a>
+  );
+}
+
+function scopeBadgeClass(scope: string): string {
+  if (scope === "events:log") {
+    return "bg-slate-800 text-slate-300 border border-slate-700";
+  }
+  if (scope === "playbooks:trigger") {
+    return "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+  }
+  return "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+}
+
+function useInboundReferenceData() {
+  const { data: scopesData } = useQuery({
+    queryKey: ["inbound-webhook-scopes"],
+    queryFn: () =>
+      typeof api.getInboundWebhookScopes === "function"
+        ? (api.getInboundWebhookScopes() as Promise<{
+            scopes?: InboundScopeOption[];
+          }>)
+        : Promise.resolve({ scopes: FALLBACK_INBOUND_SCOPES }),
+    staleTime: 60000,
+  });
+
+  const { data: streamsData } = useQuery({
+    queryKey: ["streams", "inbound-select"],
+    queryFn: () => {
+      const apiWithOptional = api as unknown as {
+        listStreams?: (p?: {
+          page?: number;
+          per_page?: number;
+        }) => Promise<{ data?: StreamOption[]; items?: StreamOption[] }>;
+        getStreams?: () => Promise<{
+          data?: StreamOption[];
+          items?: StreamOption[];
+        }>;
+      };
+      if (typeof apiWithOptional.listStreams === "function") {
+        return apiWithOptional.listStreams({ page: 1, per_page: 100 });
+      }
+      if (typeof apiWithOptional.getStreams === "function") {
+        return apiWithOptional.getStreams();
+      }
+      return Promise.resolve({ data: [] });
+    },
+    staleTime: 30000,
+  });
+
+  const { data: orgsData } = useQuery({
+    queryKey: ["organizations"],
+    queryFn: () =>
+      typeof api.getOrganizations === "function"
+        ? (api.getOrganizations() as Promise<OrganizationResponse>)
+        : Promise.resolve({ items: [] }),
+    staleTime: 30000,
+  });
+
+  const scopeOptions = scopesData?.scopes?.length
+    ? scopesData.scopes
+    : FALLBACK_INBOUND_SCOPES;
+  const streams = streamsData?.data || streamsData?.items || [];
+  const organizations = orgsData?.items || [];
+
+  return { scopeOptions, streams, organizations };
+}
+
+function InboundScopeSelector({
+  options,
+  selectedScopes,
+  onChange,
+}: {
+  options: InboundScopeOption[];
+  selectedScopes: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const grouped = new Map<string, InboundScopeOption[]>();
+  for (const cat of SCOPE_CATEGORY_ORDER) {
+    grouped.set(cat, []);
+  }
+  for (const opt of options) {
+    const existing = grouped.get(opt.category);
+    if (existing) {
+      existing.push(opt);
+    } else {
+      grouped.set(opt.category, [opt]);
+    }
+  }
+
+  const toggleScope = (scope: string) => {
+    if (selectedScopes.includes(scope)) {
+      onChange(selectedScopes.filter((s) => s !== scope));
+    } else {
+      onChange([...selectedScopes, scope]);
+    }
+  };
+
+  const applyPreset = (scopes: string[]) => {
+    const valid = new Set(options.map((o) => o.scope));
+    const filtered = scopes.filter((s) => valid.has(s));
+    onChange(filtered.length ? filtered : ["events:log"]);
+  };
+
+  const allResourceScopes = options
+    .filter((o) => o.scope !== "playbooks:trigger")
+    .map((o) => o.scope);
+
+  return (
+    <div className="space-y-3 pt-2 border-t border-slate-700">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-medium text-yellow-500">
+          Permission Scopes
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => applyPreset(["events:log"])}
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-colors"
+          >
+            Log Only
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset(["events:log", "playbooks:trigger"])}
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 transition-colors"
+          >
+            Playbook Trigger
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              applyPreset(["events:log", "issues:create", "issues:update"])
+            }
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-emerald-500/30 transition-colors"
+          >
+            Issues R/W
+          </button>
+          <button
+            type="button"
+            onClick={() => applyPreset(allResourceScopes)}
+            className="px-2 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-primary-300 border border-primary-500/30 transition-colors"
+          >
+            All Resource Scopes
+          </button>
+        </div>
+      </div>
+
+      {selectedScopes.length === 0 && (
+        <p className="text-xs text-amber-400">
+          Select at least one permission scope.
+        </p>
+      )}
+
+      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+        {Array.from(grouped.entries()).map(([category, items]) => {
+          if (!items.length) return null;
+          return (
+            <div
+              key={category}
+              className="rounded-lg bg-slate-900/60 border border-slate-800 p-2.5 space-y-2"
+            >
+              <div className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                {category}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {items.map((opt) => (
+                  <label
+                    key={opt.scope}
+                    className="flex items-start gap-2.5 cursor-pointer rounded p-1.5 hover:bg-slate-800/70 transition-colors"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedScopes.includes(opt.scope)}
+                      onChange={() => toggleScope(opt.scope)}
+                      className="mt-0.5 w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500 shrink-0"
+                      data-testid={`inbound-scope-${opt.scope}`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-slate-200">
+                          {opt.label}
+                        </span>
+                        <code className="text-[11px] font-mono text-slate-400 bg-slate-950/70 px-1.5 py-0.5 rounded">
+                          {opt.scope}
+                        </code>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {opt.description}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CreateInboundWebhookModal({
+  initialStreamId,
+  initialStreamName,
   onClose,
   onSuccess,
 }: {
+  initialStreamId?: number;
+  initialStreamName?: string;
   onClose: () => void;
   onSuccess: (res: {
     webhook: InboundWebhookConfig;
     credentials: InboundCredentials;
   }) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(
+    initialStreamName ? `${initialStreamName} Webhook` : "",
+  );
   const [description, setDescription] = useState("");
   const [authType, setAuthType] = useState<"bearer" | "basic">("bearer");
   const [bearerToken, setBearerToken] = useState("");
   const [basicUsername, setBasicUsername] = useState("");
   const [basicPassword, setBasicPassword] = useState("");
-  const [streamId, setStreamId] = useState("");
+  const [organizationId, setOrganizationId] = useState("");
+  const [streamId, setStreamId] = useState(
+    initialStreamId ? String(initialStreamId) : "",
+  );
+  const [scopes, setScopes] = useState<string[]>(
+    initialStreamId ? ["events:log", "playbooks:trigger"] : ["events:log"],
+  );
+
+  const { scopeOptions, streams, organizations } = useInboundReferenceData();
 
   const createMutation = useMutation({
     mutationFn: (data: Parameters<typeof api.createInboundWebhook>[0]) =>
@@ -959,13 +1416,32 @@ function CreateInboundWebhookModal({
     onError: () => toast.error("Failed to create inbound webhook"),
   });
 
+  const handleStreamChange = (nextVal: string) => {
+    setStreamId(nextVal);
+    if (nextVal) {
+      setScopes((prev) =>
+        prev.includes("playbooks:trigger")
+          ? prev
+          : [...prev, "playbooks:trigger"],
+      );
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!scopes.length) {
+      toast.error("Select at least one permission scope");
+      return;
+    }
     const payload: Parameters<typeof api.createInboundWebhook>[0] = {
       name,
       description: description || undefined,
       auth_type: authType,
+      organization_id: organizationId
+        ? parseInt(organizationId, 10)
+        : undefined,
       stream_id: streamId ? parseInt(streamId, 10) : undefined,
+      scopes,
     };
     if (authType === "bearer" && bearerToken.trim()) {
       payload.bearer_token = bearerToken.trim();
@@ -976,16 +1452,46 @@ function CreateInboundWebhookModal({
     createMutation.mutate(payload);
   };
 
+  const hasInitialStreamInList =
+    initialStreamId !== undefined &&
+    streams.some((s) => s.id === initialStreamId);
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <Card className="w-full max-w-xl max-h-[90vh] overflow-y-auto">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <CardHeader>
-          <h2 className="text-xl font-semibold text-white">
-            Create Inbound Webhook
-          </h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-white">
+              Create Inbound Webhook
+            </h2>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            data-testid="create-inbound-webhook-form"
+          >
+            {initialStreamId && (
+              <div
+                className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-200"
+                data-testid="playbook-softlink-banner"
+              >
+                Soft-linked to{" "}
+                <span className="font-semibold">
+                  {initialStreamName || `Playbook #${initialStreamId}`}
+                </span>{" "}
+                with{" "}
+                <code className="font-mono text-amber-300">
+                  playbooks:trigger
+                </code>{" "}
+                pre-selected.
+              </div>
+            )}
+
             <Input
               id="inbound-name"
               label="Name"
@@ -1043,20 +1549,60 @@ function CreateInboundWebhookModal({
               </div>
             )}
 
-            <Input
-              id="inbound-stream-id"
-              label="Playbook / Stream ID (optional)"
-              type="number"
-              value={streamId}
-              onChange={(e) => setStreamId(e.target.value)}
-              placeholder="e.g. 12"
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                id="inbound-stream-id"
+                data-testid="inbound-stream-select"
+                label="Linked Playbook (optional)"
+                value={streamId}
+                onChange={(e) => handleStreamChange(e.target.value)}
+              >
+                <option value="">None (use explicit action payloads)</option>
+                {initialStreamId && !hasInitialStreamInList && (
+                  <option value={String(initialStreamId)}>
+                    {initialStreamName || `Playbook #${initialStreamId}`}
+                  </option>
+                )}
+                {streams.map((stream) => (
+                  <option key={stream.id} value={String(stream.id)}>
+                    {stream.name} (#{stream.id})
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                id="inbound-organization-id"
+                data-testid="inbound-organization-select"
+                label="Default Organization (optional)"
+                value={organizationId}
+                onChange={(e) => setOrganizationId(e.target.value)}
+              >
+                <option value="">
+                  None (supply organization_id in payload)
+                </option>
+                {organizations.map((org) => (
+                  <option key={org.id} value={String(org.id)}>
+                    {org.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <InboundScopeSelector
+              options={scopeOptions}
+              selectedScopes={scopes}
+              onChange={setScopes}
             />
 
             <div className="flex justify-end gap-3 mt-6">
               <Button type="button" variant="ghost" onClick={onClose}>
                 Cancel
               </Button>
-              <Button type="submit" isLoading={createMutation.isPending}>
+              <Button
+                type="submit"
+                isLoading={createMutation.isPending}
+                disabled={scopes.length === 0}
+              >
                 Create Inbound Webhook
               </Button>
             </div>
@@ -1065,6 +1611,215 @@ function CreateInboundWebhookModal({
       </Card>
     </div>
   );
+}
+
+function EditInboundWebhookModal({
+  webhook,
+  onClose,
+  onSuccess,
+}: {
+  webhook: InboundWebhookConfig;
+  onClose: () => void;
+  onSuccess: () => Promise<void>;
+}) {
+  const [name, setName] = useState(webhook.name);
+  const [description, setDescription] = useState(webhook.description || "");
+  const [isActive, setIsActive] = useState(webhook.is_active);
+  const [organizationId, setOrganizationId] = useState(
+    webhook.organization_id ? String(webhook.organization_id) : "",
+  );
+  const [streamId, setStreamId] = useState(
+    webhook.stream_id ? String(webhook.stream_id) : "",
+  );
+  const [scopes, setScopes] = useState<string[]>(
+    webhook.scopes?.length ? webhook.scopes : ["events:log"],
+  );
+
+  const { scopeOptions, streams, organizations } = useInboundReferenceData();
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Parameters<typeof api.updateInboundWebhook>[1]) =>
+      api.updateInboundWebhook(webhook.id, data),
+    onSuccess: async () => {
+      toast.success("Inbound webhook updated");
+      await onSuccess();
+    },
+    onError: () => toast.error("Failed to update inbound webhook"),
+  });
+
+  const handleStreamChange = (nextVal: string) => {
+    setStreamId(nextVal);
+    if (nextVal) {
+      setScopes((prev) =>
+        prev.includes("playbooks:trigger")
+          ? prev
+          : [...prev, "playbooks:trigger"],
+      );
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scopes.length) {
+      toast.error("Select at least one permission scope");
+      return;
+    }
+    updateMutation.mutate({
+      name,
+      description: description || undefined,
+      is_active: isActive,
+      organization_id: organizationId ? parseInt(organizationId, 10) : null,
+      stream_id: streamId ? parseInt(streamId, 10) : null,
+      scopes,
+    });
+  };
+
+  const hasCurrentStreamInList =
+    Boolean(webhook.stream_id) &&
+    streams.some((s) => s.id === webhook.stream_id);
+  const hasCurrentOrgInList =
+    Boolean(webhook.organization_id) &&
+    organizations.some((o) => o.id === webhook.organization_id);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-white">
+              Edit Inbound Webhook
+            </h2>
+            <Button size="sm" variant="ghost" onClick={onClose}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4"
+            data-testid="edit-inbound-webhook-form"
+          >
+            <Input
+              id="edit-inbound-name"
+              label="Name"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Input
+              id="edit-inbound-description"
+              label="Description (optional)"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Receives production alerts"
+            />
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="w-4 h-4 bg-slate-900 border-slate-700 rounded text-primary-500"
+                  data-testid="edit-inbound-is-active"
+                />
+                <span className="text-sm font-medium text-slate-300">
+                  Active
+                </span>
+              </label>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                id="edit-inbound-stream-id"
+                data-testid="edit-inbound-stream-select"
+                label="Linked Playbook (optional)"
+                value={streamId}
+                onChange={(e) => handleStreamChange(e.target.value)}
+              >
+                <option value="">None</option>
+                {webhook.stream_id && !hasCurrentStreamInList && (
+                  <option value={String(webhook.stream_id)}>
+                    Playbook #{webhook.stream_id}
+                  </option>
+                )}
+                {streams.map((stream) => (
+                  <option key={stream.id} value={String(stream.id)}>
+                    {stream.name} (#{stream.id})
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                id="edit-inbound-organization-id"
+                data-testid="edit-inbound-organization-select"
+                label="Default Organization (optional)"
+                value={organizationId}
+                onChange={(e) => setOrganizationId(e.target.value)}
+              >
+                <option value="">None</option>
+                {webhook.organization_id && !hasCurrentOrgInList && (
+                  <option value={String(webhook.organization_id)}>
+                    Organization #{webhook.organization_id}
+                  </option>
+                )}
+                {organizations.map((org) => (
+                  <option key={org.id} value={String(org.id)}>
+                    {org.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <InboundScopeSelector
+              options={scopeOptions}
+              selectedScopes={scopes}
+              onChange={setScopes}
+            />
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                isLoading={updateMutation.isPending}
+                disabled={scopes.length === 0}
+                data-testid="save-inbound-webhook-button"
+              >
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function buildCurlSamplePayload(webhook: InboundWebhookConfig): string {
+  const granted = webhook.scopes?.length ? webhook.scopes : ["events:log"];
+  if (granted.includes("playbooks:trigger") && webhook.stream_id) {
+    return JSON.stringify({
+      action: "playbooks:trigger",
+      stream_id: webhook.stream_id,
+      input: { event: "trigger" },
+    });
+  }
+  if (granted.includes("playbooks:trigger")) {
+    return JSON.stringify({
+      action: "playbooks:trigger",
+      playbook_id: 1,
+      input: { event: "trigger" },
+    });
+  }
+  if (granted.includes("issues:create")) {
+    return JSON.stringify({
+      action: "issues:create",
+      data: { title: "Alert from external system", priority: "high" },
+    });
+  }
+  return JSON.stringify({ event: "test" });
 }
 
 function RevealInboundCredentialsModal({
@@ -1081,10 +1836,14 @@ function RevealInboundCredentialsModal({
     credentials.username || "",
     credentials.password || "",
   ].join(":");
+  const samplePayload = buildCurlSamplePayload(webhook);
   const curlExample =
     credentials.auth_type === "bearer"
-      ? `curl -X POST "${receiveUrl}" \\\n  -H "Authorization: Bearer ${credentials.bearer_token}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"event": "test"}'`
-      : `curl -X POST "${receiveUrl}" \\\n  -u "${basicCreds}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"event": "test"}'`;
+      ? `curl -X POST "${receiveUrl}" \\\n  -H "Authorization: Bearer ${credentials.bearer_token}" \\\n  -H "Content-Type: application/json" \\\n  -d '${samplePayload}'`
+      : `curl -X POST "${receiveUrl}" \\\n  -u "${basicCreds}" \\\n  -H "Content-Type: application/json" \\\n  -d '${samplePayload}'`;
+  const grantedScopes = webhook.scopes?.length
+    ? webhook.scopes
+    : ["events:log"];
 
   const copyValue = async (value: string, label: string) => {
     try {
@@ -1112,6 +1871,22 @@ function RevealInboundCredentialsModal({
           <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300">
             Save these credentials now. They are hashed before storage and
             cannot be viewed again (you can rotate them at any time).
+          </div>
+
+          <div>
+            <span className="block text-xs font-medium text-slate-400 mb-1.5">
+              Granted Scopes
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {grantedScopes.map((sc) => (
+                <span
+                  key={sc}
+                  className={`px-2 py-0.5 text-xs font-mono rounded ${scopeBadgeClass(sc)}`}
+                >
+                  {sc}
+                </span>
+              ))}
+            </div>
           </div>
 
           <div>
@@ -1227,6 +2002,13 @@ function RevealInboundCredentialsModal({
   );
 }
 
+function eventStatusClass(status: string): string {
+  if (status === "forbidden" || status === "failed" || status === "invalid") {
+    return "text-red-400";
+  }
+  return "text-emerald-400";
+}
+
 function InboundEventsModal({
   webhook,
   onClose,
@@ -1269,17 +2051,36 @@ function InboundEventsModal({
                   key={ev.id}
                   className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 space-y-2"
                 >
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>
-                      Event #{ev.id} •{" "}
-                      <span className="text-emerald-400">{ev.status}</span>
-                      {ev.source_ip ? ` • ${ev.source_ip}` : ""}
+                  <div className="flex items-center justify-between gap-2 flex-wrap text-xs text-slate-400">
+                    <span className="flex items-center gap-2 flex-wrap">
+                      <span>Event #{ev.id}</span>
+                      <span>•</span>
+                      <span className={eventStatusClass(ev.status)}>
+                        {ev.status}
+                      </span>
+                      {ev.action && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-primary-300 border border-slate-700 font-mono">
+                          {ev.action}
+                        </span>
+                      )}
+                      {ev.source_ip ? `• ${ev.source_ip}` : ""}
                     </span>
                     <span>{new Date(ev.received_at).toLocaleString()}</span>
                   </div>
                   <pre className="text-xs font-mono text-slate-300 bg-slate-950 p-2.5 rounded overflow-x-auto max-h-48">
                     {JSON.stringify(ev.payload, null, 2)}
                   </pre>
+                  {ev.action_result !== null &&
+                    ev.action_result !== undefined && (
+                      <div>
+                        <span className="block text-[11px] font-medium text-slate-400 mb-1">
+                          Action Result
+                        </span>
+                        <pre className="text-xs font-mono text-slate-300 bg-slate-950 p-2.5 rounded overflow-x-auto max-h-40">
+                          {JSON.stringify(ev.action_result, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                 </div>
               ))}
             </div>
