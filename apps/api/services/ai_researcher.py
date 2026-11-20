@@ -9,13 +9,18 @@ from typing import Any
 
 import httpx
 
-from apps.api.auth.jwt_handler import generate_service_researcher_token
+from apps.api.auth.jwt_handler import (
+    _is_valid_read_scope,
+    generate_service_researcher_token,
+    get_service_researcher_read_scopes,
+)
 from apps.api.common.modules.licensing import module_licensed
 from apps.api.common.modules.tenant_toggle import is_module_enabled
 from apps.api.modules import MODULES
 from apps.mcp.client import ElderAPIError, ElderClient
 from apps.mcp.registry import (
     TOOL_BY_NAME,
+    ToolDefinition,
     get_tools,
     invoke_tool,
     to_ollama_tools,
@@ -118,6 +123,77 @@ class OllamaUnavailableError(Exception):
 
 class AIResearchValidationError(Exception):
     """Raised when an AI research request payload is invalid."""
+
+
+class AIResearchPermissionError(Exception):
+    """Raised when the caller lacks required permissions or identity for AI research."""
+
+
+_TOOL_SCOPE_OVERRIDES: dict[str, str] = {
+    "universal_search": "ai:read",
+    "search_graph": "ai:read",
+    "resolve_ref": "ai:read",
+    "get_ref_backlinks": "ai:read",
+    "lookup_village_id": "infrastructure:read",
+    "list_audit_logs": "audit:read",
+    "list_inbound_webhooks": "webhooks:read",
+    "list_identities": "users:read",
+    "get_identity": "users:read",
+    "list_identity_groups": "users:read",
+    "list_backups": "backup:read",
+    "get_backup_stats": "backup:read",
+    "list_system_logs": "logs:read",
+}
+
+
+def intersect_caller_read_scopes(
+    caller_scopes: Iterable[str] | str | None,
+) -> list[str]:
+    """Return sorted read-only scopes permitted by both caller and registered catalog."""
+    if caller_scopes is None:
+        return []
+    if isinstance(caller_scopes, str):
+        normalized = [s.strip() for s in caller_scopes.split() if s.strip()]
+    else:
+        normalized = [
+            s.strip() for s in caller_scopes if isinstance(s, str) and s.strip()
+        ]
+    if not normalized:
+        return []
+
+    catalog = set(get_service_researcher_read_scopes())
+    if "*:read" in normalized:
+        return sorted(catalog)
+    return sorted({s for s in normalized if _is_valid_read_scope(s) and s in catalog})
+
+
+def get_tool_required_scope(tool: ToolDefinition) -> str | None:
+    """Return the read-only OIDC scope required by *tool*'s Elder API endpoint."""
+    if not tool.read_only:
+        return None
+    if tool.name in _TOOL_SCOPE_OVERRIDES:
+        return _TOOL_SCOPE_OVERRIDES[tool.name]
+    if tool.required_module:
+        return f"{tool.required_module}:read"
+    return None
+
+
+def filter_tools_by_scopes(
+    tools: Iterable[ToolDefinition],
+    allowed_scopes: Iterable[str],
+) -> list[ToolDefinition]:
+    """Filter *tools* to read-only tools whose endpoint scope is in *allowed_scopes*."""
+    allowed_set = {
+        s.strip() for s in allowed_scopes if isinstance(s, str) and s.strip()
+    }
+    filtered: list[ToolDefinition] = []
+    for tool in tools:
+        if not tool.read_only:
+            continue
+        required_scope = get_tool_required_scope(tool)
+        if required_scope is not None and required_scope in allowed_set:
+            filtered.append(tool)
+    return filtered
 
 
 def _citation_url(resource_type: str, item: dict[str, Any], item_id: Any) -> str:
@@ -342,8 +418,13 @@ def _make_async_client(
     return httpx.AsyncClient(timeout=timeout)
 
 
-async def get_ai_researcher_config(app: Any, tenant_id: int) -> dict[str, Any]:
-    """Inspect Ollama reachability, installed models, and tenant-scoped MCP tools."""
+async def get_ai_researcher_config(
+    app: Any,
+    tenant_id: int,
+    *,
+    caller_scopes: Iterable[str] | str | None = None,
+) -> dict[str, Any]:
+    """Inspect Ollama reachability, installed models, and tenant/scope-filtered MCP tools."""
     ollama_url = str(app.config.get("OLLAMA_URL") or DEFAULT_OLLAMA_URL).rstrip("/")
     default_model = str(
         app.config.get("AI_RESEARCHER_MODEL") or DEFAULT_AI_RESEARCHER_MODEL
@@ -352,6 +433,9 @@ async def get_ai_researcher_config(app: Any, tenant_id: int) -> dict[str, Any]:
 
     enabled_modules = resolve_effective_modules(app, tenant_id)
     tools = get_tools(enabled_modules=enabled_modules, read_only=True)
+    if caller_scopes is not None:
+        effective_scopes = intersect_caller_read_scopes(caller_scopes)
+        tools = filter_tools_by_scopes(tools, effective_scopes)
 
     ollama_transport = (
         app.extensions.get("ai_researcher_ollama_transport")
@@ -435,6 +519,9 @@ async def run_ai_research(
     tenant_id: int,
     *,
     query: str,
+    caller_sub: str,
+    caller_scopes: Iterable[str] | str | None,
+    caller_username: str | None = None,
     model: str | None = None,
     history: Iterable[dict[str, Any]] | None = None,
     max_steps: int | None = None,
@@ -442,6 +529,18 @@ async def run_ai_research(
     elder_transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[str, Any]:
     """Run a multi-step Ollama ``/api/chat`` tool-calling loop over read-only MCP tools."""
+    if isinstance(caller_sub, bool) or caller_sub is None:
+        raise AIResearchPermissionError("Authenticated caller identity is required")
+    caller_sub_clean = str(caller_sub).strip()
+    if not caller_sub_clean:
+        raise AIResearchPermissionError("Authenticated caller identity is required")
+
+    effective_scopes = intersect_caller_read_scopes(caller_scopes)
+    if not effective_scopes or "ai:read" not in effective_scopes:
+        raise AIResearchPermissionError(
+            "Caller lacks required 'ai:read' scope for AI research"
+        )
+
     cleaned_query = (query or "").strip()
     if not cleaned_query:
         raise AIResearchValidationError("Research query must not be empty")
@@ -462,13 +561,17 @@ async def run_ai_research(
     ).rstrip("/")
 
     effective_modules = resolve_effective_modules(app, tenant_id)
-    allowed_tools = get_tools(enabled_modules=effective_modules, read_only=True)
+    module_tools = get_tools(enabled_modules=effective_modules, read_only=True)
+    allowed_tools = filter_tools_by_scopes(module_tools, effective_scopes)
+    allowed_tool_names = {tool.name for tool in allowed_tools}
     ollama_tools = to_ollama_tools(allowed_tools)
 
-    override_token = str(app.config.get("AI_RESEARCHER_SERVICE_TOKEN") or "").strip()
-    service_token = override_token or generate_service_researcher_token(
+    service_token = generate_service_researcher_token(
         tenant_id=tenant_id,
+        scopes=effective_scopes,
         ttl_seconds=300,
+        caller_sub=caller_sub_clean,
+        caller_username=caller_username,
     )
 
     if ollama_transport is None and hasattr(app, "extensions"):
@@ -549,6 +652,7 @@ async def run_ai_research(
                     "ai_researcher_tool_call",
                     extra={
                         "tenant_id": tenant_id,
+                        "caller_sub": caller_sub_clean,
                         "model": selected_model,
                         "step": step_idx,
                         "tool": tool_name,
@@ -556,6 +660,10 @@ async def run_ai_research(
                 )
 
                 try:
+                    if tool_name not in allowed_tool_names:
+                        raise PermissionError(
+                            f"Tool {tool_name!r} is not permitted for caller scopes"
+                        )
                     result = await invoke_tool(
                         tool_name,
                         elder_client,

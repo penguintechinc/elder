@@ -1,5 +1,7 @@
 """Elder RBAC — roles, scopes, and permission enforcement via penguin-aaa."""
 
+from typing import Any
+
 from penguin_aaa.authz.rbac import RBACEnforcer, Role
 
 # ---------------------------------------------------------------------------
@@ -7,58 +9,100 @@ from penguin_aaa.authz.rbac import RBACEnforcer, Role
 # ---------------------------------------------------------------------------
 
 _OBSERVER_SCOPES = [
+    "access_reviews:read",
     "ai:read",
     "audit:read",
     "certificates:read",
     "data-stores:read",
     "dependencies:read",
+    "diagrams:read",
     "discovery:read",
+    "documents:read",
     "entities:read",
+    "flows:read",
+    "helpdesk:read",
     "iam:read",
+    "infrastructure:read",
+    "ipam:read",
     "issues:read",
     "keys:read",
     "networking:read",
     "organizations:read",
+    "pages:read",
     "projects:read",
     "sbom:read",
     "secrets:read",
+    "services_oncall:read",
     "software:read",
+    "streams:read",
     "vulnerabilities:read",
     "webhooks:read",
+    "webhooks_alerting:read",
 ]
 
 _EDITOR_SCOPES = _OBSERVER_SCOPES + [
+    "access_reviews:write",
     "ai:write",
     "certificates:write",
     "data-stores:write",
     "dependencies:write",
+    "diagrams:write",
     "discovery:write",
+    "documents:write",
     "entities:write",
+    "flows:approve",
+    "flows:execute",
+    "flows:write",
+    "helpdesk:write",
     "iam:write",
+    "infrastructure:write",
+    "ipam:write",
     "issues:write",
     "keys:write",
     "networking:write",
     "organizations:write",
+    "pages:write",
     "projects:write",
     "sbom:write",
     "secrets:write",
+    "services_oncall:write",
     "software:write",
+    "streams:execute",
+    "streams:write",
     "vulnerabilities:write",
     "webhooks:write",
+    "webhooks_alerting:write",
     "users:read",
 ]
 
 _ADMIN_SCOPES = _EDITOR_SCOPES + [
+    "access_reviews:admin",
     "ai:admin",
     "audit:write",
+    "backup:read",
     "config:write",
+    "diagrams:admin",
+    "discovery:admin",
+    "documents:admin",
     "entities:delete",
+    "flows:admin",
+    "helpdesk:admin",
+    "infrastructure:admin",
+    "ipam:admin",
+    "issues:admin",
     "issues:delete",
     "keys:delete",
+    "logs:read",
     "organizations:delete",
+    "pages:admin",
+    "sbom:admin",
+    "secrets:admin",
     "secrets:delete",
+    "services_oncall:admin",
+    "streams:admin",
     "users:write",
     "users:delete",
+    "webhooks_alerting:admin",
 ]
 
 # ---------------------------------------------------------------------------
@@ -126,9 +170,32 @@ def check_org_permission(user, permission_name: str, org_id: int) -> bool:
     return check_permission(user, permission_name)
 
 
+_ROLE_ALIASES: dict[str, str] = {
+    "observer": "observer",
+    "reader": "observer",
+    "viewer": "observer",
+    "support": "observer",
+    "editor": "editor",
+    "maintainer": "editor",
+    "admin": "admin",
+    "superadmin": "admin",
+}
+
+
+def resolve_portal_effective_role(global_role: Any, tenant_role: Any) -> str:
+    """Compute a portal user's effective role from global_role / tenant_role."""
+    raw_global = global_role.strip() if isinstance(global_role, str) else ""
+    raw_tenant = tenant_role.strip() if isinstance(tenant_role, str) else ""
+    effective = (raw_global or raw_tenant or "observer").lower()
+    if effective == "superadmin":
+        return "admin"
+    return effective
+
+
 def role_scopes(portal_role: str) -> list[str]:
     """Return the scope list for a portal_role string, defaulting to observer."""
-    role = portal_role if portal_role in ("observer", "editor", "admin") else "observer"
+    normalized = portal_role.strip().lower() if isinstance(portal_role, str) else ""
+    role = _ROLE_ALIASES.get(normalized, "observer")
     try:
         return enforcer.scopes_for_role(role)
     except KeyError:
