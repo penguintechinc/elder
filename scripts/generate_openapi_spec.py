@@ -32,9 +32,16 @@ suite, or against a local dev DATABASE_URL/REDIS_URL.
 import asyncio
 import json
 import os
+import re
 import sys
 
+import quart_schema.openapi
 import yaml
+
+# Fix quart-schema's PATH_RE (`<(?:[^:]*:)?([^>]+)>`) which greedily spans across
+# `/` and `>` when a route mixes an untyped `<param>` followed by a typed
+# `<type:param>` (e.g. `/<slug>/collections/<int:collection_id>`).
+quart_schema.openapi.PATH_RE = re.compile(r"<(?:[^:>]*:)?([^>]+)>")
 
 # Add parent directory to path (matches scripts/seed_cloud_discovery.py)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
