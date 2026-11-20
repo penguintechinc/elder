@@ -23,6 +23,7 @@ from apps.api.auth.jwt_handler import (
     generate_token,
     verify_token,
 )
+from apps.api.common.modules.tenant_toggle import set_module_enabled
 from apps.api.main import create_app
 from apps.api.services.ai_researcher import resolve_effective_modules
 from apps.mcp.auth import ElderAuthError, ElderSession
@@ -396,6 +397,15 @@ async def test_service_researcher_jwt_validation_and_strict_enforcement(app) -> 
 @pytest.mark.asyncio
 async def test_ai_researcher_config_module_gating_and_ollama_status(app) -> None:
     """Config endpoint reflects tenant module toggles, Ollama tags, and unreachable state cleanly."""
+    sentinel = object()
+    prior_ollama_transport = app.extensions.get(
+        "ai_researcher_ollama_transport", sentinel
+    )
+    redis_client = app.extensions.get("module_redis")
+    prior_had_row = False
+    prior_enabled = True
+    prior_settings = None
+
     async with app.app_context():
         db = app.db
         user_headers = _seed_user_headers(db, tenant_id=1)
@@ -410,59 +420,108 @@ async def test_ai_researcher_config_module_gating_and_ollama_status(app) -> None
             .select()
             .first()
         )
-        if existing:
-            db(db.tenant_modules.id == existing.id).update(enabled=False)
-        else:
-            db.tenant_modules.insert(
-                tenant_id=1,
-                module_name="sbom",
-                enabled=False,
+        if existing is not None:
+            prior_had_row = True
+            prior_enabled = bool(existing.enabled)
+            prior_settings = existing.settings
+
+    try:
+        async with app.app_context():
+            db = app.db
+            if redis_client is not None:
+                set_module_enabled(db, redis_client, 1, "sbom", False)
+            elif prior_had_row:
+                db(
+                    (db.tenant_modules.tenant_id == 1)
+                    & (db.tenant_modules.module_name == "sbom")
+                ).update(enabled=False)
+            else:
+                db.tenant_modules.insert(
+                    tenant_id=1,
+                    module_name="sbom",
+                    enabled=False,
+                )
+            db.commit()
+
+            reduced_modules = resolve_effective_modules(app, tenant_id=1)
+            assert "sbom" not in reduced_modules
+            expected_tool_count = len(
+                get_tools(enabled_modules=reduced_modules, read_only=True)
             )
-        db.commit()
 
-        reduced_modules = resolve_effective_modules(app, tenant_id=1)
-        assert "sbom" not in reduced_modules
-        expected_tool_count = len(
-            get_tools(enabled_modules=reduced_modules, read_only=True)
+        app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+            lambda req: httpx.Response(
+                200,
+                json={"models": [{"name": "gemma4:e4b"}, {"name": "llama3.2:latest"}]},
+            )
         )
+        async with app.test_client() as test_cli:
+            resp_ok = await test_cli.get(
+                "/api/v1/search/ai-research/config", headers=user_headers
+            )
+            assert resp_ok.status_code == 200
+            cfg = await resp_ok.get_json()
+            assert cfg["default_model"] == "gemma4:e4b"
+            assert cfg["ollama_reachable"] is True
+            assert cfg["ollama_error"] is None
+            assert cfg["mcp_tool_count"] == expected_tool_count
+            assert "sbom" not in cfg["enabled_modules"]
+            assert "gemma4:e4b" in cfg["available_models"]
 
-    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
-        lambda req: httpx.Response(
-            200,
-            json={"models": [{"name": "gemma4:e4b"}, {"name": "llama3.2:latest"}]},
-        )
-    )
-    async with app.test_client() as test_cli:
-        resp_ok = await test_cli.get(
-            "/api/v1/search/ai-research/config", headers=user_headers
-        )
-        assert resp_ok.status_code == 200
-        cfg = await resp_ok.get_json()
-        assert cfg["default_model"] == "gemma4:e4b"
-        assert cfg["ollama_reachable"] is True
-        assert cfg["ollama_error"] is None
-        assert cfg["mcp_tool_count"] == expected_tool_count
-        assert "sbom" not in cfg["enabled_modules"]
-        assert "gemma4:e4b" in cfg["available_models"]
+        def _unreachable(_req: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("connection refused")
 
-    def _unreachable(_req: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("connection refused")
-
-    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(_unreachable)
-    async with app.test_client() as test_cli:
-        resp_down = await test_cli.get(
-            "/api/v1/search/ai-research/config", headers=user_headers
+        app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+            _unreachable
         )
-        assert resp_down.status_code == 200
-        down_cfg = await resp_down.get_json()
-        assert down_cfg["ollama_reachable"] is False
-        assert down_cfg["ollama_error"] is not None
-        assert "connection refused" in down_cfg["ollama_error"]
+        async with app.test_client() as test_cli:
+            resp_down = await test_cli.get(
+                "/api/v1/search/ai-research/config", headers=user_headers
+            )
+            assert resp_down.status_code == 200
+            down_cfg = await resp_down.get_json()
+            assert down_cfg["ollama_reachable"] is False
+            assert down_cfg["ollama_error"] is not None
+            assert "connection refused" in down_cfg["ollama_error"]
+    finally:
+        if prior_ollama_transport is sentinel:
+            app.extensions.pop("ai_researcher_ollama_transport", None)
+        else:
+            app.extensions["ai_researcher_ollama_transport"] = prior_ollama_transport
+
+        async with app.app_context():
+            db = app.db
+            if prior_had_row:
+                if redis_client is not None:
+                    set_module_enabled(
+                        db, redis_client, 1, "sbom", prior_enabled, prior_settings
+                    )
+                else:
+                    db(
+                        (db.tenant_modules.tenant_id == 1)
+                        & (db.tenant_modules.module_name == "sbom")
+                    ).update(enabled=prior_enabled, settings=prior_settings)
+            else:
+                db(
+                    (db.tenant_modules.tenant_id == 1)
+                    & (db.tenant_modules.module_name == "sbom")
+                ).delete()
+                if redis_client is not None:
+                    redis_client.delete("elder:modtoggle:1")
+            db.commit()
 
 
 @pytest.mark.asyncio
 async def test_ai_researcher_multistep_tool_calling_and_fail_loud_503(app) -> None:
     """Multi-step Ollama /api/chat invokes Elder MCP tools with service JWT and fails loud on 503."""
+    sentinel = object()
+    prior_ollama_transport = app.extensions.get(
+        "ai_researcher_ollama_transport", sentinel
+    )
+    prior_elder_transport = app.extensions.get(
+        "ai_researcher_elder_transport", sentinel
+    )
+
     async with app.app_context():
         db = app.db
         user_headers = _seed_user_headers(db, tenant_id=1)
@@ -506,55 +565,67 @@ async def test_ai_researcher_multistep_tool_calling_and_fail_loud_503(app) -> No
             },
         )
 
-    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
-        _ollama_handler
-    )
-    app.extensions["ai_researcher_elder_transport"] = httpx.ASGITransport(app=app)
-
-    async with app.test_client() as test_cli:
-        resp = await test_cli.post(
-            "/api/v1/search/ai-research",
-            headers=user_headers,
-            json={"query": f"Find entity {entity_name}"},
+    try:
+        app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+            _ollama_handler
         )
-        assert resp.status_code == 200
-        data = await resp.get_json()
+        app.extensions["ai_researcher_elder_transport"] = httpx.ASGITransport(app=app)
 
-    assert len(chat_requests) == 2
-    assert chat_requests[0]["model"] == "gemma4:e4b"
-    offered_names = {t["function"]["name"] for t in chat_requests[0]["tools"]}
-    assert "search_entities" in offered_names
-    assert "update_entity" not in offered_names
-    assert "create_relationship" not in offered_names
+        async with app.test_client() as test_cli:
+            resp = await test_cli.post(
+                "/api/v1/search/ai-research",
+                headers=user_headers,
+                json={"query": f"Find entity {entity_name}"},
+            )
+            assert resp.status_code == 200
+            data = await resp.get_json()
 
-    tool_msgs = [m for m in chat_requests[1]["messages"] if m["role"] == "tool"]
-    assert len(tool_msgs) == 1
-    assert entity_name in tool_msgs[0]["content"]
+        assert len(chat_requests) == 2
+        assert chat_requests[0]["model"] == "gemma4:e4b"
+        offered_names = {t["function"]["name"] for t in chat_requests[0]["tools"]}
+        assert "search_entities" in offered_names
+        assert "update_entity" not in offered_names
+        assert "create_relationship" not in offered_names
 
-    assert entity_name in data["answer"]
-    assert len(data["steps"]) == 1
-    assert data["steps"][0]["tool"] == "search_entities"
-    assert data["steps"][0]["status"] == "ok"
+        tool_msgs = [m for m in chat_requests[1]["messages"] if m["role"] == "tool"]
+        assert len(tool_msgs) == 1
+        assert entity_name in tool_msgs[0]["content"]
 
-    entity_citations = [
-        c
-        for c in data["citations"]
-        if c["resource_type"] == "entity" and int(c["id"]) == entity_id
-    ]
-    assert len(entity_citations) == 1
-    assert entity_citations[0]["url"] == f"/entities/{entity_id}"
-    assert entity_citations[0]["name"] == entity_name
+        assert entity_name in data["answer"]
+        assert len(data["steps"]) == 1
+        assert data["steps"][0]["tool"] == "search_entities"
+        assert data["steps"][0]["status"] == "ok"
 
-    def _ollama_down(_request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("dial tcp: connection refused")
+        entity_citations = [
+            c
+            for c in data["citations"]
+            if c["resource_type"] == "entity" and int(c["id"]) == entity_id
+        ]
+        assert len(entity_citations) == 1
+        assert entity_citations[0]["url"] == f"/entities/{entity_id}"
+        assert entity_citations[0]["name"] == entity_name
 
-    app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(_ollama_down)
-    async with app.test_client() as test_cli:
-        resp_503 = await test_cli.post(
-            "/api/v1/search/ai-research",
-            headers=user_headers,
-            json={"query": "Check system status"},
+        def _ollama_down(_request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("dial tcp: connection refused")
+
+        app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
+            _ollama_down
         )
-        assert resp_503.status_code == 503
-        err_data = await resp_503.get_json()
-        assert err_data["error"] == "OLLAMA_UNAVAILABLE"
+        async with app.test_client() as test_cli:
+            resp_503 = await test_cli.post(
+                "/api/v1/search/ai-research",
+                headers=user_headers,
+                json={"query": "Check system status"},
+            )
+            assert resp_503.status_code == 503
+            err_data = await resp_503.get_json()
+            assert err_data["error"] == "OLLAMA_UNAVAILABLE"
+    finally:
+        if prior_ollama_transport is sentinel:
+            app.extensions.pop("ai_researcher_ollama_transport", None)
+        else:
+            app.extensions["ai_researcher_ollama_transport"] = prior_ollama_transport
+        if prior_elder_transport is sentinel:
+            app.extensions.pop("ai_researcher_elder_transport", None)
+        else:
+            app.extensions["ai_researcher_elder_transport"] = prior_elder_transport
