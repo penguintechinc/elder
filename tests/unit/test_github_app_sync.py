@@ -471,6 +471,8 @@ class TestInstallationTokenExchangeAndLifecycle:
         )
 
         secret_token = "ghs_super_secret_installation_token_999"
+        future_exp = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
+        future_exp_z = future_exp.isoformat().replace("+00:00", "Z")
         seen_paths: list[str] = []
 
         def handler(req: httpx.Request) -> httpx.Response:
@@ -480,7 +482,7 @@ class TestInstallationTokenExchangeAndLifecycle:
                     201,
                     json={
                         "token": secret_token,
-                        "expires_at": "2026-11-20T20:00:00Z",
+                        "expires_at": future_exp_z,
                         "permissions": {
                             "issues": "write",
                             "metadata": "read",
@@ -508,7 +510,7 @@ class TestInstallationTokenExchangeAndLifecycle:
         assert detail["success"] is True
         assert detail["auth_mode"] == "github_app"
         assert detail["repo_full_name"] == "penguintechinc/elder"
-        assert detail["token_expires_at"] == "2026-11-20T20:00:00+00:00"
+        assert detail["token_expires_at"] == future_exp.isoformat()
         assert detail["permissions"] == {
             "issues": "write",
             "metadata": "read",
@@ -781,13 +783,20 @@ class TestGitHubAppApiRoutesValidationAndRedaction:
         assert db.sync_configs[cfg_id].config_json["private_key"] == pkcs8_pem
 
         # Test /test and /trigger endpoints with GitHub App config
+        route_future_exp_z = (
+            (datetime.now(UTC) + timedelta(hours=2))
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )
+
         def mock_transport_handler(req: httpx.Request) -> httpx.Response:
             if req.url.path == "/app/installations/445566/access_tokens":
                 return httpx.Response(
                     201,
                     json={
                         "token": "ghs_route_test_tok",
-                        "expires_at": "2026-11-20T22:00:00Z",
+                        "expires_at": route_future_exp_z,
                         "permissions": {"issues": "write", "metadata": "read"},
                     },
                 )
