@@ -15,6 +15,17 @@ from typing import Any
 from penguin_libs.pydantic.base import ImmutableModel
 
 
+class DataStoreLabelResponse(ImmutableModel):
+    """A label attached to a data store (from the shared `labels` table)."""
+
+    id: int
+    name: str
+    color: str
+    description: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
 class DataStoreResponse(ImmutableModel):
     """A single data store compliance-inventory record."""
 
@@ -49,6 +60,7 @@ class DataStoreResponse(ImmutableModel):
     village_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    labels: list[DataStoreLabelResponse] = []
 
 
 class DataStoreListResponse(ImmutableModel):
@@ -59,17 +71,6 @@ class DataStoreListResponse(ImmutableModel):
     page: int
     per_page: int
     pages: int
-
-
-class DataStoreLabelResponse(ImmutableModel):
-    """A label attached to a data store (from the shared `labels` table)."""
-
-    id: int
-    name: str
-    color: str
-    description: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
 
 
 class DataStoreLabelListResponse(ImmutableModel):

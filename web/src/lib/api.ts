@@ -2514,6 +2514,8 @@ class ApiClient {
     contains_pci?: boolean;
     compliance_framework?: string;
     poc_identity_id?: number;
+    label_id?: number;
+    label?: string;
     search?: string;
   }) {
     const response = await this.client.get("/data-stores", { params });
@@ -2537,6 +2539,8 @@ class ApiClient {
     contains_pci?: boolean;
     compliance_framework?: string;
     poc_identity_id?: number;
+    label_ids?: number[];
+    metadata?: Record<string, unknown>;
   }) {
     const response = await this.client.post("/data-stores", data);
     return response.data;
@@ -2555,6 +2559,8 @@ class ApiClient {
       contains_pci: boolean;
       compliance_framework: string;
       poc_identity_id: number;
+      label_ids: number[];
+      metadata: Record<string, unknown> | null;
     }>,
   ) {
     const response = await this.client.put(`/data-stores/${id}`, data);
