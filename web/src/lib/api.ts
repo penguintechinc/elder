@@ -2867,6 +2867,48 @@ class ApiClient {
     return response.data;
   }
 
+  async createVulnerability(data: {
+    cve_id: string;
+    title: string;
+    severity: string;
+    cvss_score?: number;
+    description?: string;
+    published_at?: string;
+    source?: string;
+  }) {
+    const response = await this.client.post("/vulnerabilities", data);
+    return response.data;
+  }
+
+  // CSV Bulk Import & Templates
+  async getCsvTemplates() {
+    const response = await this.client.get("/import/templates");
+    return response.data;
+  }
+
+  async downloadCsvTemplate(resource: string): Promise<string> {
+    const response = await this.client.get(
+      `/import/templates/${resource}/download`,
+      { responseType: "text" },
+    );
+    return response.data;
+  }
+
+  async importCsvResource(resource: string, fileOrText: File | string) {
+    if (typeof fileOrText === "string") {
+      const response = await this.client.post(`/import/${resource}`, {
+        csv_text: fileOrText,
+      });
+      return response.data;
+    }
+    const formData = new FormData();
+    formData.append("file", fileOrText);
+    const response = await this.client.post(`/import/${resource}`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  }
+
   async updateVulnerabilityStatus(
     id: number,
     data: Partial<{ status: string }>,
