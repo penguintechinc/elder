@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, FileKey, Trash2, Edit2, Eye } from "lucide-react";
 import toast from "react-hot-toast";
@@ -8,6 +9,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 // Input is used in form configs only, not directly imported for this component
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import type { FormField } from "@/types/form";
 import { Organization } from "@/types";
 
@@ -25,6 +27,7 @@ interface Certificate {
   auto_renew?: boolean;
   certificate_pem?: string;
   description?: string;
+  village_id?: string | null;
 }
 
 interface CertificateResponse {
@@ -107,12 +110,31 @@ export default function Certificates() {
   const [filterCreator, setFilterCreator] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterOrg, setFilterOrg] = useState("");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery({
     queryKey: ["certificates"],
     queryFn: () => api.getCertificates() as Promise<CertificateResponse>,
   });
+
+  useEffect(() => {
+    const certs = data?.certificates || [];
+    if (!highlightId || !certs.length) return;
+    const match = certs.find(
+      (c) => String(c.id) === highlightId || c.village_id === highlightId,
+    );
+    if (!match) return;
+    if (appliedHighlightRef.current !== highlightId) {
+      appliedHighlightRef.current = highlightId;
+      setSelectedCertificate(match);
+      setShowDetailsModal(true);
+    }
+    const el = document.getElementById(`certificate-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.certificates]);
 
   const { data: orgs } = useQuery({
     queryKey: ["organizations"],
@@ -229,17 +251,37 @@ export default function Certificates() {
                 (o: Organization) => o.id === cert.organization_id,
               )?.name || "Unknown";
 
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(cert.id) === highlightId ||
+                  cert.village_id === highlightId),
+            );
+
             return (
-              <Card key={cert.id}>
+              <Card
+                key={cert.id}
+                id={`certificate-${cert.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : undefined
+                }
+              >
                 <CardContent>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
+                      <div className="flex items-center gap-3 mb-3 flex-wrap">
                         <FileKey className="w-5 h-5 text-primary-400" />
                         <div>
-                          <h3 className="text-lg font-semibold text-white">
-                            {cert.name}
-                          </h3>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg font-semibold text-white">
+                              {cert.name}
+                            </h3>
+                            {cert.village_id && (
+                              <VillageIdBadge villageId={cert.village_id} />
+                            )}
+                          </div>
                           {cert.common_name && (
                             <p className="text-sm text-slate-400">
                               CN: {cert.common_name}
@@ -764,10 +806,15 @@ function CertificateDetailsModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">
-              {certificate.name}
-            </h2>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-semibold text-white">
+                {certificate.name}
+              </h2>
+              {certificate.village_id && (
+                <VillageIdBadge villageId={certificate.village_id} />
+              )}
+            </div>
             <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>

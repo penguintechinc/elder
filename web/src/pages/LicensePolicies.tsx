@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Shield } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -6,6 +7,7 @@ import api from '@/lib/api'
 import Button from '@/components/Button'
 import Card, { CardContent } from '@/components/Card'
 import Input from '@/components/Input'
+import VillageIdBadge from '@/components/VillageIdBadge'
 import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
 
 interface LicensePolicy {
@@ -15,6 +17,7 @@ interface LicensePolicy {
   allowed_patterns?: string
   denied_patterns?: string
   is_active: boolean
+  village_id?: string | null
 }
 
 interface LicensePoliciesResponse {
@@ -62,12 +65,25 @@ export default function LicensePolicies() {
   const [search, setSearch] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingPolicy, setEditingPolicy] = useState<LicensePolicy | null>(null)
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
   const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['license-policies', { search }],
     queryFn: () => api.getLicensePolicies({ search }) as Promise<LicensePoliciesResponse>,
   })
+
+  useEffect(() => {
+    const items = data?.items || []
+    if (!highlightId || !items.length) return
+    const match = items.find(
+      (p) => String(p.id) === highlightId || p.village_id === highlightId
+    )
+    if (!match) return
+    const el = document.getElementById(`license-policy-${match.id}`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [highlightId, data?.items])
 
   const createMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) => api.createLicensePolicy(data as Parameters<typeof api.createLicensePolicy>[0]),
@@ -206,16 +222,34 @@ export default function LicensePolicies() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredPolicies?.map((policy: LicensePolicy) => (
-            <Card key={policy.id}>
+          {filteredPolicies?.map((policy: LicensePolicy) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(policy.id) === highlightId ||
+                  policy.village_id === highlightId)
+            )
+            return (
+            <Card
+              key={policy.id}
+              id={`license-policy-${policy.id}`}
+              data-highlighted={isHighlighted ? 'true' : undefined}
+              className={
+                isHighlighted
+                  ? 'ring-2 ring-primary-500 border-primary-500 bg-primary-500/10'
+                  : undefined
+              }
+            >
               <CardContent>
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <Shield className="w-5 h-5 text-primary-500 flex-shrink-0" />
                       <h3 className="text-lg font-semibold text-white truncate">
                         {policy.name}
                       </h3>
+                      {policy.village_id && (
+                        <VillageIdBadge villageId={policy.village_id} />
+                      )}
                       {policy.is_active && (
                         <span className="ml-auto inline-block px-2 py-1 text-xs rounded bg-green-500/20 text-green-400 flex-shrink-0">
                           Active
@@ -279,7 +313,8 @@ export default function LicensePolicies() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 

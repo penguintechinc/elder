@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -27,6 +28,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import SearchableSelect from "@/components/SearchableSelect";
 import Select from "@/components/Select";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import type {
   AIResource,
   AIResourceType,
@@ -376,6 +378,9 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
     emptyFormState(defaultType),
   );
   const [metadataError, setMetadataError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const appliedHighlightRef = useRef<string | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -435,6 +440,27 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
     () => allResourcesData?.items || resources,
     [allResourcesData, resources],
   );
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const match =
+      resources.find(
+        (r) => String(r.id) === highlightId || r.village_id === highlightId,
+      ) ||
+      allResources.find(
+        (r) => String(r.id) === highlightId || r.village_id === highlightId,
+      );
+    if (!match) return;
+    if (activeType === "providers") {
+      setActiveType("");
+    }
+    if (appliedHighlightRef.current !== highlightId) {
+      appliedHighlightRef.current = highlightId;
+      setViewingResource(match);
+    }
+    const el = document.getElementById(`ai-resource-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, resources, allResources, activeType]);
 
   const providerOptions = useMemo(() => {
     const set = new Set<string>(COMMON_PROVIDERS);
@@ -1019,10 +1045,21 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                   {resources.map((resource) => {
                     const statusMeta = STATUS_BADGE[resource.status];
                     const StatusIcon = statusMeta.icon;
+                    const isHighlighted = Boolean(
+                      highlightId &&
+                        (String(resource.id) === highlightId ||
+                          resource.village_id === highlightId),
+                    );
                     return (
                       <tr
                         key={resource.id}
-                        className="hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                        id={`ai-resource-${resource.id}`}
+                        data-highlighted={isHighlighted ? "true" : undefined}
+                        className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 ${
+                          isHighlighted
+                            ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+                            : ""
+                        }`}
                       >
                         <td className="py-3 px-4 font-medium text-slate-900 dark:text-white">
                           <div>{resource.name}</div>
@@ -1030,6 +1067,11 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
                             {orgNameById.get(resource.organization_id) ||
                               `Org #${resource.organization_id}`}
                           </div>
+                          {resource.village_id && (
+                            <div className="mt-1">
+                              <VillageIdBadge villageId={resource.village_id} />
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
@@ -1539,11 +1581,14 @@ export default function AIResources({ defaultType }: AIResourcesProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {renderTypeIcon(viewingResource.resource_type)}
                 <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                   {viewingResource.name}
                 </h3>
+                {viewingResource.village_id && (
+                  <VillageIdBadge villageId={viewingResource.village_id} />
+                )}
               </div>
               <button
                 type="button"

@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -18,6 +19,7 @@ import Card, { CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import type { FormField } from "@/types/form";
 
 // Types
@@ -42,6 +44,7 @@ interface IpamPrefix {
   created_at: string;
   updated_at: string;
   children?: IpamPrefix[];
+  village_id?: string | null;
 }
 
 interface IpamAddress {
@@ -54,6 +57,7 @@ interface IpamAddress {
   organization_id: number;
   created_at: string;
   updated_at: string;
+  village_id?: string | null;
 }
 
 interface IpamVlan {
@@ -66,6 +70,7 @@ interface IpamVlan {
   organization_id: number;
   created_at: string;
   updated_at: string;
+  village_id?: string | null;
 }
 
 type TabType = "prefixes" | "addresses" | "vlans";
@@ -116,9 +121,27 @@ const vlanStatusOptions = [
   { value: "deprecated", label: "Deprecated" },
 ];
 
+function parseIpamTab(raw: string | null): TabType {
+  if (raw === "addresses" || raw === "vlans" || raw === "prefixes") {
+    return raw;
+  }
+  return "prefixes";
+}
+
 export default function IPAM() {
-  const [activeTab, setActiveTab] = useState<TabType>("prefixes");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const highlightId = searchParams.get("highlight");
+  const [activeTab, setActiveTab] = useState<TabType>(() =>
+    parseIpamTab(tabParam),
+  );
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (tabParam) {
+      setActiveTab(parseIpamTab(tabParam));
+    }
+  }, [tabParam]);
   const [organizationFilter, setOrganizationFilter] = useState<
     number | undefined
   >();
@@ -848,6 +871,7 @@ export default function IPAM() {
           data={prefixesData}
           isLoading={prefixesLoading}
           search={search}
+          highlightId={highlightId}
           onEdit={setEditingPrefix}
           onDelete={(id, name) => handleDelete("prefix", id, name)}
           onCreate={() => setShowCreatePrefixModal(true)}
@@ -859,6 +883,7 @@ export default function IPAM() {
           data={addressesData}
           isLoading={addressesLoading}
           search={search}
+          highlightId={highlightId}
           onEdit={setEditingAddress}
           onDelete={(id, name) => handleDelete("address", id, name)}
           onCreate={() => setShowCreateAddressModal(true)}
@@ -870,6 +895,7 @@ export default function IPAM() {
           data={vlansData}
           isLoading={vlansLoading}
           search={search}
+          highlightId={highlightId}
           onEdit={setEditingVlan}
           onDelete={(id, name) => handleDelete("vlan", id, name)}
           onCreate={() => setShowCreateVlanModal(true)}
@@ -1024,19 +1050,49 @@ interface PrefixesTabProps {
   data: { items?: IpamPrefix[] };
   isLoading: boolean;
   search: string;
+  highlightId: string | null;
   onEdit: (prefix: IpamPrefix) => void;
   onDelete: (id: number, name: string) => void;
   onCreate: () => void;
+}
+
+function hasHighlightedDescendant(
+  prefixId: number,
+  childrenMap: Map<number, IpamPrefix[]>,
+  highlightId: string | null,
+): boolean {
+  if (!highlightId) return false;
+  const children = childrenMap.get(prefixId) || [];
+  for (const child of children) {
+    if (String(child.id) === highlightId || child.village_id === highlightId) {
+      return true;
+    }
+    if (hasHighlightedDescendant(child.id, childrenMap, highlightId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function PrefixesTab({
   data,
   isLoading,
   search,
+  highlightId,
   onEdit,
   onDelete,
   onCreate,
 }: PrefixesTabProps) {
+  useEffect(() => {
+    if (!highlightId || !data?.items?.length) return;
+    const match = data.items.find(
+      (p) => String(p.id) === highlightId || p.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`ipam-prefix-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1090,6 +1146,7 @@ function PrefixesTab({
               prefix={prefix}
               childrenMap={childrenMap}
               depth={0}
+              highlightId={highlightId}
               onEdit={onEdit}
               onDelete={onDelete}
             />
@@ -1105,6 +1162,7 @@ interface PrefixTreeNodeProps {
   prefix: IpamPrefix;
   childrenMap: Map<number, IpamPrefix[]>;
   depth: number;
+  highlightId: string | null;
   onEdit: (prefix: IpamPrefix) => void;
   onDelete: (id: number, name: string) => void;
 }
@@ -1113,17 +1171,39 @@ function PrefixTreeNode({
   prefix,
   childrenMap,
   depth,
+  highlightId,
   onEdit,
   onDelete,
 }: PrefixTreeNodeProps) {
-  const [expanded, setExpanded] = useState(false);
+  const shouldAutoExpand = hasHighlightedDescendant(
+    prefix.id,
+    childrenMap,
+    highlightId,
+  );
+  const [expanded, setExpanded] = useState(shouldAutoExpand);
+  useEffect(() => {
+    if (shouldAutoExpand) {
+      setExpanded(true);
+    }
+  }, [shouldAutoExpand]);
+
   const children = childrenMap.get(prefix.id) || [];
   const hasChildren = children.length > 0;
+  const isHighlighted = Boolean(
+    highlightId &&
+      (String(prefix.id) === highlightId || prefix.village_id === highlightId),
+  );
 
   return (
     <div>
       <div
-        className="flex items-center gap-3 px-4 py-3 hover:bg-slate-700/50 transition-colors"
+        id={`ipam-prefix-${prefix.id}`}
+        data-highlighted={isHighlighted ? "true" : undefined}
+        className={`flex items-center gap-3 px-4 py-3 hover:bg-slate-700/50 transition-colors ${
+          isHighlighted
+            ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+            : ""
+        }`}
         style={{ paddingLeft: `${16 + depth * 24}px` }}
       >
         {/* Expand/collapse button */}
@@ -1140,7 +1220,7 @@ function PrefixTreeNode({
 
         {/* Prefix info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <Network className="w-4 h-4 text-primary-400 flex-shrink-0" />
             <span className="font-mono font-medium text-white">
               {prefix.prefix}
@@ -1150,6 +1230,9 @@ function PrefixTreeNode({
             >
               {prefix.status}
             </span>
+            {prefix.village_id && (
+              <VillageIdBadge villageId={prefix.village_id} />
+            )}
             {hasChildren && (
               <span className="text-xs text-slate-500">
                 {children.length} child{children.length !== 1 ? "ren" : ""}
@@ -1194,6 +1277,7 @@ function PrefixTreeNode({
               prefix={child}
               childrenMap={childrenMap}
               depth={depth + 1}
+              highlightId={highlightId}
               onEdit={onEdit}
               onDelete={onDelete}
             />
@@ -1209,6 +1293,7 @@ interface AddressesTabProps {
   data: { items?: IpamAddress[] };
   isLoading: boolean;
   search: string;
+  highlightId: string | null;
   onEdit: (address: IpamAddress) => void;
   onDelete: (id: number, name: string) => void;
   onCreate: () => void;
@@ -1218,10 +1303,21 @@ function AddressesTab({
   data,
   isLoading,
   search,
+  highlightId,
   onEdit,
   onDelete,
   onCreate,
 }: AddressesTabProps) {
+  useEffect(() => {
+    if (!highlightId || !data?.items?.length) return;
+    const match = data.items.find(
+      (a) => String(a.id) === highlightId || a.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`ipam-address-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1277,47 +1373,67 @@ function AddressesTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700">
-            {filteredAddresses.map((address: IpamAddress) => (
-              <tr
-                key={address.id}
-                className="hover:bg-slate-700/50 transition-colors"
-              >
-                <td className="px-4 py-3">
-                  <span className="font-mono text-white">
-                    {address.address}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-300">
-                  {address.dns_name || "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[address.status] || STATUS_COLORS.available}`}
-                  >
-                    {address.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-400 text-sm truncate max-w-xs">
-                  {address.description || "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onEdit(address)}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            {filteredAddresses.map((address: IpamAddress) => {
+              const isHighlighted = Boolean(
+                highlightId &&
+                  (String(address.id) === highlightId ||
+                    address.village_id === highlightId),
+              );
+              return (
+                <tr
+                  key={address.id}
+                  id={`ipam-address-${address.id}`}
+                  data-highlighted={isHighlighted ? "true" : undefined}
+                  className={`hover:bg-slate-700/50 transition-colors ${
+                    isHighlighted
+                      ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+                      : ""
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <div>
+                      <span className="font-mono text-white">
+                        {address.address}
+                      </span>
+                      {address.village_id && (
+                        <div className="mt-1">
+                          <VillageIdBadge villageId={address.village_id} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">
+                    {address.dns_name || "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[address.status] || STATUS_COLORS.available}`}
                     >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(address.id, address.address)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {address.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400 text-sm truncate max-w-xs">
+                    {address.description || "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onEdit(address)}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(address.id, address.address)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </CardContent>
@@ -1330,6 +1446,7 @@ interface VlansTabProps {
   data: { items?: IpamVlan[] };
   isLoading: boolean;
   search: string;
+  highlightId: string | null;
   onEdit: (vlan: IpamVlan) => void;
   onDelete: (id: number, name: string) => void;
   onCreate: () => void;
@@ -1339,10 +1456,21 @@ function VlansTab({
   data,
   isLoading,
   search,
+  highlightId,
   onEdit,
   onDelete,
   onCreate,
 }: VlansTabProps) {
+  useEffect(() => {
+    if (!highlightId || !data?.items?.length) return;
+    const match = data.items.find(
+      (v) => String(v.id) === highlightId || v.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`ipam-vlan-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1398,45 +1526,65 @@ function VlansTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700">
-            {filteredVlans.map((vlan: IpamVlan) => (
-              <tr
-                key={vlan.id}
-                className="hover:bg-slate-700/50 transition-colors"
-              >
-                <td className="px-4 py-3">
-                  <span className="font-mono text-white">{vlan.vid}</span>
-                </td>
-                <td className="px-4 py-3 text-white font-medium">
-                  {vlan.name}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[vlan.status] || STATUS_COLORS.available}`}
-                  >
-                    {vlan.status}
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-slate-400 text-sm truncate max-w-xs">
-                  {vlan.description || "-"}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => onEdit(vlan)}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            {filteredVlans.map((vlan: IpamVlan) => {
+              const isHighlighted = Boolean(
+                highlightId &&
+                  (String(vlan.id) === highlightId ||
+                    vlan.village_id === highlightId),
+              );
+              return (
+                <tr
+                  key={vlan.id}
+                  id={`ipam-vlan-${vlan.id}`}
+                  data-highlighted={isHighlighted ? "true" : undefined}
+                  className={`hover:bg-slate-700/50 transition-colors ${
+                    isHighlighted
+                      ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+                      : ""
+                  }`}
+                >
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-white">{vlan.vid}</span>
+                  </td>
+                  <td className="px-4 py-3 text-white font-medium">
+                    <div>
+                      <span>{vlan.name}</span>
+                      {vlan.village_id && (
+                        <div className="mt-1">
+                          <VillageIdBadge villageId={vlan.village_id} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[vlan.status] || STATUS_COLORS.available}`}
                     >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => onDelete(vlan.id, vlan.name)}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+                      {vlan.status}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-400 text-sm truncate max-w-xs">
+                    {vlan.description || "-"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onEdit(vlan)}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(vlan.id, vlan.name)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </CardContent>

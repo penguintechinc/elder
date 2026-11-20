@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Search, Trash2, ArrowRight, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -9,6 +10,7 @@ import Card, { CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 const RESOURCE_TYPES = [
   { value: "entity", label: "Entity" },
@@ -65,6 +67,7 @@ interface PolymorphicDependency {
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  village_id?: string | null;
 }
 
 // Fetch resources by type with optional search
@@ -179,6 +182,8 @@ export default function Dependencies() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [sourceTypeFilter, setSourceTypeFilter] = useState<string>("");
   const [targetTypeFilter, setTargetTypeFilter] = useState<string>("");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   const { data: dependencies, isLoading } = useQuery({
@@ -310,6 +315,17 @@ export default function Dependencies() {
     }
   };
 
+  useEffect(() => {
+    const items = (dependencies?.items || []) as PolymorphicDependency[];
+    if (!highlightId || !items.length) return;
+    const match = items.find(
+      (d) => String(d.id) === highlightId || d.village_id === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`dependency-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, dependencies?.items]);
+
   const filteredDependencies = dependencies?.items?.filter(
     (dep: PolymorphicDependency) => {
       if (!search) return true;
@@ -395,57 +411,76 @@ export default function Dependencies() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredDependencies?.map((dep: PolymorphicDependency) => (
-            <Card key={dep.id}>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-4 flex-1">
-                    <div className="flex-1">
-                      <div className="text-sm text-slate-400">Source</div>
-                      <div className="text-white font-medium">
-                        {getResourceName(dep.source_type, dep.source_id)}
+          {filteredDependencies?.map((dep: PolymorphicDependency) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(dep.id) === highlightId ||
+                  dep.village_id === highlightId),
+            );
+            return (
+              <Card
+                key={dep.id}
+                id={`dependency-${dep.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : undefined
+                }
+              >
+                <CardContent>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-4 flex-1">
+                      <div className="flex-1">
+                        <div className="text-sm text-slate-400">Source</div>
+                        <div className="text-white font-medium">
+                          {getResourceName(dep.source_type, dep.source_id)}
+                        </div>
+                        <div className="text-xs text-slate-500 capitalize">
+                          {dep.source_type}
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 capitalize">
-                        {dep.source_type}
+                      <div className="flex flex-col items-center">
+                        <ArrowRight className="w-6 h-6 text-primary-500" />
+                        <div className="text-xs text-slate-400 mt-1">
+                          {dep.dependency_type}
+                        </div>
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm text-slate-400">Target</div>
+                        <div className="text-white font-medium">
+                          {getResourceName(dep.target_type, dep.target_id)}
+                        </div>
+                        <div className="text-xs text-slate-500 capitalize">
+                          {dep.target_type}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex flex-col items-center">
-                      <ArrowRight className="w-6 h-6 text-primary-500" />
-                      <div className="text-xs text-slate-400 mt-1">
-                        {dep.dependency_type}
+                    <div className="flex items-center gap-2 ml-4">
+                      {dep.village_id && (
+                        <VillageIdBadge villageId={dep.village_id} />
+                      )}
+                      <div className="text-xs text-slate-500">
+                        {new Date(dep.created_at).toLocaleDateString()}
                       </div>
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm text-slate-400">Target</div>
-                      <div className="text-white font-medium">
-                        {getResourceName(dep.target_type, dep.target_id)}
-                      </div>
-                      <div className="text-xs text-slate-500 capitalize">
-                        {dep.target_type}
-                      </div>
+                      <button
+                        onClick={() =>
+                          handleDelete(
+                            dep.id,
+                            getResourceName(dep.source_type, dep.source_id),
+                            getResourceName(dep.target_type, dep.target_id),
+                          )
+                        }
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    <div className="text-xs text-slate-500">
-                      {new Date(dep.created_at).toLocaleDateString()}
-                    </div>
-                    <button
-                      onClick={() =>
-                        handleDelete(
-                          dep.id,
-                          getResourceName(dep.source_type, dep.source_id),
-                          getResourceName(dep.target_type, dep.target_id),
-                        )
-                      }
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Edit, Trash2, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -13,6 +14,7 @@ import Select from '@/components/Select'
 // ModalFormBuilder and FormConfig not currently used
 import CreateOnCallRotationModal from '@/components/CreateOnCallRotationModal'
 import OnCallRotationDetailModal from '@/components/OnCallRotationDetailModal'
+import VillageIdBadge from '@/components/VillageIdBadge'
 import { Organization } from '@/types'
 
 interface OnCallRotation {
@@ -24,6 +26,7 @@ interface OnCallRotation {
   is_active: boolean
   organization_id?: number
   service_id?: number
+  village_id?: string | null
 }
 
 interface Service {
@@ -62,6 +65,8 @@ export default function OnCallRotations() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingRotation, setEditingRotation] = useState<OnCallRotation | null>(null)
   const [viewingRotation, setViewingRotation] = useState<OnCallRotation | null>(null)
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
   const queryClient = useQueryClient()
 
   const { data: organizations } = useQuery({
@@ -109,6 +114,17 @@ export default function OnCallRotations() {
       deleteMutation.mutate(id)
     })
   }
+
+  useEffect(() => {
+    const items = (data?.items || []) as OnCallRotation[]
+    if (!highlightId || !items.length) return
+    const match = items.find(
+      (r) => String(r.id) === highlightId || r.village_id === highlightId
+    )
+    if (!match) return
+    const el = document.getElementById(`rotation-${match.id}`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [highlightId, data?.items])
 
   const getScopeLabel = (rotation: OnCallRotation) => {
     if (rotation.scope_type === 'organization' && rotation.organization_id) {
@@ -231,41 +247,59 @@ export default function OnCallRotations() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((rotation: OnCallRotation) => (
-            <Card
-              key={rotation.id}
-              className="cursor-pointer hover:border-primary-500/50 transition-colors"
-              onClick={() => setViewingRotation(rotation)}
-            >
-              <CardContent className="pt-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Clock className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                    <h3 className="text-lg font-semibold text-white truncate">
-                      {rotation.name}
-                    </h3>
+          {data?.items?.map((rotation: OnCallRotation) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(rotation.id) === highlightId ||
+                  rotation.village_id === highlightId)
+            )
+            return (
+              <Card
+                key={rotation.id}
+                id={`rotation-${rotation.id}`}
+                data-highlighted={isHighlighted ? 'true' : undefined}
+                className={`cursor-pointer hover:border-primary-500/50 transition-colors ${
+                  isHighlighted
+                    ? 'ring-2 ring-primary-500 border-primary-500 bg-primary-500/10'
+                    : ''
+                }`}
+                onClick={() => setViewingRotation(rotation)}
+              >
+                <CardContent className="pt-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Clock className="w-5 h-5 text-primary-400 flex-shrink-0" />
+                      <h3 className="text-lg font-semibold text-white truncate">
+                        {rotation.name}
+                      </h3>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setEditingRotation(rotation)
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDelete(rotation.id, rotation.name)
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setEditingRotation(rotation)
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDelete(rotation.id, rotation.name)
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
+
+                  {rotation.village_id && (
+                    <div className="mb-3">
+                      <VillageIdBadge villageId={rotation.village_id} />
+                    </div>
+                  )}
 
                 {rotation.description && (
                   <p className="text-sm text-slate-400 mb-3 line-clamp-2">
@@ -296,7 +330,8 @@ export default function OnCallRotations() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
 

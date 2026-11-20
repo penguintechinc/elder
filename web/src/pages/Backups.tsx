@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Play, Trash2, RotateCcw, Calendar, Cloud } from "lucide-react";
 import toast from "react-hot-toast";
@@ -7,6 +8,7 @@ import Button from "@/components/Button";
 import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import SearchableSelect from "@/components/SearchableSelect";
+import VillageIdBadge from "@/components/VillageIdBadge";
 
 const COMMON_S3_REGIONS = [
   "us-east-1",
@@ -25,6 +27,7 @@ interface BackupJob {
   schedule: string;
   retention_days: number;
   enabled: boolean;
+  village_id?: string | null;
 }
 
 interface Backup {
@@ -32,6 +35,7 @@ interface Backup {
   status: string;
   created_at: string;
   size_bytes: number;
+  village_id?: string | null;
 }
 
 interface Organization {
@@ -46,6 +50,8 @@ interface CreateJobModalProps {
 
 export default function Backups() {
   const [showCreateJobModal, setShowCreateJobModal] = useState(false);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
   const queryClient = useQueryClient();
 
   const { data: jobs, isLoading: jobsLoading } = useQuery({
@@ -57,6 +63,27 @@ export default function Backups() {
     queryKey: ["backups"],
     queryFn: () => api.getBackups(),
   });
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const backupMatch = ((backups?.backups || []) as Backup[]).find(
+      (b) => String(b.id) === highlightId || b.village_id === highlightId,
+    );
+    if (backupMatch) {
+      document
+        .getElementById(`backup-${backupMatch.id}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      return;
+    }
+    const jobMatch = ((jobs?.jobs || []) as BackupJob[]).find(
+      (j) => String(j.id) === highlightId || j.village_id === highlightId,
+    );
+    if (jobMatch) {
+      document
+        .getElementById(`backup-job-${jobMatch.id}`)
+        ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, backups?.backups, jobs?.jobs]);
 
   const runJobMutation = useMutation({
     mutationFn: (id: number) => api.runBackupJob(id),
@@ -117,52 +144,73 @@ export default function Backups() {
             </div>
           ) : (
             <div className="space-y-4">
-              {jobs?.jobs?.map((job: BackupJob) => (
-                <Card key={job.id}>
-                  <CardContent>
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h3 className="text-lg font-semibold text-white">
-                          {job.name}
-                        </h3>
-                        <p className="text-sm text-slate-400 mt-1">
-                          <Calendar className="w-4 h-4 inline mr-1" />
-                          {job.schedule}
-                        </p>
-                        <p className="text-sm text-slate-400">
-                          Retention: {job.retention_days} days
-                        </p>
+              {jobs?.jobs?.map((job: BackupJob) => {
+                const isHighlighted = Boolean(
+                  highlightId &&
+                    (String(job.id) === highlightId ||
+                      job.village_id === highlightId),
+                );
+                return (
+                  <Card
+                    key={job.id}
+                    id={`backup-job-${job.id}`}
+                    data-highlighted={isHighlighted ? "true" : undefined}
+                    className={
+                      isHighlighted
+                        ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                        : undefined
+                    }
+                  >
+                    <CardContent>
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-lg font-semibold text-white">
+                              {job.name}
+                            </h3>
+                            {job.village_id && (
+                              <VillageIdBadge villageId={job.village_id} />
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-400 mt-1">
+                            <Calendar className="w-4 h-4 inline mr-1" />
+                            {job.schedule}
+                          </p>
+                          <p className="text-sm text-slate-400">
+                            Retention: {job.retention_days} days
+                          </p>
+                        </div>
+                        <span
+                          className={`px-2 py-1 text-xs font-medium rounded ${
+                            job.enabled
+                              ? "bg-green-500/20 text-green-400"
+                              : "bg-slate-500/20 text-slate-400"
+                          }`}
+                        >
+                          {job.enabled ? "Enabled" : "Disabled"}
+                        </span>
                       </div>
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded ${
-                          job.enabled
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-slate-500/20 text-slate-400"
-                        }`}
-                      >
-                        {job.enabled ? "Enabled" : "Disabled"}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => runJobMutation.mutate(job.id)}
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        Run Now
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteJobMutation.mutate(job.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => runJobMutation.mutate(job.id)}
+                        >
+                          <Play className="w-4 h-4 mr-2" />
+                          Run Now
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => deleteJobMutation.mutate(job.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -173,60 +221,85 @@ export default function Backups() {
             Available Backups
           </h2>
           <div className="space-y-4">
-            {backups?.backups?.map((backup: Backup) => (
-              <Card key={backup.id}>
-                <CardContent>
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-white font-medium">
-                        {new Date(backup.created_at).toLocaleString()}
-                      </h3>
-                      <p className="text-sm text-slate-400">
-                        Size: {(backup.size_bytes / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                      <span
-                        className={`inline-block mt-2 px-2 py-1 text-xs font-medium rounded ${
-                          backup.status === "completed"
-                            ? "bg-green-500/20 text-green-400"
-                            : backup.status === "failed"
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-yellow-500/20 text-yellow-400"
-                        }`}
-                      >
-                        {backup.status}
-                      </span>
+            {backups?.backups?.map((backup: Backup) => {
+              const isHighlighted = Boolean(
+                highlightId &&
+                  (String(backup.id) === highlightId ||
+                    backup.village_id === highlightId),
+              );
+              return (
+                <Card
+                  key={backup.id}
+                  id={`backup-${backup.id}`}
+                  data-highlighted={isHighlighted ? "true" : undefined}
+                  className={
+                    isHighlighted
+                      ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                      : undefined
+                  }
+                >
+                  <CardContent>
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-white font-medium">
+                            {new Date(backup.created_at).toLocaleString()}
+                          </h3>
+                          {backup.village_id && (
+                            <VillageIdBadge villageId={backup.village_id} />
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-400">
+                          Size: {(backup.size_bytes / 1024 / 1024).toFixed(2)}{" "}
+                          MB
+                        </p>
+                        <span
+                          className={`inline-block mt-2 px-2 py-1 text-xs font-medium rounded ${
+                            backup.status === "completed"
+                              ? "bg-green-500/20 text-green-400"
+                              : backup.status === "failed"
+                                ? "bg-red-500/20 text-red-400"
+                                : "bg-yellow-500/20 text-yellow-400"
+                          }`}
+                        >
+                          {backup.status}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        restoreMutation.mutate({ id: backup.id, dryRun: true })
-                      }
-                    >
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      Dry Run
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (
-                          confirm(
-                            "Are you sure you want to restore this backup?",
-                          )
-                        ) {
-                          restoreMutation.mutate({ id: backup.id });
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          restoreMutation.mutate({
+                            id: backup.id,
+                            dryRun: true,
+                          })
                         }
-                      }}
-                    >
-                      <RotateCcw className="w-4 h-4 mr-2" />
-                      Restore
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                      >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Dry Run
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (
+                            confirm(
+                              "Are you sure you want to restore this backup?",
+                            )
+                          ) {
+                            restoreMutation.mutate({ id: backup.id });
+                          }
+                        }}
+                      >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        Restore
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </div>
       </div>

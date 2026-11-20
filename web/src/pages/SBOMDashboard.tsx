@@ -1,6 +1,8 @@
 import { Package, FileCode, AlertTriangle, Shield, Clock, CheckCircle, XCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Card, { CardHeader, CardContent } from '@/components/Card'
-import { useState } from 'react'
+import VillageIdBadge from '@/components/VillageIdBadge'
 
 interface SBOMComponent {
   id: number
@@ -11,6 +13,7 @@ interface SBOMComponent {
   vulnerability_count: number
   source_service?: string
   source_software?: string
+  village_id?: string | null
 }
 
 interface SBOMScan {
@@ -20,6 +23,7 @@ interface SBOMScan {
   components_found: number
   created_at: string
   scan_type: string
+  village_id?: string | null
 }
 
 interface VulnerabilitySummary {
@@ -47,6 +51,8 @@ export default function SBOMDashboard() {
   const [searchTerm, setSearchTerm] = useState('')
   const [licenseFilter, setLicenseFilter] = useState('')
   const [packageTypeFilter, setPackageTypeFilter] = useState('')
+  const [searchParams] = useSearchParams()
+  const highlightId = searchParams.get('highlight')
 
   // TODO: Wire up real API calls once backend endpoints are implemented
   // For now using mock data to avoid TypeScript errors while allowing page to render
@@ -68,6 +74,15 @@ export default function SBOMDashboard() {
 
   const components: SBOMComponent[] = componentsData?.items || []
   const scans: SBOMScan[] = scansData?.items || []
+
+  useEffect(() => {
+    if (!highlightId) return
+    const el =
+      document.getElementById(`sbom-scan-${highlightId}`) ||
+      document.getElementById(`sbom-component-${highlightId}`) ||
+      document.querySelector<HTMLElement>('[data-highlighted="true"]')
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [highlightId])
   const vulnSummary: VulnerabilitySummary = dashboardData?.vulnerability_summary || {
     critical: 0,
     high: 0,
@@ -192,6 +207,10 @@ export default function SBOMDashboard() {
           ) : (
             <div className="space-y-3">
               {scans.slice(0, 5).map((scan) => {
+                const isHighlighted = Boolean(
+                  highlightId &&
+                    (String(scan.id) === highlightId || scan.village_id === highlightId)
+                )
                 const StatusIcon =
                   scan.status === 'completed'
                     ? CheckCircle
@@ -201,12 +220,19 @@ export default function SBOMDashboard() {
                 return (
                   <div
                     key={scan.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors"
+                    id={`sbom-scan-${scan.id}`}
+                    data-highlighted={isHighlighted ? 'true' : undefined}
+                    className={`flex items-center justify-between p-4 rounded-lg bg-slate-800/30 hover:bg-slate-800/50 transition-colors ${
+                      isHighlighted ? 'ring-2 ring-primary-500 bg-primary-500/10' : ''
+                    }`}
                   >
                     <div className="flex items-center gap-4">
                       <StatusIcon className={`w-5 h-5 ${STATUS_COLORS[scan.status]?.split(' ')[0] || 'text-slate-400'}`} />
                       <div>
-                        <p className="text-white font-medium truncate max-w-md">{scan.repo_url}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white font-medium truncate max-w-md">{scan.repo_url}</p>
+                          {scan.village_id && <VillageIdBadge villageId={scan.village_id} />}
+                        </div>
                         <p className="text-sm text-slate-400">
                           {scan.components_found} components found • {scan.scan_type}
                         </p>
@@ -292,12 +318,28 @@ export default function SBOMDashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
-                {filteredComponents.map((component) => (
-                  <tr key={component.id} className="hover:bg-slate-700/50 transition-colors">
+                {filteredComponents.map((component) => {
+                  const isHighlighted = Boolean(
+                    highlightId &&
+                      (String(component.id) === highlightId ||
+                        component.village_id === highlightId)
+                  )
+                  return (
+                  <tr
+                    key={component.id}
+                    id={`sbom-component-${component.id}`}
+                    data-highlighted={isHighlighted ? 'true' : undefined}
+                    className={`hover:bg-slate-700/50 transition-colors ${
+                      isHighlighted ? 'bg-primary-500/15 ring-2 ring-inset ring-primary-500' : ''
+                    }`}
+                  >
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Package className="w-4 h-4 text-primary-400" />
                         <span className="text-white font-medium">{component.name}</span>
+                        {component.village_id && (
+                          <VillageIdBadge villageId={component.village_id} />
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-slate-300 font-mono text-sm">
@@ -330,7 +372,8 @@ export default function SBOMDashboard() {
                       {component.source_service || component.source_software || '-'}
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           )}

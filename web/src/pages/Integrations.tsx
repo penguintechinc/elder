@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -27,6 +27,7 @@ import api, {
 } from "@/lib/api";
 import Button from "@/components/Button";
 import Card, { CardContent, CardHeader } from "@/components/Card";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import SyncConfig from "./SyncConfig";
 import CloudProfilesPanel from "@/components/integrations/CloudProfilesPanel";
 import EndpointsPanel from "@/components/integrations/EndpointsPanel";
@@ -58,6 +59,7 @@ const CLOUD_PROVIDER_KEYS = new Set([
 
 interface UnifiedIntegrationRow {
   key: string;
+  resourceId: number;
   name: string;
   provider: string;
   category: Exclude<IntegrationCategory, "overview">;
@@ -65,6 +67,7 @@ interface UnifiedIntegrationRow {
   target: string;
   enabled: boolean;
   cadence: string;
+  villageId?: string | null;
 }
 
 interface CatalogEntry {
@@ -206,6 +209,7 @@ function describeDiscoveryTarget(job: DiscoveryJobItem): string {
 export default function Integrations() {
   const [searchParams, setSearchParams] = useSearchParams();
   const rawTab = searchParams.get("tab") || "overview";
+  const highlightId = searchParams.get("highlight");
   const activeTab: IntegrationCategory = VALID_CATEGORIES.has(
     rawTab as IntegrationCategory,
   )
@@ -290,6 +294,7 @@ export default function Integrations() {
             : String(json.base_url || cfg.platform);
       rows.push({
         key: `sync-${cfg.id}`,
+        resourceId: cfg.id,
         name: cfg.name,
         provider: cfg.platform.toUpperCase(),
         category: "work-management",
@@ -297,12 +302,14 @@ export default function Integrations() {
         target,
         enabled: cfg.enabled,
         cadence: formatScheduleInterval(cfg.sync_interval),
+        villageId: (cfg as { village_id?: string | null }).village_id ?? null,
       });
     }
 
     for (const job of cloudJobs) {
       rows.push({
         key: `cloud-${job.id}`,
+        resourceId: job.id,
         name: job.name,
         provider: job.provider.toUpperCase(),
         category: "cloud",
@@ -310,12 +317,14 @@ export default function Integrations() {
         target: describeDiscoveryTarget(job),
         enabled: job.enabled,
         cadence: formatScheduleInterval(job.schedule_interval),
+        villageId: (job as { village_id?: string | null }).village_id ?? null,
       });
     }
 
     for (const job of fleetJobs) {
       rows.push({
         key: `endpoint-${job.id}`,
+        resourceId: job.id,
         name: job.name,
         provider: "FleetDM",
         category: "endpoints",
@@ -323,12 +332,14 @@ export default function Integrations() {
         target: describeDiscoveryTarget(job),
         enabled: job.enabled,
         cadence: formatScheduleInterval(job.schedule_interval),
+        villageId: (job as { village_id?: string | null }).village_id ?? null,
       });
     }
 
     for (const gws of gwsProviders) {
       rows.push({
         key: `gws-${gws.id}`,
+        resourceId: gws.id,
         name: gws.name,
         provider: "Google Workspace",
         category: "identity",
@@ -338,12 +349,14 @@ export default function Integrations() {
         cadence: gws.last_sync_at
           ? `Synced ${new Date(gws.last_sync_at).toLocaleDateString()}`
           : "On demand",
+        villageId: (gws as { village_id?: string | null }).village_id ?? null,
       });
     }
 
     for (const iam of iamProviders) {
       rows.push({
         key: `iam-${iam.id}`,
+        resourceId: iam.id,
         name: iam.name,
         provider: iam.provider_type.toUpperCase(),
         category: "identity",
@@ -360,6 +373,7 @@ export default function Integrations() {
         cadence: iam.last_sync_at
           ? `Synced ${new Date(iam.last_sync_at).toLocaleDateString()}`
           : "On demand",
+        villageId: (iam as { village_id?: string | null }).village_id ?? null,
       });
     }
 
@@ -370,6 +384,17 @@ export default function Integrations() {
     () => unifiedRows.filter((row) => row.enabled).length,
     [unifiedRows],
   );
+
+  useEffect(() => {
+    if (!highlightId || !unifiedRows.length) return;
+    const match = unifiedRows.find(
+      (r) =>
+        String(r.resourceId) === highlightId || r.villageId === highlightId,
+    );
+    if (!match) return;
+    const el = document.getElementById(`integration-${match.key}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, unifiedRows]);
 
   const filteredOverviewRows = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -728,49 +753,74 @@ export default function Integrations() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800">
-                          {filteredOverviewRows.map((row) => (
-                            <tr key={row.key}>
-                              <td className="py-3 pr-4 font-medium text-white">
-                                {row.name}
-                              </td>
-                              <td className="py-3 pr-4">
-                                <span className="px-2 py-0.5 text-xs rounded-full bg-slate-900 border border-slate-700 text-yellow-400">
-                                  {row.provider}
-                                </span>
-                              </td>
-                              <td className="py-3 pr-4 text-xs text-slate-400">
-                                {row.categoryLabel}
-                              </td>
-                              <td className="py-3 pr-4 text-xs text-slate-300 font-mono">
-                                {row.target}
-                              </td>
-                              <td className="py-3 pr-4 text-xs text-slate-400">
-                                {row.cadence}
-                              </td>
-                              <td className="py-3 pr-4">
-                                <span
-                                  className={`px-2 py-0.5 text-xs font-medium rounded-full border ${
-                                    row.enabled
-                                      ? "bg-emerald-950/60 text-emerald-300 border-emerald-700/60"
-                                      : "bg-slate-900 text-slate-400 border-slate-700"
-                                  }`}
-                                >
-                                  {row.enabled ? "Active" : "Paused"}
-                                </span>
-                              </td>
-                              <td className="py-3 text-right">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() =>
-                                    setActiveCategory(row.category)
-                                  }
-                                >
-                                  Manage
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
+                          {filteredOverviewRows.map((row) => {
+                            const isHighlighted = Boolean(
+                              highlightId &&
+                                (String(row.resourceId) === highlightId ||
+                                  row.villageId === highlightId),
+                            );
+                            return (
+                              <tr
+                                key={row.key}
+                                id={`integration-${row.key}`}
+                                data-highlighted={
+                                  isHighlighted ? "true" : undefined
+                                }
+                                className={
+                                  isHighlighted
+                                    ? "bg-primary-500/15 ring-2 ring-inset ring-primary-500"
+                                    : undefined
+                                }
+                              >
+                                <td className="py-3 pr-4 font-medium text-white">
+                                  <div>{row.name}</div>
+                                  {row.villageId && (
+                                    <div className="mt-1">
+                                      <VillageIdBadge
+                                        villageId={row.villageId}
+                                      />
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <span className="px-2 py-0.5 text-xs rounded-full bg-slate-900 border border-slate-700 text-yellow-400">
+                                    {row.provider}
+                                  </span>
+                                </td>
+                                <td className="py-3 pr-4 text-xs text-slate-400">
+                                  {row.categoryLabel}
+                                </td>
+                                <td className="py-3 pr-4 text-xs text-slate-300 font-mono">
+                                  {row.target}
+                                </td>
+                                <td className="py-3 pr-4 text-xs text-slate-400">
+                                  {row.cadence}
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <span
+                                    className={`px-2 py-0.5 text-xs font-medium rounded-full border ${
+                                      row.enabled
+                                        ? "bg-emerald-950/60 text-emerald-300 border-emerald-700/60"
+                                        : "bg-slate-900 text-slate-400 border-slate-700"
+                                    }`}
+                                  >
+                                    {row.enabled ? "Active" : "Paused"}
+                                  </span>
+                                </td>
+                                <td className="py-3 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() =>
+                                      setActiveCategory(row.category)
+                                    }
+                                  >
+                                    Manage
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

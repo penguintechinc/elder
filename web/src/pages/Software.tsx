@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -22,6 +23,7 @@ import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
 import { FormField } from "@/types/form";
 
 interface Organization {
@@ -45,6 +47,7 @@ interface Software {
   git_url?: string;
   git_path?: string;
   release_shasum?: string;
+  village_id?: string | null;
 }
 
 interface SBOMSchedule {
@@ -109,6 +112,9 @@ export default function Software() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingSoftware, setEditingSoftware] = useState<Software | null>(null);
   const [viewingSoftware, setViewingSoftware] = useState<Software | null>(null);
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get("highlight");
+  const appliedHighlightRef = useRef<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data: organizations } = useQuery({
@@ -180,6 +186,20 @@ export default function Software() {
   const handleDelete = (id: number, name: string) => {
     confirmDelete(name, () => deleteMutation.mutate(id));
   };
+
+  useEffect(() => {
+    if (!highlightId || !data?.items?.length) return;
+    const match = (data.items as Software[]).find(
+      (s) => String(s.id) === highlightId || s.village_id === highlightId,
+    );
+    if (!match) return;
+    if (appliedHighlightRef.current !== highlightId) {
+      appliedHighlightRef.current = highlightId;
+      setViewingSoftware(match);
+    }
+    const el = document.getElementById(`software-${match.id}`);
+    el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  }, [highlightId, data?.items]);
 
   const getSoftwareTypeColor = (type: string): string => {
     const typeMap: { [key: string]: string } = {
@@ -605,120 +625,139 @@ export default function Software() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data?.items?.map((software: Software) => (
-            <Card
-              key={software.id}
-              className="cursor-pointer hover:border-primary-500/50 transition-colors"
-              onClick={() => setViewingSoftware(software)}
-            >
-              <CardContent>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Package className="w-5 h-5 text-primary-400 flex-shrink-0" />
-                    <h3 className="text-lg font-semibold text-white truncate">
-                      {software.name}
-                    </h3>
+          {data?.items?.map((software: Software) => {
+            const isHighlighted = Boolean(
+              highlightId &&
+                (String(software.id) === highlightId ||
+                  software.village_id === highlightId),
+            );
+            return (
+              <Card
+                key={software.id}
+                id={`software-${software.id}`}
+                data-highlighted={isHighlighted ? "true" : undefined}
+                className={`cursor-pointer hover:border-primary-500/50 transition-colors ${
+                  isHighlighted
+                    ? "ring-2 ring-primary-500 border-primary-500 bg-primary-500/10"
+                    : ""
+                }`}
+                onClick={() => setViewingSoftware(software)}
+              >
+                <CardContent>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <Package className="w-5 h-5 text-primary-400 flex-shrink-0" />
+                      <h3 className="text-lg font-semibold text-white truncate">
+                        {software.name}
+                      </h3>
+                    </div>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingSoftware(software);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(software.id, software.name);
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex gap-2 flex-shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingSoftware(software);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(software.id, software.name);
-                      }}
-                      className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
 
-                {software.vendor && (
-                  <p className="text-sm text-slate-400 mb-2">
-                    {software.vendor}
-                  </p>
-                )}
-
-                <div className="flex items-center justify-between mb-3">
-                  <span
-                    className={`text-xs px-2 py-1 rounded ${getSoftwareTypeColor(software.software_type)}`}
-                  >
-                    {software.software_type?.replace("_", " ")}
-                  </span>
-                  {software.version && (
-                    <span className="text-xs text-slate-500">
-                      v{software.version}
-                    </span>
+                  {software.village_id && (
+                    <div className="mb-2">
+                      <VillageIdBadge villageId={software.village_id} />
+                    </div>
                   )}
-                </div>
 
-                <div className="space-y-1 text-xs text-slate-400">
-                  {software.seats && <div>Seats: {software.seats}</div>}
-                  {software.cost_monthly !== null &&
-                    software.cost_monthly !== undefined && (
+                  {software.vendor && (
+                    <p className="text-sm text-slate-400 mb-2">
+                      {software.vendor}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between mb-3">
+                    <span
+                      className={`text-xs px-2 py-1 rounded ${getSoftwareTypeColor(software.software_type)}`}
+                    >
+                      {software.software_type?.replace("_", " ")}
+                    </span>
+                    {software.version && (
+                      <span className="text-xs text-slate-500">
+                        v{software.version}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1 text-xs text-slate-400">
+                    {software.seats && <div>Seats: {software.seats}</div>}
+                    {software.cost_monthly !== null &&
+                      software.cost_monthly !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <DollarSign className="w-3 h-3" />
+                          {formatCurrency(software.cost_monthly)}/mo
+                        </div>
+                      )}
+                    {software.renewal_date && (
                       <div className="flex items-center gap-1">
-                        <DollarSign className="w-3 h-3" />
-                        {formatCurrency(software.cost_monthly)}/mo
+                        <Calendar className="w-3 h-3" />
+                        Renews:{" "}
+                        {new Date(software.renewal_date).toLocaleDateString()}
                       </div>
                     )}
-                  {software.renewal_date && (
-                    <div className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
-                      Renews:{" "}
-                      {new Date(software.renewal_date).toLocaleDateString()}
-                    </div>
-                  )}
-                  {software.parent_system_id && (
-                    <div className="truncate">
-                      System:{" "}
-                      {entityMap.get(software.parent_system_id) ||
-                        `Entity #${software.parent_system_id}`}
-                    </div>
-                  )}
-                  {software.access_url && (
-                    <a
-                      href={software.access_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">{software.access_url}</span>
-                    </a>
-                  )}
-                  {software.git_url && (
-                    <a
-                      href={software.git_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
-                    >
-                      <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">
-                        {software.git_url}
-                        {software.git_path ? ` (${software.git_path})` : ""}
-                      </span>
-                    </a>
-                  )}
-                  {software.release_shasum && (
-                    <div className="truncate font-mono text-xs">
-                      SHA: {software.release_shasum}
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    {software.parent_system_id && (
+                      <div className="truncate">
+                        System:{" "}
+                        {entityMap.get(software.parent_system_id) ||
+                          `Entity #${software.parent_system_id}`}
+                      </div>
+                    )}
+                    {software.access_url && (
+                      <a
+                        href={software.access_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
+                      >
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">{software.access_url}</span>
+                      </a>
+                    )}
+                    {software.git_url && (
+                      <a
+                        href={software.git_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 truncate max-w-full"
+                      >
+                        <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                        <span className="truncate">
+                          {software.git_url}
+                          {software.git_path ? ` (${software.git_path})` : ""}
+                        </span>
+                      </a>
+                    )}
+                    {software.release_shasum && (
+                      <div className="truncate font-mono text-xs">
+                        SHA: {software.release_shasum}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -784,9 +823,14 @@ function SoftwareDetailModal({
       <Card className="w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">
-              {software.name}
-            </h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="text-xl font-semibold text-white">
+                {software.name}
+              </h2>
+              {software.village_id && (
+                <VillageIdBadge villageId={software.village_id} />
+              )}
+            </div>
             <Button variant="ghost" size="sm" onClick={onEdit}>
               <Edit className="w-4 h-4 mr-1" />
               Edit
