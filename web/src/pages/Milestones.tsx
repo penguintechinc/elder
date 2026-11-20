@@ -1,11 +1,22 @@
 import { useState, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Edit, Trash2, Flag, Calendar } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Flag,
+  Calendar,
+  X,
+  AlertCircle,
+  ArrowRight,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
 import { Organization } from "@/types";
 import Button from "@/components/Button";
-import Card, { CardContent } from "@/components/Card";
+import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
 import Select from "@/components/Select";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
@@ -33,6 +44,31 @@ interface Project {
   status?: string;
 }
 
+interface MilestoneIssue {
+  id: number;
+  title: string;
+  status: string;
+  priority?: string;
+  issue_type?: string;
+}
+
+const getIssueStatusColor = (status: string) => {
+  switch (status?.toLowerCase()) {
+    case "open":
+    case "new":
+      return "bg-blue-500/20 text-blue-400";
+    case "in_progress":
+    case "in progress":
+      return "bg-yellow-500/20 text-yellow-400";
+    case "resolved":
+    case "closed":
+    case "done":
+      return "bg-green-500/20 text-green-400";
+    default:
+      return "bg-slate-500/20 text-slate-400";
+  }
+};
+
 export default function Milestones() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -41,7 +77,20 @@ export default function Milestones() {
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(
     null,
   );
+  const [viewingMilestone, setViewingMilestone] = useState<Milestone | null>(
+    null,
+  );
   const queryClient = useQueryClient();
+
+  const {
+    data: milestoneIssuesData,
+    isLoading: isLoadingIssues,
+    isError: isErrorIssues,
+  } = useQuery<{ issues: MilestoneIssue[] }>({
+    queryKey: ["milestone-issues", viewingMilestone?.id],
+    queryFn: () => api.getMilestoneIssues(viewingMilestone!.id),
+    enabled: !!viewingMilestone,
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -396,7 +445,11 @@ export default function Milestones() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {data?.items?.map((milestone: Milestone) => (
-            <Card key={milestone.id}>
+            <Card
+              key={milestone.id}
+              className="cursor-pointer hover:border-slate-600 transition-colors"
+              onClick={() => setViewingMilestone(milestone)}
+            >
               <CardContent>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -413,15 +466,23 @@ export default function Milestones() {
                   </div>
                   <div className="flex gap-2 flex-shrink-0">
                     <button
-                      onClick={() => setEditingMilestone(milestone)}
+                      type="button"
+                      aria-label={`Edit ${milestone.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingMilestone(milestone);
+                      }}
                       className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() =>
-                        handleDelete(milestone.id, milestone.title)
-                      }
+                      type="button"
+                      aria-label={`Delete ${milestone.title}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(milestone.id, milestone.title);
+                      }}
                       className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-500/10 rounded transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -466,6 +527,13 @@ export default function Milestones() {
                       )?.name || milestone.project_id}
                     </div>
                   )}
+
+                  <div className="pt-2 border-t border-slate-700/50 flex items-center justify-between">
+                    <span className="text-xs text-primary-400 font-medium inline-flex items-center gap-1">
+                      View Issues
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -495,6 +563,104 @@ export default function Milestones() {
           onSubmit={handleUpdate}
           submitLabel="Update"
         />
+      )}
+
+      {/* Milestone Issues Modal */}
+      {viewingMilestone && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+          onClick={() => setViewingMilestone(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="milestone-issues-modal-title"
+        >
+          <Card
+            className="w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div className="min-w-0 pr-4">
+                <div className="flex items-center gap-2">
+                  <Flag className="w-5 h-5 text-primary-400 flex-shrink-0" />
+                  <h2
+                    id="milestone-issues-modal-title"
+                    className="text-xl font-semibold text-white truncate"
+                  >
+                    {viewingMilestone.title}
+                  </h2>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded ${getStatusColor(viewingMilestone.status)}`}
+                  >
+                    {viewingMilestone.status}
+                  </span>
+                </div>
+                {viewingMilestone.description && (
+                  <p className="text-sm text-slate-400 mt-1 line-clamp-2">
+                    {viewingMilestone.description}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingMilestone(null)}
+                aria-label="Close milestone issues"
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors flex-shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </CardHeader>
+            <CardContent className="overflow-y-auto flex-1 py-4">
+              {isLoadingIssues ? (
+                <div className="flex items-center justify-center py-10">
+                  <div className="w-7 h-7 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : isErrorIssues ? (
+                <div className="text-center py-10 text-red-400">
+                  <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-80" />
+                  <p>Failed to load issues for this milestone.</p>
+                </div>
+              ) : (milestoneIssuesData?.issues?.length ?? 0) === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <AlertCircle className="w-10 h-10 mx-auto mb-2 text-slate-600" />
+                  <p>No issues linked to this milestone yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {milestoneIssuesData?.issues?.map((issue) => (
+                    <Link
+                      key={issue.id}
+                      to={`/issues/${issue.id}`}
+                      className="flex items-center justify-between gap-3 p-3 rounded-lg bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700 hover:border-slate-600 transition-colors"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono text-slate-400">
+                            #{issue.id}
+                          </span>
+                          <span className="text-sm font-medium text-white truncate">
+                            {issue.title}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {issue.priority && (
+                          <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">
+                            {issue.priority}
+                          </span>
+                        )}
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded ${getIssueStatusColor(issue.status)}`}
+                        >
+                          {issue.status}
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
