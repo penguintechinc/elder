@@ -1328,9 +1328,9 @@ function DataStoreDetailModal({
 
             {dataStore.metadata && Object.keys(dataStore.metadata).length > 0 && (
               <div>
-                <label className="text-xs text-slate-500 uppercase block mb-1">
+                <span className="text-xs text-slate-500 uppercase block mb-1">
                   Metadata
-                </label>
+                </span>
                 <pre className="text-xs font-mono text-slate-300 bg-slate-900 border border-slate-700 rounded-lg p-3 overflow-x-auto">
                   {JSON.stringify(dataStore.metadata, null, 2)}
                 </pre>
