@@ -1307,7 +1307,7 @@ export default function IdentityIntegrationsPanel({
                   placeholder={
                     editingGws
                       ? "Leave blank to keep existing credentials"
-                      : '{"type": "service_account", "project_id": "...", "private_key": "...", "client_email": "..."}'
+                      : "Paste your Google Workspace domain-delegated service account JSON key object (project_id, client_email, private_key)"
                   }
                   className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
                 />
@@ -1687,7 +1687,7 @@ export default function IdentityIntegrationsPanel({
                         placeholder={
                           editingIam && iamHasSavedSecret
                             ? "Leave blank to keep existing secret"
-                            : '{"type": "service_account", "project_id": "..."}'
+                            : "Paste your Google Cloud service account JSON key object (project_id, client_email, private_key)"
                         }
                         className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-xs text-white placeholder-slate-500 focus:border-yellow-500 focus:outline-none"
                       />
