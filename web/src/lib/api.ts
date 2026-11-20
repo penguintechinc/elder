@@ -375,6 +375,7 @@ class ApiClient {
     entity_type: string;
     sub_type?: string;
     organization_id: number;
+    parent_id?: number;
     metadata?: Record<string, unknown>;
   }) {
     const response = await this.client.post("/entities", data);
