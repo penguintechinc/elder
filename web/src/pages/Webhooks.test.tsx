@@ -321,7 +321,6 @@ describe("Webhooks admin page", () => {
     expect(call.filter_assignee_id).toBeUndefined();
   });
 
-<<<<<<< HEAD
   it("renders scope badges on inbound tab and creates an inbound webhook with selected scopes", async () => {
     vi.mocked(api.getInboundWebhooks).mockResolvedValue({
       inbound_webhooks: [

@@ -9,7 +9,7 @@ import json
 import time
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -635,9 +635,14 @@ async def test_identities_create_route_fires_user_created(
 
 
 @pytest.mark.asyncio
+@patch(
+    "apps.api.services.portal_auth.service.check_limit",
+    new_callable=AsyncMock,
+    return_value=None,
+)
 @patch("apps.api.services.webhooks.user_events.requests.post")
 async def test_portal_auth_create_portal_user_regular_tenant_and_global_admin(
-    mock_post, app
+    mock_post, _mock_check_limit, app
 ):
     mock_post.return_value = MagicMock(status_code=200, text="ok")
 
