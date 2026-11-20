@@ -604,6 +604,7 @@ def _register_blueprints(app: Quart) -> None:
         audit_enterprise,
         auth,
         backup,
+        csv_import,
         identities,
         logs,
         lookup,
@@ -649,9 +650,10 @@ def _register_blueprints(app: Quart) -> None:
     )
     app.register_blueprint(logs.bp, url_prefix=f"{api_prefix}/logs")
 
-    # Search and backup
+    # Search, backup, and CSV import
     app.register_blueprint(search.bp, url_prefix=f"{api_prefix}/search")
     app.register_blueprint(backup.bp, url_prefix=f"{api_prefix}/backup")
+    app.register_blueprint(csv_import.bp, url_prefix=f"{api_prefix}/import")
 
     # Module registry endpoint
     app.register_blueprint(modules.bp, url_prefix=f"{api_prefix}")

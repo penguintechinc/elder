@@ -3,7 +3,7 @@
 # flake8: noqa: E501
 
 from dataclasses import asdict
-from datetime import UTC
+from datetime import UTC, datetime
 
 from pydantic import ValidationError
 from quart import Blueprint, current_app, jsonify, request
@@ -178,6 +178,91 @@ async def list_vulnerabilities():
     )
 
     return jsonify(asdict(response)), 200
+
+
+@bp.route("", methods=["POST"])
+@login_required
+@require_scope("sbom:write")
+async def create_vulnerability():
+    """Manually create a vulnerability entry."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.error("Tenant context is required", 403)
+
+    data = await request.get_json()
+    if not isinstance(data, dict):
+        return ApiResponse.error("Invalid JSON body", 400)
+
+    cve_id = (data.get("cve_id") or "").strip().upper()
+    title = (data.get("title") or "").strip()
+    severity = (data.get("severity") or "").strip().upper()
+
+    if not cve_id or len(cve_id) > 50:
+        return ApiResponse.error("cve_id is required (max 50 chars)", 400)
+    if not title or len(title) > 512:
+        return ApiResponse.error("title is required (max 512 chars)", 400)
+    if severity not in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+        return ApiResponse.error(
+            "severity must be one of: critical, high, medium, low, info", 400
+        )
+
+    cvss_score = data.get("cvss_score")
+    if cvss_score is not None and cvss_score != "":
+        try:
+            cvss_score = float(cvss_score)
+            if cvss_score < 0.0 or cvss_score > 10.0:
+                return ApiResponse.error("cvss_score must be between 0.0 and 10.0", 400)
+        except (TypeError, ValueError):
+            return ApiResponse.error("cvss_score must be a valid number", 400)
+    else:
+        cvss_score = None
+
+    published_at = None
+    if data.get("published_at"):
+        try:
+            raw_pub = str(data["published_at"]).strip()
+            published_at = datetime.fromisoformat(raw_pub.replace("Z", "+00:00"))
+        except ValueError:
+            return ApiResponse.error(
+                "published_at must be a valid ISO-8601 date or datetime", 400
+            )
+
+    def create():
+        existing = db(db.vulnerabilities.cve_id == cve_id).select().first()
+        if existing:
+            return None, True
+        now = datetime.now(UTC)
+        vuln_id = db.vulnerabilities.insert(
+            tenant_id=tenant_id,
+            cve_id=cve_id,
+            title=title,
+            severity=severity,
+            cvss_score=cvss_score,
+            description=(data.get("description") or "").strip() or None,
+            affected_packages=data.get("affected_packages")
+            if isinstance(data.get("affected_packages"), list)
+            else None,
+            fixed_versions=data.get("fixed_versions")
+            if isinstance(data.get("fixed_versions"), list)
+            else None,
+            references=data.get("references")
+            if isinstance(data.get("references"), list)
+            else None,
+            published_at=published_at,
+            source=(data.get("source") or "manual").strip()[:50],
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.commit()
+        return db.vulnerabilities[vuln_id], False  # tenant-scope-exempt
+
+    row, duplicate = await run_in_threadpool(create)
+    if duplicate:
+        return ApiResponse.error(f"Vulnerability '{cve_id}' already exists", 409)
+
+    return jsonify(asdict(from_pydal_row(row, VulnerabilityDTO))), 201
 
 
 @bp.route("/<int:id>", methods=["GET"])

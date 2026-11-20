@@ -2,7 +2,7 @@ import { lazy } from 'react'
 import type { RouteObject } from 'react-router-dom'
 import type { MenuCategory } from '@penguintechinc/react-libs/components'
 import type { FrontendModule } from '../types'
-import { Package, Bug, Layers } from 'lucide-react'
+import { Package, Bug, Layers, FileSpreadsheet } from 'lucide-react'
 
 // eslint-disable react-refresh/only-export-components -- Intentional: exports both lazy components and module manifest
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
@@ -11,6 +11,8 @@ const Software = lazy(() => import('@/pages/Software'))
 const Vulnerabilities = lazy(() => import('@/pages/Vulnerabilities'))
 // eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
 const SBOMDashboard = lazy(() => import('@/pages/SBOMDashboard'))
+// eslint-disable-next-line react-refresh/only-export-components -- Intentional: module manifest export
+const CsvTemplates = lazy(() => import('@/pages/CsvTemplates'))
 // eslint-enable react-refresh/only-export-components
 
 const navigation: MenuCategory[] = [
@@ -21,6 +23,7 @@ const navigation: MenuCategory[] = [
       { name: 'Software', href: '/software', icon: Package },
       { name: 'SBOM Dashboard', href: '/sbom', icon: Layers },
       { name: 'Vulnerabilities', href: '/vulnerabilities', icon: Bug },
+      { name: 'CSV Templates', href: '/csv-templates', icon: FileSpreadsheet },
     ],
   },
 ]
@@ -29,6 +32,7 @@ const routes: RouteObject[] = [
   { path: 'software', element: <Software /> },
   { path: 'vulnerabilities', element: <Vulnerabilities /> },
   { path: 'sbom', element: <SBOMDashboard /> },
+  { path: 'csv-templates', element: <CsvTemplates /> },
 ]
 
 const sbomModule: FrontendModule = {

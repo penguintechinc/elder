@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Search, Calendar, Plus } from "lucide-react";
+import { AlertTriangle, Search, Calendar, Plus, Upload, X } from "lucide-react";
+import toast from "react-hot-toast";
 import { queryKeys } from "@/lib/queryKeys";
 import api from "@/lib/api";
-import Card, { CardContent } from "@/components/Card";
+import Button from "@/components/Button";
+import Card, { CardHeader, CardContent } from "@/components/Card";
 import Input from "@/components/Input";
+import Select from "@/components/Select";
 import SearchableSelect from "@/components/SearchableSelect";
+import CsvImportModal from "@/components/CsvImportModal";
 
 interface AffectedEntity {
   parent_type: string;
@@ -72,6 +76,14 @@ export default function Vulnerabilities() {
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [newCveId, setNewCveId] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newSeverity, setNewSeverity] = useState("high");
+  const [newCvss, setNewCvss] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newPublishedAt, setNewPublishedAt] = useState("");
   const [selectedVulnerability, setSelectedVulnerability] =
     useState<Vulnerability | null>(null);
   const [assignParentType, setAssignParentType] = useState<string>("service");
@@ -113,6 +125,38 @@ export default function Vulnerabilities() {
       setAssignModalOpen(false);
       setSelectedVulnerability(null);
       setAssignParentId("");
+    },
+  });
+
+  const createVulnMutation = useMutation({
+    mutationFn: (payload: {
+      cve_id: string;
+      title: string;
+      severity: string;
+      cvss_score?: number;
+      description?: string;
+      published_at?: string;
+    }) => api.createVulnerability(payload),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.vulnerabilities.all,
+        refetchType: "all",
+      });
+      toast.success("Vulnerability created");
+      setCreateModalOpen(false);
+      setNewCveId("");
+      setNewTitle("");
+      setNewSeverity("high");
+      setNewCvss("");
+      setNewDescription("");
+      setNewPublishedAt("");
+    },
+    onError: (err: { response?: { data?: { message?: string; error?: string } } }) => {
+      toast.error(
+        err?.response?.data?.message ||
+          err?.response?.data?.error ||
+          "Failed to create vulnerability",
+      );
     },
   });
 
@@ -170,11 +214,23 @@ export default function Vulnerabilities() {
   return (
     <div className="p-8">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white">Vulnerabilities</h1>
-        <p className="mt-2 text-slate-400">
-          Track and manage security vulnerabilities across your infrastructure
-        </p>
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Vulnerabilities</h1>
+          <p className="mt-2 text-slate-400">
+            Track and remediate CVEs and security vulnerabilities
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" onClick={() => setCsvImportOpen(true)}>
+            <Upload className="w-4 h-4 mr-2" />
+            Import CSV
+          </Button>
+          <Button onClick={() => setCreateModalOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Vulnerability
+          </Button>
+        </div>
       </div>
 
       {/* Dashboard Stats */}
@@ -515,6 +571,137 @@ export default function Vulnerabilities() {
           </div>
         </div>
       )}
+
+      {/* Manual Create Vulnerability Modal */}
+      {createModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">
+                Add Vulnerability
+              </h2>
+              <button
+                type="button"
+                onClick={() => setCreateModalOpen(false)}
+                className="p-1 text-slate-400 hover:text-white rounded"
+                aria-label="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newCveId.trim() || !newTitle.trim()) return;
+                  let parsedCvss: number | undefined;
+                  if (newCvss.trim()) {
+                    const num = Number(newCvss);
+                    if (Number.isNaN(num) || num < 0 || num > 10) {
+                      toast.error("CVSS score must be between 0.0 and 10.0");
+                      return;
+                    }
+                    parsedCvss = num;
+                  }
+                  createVulnMutation.mutate({
+                    cve_id: newCveId.trim().toUpperCase(),
+                    title: newTitle.trim(),
+                    severity: newSeverity,
+                    cvss_score: parsedCvss,
+                    description: newDescription.trim() || undefined,
+                    published_at: newPublishedAt || undefined,
+                  });
+                }}
+                className="space-y-4"
+              >
+                <Input
+                  label="CVE / Advisory ID"
+                  required
+                  value={newCveId}
+                  onChange={(e) => setNewCveId(e.target.value)}
+                  placeholder="CVE-2026-1234"
+                />
+                <Input
+                  label="Title"
+                  required
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Short vulnerability summary"
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Select
+                    label="Severity"
+                    required
+                    value={newSeverity}
+                    onChange={(e) => setNewSeverity(e.target.value)}
+                  >
+                    <option value="critical">Critical</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                    <option value="info">Info</option>
+                  </Select>
+                  <Input
+                    label="CVSS Score (0.0 - 10.0)"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    max="10"
+                    value={newCvss}
+                    onChange={(e) => setNewCvss(e.target.value)}
+                    placeholder="7.5"
+                  />
+                </div>
+                <Input
+                  label="Published Date (Optional)"
+                  type="date"
+                  value={newPublishedAt}
+                  onChange={(e) => setNewPublishedAt(e.target.value)}
+                />
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                    Description (Optional)
+                  </label>
+                  <textarea
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    rows={3}
+                    placeholder="Vulnerability details, impact, and remediation notes..."
+                    className="block w-full px-4 py-2 text-sm bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setCreateModalOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={createVulnMutation.isPending}>
+                    {createVulnMutation.isPending
+                      ? "Creating..."
+                      : "Create Vulnerability"}
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      <CsvImportModal
+        resource="vulnerabilities"
+        isOpen={csvImportOpen}
+        onClose={() => setCsvImportOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.vulnerabilities.all,
+            refetchType: "all",
+          });
+        }}
+      />
     </div>
   );
 }
