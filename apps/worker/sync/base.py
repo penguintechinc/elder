@@ -12,9 +12,9 @@ the required abstract methods.
 
 import abc
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from penguin_dal import DAL
 
@@ -194,6 +194,33 @@ class BaseSyncClient(abc.ABC):
         self.sync_config_id = sync_config_id
         self.logger = logger
 
+    def close(self) -> None:
+        """Close underlying network/HTTP client resources if present."""
+        client = getattr(self, "client", None)
+        if client is not None and hasattr(client, "close"):
+            client.close()
+
+    def __enter__(self) -> "BaseSyncClient":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit context manager and close underlying client."""
+        self.close()
+
+    def test_connection_detail(self) -> dict[str, Any]:
+        """Test connection and return structured diagnostic details.
+
+        Returns:
+            Dictionary containing at least ``connected`` and ``platform`` keys.
+        """
+        connected = self.test_connection()
+        return {
+            "connected": connected,
+            "success": connected,
+            "platform": self.platform_name,
+        }
+
     @abc.abstractmethod
     def validate_config(self) -> bool:
         """Validate platform configuration.
@@ -271,12 +298,14 @@ class BaseSyncClient(abc.ABC):
         self,
         resource_type: ResourceType,
         since: datetime | None = None,
+        direction: str = "pull",
     ) -> SyncResult:
         """Perform batch synchronization for a resource type.
 
         Args:
             resource_type: Type of resources to sync
             since: Only sync resources modified after this timestamp
+            direction: Sync direction (``"pull"``, ``"push"``, or ``"bidirectional"``)
 
         Returns:
             Aggregate result of batch sync
@@ -395,11 +424,13 @@ class BaseSyncClient(abc.ABC):
             & (self.db.sync_mappings.sync_config_id == mapping.sync_config_id)
         )
 
+        now = datetime.now(UTC)
         self.db(query).update(
             sync_status=sync_status,
-            last_synced_at=datetime.now(),
+            last_synced_at=now,
             elder_updated_at=mapping.elder_updated_at,
             external_updated_at=mapping.external_updated_at,
+            updated_at=now,
         )
         self.db.commit()
 
@@ -426,8 +457,6 @@ class BaseSyncClient(abc.ABC):
             success=result.is_success,
             error_message="; ".join(result.errors) if result.errors else None,
             sync_metadata=result.metadata,
-            created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 
@@ -454,7 +483,6 @@ class BaseSyncClient(abc.ABC):
             resolution_strategy=conflict.resolution_strategy,
             resolved=conflict.resolved,
             created_at=now,
-            updated_at=now,
         )
         self.db.commit()
 

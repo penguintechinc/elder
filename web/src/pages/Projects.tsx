@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus,
@@ -8,6 +8,7 @@ import {
   Trash2,
   FolderKanban,
   Calendar,
+  GitBranch,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
@@ -255,10 +256,19 @@ export default function Projects() {
             Manage projects and their milestones
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Project
-        </Button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/sync-config"
+            className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <GitBranch className="w-4 h-4 mr-2 text-yellow-500" />
+            GitHub & Jira Sync
+          </Link>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Project
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

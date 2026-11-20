@@ -47,6 +47,142 @@ function clearAuthenticated(): void {
   localStorage.removeItem(AUTH_FLAG_KEY);
 }
 
+export type SyncPlatform =
+  | "github"
+  | "jira"
+  | "gitlab"
+  | "trello"
+  | "openproject";
+
+export type SyncResourceType = "issue" | "milestone" | "project" | "label";
+export type SyncDirection = "pull" | "push" | "bidirectional";
+
+export interface SyncConfigItem {
+  id: number;
+  name: string;
+  platform: SyncPlatform;
+  enabled: boolean;
+  sync_interval: number;
+  batch_fallback_enabled: boolean;
+  batch_size: number;
+  two_way_create: boolean;
+  webhook_enabled: boolean;
+  has_webhook_secret: boolean;
+  last_sync_at: string | null;
+  last_batch_sync_at: string | null;
+  config_json: Record<string, unknown> | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SyncStatusSummary {
+  configs: { total: number; enabled: number };
+  recent_activity: { syncs_24h: number; failures_24h: number };
+  conflicts: { unresolved: number };
+  mappings: { total: number };
+}
+
+export interface SyncHistoryItem {
+  id: number;
+  sync_config_id: number;
+  correlation_id: string | null;
+  sync_type: string;
+  items_synced: number;
+  items_failed: number;
+  started_at: string;
+  completed_at: string | null;
+  success: boolean;
+  error_message: string | null;
+  sync_metadata: Record<string, unknown> | null;
+}
+
+export interface SyncMappingItem {
+  id: number;
+  elder_type: string;
+  elder_id: number;
+  external_platform: string;
+  external_id: string;
+  sync_config_id: number;
+  sync_status: string | null;
+  sync_method: string | null;
+  last_synced_at: string | null;
+  elder_updated_at: string | null;
+  external_updated_at: string | null;
+}
+
+export interface SyncConflictItem {
+  id: number;
+  mapping_id: number;
+  conflict_type: string;
+  elder_data: Record<string, unknown> | unknown[] | null;
+  external_data: Record<string, unknown> | unknown[] | null;
+  resolution_strategy: string | null;
+  resolved: boolean;
+  resolved_at: string | null;
+  resolved_by_id: number | null;
+  created_at: string | null;
+}
+
+export interface SyncTestResult {
+  connected: boolean;
+  success: boolean;
+  platform: string;
+  status_code?: number;
+  error?: string;
+  repository?: {
+    full_name?: string;
+    private?: boolean;
+    default_branch?: string;
+    html_url?: string;
+    open_issues_count?: number;
+  };
+  project?: {
+    id?: string;
+    key?: string;
+    name?: string;
+    project_type?: string;
+  };
+}
+
+export interface SyncTriggerResult {
+  sync_config_id: number;
+  platform: string;
+  correlation_id: string;
+  direction: SyncDirection;
+  resource_types: SyncResourceType[];
+  success: boolean;
+  items_synced: number;
+  items_failed: number;
+  errors: string[];
+  results: Record<string, unknown>;
+}
+
+export interface CreateSyncConfigPayload {
+  name: string;
+  platform: SyncPlatform;
+  enabled?: boolean;
+  sync_interval?: number;
+  batch_fallback_enabled?: boolean;
+  batch_size?: number;
+  two_way_create?: boolean;
+  webhook_enabled?: boolean;
+  webhook_secret?: string;
+  config_json: Record<string, unknown>;
+}
+
+export interface UpdateSyncConfigPayload {
+  name?: string;
+  enabled?: boolean;
+  sync_interval?: number;
+  batch_fallback_enabled?: boolean;
+  batch_size?: number;
+  two_way_create?: boolean;
+  webhook_enabled?: boolean;
+  webhook_secret?: string;
+  clear_webhook_secret?: boolean;
+  config_json?: Record<string, unknown>;
+}
+
 class ApiClient {
   private client: AxiosInstance;
   private isRefreshing = false;
@@ -3764,6 +3900,101 @@ class ApiClient {
 
   async geocodeLocation(query: string) {
     const response = await this.client.post("/geo/geocode", { query });
+    return response.data;
+  }
+
+  // External Issue/Milestone/Project/Label Sync API
+  async getSyncConfigs(): Promise<{ configs: SyncConfigItem[] }> {
+    const response = await this.client.get("/sync/configs");
+    return response.data;
+  }
+
+  async getSyncConfig(id: number): Promise<{ config: SyncConfigItem }> {
+    const response = await this.client.get(`/sync/configs/${id}`);
+    return response.data;
+  }
+
+  async createSyncConfig(
+    data: CreateSyncConfigPayload,
+  ): Promise<{ config: SyncConfigItem }> {
+    const response = await this.client.post("/sync/configs", data);
+    return response.data;
+  }
+
+  async updateSyncConfig(
+    id: number,
+    data: UpdateSyncConfigPayload,
+  ): Promise<{ config: SyncConfigItem }> {
+    const response = await this.client.patch(`/sync/configs/${id}`, data);
+    return response.data;
+  }
+
+  async deleteSyncConfig(id: number): Promise<{ message: string }> {
+    const response = await this.client.delete(`/sync/configs/${id}`);
+    return response.data;
+  }
+
+  async testSyncConfig(id: number): Promise<SyncTestResult> {
+    const response = await this.client.post(`/sync/configs/${id}/test`);
+    return response.data;
+  }
+
+  async triggerSyncConfig(
+    id: number,
+    data?: {
+      resource_types?: SyncResourceType[];
+      direction?: SyncDirection;
+      since?: string;
+    },
+  ): Promise<SyncTriggerResult> {
+    const response = await this.client.post(
+      `/sync/configs/${id}/trigger`,
+      data || {},
+    );
+    return response.data;
+  }
+
+  async getSyncStatus(): Promise<SyncStatusSummary> {
+    const response = await this.client.get("/sync/status");
+    return response.data;
+  }
+
+  async getSyncHistory(params?: {
+    config_id?: number;
+    sync_type?: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<{
+    history: SyncHistoryItem[];
+    pagination: { page: number; per_page: number; total: number; pages: number };
+  }> {
+    const response = await this.client.get("/sync/history", { params });
+    return response.data;
+  }
+
+  async getSyncMappings(params?: {
+    config_id?: number;
+    elder_type?: string;
+  }): Promise<{ mappings: SyncMappingItem[] }> {
+    const response = await this.client.get("/sync/mappings", { params });
+    return response.data;
+  }
+
+  async getSyncConflicts(params?: {
+    resolved?: boolean;
+    config_id?: number;
+  }): Promise<{ conflicts: SyncConflictItem[] }> {
+    const response = await this.client.get("/sync/conflicts", { params });
+    return response.data;
+  }
+
+  async resolveSyncConflict(
+    id: number,
+    resolution_strategy: string,
+  ): Promise<{ conflict: SyncConflictItem }> {
+    const response = await this.client.post(`/sync/conflicts/${id}/resolve`, {
+      resolution_strategy,
+    });
     return response.data;
   }
 }

@@ -14,9 +14,9 @@ The primary strategy is Last-Modified-Wins as specified in the v1.1.0 requiremen
 
 # flake8: noqa: E501
 
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from apps.worker.sync.base import ConflictResolution, SyncMapping
 
@@ -96,13 +96,18 @@ class ConflictResolver:
         # Check for timestamp conflicts (both modified since last sync)
         elder_modified = elder_data.get("updated_at")
         external_modified = external_data.get("updated_at")
-        last_synced = mapping.last_synced_at
+        last_synced = self._parse_datetime(mapping.last_synced_at)
 
         if elder_modified and external_modified and last_synced:
             elder_modified_dt = self._parse_datetime(elder_modified)
             external_modified_dt = self._parse_datetime(external_modified)
 
-            if elder_modified_dt > last_synced and external_modified_dt > last_synced:
+            if (
+                elder_modified_dt
+                and external_modified_dt
+                and elder_modified_dt > last_synced
+                and external_modified_dt > last_synced
+            ):
                 # Both modified since last sync - conflict!
                 return ConflictResolution(
                     conflict_type=ConflictType.BOTH_MODIFIED.value,
@@ -312,19 +317,24 @@ class ConflictResolver:
             return None
 
         if isinstance(dt, datetime):
-            return dt
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
 
         if isinstance(dt, str):
             try:
                 # Try ISO format
-                return datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=UTC)
+                return parsed.astimezone(UTC)
             except (ValueError, AttributeError):
                 pass
 
         if isinstance(dt, (int, float)):
             try:
                 # Try Unix timestamp
-                return datetime.fromtimestamp(dt)
+                return datetime.fromtimestamp(dt, tz=UTC)
             except (ValueError, OSError):
                 pass
 

@@ -11,6 +11,7 @@ import {
   X,
   AlertCircle,
   ArrowRight,
+  GitBranch,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "@/lib/api";
@@ -381,10 +382,19 @@ export default function Milestones() {
             Track project milestones and deadlines
           </p>
         </div>
-        <Button onClick={() => setShowCreateModal(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          Create Milestone
-        </Button>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/sync-config"
+            className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+          >
+            <GitBranch className="w-4 h-4 mr-2 text-yellow-500" />
+            GitHub & Jira Sync
+          </Link>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Create Milestone
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
