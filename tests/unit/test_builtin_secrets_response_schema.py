@@ -27,6 +27,7 @@ class TestSecretMetadataResponseFieldSet:
             "version",
             "created_at",
             "updated_at",
+            "village_id",
             "metadata",
         }
 
@@ -62,6 +63,7 @@ class TestSecretValueResponseFieldSet:
             "version",
             "created_at",
             "updated_at",
+            "village_id",
             "metadata",
         }
 

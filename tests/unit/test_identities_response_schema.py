@@ -37,6 +37,7 @@ class TestIdentityDTOFieldSet:
             "is_service_account",
             "metadata",
             "last_seen_at",
+            "village_id",
         }
 
     def test_no_password_or_credential_fields(self):
@@ -55,6 +56,7 @@ class TestIdentityGroupDTOFieldSet:
             "is_active",
             "created_at",
             "updated_at",
+            "village_id",
         }
 
 

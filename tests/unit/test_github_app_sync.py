@@ -68,6 +68,7 @@ def _create_sync_db(db_path: str) -> DAL:
         "organizations",
         Field("name", "string"),
         Field("tenant_id", "integer"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -85,6 +86,7 @@ def _create_sync_db(db_path: str) -> DAL:
         Field("last_sync_at", "datetime"),
         Field("last_batch_sync_at", "datetime"),
         Field("config_json", "json"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -137,6 +139,7 @@ def _create_sync_db(db_path: str) -> DAL:
         Field("target_date", "datetime"),
         Field("organization_id", "integer"),
         Field("tenant_id", "integer"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -149,6 +152,7 @@ def _create_sync_db(db_path: str) -> DAL:
         Field("closed_at", "datetime"),
         Field("organization_id", "integer"),
         Field("tenant_id", "integer"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -157,6 +161,7 @@ def _create_sync_db(db_path: str) -> DAL:
         Field("name", "string"),
         Field("color", "string"),
         Field("description", "text"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )
@@ -175,6 +180,7 @@ def _create_sync_db(db_path: str) -> DAL:
         Field("reporter_id", "integer"),
         Field("due_date", "datetime"),
         Field("closed_at", "datetime"),
+        Field("village_id", "string"),
         Field("created_at", "datetime"),
         Field("updated_at", "datetime"),
     )

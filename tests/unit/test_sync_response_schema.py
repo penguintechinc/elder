@@ -42,6 +42,7 @@ class TestSyncConfigResponseFieldSet:
             "last_sync_at",
             "last_batch_sync_at",
             "config_json",
+            "village_id",
             "created_at",
             "updated_at",
         }

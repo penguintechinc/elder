@@ -42,6 +42,7 @@ class TestOrganizationDTOFieldSet:
             "settings",
             "tags",
             "metadata",
+            "village_id",
         }
 
 
