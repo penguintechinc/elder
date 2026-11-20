@@ -10,7 +10,15 @@ import datetime
 import secrets
 from typing import Optional
 
+import structlog
 from quart import current_app
+
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 class SCIMService:
@@ -153,13 +161,14 @@ class SCIMService:
         )
 
         # Create portal user
+        is_active = bool(scim_user.get("active", True))
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SCIM users authenticate via SSO
             full_name=full_name or None,
             tenant_role="reader",  # Default role
-            is_active=scim_user.get("active", True),
+            is_active=is_active,
             email_verified=True,  # SCIM validates email
         )
         db.commit()
@@ -169,6 +178,26 @@ class SCIMService:
             last_sync_at=datetime.datetime.now(datetime.UTC)
         )
         db.commit()
+
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="scim",
+                    tenant_role="reader",
+                    is_active=is_active,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
 
         return SCIMService._user_to_scim(user_id, email.lower(), full_name, True)
 

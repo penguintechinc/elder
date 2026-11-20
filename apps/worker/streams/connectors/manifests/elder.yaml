@@ -820,7 +820,7 @@ connector:
         - field: events
           type: multiselect
           label: Events
-          options: [entity.created, entity.updated, entity.deleted, dependency.added, dependency.removed, issue.created, issue.updated, discovery.completed, vulnerability.detected]
+          options: [entity.created, entity.updated, entity.deleted, dependency.added, dependency.removed, issue.created, issue.updated, user.created, admin_user.created, discovery.completed, vulnerability.detected]
           required: true
         - field: secret
           type: string

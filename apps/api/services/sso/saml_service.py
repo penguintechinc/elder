@@ -10,6 +10,7 @@ import datetime
 from collections.abc import Mapping
 from typing import Any, Optional
 
+import structlog
 from quart import current_app
 
 from apps.api.services.sso.idp_access import (
@@ -27,6 +28,12 @@ from apps.api.services.sso.idp_validation import (
     validate_https_url,
     validate_x509_certificate,
 )
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 # Columns an admin may change through update_idp_config. ``tenant_id`` and
 # ``idp_type`` are deliberately absent: a config can never be re-homed to a
@@ -444,23 +451,44 @@ class SAMLService:
         full_name = attributes.get(mappings.get("full_name", "name"))
 
         # Create new user (no password for SSO users)
+        default_role = idp_config.get("default_role", "reader")
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SSO users don't have passwords
             full_name=full_name,
-            tenant_role=idp_config.get("default_role", "reader"),
+            tenant_role=default_role,
             is_active=True,
             email_verified=True,  # SSO validates email
             last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
 
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="saml",
+                    tenant_role=default_role,
+                    is_active=True,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
+
         return {
             "id": user_id,
             "email": email.lower(),
             "tenant_id": tenant_id,
-            "tenant_role": idp_config.get("default_role", "reader"),
+            "tenant_role": default_role,
             "global_role": None,
             "jit_provisioned": True,
         }

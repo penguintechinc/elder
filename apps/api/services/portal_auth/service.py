@@ -11,10 +11,17 @@ import secrets
 from typing import Optional
 
 import pyotp
+import structlog
 from quart import current_app
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from apps.api.common.licensing.enforce import check_limit
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 def _admin_kind(tenant_role: str | None, global_role: str | None) -> str | None:
@@ -122,6 +129,27 @@ class PortalAuthService:
             password_changed_at=datetime.datetime.now(datetime.UTC),
         )
         current_app.db.commit()
+
+        try:
+            schedule_user_created_webhooks(
+                current_app.db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="local",
+                    global_role=global_role,
+                    tenant_role=tenant_role,
+                    is_active=True,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
 
         return {
             "id": user_id,

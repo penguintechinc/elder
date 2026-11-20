@@ -6,6 +6,7 @@ import os
 from dataclasses import asdict
 from datetime import UTC, datetime, timezone
 
+import structlog
 from pydantic import ValidationError
 from quart import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import generate_password_hash
@@ -16,9 +17,14 @@ from apps.api.auth.portal_cookies import set_portal_auth_cookies
 from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("auth", __name__)
 
 
@@ -132,6 +138,31 @@ async def register():
 
     if error:
         return jsonify({"error": error}), status
+
+    if identity and getattr(identity, "tenant_id", None):
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=identity.id,
+                    tenant_id=identity.tenant_id,
+                    user_source="identity",
+                    identity_type=identity.identity_type or "human",
+                    auth_provider="local",
+                    is_superuser=bool(identity.is_superuser),
+                    portal_role=identity.portal_role or "observer",
+                    organization_id=getattr(identity, "organization_id", None),
+                    is_active=bool(identity.is_active),
+                ),
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail register
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=identity.id,
+                error=str(exc)[:200],
+            )
 
     return (
         jsonify(

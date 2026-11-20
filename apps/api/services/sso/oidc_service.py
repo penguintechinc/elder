@@ -13,10 +13,17 @@ from urllib.parse import urlencode
 
 import jwt
 import requests
+import structlog
 from authlib.integrations.requests_client import OAuth2Session
 from quart import current_app
 
 from apps.api.services.sso.idp_access import normalize_attribute_mappings
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
 
 
 class OIDCService:
@@ -464,23 +471,44 @@ class OIDCService:
             }
 
         # Create new user (no password for SSO users)
+        default_role = idp_config.get("default_role", "reader")
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SSO users don't have passwords
             full_name=full_name,
-            tenant_role=idp_config.get("default_role", "reader"),
+            tenant_role=default_role,
             is_active=True,
             email_verified=True,  # OIDC validates email
             last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
 
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="oidc",
+                    tenant_role=default_role,
+                    is_active=True,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
+
         return {
             "id": user_id,
             "email": email.lower(),
             "tenant_id": tenant_id,
-            "tenant_role": idp_config.get("default_role", "reader"),
+            "tenant_role": default_role,
             "global_role": None,
             "jit_provisioned": True,
         }

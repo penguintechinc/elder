@@ -65,7 +65,6 @@ vi.mock("@/lib/api", () => ({
     listStreams: vi.fn(),
   },
 }));
-
 const DEFAULT_SCOPES_CATALOG = [
   {
     scope: "events:log",
@@ -146,7 +145,6 @@ describe("Webhooks admin page", () => {
   afterEach(() => {
     window.history.pushState({}, "", "/webhooks");
   });
-
   it("shows an admin-required message for non-admins", async () => {
     vi.mocked(api.getPortalProfile).mockResolvedValue({
       global_role: "viewer",
@@ -323,6 +321,7 @@ describe("Webhooks admin page", () => {
     expect(call.filter_assignee_id).toBeUndefined();
   });
 
+<<<<<<< HEAD
   it("renders scope badges on inbound tab and creates an inbound webhook with selected scopes", async () => {
     vi.mocked(api.getInboundWebhooks).mockResolvedValue({
       inbound_webhooks: [
@@ -565,5 +564,98 @@ describe("Webhooks admin page", () => {
         screen.getByText(/Webhook lacks required scope: issues:create/),
       ).toBeDefined();
     });
+  });
+
+  it("renders user.created and admin_user.created event checkboxes in Create & Edit modals and submits them", async () => {
+    vi.mocked(api.createWebhook).mockResolvedValue({ id: 4 });
+    vi.mocked(api.updateWebhook).mockResolvedValue({ id: 10 });
+    vi.mocked(api.getWebhooks).mockResolvedValue({
+      webhooks: [
+        {
+          id: 10,
+          name: "User lifecycle hook",
+          url: "https://hooks.example.com/users",
+          organization_id: 1,
+          events: ["user.created"],
+          is_active: true,
+        },
+      ],
+    });
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText("Outbound (Basic Events)")).toBeDefined();
+    });
+    fireEvent.click(screen.getByText("Outbound (Basic Events)"));
+
+    // Create modal: select both user.created and admin_user.created
+    fireEvent.click(screen.getByText("Create Outbound Webhook"));
+    await waitFor(() => {
+      expect(screen.getByTestId("event-checkbox-user.created")).toBeDefined();
+      expect(
+        screen.getByTestId("event-checkbox-admin_user.created"),
+      ).toBeDefined();
+    });
+    const inputs = screen.getAllByPlaceholderText(
+      /Production Webhook|example.com/,
+    );
+    const nameInput = inputs.find((i) =>
+      (i as HTMLInputElement).placeholder.includes("Production"),
+    );
+    const urlInput = inputs.find((i) =>
+      (i as HTMLInputElement).placeholder.includes("example.com"),
+    );
+    if (nameInput)
+      fireEvent.change(nameInput, {
+        target: { value: "User Onboarding Hook" },
+      });
+    if (urlInput) {
+      fireEvent.focus(urlInput);
+      fireEvent.change(urlInput, {
+        target: { value: "https://hooks.example.com/onboarding" },
+      });
+      fireEvent.keyDown(urlInput, { key: "Enter" });
+    }
+    fireEvent.click(screen.getByTestId("event-checkbox-user.created"));
+    fireEvent.click(screen.getByTestId("event-checkbox-admin_user.created"));
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.createWebhook)).toHaveBeenCalled();
+    });
+    const createPayload = vi.mocked(api.createWebhook).mock.calls[0][0];
+    expect(createPayload.url).toBe("https://hooks.example.com/onboarding");
+    expect(createPayload.events).toEqual([
+      "user.created",
+      "admin_user.created",
+    ]);
+
+    // Edit modal: verify both checkboxes render, user.created is pre-checked, toggle admin_user.created and save
+    await waitFor(() => {
+      expect(screen.getByText("User lifecycle hook")).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle("Edit webhook"));
+    await screen.findByTestId("edit-webhook-form");
+
+    const editUserCheckbox = screen.getByTestId(
+      "event-checkbox-user.created",
+    ) as HTMLInputElement;
+    const editAdminCheckbox = screen.getByTestId(
+      "event-checkbox-admin_user.created",
+    ) as HTMLInputElement;
+    expect(editUserCheckbox.checked).toBe(true);
+    expect(editAdminCheckbox.checked).toBe(false);
+
+    fireEvent.click(editAdminCheckbox);
+    fireEvent.click(screen.getByTestId("save-webhook-button"));
+
+    await waitFor(() => {
+      expect(vi.mocked(api.updateWebhook)).toHaveBeenCalled();
+    });
+    const updateCall = vi.mocked(api.updateWebhook).mock.calls[0];
+    expect(updateCall[0]).toBe(10);
+    expect(updateCall[1].events).toEqual([
+      "user.created",
+      "admin_user.created",
+    ]);
   });
 });
