@@ -120,7 +120,13 @@ def _issues_blueprints() -> list[tuple[Blueprint, str]]:
 
 def _discovery_blueprints() -> list[tuple[Blueprint, str]]:
     """Load discovery and sync blueprints (discovery, sync, connectors, IAM)."""
-    from apps.api.modules.discovery.routes import discovery, google_workspace, iam, sync
+    from apps.api.modules.discovery.routes import (
+        discovery,
+        google_workspace,
+        iam,
+        integrations_internal,
+        sync,
+    )
 
     api_prefix = "/api/v1"
     return [
@@ -128,6 +134,7 @@ def _discovery_blueprints() -> list[tuple[Blueprint, str]]:
         (sync.bp, f"{api_prefix}/sync"),
         (google_workspace.bp, f"{api_prefix}/google-workspace"),
         (iam.bp, f"{api_prefix}/iam"),
+        (integrations_internal.bp, f"{api_prefix}/integrations/internal"),
     ]
 
 

@@ -143,7 +143,7 @@ class TestFleetDMConnectAndSettings:
         mock_http.aclose.assert_awaited_once()
         assert connector.http_client is None
 
-    def test_worker_service_registers_fleetdm_when_enabled(self):
+    def test_worker_service_decoupled_from_connectors(self):
         stub_modules = {}
         if importlib.util.find_spec("aiocron") is None:
             stub_modules["aiocron"] = MagicMock()
@@ -153,20 +153,15 @@ class TestFleetDMConnectAndSettings:
 
             with (
                 patch.object(WorkerService, "_init_database"),
-                patch.object(WorkerService, "_init_discovery_executor"),
-                patch.object(settings, "aws_enabled", False),
-                patch.object(settings, "gcp_enabled", False),
-                patch.object(settings, "google_workspace_enabled", False),
-                patch.object(settings, "ldap_enabled", False),
-                patch.object(settings, "okta_enabled", False),
-                patch.object(settings, "authentik_enabled", False),
-                patch.object(settings, "lxd_enabled", False),
                 patch.object(settings, "fleetdm_enabled", True),
             ):
                 worker = WorkerService()
-                worker._initialize_connectors()
 
-            assert any(isinstance(c, FleetDMConnector) for c in worker.connectors)
+            assert not hasattr(worker, "connectors")
+            assert not hasattr(worker, "_initialize_connectors")
+            assert not hasattr(worker, "_init_discovery_executor")
+            connector = FleetDMConnector()
+            assert connector.name == "fleetdm"
 
 
 # ---------------------------------------------------------------------------

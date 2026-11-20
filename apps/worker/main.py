@@ -15,15 +15,6 @@ import redis.asyncio
 from quart import Quart, jsonify
 
 from apps.worker.config.settings import settings
-from apps.worker.connectors.authentik_connector import AuthentikConnector
-from apps.worker.connectors.aws_connector import AWSConnector
-from apps.worker.connectors.base import BaseConnector, SyncResult
-from apps.worker.connectors.fleetdm_connector import FleetDMConnector
-from apps.worker.connectors.gcp_connector import GCPConnector
-from apps.worker.connectors.google_workspace_connector import GoogleWorkspaceConnector
-from apps.worker.connectors.ldap_connector import LDAPConnector
-from apps.worker.connectors.lxd_connector import LXDConnector
-from apps.worker.connectors.okta_connector import OktaConnector
 from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
@@ -99,11 +90,8 @@ class WorkerService:
 
     def __init__(self):
         """Initialize worker service."""
-        self.connectors: list[BaseConnector] = []
         self.running = False
-        self.sync_tasks: list[asyncio.Task] = []
         self.db_manager = None
-        self.discovery_executor = None
         # Job-bus consumer components
         self.redis = None
         self.jobbus = None
@@ -113,7 +101,6 @@ class WorkerService:
         self.health_app = Quart(__name__)
         self._setup_health_endpoints()
         self._init_database()
-        self._init_discovery_executor()
 
     def _init_database(self):
         """Initialize database connection if DATABASE_URL is configured."""
@@ -134,42 +121,21 @@ class WorkerService:
             logger.error(f"Failed to initialize database: {e}", exc_info=True)
             logger.warning("Worker will continue without direct DB access")
 
-    def _init_discovery_executor(self):
-        """Initialize the discovery executor if DB is available."""
-        if not self.db_manager:
-            logger.info("Discovery executor disabled (no DB connection)")
-            return
-
-        try:
-            from apps.worker.discovery.executor import DiscoveryExecutor
-
-            self.discovery_executor = DiscoveryExecutor(
-                db_write=self.db_manager.write,
-                db_read=self.db_manager.read,
-            )
-            logger.info("Discovery executor initialized")
-        except Exception as e:
-            logger.error(f"Failed to initialize discovery executor: {e}", exc_info=True)
-            logger.warning("Worker will continue without discovery execution")
-
     def _setup_health_endpoints(self):
         """Setup Quart health check and metrics endpoints."""
 
         @self.health_app.route("/healthz")
         def health_check():
             """Health check endpoint."""
-            health_status = {
-                "status": "healthy" if self.running else "stopped",
-                "connectors": {},
-            }
-
-            for connector in self.connectors:
-                health_status["connectors"][connector.name] = {
-                    "enabled": True,
-                    "healthy": True,  # Will be updated by actual health checks
-                }
-
-            return jsonify(health_status), 200
+            return (
+                jsonify(
+                    {
+                        "status": "healthy" if self.running else "stopped",
+                        "integrations_owner": "svc-integrations",
+                    }
+                ),
+                200,
+            )
 
         @self.health_app.route("/status")
         def status():
@@ -179,184 +145,14 @@ class WorkerService:
                     {
                         "service": "elder-worker",
                         "running": self.running,
-                        "connectors": [
-                            {
-                                "name": c.name,
-                                "type": c.__class__.__name__,
-                            }
-                            for c in self.connectors
-                        ],
-                        "discovery_executor": self.discovery_executor is not None,
+                        "integrations_owner": "svc-integrations",
+                        "jobbus_connected": self.jobbus is not None,
+                        "worker_groups": sorted(self.worker_groups),
                         "database_connected": self.db_manager is not None,
-                        "settings": {
-                            "sync_on_startup": settings.sync_on_startup,
-                            "aws_enabled": settings.aws_enabled,
-                            "gcp_enabled": settings.gcp_enabled,
-                            "google_workspace_enabled": settings.google_workspace_enabled,
-                            "ldap_enabled": settings.ldap_enabled,
-                            "okta_enabled": settings.okta_enabled,
-                            "authentik_enabled": settings.authentik_enabled,
-                            "lxd_enabled": settings.lxd_enabled,
-                            "fleetdm_enabled": settings.fleetdm_enabled,
-                        },
                     }
                 ),
                 200,
             )
-
-    def _initialize_connectors(self):
-        """Initialize enabled connectors."""
-        logger.info("Initializing connectors")
-
-        if settings.aws_enabled:
-            logger.info("AWS connector enabled")
-            self.connectors.append(AWSConnector())
-
-        if settings.gcp_enabled:
-            logger.info("GCP connector enabled")
-            self.connectors.append(GCPConnector())
-
-        if settings.google_workspace_enabled:
-            logger.info("Google Workspace connector enabled")
-            self.connectors.append(GoogleWorkspaceConnector())
-
-        if settings.ldap_enabled:
-            logger.info("LDAP connector enabled")
-            self.connectors.append(LDAPConnector())
-
-        if settings.okta_enabled:
-            logger.info("Okta connector enabled (Enterprise)")
-            self.connectors.append(OktaConnector())
-
-        if settings.authentik_enabled:
-            logger.info("Authentik connector enabled (Enterprise)")
-            self.connectors.append(AuthentikConnector())
-
-        if settings.lxd_enabled:
-            logger.info("LXD connector enabled")
-            self.connectors.append(LXDConnector())
-
-        if settings.fleetdm_enabled:
-            logger.info("FleetDM connector enabled")
-            self.connectors.append(FleetDMConnector())
-
-        if not self.connectors:
-            logger.warning("No connectors enabled! Check your configuration.")
-
-        logger.info(f"Initialized {len(self.connectors)} connector(s)")
-
-    async def _sync_connector(self, connector: BaseConnector) -> SyncResult:
-        """
-        Sync a single connector with metrics.
-
-        Args:
-            connector: Connector to sync
-
-        Returns:
-            SyncResult
-        """
-        logger.info(f"Starting sync for {connector.name}")
-
-        start_time = time.time()
-        try:
-            # Connect to connector
-            await connector.connect()
-
-            # Perform sync
-            result = await connector.sync()
-
-            # Update OTel metrics
-            duration = time.time() - start_time
-            if _otel_metrics:
-                _otel_metrics["sync_duration_histogram"].record(
-                    duration, {"connector": connector.name}
-                )
-                if result.has_errors:
-                    _otel_metrics["sync_counter"].add(
-                        1, {"connector": connector.name, "status": "partial"}
-                    )
-                    _otel_metrics["error_counter"].add(
-                        len(result.errors), {"connector": connector.name}
-                    )
-                else:
-                    _otel_metrics["sync_counter"].add(
-                        1, {"connector": connector.name, "status": "success"}
-                    )
-
-            logger.info(
-                f"Sync completed for {connector.name}",
-                **result.to_dict(),
-            )
-
-            return result
-
-        except Exception as e:
-            logger.error(
-                f"Sync failed for {connector.name}",
-                error=str(e),
-                exc_info=True,
-            )
-            duration = time.time() - start_time
-            if _otel_metrics:
-                _otel_metrics["sync_counter"].add(
-                    1, {"connector": connector.name, "status": "failed"}
-                )
-                _otel_metrics["error_counter"].add(1, {"connector": connector.name})
-                _otel_metrics["sync_duration_histogram"].record(
-                    duration, {"connector": connector.name}
-                )
-
-            return SyncResult(
-                connector_name=connector.name,
-                errors=[str(e)],
-            )
-
-        finally:
-            # Disconnect connector
-            await connector.disconnect()
-
-    async def _run_sync_cycle(self):
-        """Run a complete sync cycle for all connectors."""
-        logger.info("Starting sync cycle for all connectors")
-
-        results = await asyncio.gather(
-            *[self._sync_connector(connector) for connector in self.connectors],
-            return_exceptions=True,
-        )
-
-        total_ops = sum(
-            r.total_operations for r in results if isinstance(r, SyncResult)
-        )
-        total_errors = sum(len(r.errors) for r in results if isinstance(r, SyncResult))
-
-        logger.info(
-            "Sync cycle completed",
-            total_operations=total_ops,
-            total_errors=total_errors,
-        )
-
-    async def _run_discovery_poll(self):
-        """Poll for and execute pending cloud discovery jobs."""
-        if not self.discovery_executor:
-            return
-
-        try:
-            start_time = time.time()
-            executed = self.discovery_executor.run_pending()
-            duration = time.time() - start_time
-            if _otel_metrics:
-                _otel_metrics["poll_duration_histogram"].record(duration)
-                if executed > 0:
-                    _otel_metrics["job_counter"].add(
-                        executed, {"provider": "cloud", "status": "success"}
-                    )
-            logger.info(f"Discovery poll completed: {executed} job(s) executed")
-        except Exception as e:
-            if _otel_metrics:
-                _otel_metrics["job_counter"].add(
-                    1, {"provider": "cloud", "status": "failed"}
-                )
-            logger.error(f"Discovery poll failed: {e}", exc_info=True)
 
     async def _init_jobbus(self) -> None:
         """Initialize Redis and JobBus consumer.
@@ -706,15 +502,6 @@ class WorkerService:
 
             logger.info("Scheduled XAUTOCLAIM sweeper (every minute)")
 
-        # Schedule discovery job polling (every 5 minutes)
-        if self.discovery_executor:
-
-            @aiocron.crontab("*/5 * * * *")
-            async def discovery_poll():
-                await self._run_discovery_poll()
-
-            logger.info("Scheduled discovery job polling (every 5 minutes)")
-
         # Schedule helpdesk SLA breach checker (every 5 minutes) if helpdesk_sla_breach group enabled
         if self.jobbus and "helpdesk_sla_breach" in self.worker_groups:
             import uuid
@@ -787,58 +574,10 @@ class WorkerService:
 
             logger.info("Scheduled helpdesk SLA breach check (every 5 minutes)")
 
-        for connector in self.connectors:
-            # Determine sync interval based on connector type
-            if isinstance(connector, AWSConnector):
-                interval = settings.aws_sync_interval
-            elif isinstance(connector, GCPConnector):
-                interval = settings.gcp_sync_interval
-            elif isinstance(connector, GoogleWorkspaceConnector):
-                interval = settings.google_workspace_sync_interval
-            elif isinstance(connector, LDAPConnector):
-                interval = settings.ldap_sync_interval
-            elif isinstance(connector, OktaConnector):
-                interval = settings.okta_sync_interval
-            elif isinstance(connector, AuthentikConnector):
-                interval = settings.authentik_sync_interval
-            elif isinstance(connector, LXDConnector):
-                interval = settings.lxd_sync_interval
-            elif isinstance(connector, FleetDMConnector):
-                interval = settings.fleetdm_sync_interval
-            else:
-                interval = 3600  # Default to 1 hour
-
-            # Convert interval to cron expression (every X seconds)
-            # For simplicity, we'll use minutes if interval >= 60
-            if interval >= 3600:
-                hours = interval // 3600
-                cron_expr = f"0 */{hours} * * *"  # Every N hours
-            elif interval >= 60:
-                minutes = interval // 60
-                cron_expr = f"*/{minutes} * * * *"  # Every N minutes
-            else:
-                # For intervals < 60 seconds, just run every minute
-                # (aiocron doesn't support sub-minute intervals well)
-                cron_expr = "* * * * *"
-
-            logger.info(
-                f"Scheduling {connector.name}",
-                interval=interval,
-                cron=cron_expr,
-            )
-
-            # Schedule the sync
-            @aiocron.crontab(cron_expr)
-            async def scheduled_sync(conn=connector):
-                await self._sync_connector(conn)
-
     async def start(self):
         """Start the worker service."""
         logger.info("Starting Elder Worker Service")
         self.running = True
-
-        # Initialize connectors
-        self._initialize_connectors()
 
         # Initialize job-bus consumer
         await self._init_jobbus()
@@ -848,14 +587,7 @@ class WorkerService:
         # first aiocron tick
         await self._service_node_heartbeat()
 
-        # Run initial sync if configured
-        if settings.sync_on_startup:
-            logger.info("Running initial sync on startup")
-            await self._run_sync_cycle()
-            # Also run initial discovery poll
-            await self._run_discovery_poll()
-
-        # Setup scheduled syncs (includes discovery polling and XAUTOCLAIM sweeper)
+        # Setup scheduled background tasks (heartbeat, XAUTOCLAIM sweeper, SLA breach)
         self._setup_scheduled_syncs()
 
         # Launch consumer task (keeps running in background)
