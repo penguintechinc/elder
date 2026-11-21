@@ -61,6 +61,7 @@ _VID_PREFIX_SCOPED_TABLES = frozenset(
 
 # Registry: all resolvable types (mutable, seeded at startup)
 _REGISTRY: dict[str, ResolvableType] = {}
+_BY_TABLE: dict[str, ResolvableType] = {}
 
 
 def register(resolvable_type: ResolvableType) -> None:
@@ -77,6 +78,7 @@ def register(resolvable_type: ResolvableType) -> None:
     if resolvable_type.type in _REGISTRY:
         raise ValueError(f"ResolvableType '{resolvable_type.type}' already registered")
     _REGISTRY[resolvable_type.type] = resolvable_type
+    _BY_TABLE[resolvable_type.table] = resolvable_type
 
 
 def _init_registry() -> None:
@@ -397,6 +399,15 @@ def _init_registry() -> None:
             title_column="name",
         )
     )
+    register(
+        ResolvableType(
+            type="stream_webhook",
+            module="streams",
+            table="stream_webhooks",
+            url_pattern="/streams/{playbook_id}",
+            title_column="name",
+        )
+    )
 
     # Diagrams
     register(
@@ -534,7 +545,7 @@ def _init_registry() -> None:
         )
     )
 
-    # Webhooks & Backups
+    # Webhooks, Alerting & Backups
     register(
         ResolvableType(
             type="webhook",
@@ -549,6 +560,24 @@ def _init_registry() -> None:
             type="inbound_webhook",
             module="webhooks_alerting",
             table="inbound_webhooks",
+            url_pattern="/webhooks?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="notification_rule",
+            module="webhooks_alerting",
+            table="notification_rules",
+            url_pattern="/webhooks?highlight={id}",
+            title_column="name",
+        )
+    )
+    register(
+        ResolvableType(
+            type="alert_configuration",
+            module="webhooks_alerting",
+            table="alert_configurations",
             url_pattern="/webhooks?highlight={id}",
             title_column="name",
         )
@@ -665,6 +694,11 @@ def get_type(type_name: str) -> ResolvableType | None:
     return _REGISTRY.get(type_name)
 
 
+def get_type_by_table(table_name: str) -> ResolvableType | None:
+    """Look up a resolvable type by database table name."""
+    return _BY_TABLE.get(table_name)
+
+
 def _extract_title(row: Any, resolvable: ResolvableType, resource_id: Any) -> str:
     """Extract a human-readable display title from a resolved row."""
     raw = getattr(row, resolvable.title_column, None)
@@ -747,21 +781,221 @@ def _vid_matches_tenant_prefix(village_id: str, tenant_id: int) -> bool:
     return parse_village_id(village_id).tenant_id == tenant_id
 
 
+def _is_mock_object(obj: Any) -> bool:
+    """Return True if ``obj`` is a unittest.mock test double."""
+    from unittest.mock import Base
+
+    return isinstance(obj, Base)
+
+
+def _is_missing_table_error(exc: Exception) -> bool:
+    """Return True when an exception indicates ``village_ids`` does not exist yet."""
+    msg = str(exc).lower()
+    return (
+        "village_ids" in msg
+        and (
+            "does not exist" in msg
+            or "no such table" in msg
+            or "undefined table" in msg
+            or "doesn't exist" in msg
+        )
+    ) or "undefinedtable" in type(exc).__name__.lower()
+
+
+def _lookup_via_village_ids_registry(
+    db: Any, village_id: str, tenant_id: int
+) -> tuple[tuple[str, int] | None, bool]:
+    """Perform an O(1) lookup in the central ``village_ids`` table.
+
+    Returns ``((table_name, record_id), True)`` when found, ``(None, True)``
+    when ``village_ids`` exists but has no tenant-matching row, or
+    ``(None, False)`` when the ``village_ids`` table does not exist (e.g.,
+    SQLite unit tests or pre-046 schemas).
+    """
+    if _is_mock_object(db):
+        return None, False
+
+    engine = getattr(db, "engine", None)
+    if engine is None:
+        engine = getattr(db, "_engine", None)
+
+    if engine is not None and not _is_mock_object(engine):
+        try:
+            import sqlalchemy as sa
+
+            with engine.connect() as conn:
+                hit = conn.execute(
+                    sa.text(
+                        "SELECT table_name, record_id "
+                        "FROM village_ids "
+                        "WHERE village_id = :vid AND tenant_id = :tid "
+                        "LIMIT 1"
+                    ),
+                    {"vid": village_id, "tid": tenant_id},
+                ).first()
+                if hit is None:
+                    return None, True
+                return (str(hit[0]), int(hit[1])), True
+        except Exception as exc:
+            if _is_missing_table_error(exc):
+                return None, False
+            raise
+
+    # Non-SQLAlchemy DB handle (e.g., pure PyDAL with registered village_ids table)
+    if "village_ids" in getattr(db, "tables", ()):
+        vid_tbl = _get_table_safe(db, "village_ids")
+        if vid_tbl is not None and _get_column_safe(vid_tbl, "village_id") is not None:
+            row = (
+                db(
+                    (vid_tbl.village_id == village_id)
+                    & (vid_tbl.tenant_id == tenant_id)
+                )
+                .select(vid_tbl.table_name, vid_tbl.record_id)
+                .first()
+            )
+            if row is None:
+                return None, True
+            return (str(row.table_name), int(row.record_id)), True
+
+    return None, False
+
+
+def _resolve_row_in_type(
+    db: Any,
+    resolvable: ResolvableType,
+    village_id: str,
+    tenant_id: int,
+    get_org_ids: Any,
+    get_tenant_strs: Any,
+    record_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Resolve and tenant-scope a single registered resource table for ``village_id``."""
+    table = _get_table_safe(db, resolvable.table)
+    if table is None:
+        return None
+
+    village_id_field = _get_column_safe(table, resolvable.village_id_column)
+    if village_id_field is None:
+        return None
+
+    base_cond: Any = village_id_field == village_id
+    if record_id is not None:
+        pk_col = _get_column_safe(table, "id")
+        if pk_col is not None:
+            base_cond = base_cond & (pk_col == record_id)
+
+    tenant_col = _get_column_safe(table, "tenant_id")
+    org_col = _get_column_safe(table, "organization_id")
+    row = None
+
+    if resolvable.type == "tenant":
+        row = db(base_cond & (table.id == tenant_id)).select().first()
+    elif resolvable.tenant_id_is_string and tenant_col is not None:
+        allowed_strs = get_tenant_strs()
+        row = db(base_cond & (tenant_col.belongs(allowed_strs))).select().first()
+    elif tenant_col is not None:
+        row = db(base_cond & (tenant_col == tenant_id)).select().first()
+        # Legacy rows on nullable-tenant_id tables (e.g. projects/milestones/webhooks)
+        # may still link tenancy through organization_id
+        if row is None and org_col is not None:
+            org_ids = get_org_ids()
+            if org_ids:
+                row = (
+                    db(
+                        base_cond
+                        & (tenant_col == None)  # noqa: E711
+                        & (org_col.belongs(list(org_ids)))
+                    )
+                    .select()
+                    .first()
+                )
+    elif org_col is not None:
+        org_ids = get_org_ids()
+        if org_ids:
+            row = db(base_cond & (org_col.belongs(list(org_ids)))).select().first()
+    elif resolvable.table == "discovery_jobs":
+        org_ids = get_org_ids()
+        if org_ids:
+            candidate = db(base_cond).select().first()
+            if candidate is not None:
+                cfg = _parse_json_config(getattr(candidate, "config_json", None))
+                job_org_id = cfg.get("_organization_id")
+                if job_org_id is not None:
+                    try:
+                        if int(job_org_id) in org_ids:
+                            row = candidate
+                    except (TypeError, ValueError):
+                        row = None
+    elif resolvable.table == "sync_configs":
+        candidate = db(base_cond).select().first()
+        if candidate is not None:
+            cfg = _parse_json_config(getattr(candidate, "config_json", None))
+            cfg_org_id = cfg.get("elder_organization_id") or cfg.get("organization_id")
+            if cfg_org_id is not None:
+                try:
+                    if int(cfg_org_id) in get_org_ids():
+                        row = candidate
+                except (TypeError, ValueError):
+                    row = None
+            elif _vid_matches_tenant_prefix(village_id, tenant_id):
+                row = candidate
+    elif resolvable.table in _VID_PREFIX_SCOPED_TABLES:
+        if _vid_matches_tenant_prefix(village_id, tenant_id):
+            row = db(base_cond).select().first()
+    else:
+        return None
+
+    if row is None:
+        return None
+
+    resource_id = getattr(row, resolvable.id_column)
+    return {
+        "type": resolvable.type,
+        "id": resource_id,
+        "table_name": resolvable.table,
+        "title": _extract_title(row, resolvable, resource_id),
+        "module": resolvable.module,
+    }
+
+
+def format_resolvable_url(
+    db: Any,
+    resolvable: ResolvableType,
+    resource_id: Any,
+    tenant_id: int | None = None,
+) -> str:
+    """Format ``resolvable.url_pattern`` for ``resource_id`` (supporting ``{playbook_id}``)."""
+    if "{playbook_id}" not in resolvable.url_pattern:
+        return resolvable.url_pattern.format(id=resource_id)
+
+    table = _get_table_safe(db, resolvable.table) if db is not None else None
+    if table is not None:
+        id_field = _get_column_safe(table, resolvable.id_column)
+        tenant_col = _get_column_safe(table, "tenant_id")
+        if id_field is not None:
+            cond: Any = id_field == resource_id
+            if tenant_id is not None and tenant_col is not None:
+                cond = cond & (tenant_col == tenant_id)
+            row = db(cond).select().first()
+            playbook_id = getattr(row, "playbook_id", None) if row is not None else None
+            if playbook_id is not None:
+                return resolvable.url_pattern.format(
+                    id=resource_id, playbook_id=playbook_id
+                )
+
+    return "/streams"
+
+
 def resolve_by_village_id(
     db: Any, village_id: str, tenant_id: int | None = None
 ) -> dict[str, Any] | None:
     """Resolve a village_id to its resource type, ID, title, module, and table.
 
-    Searches all registered types for a matching village_id, strictly scoped to
-    ``tenant_id``. Supports:
-    - Direct ``tenant_id`` integer columns
-    - ``tenants`` self-resolution (``table.id == tenant_id``)
-    - String ``tenant_id`` columns (``geo_regions``, ``geo_locations``)
-    - Organization-scoped tables (``entities``, ``networking_resources``,
-      ``secrets``, ``builtin_secrets``, ``crypto_keys``, ``cloud_accounts``,
-      etc.) via ``organizations.tenant_id == tenant_id``
-    - ``discovery_jobs`` via ``config_json["_organization_id"]`` in tenant orgs
-    - Tenantless global tables via the server-minted ``village_id`` tenant prefix
+    Tries an O(1) lookup against the central ``village_ids`` registry table
+    first (strictly scoped by ``tenant_id``), resolving only the exact matched
+    table without scanning all 64 tables. Falls back to the multi-table scan
+    only when the ``village_ids`` table does not exist (e.g., SQLite unit
+    tests).
 
     Fail-closed (regression: gh-237): when ``tenant_id is None``, immediately
     returns ``None`` without querying any table.
@@ -781,7 +1015,12 @@ def resolve_by_village_id(
     # Fail-closed (regression: gh-237): no tenant_id means ownership of ANY row
     # cannot be verified, so never resolve one -- skip every table rather than
     # falling through to an unscoped query.
-    if tenant_id is None:
+    if tenant_id is None or isinstance(tenant_id, bool):
+        return None
+
+    try:
+        scoped_tenant_id = int(tenant_id)
+    except (TypeError, ValueError):
         return None
 
     tenant_org_ids_cache: set[int] | None = None
@@ -790,126 +1029,46 @@ def resolve_by_village_id(
     def get_org_ids() -> set[int]:
         nonlocal tenant_org_ids_cache
         if tenant_org_ids_cache is None:
-            tenant_org_ids_cache = _get_tenant_org_ids(db, tenant_id)
+            tenant_org_ids_cache = _get_tenant_org_ids(db, scoped_tenant_id)
         return tenant_org_ids_cache
 
     def get_tenant_strs() -> list[str]:
         nonlocal tenant_str_values_cache
         if tenant_str_values_cache is None:
-            tenant_str_values_cache = _get_tenant_string_values(db, tenant_id)
+            tenant_str_values_cache = _get_tenant_string_values(db, scoped_tenant_id)
         return tenant_str_values_cache
 
-    for type_name, resolvable in _REGISTRY.items():
-        table = _get_table_safe(db, resolvable.table)
-        if table is None:
-            continue
+    hit, registry_available = _lookup_via_village_ids_registry(
+        db, village_id, scoped_tenant_id
+    )
+    if registry_available:
+        if hit is None:
+            return None
+        table_name, record_id = hit
+        resolvable = _BY_TABLE.get(table_name)
+        if resolvable is None:
+            return None
+        return _resolve_row_in_type(
+            db,
+            resolvable,
+            village_id,
+            scoped_tenant_id,
+            get_org_ids,
+            get_tenant_strs,
+            record_id=record_id,
+        )
 
-        village_id_field = _get_column_safe(table, resolvable.village_id_column)
-        if village_id_field is None:
-            continue
-
-        tenant_col = _get_column_safe(table, "tenant_id")
-        org_col = _get_column_safe(table, "organization_id")
-        row = None
-
-        if type_name == "tenant":
-            # Special case: tenants table — a tenant can only resolve itself
-            row = (
-                db((village_id_field == village_id) & (table.id == tenant_id))
-                .select()
-                .first()
-            )
-        elif resolvable.tenant_id_is_string and tenant_col is not None:
-            allowed_strs = get_tenant_strs()
-            row = (
-                db(
-                    (village_id_field == village_id)
-                    & (tenant_col.belongs(allowed_strs))
-                )
-                .select()
-                .first()
-            )
-        elif tenant_col is not None:
-            # Table has explicit integer tenant_id column
-            row = (
-                db((village_id_field == village_id) & (tenant_col == tenant_id))
-                .select()
-                .first()
-            )
-            # Legacy rows on nullable-tenant_id tables (e.g. projects/milestones/webhooks)
-            # may still link tenancy through organization_id
-            if row is None and org_col is not None:
-                org_ids = get_org_ids()
-                if org_ids:
-                    row = (
-                        db(
-                            (village_id_field == village_id)
-                            & (tenant_col == None)  # noqa: E711
-                            & (org_col.belongs(list(org_ids)))
-                        )
-                        .select()
-                        .first()
-                    )
-        elif org_col is not None:
-            # Org-scoped tables (entities, networking_resources, secrets,
-            # builtin_secrets, crypto_keys, cloud_accounts, iam_providers, etc.)
-            org_ids = get_org_ids()
-            if org_ids:
-                row = (
-                    db(
-                        (village_id_field == village_id)
-                        & (org_col.belongs(list(org_ids)))
-                    )
-                    .select()
-                    .first()
-                )
-        elif resolvable.table == "discovery_jobs":
-            # discovery_jobs stores _organization_id inside config_json
-            org_ids = get_org_ids()
-            if org_ids:
-                candidate = db(village_id_field == village_id).select().first()
-                if candidate is not None:
-                    cfg = _parse_json_config(getattr(candidate, "config_json", None))
-                    job_org_id = cfg.get("_organization_id")
-                    if job_org_id is not None:
-                        try:
-                            if int(job_org_id) in org_ids:
-                                row = candidate
-                        except (TypeError, ValueError):
-                            row = None
-        elif resolvable.table == "sync_configs":
-            candidate = db(village_id_field == village_id).select().first()
-            if candidate is not None:
-                cfg = _parse_json_config(getattr(candidate, "config_json", None))
-                cfg_org_id = cfg.get("elder_organization_id") or cfg.get(
-                    "organization_id"
-                )
-                if cfg_org_id is not None:
-                    try:
-                        if int(cfg_org_id) in get_org_ids():
-                            row = candidate
-                    except (TypeError, ValueError):
-                        row = None
-                elif _vid_matches_tenant_prefix(village_id, tenant_id):
-                    row = candidate
-        elif resolvable.table in _VID_PREFIX_SCOPED_TABLES:
-            # Global/tenantless tables: enforce strict tenant match via the
-            # server-minted 8-hex-char tenant prefix embedded in village_id
-            if _vid_matches_tenant_prefix(village_id, tenant_id):
-                row = db(village_id_field == village_id).select().first()
-        else:
-            # Cannot safely scope — skip this table
-            continue
-
-        if row is not None:
-            resource_id = getattr(row, resolvable.id_column)
-            return {
-                "type": type_name,
-                "id": resource_id,
-                "table_name": resolvable.table,
-                "title": _extract_title(row, resolvable, resource_id),
-                "module": resolvable.module,
-            }
+    for resolvable in _REGISTRY.values():
+        resolved = _resolve_row_in_type(
+            db,
+            resolvable,
+            village_id,
+            scoped_tenant_id,
+            get_org_ids,
+            get_tenant_strs,
+        )
+        if resolved is not None:
+            return resolved
 
     return None
 

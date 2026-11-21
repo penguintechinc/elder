@@ -520,11 +520,14 @@ def list_notification_rules():
 
     Returns:
         200: List of notification rules
+        403: Tenant not found
     """
     try:
-        service = get_webhook_service()
         tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
 
+        service = get_webhook_service()
         organization_id = request.args.get("organization_id", type=int)
         channel = request.args.get("channel")
 
@@ -562,9 +565,19 @@ async def create_notification_rule():
     Returns:
         201: Rule created
         400: Invalid request
+        403: Tenant not found
+        404: organization_id not found in tenant
     """
     try:
-        data = await request.get_json()
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        blocked = await check_limit("object", tenant_id)
+        if blocked is not None:
+            return blocked
+
+        data = await request.get_json(silent=True)
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -577,20 +590,38 @@ async def create_notification_rule():
                 400,
             )
 
+        organization_id = data["organization_id"]
+        if (
+            not isinstance(organization_id, int)
+            or isinstance(organization_id, bool)
+            or organization_id <= 0
+        ):
+            return jsonify({"error": "organization_id must be a positive integer"}), 400
+
         service = get_webhook_service()
+        if not _org_unit_in_tenant(service.db, organization_id, tenant_id):
+            return jsonify({"error": "organization_id not found in tenant"}), 404
+
+        redis_client = getattr(current_app, "redis_client", None)
         rule = service.create_notification_rule(
             name=data["name"],
             channel=data["channel"],
             events=data["events"],
             config=data["config"],
-            organization_id=data["organization_id"],
+            organization_id=organization_id,
             description=data.get("description"),
+            tenant_id=tenant_id,
+            redis_client=redis_client,
         )
 
         return jsonify(rule), 201
 
+    except ValueError as e:
+        return log_error_and_respond(
+            logger, e, "Invalid notification rule request", 400
+        )
     except Exception as e:
-        return log_error_and_respond(logger, e, "Failed to process request", 400)
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["GET"])
@@ -602,11 +633,15 @@ def get_notification_rule(rule_id):
 
     Returns:
         200: Rule details
+        403: Tenant not found
         404: Rule not found or cross-tenant
     """
     try:
-        service = get_webhook_service()
         tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        service = get_webhook_service()
         rule = service.get_notification_rule(rule_id, tenant_id=tenant_id)
         return jsonify(rule), 200
 
@@ -634,10 +669,16 @@ async def update_notification_rule(rule_id):
 
     Returns:
         200: Rule updated
+        400: Invalid request
+        403: Tenant not found
         404: Rule not found
     """
     try:
-        data = await request.get_json()
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        data = await request.get_json(silent=True)
 
         if not data:
             return jsonify({"error": "Request body required"}), 400
@@ -650,14 +691,21 @@ async def update_notification_rule(rule_id):
             config=data.get("config"),
             description=data.get("description"),
             enabled=data.get("enabled"),
+            tenant_id=tenant_id,
         )
 
         return jsonify(rule), 200
 
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
+        return log_error_and_respond(
+            logger, e, "Invalid notification rule request", 400
+        )
     except Exception as e:
         if "not found" in str(e).lower():
             return log_error_and_respond(logger, e, "Failed to process request", 404)
-        return log_error_and_respond(logger, e, "Failed to process request", 400)
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
 
 
 @bp.route("/notification-rules/<int:rule_id>", methods=["DELETE"])
@@ -669,11 +717,16 @@ def delete_notification_rule(rule_id):
 
     Returns:
         200: Rule deleted
+        403: Tenant not found
         404: Rule not found
     """
     try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
         service = get_webhook_service()
-        result = service.delete_notification_rule(rule_id)
+        result = service.delete_notification_rule(rule_id, tenant_id=tenant_id)
         return jsonify(result), 200
 
     except Exception as e:
@@ -692,14 +745,200 @@ def test_notification_rule(rule_id):
     Returns:
         200: Test notification sent
         400: Test failed
+        403: Tenant not found
         404: Rule not found
     """
     try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
         service = get_webhook_service()
-        result = service.test_notification_rule(rule_id)
+        result = service.test_notification_rule(rule_id, tenant_id=tenant_id)
 
         status_code = 200 if result.get("success") else 400
         return jsonify(result), status_code
+
+    except Exception as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+# ===========================
+# Alert Configuration Endpoints
+# ===========================
+
+
+@bp.route("/alert-configurations", methods=["GET"])
+@login_required
+@require_scope("webhooks_alerting:read")
+def list_alert_configurations():
+    """List alert configurations scoped to the caller's tenant."""
+    try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        organization_id = None
+        if "organization_id" in request.args:
+            organization_id = request.args.get("organization_id", type=int)
+            if organization_id is None or organization_id <= 0:
+                return (
+                    jsonify({"error": "organization_id must be a positive integer"}),
+                    400,
+                )
+
+        destination_type = request.args.get("destination_type")
+        service = get_webhook_service()
+        configs = service.list_alert_configurations(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            destination_type=destination_type,
+        )
+        return jsonify({"alert_configurations": configs, "count": len(configs)}), 200
+
+    except ValueError as e:
+        return log_error_and_respond(
+            logger, e, "Invalid alert configuration query", 400
+        )
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/alert-configurations", methods=["POST"])
+@login_required
+@require_scope("webhooks_alerting:admin")
+@admin_required
+async def create_alert_configuration():
+    """Create a new alert configuration with a universal village_id."""
+    try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        blocked = await check_limit("object", tenant_id)
+        if blocked is not None:
+            return blocked
+
+        data = await request.get_json(silent=True)
+        if not data or not isinstance(data, dict):
+            return jsonify({"error": "Request body required"}), 400
+
+        required = ["name", "destination_type", "config", "organization_id"]
+        missing = [f for f in required if f not in data]
+        if missing:
+            return (
+                jsonify({"error": f"Missing required fields: {', '.join(missing)}"}),
+                400,
+            )
+
+        organization_id = data["organization_id"]
+        if (
+            not isinstance(organization_id, int)
+            or isinstance(organization_id, bool)
+            or organization_id <= 0
+        ):
+            return jsonify({"error": "organization_id must be a positive integer"}), 400
+
+        service = get_webhook_service()
+        if not _org_unit_in_tenant(service.db, organization_id, tenant_id):
+            return jsonify({"error": "organization_id not found in tenant"}), 404
+
+        redis_client = getattr(current_app, "redis_client", None)
+        created = service.create_alert_configuration(
+            tenant_id=tenant_id,
+            organization_id=organization_id,
+            destination_type=data["destination_type"],
+            name=data["name"],
+            config=data["config"],
+            enabled=data.get("enabled", 1),
+            severity_filter=data.get("severity_filter"),
+            redis_client=redis_client,
+        )
+        return jsonify(created), 201
+
+    except ValueError as e:
+        return log_error_and_respond(
+            logger, e, "Invalid alert configuration request", 400
+        )
+    except Exception as e:
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/alert-configurations/<int:config_id>", methods=["GET"])
+@login_required
+@require_scope("webhooks_alerting:read")
+def get_alert_configuration(config_id):
+    """Get a single alert configuration scoped to the caller's tenant."""
+    try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        service = get_webhook_service()
+        config = service.get_alert_configuration(config_id, tenant_id=tenant_id)
+        return jsonify(config), 200
+
+    except Exception as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/alert-configurations/<int:config_id>", methods=["PUT"])
+@admin_required
+@require_scope("webhooks_alerting:admin")
+async def update_alert_configuration(config_id):
+    """Update an alert configuration scoped to the caller's tenant."""
+    try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        data = await request.get_json(silent=True)
+        if not data or not isinstance(data, dict):
+            return jsonify({"error": "Request body required"}), 400
+
+        severity_filter = (
+            data["severity_filter"] if "severity_filter" in data else _UNSET
+        )
+        service = get_webhook_service()
+        updated = service.update_alert_configuration(
+            config_id=config_id,
+            tenant_id=tenant_id,
+            name=data.get("name"),
+            enabled=data.get("enabled"),
+            config=data.get("config"),
+            severity_filter=severity_filter,
+        )
+        return jsonify(updated), 200
+
+    except ValueError as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
+        return log_error_and_respond(
+            logger, e, "Invalid alert configuration request", 400
+        )
+    except Exception as e:
+        if "not found" in str(e).lower():
+            return log_error_and_respond(logger, e, "Failed to process request", 404)
+        return log_error_and_respond(logger, e, "Failed to process request", 500)
+
+
+@bp.route("/alert-configurations/<int:config_id>", methods=["DELETE"])
+@admin_required
+@require_scope("webhooks_alerting:admin")
+def delete_alert_configuration(config_id):
+    """Delete an alert configuration scoped to the caller's tenant."""
+    try:
+        tenant_id = _tenant_id()
+        if not tenant_id:
+            return jsonify({"error": "Tenant not found"}), 403
+
+        service = get_webhook_service()
+        result = service.delete_alert_configuration(config_id, tenant_id=tenant_id)
+        return jsonify(result), 200
 
     except Exception as e:
         if "not found" in str(e).lower():
@@ -894,6 +1133,19 @@ def _ensure_inbound_tables(db: Any) -> None:
             )
         else:
             wh_cols = {c["name"] for c in inspector.get_columns("inbound_webhooks")}
+            if "village_id" not in wh_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE inbound_webhooks ADD COLUMN village_id VARCHAR(32)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_inbound_webhooks_village_id "
+                        "ON inbound_webhooks (village_id);"
+                    )
+                )
+                altered = True
             if "scopes" not in wh_cols:
                 conn.execute(
                     text(
@@ -1078,7 +1330,9 @@ def _build_inbound_credentials(
 def _mint_inbound_village_id(tenant_id: int) -> str:
     from apps.api.utils.village_id import mint_village_id
 
-    return mint_village_id(tenant_id)
+    redis_client = getattr(current_app, "redis_client", None)
+    db = getattr(current_app, "db", None)
+    return mint_village_id(tenant_id, redis_client=redis_client, db=db)
 
 
 @bp.route("/inbound/scopes", methods=["GET"])

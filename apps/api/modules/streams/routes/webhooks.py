@@ -11,6 +11,7 @@ from quart import Blueprint, current_app, g, jsonify, request
 from apps.api.auth.decorators import login_required, require_scope
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.village_id import mint_village_id
 
 from .streams import (
     _can_edit_stream,
@@ -258,6 +259,7 @@ async def list_webhooks(stream_id):
         result = [
             {
                 "id": w.id,
+                "village_id": getattr(w, "village_id", None),
                 "name": w.name,
                 "token": w.token if can_edit else None,
                 "url": (f"/api/v1/hooks/{w.token}" if can_edit else None),
@@ -309,6 +311,7 @@ async def create_webhook(stream_id):
         return ApiResponse.error("Tenant or identity not found", 403)
 
     data = await request.get_json() or {}
+    redis_client = getattr(current_app, "redis_client", None)
 
     def create():
         stream = (
@@ -329,11 +332,14 @@ async def create_webhook(stream_id):
         # Generate secure token
         token = secrets.token_urlsafe(32)
         now = datetime.now(UTC)
+        webhook_name = data.get("name") or f"Webhook for {stream.name}"
+        village_id = mint_village_id(tenant_id, redis_client=redis_client, db=db)
 
         webhook_id = db.stream_webhooks.insert(
             tenant_id=tenant_id,
+            village_id=village_id,
             playbook_id=stream_id,
-            name=data.get("name") or f"Webhook for {stream.name}",
+            name=webhook_name,
             token=token,
             allowed_methods=data.get("allowed_methods") or ["POST"],
             validate_signature=data.get("validate_signature", False),
@@ -347,6 +353,7 @@ async def create_webhook(stream_id):
 
         return {
             "id": webhook_id,
+            "village_id": village_id,
             "name": data.get("name"),
             "token": token,
             "url": f"/api/v1/hooks/{token}",

@@ -10,7 +10,11 @@ Exposed at BOTH ``GET /api/v1/id/<village_id>`` (used by the WebUI SPA) and
 from quart import Blueprint, current_app, g, jsonify
 
 from apps.api.auth.decorators import login_required
-from apps.api.common.refs.registry import get_type, resolve_by_village_id
+from apps.api.common.refs.registry import (
+    format_resolvable_url,
+    get_type,
+    resolve_by_village_id,
+)
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.tenant_scoping import get_current_tenant_id
 
@@ -24,6 +28,7 @@ _MODULE_READ_SCOPE_ALIASES: dict[str, tuple[str, ...]] = {
     "tenant": ("tenants:read", "admin:read"),
     "backup": ("backups:read", "webhooks_alerting:read"),
     "sbom": ("services_oncall:read",),
+    "webhooks_alerting": ("webhooks:read",),
 }
 
 
@@ -72,7 +77,7 @@ async def _handle_lookup_village_id(village_id: str):
         if not resolvable:
             return None
 
-        url = resolvable.url_pattern.format(id=result["id"])
+        url = format_resolvable_url(db, resolvable, result["id"], tenant_id=tenant_id)
         return {
             "resource_type": result["type"],
             "resource_id": result["id"],
