@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "cli/elder-cli",
     "crates/elder-sdk",
     "crates/elder-svc-common",
     "crates/elder-int-workmgmt",

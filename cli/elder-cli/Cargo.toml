@@ -1,0 +1,35 @@
+[package]
+name = "elder-cli"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Official pure-rustls Rust CLI for Elder hub-api"
+
+[lib]
+name = "elder_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "elder"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env", "string", "wrap_help"] }
+clap_complete = "4"
+comfy-table = "7"
+dirs = "5"
+elder-sdk = { path = "../../crates/elder-sdk" }
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+rpassword = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-util", "time"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "io-util", "sync", "time"] }
