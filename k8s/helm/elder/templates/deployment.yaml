@@ -1,6 +1,6 @@
-{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "svc-worker" "svc-flows-invoker" }}
+{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "hub-mcp" "svc-worker" "svc-flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
-{{- if $componentConfig.enabled }}
+{{- if and $componentConfig $componentConfig.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -35,7 +35,7 @@ spec:
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
         {{- $hasModules := or (eq $component "hub-api") (eq $component "svc-worker") }}
-        {{- $isOtelComponent := or (eq $component "hub-api") (eq $component "svc-worker") }}
+        {{- $isOtelComponent := or (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
         {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
         {{- if or $hasModules $hasOtel }}
         envFrom:
@@ -66,7 +66,7 @@ spec:
               fieldPath: metadata.name
         {{- end }}
         {{- end }}
-        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "hub-webui") (eq $component "hub-api") (eq $component "svc-worker") }}
+        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
         ports:
         {{- if eq $component "postgres" }}
         - name: postgres
@@ -87,6 +87,10 @@ spec:
         - name: grpc
           containerPort: {{ $componentConfig.service.grpcPort }}
           protocol: TCP
+        {{- else if eq $component "hub-mcp" }}
+        - name: http
+          containerPort: {{ $componentConfig.service.targetPort | default 8080 }}
+          protocol: TCP
         {{- else if eq $component "svc-worker" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
@@ -95,7 +99,7 @@ spec:
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
-        {{- $isHttpProbe := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "svc-worker") }}
+        {{- $isHttpProbe := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
         {{/* Release audit finding #6: liveness must be a lighter,
              dependency-free self-check while readiness gates traffic on
              dependency availability — previously identical for
@@ -165,7 +169,7 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "svc-flows-invoker") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "hub-mcp") (eq $component "svc-flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
@@ -193,6 +197,9 @@ spec:
         {{- else if eq $component "hub-webui" }}
         - name: tmp
           mountPath: /tmp
+        {{- else if eq $component "hub-mcp" }}
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "svc-flows-invoker" }}
         - name: workspace
           mountPath: /workspace
@@ -206,7 +213,7 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "svc-flows-invoker") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "hub-mcp") (eq $component "svc-flows-invoker") }}
       volumes:
       {{- if eq $component "hub-api" }}
       - name: instance-dir
@@ -221,6 +228,9 @@ spec:
       - name: tmp
         emptyDir: {}
       {{- else if eq $component "hub-webui" }}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "hub-mcp" }}
       - name: tmp
         emptyDir: {}
       {{- else if eq $component "svc-flows-invoker" }}

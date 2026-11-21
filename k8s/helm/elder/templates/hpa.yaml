@@ -5,9 +5,9 @@ autoscaling.enabled is true; deployment.yaml already omits `replicas` in that
 case so the HPA (not Helm) owns replica count. Release audit finding #1 —
 autoscaling.enabled was previously inert (no HPA template existed at all).
 */}}
-{{- range $component := list "hub-webui" "hub-api" }}
+{{- range $component := list "hub-webui" "hub-api" "hub-mcp" }}
 {{- $componentConfig := index $.Values $component }}
-{{- if and $componentConfig.enabled ($componentConfig.autoscaling).enabled }}
+{{- if and $componentConfig $componentConfig.enabled ($componentConfig.autoscaling).enabled }}
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

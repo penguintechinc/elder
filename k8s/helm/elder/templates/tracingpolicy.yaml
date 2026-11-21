@@ -28,7 +28,7 @@ spec:
     matchExpressions:
       - key: app.kubernetes.io/component
         operator: In
-        values: ["hub-api", "svc-worker"]
+        values: ["hub-api", "hub-mcp", "svc-worker"]
   kprobes:
     - call: "sys_execve"
       syscall: true

@@ -1,0 +1,59 @@
+{{/*
+Zero-trust CiliumNetworkPolicy dedicated to hub-mcp.
+
+hub-mcp is a lightweight stateless API translator (excluded from the broader
+same-namespace and datastore allow policies in networkpolicy-default-deny.yaml):
+- Ingress: ONLY from the TLS-terminating Cilium Gateway (gatewayNamespace) and
+  from hub-api pods (AI Researcher MCP client), strictly on hub-mcp's HTTP port.
+- Egress: ONLY to hub-api's HTTP port, kube-dns (UDP/TCP 53), and the OTLP
+  collector port (4318). Zero Postgres, Redis, or public internet egress.
+*/}}
+{{- $hubMcp := index .Values "hub-mcp" -}}
+{{- if and .Values.networkPolicy.enabled $hubMcp $hubMcp.enabled }}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "elder.fullname" . }}-hub-mcp-zero-trust
+  namespace: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.componentLabels" (list "hub-mcp" .) | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "elder.componentSelectorLabels" (list "hub-mcp" .) | nindent 6 }}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.gatewayNamespace | default "gateway" }}
+        - matchLabels:
+            {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ ($hubMcp.service).targetPort | default 8080 | quote }}
+              protocol: TCP
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            {{- include "elder.componentSelectorLabels" (list "hub-api" .) | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ (index .Values "hub-api").service.targetPort | default 5000 | quote }}
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels: {}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.otelCollectorPort | default 4318 | quote }}
+              protocol: TCP
+{{- end }}

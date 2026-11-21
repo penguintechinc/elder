@@ -1,6 +1,6 @@
-{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "svc-worker" }}
+{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "hub-mcp" "svc-worker" }}
 {{- $componentConfig := index $.Values $component }}
-{{- if $componentConfig.enabled }}
+{{- if and $componentConfig $componentConfig.enabled }}
 {{- if $componentConfig.service }}
 ---
 apiVersion: v1
@@ -43,6 +43,14 @@ spec:
     targetPort: {{ $componentConfig.service.grpcPort }}
     protocol: TCP
     name: grpc
+  {{- else if eq $component "hub-mcp" }}
+  - port: {{ $componentConfig.service.port | default 8080 }}
+    targetPort: {{ $componentConfig.service.targetPort | default 8080 }}
+    protocol: TCP
+    name: http
+    {{- if and (eq ($componentConfig.service.type | default "ClusterIP") "NodePort") $componentConfig.service.nodePort }}
+    nodePort: {{ $componentConfig.service.nodePort }}
+    {{- end }}
   {{- else if eq $component "svc-worker" }}
   - port: {{ $componentConfig.service.port }}
     targetPort: {{ $componentConfig.service.targetPort }}
