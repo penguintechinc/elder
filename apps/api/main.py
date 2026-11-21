@@ -177,6 +177,13 @@ def create_app(config_name: str = None) -> Quart:
     # per-tenant + per-IP compound key. Degrades open if Redis is down.
     init_rate_limiter(app)
 
+    @app.after_serving
+    async def _close_embedded_mcp() -> None:
+        """Close the AI Researcher's cached in-process hub-mcp client on shutdown."""
+        from apps.api.services.ai_researcher_mcp import aclose_embedded_mcp
+
+        await aclose_embedded_mcp(app)
+
     # Install OTel auto-instrumentation (ASGI, Redis, psycopg, httpx)
     auto_instrument_app(app)
 

@@ -861,6 +861,7 @@ async def test_ai_research_endpoints_require_ai_read_scope(app, async_client) ->
                     query="find web hosts",
                     caller_sub=str(ident_id),
                     caller_scopes=["infrastructure:read"],
+                    caller_token=no_ai_token,
                 )
 
             with pytest.raises(AIResearchPermissionError):
@@ -870,6 +871,7 @@ async def test_ai_research_endpoints_require_ai_read_scope(app, async_client) ->
                     query="find web hosts",
                     caller_sub="   ",
                     caller_scopes=["ai:read", "infrastructure:read"],
+                    caller_token=no_ai_token,
                 )
     finally:
         async with app.app_context():
@@ -1036,17 +1038,17 @@ async def test_ai_research_confused_deputy_scope_and_tool_filtering(
         assert not any(p.startswith("/api/v1/secrets") for p in seen_elder_paths)
         assert len(seen_elder_tokens) >= 1
 
+        # hub-api sees the CALLER's own credential (no minted service token), so
+        # its scope/tenant enforcement applies to every tool call.
         async with app.app_context():
             for downstream_tok in seen_elder_tokens:
+                assert downstream_tok == caller_token
                 claims = verify_token(downstream_tok)
                 assert claims is not None
-                assert claims["type"] == "service_researcher"
+                assert claims.get("type") != "service_researcher"
                 assert claims["tenant"] == "1"
-                assert claims["roles"] == ["viewer"]
                 assert claims["scope"] == ["ai:read", "infrastructure:read"]
-                assert claims["delegated_by"] == str(ident_id)
-                assert claims["sub"] == f"service-researcher:1:{ident_id}"
-                assert claims["act"] == {"sub": str(ident_id), "username": "narrow"}
+                assert claims["sub"] == str(ident_id)
     finally:
         async with app.app_context():
             _delete_test_identity(app, ident_id)
@@ -1139,7 +1141,9 @@ def test_tool_scope_mapping_completeness_and_intersection() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cross_tenant_service_token_override_completely_removed(app) -> None:
+async def test_cross_tenant_service_token_override_completely_removed(
+    app, monkeypatch
+) -> None:
     """AI_RESEARCHER_SERVICE_TOKEN is absent from Config/app.config and ignored if manually injected."""
     assert not hasattr(Config, "AI_RESEARCHER_SERVICE_TOKEN")
     assert "AI_RESEARCHER_SERVICE_TOKEN" not in app.config
@@ -1187,6 +1191,21 @@ async def test_cross_tenant_service_token_override_completely_removed(app) -> No
             seen_tokens.append(auth_header.removeprefix("Bearer ").strip())
             return httpx.Response(200, json={"entities": []})
 
+        caller_token = _encode_test_jwt(
+            app,
+            sub="7",
+            tenant_id=1,
+            roles=["admin"],
+            scopes=["ai:read", "infrastructure:read"],
+        )
+        import apps.api.auth.jwt_handler as jwt_handler
+
+        def _must_not_mint(*_a: Any, **_k: Any) -> str:
+            raise AssertionError("service token must not be minted")
+
+        monkeypatch.setattr(
+            jwt_handler, "generate_service_researcher_token", _must_not_mint
+        )
         app.config["AI_RESEARCHER_SERVICE_TOKEN"] = foreign_token
         try:
             result = await run_ai_research(
@@ -1195,16 +1214,14 @@ async def test_cross_tenant_service_token_override_completely_removed(app) -> No
                 query="db",
                 caller_sub="caller-tenant-1",
                 caller_scopes=["ai:read", "infrastructure:read"],
+                caller_token=caller_token,
                 ollama_transport=httpx.MockTransport(ollama_handler),
                 elder_transport=httpx.MockTransport(elder_handler),
             )
             assert result["answer"] == "Done"
             assert len(seen_tokens) == 1
             assert seen_tokens[0] != foreign_token
-            verified = verify_token(seen_tokens[0])
-            assert verified is not None
-            assert verified["tenant"] == "1"
-            assert verified["delegated_by"] == "caller-tenant-1"
+            assert seen_tokens[0] == caller_token
         finally:
             app.config.pop("AI_RESEARCHER_SERVICE_TOKEN", None)
 
@@ -1248,7 +1265,7 @@ async def test_portal_user_scopes_and_superuser_empty_scope_fallback(
     prior_elder_transport = app.extensions.get(
         "ai_researcher_elder_transport", sentinel
     )
-    seen_downstream_scopes: list[list[str]] = []
+    seen_downstream_tokens: list[str] = []
 
     def ollama_handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/tags":
@@ -1283,9 +1300,7 @@ async def test_portal_user_scopes_and_superuser_empty_scope_fallback(
 
     def elder_handler(request: httpx.Request) -> httpx.Response:
         tok = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-        seen_downstream_scopes.append(
-            list(jwt.decode(tok, options={"verify_signature": False})["scope"])
-        )
+        seen_downstream_tokens.append(tok)
         return httpx.Response(200, json={"entities": []})
 
     app.extensions["ai_researcher_ollama_transport"] = httpx.MockTransport(
@@ -1344,12 +1359,14 @@ async def test_portal_user_scopes_and_superuser_empty_scope_fallback(
             json={"query": "edge"},
         )
         assert run_resp.status_code == 200
-        assert len(seen_downstream_scopes) == 1
-        assert seen_downstream_scopes[0] == sorted(
+        # hub-api receives the caller's own portal token and derives the observer's
+        # (narrow) scopes from it itself; no wider service token is substituted.
+        assert seen_downstream_tokens == [legacy_portal_token]
+        observer_read_scopes = sorted(
             intersect_caller_read_scopes(role_scopes("observer"))
         )
-        assert "users:read" not in seen_downstream_scopes[0]
-        assert "backup:read" not in seen_downstream_scopes[0]
+        assert "users:read" not in observer_read_scopes
+        assert "backup:read" not in observer_read_scopes
 
         non_su_headers = {"Authorization": f"Bearer {empty_non_su}"}
         assert (
@@ -1376,7 +1393,9 @@ async def test_portal_user_scopes_and_superuser_empty_scope_fallback(
             json={"query": "edge"},
         )
         assert su_run.status_code == 200
-        assert seen_downstream_scopes[-1] == expected_catalog_sorted
+        # The superuser's own credential is forwarded unchanged (hub-api decides access).
+        assert seen_downstream_tokens[-1] == empty_su
+        assert expected_catalog_sorted
     finally:
         async with app.app_context():
             _delete_test_portal_user(app, pu_id)
