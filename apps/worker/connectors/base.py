@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List
@@ -21,7 +20,7 @@ class SyncResult:
     organizations_updated: int = 0
     entities_created: int = 0
     entities_updated: int = 0
-    errors: List[str] = None
+    errors: list[str] = None
 
     def __post_init__(self):
         """Initialize errors list if not provided."""
@@ -43,7 +42,7 @@ class SyncResult:
         """Check if there were any errors."""
         return len(self.errors) > 0
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "connector": self.connector_name,

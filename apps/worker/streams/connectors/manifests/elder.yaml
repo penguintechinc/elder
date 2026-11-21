@@ -1,0 +1,3483 @@
+# Elder Platform Connector Manifest
+# Live-verified against Elder API /api/v1 routes across all 16 feature modules + core.
+connector:
+  id: elder
+  name: Elder
+  description: Infrastructure CMDB, security, issues, ticketing, workflows, and knowledge platform
+  icon: "Layers"
+  color: "#F59E0B"
+  version: "4.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: jwt
+        header: Authorization
+        token_prefix: Bearer
+        env_var: ELDER_TOKEN
+      - type: api_key
+        header: X-API-Key
+        env_var: ELDER_API_KEY
+
+  connection:
+    base_url_env: ELDER_API_URL
+    default_url: http://api:5000
+    health_endpoint: /api/v1/status
+
+  # ============================================================================
+  # TRIGGERS - Webhook / event triggers emitted by Elder modules
+  # ============================================================================
+  triggers:
+    - id: entity_created
+      name: Entity Created
+      description: Triggered when a new infrastructure entity is created or discovered
+      icon: "Server"
+      required_module: infrastructure
+      subcategory: Entities
+      webhook_path: /api/v1/webhooks/receive/elder-entity-created
+      outputs:
+        - name: out
+          type: object
+          description: Created entity event payload
+      output_schema:
+        - name: event
+          type: string
+          description: Event name (entity.created)
+        - name: entity_id
+          type: number
+          description: Created entity ID
+        - name: name
+          type: string
+          description: Entity name
+        - name: entity_type
+          type: string
+          description: Entity type
+        - name: organization_id
+          type: number
+          description: Organization ID
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+          description: Filter by entity types (empty for all)
+        - field: organization_id
+          type: string
+          label: Organization ID Filter
+          placeholder: "1"
+          description: Optional organization ID filter
+
+    - id: entity_updated
+      name: Entity Updated
+      description: Triggered when an infrastructure entity is modified
+      icon: "Pencil"
+      required_module: infrastructure
+      subcategory: Entities
+      webhook_path: /api/v1/webhooks/receive/elder-entity-updated
+      outputs:
+        - name: out
+          type: object
+          description: Updated entity payload
+      output_schema:
+        - name: event
+          type: string
+        - name: entity_id
+          type: number
+        - name: name
+          type: string
+        - name: entity_type
+          type: string
+        - name: changes
+          type: object
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+        - field: track_fields
+          type: string
+          label: Track Fields
+          placeholder: "name, attributes, tags"
+
+    - id: entity_deleted
+      name: Entity Deleted
+      description: Triggered when an infrastructure entity is removed
+      icon: "Trash2"
+      required_module: infrastructure
+      subcategory: Entities
+      webhook_path: /api/v1/webhooks/receive/elder-entity-deleted
+      outputs:
+        - name: out
+          type: object
+          description: Deleted entity payload
+      output_schema:
+        - name: event
+          type: string
+        - name: entity_id
+          type: number
+        - name: name
+          type: string
+      config_schema:
+        - field: entity_types
+          type: multiselect
+          label: Entity Types
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+
+    - id: dependency_changed
+      name: Dependency Changed
+      description: Triggered when dependencies between resources are added or removed
+      icon: "GitBranch"
+      required_module: infrastructure
+      subcategory: Dependencies
+      webhook_path: /api/v1/webhooks/receive/elder-dependency-changed
+      outputs:
+        - name: out
+          type: object
+          description: Dependency change payload
+      output_schema:
+        - name: event
+          type: string
+        - name: dependency_id
+          type: number
+        - name: source_id
+          type: number
+        - name: target_id
+          type: number
+        - name: dependency_type
+          type: string
+      config_schema:
+        - field: dependency_type
+          type: select
+          label: Dependency Type
+          options: [any, runtime, buildtime, network, data, api, configuration]
+          default: any
+
+    - id: issue_created
+      name: Issue Created
+      description: Triggered when a new issue is opened in Elder
+      icon: "AlertCircle"
+      required_module: issues
+      subcategory: Issues
+      webhook_path: /api/v1/webhooks/receive/elder-issue-created
+      outputs:
+        - name: out
+          type: object
+          description: Created issue data
+      output_schema:
+        - name: event
+          type: string
+        - name: issue_id
+          type: number
+        - name: title
+          type: string
+        - name: priority
+          type: string
+        - name: issue_type
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: priority
+          type: multiselect
+          label: Priority Filter
+          options: [critical, urgent, high, medium, low]
+        - field: issue_type
+          type: multiselect
+          label: Issue Type Filter
+          options: [bug, feature, task, security, incident, other]
+
+    - id: issue_status_changed
+      name: Issue Status Changed
+      description: Triggered when an issue transitions status
+      icon: "RefreshCw"
+      required_module: issues
+      subcategory: Issues
+      webhook_path: /api/v1/webhooks/receive/elder-issue-status
+      outputs:
+        - name: out
+          type: object
+          description: Issue status transition payload
+      output_schema:
+        - name: event
+          type: string
+        - name: issue_id
+          type: number
+        - name: old_status
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: to_status
+          type: multiselect
+          label: Target Statuses
+          options: [open, in_progress, resolved, closed, reopened]
+
+    - id: ticket_created
+      name: Helpdesk Ticket Created
+      description: Triggered when a new internal helpdesk ticket is created
+      icon: "Ticket"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      webhook_path: /api/v1/webhooks/receive/elder-ticket-created
+      outputs:
+        - name: out
+          type: object
+          description: Created ticket payload
+      output_schema:
+        - name: event
+          type: string
+        - name: ticket_id
+          type: number
+        - name: subject
+          type: string
+        - name: priority
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: priority
+          type: multiselect
+          label: Priority Filter
+          options: [critical, urgent, high, medium, low]
+
+    - id: vuln_detected
+      name: Vulnerability Detected
+      description: Triggered when an SBOM scan detects a vulnerability
+      icon: "ShieldAlert"
+      required_module: sbom
+      subcategory: Vulnerabilities
+      webhook_path: /api/v1/webhooks/receive/elder-vulnerability
+      outputs:
+        - name: out
+          type: object
+          description: Vulnerability CVE details
+      output_schema:
+        - name: event
+          type: string
+        - name: vulnerability_id
+          type: number
+        - name: cve_id
+          type: string
+        - name: severity
+          type: string
+        - name: cvss_score
+          type: number
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity
+          options: [critical, high, medium, low]
+          default: [critical, high]
+
+    - id: discovery_completed
+      name: Discovery Completed
+      description: Triggered when a discovery job completes
+      icon: "Radar"
+      required_module: discovery
+      subcategory: Discovery
+      webhook_path: /api/v1/webhooks/receive/elder-discovery-completed
+      outputs:
+        - name: out
+          type: object
+          description: Discovery run summary
+      output_schema:
+        - name: event
+          type: string
+        - name: job_id
+          type: number
+        - name: status
+          type: string
+        - name: results
+          type: object
+      config_schema:
+        - field: provider
+          type: select
+          label: Provider
+          options: [any, aws, gcp, google_workspace, ldap, okta, authentik, vcenter, lxd, fleetdm]
+          default: any
+
+    - id: oncall_alert
+      name: On-Call Alert Received
+      description: Triggered when an on-call Alertmanager webhook fires
+      icon: "PhoneCall"
+      required_module: services_oncall
+      subcategory: On-Call
+      webhook_path: /api/v1/on-call/webhooks/alertmanager/webhook
+      outputs:
+        - name: out
+          type: object
+          description: Alertmanager webhook payload
+      output_schema:
+        - name: status
+          type: string
+        - name: alerts
+          type: array
+        - name: commonLabels
+          type: object
+      config_schema:
+        - field: severity
+          type: select
+          label: Severity
+          options: [any, critical, warning, info]
+          default: any
+
+    - id: flow_promo_pending
+      name: Flow Promotion Pending
+      description: Triggered when a CI/CD flow promotion awaits approval
+      icon: "Workflow"
+      required_module: flows
+      subcategory: Promotions
+      webhook_path: /api/v1/webhooks/receive/elder-flow-promotion
+      outputs:
+        - name: out
+          type: object
+          description: Pending promotion payload
+      output_schema:
+        - name: promotion_id
+          type: string
+        - name: flow_id
+          type: string
+        - name: status
+          type: string
+        - name: target_environment
+          type: string
+      config_schema:
+        - field: target_environment
+          type: string
+          label: Target Environment
+          placeholder: "production"
+
+    - id: access_review_due
+      name: Access Review Due
+      description: Triggered when an enterprise access review requires decisions
+      icon: "UserCheck"
+      required_module: access_reviews
+      required_license_feature: access-reviews
+      subcategory: Access Reviews
+      webhook_path: /api/v1/webhooks/receive/elder-access-review
+      outputs:
+        - name: out
+          type: object
+          description: Access review payload
+      output_schema:
+        - name: review_id
+          type: number
+        - name: group_id
+          type: number
+        - name: status
+          type: string
+        - name: due_date
+          type: string
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: [pending, in_progress, overdue]
+          default: pending
+
+    - id: user_created
+      name: Identity / User Created
+      description: Triggered when a new user or identity is provisioned
+      icon: "UserPlus"
+      required_module: core
+      subcategory: Identities
+      webhook_path: /api/v1/webhooks/receive/elder-user-created
+      outputs:
+        - name: out
+          type: object
+          description: Provisioned user/identity payload
+      output_schema:
+        - name: event
+          type: string
+        - name: identity_id
+          type: number
+        - name: username
+          type: string
+        - name: tenant_id
+          type: number
+      config_schema:
+        - field: identity_type
+          type: select
+          label: Identity Type
+          options: [any, human, service_account, bot]
+          default: any
+
+    - id: webhook_event
+      name: Elder Event Webhook
+      description: Generic event trigger for any outbound Elder webhook event
+      icon: "Webhook"
+      required_module: core
+      subcategory: Events
+      webhook_path: /api/v1/webhooks/receive/elder-event
+      outputs:
+        - name: out
+          type: object
+          description: Raw Elder event payload
+      output_schema:
+        - name: event
+          type: string
+        - name: payload
+          type: object
+        - name: timestamp
+          type: string
+      config_schema:
+        - field: event_types
+          type: string
+          label: Event Types
+          placeholder: "entity.created, issue.created, user.created"
+
+  # ============================================================================
+  # TRANSFORMS - Read / Search / Lookup / Analysis calls against Elder API
+  # ============================================================================
+  transforms:
+    # --- Core ---
+    - id: search_all
+      name: Global Search
+      description: Search across entities, organizations, and issues
+      icon: "Search"
+      required_module: core
+      subcategory: Search
+      endpoint: /api/v1/search
+      method: GET
+      query_params: [q, types, limit, offset]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Global search results
+      output_schema:
+        - name: results
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: q
+          type: string
+          label: Query
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.name}}"
+        - field: types
+          type: string
+          label: Resource Types
+          default: "entity,organization,issue"
+          placeholder: "entity,organization,issue"
+        - field: limit
+          type: integer
+          label: Limit
+          default: 50
+
+    - id: search_entities
+      name: Search Entities
+      description: Search infrastructure entities with filters
+      icon: "Search"
+      required_module: core
+      subcategory: Search
+      endpoint: /api/v1/search/entities
+      method: GET
+      query_params: [q, entity_type, sub_type, organization_id, limit, offset]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: q
+          type: string
+          label: Query
+          supports_variables: true
+        - field: entity_type
+          type: select
+          label: Entity Type
+          options: ["", server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: limit
+          type: integer
+          label: Limit
+          default: 50
+
+    - id: search_graph
+      name: Search Graph
+      description: Query the relationship graph via search
+      icon: "Network"
+      required_module: core
+      subcategory: Search
+      endpoint: /api/v1/search/graph
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: nodes
+          type: array
+        - name: edges
+          type: array
+      config_schema:
+        - field: entity_id
+          type: integer
+          label: Start Entity ID
+          supports_variables: true
+        - field: depth
+          type: integer
+          label: Max Depth
+          default: 2
+
+    - id: get_identity
+      name: Lookup Identity
+      description: Fetch an identity by ID
+      icon: "Users"
+      required_module: core
+      subcategory: Identities
+      endpoint: /api/v1/identities/{{id}}
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: username
+          type: string
+        - name: email
+          type: string
+        - name: identity_type
+          type: string
+        - name: is_active
+          type: boolean
+      config_schema:
+        - field: id
+          type: string
+          label: Identity ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.identity_id}}"
+
+    - id: resolve_ref
+      name: Resolve Cross-Reference
+      description: Resolve an Elder VillageID or entity cross-reference
+      icon: "Link2"
+      required_module: core
+      subcategory: References
+      endpoint: /api/v1/refs/resolve
+      method: GET
+      query_params: [ref]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: ref
+          type: string
+        - name: resource_type
+          type: string
+        - name: resource_id
+          type: number
+      config_schema:
+        - field: ref
+          type: string
+          label: Reference / Village ID
+          required: true
+          supports_variables: true
+
+    # --- Infrastructure ---
+    - id: get_entity
+      name: Lookup Entity
+      description: Fetch an infrastructure entity by ID
+      icon: "Server"
+      required_module: infrastructure
+      subcategory: Entities
+      endpoint: /api/v1/entities/{{id}}
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: name
+          type: string
+        - name: entity_type
+          type: string
+        - name: sub_type
+          type: string
+        - name: organization_id
+          type: number
+        - name: attributes
+          type: object
+        - name: tags
+          type: array
+      config_schema:
+        - field: id
+          type: string
+          label: Entity ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.entity_id}}"
+
+    - id: list_entities
+      name: List Entities
+      description: List infrastructure entities with pagination and filters
+      icon: "Server"
+      required_module: infrastructure
+      subcategory: Entities
+      endpoint: /api/v1/entities
+      method: GET
+      query_params: [entity_type, sub_type, parent_id, organization_id, name, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+        - name: page
+          type: number
+        - name: pages
+          type: number
+      config_schema:
+        - field: entity_type
+          type: string
+          label: Entity Type
+          supports_variables: true
+        - field: sub_type
+          type: string
+          label: Sub Type
+          supports_variables: true
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: name
+          type: string
+          label: Name Contains
+          supports_variables: true
+        - field: per_page
+          type: integer
+          label: Per Page
+          default: 50
+
+    - id: get_entity_deps
+      name: Get Entity Dependencies
+      description: Fetch upstream and downstream dependencies for an entity
+      icon: "GitBranch"
+      required_module: infrastructure
+      subcategory: Dependencies
+      endpoint: /api/v1/entities/{{id}}/dependencies
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: upstream
+          type: array
+        - name: downstream
+          type: array
+      config_schema:
+        - field: id
+          type: string
+          label: Entity ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.id}}"
+
+    - id: get_graph
+      name: Get Dependency Graph
+      description: Retrieve infrastructure dependency graph around an entity or org
+      icon: "Network"
+      required_module: infrastructure
+      subcategory: Graph
+      endpoint: /api/v1/graph
+      method: GET
+      query_params: [organization_id, entity_type, entity_id, depth, include_metadata]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: nodes
+          type: array
+        - name: edges
+          type: array
+      config_schema:
+        - field: entity_id
+          type: integer
+          label: Center Entity ID
+          supports_variables: true
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: depth
+          type: integer
+          label: Depth
+          default: 2
+        - field: include_metadata
+          type: boolean
+          label: Include Metadata
+          default: false
+
+    - id: analyze_graph
+      name: Analyze Graph Impact
+      description: Run impact & centrality analysis on the dependency graph
+      icon: "Activity"
+      required_module: infrastructure
+      subcategory: Graph
+      endpoint: /api/v1/graph/analyze
+      method: GET
+      query_params: [organization_id, entity_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: single_points_of_failure
+          type: array
+        - name: cycles
+          type: array
+        - name: stats
+          type: object
+      config_schema:
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: entity_id
+          type: integer
+          label: Entity ID
+          supports_variables: true
+
+    - id: get_organization
+      name: Lookup Organization
+      description: Fetch an organization by ID
+      icon: "Building2"
+      required_module: infrastructure
+      subcategory: Organizations
+      endpoint: /api/v1/organizations/{{id}}
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: description
+          type: string
+        - name: parent_id
+          type: number
+      config_schema:
+        - field: id
+          type: string
+          label: Organization ID
+          required: true
+          supports_variables: true
+
+    - id: list_data_stores
+      name: List Data Stores
+      description: List database, cache, and storage data stores
+      icon: "Database"
+      required_module: infrastructure
+      subcategory: Data Stores
+      endpoint: /api/v1/data-stores
+      method: GET
+      query_params: [organization_id, store_type, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: store_type
+          type: string
+          label: Store Type
+        - field: per_page
+          type: integer
+          label: Per Page
+          default: 50
+
+    # --- IPAM ---
+    - id: list_ipam_prefixes
+      name: List IPAM Prefixes
+      description: List CIDR IP prefixes in IPAM
+      icon: "Globe"
+      required_module: ipam
+      subcategory: IPAM
+      endpoint: /api/v1/ipam/prefixes
+      method: GET
+      query_params: [organization_id, status, search, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", active, reserved, deprecated]
+        - field: search
+          type: string
+          label: Search
+          supports_variables: true
+
+    - id: list_ipam_addrs
+      name: List IPAM Addresses
+      description: List IP addresses in IPAM
+      icon: "Globe"
+      required_module: ipam
+      subcategory: IPAM
+      endpoint: /api/v1/ipam/addresses
+      method: GET
+      query_params: [prefix_id, status, search, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: prefix_id
+          type: integer
+          label: Prefix ID
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", active, reserved, deprecated, dhcp]
+        - field: search
+          type: string
+          label: Search
+          supports_variables: true
+
+    # --- SBOM & Vulnerabilities ---
+    - id: list_vulns
+      name: List Vulnerabilities
+      description: Query tracked CVE vulnerabilities
+      icon: "ShieldAlert"
+      required_module: sbom
+      subcategory: Vulnerabilities
+      endpoint: /api/v1/vulnerabilities
+      method: GET
+      query_params: [severity, status, cve_id, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: severity
+          type: select
+          label: Severity
+          options: ["", critical, high, medium, low, unknown]
+        - field: cve_id
+          type: string
+          label: CVE ID
+          supports_variables: true
+          placeholder: "CVE-2025-1234"
+        - field: per_page
+          type: integer
+          label: Per Page
+          default: 50
+
+    - id: get_service_sbom
+      name: Get Service SBOM
+      description: Retrieve SBOM components for a service
+      icon: "Package"
+      required_module: sbom
+      subcategory: SBOM
+      endpoint: /api/v1/services/{{id}}/sbom
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: components
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: id
+          type: string
+          label: Service ID
+          required: true
+          supports_variables: true
+
+    - id: list_sbom_scans
+      name: List SBOM Scans
+      description: List SBOM scan jobs and results
+      icon: "Package"
+      required_module: sbom
+      subcategory: SBOM
+      endpoint: /api/v1/sbom/scans
+      method: GET
+      query_params: [parent_type, parent_id, status, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: parent_type
+          type: select
+          label: Parent Type
+          options: ["", service, software, entity]
+        - field: parent_id
+          type: integer
+          label: Parent ID
+          supports_variables: true
+
+    # --- Services & On-Call ---
+    - id: get_svc_oncall
+      name: Get Current Service On-Call
+      description: Lookup the currently active on-call responder for a service
+      icon: "PhoneCall"
+      required_module: services_oncall
+      subcategory: On-Call
+      endpoint: /api/v1/on-call/rotations/current/service/{{service_id}}
+      method: GET
+      path_params: [service_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: identity_id
+          type: number
+        - name: identity_name
+          type: string
+        - name: identity_email
+          type: string
+        - name: shift_start
+          type: string
+        - name: shift_end
+          type: string
+      config_schema:
+        - field: service_id
+          type: string
+          label: Service ID
+          required: true
+          supports_variables: true
+
+    - id: list_oncall_rots
+      name: List On-Call Rotations
+      description: List configured on-call rotations
+      icon: "PhoneCall"
+      required_module: services_oncall
+      subcategory: On-Call
+      endpoint: /api/v1/on-call/rotations
+      method: GET
+      query_params: [org_id, service_id, is_active, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: service_id
+          type: integer
+          label: Service ID
+          supports_variables: true
+        - field: is_active
+          type: boolean
+          label: Active Only
+          default: true
+
+    # --- Issues & Projects ---
+    - id: get_issue
+      name: Lookup Issue
+      description: Fetch full issue details by ID
+      icon: "AlertCircle"
+      required_module: issues
+      subcategory: Issues
+      endpoint: /api/v1/issues/{{id}}
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: title
+          type: string
+        - name: description
+          type: string
+        - name: status
+          type: string
+        - name: priority
+          type: string
+        - name: issue_type
+          type: string
+        - name: assignee_id
+          type: number
+      config_schema:
+        - field: id
+          type: string
+          label: Issue ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.issue_id}}"
+
+    - id: list_issues
+      name: List Issues
+      description: Filter and list issues
+      icon: "AlertCircle"
+      required_module: issues
+      subcategory: Issues
+      endpoint: /api/v1/issues
+      method: GET
+      query_params: [status, priority, issue_type, assignee_id, organization_id, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: ["", open, in_progress, resolved, closed, reopened]
+        - field: priority
+          type: select
+          label: Priority
+          options: ["", low, medium, high, urgent, critical]
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: per_page
+          type: integer
+          label: Per Page
+          default: 50
+
+    # --- Discovery ---
+    - id: list_disc_jobs
+      name: List Discovery Jobs
+      description: List configured infrastructure discovery jobs
+      icon: "Radar"
+      required_module: discovery
+      subcategory: Discovery
+      endpoint: /api/v1/discovery/jobs
+      method: GET
+      query_params: [provider, enabled, organization_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: jobs
+          type: array
+      config_schema:
+        - field: provider
+          type: string
+          label: Provider
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+
+    - id: list_sync_configs
+      name: List Sync Configurations
+      description: List external sync provider configurations
+      icon: "RefreshCw"
+      required_module: discovery
+      subcategory: Sync
+      endpoint: /api/v1/sync/configs
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: configs
+          type: array
+      config_schema: []
+
+    # --- Secrets ---
+    - id: list_secrets
+      name: List Secrets Metadata
+      description: List secret metadata records (values remain masked)
+      icon: "KeyRound"
+      required_module: secrets
+      subcategory: Secrets
+      endpoint: /api/v1/secrets
+      method: GET
+      query_params: [organization_id, provider_id, secret_type]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: secrets
+          type: array
+      config_schema:
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: secret_type
+          type: string
+          label: Secret Type
+
+    - id: get_builtin_secret
+      name: Get Built-in Secret
+      description: Read secret metadata from Elder built-in secrets store
+      icon: "Lock"
+      required_module: secrets
+      subcategory: Secrets
+      endpoint: /api/v1/builtin-secrets/{{secret_path}}
+      method: GET
+      path_params: [secret_path]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: name
+          type: string
+        - name: is_masked
+          type: boolean
+        - name: is_kv
+          type: boolean
+        - name: metadata
+          type: object
+      config_schema:
+        - field: secret_path
+          type: string
+          label: Secret Path
+          required: true
+          supports_variables: true
+          placeholder: "prod-api-key"
+
+    # --- Webhooks & Alerting ---
+    - id: list_webhooks
+      name: List Outbound Webhooks
+      description: List configured outbound webhook subscriptions
+      icon: "Webhook"
+      required_module: webhooks_alerting
+      subcategory: Webhooks
+      endpoint: /api/v1/webhooks
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: webhooks
+          type: array
+      config_schema: []
+
+    - id: get_resource_costs
+      name: Get Resource Costs
+      description: Fetch cost metrics for an Elder resource
+      icon: "DollarSign"
+      required_module: webhooks_alerting
+      subcategory: Costs
+      endpoint: /api/v1/costs/{{resource_type}}/{{resource_id}}
+      method: GET
+      path_params: [resource_type, resource_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: total_cost
+          type: number
+        - name: currency
+          type: string
+        - name: records
+          type: array
+      config_schema:
+        - field: resource_type
+          type: select
+          label: Resource Type
+          options: [entity, service, data_store, ai_resource]
+          required: true
+          default: entity
+        - field: resource_id
+          type: string
+          label: Resource ID
+          required: true
+          supports_variables: true
+
+    # --- Access Reviews (Enterprise) ---
+    - id: list_access_reviews
+      name: List Access Reviews
+      description: List access review campaigns (Enterprise)
+      icon: "UserCheck"
+      required_module: access_reviews
+      required_license_feature: access-reviews
+      subcategory: Access Reviews
+      endpoint: /api/v1/access-reviews
+      method: GET
+      query_params: [status, group_id, limit, offset]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: reviews
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: ["", pending, in_progress, completed, cancelled]
+        - field: group_id
+          type: integer
+          label: Group ID
+          supports_variables: true
+        - field: limit
+          type: integer
+          label: Limit
+          default: 50
+
+    - id: list_pending_reqs
+      name: List Pending Access Requests
+      description: List pending group membership access requests (Enterprise)
+      icon: "UserCheck"
+      required_module: access_reviews
+      required_license_feature: access-reviews
+      subcategory: Access Reviews
+      endpoint: /api/v1/group-membership/requests/pending
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: requests
+          type: array
+      config_schema: []
+
+    # --- Documents ---
+    - id: list_documents
+      name: List Documents
+      description: Search or list knowledge base documents
+      icon: "FileText"
+      required_module: documents
+      subcategory: Documents
+      endpoint: /api/v1/documents
+      method: GET
+      query_params: [status, category, q]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: q
+          type: string
+          label: Search Query
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", draft, published, archived]
+        - field: category
+          type: string
+          label: Category
+
+    - id: get_document
+      name: Lookup Document
+      description: Fetch a document by slug
+      icon: "FileText"
+      required_module: documents
+      subcategory: Documents
+      endpoint: /api/v1/documents/{{slug}}
+      method: GET
+      path_params: [slug]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: slug
+          type: string
+        - name: title
+          type: string
+        - name: body
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: slug
+          type: string
+          label: Document Slug
+          required: true
+          supports_variables: true
+
+    # --- Pages ---
+    - id: list_pages
+      name: List Wiki Pages
+      description: List wiki pages with optional status/visibility filters
+      icon: "BookOpen"
+      required_module: pages
+      subcategory: Pages
+      endpoint: /api/v1/pages
+      method: GET
+      query_params: [status, visibility]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: ["", draft, published, archived]
+        - field: visibility
+          type: select
+          label: Visibility
+          options: ["", authenticated, public, restricted]
+
+    - id: get_page
+      name: Lookup Wiki Page
+      description: Fetch a wiki page by slug
+      icon: "BookOpen"
+      required_module: pages
+      subcategory: Pages
+      endpoint: /api/v1/pages/{{slug}}
+      method: GET
+      path_params: [slug]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: slug
+          type: string
+        - name: title
+          type: string
+        - name: body_html
+          type: string
+      config_schema:
+        - field: slug
+          type: string
+          label: Page Slug
+          required: true
+          supports_variables: true
+
+    # --- Diagrams ---
+    - id: list_diagrams
+      name: List Diagrams
+      description: List architecture diagrams
+      icon: "LayoutTemplate"
+      required_module: diagrams
+      subcategory: Diagrams
+      endpoint: /api/v1/diagrams
+      method: GET
+      query_params: [status, q, is_template]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: q
+          type: string
+          label: Search Query
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", draft, published, archived]
+
+    - id: get_diagram
+      name: Lookup Diagram
+      description: Fetch diagram details and canvas content by ID
+      icon: "LayoutTemplate"
+      required_module: diagrams
+      subcategory: Diagrams
+      endpoint: /api/v1/diagrams/{{diagram_id}}
+      method: GET
+      path_params: [diagram_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: title
+          type: string
+        - name: status
+          type: string
+        - name: content
+          type: object
+      config_schema:
+        - field: diagram_id
+          type: string
+          label: Diagram ID
+          required: true
+          supports_variables: true
+
+    # --- Streams ---
+    - id: list_streams
+      name: List Playbooks
+      description: List Streams playbooks in this tenant
+      icon: "Workflow"
+      required_module: streams
+      subcategory: Streams
+      endpoint: /api/v1/streams
+      method: GET
+      query_params: [status, q, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: q
+          type: string
+          label: Search
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", draft, active, paused, archived]
+
+    # --- Flows ---
+    - id: list_flows
+      name: List CI/CD Flows
+      description: List CI/CD pipeline definitions
+      icon: "GitCommit"
+      required_module: flows
+      subcategory: Flows
+      endpoint: /api/v1/flows
+      method: GET
+      query_params: [status, search, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: search
+          type: string
+          label: Search
+          supports_variables: true
+        - field: status
+          type: string
+          label: Status
+
+    - id: list_promotions
+      name: List Flow Promotions
+      description: List CI/CD environment promotions
+      icon: "GitCommit"
+      required_module: flows
+      subcategory: Promotions
+      endpoint: /api/v1/flows/promotions
+      method: GET
+      query_params: [status, flow_id, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: data
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: flow_id
+          type: string
+          label: Flow ID
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", pending, approved, rejected, executed]
+
+    # --- Helpdesk ---
+    - id: list_tickets
+      name: List Helpdesk Tickets
+      description: List internal helpdesk tickets
+      icon: "Ticket"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      endpoint: /api/v1/helpdesk/tickets
+      method: GET
+      query_params: [status, priority, assignee_id, team_id, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: status
+          type: select
+          label: Status
+          options: ["", open, in_progress, resolved, closed]
+        - field: priority
+          type: select
+          label: Priority
+          options: ["", low, medium, high, urgent, critical]
+        - field: per_page
+          type: integer
+          label: Per Page
+          default: 50
+
+    - id: get_ticket
+      name: Lookup Helpdesk Ticket
+      description: Fetch internal helpdesk ticket details by ID
+      icon: "Ticket"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      endpoint: /api/v1/helpdesk/tickets/{{ticket_id}}
+      method: GET
+      path_params: [ticket_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: subject
+          type: string
+        - name: status
+          type: string
+        - name: priority
+          type: string
+        - name: assignee_id
+          type: number
+      config_schema:
+        - field: ticket_id
+          type: string
+          label: Ticket ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.ticket_id}}"
+
+    # --- AI Resources ---
+    - id: list_ai_resources
+      name: List AI Resources
+      description: List registered LLMs, AI gateways, and MCP servers
+      icon: "Sparkles"
+      required_module: ai
+      subcategory: AI Resources
+      endpoint: /api/v1/ai/resources
+      method: GET
+      query_params: [resource_type, status, organization_id, page, per_page]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: items
+          type: array
+        - name: total
+          type: number
+      config_schema:
+        - field: resource_type
+          type: select
+          label: Resource Type
+          options: ["", llm, ai_gateway, mcp_server]
+        - field: status
+          type: select
+          label: Status
+          options: ["", pending_review, allowed, restricted, not_allowed]
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+
+    - id: get_ai_resource
+      name: Lookup AI Resource
+      description: Fetch an AI resource record by ID
+      icon: "Sparkles"
+      required_module: ai
+      subcategory: AI Resources
+      endpoint: /api/v1/ai/resources/{{id}}
+      method: GET
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: resource_type
+          type: string
+        - name: provider
+          type: string
+        - name: model_name
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: AI Resource ID
+          required: true
+          supports_variables: true
+
+  # ============================================================================
+  # ACTIONS - Create / Update / Delete / Execute mutations against Elder API
+  # ============================================================================
+  actions:
+    # --- Infrastructure ---
+    - id: create_entity
+      name: Create Entity
+      description: Create a new entity in Elder CMDB
+      icon: "Plus"
+      required_module: infrastructure
+      subcategory: Entities
+      endpoint: /api/v1/entities
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: name
+          type: string
+        - name: entity_type
+          type: string
+        - name: organization_id
+          type: number
+      config_schema:
+        - field: name
+          type: string
+          label: Entity Name
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.name}}"
+        - field: entity_type
+          type: select
+          label: Entity Type
+          options: [server, database, application, service, container, network, storage, loadbalancer, cache, queue, api, microservice]
+          required: true
+          default: server
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          required: true
+          supports_variables: true
+        - field: sub_type
+          type: string
+          label: Sub Type
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: attributes
+          type: json
+          label: Attributes (JSON)
+          placeholder: '{"env": "production"}'
+          supports_variables: true
+
+    - id: update_entity
+      name: Update Entity
+      description: Update an existing entity in Elder CMDB
+      icon: "Pencil"
+      required_module: infrastructure
+      subcategory: Entities
+      endpoint: /api/v1/entities/{{id}}
+      method: PUT
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: entity_type
+          type: string
+        - name: is_active
+          type: boolean
+      config_schema:
+        - field: id
+          type: string
+          label: Entity ID
+          required: true
+          supports_variables: true
+          placeholder: "{{$json.entity_id}}"
+        - field: name
+          type: string
+          label: Name
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: is_active
+          type: boolean
+          label: Active
+          default: true
+        - field: attributes
+          type: json
+          label: Attributes (JSON)
+          supports_variables: true
+
+    - id: delete_entity
+      name: Delete Entity
+      description: Delete an entity from Elder CMDB
+      icon: "Trash2"
+      required_module: infrastructure
+      subcategory: Entities
+      endpoint: /api/v1/entities/{{id}}
+      method: DELETE
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: message
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Entity ID
+          required: true
+          supports_variables: true
+
+    - id: create_dependency
+      name: Create Dependency
+      description: Create a dependency edge between two Elder resources
+      icon: "GitBranch"
+      required_module: infrastructure
+      subcategory: Dependencies
+      endpoint: /api/v1/dependencies
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: source_type
+          type: string
+        - name: source_id
+          type: number
+        - name: target_type
+          type: string
+        - name: target_id
+          type: number
+        - name: dependency_type
+          type: string
+      config_schema:
+        - field: source_type
+          type: select
+          label: Source Type
+          options: [entity, data_store, service, ai_resource, network]
+          required: true
+          default: entity
+        - field: source_id
+          type: integer
+          label: Source ID
+          required: true
+          supports_variables: true
+        - field: target_type
+          type: select
+          label: Target Type
+          options: [entity, data_store, service, ai_resource, network]
+          required: true
+          default: entity
+        - field: target_id
+          type: integer
+          label: Target ID
+          required: true
+          supports_variables: true
+        - field: dependency_type
+          type: select
+          label: Dependency Type
+          options: [runtime, buildtime, network, data, api, configuration]
+          required: true
+          default: runtime
+        - field: metadata
+          type: json
+          label: Metadata (JSON)
+          supports_variables: true
+
+    - id: delete_dependency
+      name: Delete Dependency
+      description: Remove a dependency relationship by ID
+      icon: "Trash2"
+      required_module: infrastructure
+      subcategory: Dependencies
+      endpoint: /api/v1/dependencies/{{id}}
+      method: DELETE
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: message
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Dependency ID
+          required: true
+          supports_variables: true
+
+    - id: create_organization
+      name: Create Organization
+      description: Create an organization unit in Elder
+      icon: "Building2"
+      required_module: infrastructure
+      subcategory: Organizations
+      endpoint: /api/v1/organizations
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: parent_id
+          type: number
+      config_schema:
+        - field: name
+          type: string
+          label: Organization Name
+          required: true
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: parent_id
+          type: integer
+          label: Parent Organization ID
+          supports_variables: true
+
+    # --- IPAM ---
+    - id: create_ipam_prefix
+      name: Create IPAM Prefix
+      description: Register a CIDR prefix in IPAM
+      icon: "Globe"
+      required_module: ipam
+      subcategory: IPAM
+      endpoint: /api/v1/ipam/prefixes
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: prefix
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: prefix
+          type: string
+          label: CIDR Prefix
+          required: true
+          supports_variables: true
+          placeholder: "10.20.0.0/24"
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          required: true
+          supports_variables: true
+        - field: description
+          type: string
+          label: Description
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [active, reserved, deprecated]
+          default: active
+        - field: is_pool
+          type: boolean
+          label: Address Pool
+          default: false
+
+    - id: create_ipam_addr
+      name: Create IPAM Address
+      description: Allocate/create an IP address record inside an IPAM prefix
+      icon: "Globe"
+      required_module: ipam
+      subcategory: IPAM
+      endpoint: /api/v1/ipam/addresses
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: address
+          type: string
+        - name: prefix_id
+          type: number
+        - name: dns_name
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: address
+          type: string
+          label: IP Address
+          required: true
+          supports_variables: true
+          placeholder: "10.20.0.15/32"
+        - field: prefix_id
+          type: integer
+          label: Prefix ID
+          required: true
+          supports_variables: true
+        - field: dns_name
+          type: string
+          label: DNS Name
+          supports_variables: true
+        - field: description
+          type: string
+          label: Description
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [active, reserved, deprecated, dhcp]
+          default: active
+
+    - id: delete_ipam_addr
+      name: Delete IPAM Address
+      description: Release/delete an IPAM address record
+      icon: "Trash2"
+      required_module: ipam
+      subcategory: IPAM
+      endpoint: /api/v1/ipam/addresses/{{id}}
+      method: DELETE
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: message
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Address ID
+          required: true
+          supports_variables: true
+
+    # --- SBOM ---
+    - id: create_sbom_scan
+      name: Create SBOM Scan
+      description: Create a new SBOM scan for a service, software, or entity
+      icon: "Package"
+      required_module: sbom
+      subcategory: SBOM
+      endpoint: /api/v1/sbom/scans
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: status
+          type: string
+        - name: scan_type
+          type: string
+      config_schema:
+        - field: parent_type
+          type: select
+          label: Parent Resource Type
+          options: [service, software, entity]
+          required: true
+          default: service
+        - field: parent_id
+          type: integer
+          label: Parent Resource ID
+          required: true
+          supports_variables: true
+        - field: scan_type
+          type: select
+          label: Scan Type
+          options: [manifest, lockfile, repository, container, binary, source]
+          required: true
+          default: container
+        - field: repository_url
+          type: string
+          label: Repository URL
+          supports_variables: true
+          show_when:
+            scan_type: [repository, source]
+        - field: repository_branch
+          type: string
+          label: Branch
+          default: main
+          show_when:
+            scan_type: [repository, source]
+
+    - id: start_sbom_scan
+      name: Start SBOM Scan
+      description: Trigger execution of a queued SBOM scan
+      icon: "Play"
+      required_module: sbom
+      subcategory: SBOM
+      endpoint: /api/v1/sbom/scans/{{id}}/start
+      method: POST
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Scan ID
+          required: true
+          supports_variables: true
+
+    - id: assign_vuln
+      name: Assign Vulnerability
+      description: Assign a vulnerability to an identity for remediation
+      icon: "ShieldAlert"
+      required_module: sbom
+      subcategory: Vulnerabilities
+      endpoint: /api/v1/vulnerabilities/{{id}}/assign
+      method: POST
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: assignee_id
+          type: number
+      config_schema:
+        - field: id
+          type: string
+          label: Vulnerability ID
+          required: true
+          supports_variables: true
+        - field: assignee_id
+          type: integer
+          label: Assignee Identity ID
+          required: true
+          supports_variables: true
+
+    # --- Services & On-Call ---
+    - id: create_oncall_ovr
+      name: Create On-Call Override
+      description: Schedule a temporary override on an on-call rotation
+      icon: "PhoneCall"
+      required_module: services_oncall
+      subcategory: On-Call
+      endpoint: /api/v1/on-call/rotations/{{rotation_id}}/overrides
+      method: POST
+      path_params: [rotation_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: rotation_id
+          type: number
+        - name: identity_id
+          type: number
+      config_schema:
+        - field: rotation_id
+          type: string
+          label: Rotation ID
+          required: true
+          supports_variables: true
+        - field: identity_id
+          type: integer
+          label: Override Identity ID
+          required: true
+          supports_variables: true
+        - field: start_time
+          type: string
+          label: Start Time (ISO8601)
+          required: true
+          supports_variables: true
+        - field: end_time
+          type: string
+          label: End Time (ISO8601)
+          required: true
+          supports_variables: true
+        - field: reason
+          type: string
+          label: Reason
+          supports_variables: true
+
+    # --- Issues & Projects ---
+    - id: create_issue
+      name: Create Issue
+      description: Create a new issue or incident in Elder
+      icon: "AlertCircle"
+      required_module: issues
+      subcategory: Issues
+      endpoint: /api/v1/issues
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: title
+          type: string
+        - name: status
+          type: string
+        - name: priority
+          type: string
+      config_schema:
+        - field: title
+          type: string
+          label: Issue Title
+          required: true
+          supports_variables: true
+          placeholder: "Alert: {{$json.name}}"
+        - field: reporter_id
+          type: integer
+          label: Reporter Identity ID
+          required: true
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: priority
+          type: select
+          label: Priority
+          options: [low, medium, high, urgent, critical]
+          default: medium
+        - field: issue_type
+          type: select
+          label: Issue Type
+          options: [bug, feature, task, security, incident, other]
+          default: other
+        - field: assignee_id
+          type: integer
+          label: Assignee Identity ID
+          supports_variables: true
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          supports_variables: true
+        - field: metadata
+          type: json
+          label: Metadata (JSON)
+          supports_variables: true
+
+    - id: update_issue
+      name: Update Issue
+      description: Update an existing issue via PATCH
+      icon: "Pencil"
+      required_module: issues
+      subcategory: Issues
+      endpoint: /api/v1/issues/{{id}}
+      method: PATCH
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: status
+          type: string
+        - name: priority
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Issue ID
+          required: true
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", open, in_progress, resolved, closed, reopened]
+        - field: priority
+          type: select
+          label: Priority
+          options: ["", low, medium, high, urgent, critical]
+        - field: assignee_id
+          type: integer
+          label: Assignee ID
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    - id: add_issue_comment
+      name: Add Issue Comment
+      description: Post a comment on an Elder issue
+      icon: "MessageSquare"
+      required_module: issues
+      subcategory: Issues
+      endpoint: /api/v1/issues/{{id}}/comments
+      method: POST
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: issue_id
+          type: number
+        - name: content
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: Issue ID
+          required: true
+          supports_variables: true
+        - field: content
+          type: textarea
+          label: Comment Text
+          required: true
+          supports_variables: true
+
+    - id: create_project
+      name: Create Project
+      description: Create a new project in Elder
+      icon: "FolderKanban"
+      required_module: issues
+      subcategory: Projects
+      endpoint: /api/v1/projects
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: name
+          type: string
+          label: Project Name
+          required: true
+          supports_variables: true
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          required: true
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    - id: create_milestone
+      name: Create Milestone
+      description: Create a release or project milestone
+      icon: "Flag"
+      required_module: issues
+      subcategory: Milestones
+      endpoint: /api/v1/milestones
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: title
+          type: string
+        - name: due_date
+          type: string
+      config_schema:
+        - field: title
+          type: string
+          label: Milestone Title
+          required: true
+          supports_variables: true
+        - field: project_id
+          type: integer
+          label: Project ID
+          supports_variables: true
+        - field: due_date
+          type: string
+          label: Due Date
+          placeholder: "2026-12-31"
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    # --- Discovery ---
+    - id: run_disc_job
+      name: Run Discovery Job
+      description: Trigger an existing infrastructure discovery job immediately
+      icon: "Radar"
+      required_module: discovery
+      subcategory: Discovery
+      endpoint: /api/v1/discovery/jobs/{{job_id}}/run
+      method: POST
+      path_params: [job_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: job_id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: job_id
+          type: string
+          label: Discovery Job ID
+          required: true
+          supports_variables: true
+
+    - id: trigger_sync
+      name: Trigger External Sync
+      description: Trigger a configured GitHub/Jira/IdP sync job
+      icon: "RefreshCw"
+      required_module: discovery
+      subcategory: Sync
+      endpoint: /api/v1/sync/configs/{{config_id}}/trigger
+      method: POST
+      path_params: [config_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: config_id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: config_id
+          type: string
+          label: Sync Config ID
+          required: true
+          supports_variables: true
+
+    # --- Secrets ---
+    - id: sync_secret
+      name: Sync Secret
+      description: Synchronize a managed secret with its external provider
+      icon: "KeyRound"
+      required_module: secrets
+      subcategory: Secrets
+      endpoint: /api/v1/secrets/{{secret_id}}/sync
+      method: POST
+      path_params: [secret_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: synced
+          type: boolean
+      config_schema:
+        - field: secret_id
+          type: string
+          label: Secret ID
+          required: true
+          supports_variables: true
+
+    - id: rotate_key
+      name: Rotate Encryption Key
+      description: Rotate a managed cryptographic key
+      icon: "Lock"
+      required_module: secrets
+      subcategory: Keys
+      endpoint: /api/v1/keys/{{key_id}}/rotate
+      method: POST
+      path_params: [key_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: key_id
+          type: number
+        - name: version
+          type: number
+      config_schema:
+        - field: key_id
+          type: string
+          label: Key ID
+          required: true
+          supports_variables: true
+
+    # --- Webhooks & Alerting ---
+    - id: broadcast_webhook
+      name: Broadcast Webhook Event
+      description: Broadcast a custom event to matching outbound webhooks
+      icon: "Send"
+      required_module: webhooks_alerting
+      subcategory: Webhooks
+      endpoint: /api/v1/webhooks/broadcast
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: delivered
+          type: number
+        - name: event
+          type: string
+      config_schema:
+        - field: event
+          type: string
+          label: Event Name
+          required: true
+          supports_variables: true
+          placeholder: "playbook.alert"
+        - field: payload
+          type: json
+          label: Event Payload (JSON)
+          supports_variables: true
+
+    - id: create_webhook
+      name: Create Outbound Webhook
+      description: Register a new outbound webhook subscription
+      icon: "Webhook"
+      required_module: webhooks_alerting
+      subcategory: Webhooks
+      endpoint: /api/v1/webhooks
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: url
+          type: string
+      config_schema:
+        - field: name
+          type: string
+          label: Webhook Name
+          required: true
+          supports_variables: true
+        - field: url
+          type: string
+          label: Target URL
+          required: true
+          supports_variables: true
+          placeholder: "https://example.com/hook"
+        - field: events
+          type: multiselect
+          label: Events
+          options: [entity.created, entity.updated, entity.deleted, issue.created, issue.updated, user.created, admin_user.created]
+          required: true
+        - field: is_active
+          type: boolean
+          label: Active
+          default: true
+
+    # --- Access Reviews (Enterprise) ---
+    - id: create_access_review
+      name: Create Access Review
+      description: Launch a periodic access review for an identity group (Enterprise)
+      icon: "UserCheck"
+      required_module: access_reviews
+      required_license_feature: access-reviews
+      subcategory: Access Reviews
+      endpoint: /api/v1/access-reviews
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: group_id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: group_id
+          type: integer
+          label: Identity Group ID
+          required: true
+          supports_variables: true
+        - field: period_start
+          type: string
+          label: Period Start (ISO8601)
+          required: true
+        - field: period_end
+          type: string
+          label: Period End (ISO8601)
+          required: true
+        - field: due_date
+          type: string
+          label: Due Date (ISO8601)
+          required: true
+        - field: auto_apply
+          type: boolean
+          label: Auto-Apply Decisions
+          default: true
+
+    - id: approve_group_req
+      name: Approve Group Access Request
+      description: Approve a pending group membership request (Enterprise)
+      icon: "CheckCircle2"
+      required_module: access_reviews
+      required_license_feature: access-reviews
+      subcategory: Access Reviews
+      endpoint: /api/v1/group-membership/requests/{{request_id}}/approve
+      method: POST
+      path_params: [request_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: request_id
+          type: string
+          label: Request ID
+          required: true
+          supports_variables: true
+        - field: justification
+          type: string
+          label: Justification
+          supports_variables: true
+
+    # --- Documents ---
+    - id: create_document
+      name: Create Document
+      description: Create a new knowledge base document in Elder
+      icon: "FileText"
+      required_module: documents
+      subcategory: Documents
+      endpoint: /api/v1/documents
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: slug
+          type: string
+        - name: title
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: title
+          type: string
+          label: Title
+          required: true
+          supports_variables: true
+        - field: body
+          type: textarea
+          label: Markdown Body
+          required: true
+          supports_variables: true
+        - field: category
+          type: string
+          label: Category
+          supports_variables: true
+        - field: visibility
+          type: select
+          label: Visibility
+          options: [authenticated, public, restricted]
+          default: authenticated
+
+    - id: publish_document
+      name: Publish Document
+      description: Publish a draft document by ID
+      icon: "CheckCircle2"
+      required_module: documents
+      subcategory: Documents
+      endpoint: /api/v1/documents/{{doc_id}}/publish
+      method: POST
+      path_params: [doc_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: doc_id
+          type: string
+          label: Document ID
+          required: true
+          supports_variables: true
+
+    # --- Pages ---
+    - id: create_page
+      name: Create Wiki Page
+      description: Create a new wiki page in Elder
+      icon: "BookOpen"
+      required_module: pages
+      subcategory: Pages
+      endpoint: /api/v1/pages
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: slug
+          type: string
+        - name: title
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: title
+          type: string
+          label: Page Title
+          required: true
+          supports_variables: true
+        - field: body_html
+          type: textarea
+          label: Body HTML
+          required: true
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [draft, published]
+          default: draft
+        - field: visibility
+          type: select
+          label: Visibility
+          options: [authenticated, public, restricted]
+          default: authenticated
+
+    # --- Diagrams ---
+    - id: create_diagram
+      name: Create Diagram
+      description: Create a new architecture diagram
+      icon: "LayoutTemplate"
+      required_module: diagrams
+      subcategory: Diagrams
+      endpoint: /api/v1/diagrams
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: title
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: title
+          type: string
+          label: Diagram Title
+          required: true
+          supports_variables: true
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [draft, published, archived]
+          default: draft
+        - field: content
+          type: json
+          label: Diagram Canvas JSON
+          supports_variables: true
+
+    # --- Streams ---
+    - id: execute_stream
+      name: Trigger Child Playbook
+      description: Enqueue execution of another Streams playbook
+      icon: "Workflow"
+      required_module: streams
+      subcategory: Streams
+      endpoint: /api/v1/streams/{{stream_id}}/execute
+      method: POST
+      path_params: [stream_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: execution_id
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: stream_id
+          type: string
+          label: Playbook ID
+          required: true
+          supports_variables: true
+        - field: input_data
+          type: json
+          label: Input Data (JSON)
+          supports_variables: true
+
+    - id: approve_stream_exec
+      name: Approve Playbook Gate
+      description: Approve a paused playbook execution gate
+      icon: "CheckCircle2"
+      required_module: streams
+      subcategory: Streams
+      endpoint: /api/v1/streams/executions/{{execution_id}}/approve
+      method: POST
+      path_params: [execution_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: execution_id
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: execution_id
+          type: string
+          label: Execution ID
+          required: true
+          supports_variables: true
+        - field: comment
+          type: string
+          label: Approval Comment
+          supports_variables: true
+
+    # --- Flows ---
+    - id: approve_promotion
+      name: Approve Flow Promotion
+      description: Approve a pending CI/CD environment promotion
+      icon: "CheckCircle2"
+      required_module: flows
+      subcategory: Promotions
+      endpoint: /api/v1/flows/promotions/{{promotion_id}}/approve
+      method: POST
+      path_params: [promotion_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: promotion_id
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: promotion_id
+          type: string
+          label: Promotion ID
+          required: true
+          supports_variables: true
+        - field: comment
+          type: string
+          label: Comment
+          supports_variables: true
+
+    - id: execute_promotion
+      name: Execute Flow Promotion
+      description: Execute an approved CI/CD environment promotion
+      icon: "Play"
+      required_module: flows
+      subcategory: Promotions
+      endpoint: /api/v1/flows/promotions/{{promotion_id}}/execute
+      method: POST
+      path_params: [promotion_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: promotion_id
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: promotion_id
+          type: string
+          label: Promotion ID
+          required: true
+          supports_variables: true
+
+    # --- Helpdesk ---
+    - id: create_ticket
+      name: Create Helpdesk Ticket
+      description: Open a new internal helpdesk ticket
+      icon: "Ticket"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      endpoint: /api/v1/helpdesk/tickets
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: village_id
+          type: string
+        - name: subject
+          type: string
+        - name: status
+          type: string
+        - name: priority
+          type: string
+      config_schema:
+        - field: subject
+          type: string
+          label: Subject
+          required: true
+          supports_variables: true
+        - field: requester_id
+          type: integer
+          label: Requester Identity ID
+          required: true
+          supports_variables: true
+        - field: priority
+          type: select
+          label: Priority
+          options: [low, medium, high, urgent, critical]
+          default: medium
+        - field: channel
+          type: select
+          label: Channel
+          options: [web, email, api, slack, playbook]
+          default: web
+        - field: category
+          type: string
+          label: Category
+          supports_variables: true
+        - field: team_id
+          type: integer
+          label: Team ID
+          supports_variables: true
+        - field: assignee_id
+          type: integer
+          label: Assignee Identity ID
+          supports_variables: true
+
+    - id: update_ticket
+      name: Update Helpdesk Ticket
+      description: Update an internal helpdesk ticket status or priority
+      icon: "Pencil"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      endpoint: /api/v1/helpdesk/tickets/{{ticket_id}}
+      method: PATCH
+      path_params: [ticket_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: status
+          type: string
+        - name: priority
+          type: string
+      config_schema:
+        - field: ticket_id
+          type: string
+          label: Ticket ID
+          required: true
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", open, in_progress, resolved, closed]
+        - field: priority
+          type: select
+          label: Priority
+          options: ["", low, medium, high, urgent, critical]
+        - field: assignee_id
+          type: integer
+          label: Assignee Identity ID
+          supports_variables: true
+
+    - id: assign_ticket
+      name: Assign Helpdesk Ticket
+      description: Assign an internal helpdesk ticket to an agent
+      icon: "UserCheck"
+      required_module: helpdesk
+      subcategory: Helpdesk
+      endpoint: /api/v1/helpdesk/tickets/{{ticket_id}}/assign
+      method: POST
+      path_params: [ticket_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: assignee_id
+          type: number
+      config_schema:
+        - field: ticket_id
+          type: string
+          label: Ticket ID
+          required: true
+          supports_variables: true
+        - field: assignee_id
+          type: integer
+          label: Assignee Identity ID
+          required: true
+          supports_variables: true
+
+    # --- AI Resources ---
+    - id: create_ai_resource
+      name: Register AI Resource
+      description: Register a new LLM, AI Gateway, or MCP Server
+      icon: "Sparkles"
+      required_module: ai
+      subcategory: AI Resources
+      endpoint: /api/v1/ai/resources
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: resource_type
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: name
+          type: string
+          label: Resource Name
+          required: true
+          supports_variables: true
+        - field: organization_id
+          type: integer
+          label: Organization ID
+          required: true
+          supports_variables: true
+        - field: resource_type
+          type: select
+          label: Resource Type
+          options: [llm, ai_gateway, mcp_server]
+          required: true
+          default: llm
+        - field: provider
+          type: string
+          label: Provider
+          supports_variables: true
+          placeholder: "anthropic, openai, ollama"
+        - field: model_name
+          type: string
+          label: Model Name
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: [pending_review, allowed, restricted, not_allowed]
+          default: pending_review
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    - id: update_ai_resource
+      name: Update AI Resource
+      description: Update status or metadata on an existing AI resource
+      icon: "Pencil"
+      required_module: ai
+      subcategory: AI Resources
+      endpoint: /api/v1/ai/resources/{{id}}
+      method: PUT
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: name
+          type: string
+        - name: status
+          type: string
+      config_schema:
+        - field: id
+          type: string
+          label: AI Resource ID
+          required: true
+          supports_variables: true
+        - field: status
+          type: select
+          label: Status
+          options: ["", pending_review, allowed, restricted, not_allowed]
+        - field: description
+          type: textarea
+          label: Description
+          supports_variables: true
+
+    # --- Core ---
+    - id: update_identity
+      name: Update Identity
+      description: Update an identity's status or portal role
+      icon: "Users"
+      required_module: core
+      subcategory: Identities
+      endpoint: /api/v1/identities/{{id}}
+      method: PATCH
+      path_params: [id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: id
+          type: number
+        - name: username
+          type: string
+        - name: is_active
+          type: boolean
+      config_schema:
+        - field: id
+          type: string
+          label: Identity ID
+          required: true
+          supports_variables: true
+        - field: is_active
+          type: boolean
+          label: Active
+        - field: portal_role
+          type: select
+          label: Portal Role
+          options: ["", observer, editor, admin]
+
+    - id: run_backup_job
+      name: Run Backup Job
+      description: Trigger a scheduled Elder backup job immediately
+      icon: "Archive"
+      required_module: core
+      subcategory: Backup
+      endpoint: /api/v1/backup/jobs/{{job_id}}/run
+      method: POST
+      path_params: [job_id]
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+      output_schema:
+        - name: job_id
+          type: number
+        - name: status
+          type: string
+      config_schema:
+        - field: job_id
+          type: string
+          label: Backup Job ID
+          required: true
+          supports_variables: true

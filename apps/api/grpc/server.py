@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 import signal
 import sys
@@ -13,6 +12,10 @@ import grpc
 import structlog
 from grpc_reflection.v1alpha import reflection
 
+from apps.api.common.modules.licensing import (
+    get_matched_bypass_domain,
+    is_bypass_domain,
+)
 from apps.api.grpc.generated import elder_pb2, elder_pb2_grpc
 from apps.api.grpc.servicers.elder_servicer import ElderServicer
 from apps.api.licensing_fallback import get_license_client
@@ -22,7 +25,7 @@ logger = structlog.get_logger(__name__)
 
 def serve(
     app,
-    host: str = "0.0.0.0",
+    host: str = "0.0.0.0",  # nosec B104
     port: int = 50051,
     max_workers: int = 10,
     require_license: bool = True,
@@ -41,7 +44,13 @@ def serve(
     app.db.engine.dispose()
     # Validate license if required
     if require_license:
-        if get_license_client is None:
+        if is_bypass_domain():
+            logger.info(
+                "grpc_server_license_bypassed",
+                tier="enterprise",
+                bypass_domain=get_matched_bypass_domain(),
+            )
+        elif get_license_client is None:
             logger.warning(
                 "grpc_server_no_licensing_module",
                 message="penguin_licensing not available, skipping license check",
@@ -49,25 +58,31 @@ def serve(
         else:
             try:
                 license_client = get_license_client()
-                validation = license_client.validate()
-
-                if not validation.valid:
-                    logger.error(
-                        "grpc_server_license_invalid", message=validation.message
+                if license_client is None:
+                    logger.warning(
+                        "grpc_server_no_licensing_module",
+                        message="penguin_licensing not available, skipping license check",
                     )
-                    sys.exit(1)
+                else:
+                    validation = license_client.validate()
 
-                if validation.tier != "enterprise":
-                    logger.error(
-                        "grpc_server_requires_enterprise", tier=validation.tier
+                    if not validation.valid:
+                        logger.error(
+                            "grpc_server_license_invalid", message=validation.message
+                        )
+                        sys.exit(1)
+
+                    if validation.tier != "enterprise":
+                        logger.error(
+                            "grpc_server_requires_enterprise", tier=validation.tier
+                        )
+                        sys.exit(1)
+
+                    logger.info(
+                        "grpc_server_license_validated",
+                        tier=validation.tier,
+                        customer=validation.customer,
                     )
-                    sys.exit(1)
-
-                logger.info(
-                    "grpc_server_license_validated",
-                    tier=validation.tier,
-                    customer=validation.customer,
-                )
             except Exception as e:
                 logger.error("grpc_server_license_error", error=str(e))
                 sys.exit(1)
@@ -128,7 +143,7 @@ def serve(
 
 if __name__ == "__main__":
     # Get configuration from environment
-    host = os.getenv("GRPC_HOST", "0.0.0.0")
+    host = os.getenv("GRPC_HOST", "0.0.0.0")  # nosec B104
     port = int(os.getenv("GRPC_PORT", "50051"))
     max_workers = int(os.getenv("GRPC_MAX_WORKERS", "10"))
     require_license = os.getenv("GRPC_REQUIRE_LICENSE", "true").lower() == "true"

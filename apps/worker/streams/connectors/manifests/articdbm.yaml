@@ -1,0 +1,433 @@
+# ArticDBM Service Connector Manifest
+# Database management platform for multi-database lifecycle management
+# Provides database provisioning, security, monitoring, and SQL execution
+
+connector:
+  id: articdbm
+  name: ArticDBM
+  description: Database management platform for provisioning, securing, and monitoring databases across multiple engines
+  icon: "articdbm-logo"
+  color: "#0EA5E9"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: ARTICDBM_API_KEY
+
+  connection:
+    base_url_env: ARTICDBM_URL
+    default_url: http://localhost:8000
+    health_endpoint: /api/v1/health
+
+  triggers:
+    - id: security_violation
+      name: Security Violation Detected
+      description: Triggered when a database security violation is detected
+      icon: "🛡️"
+      webhook_path: /webhooks/articdbm/security/violation
+      outputs:
+        - name: violation
+          type: object
+          description: Security violation details including type, database, user, and threat level
+      config_schema:
+        - field: severity
+          type: multiselect
+          label: Severity Levels
+          description: Filter by violation severity
+          options:
+            - critical
+            - high
+            - medium
+            - low
+          required: false
+        - field: violation_types
+          type: multiselect
+          label: Violation Types
+          description: Filter by type of security violation
+          options:
+            - unauthorized_access
+            - sql_injection
+            - privilege_escalation
+            - data_exfiltration
+          required: false
+
+    - id: database_health_changed
+      name: Database Health Changed
+      description: Triggered when database health status changes
+      icon: "💚"
+      webhook_path: /webhooks/articdbm/health/changed
+      outputs:
+        - name: health_event
+          type: object
+          description: Health status change details including database, previous state, and current state
+      config_schema:
+        - field: health_states
+          type: multiselect
+          label: Health States
+          description: Filter by health status changes
+          options:
+            - healthy
+            - degraded
+            - critical
+            - offline
+          required: false
+        - field: db_types
+          type: multiselect
+          label: Database Types
+          description: Filter by database engine type
+          options:
+            - postgresql
+            - mysql
+            - mariadb
+            - mongodb
+            - redis
+          required: false
+
+  actions:
+    - id: create_database
+      name: Create Database
+      description: Create a new managed database instance
+      icon: "➕"
+      endpoint: /api/v1/databases
+      method: POST
+      inputs:
+        - name: database_config
+          type: any
+          required: false
+          description: Database configuration from previous step
+      outputs:
+        - name: database
+          type: object
+          description: Created database details with connection information and credentials
+      config_schema:
+        - field: name
+          type: string
+          label: Database Name
+          description: Name for the new database instance
+          supports_variables: true
+          required: true
+        - field: db_type
+          type: select
+          label: Database Type
+          description: Database engine type
+          options:
+            - postgresql
+            - mysql
+            - mariadb
+            - mongodb
+            - redis
+          required: true
+        - field: version
+          type: string
+          label: Database Version
+          description: Database engine version (e.g., 16, 8.0, latest)
+          default: "latest"
+          required: false
+        - field: size
+          type: select
+          label: Instance Size
+          description: Database instance size tier
+          options:
+            - small
+            - medium
+            - large
+            - xlarge
+          default: small
+          required: false
+        - field: environment
+          type: select
+          label: Environment
+          description: Deployment environment for the database
+          options:
+            - production
+            - staging
+            - development
+          required: true
+
+    - id: update_database
+      name: Update Database
+      description: Update database configuration and settings
+      icon: "⚙️"
+      endpoint: /api/v1/databases/{{database_id}}
+      method: PUT
+      inputs:
+        - name: database_config
+          type: any
+          required: false
+          description: Database configuration updates from previous step
+      outputs:
+        - name: database
+          type: object
+          description: Updated database details
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: The ID of the database to update
+          supports_variables: true
+          required: true
+        - field: size
+          type: select
+          label: Instance Size
+          description: Update instance size tier
+          options:
+            - small
+            - medium
+            - large
+            - xlarge
+          required: false
+        - field: maintenance_window
+          type: string
+          label: Maintenance Window
+          description: Scheduled maintenance window for updates
+          placeholder: "Sun 02:00-04:00 UTC"
+          required: false
+
+    - id: delete_database
+      name: Delete Database
+      description: Delete a managed database instance
+      icon: "🗑️"
+      endpoint: /api/v1/databases/{{database_id}}
+      method: DELETE
+      inputs:
+        - name: database_id
+          type: any
+          required: false
+          description: Database ID from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Deletion confirmation with backup information
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: The ID of the database to delete
+          supports_variables: true
+          required: true
+        - field: create_backup
+          type: checkbox
+          label: Create Final Backup
+          description: Create a final backup before deletion
+          default: true
+          required: false
+
+    - id: execute_sql_file
+      name: Execute SQL File
+      description: Execute a SQL file or script against a database
+      icon: "▶️"
+      endpoint: /api/v1/databases/{{database_id}}/execute
+      method: POST
+      inputs:
+        - name: sql_content
+          type: any
+          required: false
+          description: SQL content from previous step
+      outputs:
+        - name: result
+          type: object
+          description: Execution results with affected rows and any errors
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: The ID of the database to execute against
+          supports_variables: true
+          required: true
+        - field: sql_content
+          type: textarea
+          label: SQL Content
+          description: SQL statements to execute
+          supports_variables: true
+          required: true
+        - field: dry_run
+          type: checkbox
+          label: Dry Run
+          description: Validate SQL without executing changes
+          default: true
+          required: false
+
+    - id: validate_sql_file
+      name: Validate SQL File
+      description: Validate SQL syntax without executing
+      icon: "✔️"
+      endpoint: /api/v1/sql/validate
+      method: POST
+      inputs:
+        - name: sql_content
+          type: any
+          required: false
+          description: SQL content from previous step
+      outputs:
+        - name: validation
+          type: object
+          description: Validation results with syntax errors or success confirmation
+      config_schema:
+        - field: sql_content
+          type: textarea
+          label: SQL Content
+          description: SQL statements to validate
+          supports_variables: true
+          required: true
+        - field: db_type
+          type: select
+          label: Database Type
+          description: Database engine type for syntax validation
+          options:
+            - postgresql
+            - mysql
+            - mariadb
+          required: true
+
+  transforms:
+    - id: list_databases
+      name: List Databases
+      description: Retrieve a list of managed databases with optional filtering
+      icon: "📋"
+      endpoint: /api/v1/databases
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: databases
+          type: object
+          description: Array of managed databases matching filter criteria
+      config_schema:
+        - field: db_type
+          type: select
+          label: Database Type
+          description: Filter by database engine type
+          options:
+            - any
+            - postgresql
+            - mysql
+            - mariadb
+            - mongodb
+            - redis
+          default: any
+          required: false
+        - field: environment
+          type: select
+          label: Environment
+          description: Filter by deployment environment
+          options:
+            - any
+            - production
+            - staging
+            - development
+          default: any
+          required: false
+        - field: limit
+          type: number
+          label: Result Limit
+          description: Maximum number of databases to return
+          default: 50
+          required: false
+
+    - id: get_stats
+      name: Get Database Statistics
+      description: Retrieve performance and health statistics for a database
+      icon: "📊"
+      endpoint: /api/v1/databases/{{database_id}}/stats
+      method: GET
+      inputs:
+        - name: database_id
+          type: any
+          required: true
+          description: Database ID from previous step
+      outputs:
+        - name: stats
+          type: object
+          description: Database statistics including connections, queries, storage, and performance metrics
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: The ID of the database to get statistics for
+          supports_variables: true
+          required: true
+        - field: metrics
+          type: multiselect
+          label: Metrics to Include
+          description: Select which metric categories to include
+          options:
+            - connections
+            - queries
+            - storage
+            - replication
+            - cache
+          required: false
+
+    - id: get_audit_log
+      name: Get Audit Log
+      description: Retrieve audit log entries for a database
+      icon: "📜"
+      endpoint: /api/v1/databases/{{database_id}}/audit
+      method: GET
+      inputs:
+        - name: database_id
+          type: any
+          required: true
+          description: Database ID from previous step
+      outputs:
+        - name: audit_log
+          type: object
+          description: Array of audit log entries with user actions and changes
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: The ID of the database to get audit logs for
+          supports_variables: true
+          required: true
+        - field: limit
+          type: number
+          label: Result Limit
+          description: Maximum number of log entries to return
+          default: 100
+          required: false
+        - field: action_filter
+          type: string
+          label: Action Filter
+          description: Filter by SQL action types (comma-separated)
+          placeholder: "CREATE, DROP, ALTER"
+          required: false
+
+    - id: list_security_rules
+      name: List Security Rules
+      description: Retrieve security rules for databases
+      icon: "🔒"
+      endpoint: /api/v1/security/rules
+      method: GET
+      inputs:
+        - name: filters
+          type: any
+          required: false
+          description: Filter parameters from previous step
+      outputs:
+        - name: rules
+          type: object
+          description: Array of security rules with conditions and actions
+      config_schema:
+        - field: database_id
+          type: string
+          label: Database ID
+          description: Filter rules for a specific database (optional)
+          supports_variables: true
+          required: false
+        - field: status
+          type: select
+          label: Rule Status
+          description: Filter by rule status
+          options:
+            - any
+            - active
+            - disabled
+          default: any
+          required: false

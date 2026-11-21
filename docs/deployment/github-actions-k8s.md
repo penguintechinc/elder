@@ -154,7 +154,7 @@ Add the secrets output by the setup script to your GitHub repository.
 
 | Secret Name | Description | How to Generate |
 |-------------|-------------|-----------------|
-| `SECRET_KEY` | Flask secret key | `openssl rand -base64 32` |
+| `SECRET_KEY` | Application secret key | `openssl rand -base64 32` |
 | `POSTGRES_PASSWORD` | PostgreSQL password | `openssl rand -base64 32` |
 | `REDIS_PASSWORD` | Redis password | `openssl rand -base64 32` |
 | `LICENSE_KEY` | Elder license key (optional) | Your license key |
@@ -262,7 +262,7 @@ env:
 Edit `.github/workflows/docker-build.yml`:
 
 ```yaml
-helm upgrade --install elder ./infrastructure/helm/elder \
+helm upgrade --install elder ./k8s/helm/elder \
   --namespace ${{ env.K8S_NAMESPACE }} \
   --set api.replicaCount=3 \
   --set config.logging.level=INFO \
@@ -482,7 +482,7 @@ SA_TOKEN=$(kubectl create token "$SERVICEACCOUNT" -n "$NAMESPACE" --duration=216
 - [Kubernetes Manifests](../../infrastructure/k8s/github-ci/)
 - [Workflow File](../../.github/workflows/docker-build.yml)
 - [Local Kubernetes Setup](./local-kubernetes-setup.md)
-- [Helm Chart Documentation](../../infrastructure/helm/elder/README.md)
+- [Helm Chart](../../k8s/helm/elder/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 
 ## Support

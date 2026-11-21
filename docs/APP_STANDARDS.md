@@ -12,7 +12,7 @@ Elder implements a **stateless, multi-container microservices architecture** wit
 
 ### Service Roles & Responsibilities
 
-**API Service** (Flask backend, port 5000)
+**API Service** (Quart backend, ASGI/uvicorn)
 - REST CRUD endpoints for all domain resources (entities, organizations, services, etc.)
 - Discovery job management (create, update, delete, list, test)
 - Job queuing via `POST /api/v1/discovery/jobs/<id>/run` (sets `next_run_at = now()`, returns 202)

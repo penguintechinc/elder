@@ -9,7 +9,6 @@ Trello mapping:
 
 # flake8: noqa: E501
 
-
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -31,7 +30,7 @@ class TrelloSyncClient(BaseSyncClient):
     """Trello sync client implementation."""
 
     def __init__(
-        self, config: Dict[str, Any], db: DAL, sync_config_id: int, logger: Any
+        self, config: dict[str, Any], db: DAL, sync_config_id: int, logger: Any
     ):
         super().__init__("trello", config, db, sync_config_id, logger)
 
@@ -78,7 +77,7 @@ class TrelloSyncClient(BaseSyncClient):
         return SyncResult(status=SyncStatus.SUCCESS, operation=operation)
 
     def batch_sync(
-        self, resource_type: ResourceType, since: Optional[datetime] = None
+        self, resource_type: ResourceType, since: datetime | None = None
     ) -> SyncResult:
         """Batch sync Trello resources."""
         self.logger.info(f"Trello batch sync for {resource_type.value}")
@@ -91,7 +90,7 @@ class TrelloSyncClient(BaseSyncClient):
             ),
         )
 
-    def handle_webhook(self, webhook_data: Dict[str, Any]) -> SyncResult:
+    def handle_webhook(self, webhook_data: dict[str, Any]) -> SyncResult:
         """Handle Trello webhook."""
         action_type = webhook_data.get("action", {}).get("type")
         self.logger.info(f"Trello webhook: {action_type}")

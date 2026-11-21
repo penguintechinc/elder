@@ -12,7 +12,6 @@ Supports:
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List
 
@@ -102,7 +101,7 @@ class GoEndpointParser:
         """
         return filename.endswith(".go")
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Go source file and extract HTTP endpoint information.
 
         Args:
@@ -119,7 +118,7 @@ class GoEndpointParser:
             - source_file: Source filename (str)
             - middleware: Middleware list (List[str])
         """
-        endpoints: List[Dict[str, Any]] = []
+        endpoints: list[dict[str, Any]] = []
 
         # Detect middleware
         middleware = self._extract_middleware(content)
@@ -138,7 +137,7 @@ class GoEndpointParser:
 
         return endpoints
 
-    def _extract_middleware(self, content: str) -> List[str]:
+    def _extract_middleware(self, content: str) -> list[str]:
         """Extract middleware from Go source code.
 
         Args:
@@ -153,8 +152,8 @@ class GoEndpointParser:
         return middleware
 
     def _parse_gin_routes(
-        self, content: str, filename: str, middleware: List[str]
-    ) -> List[Dict[str, Any]]:
+        self, content: str, filename: str, middleware: list[str]
+    ) -> list[dict[str, Any]]:
         """Parse Gin framework routes.
 
         Args:
@@ -193,8 +192,8 @@ class GoEndpointParser:
         return endpoints
 
     def _parse_chi_routes(
-        self, content: str, filename: str, middleware: List[str]
-    ) -> List[Dict[str, Any]]:
+        self, content: str, filename: str, middleware: list[str]
+    ) -> list[dict[str, Any]]:
         """Parse Chi framework routes.
 
         Args:
@@ -226,8 +225,8 @@ class GoEndpointParser:
         return endpoints
 
     def _parse_gorilla_routes(
-        self, content: str, filename: str, middleware: List[str]
-    ) -> List[Dict[str, Any]]:
+        self, content: str, filename: str, middleware: list[str]
+    ) -> list[dict[str, Any]]:
         """Parse Gorilla Mux routes.
 
         Args:
@@ -265,8 +264,8 @@ class GoEndpointParser:
         return endpoints
 
     def _parse_nethttp_routes(
-        self, content: str, filename: str, middleware: List[str]
-    ) -> List[Dict[str, Any]]:
+        self, content: str, filename: str, middleware: list[str]
+    ) -> list[dict[str, Any]]:
         """Parse net/http standard library routes.
 
         Args:

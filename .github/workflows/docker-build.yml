@@ -2,10 +2,10 @@ name: Build and Push Docker Images
 
 on:
   push:
-    branches: [ '**' ]  # All branches
+    branches: [ main, 'release/**' ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, 'release/**' ]
 
 # Required permissions for GHCR push, security scanning, and integration tests
 permissions:
@@ -24,34 +24,54 @@ env:
 jobs:
   build-platform:
     name: Build (${{ matrix.service.name }}, ${{ matrix.platform }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
         service:
-          - name: api
+          - name: hub-api
             dockerfile: apps/api/Dockerfile
             context: .
-          - name: web
+          - name: hub-webui
             dockerfile: web/Dockerfile
             context: .
-          - name: scanner
-            dockerfile: apps/scanner/Dockerfile
+          - name: hub-mcp
+            dockerfile: apps/mcp/Dockerfile
             context: .
-          - name: worker
+          - name: svc-scanner
+            dockerfile: services/svc-scanner/Dockerfile
+            context: .
+          - name: svc-integrations
+            dockerfile: services/svc-integrations/Dockerfile
+            context: .
+          - name: svc-worker
             dockerfile: apps/worker/Dockerfile
+            context: .
+          - name: svc-flows-invoker
+            dockerfile: apps/flows_invoker/Dockerfile
             context: .
         platform:
           - linux/amd64
-          - linux/arm64
+          # Temporarily disabled until release-ready amd64 image is validated
+          # - linux/arm64
 
     steps:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up QEMU (for arm64 emulation)
-      uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
+    # Temporarily disabled while linux/arm64 builds are paused
+    # - name: Set up QEMU (for arm64 emulation)
+    #   uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a  # v4
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
@@ -65,12 +85,12 @@ jobs:
     - name: Read version from .version file
       id: version
       run: |
-        VERSION=$(cat .version | tr -d '\n')
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        VERSION=$(tr -d '\n' < .version)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Compute build epoch
       id: epoch
-      run: echo "epoch=$(date +%s)" >> $GITHUB_OUTPUT
+      run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
 
     - name: Sanitize platform name for tag suffix
       id: platform
@@ -78,7 +98,7 @@ jobs:
         PLATFORM: ${{ matrix.platform }}
       run: |
         # linux/amd64 → amd64, linux/arm64 → arm64
-        echo "suffix=$(echo "$PLATFORM" | tr '/' '-' | cut -d'-' -f2-)" >> $GITHUB_OUTPUT
+        echo "suffix=$(echo "$PLATFORM" | tr '/' '-' | cut -d'-' -f2-)" >> "$GITHUB_OUTPUT"
 
     - name: Build and push platform image
       id: build
@@ -89,12 +109,12 @@ jobs:
         platforms: ${{ matrix.platform }}
         push: ${{ github.event_name != 'pull_request' }}
         # Push to a platform-specific tag; merged in the next job
-        tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-${{ matrix.service.name }}:${{ steps.version.outputs.version }}-${{ steps.platform.outputs.suffix }}
+        tags: ${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/${{ matrix.service.name }}:${{ steps.version.outputs.version }}-${{ steps.platform.outputs.suffix }}
         # Scope cache per service+platform to prevent eviction
         cache-from: type=gha,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
         cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}-${{ steps.platform.outputs.suffix }}
-        provenance: false
-        sbom: false
+        provenance: true
+        sbom: true
         build-args: |
           VCS_REF=${{ github.sha }}
           VERSION=${{ steps.version.outputs.version }}
@@ -107,16 +127,25 @@ jobs:
     name: Merge manifest (${{ matrix.service }})
     needs: build-platform
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main') && '"ubuntu-24.04"' || '{"group":"dal2alpha"}') }}
     strategy:
+      max-parallel: 3
       matrix:
-        service: [api, web, scanner, worker]
+        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
 
     steps:
     - name: Checkout code
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
-    - name: Set up Docker Buildx
+    - name: Set up Docker Buildx (dal2alpha remote buildkit)
+      if: github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/') && github.event_name != 'release' && github.base_ref != 'main' && github.event_name != 'pull_request'
+      uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
+      with:
+        driver: remote
+        endpoint: tcp://buildkitd.buildkit.svc.cluster.local:1234
+
+    - name: Set up Docker Buildx (hosted)
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.base_ref == 'main' || github.event_name == 'pull_request'
       uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4
 
     - name: Log in to Container Registry
@@ -129,8 +158,8 @@ jobs:
     - name: Read version from .version file
       id: version
       run: |
-        VERSION=$(cat .version | tr -d '\n')
-        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        VERSION=$(tr -d '\n' < .version)
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Merge platform images into multi-arch manifest
       env:
@@ -138,14 +167,14 @@ jobs:
         VERSION: ${{ steps.version.outputs.version }}
         IS_RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         IS_MAIN: ${{ github.ref == 'refs/heads/main' }}
-        IS_RELEASE_BRANCH: ${{ startsWith(github.ref, 'refs/heads/v') }}
+        IS_RELEASE_BRANCH: ${{ startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/v') }}
         REF_NAME: ${{ github.ref_name }}
         REGISTRY: ${{ env.REGISTRY }}
         ORG: ${{ github.repository_owner }}
       run: |
-        IMAGE="${REGISTRY}/${ORG}/elder-${SERVICE}"
+        IMAGE="${REGISTRY}/${ORG}/elder/${SERVICE}"
         SRC_AMD64="${IMAGE}:${VERSION}-amd64"
-        SRC_ARM64="${IMAGE}:${VERSION}-arm64"
+        # SRC_ARM64="${IMAGE}:${VERSION}-arm64"  # Temporarily disabled
 
         # Determine which named tags to create for this ref
         TAGS=()
@@ -165,9 +194,9 @@ jobs:
           TAG_ARGS+=(--tag "$tag")
         done
 
-        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64" "$SRC_ARM64"
+        docker buildx imagetools create "${TAG_ARGS[@]}" "$SRC_AMD64"
 
-        echo "Merged multi-arch manifest for elder-${SERVICE} → ${TAGS[*]}"
+        echo "Merged multi-arch manifest for elder/${SERVICE} → ${TAGS[*]}"
         docker buildx imagetools inspect "${TAGS[0]}"
 
   # Release creation (triggered after manifests are merged)
@@ -199,10 +228,12 @@ jobs:
         else
           git log --pretty=format:"* %s (%h)" >> CHANGELOG.md
         fi
-        echo "" >> CHANGELOG.md
-        echo "### Docker Images" >> CHANGELOG.md
-        echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-api:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
-        echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder-web:${GITHUB_REF_NAME}\`" >> CHANGELOG.md
+        {
+          echo ""
+          echo "### Docker Images"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/hub-api:${GITHUB_REF_NAME}\`"
+          echo "- \`${{ env.REGISTRY }}/${{ github.repository_owner }}/elder/hub-webui:${GITHUB_REF_NAME}\`"
+        } >> CHANGELOG.md
 
     - name: Create Release
       uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e  # v1
@@ -221,7 +252,8 @@ jobs:
     runs-on: ubuntu-latest
     if: false
     strategy:
+      max-parallel: 3
       matrix:
-        service: [api, web, scanner, worker]
+        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
     steps:
     - run: echo "Container security scan disabled — see ci.yml for filesystem scan"

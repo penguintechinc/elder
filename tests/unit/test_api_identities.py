@@ -6,7 +6,6 @@ regression: gh-121 — identities.tenant_id is NOT NULL but several code paths
 """
 
 import pytest
-from datetime import datetime, timezone
 
 
 class TestCreateIdentityTenantId:
@@ -38,9 +37,11 @@ class TestCreateIdentityTenantId:
         """
         When tenant_id not in body but g.current_user.tenant_id exists, use it.
         """
-        from apps.api.models.pydantic.identity import CreateIdentityRequest
         from unittest.mock import MagicMock
+
         from flask import Flask, g
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
 
         app = Flask(__name__)
         with app.app_context():
@@ -68,9 +69,11 @@ class TestCreateIdentityTenantId:
         When tenant_id not in body and g.current_user.tenant_id is None,
         fall back to default tenant from database.
         """
-        from apps.api.models.pydantic.identity import CreateIdentityRequest
         from unittest.mock import MagicMock
+
         from flask import Flask, g
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
 
         app = Flask(__name__)
         with app.app_context():
@@ -175,8 +178,6 @@ class TestCreateUserTenantId:
         """
         When tenant_id is provided in request body, use it.
         """
-        from unittest.mock import MagicMock
-
         # Simulate insert_data with tenant_id from request
         insert_data = {
             "username": "testuser",
@@ -184,15 +185,22 @@ class TestCreateUserTenantId:
         }
 
         # Simulate derivation logic
-        tenant_id = insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
-        assert tenant_id == 7, "Should extract tenant_id from insert_data (request body)"
-        assert "tenant_id" not in insert_data, "tenant_id should be popped from insert_data"
+        tenant_id = (
+            insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+        )
+        assert (
+            tenant_id == 7
+        ), "Should extract tenant_id from insert_data (request body)"
+        assert (
+            "tenant_id" not in insert_data
+        ), "tenant_id should be popped from insert_data"
 
     def test_create_user_derives_tenant_id_from_current_user(self):
         """
         When tenant_id not in body but g.current_user.tenant_id exists, use it.
         """
         from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -207,7 +215,11 @@ class TestCreateUserTenantId:
             g.current_user.tenant_id = 5
 
             # Simulate derivation logic
-            tenant_id = insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+            tenant_id = (
+                insert_data.pop("tenant_id", None)
+                if "tenant_id" in insert_data
+                else None
+            )
             if not tenant_id and hasattr(g, "current_user") and g.current_user:
                 tenant_id = g.current_user.tenant_id
 
@@ -218,6 +230,7 @@ class TestCreateUserTenantId:
         When tenant_id not in body and no current_user, fall back to default tenant from DB.
         """
         from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -236,7 +249,11 @@ class TestCreateUserTenantId:
             mock_tenant.id = 1
 
             # Simulate derivation logic
-            tenant_id = insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+            tenant_id = (
+                insert_data.pop("tenant_id", None)
+                if "tenant_id" in insert_data
+                else None
+            )
             if not tenant_id and hasattr(g, "current_user") and g.current_user:
                 tenant_id = g.current_user.tenant_id
             if not tenant_id:
@@ -250,7 +267,8 @@ class TestCreateUserTenantId:
         Verify that db.identities.insert() is always called with tenant_id.
         After the fix, the insert call must include tenant_id parameter.
         """
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
+
         from flask import Flask, g
 
         app = Flask(__name__)
@@ -267,7 +285,11 @@ class TestCreateUserTenantId:
             g.current_user.tenant_id = 3
 
             # Simulate derivation logic (must match users.py exactly)
-            tenant_id = insert_data.pop("tenant_id", None) if "tenant_id" in insert_data else None
+            tenant_id = (
+                insert_data.pop("tenant_id", None)
+                if "tenant_id" in insert_data
+                else None
+            )
             if not tenant_id and hasattr(g, "current_user") and g.current_user:
                 tenant_id = g.current_user.tenant_id
             if not tenant_id:
@@ -283,4 +305,65 @@ class TestCreateUserTenantId:
             # Verify we would call insert with tenant_id
             call_kwargs = {**insert_data, "tenant_id": tenant_id}
             assert "tenant_id" in call_kwargs, "insert call must include tenant_id"
-            assert call_kwargs["tenant_id"] == 3, "insert call must have correct tenant_id value"
+            assert (
+                call_kwargs["tenant_id"] == 3
+            ), "insert call must have correct tenant_id value"
+
+
+class TestIdentityTypeLiteral:
+    """
+    Test that CreateIdentityRequest accepts the full IdentityType vocabulary.
+
+    regression: identity_type Literal was narrowed to ["human", "service_account"],
+    rejecting valid types like "customer_contact" and "employee" that the
+    SQLAlchemy enum supports.
+    """
+
+    def test_create_identity_accepts_customer_contact(self):
+        """
+        When identity_type="customer_contact", CreateIdentityRequest should accept it.
+        """
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
+
+        # Should NOT raise ValidationError
+        body = CreateIdentityRequest(
+            username="customer123",
+            identity_type="customer_contact",
+            auth_provider="local",
+            password="SecurePass123",
+        )
+
+        assert body.identity_type == "customer_contact"
+
+    def test_create_identity_accepts_employee(self):
+        """
+        When identity_type="employee", CreateIdentityRequest should accept it.
+        """
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
+
+        # Should NOT raise ValidationError
+        body = CreateIdentityRequest(
+            username="emp123",
+            identity_type="employee",
+            auth_provider="local",
+            password="SecurePass123",
+        )
+
+        assert body.identity_type == "employee"
+
+    def test_create_identity_rejects_invalid_type(self):
+        """
+        When identity_type="not_a_type", CreateIdentityRequest should reject it (400).
+        """
+        from pydantic import ValidationError
+
+        from apps.api.models.pydantic.identity import CreateIdentityRequest
+
+        # Should raise ValidationError
+        with pytest.raises(ValidationError):
+            CreateIdentityRequest(
+                username="badtype",
+                identity_type="not_a_type",
+                auth_provider="local",
+                password="SecurePass123",
+            )

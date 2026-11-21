@@ -1,0 +1,305 @@
+# Tobogganing Connector Manifest for IceCharts
+# VPN and network security service
+connector:
+  id: tobogganing
+  name: Tobogganing
+  description: VPN and network security service with cluster management and security scanning
+  icon: "tobogganing-logo"
+  color: "#7C3AED"
+  version: "1.0.0"
+  vendor: penguintech
+
+  auth:
+    methods:
+      - type: api_key
+        header: X-API-Key
+        env_var: TOBOGGANING_API_KEY
+
+  connection:
+    base_url_env: TOBOGGANING_URL
+    default_url: http://localhost:8000
+    health_endpoint: /api/v1/health
+
+  # ============================================================================
+  # TRIGGERS
+  # ============================================================================
+  triggers:
+    - id: cluster_registered
+      name: Cluster Registered
+      description: Triggered when a new cluster registers with the VPN mesh
+      icon: "🎯"
+      webhook_path: /webhooks/tobogganing/cluster/registered
+      outputs:
+        - name: out
+          type: object
+          description: Registered cluster details including ID, name, type, and connection status
+      config_schema:
+        - field: cluster_types
+          type: multiselect
+          label: Cluster Types
+          description: Types of clusters to monitor for registration
+          options: [kubernetes, docker_swarm, nomad, bare_metal]
+
+    - id: security_scan_completed
+      name: Security Scan Completed
+      description: Triggered when a network security scan completes
+      icon: "🔒"
+      webhook_path: /webhooks/tobogganing/scan/completed
+      outputs:
+        - name: out
+          type: object
+          description: Security scan results including vulnerabilities and recommendations
+      config_schema:
+        - field: scan_types
+          type: multiselect
+          label: Scan Types
+          description: Types of security scans to monitor
+          options: [vulnerability, compliance, traffic_analysis]
+        - field: min_risk
+          type: select
+          label: Minimum Risk Level
+          description: Minimum risk level to trigger notification
+          options: [critical, high, medium, low]
+          default: medium
+
+  # ============================================================================
+  # ACTIONS
+  # ============================================================================
+  actions:
+    - id: register_cluster
+      name: Register Cluster
+      description: Register a cluster with the VPN mesh
+      icon: "➕"
+      endpoint: /api/v1/clusters
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Cluster configuration details
+      outputs:
+        - name: out
+          type: object
+          description: Registered cluster details including ID and credentials
+      config_schema:
+        - field: name
+          type: string
+          label: Cluster Name
+          description: Name for the cluster
+          placeholder: "production-cluster"
+          supports_variables: true
+          required: true
+        - field: cluster_type
+          type: select
+          label: Cluster Type
+          description: Type of cluster being registered
+          options: [kubernetes, docker_swarm, nomad, bare_metal]
+          required: true
+        - field: endpoint_url
+          type: string
+          label: Endpoint URL
+          description: API endpoint URL for the cluster
+          placeholder: "https://cluster.example.com:6443"
+          supports_variables: true
+          required: true
+        - field: region
+          type: string
+          label: Region
+          description: Geographic region of the cluster
+          placeholder: "us-east-1"
+          supports_variables: true
+
+    - id: run_security_scan
+      name: Run Security Scan
+      description: Run a network security scan on a cluster
+      icon: "🔍"
+      endpoint: /api/v1/scans
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: false
+          description: Security scan configuration
+      outputs:
+        - name: out
+          type: object
+          description: Security scan job details and initial results
+      config_schema:
+        - field: cluster_id
+          type: string
+          label: Cluster ID
+          description: ID of the cluster to scan
+          placeholder: "cluster-123"
+          supports_variables: true
+          required: true
+        - field: scan_type
+          type: select
+          label: Scan Type
+          description: Type of security scan to perform
+          options: [vulnerability, compliance, traffic_analysis, full]
+          required: true
+        - field: target_namespace
+          type: string
+          label: Target Namespace
+          description: Kubernetes namespace to scan (if applicable)
+          placeholder: "default"
+          supports_variables: true
+
+    - id: create_backup
+      name: Create Backup
+      description: Create cluster configuration backup
+      icon: "💾"
+      endpoint: /api/v1/clusters/{{cluster_id}}/backup
+      method: POST
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Backup job details and download URL
+      config_schema:
+        - field: cluster_id
+          type: string
+          label: Cluster ID
+          description: ID of the cluster to backup
+          placeholder: "cluster-123"
+          supports_variables: true
+          required: true
+        - field: include_secrets
+          type: checkbox
+          label: Include Secrets
+          description: Include encrypted secrets in backup
+          default: false
+
+    - id: update_network_policy
+      name: Update Network Policy
+      description: Update network policy for a cluster
+      icon: "🛡️"
+      endpoint: /api/v1/clusters/{{cluster_id}}/policies
+      method: PUT
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Updated network policy details
+      config_schema:
+        - field: cluster_id
+          type: string
+          label: Cluster ID
+          description: ID of the cluster to update
+          placeholder: "cluster-123"
+          supports_variables: true
+          required: true
+        - field: policy_name
+          type: string
+          label: Policy Name
+          description: Name of the network policy
+          placeholder: "default-deny-ingress"
+          supports_variables: true
+          required: true
+        - field: rules
+          type: textarea
+          label: Policy Rules
+          description: JSON array of network policy rules
+          placeholder: '[{"action": "allow", "protocol": "tcp", "port": 443}]'
+          supports_variables: true
+          required: true
+
+  # ============================================================================
+  # TRANSFORMS
+  # ============================================================================
+  transforms:
+    - id: list_clusters
+      name: List Clusters
+      description: List registered clusters with optional filtering
+      icon: "📋"
+      endpoint: /api/v1/clusters
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: List of registered clusters
+      config_schema:
+        - field: cluster_type
+          type: select
+          label: Cluster Type
+          description: Filter by cluster type
+          options: [any, kubernetes, docker_swarm, nomad, bare_metal]
+          default: any
+        - field: status
+          type: select
+          label: Status
+          description: Filter by connection status
+          options: [any, connected, disconnected, degraded]
+          default: any
+
+    - id: get_cluster_status
+      name: Get Cluster Status
+      description: Get cluster status and health information
+      icon: "💚"
+      endpoint: /api/v1/clusters/{{cluster_id}}/status
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: true
+      outputs:
+        - name: out
+          type: object
+          description: Cluster status and health metrics
+      config_schema:
+        - field: cluster_id
+          type: string
+          label: Cluster ID
+          description: ID of the cluster to check
+          placeholder: "cluster-123"
+          supports_variables: true
+          required: true
+        - field: include_nodes
+          type: checkbox
+          label: Include Node Details
+          description: Include individual node status information
+          default: true
+
+    - id: get_audit_log
+      name: Get Audit Log
+      description: Get VPN audit log with optional filtering
+      icon: "📜"
+      endpoint: /api/v1/audit
+      method: GET
+      inputs:
+        - name: in
+          type: any
+          required: false
+      outputs:
+        - name: out
+          type: object
+          description: Audit log entries
+      config_schema:
+        - field: cluster_id
+          type: string
+          label: Cluster ID
+          description: Filter by cluster ID
+          placeholder: "cluster-123"
+          supports_variables: true
+        - field: time_range
+          type: select
+          label: Time Range
+          description: Time range for audit logs
+          options: [1h, 24h, 7d, 30d]
+          default: 24h
+        - field: action_filter
+          type: string
+          label: Action Filter
+          description: Filter by action types (comma-separated)
+          placeholder: "connect, disconnect, policy_change"
+          supports_variables: true

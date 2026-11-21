@@ -1,13 +1,17 @@
 import { useNavigate } from 'react-router-dom'
 import { LoginPageBuilder } from '@penguintechinc/react-libs/components'
 import type { LoginResponse } from '@penguintechinc/react-libs/components'
+import { markAuthenticated } from '@/lib/api'
 
 export default function Login() {
   const navigate = useNavigate()
 
   const handleSuccess = (response: LoginResponse) => {
+    // The access/refresh JWT arrive as HttpOnly cookies on this same
+    // response (gh security audit) -- nothing to persist here beyond the
+    // non-sensitive "logged in" flag used by route guards.
     if (response.token) {
-      localStorage.setItem('elder_token', response.token)
+      markAuthenticated()
     }
     navigate('/')
   }

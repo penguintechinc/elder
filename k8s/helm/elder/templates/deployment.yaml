@@ -1,11 +1,11 @@
-{{- range $component := list "postgres" "redis" "web" "api" "scanner" "worker" "prometheus" "alertmanager" "grafana" }}
+{{- range $component := list "postgres" "redis" "hub-webui" "hub-api" "hub-mcp" "svc-worker" "svc-flows-invoker" }}
 {{- $componentConfig := index $.Values $component }}
-{{- if $componentConfig.enabled }}
+{{- if and $componentConfig $componentConfig.enabled }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "elder.fullname" $ }}-{{ $component }}
+  name: {{ include "elder.componentResourceName" (list $component $) }}
   namespace: {{ $.Values.namespace }}
   labels:
     {{- include "elder.componentLabels" (list $component $) | nindent 4 }}
@@ -22,6 +22,9 @@ spec:
     metadata:
       labels:
         {{- include "elder.componentSelectorLabels" (list $component $) | nindent 8 }}
+        {{- with $componentConfig.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets:
@@ -34,13 +37,39 @@ spec:
       - name: {{ $component }}
         image: {{ include "elder.image" (list $component $) }}
         imagePullPolicy: {{ include "elder.imagePullPolicy" (list $component $) }}
-        {{- if $componentConfig.env }}
+        {{- $hasModules := or (eq $component "hub-api") (eq $component "svc-worker") }}
+        {{- $isOtelComponent := or (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
+        {{- $hasOtel := and $.Values.otel.enabled $isOtelComponent }}
+        {{- if or $hasModules $hasOtel }}
+        envFrom:
+        {{- if $hasModules }}
+        - configMapRef:
+            name: elder-modules
+        {{- end }}
+        {{- if $hasOtel }}
+        - configMapRef:
+            name: elder-otel
+        {{- end }}
+        {{- end }}
+        {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
+        {{- if or $componentConfig.env $hasOtel $needsPodName }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
         {{- end }}
+        {{- if $hasOtel }}
+        - name: OTEL_SERVICE_NAME
+          value: {{ $component | quote }}
         {{- end }}
+        {{- if $needsPodName }}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        {{- end }}
+        {{- end }}
+        {{- if or (eq $component "postgres") (eq $component "redis") (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
         ports:
         {{- if eq $component "postgres" }}
         - name: postgres
@@ -50,40 +79,45 @@ spec:
         - name: redis
           containerPort: 6379
           protocol: TCP
-        {{- else if eq $component "web" }}
+        {{- else if eq $component "hub-webui" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
-        {{- else if eq $component "api" }}
+        {{- else if eq $component "hub-api" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
         - name: grpc
           containerPort: {{ $componentConfig.service.grpcPort }}
           protocol: TCP
-        {{- else if eq $component "worker" }}
+        {{- else if eq $component "hub-mcp" }}
+        - name: http
+          containerPort: {{ $componentConfig.service.targetPort | default 8080 }}
+          protocol: TCP
+        {{- else if eq $component "svc-worker" }}
         - name: http
           containerPort: {{ $componentConfig.service.targetPort }}
           protocol: TCP
-        {{- else if eq $component "prometheus" }}
-        - name: http
-          containerPort: 9090
-          protocol: TCP
-        {{- else if eq $component "alertmanager" }}
-        - name: http
-          containerPort: 9093
-          protocol: TCP
-        {{- else if eq $component "grafana" }}
-        - name: http
-          containerPort: 3000
-          protocol: TCP
+        {{- end }}
         {{- end }}
         {{- if $componentConfig.healthcheck }}
         {{- if $componentConfig.healthcheck.enabled }}
+        {{- $isHttpProbe := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-worker") }}
+        {{/* Release audit finding #6: liveness must be a lighter,
+             dependency-free self-check while readiness gates traffic on
+             dependency availability — previously identical for
+             hub-webui/hub-api/svc-worker.
+             livenessPath falls back to the readiness path when a
+             component has no separate self-only endpoint (hub-api/svc-worker);
+             hub-webui overrides it to "/" (see values.yaml). `dig` safely
+             returns the readiness-equivalent default when no
+             `healthcheck.liveness` override block is set, so
+             postgres/redis/svc-flows-invoker render identically to before. */}}
+        {{- $livenessPath := $componentConfig.healthcheck.livenessPath | default $componentConfig.healthcheck.path }}
         livenessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if $isHttpProbe }}
           httpGet:
-            path: {{ $componentConfig.healthcheck.path }}
+            path: {{ $livenessPath }}
             port: http
           {{- else if eq $component "postgres" }}
           exec:
@@ -96,13 +130,20 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "svc-flows-invoker" }}
+          # No HTTP server in this service (pure Redis Streams consumer) —
+          # health is verified via a native Python exec probe.
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
-          initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
-          periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
-          timeoutSeconds: {{ $componentConfig.healthcheck.timeoutSeconds | default 5 }}
-          failureThreshold: {{ $componentConfig.healthcheck.failureThreshold | default 3 }}
+          initialDelaySeconds: {{ dig "liveness" "initialDelaySeconds" ($componentConfig.healthcheck.initialDelaySeconds | default 30) $componentConfig.healthcheck }}
+          periodSeconds: {{ dig "liveness" "periodSeconds" ($componentConfig.healthcheck.periodSeconds | default 10) $componentConfig.healthcheck }}
+          timeoutSeconds: {{ dig "liveness" "timeoutSeconds" ($componentConfig.healthcheck.timeoutSeconds | default 5) $componentConfig.healthcheck }}
+          failureThreshold: {{ dig "liveness" "failureThreshold" ($componentConfig.healthcheck.failureThreshold | default 3) $componentConfig.healthcheck }}
         readinessProbe:
-          {{- if or (eq $component "web") (eq $component "api") (eq $component "worker") (eq $component "prometheus") (eq $component "alertmanager") (eq $component "grafana") }}
+          {{- if $isHttpProbe }}
           httpGet:
             path: {{ $componentConfig.healthcheck.path }}
             port: http
@@ -117,6 +158,11 @@ spec:
             command:
             - redis-cli
             - ping
+          {{- else if eq $component "svc-flows-invoker" }}
+          exec:
+            command:
+            - python3
+            - apps/flows_invoker/healthcheck.py
           {{- end }}
           initialDelaySeconds: {{ $componentConfig.healthcheck.initialDelaySeconds | default 30 }}
           periodSeconds: {{ $componentConfig.healthcheck.periodSeconds | default 10 }}
@@ -126,37 +172,42 @@ spec:
         {{- end }}
         resources:
           {{- toYaml $componentConfig.resources | nindent 10 }}
-        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+        {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "hub-mcp") (eq $component "svc-flows-invoker") }}
         volumeMounts:
         {{- if eq $component "postgres" }}
         - name: data
           mountPath: /var/lib/postgresql/data
+        - name: run
+          mountPath: /var/run/postgresql
+        - name: tmp
+          mountPath: /tmp
         {{- else if eq $component "redis" }}
         - name: data
           mountPath: /data
-        {{- else if eq $component "scanner" }}
-        - name: screenshots
-          mountPath: /app/screenshots
-        {{- else if eq $component "api" }}
+        - name: tmp
+          mountPath: /tmp
+        {{- else if eq $component "hub-api" }}
         - name: instance-dir
           mountPath: /app/instance
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "worker" }}
+        {{- else if eq $component "svc-worker" }}
         - name: credentials
           mountPath: /var/run/secrets/elder
           readOnly: true
         - name: tmp
           mountPath: /tmp
-        {{- else if eq $component "prometheus" }}
-        - name: data
-          mountPath: /prometheus
-        {{- else if eq $component "alertmanager" }}
-        - name: data
-          mountPath: /alertmanager
-        {{- else if eq $component "grafana" }}
-        - name: data
-          mountPath: /var/lib/grafana
+        {{- else if eq $component "hub-webui" }}
+        - name: tmp
+          mountPath: /tmp
+        {{- else if eq $component "hub-mcp" }}
+        - name: tmp
+          mountPath: /tmp
+        {{- else if eq $component "svc-flows-invoker" }}
+        - name: workspace
+          mountPath: /workspace
+        - name: tmp
+          mountPath: /tmp
         {{- end }}
         {{- end }}
         securityContext:
@@ -165,22 +216,43 @@ spec:
           {{- else }}
           {{- toYaml $.Values.securityContext | nindent 10 }}
           {{- end }}
-      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "scanner") (eq $component "worker") (eq $component "api") }}
+      {{- if or (and $componentConfig.persistence $componentConfig.persistence.enabled) (eq $component "svc-worker") (eq $component "hub-api") (eq $component "hub-webui") (eq $component "hub-mcp") (eq $component "svc-flows-invoker") }}
       volumes:
-      {{- if eq $component "scanner" }}
-      - name: screenshots
-        emptyDir:
-          sizeLimit: {{ ($componentConfig.screenshotStorage).sizeLimit | default "1Gi" }}
-      {{- else if eq $component "api" }}
+      {{- if eq $component "hub-api" }}
       - name: instance-dir
         emptyDir: {}
       - name: tmp
         emptyDir: {}
-      {{- else if eq $component "worker" }}
+      {{- else if eq $component "svc-worker" }}
       - name: credentials
         secret:
-          secretName: {{ ($componentConfig.credentialsSecret).name | default (printf "%s-worker-credentials" (include "elder.fullname" $)) }}
+          secretName: {{ ($componentConfig.credentialsSecret).name | default "svc-worker-credentials" }}
           optional: true
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "hub-webui" }}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "hub-mcp" }}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "svc-flows-invoker" }}
+      - name: workspace
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "postgres" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
+      - name: run
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      {{- else if eq $component "redis" }}
+      - name: data
+        persistentVolumeClaim:
+          claimName: {{ include "elder.fullname" $ }}-{{ $component }}-pvc
       - name: tmp
         emptyDir: {}
       {{- else }}
@@ -201,7 +273,7 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "scanner") (ne $component "worker") }}
+{{- if and $componentConfig.persistence $componentConfig.persistence.enabled (ne $component "svc-worker") }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

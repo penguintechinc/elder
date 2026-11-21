@@ -6,35 +6,91 @@ at both global and tenant levels.
 
 # flake8: noqa: E501
 
-
 import datetime
-from typing import Optional
+from collections.abc import Mapping
+from typing import Any, Optional
 
+import structlog
 from quart import current_app
+
+from apps.api.services.sso.idp_access import (
+    IdPCaller,
+    IdPConfigView,
+    IdPForbiddenError,
+    IdPNotFoundError,
+    IdPTenantNotFoundError,
+    IdPValidationError,
+    normalize_attribute_mappings,
+    validate_oidc_attribute_mappings,
+)
+from apps.api.services.sso.idp_validation import (
+    HTTPS_URL_FIELDS,
+    validate_https_url,
+    validate_x509_certificate,
+)
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+
+logger = structlog.get_logger(__name__)
+
+# Columns an admin may change through update_idp_config. ``tenant_id`` and
+# ``idp_type`` are deliberately absent: a config can never be re-homed to a
+# different tenant (regression: idp-config-cross-tenant).
+_UPDATABLE_FIELDS = frozenset(
+    {
+        "name",
+        "entity_id",
+        "metadata_url",
+        "sso_url",
+        "slo_url",
+        "certificate",
+        "attribute_mappings",
+        "jit_provisioning_enabled",
+        "default_role",
+        "is_active",
+        "oidc_client_id",
+        "oidc_client_secret",
+        "oidc_issuer_url",
+        "oidc_scopes",
+        "oidc_response_type",
+        "oidc_token_endpoint_auth_method",
+    }
+)
 
 
 class SAMLService:
     """SAML 2.0 Service Provider implementation."""
 
     @staticmethod
-    def get_idp_config(tenant_id: Optional[int] = None) -> Optional[dict]:
-        """Get IdP configuration for a tenant or global.
+    def get_idp_config(
+        tenant_id: int | None = None,
+        idp_type: str = "saml",
+    ) -> dict | None:
+        """Get IdP configuration for a tenant or global, filtered by protocol type.
+
+        Filters by ``idp_type`` (default ``"saml"``) and orders deterministically
+        by ``id`` so an OIDC config can never shadow a SAML config (gh-312).
 
         Args:
             tenant_id: Tenant ID or None for global IdP
+            idp_type: Protocol type filter (``"saml"`` or ``"oidc"``)
 
         Returns:
             IdP configuration dict or None
         """
         db = current_app.db
+        table = db.idp_configurations
         if tenant_id:
             # Try tenant-specific IdP first
             config = (
                 db(
-                    (db.idp_configurations.tenant_id == tenant_id)
-                    & (db.idp_configurations.is_active == True)  # noqa: E712
+                    (table.tenant_id == tenant_id)
+                    & (table.idp_type == idp_type)
+                    & (table.is_active == True)  # noqa: E712
                 )
-                .select()
+                .select(orderby=table.id)
                 .first()
             )
 
@@ -44,10 +100,11 @@ class SAMLService:
         # Fall back to global IdP
         config = (
             db(
-                (db.idp_configurations.tenant_id == None)  # noqa: E711
-                & (db.idp_configurations.is_active == True)  # noqa: E712
+                (table.tenant_id == None)  # noqa: E711
+                & (table.idp_type == idp_type)
+                & (table.is_active == True)  # noqa: E712
             )
-            .select()
+            .select(orderby=table.id)
             .first()
         )
 
@@ -64,7 +121,9 @@ class SAMLService:
             "tenant_id": config.tenant_id,
             "idp_type": config.idp_type,
             "name": config.name,
-            "attribute_mappings": config.attribute_mappings or {},
+            "attribute_mappings": normalize_attribute_mappings(
+                config.attribute_mappings
+            ),
             "jit_provisioning_enabled": config.jit_provisioning_enabled,
             "default_role": config.default_role,
         }
@@ -99,30 +158,37 @@ class SAMLService:
 
     @staticmethod
     def create_idp_config(
+        caller: IdPCaller,
         name: str,
         idp_type: str = "saml",
-        tenant_id: Optional[int] = None,
-        entity_id: Optional[str] = None,
-        metadata_url: Optional[str] = None,
-        sso_url: Optional[str] = None,
-        slo_url: Optional[str] = None,
-        certificate: Optional[str] = None,
-        oidc_client_id: Optional[str] = None,
-        oidc_client_secret: Optional[str] = None,
-        oidc_issuer_url: Optional[str] = None,
-        oidc_scopes: Optional[str] = None,
-        oidc_response_type: Optional[str] = None,
-        oidc_token_endpoint_auth_method: Optional[str] = None,
-        attribute_mappings: Optional[dict] = None,
+        tenant_id: int | None = None,
+        entity_id: str | None = None,
+        metadata_url: str | None = None,
+        sso_url: str | None = None,
+        slo_url: str | None = None,
+        certificate: str | None = None,
+        oidc_client_id: str | None = None,
+        oidc_client_secret: str | None = None,
+        oidc_issuer_url: str | None = None,
+        oidc_scopes: str | None = None,
+        oidc_response_type: str | None = None,
+        oidc_token_endpoint_auth_method: str | None = None,
+        attribute_mappings: dict | None = None,
         jit_provisioning_enabled: bool = True,
         default_role: str = "reader",
     ) -> dict:
-        """Create a new IdP configuration.
+        """Create a new IdP configuration bound to the caller's tenant.
+
+        A non-global caller always creates in their own tenant -- passing any
+        other ``tenant_id`` raises ``IdPForbiddenError``. Only a global admin
+        may choose the owning tenant (``None`` = a global config).
 
         Args:
+            caller: Authenticated admin creating the config
             name: Display name for the IdP
             idp_type: Type (saml or oidc)
-            tenant_id: Tenant ID or None for global
+            tenant_id: Requested owning tenant (global admins only; ignored
+                unless it equals the caller's own tenant for everyone else)
             entity_id: SAML Entity ID
             metadata_url: IdP metadata URL
             sso_url: SSO endpoint URL
@@ -139,99 +205,171 @@ class SAMLService:
             default_role: Default role for JIT-provisioned users
 
         Returns:
-            Created configuration dict
+            Created configuration (secret-free ``IdPConfigView`` dict)
         """
         db = current_app.db
-        config_id = db.idp_configurations.insert(
-            tenant_id=tenant_id,
-            idp_type=idp_type,
-            name=name,
-            entity_id=entity_id,
-            metadata_url=metadata_url,
-            sso_url=sso_url,
-            slo_url=slo_url,
-            certificate=certificate,
-            oidc_client_id=oidc_client_id,
-            oidc_client_secret=oidc_client_secret,
-            oidc_issuer_url=oidc_issuer_url,
-            oidc_scopes=oidc_scopes or "openid profile email",
-            oidc_response_type=oidc_response_type or "code",
-            oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
-            or "client_secret_basic",
-            attribute_mappings=attribute_mappings or {},
-            jit_provisioning_enabled=jit_provisioning_enabled,
-            default_role=default_role,
-            is_active=True,
-        )
-        db.commit()
+        if caller.is_global_admin:
+            owner_tenant_id = tenant_id
+        else:
+            if caller.tenant_id is None:
+                raise IdPForbiddenError(
+                    "Tenant claim required for IdP configuration access"
+                )
+            if tenant_id is not None and tenant_id != caller.tenant_id:
+                raise IdPForbiddenError(
+                    "Cannot create an IdP configuration for another tenant"
+                )
+            owner_tenant_id = caller.tenant_id
 
-        return {"id": config_id, "name": name, "tenant_id": tenant_id}
+        # Validate HTTPS URLs, X.509 certificate expiry, and OIDC mappings at CRUD time (gh-312, gh-313).
+        for field_name, url_value in (
+            ("metadata_url", metadata_url),
+            ("sso_url", sso_url),
+            ("slo_url", slo_url),
+            ("oidc_issuer_url", oidc_issuer_url),
+        ):
+            if url_value is not None:
+                validate_https_url(url_value, field=field_name)
+        if certificate is not None:
+            validate_x509_certificate(certificate, field="certificate")
+        validate_oidc_attribute_mappings(idp_type, attribute_mappings)
+
+        # regression: gh-313 -- verify target tenant exists before insert so a
+        # global-admin POST with a nonexistent tenant_id returns 404 instead of
+        # a 500 foreign-key IntegrityError.
+        if owner_tenant_id is not None:
+            if (
+                owner_tenant_id <= 0
+                or db(db.tenants.id == owner_tenant_id).select(db.tenants.id).first()
+                is None
+            ):
+                raise IdPTenantNotFoundError(owner_tenant_id)
+
+        try:
+            config_id = db.idp_configurations.insert(
+                tenant_id=owner_tenant_id,
+                idp_type=idp_type,
+                name=name,
+                entity_id=entity_id,
+                metadata_url=metadata_url,
+                sso_url=sso_url,
+                slo_url=slo_url,
+                certificate=certificate,
+                oidc_client_id=oidc_client_id,
+                oidc_client_secret=oidc_client_secret,
+                oidc_issuer_url=oidc_issuer_url,
+                oidc_scopes=oidc_scopes or "openid profile email",
+                oidc_response_type=oidc_response_type or "code",
+                oidc_token_endpoint_auth_method=oidc_token_endpoint_auth_method
+                or "client_secret_basic",
+                attribute_mappings=attribute_mappings or {},
+                jit_provisioning_enabled=jit_provisioning_enabled,
+                default_role=default_role,
+                is_active=True,
+            )
+            db.commit()
+        except Exception as exc:
+            pgcode = getattr(exc, "pgcode", None)
+            orig = getattr(exc, "orig", None)
+            orig_pgcode = getattr(orig, "pgcode", None) if orig is not None else None
+            if owner_tenant_id is not None and (
+                pgcode == "23503"
+                or orig_pgcode == "23503"
+                or "foreign key" in str(exc).lower()
+            ):
+                if hasattr(type(db), "rollback"):
+                    db.rollback()
+                raise IdPTenantNotFoundError(owner_tenant_id) from None
+            raise
+
+        created = db(db.idp_configurations.id == config_id).select().first()
+        return IdPConfigView.from_record(created).to_dict()
 
     @staticmethod
-    def update_idp_config(config_id: int, **kwargs) -> dict:
-        """Update an IdP configuration.
+    def update_idp_config(
+        config_id: int, caller: IdPCaller, updates: Mapping[str, Any]
+    ) -> dict:
+        """Update an IdP configuration the caller owns.
+
+        The row is loaded through the caller's tenant-scoped query, so another
+        tenant's (or a global) config raises ``IdPNotFoundError`` for non-global
+        callers. ``tenant_id`` in ``updates`` must equal the config's current
+        tenant -- re-homing is never allowed (``IdPForbiddenError``).
 
         Args:
             config_id: Configuration ID
-            **kwargs: Fields to update
+            caller: Authenticated admin performing the update
+            updates: Requested field changes (non-updatable keys are ignored)
 
         Returns:
-            Updated configuration dict or error
+            Updated configuration (secret-free ``IdPConfigView`` dict) plus
+            ``"updated": True``
         """
         db = current_app.db
-        config = db.idp_configurations[config_id]
-        if not config:
-            return {"error": "IdP configuration not found"}
+        table = db.idp_configurations
+        owned = caller.scoped_query(db) & (table.id == config_id)
 
-        # Filter allowed fields
-        allowed_fields = {
-            "name",
-            "entity_id",
-            "metadata_url",
-            "sso_url",
-            "slo_url",
-            "certificate",
-            "attribute_mappings",
-            "jit_provisioning_enabled",
-            "default_role",
-            "is_active",
-            "oidc_client_id",
-            "oidc_client_secret",
-            "oidc_issuer_url",
-            "oidc_scopes",
-            "oidc_response_type",
-            "oidc_token_endpoint_auth_method",
-        }
-        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
+        config = db(owned).select().first()
+        if config is None:
+            raise IdPNotFoundError(config_id)
 
-        if updates:
-            db(db.idp_configurations.id == config_id).update(**updates)
+        if "tenant_id" in updates and updates["tenant_id"] != config.tenant_id:
+            raise IdPForbiddenError(
+                "tenant_id of an IdP configuration cannot be changed"
+            )
 
-        return {"id": config_id, "updated": True}
+        changes = {k: v for k, v in updates.items() if k in _UPDATABLE_FIELDS}
+        # Validate HTTPS URLs, X.509 certificate expiry, and OIDC mappings on update (gh-312, gh-313).
+        # Runs after tenant ownership check so foreign config IDs still 404.
+        for url_field in HTTPS_URL_FIELDS:
+            if url_field in changes and changes[url_field] is not None:
+                validate_https_url(changes[url_field], field=url_field)
+        if "certificate" in changes and changes["certificate"] is not None:
+            validate_x509_certificate(changes["certificate"], field="certificate")
+        if "attribute_mappings" in changes:
+            validate_oidc_attribute_mappings(
+                config.idp_type, changes["attribute_mappings"]
+            )
+        # The UPDATE carries the same tenant-scoped predicate as the load, so a
+        # row deleted/moved between the statements simply matches nothing.
+        if changes:
+            db(owned).update(**changes)
+            db.commit()
+
+        # penguin-dal runs each statement in its own session, so a concurrent
+        # DELETE can land before this reload: that is a 404, never a 500.
+        fresh = db(owned).select().first()
+        if fresh is None:
+            raise IdPNotFoundError(config_id)
+        return {**IdPConfigView.from_record(fresh).to_dict(), "updated": True}
 
     @staticmethod
-    def delete_idp_config(config_id: int) -> dict:
-        """Delete an IdP configuration.
+    def delete_idp_config(config_id: int, caller: IdPCaller) -> dict:
+        """Delete an IdP configuration the caller owns.
+
+        The delete itself carries the tenant-scoped predicate (one atomic
+        statement, no check-then-act gap); zero rows deleted means the config
+        is missing or not the caller's, reported as ``IdPNotFoundError``.
 
         Args:
             config_id: Configuration ID
+            caller: Authenticated admin performing the delete
 
         Returns:
-            Success dict or error
+            ``{"deleted": True}``
         """
         db = current_app.db
-        config = db.idp_configurations[config_id]
-        if not config:
-            return {"error": "IdP configuration not found"}
+        owned = caller.scoped_query(db) & (db.idp_configurations.id == config_id)
 
-        db(db.idp_configurations.id == config_id).delete()
+        if not db(owned).delete():
+            raise IdPNotFoundError(config_id)
         db.commit()
 
         return {"deleted": True}
 
     @staticmethod
     def process_saml_response(
-        tenant_id: int, saml_response: str, relay_state: Optional[str] = None
+        tenant_id: int, saml_response: str, relay_state: str | None = None
     ) -> dict:
         """Process SAML response and authenticate user.
 
@@ -243,10 +381,17 @@ class SAMLService:
         Returns:
             Authenticated user dict or error
         """
-        # Get IdP config
-        idp_config = SAMLService.get_idp_config(tenant_id)
+        # Get SAML IdP config
+        idp_config = SAMLService.get_idp_config(tenant_id, idp_type="saml")
         if not idp_config:
             return {"error": "No IdP configured for this tenant"}
+
+        # Reject expired or malformed IdP certificates at assertion verification (gh-312).
+        if idp_config.get("certificate"):
+            try:
+                validate_x509_certificate(idp_config["certificate"])
+            except IdPValidationError as exc:
+                return {"error": str(exc)}
 
         # In production, use python3-saml to validate and parse response
         # For now, simulate SAML response parsing
@@ -291,7 +436,7 @@ class SAMLService:
         if existing:
             # Update last login
             db(db.portal_users.id == existing.id).update(
-                last_login_at=datetime.datetime.now(datetime.timezone.utc)
+                last_login_at=datetime.datetime.now(datetime.UTC)
             )
             return {
                 "id": existing.id,
@@ -306,29 +451,50 @@ class SAMLService:
         full_name = attributes.get(mappings.get("full_name", "name"))
 
         # Create new user (no password for SSO users)
+        default_role = idp_config.get("default_role", "reader")
         user_id = db.portal_users.insert(
             tenant_id=tenant_id,
             email=email.lower(),
             password_hash=None,  # SSO users don't have passwords
             full_name=full_name,
-            tenant_role=idp_config.get("default_role", "reader"),
+            tenant_role=default_role,
             is_active=True,
             email_verified=True,  # SSO validates email
-            last_login_at=datetime.datetime.now(datetime.timezone.utc),
+            last_login_at=datetime.datetime.now(datetime.UTC),
         )
         db.commit()
+
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=user_id,
+                    tenant_id=tenant_id,
+                    user_source="portal_user",
+                    identity_type="portal_user",
+                    auth_provider="saml",
+                    tenant_role=default_role,
+                    is_active=True,
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=user_id,
+                error=str(exc)[:200],
+            )
 
         return {
             "id": user_id,
             "email": email.lower(),
             "tenant_id": tenant_id,
-            "tenant_role": idp_config.get("default_role", "reader"),
+            "tenant_role": default_role,
             "global_role": None,
             "jit_provisioned": True,
         }
 
     @staticmethod
-    def get_sp_metadata(base_url: str, tenant_id: Optional[int] = None) -> str:
+    def get_sp_metadata(base_url: str, tenant_id: int | None = None) -> str:
         """Generate Service Provider SAML metadata XML.
 
         Args:
@@ -340,14 +506,12 @@ class SAMLService:
         """
         entity_id = f"{base_url}/saml/metadata"
         acs_url = f"{base_url}/api/v1/sso/saml/acs"
-        slo_url = f"{base_url}/api/v1/sso/saml/slo"
 
         if tenant_id:
             entity_id = f"{base_url}/saml/metadata/{tenant_id}"
             acs_url = f"{base_url}/api/v1/sso/saml/acs/{tenant_id}"
-            slo_url = f"{base_url}/api/v1/sso/saml/slo/{tenant_id}"
 
-        # Basic SP metadata template
+        # Basic SP metadata template (SAML SLO is intentionally omitted / 501)
         metadata = f"""<?xml version="1.0"?>
 <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"
                      entityID="{entity_id}">
@@ -358,30 +522,40 @@ class SAMLService:
     <md:AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
                                  Location="{acs_url}"
                                  index="1"/>
-    <md:SingleLogoutService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"
-                            Location="{slo_url}"/>
   </md:SPSSODescriptor>
 </md:EntityDescriptor>"""
 
         return metadata
 
     @staticmethod
-    def list_idp_configs(tenant_id: Optional[int] = None) -> list:
-        """List all IdP configurations.
+    def list_idp_configs(caller: IdPCaller, tenant_id: int | None = None) -> list:
+        """List the IdP configurations the caller may see (secret-free).
+
+        Non-global callers get exactly their own tenant's configs (global
+        configs are not listed); asking for a different ``tenant_id`` raises
+        ``IdPForbiddenError``. Global admins get every config, or -- with a
+        ``tenant_id`` filter -- that tenant's configs plus global ones.
 
         Args:
-            tenant_id: Filter by tenant or None for all
+            caller: Authenticated admin listing configs
+            tenant_id: Optional tenant filter
 
         Returns:
-            List of IdP configurations
+            List of ``IdPConfigView`` dicts (never includes secrets)
         """
         db = current_app.db
-        if tenant_id:
-            configs = db(
-                (db.idp_configurations.tenant_id == tenant_id)
-                | (db.idp_configurations.tenant_id == None)  # noqa: E711
-            ).select()
-        else:
-            configs = db(db.idp_configurations.id > 0).select()
+        table = db.idp_configurations
+        query = caller.scoped_query(db)
 
-        return [SAMLService._config_to_dict(c) for c in configs]
+        if tenant_id is not None:
+            if caller.is_global_admin:
+                query = query & (
+                    (table.tenant_id == tenant_id) | (table.tenant_id == None)  # noqa: E711
+                )
+            elif tenant_id != caller.tenant_id:
+                raise IdPForbiddenError(
+                    "Cannot list IdP configurations for another tenant"
+                )
+
+        configs = db(query).select(orderby=table.id)
+        return [IdPConfigView.from_record(c).to_dict() for c in configs]

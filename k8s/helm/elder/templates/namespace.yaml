@@ -1,0 +1,24 @@
+{{/*
+Namespace + Pod Security Admission labels — release audit finding #4.
+Gated behind namespaceManagement.create because this chart has historically
+never owned the Namespace object (created out-of-band by CI/ops in every
+existing environment); rendering it unconditionally risks Helm colliding
+with an already-existing, unmanaged namespace on upgrade. Where
+namespaceManagement.create is left false, ops must apply these same three
+labels out-of-band, e.g.:
+  kubectl label ns {{ .Values.namespace }} \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted --overwrite
+*/}}
+{{- if .Values.namespaceManagement.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Values.namespace }}
+  labels:
+    {{- include "elder.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: {{ .Values.namespaceManagement.podSecurity.enforce | default "restricted" }}
+    pod-security.kubernetes.io/audit: {{ .Values.namespaceManagement.podSecurity.audit | default "restricted" }}
+    pod-security.kubernetes.io/warn: {{ .Values.namespaceManagement.podSecurity.warn | default "restricted" }}
+{{- end }}

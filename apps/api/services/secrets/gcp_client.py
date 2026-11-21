@@ -2,14 +2,14 @@
 
 # flake8: noqa: E501
 
-
 import json
 import logging
 from typing import Any, Dict, List, Optional
 
 from google.api_core import exceptions as google_exceptions
 from google.cloud import secretmanager
-from google.oauth2 import service_account
+
+from apps.api.common.providers.gcp import resolve_gcp_credentials
 
 from .base import (
     InvalidSecretConfigException,
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class GCPSecretManagerClient(SecretProviderClient):
     """GCP Secret Manager implementation of SecretProviderClient."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize GCP Secret Manager client.
 
@@ -53,19 +53,8 @@ class GCPSecretManagerClient(SecretProviderClient):
         """Initialize the GCP Secret Manager client."""
         try:
             self.project_id = self.config["project_id"]
+            credentials = resolve_gcp_credentials(self.config)
 
-            # Initialize credentials
-            credentials = None
-            if "credentials_json" in self.config:
-                credentials = service_account.Credentials.from_service_account_info(
-                    self.config["credentials_json"]
-                )
-            elif "credentials_file" in self.config:
-                credentials = service_account.Credentials.from_service_account_file(
-                    self.config["credentials_file"]
-                )
-
-            # Create client with credentials or use default application credentials
             if credentials:
                 self.client = secretmanager.SecretManagerServiceClient(
                     credentials=credentials
@@ -99,7 +88,7 @@ class GCPSecretManagerClient(SecretProviderClient):
             logger.error(f"GCP Secret Manager connection test failed: {str(e)}")
             return False
 
-    def get_secret(self, path: str, version: Optional[str] = None) -> SecretValue:
+    def get_secret(self, path: str, version: str | None = None) -> SecretValue:
         """Retrieve a secret from GCP Secret Manager."""
         try:
             # GCP secret names are in format: projects/{project}/secrets/{secret}/versions/{version}
@@ -156,7 +145,7 @@ class GCPSecretManagerClient(SecretProviderClient):
                 f"GCP error retrieving secret '{path}': {str(e)}"
             )
 
-    def list_secrets(self, prefix: Optional[str] = None) -> List[SecretMetadata]:
+    def list_secrets(self, prefix: str | None = None) -> list[SecretMetadata]:
         """List secrets in GCP Secret Manager."""
         try:
             secrets = []
@@ -212,7 +201,7 @@ class GCPSecretManagerClient(SecretProviderClient):
             raise SecretProviderException(f"GCP error listing secrets: {str(e)}")
 
     def create_secret(
-        self, path: str, value: str, metadata: Optional[Dict[str, Any]] = None
+        self, path: str, value: str, metadata: dict[str, Any] | None = None
     ) -> SecretMetadata:
         """Create a new secret in GCP Secret Manager."""
         try:
@@ -324,7 +313,7 @@ class GCPSecretManagerClient(SecretProviderClient):
                 f"GCP error deleting secret '{path}': {str(e)}"
             )
 
-    def get_secret_versions(self, path: str) -> List[str]:
+    def get_secret_versions(self, path: str) -> list[str]:
         """Get all versions of a secret."""
         try:
             secret_name = self._format_secret_name(path)

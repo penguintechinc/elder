@@ -1,7 +1,7 @@
 #!/bin/bash
 # Generate Python gRPC code from protobuf schemas
 
-set -e
+set -euo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'

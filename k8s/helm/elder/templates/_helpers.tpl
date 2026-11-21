@@ -80,12 +80,37 @@ app.kubernetes.io/component: {{ $component }}
 {{- end }}
 
 {{/*
-Image name helper
+Resource name helper for components.
+Postgres and Redis keep the `<release>-postgres` / `<release>-redis` prefix so
+existing cluster PVCs and DATABASE_URL/REDIS_URL DNS names stay intact; app
+workloads use their exact standard service name (`hub-webui`, `hub-api`,
+`svc-worker`, `svc-scanner`, `svc-integrations`, `svc-flows-invoker`).
+*/}}
+{{- define "elder.componentResourceName" -}}
+{{- $component := index . 0 -}}
+{{- $context := index . 1 -}}
+{{- if or (eq $component "postgres") (eq $component "redis") -}}
+{{- printf "%s-%s" (include "elder.fullname" $context) $component | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $component | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Image name helper.
+global.imageRegistry only applies to the PenguinTech-built app images
+(hub-webui/hub-api/svc-scanner/svc-integrations/svc-worker/svc-flows-invoker) —
+postgres and redis are external upstream images (pgvector/pgvector, redis) that
+must keep pulling from their own registry (docker.io).
 */}}
 {{- define "elder.image" -}}
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
-{{- $registry := $context.Values.global.imageRegistry -}}
+{{- $isAppImage := or (eq $component "hub-webui") (eq $component "hub-api") (eq $component "hub-mcp") (eq $component "svc-scanner") (eq $component "svc-integrations") (eq $component "svc-worker") (eq $component "svc-flows-invoker") -}}
+{{- $registry := "" -}}
+{{- if $isAppImage -}}
+{{- $registry = $context.Values.global.imageRegistry -}}
+{{- end -}}
 {{- $repository := (index $context.Values $component).image.repository -}}
 {{- $tag := (index $context.Values $component).image.tag -}}
 {{- if $registry }}
@@ -102,4 +127,21 @@ Image pull policy helper
 {{- $component := index . 0 -}}
 {{- $context := index . 1 -}}
 {{- (index $context.Values $component).image.pullPolicy | default "IfNotPresent" }}
+{{- end }}
+
+{{/*
+Convert a camelCase module key to UPPER_SNAKE_CASE for ELDER_MODULE_<NAME> env vars.
+e.g. servicesOncall -> SERVICES_ONCALL, aiSearch -> AI_SEARCH
+*/}}
+{{- define "elder.upperSnakeCase" -}}
+{{- $input := . -}}
+{{- $result := "" -}}
+{{- range $i, $char := regexSplit "" $input -1 }}
+{{- if and (regexMatch "[A-Z]" $char) (gt $i 0) }}
+{{- $result = printf "%s_%s" $result $char }}
+{{- else }}
+{{- $result = printf "%s%s" $result ($char | upper) }}
+{{- end }}
+{{- end }}
+{{- $result }}
 {{- end }}

@@ -13,8 +13,8 @@
  *   await invalidateCache.issue(queryClient, issueId)
  */
 
-import { QueryClient } from '@tanstack/react-query'
-import { queryKeys } from './queryKeys'
+import { QueryClient } from "@tanstack/react-query";
+import { queryKeys } from "./queryKeys";
 
 export const invalidateCache = {
   /**
@@ -23,18 +23,18 @@ export const invalidateCache = {
   organizations: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.organizations.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Also invalidate dropdown since it's a separate query
     await queryClient.invalidateQueries({
       queryKey: queryKeys.organizations.dropdown,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Dashboard stats may include org count
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dashboard.stats,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -43,13 +43,13 @@ export const invalidateCache = {
   entities: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.entities.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Dashboard stats may include entity count
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dashboard.stats,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -58,13 +58,13 @@ export const invalidateCache = {
   issues: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Dashboard may show open issues count
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dashboard.stats,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -74,13 +74,13 @@ export const invalidateCache = {
     // Invalidate the specific issue
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.detail(issueId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Also invalidate the list since issue data may have changed
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -89,8 +89,8 @@ export const invalidateCache = {
   issueComments: async (queryClient: QueryClient, issueId: number) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.comments(issueId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -99,8 +99,8 @@ export const invalidateCache = {
   issueLabels: async (queryClient: QueryClient, issueId: number) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.labels(issueId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -109,8 +109,8 @@ export const invalidateCache = {
   issueEntities: async (queryClient: QueryClient, issueId: number) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.issues.entities(issueId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -119,8 +119,8 @@ export const invalidateCache = {
   projects: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.projects.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -129,8 +129,8 @@ export const invalidateCache = {
   labels: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.labels.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -139,8 +139,8 @@ export const invalidateCache = {
   milestones: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.milestones.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -149,8 +149,8 @@ export const invalidateCache = {
   software: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.software.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -159,8 +159,8 @@ export const invalidateCache = {
   services: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.services.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -169,8 +169,8 @@ export const invalidateCache = {
   dataStores: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dataStores.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -179,13 +179,13 @@ export const invalidateCache = {
   dependencies: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dependencies.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Dashboard may show dependency count
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dashboard.stats,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -194,13 +194,13 @@ export const invalidateCache = {
   identities: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.identities.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Dashboard may show identity count
     await queryClient.invalidateQueries({
       queryKey: queryKeys.dashboard.stats,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -209,8 +209,8 @@ export const invalidateCache = {
   keys: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.keys.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -219,8 +219,8 @@ export const invalidateCache = {
   secrets: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.secrets.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -229,8 +229,8 @@ export const invalidateCache = {
   discovery: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.discovery.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -239,8 +239,8 @@ export const invalidateCache = {
   webhooks: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.webhooks.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -249,8 +249,8 @@ export const invalidateCache = {
   backups: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.backups.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -259,8 +259,8 @@ export const invalidateCache = {
   network: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.network.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -269,8 +269,8 @@ export const invalidateCache = {
   ipam: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.ipam.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -279,8 +279,8 @@ export const invalidateCache = {
   tenants: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.tenants.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -289,8 +289,8 @@ export const invalidateCache = {
   profile: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.profile.current,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -299,17 +299,17 @@ export const invalidateCache = {
   onCall: async (queryClient: QueryClient) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     // Also invalidate organizations and services since they may show on-call badges
     await queryClient.invalidateQueries({
       queryKey: queryKeys.organizations.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     await queryClient.invalidateQueries({
       queryKey: queryKeys.services.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
   },
 
   /**
@@ -318,30 +318,40 @@ export const invalidateCache = {
   onCallRotation: async (queryClient: QueryClient, rotationId: number) => {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.detail(rotationId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.participants(rotationId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.overrides(rotationId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.history(rotationId),
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
     await queryClient.invalidateQueries({
       queryKey: queryKeys.onCall.all,
-      refetchType: 'all',
-    })
+      refetchType: "all",
+    });
+  },
+
+  /**
+   * Invalidate all AI resource queries
+   */
+  aiResources: async (queryClient: QueryClient) => {
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.aiResources.all,
+      refetchType: "all",
+    });
   },
 
   /**
    * Invalidate all queries (use sparingly)
    */
   all: async (queryClient: QueryClient) => {
-    await queryClient.invalidateQueries()
+    await queryClient.invalidateQueries();
   },
-}
+};

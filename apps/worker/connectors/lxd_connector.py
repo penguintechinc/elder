@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import os
 import tempfile
 import time
@@ -26,13 +25,13 @@ class LXDConnector(BaseConnector):
     def __init__(self):
         """Initialize LXD connector."""
         super().__init__("lxd")
-        self.elder_client: Optional[ElderAPIClient] = None
-        self.organization_cache: Dict[str, int] = {}
-        self.lxd_url: Optional[str] = None
-        self.session: Optional[requests.Session] = None
-        self._cert_tempdir: Optional[tempfile.TemporaryDirectory] = None
-        self._cert_file: Optional[str] = None
-        self._key_file: Optional[str] = None
+        self.elder_client: ElderAPIClient | None = None
+        self.organization_cache: dict[str, int] = {}
+        self.lxd_url: str | None = None
+        self.session: requests.Session | None = None
+        self._cert_tempdir: tempfile.TemporaryDirectory | None = None
+        self._cert_file: str | None = None
+        self._key_file: str | None = None
 
     def _get_setting(self, name: str, default: Any = None) -> Any:
         """
@@ -58,9 +57,9 @@ class LXDConnector(BaseConnector):
         Returns:
             Configured requests.Session
         """
-        lxd_cert_pem: Optional[str] = self._get_setting("lxd_cert")
-        lxd_key_pem: Optional[str] = self._get_setting("lxd_key")
-        lxd_trust_token: Optional[str] = self._get_setting("lxd_trust_token")
+        lxd_cert_pem: str | None = self._get_setting("lxd_cert")
+        lxd_key_pem: str | None = self._get_setting("lxd_key")
+        lxd_trust_token: str | None = self._get_setting("lxd_trust_token")
         lxd_verify_cert: bool = self._get_setting("lxd_verify_cert", False)
 
         session = requests.Session()
@@ -167,7 +166,7 @@ class LXDConnector(BaseConnector):
         self,
         name: str,
         description: str,
-        parent_id: Optional[int] = None,
+        parent_id: int | None = None,
     ) -> int:
         """
         Get or create an organization in Elder.
@@ -258,7 +257,7 @@ class LXDConnector(BaseConnector):
                 os_release = config.get("image.release", "")
 
                 # Network addresses from expanded state if available
-                networks: Dict[str, Any] = {}
+                networks: dict[str, Any] = {}
                 try:
                     state = self._lxd_get(f"/1.0/instances/{instance_name}/state")
                     if isinstance(state, dict):

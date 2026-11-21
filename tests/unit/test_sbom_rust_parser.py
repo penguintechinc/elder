@@ -455,8 +455,8 @@ cc = "1.0"
 """
         deps = parser.parse(content, "Cargo.toml")
 
-        # Should have 5 runtime + 2 dev + 1 build = 8 total
-        assert len(deps) == 8
+        # 6 runtime + 2 dev (tokio appears in both, kept per-scope) + 1 build = 9 total
+        assert len(deps) == 9
 
         # Verify each dependency
         dep_map = {d["name"]: d for d in deps}

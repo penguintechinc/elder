@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
@@ -10,7 +9,7 @@ from typing import Any, Dict, Optional
 class BaseKeyProvider(ABC):
     """Abstract base class for key management providers (AWS KMS, GCP KMS, Infisical)."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize the key provider.
 
@@ -25,10 +24,10 @@ class BaseKeyProvider(ABC):
         self,
         key_name: str,
         key_type: str = "symmetric",
-        key_spec: Optional[str] = None,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        key_spec: str | None = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Create a new encryption key.
 
@@ -51,7 +50,7 @@ class BaseKeyProvider(ABC):
         """
 
     @abstractmethod
-    def get_key(self, key_id: str) -> Dict[str, Any]:
+    def get_key(self, key_id: str) -> dict[str, Any]:
         """
         Get key metadata.
 
@@ -64,8 +63,8 @@ class BaseKeyProvider(ABC):
 
     @abstractmethod
     def list_keys(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """
         List all keys.
 
@@ -82,7 +81,7 @@ class BaseKeyProvider(ABC):
         """
 
     @abstractmethod
-    def enable_key(self, key_id: str) -> Dict[str, Any]:
+    def enable_key(self, key_id: str) -> dict[str, Any]:
         """
         Enable a disabled key.
 
@@ -94,7 +93,7 @@ class BaseKeyProvider(ABC):
         """
 
     @abstractmethod
-    def disable_key(self, key_id: str) -> Dict[str, Any]:
+    def disable_key(self, key_id: str) -> dict[str, Any]:
         """
         Disable a key (soft delete).
 
@@ -108,7 +107,7 @@ class BaseKeyProvider(ABC):
     @abstractmethod
     def schedule_key_deletion(
         self, key_id: str, pending_days: int = 30
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Schedule key deletion.
 
@@ -121,7 +120,7 @@ class BaseKeyProvider(ABC):
         """
 
     @abstractmethod
-    def cancel_key_deletion(self, key_id: str) -> Dict[str, Any]:
+    def cancel_key_deletion(self, key_id: str) -> dict[str, Any]:
         """
         Cancel scheduled key deletion.
 
@@ -134,8 +133,8 @@ class BaseKeyProvider(ABC):
 
     @abstractmethod
     def encrypt(
-        self, key_id: str, plaintext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, key_id: str, plaintext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Encrypt data using a key.
 
@@ -154,8 +153,8 @@ class BaseKeyProvider(ABC):
 
     @abstractmethod
     def decrypt(
-        self, ciphertext: str, context: Optional[Dict[str, str]] = None
-    ) -> Dict[str, Any]:
+        self, ciphertext: str, context: dict[str, str] | None = None
+    ) -> dict[str, Any]:
         """
         Decrypt data.
 
@@ -176,8 +175,8 @@ class BaseKeyProvider(ABC):
         self,
         key_id: str,
         key_spec: str = "AES_256",
-        context: Optional[Dict[str, str]] = None,
-    ) -> Dict[str, Any]:
+        context: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         """
         Generate a data encryption key.
 
@@ -201,7 +200,7 @@ class BaseKeyProvider(ABC):
         key_id: str,
         message: str,
         signing_algorithm: str = "RSASSA_PSS_SHA_256",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Sign a message using an asymmetric key.
 
@@ -222,7 +221,7 @@ class BaseKeyProvider(ABC):
     @abstractmethod
     def verify(
         self, key_id: str, message: str, signature: str, signing_algorithm: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Verify a message signature.
 
@@ -241,7 +240,7 @@ class BaseKeyProvider(ABC):
         """
 
     @abstractmethod
-    def rotate_key(self, key_id: str) -> Dict[str, Any]:
+    def rotate_key(self, key_id: str) -> dict[str, Any]:
         """
         Rotate a key (create new version or rotate key material).
 
@@ -261,7 +260,7 @@ class BaseKeyProvider(ABC):
             True if connection successful, False otherwise
         """
 
-    def _normalize_key_metadata(self, raw_metadata: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_key_metadata(self, raw_metadata: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize provider-specific key metadata to common format.
 

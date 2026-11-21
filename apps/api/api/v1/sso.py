@@ -6,16 +6,71 @@ and SCIM 2.0 user provisioning.
 
 # flake8: noqa: E501
 
-
 from functools import wraps
 
-from quart import Blueprint, Response, jsonify, request
+from pydantic import ValidationError
+from quart import Blueprint, Response, current_app, jsonify, request
+from quart_schema import document_request, document_response, validate_response
 
 from apps.api.api.v1.portal_auth import generate_tokens, portal_token_required
 from apps.api.auth.decorators import login_required
+from apps.api.auth.portal_cookies import set_portal_auth_cookies
+from apps.api.models.pydantic.idp import (
+    CreateIdPConfigRequest,
+    IdPConfigDeleteResponse,
+    IdPConfigResponse,
+    IdPConfigUpdateResponse,
+    IdPErrorResponse,
+    UpdateIdPConfigRequest,
+)
 from apps.api.services.sso import OIDCService, SAMLService, SCIMService
+from apps.api.services.sso.idp_access import (
+    IdPAccessError,
+    IdPCaller,
+    IdPForbiddenError,
+    IdPNotFoundError,
+    IdPTenantNotFoundError,
+    IdPValidationError,
+)
+from apps.api.services.sso.idp_validation import (
+    validate_https_url,
+    validate_x509_certificate,
+)
+from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.async_utils import run_in_threadpool, run_in_threadpool_no_retry
+from apps.api.utils.rate_limiter import rate_limit
 
 bp = Blueprint("sso", __name__)
+
+# Uniform error message returned by ``saml_login`` for every unavailable state
+# (missing tenant, no SAML IdP, disabled IdP, missing/non-HTTPS SSO URL, or
+# expired/invalid IdP certificate) so unauthenticated callers cannot enumerate
+# tenants or probe SSO configuration state (gh-312).
+_SAML_LOGIN_UNAVAILABLE_MSG = "SAML SSO login is not available for this organization"
+
+
+def _attach_auth_cookies(response, tokens: dict) -> None:
+    """Attach the portal-auth HttpOnly/Secure/SameSite auth cookies to an SSO response.
+
+    Mirrors apps.api.api.v1.portal_auth._issue_token_response: the JSON body
+    still carries the tokens for non-browser callers, but the browser must
+    rely on these cookies instead (gh #285 -- the SSO callbacks previously
+    returned the raw access/refresh JWTs in the body with no cookie-setting,
+    the same XSS-exfiltratable exposure portal-auth already closed).
+    """
+    secure = not current_app.config.get("DEBUG", False)
+    set_portal_auth_cookies(
+        response,
+        tokens["access_token"],
+        tokens["refresh_token"],
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
 
 
 # SCIM authentication decorator
@@ -60,45 +115,197 @@ def scim_auth_required(f):
 # =============================================================================
 # IdP Configuration Endpoints
 # =============================================================================
+#
+# Tenant ownership (regression: idp-config-cross-tenant): every route below
+# resolves an ``IdPCaller`` from the validated portal JWT and hands it to the
+# service layer, which scopes the DAL query itself. A config outside the
+# caller's tenant answers 404 (never 403) so ids cannot be enumerated; only
+# ``global_role == "admin"`` may touch other tenants' or global configs.
+# Request bodies are validated against strict pydantic schemas and responses go
+# through ``IdPConfigResponse`` (an allowlist with no secret field) via
+# quart-schema ``@validate_response`` -- secrets are never returned, and no
+# request value is ever interpolated into an error message or log line.
+
+
+def _claim_tenant_id(user: dict) -> int | None:
+    """Return the caller's tenant id from the validated JWT claims, else None.
+
+    Only a positive integer claim counts; anything else (missing, bool, str,
+    float) is "no tenant" and non-global callers then fail closed.
+    """
+    raw = user.get("tenant_id")
+    if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0:
+        return raw
+    return None
+
+
+def _resolve_idp_caller() -> tuple[IdPCaller | None, tuple | None]:
+    """Authorize the portal caller for IdP-config admin ops.
+
+    Returns ``(caller, None)`` on success or ``(None, error_response)``:
+    403 unless the caller is a global admin or a tenant admin, and 403 for a
+    tenant admin whose token carries no tenant claim.
+    """
+    # ``portal_user`` is attached by @portal_token_required; a missing attribute
+    # (decorator forgotten) fails closed to "no claims" -> 403, never an admin.
+    user = getattr(request, "portal_user", None) or {}
+    is_global_admin = user.get("global_role") == "admin"
+    if not (is_global_admin or user.get("tenant_role") == "admin"):
+        return None, ApiResponse.forbidden("Admin permission required")
+
+    tenant_id = _claim_tenant_id(user)
+    if tenant_id is None and not is_global_admin:
+        return None, ApiResponse.forbidden("Tenant claim required")
+
+    return IdPCaller(tenant_id=tenant_id, is_global_admin=is_global_admin), None
+
+
+def _idp_error_response(exc: IdPAccessError, action: str, caller: IdPCaller) -> tuple:
+    """Map an IdP access failure to a 404/403 response and log the denial.
+
+    Not-found (missing or other-tenant) renders one uniform 404 body; the log
+    line carries ids only -- no secrets, certificates, emails or request values.
+    """
+    config_id = getattr(exc, "config_id", None)
+    current_app.logger.warning(
+        "idp_config_access_denied action=%s config_id=%s caller_tenant_id=%s "
+        "global_admin=%s",
+        action,
+        config_id,
+        caller.tenant_id,
+        caller.is_global_admin,
+        extra={
+            "idp_action": action,
+            "idp_config_id": config_id,
+            "idp_caller_tenant_id": caller.tenant_id,
+            "idp_global_admin": caller.is_global_admin,
+        },
+    )
+    if isinstance(exc, IdPValidationError):
+        return (
+            jsonify(
+                {
+                    "error": f"Validation failed: {exc.field}: {exc.message}",
+                    "validation_errors": [
+                        {
+                            "field": exc.field,
+                            "type": exc.error_type,
+                            "message": exc.message,
+                        }
+                    ],
+                }
+            ),
+            400,
+        )
+    if isinstance(exc, IdPTenantNotFoundError):
+        return ApiResponse.not_found("Tenant")
+    if isinstance(exc, IdPNotFoundError):
+        return ApiResponse.not_found("IdP configuration", config_id)
+    return ApiResponse.forbidden(str(exc))
+
+
+def _idp_failure_response(exc: Exception, action: str, caller: IdPCaller) -> tuple:
+    """Turn an unexpected storage/runtime failure into a sanitized 500.
+
+    Only the exception *type* (and the PostgreSQL SQLSTATE when the driver
+    provides one) is logged -- never ``str(exc)`` or a traceback, because
+    driver errors embed the failing row, which can contain a submitted
+    ``oidc_client_secret``. The response body is a fixed string.
+    """
+    current_app.logger.error(
+        "idp_config_operation_failed action=%s caller_tenant_id=%s exc_type=%s "
+        "sqlstate=%s",
+        action,
+        caller.tenant_id,
+        type(exc).__name__,
+        getattr(exc, "pgcode", None),
+    )
+    return ApiResponse.error("IdP configuration operation failed", 500)
+
+
+def _validation_error_response(exc: ValidationError) -> tuple:
+    """Render a pydantic ValidationError as a 400 that never echoes input values.
+
+    Only the declared top-level field name, pydantic's static error type code
+    and its fixed message are returned -- never ``input``/``ctx`` values and
+    never nested (user-supplied) mapping keys.
+    """
+    errors = [
+        {
+            "field": str(err["loc"][0]) if err["loc"] else "body",
+            "type": err["type"],
+            "message": err["msg"],
+        }
+        for err in exc.errors()
+    ]
+    # regression: gh-313 -- surface field names & static messages in `error` so
+    # SPA error toasts show which field(s) failed instead of bare "Validation failed".
+    parts = list(dict.fromkeys(f"{e['field']}: {e['message']}" for e in errors))
+    summary = f"Validation failed: {'; '.join(parts)}" if parts else "Validation failed"
+    return jsonify({"error": summary, "validation_errors": errors}), 400
 
 
 @bp.route("/idp", methods=["GET"])
 @portal_token_required
-def list_idp_configs():
-    """List IdP configurations.
+@validate_response(list[IdPConfigResponse])
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
+async def list_idp_configs():
+    """List IdP configurations the caller is allowed to see.
+
+    Requires global admin or tenant admin. Tenant admins see only their own
+    tenant's configs; global admins see all (optionally filtered).
 
     Query params:
-        tenant_id: Optional tenant filter
+        tenant_id: Optional tenant filter -- tenant admins may only pass
+            their own tenant id (anything else is 403)
 
     Returns:
-        List of IdP configurations
+        200: List of IdP configurations (secrets redacted)
+        400: tenant_id is not an integer
+        403: Not an admin, or tenant_id of another tenant requested
     """
-    tenant_id = request.args.get("tenant_id", type=int)
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    # Check permissions - only admins can view IdP configs
-    if (
-        request.portal_user.get("global_role") not in ["admin", "support"]
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        # Non-admins can only see their tenant's config
-        tenant_id = request.portal_user.get("tenant_id")
+    tenant_id = None
+    if "tenant_id" in request.args:
+        tenant_id = request.args.get("tenant_id", type=int)
+        if tenant_id is None:
+            return ApiResponse.bad_request("tenant_id must be an integer")
 
-    configs = SAMLService.list_idp_configs(tenant_id)
-    return jsonify(configs), 200
+    try:
+        configs = await run_in_threadpool(
+            SAMLService.list_idp_configs, caller, tenant_id
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "list", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "list", caller)
+
+    return configs, 200
 
 
 @bp.route("/idp", methods=["POST"])
 @login_required
 @portal_token_required
-def create_idp_config():
+@document_request(CreateIdPConfigRequest)
+@validate_response(IdPConfigResponse, 201)
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
+async def create_idp_config():
     """Create a new IdP configuration.
 
-    Requires global admin or tenant admin.
+    Requires global admin or tenant admin. Tenant admins always create in
+    their own tenant; supplying a different ``tenant_id`` is 403. Only global
+    admins may pick the owning tenant (omit / null = global config).
 
     Request body:
         name: str - Display name
         idp_type: str - saml or oidc
-        tenant_id: int (optional) - Tenant ID or null for global
+        tenant_id: int (optional, global admins only) - Tenant ID or null for global
 
         SAML fields (required if idp_type=saml):
             entity_id: str - SAML Entity ID
@@ -109,7 +316,7 @@ def create_idp_config():
 
         OIDC fields (required if idp_type=oidc):
             oidc_client_id: str - OIDC Client ID
-            oidc_client_secret: str - OIDC Client Secret
+            oidc_client_secret: str - OIDC Client Secret (write-only, never returned)
             oidc_issuer_url: str - OIDC Issuer URL
             oidc_scopes: str (optional) - Space-separated scopes (default: "openid profile email")
             oidc_response_type: str (optional) - Response type (default: "code")
@@ -121,105 +328,133 @@ def create_idp_config():
             default_role: str - Default role for new users (default: "reader")
 
     Returns:
-        Created configuration
+        201: Created configuration (secrets redacted)
+        400: Request body failed validation (wrong type, missing name, ...)
+        403: Not an admin, or a tenant_id other than the caller's own
     """
-    # Check permissions
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
+
+    try:
+        body = CreateIdPConfigRequest.model_validate(await request.get_json())
+    except ValidationError as exc:
+        return _validation_error_response(exc)
+
+    # Only a global admin may choose the owning tenant. A tenant admin who
+    # sends any tenant_id other than their own (including an explicit null,
+    # i.e. "global") is rejected loudly rather than silently re-bound.
     if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
+        not caller.is_global_admin
+        and "tenant_id" in body.model_fields_set
+        and body.tenant_id != caller.tenant_id
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return _idp_error_response(
+            IdPForbiddenError("Cannot create an IdP configuration for another tenant"),
+            "create",
+            caller,
+        )
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    secret = body.oidc_client_secret
+    fields = body.model_dump(exclude={"oidc_client_secret", "tenant_id"})
+    try:
+        result = await run_in_threadpool_no_retry(
+            lambda: SAMLService.create_idp_config(
+                caller,
+                tenant_id=body.tenant_id,
+                oidc_client_secret=secret.get_secret_value() if secret else None,
+                **fields,
+            )
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "create", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "create", caller)
 
-    name = data.get("name")
-    if not name:
-        return jsonify({"error": "name is required"}), 400
-
-    # Tenant admins can only create for their tenant
-    tenant_id = data.get("tenant_id")
-    if request.portal_user.get("global_role") != "admin":
-        tenant_id = request.portal_user.get("tenant_id")
-
-    result = SAMLService.create_idp_config(
-        name=name,
-        idp_type=data.get("idp_type", "saml"),
-        tenant_id=tenant_id,
-        entity_id=data.get("entity_id"),
-        metadata_url=data.get("metadata_url"),
-        sso_url=data.get("sso_url"),
-        slo_url=data.get("slo_url"),
-        certificate=data.get("certificate"),
-        oidc_client_id=data.get("oidc_client_id"),
-        oidc_client_secret=data.get("oidc_client_secret"),
-        oidc_issuer_url=data.get("oidc_issuer_url"),
-        oidc_scopes=data.get("oidc_scopes"),
-        oidc_response_type=data.get("oidc_response_type"),
-        oidc_token_endpoint_auth_method=data.get("oidc_token_endpoint_auth_method"),
-        attribute_mappings=data.get("attribute_mappings"),
-        jit_provisioning_enabled=data.get("jit_provisioning_enabled", True),
-        default_role=data.get("default_role", "reader"),
-    )
-
-    return jsonify(result), 201
+    return result, 201
 
 
 @bp.route("/idp/<int:config_id>", methods=["PUT"])
 @portal_token_required
-def update_idp_config(config_id):
-    """Update an IdP configuration.
+@document_request(UpdateIdPConfigRequest)
+@validate_response(IdPConfigUpdateResponse)
+@document_response(IdPErrorResponse, 400)
+@document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
+async def update_idp_config(config_id):
+    """Update an IdP configuration the caller owns.
+
+    Other tenants' (and, for tenant admins, global) configs answer 404.
+    ``tenant_id`` in the body must match the config's current tenant (403
+    otherwise) -- a config can never be re-homed. Body keys other than the
+    documented updatable fields (e.g. ``idp_type``, ``id``) are ignored.
 
     Args:
         config_id: Configuration ID
 
     Returns:
-        Updated configuration
+        200: Updated configuration (secrets redacted) plus ``updated: true``
+        400: Request body failed validation (wrong type, null name, ...)
+        403: Not an admin, or a tenant_id change was requested
+        404: No such configuration in the caller's scope
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return jsonify({"error": "Admin permission required"}), 403
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    try:
+        body = UpdateIdPConfigRequest.model_validate(await request.get_json())
+    except ValidationError as exc:
+        return _validation_error_response(exc)
 
-    result = SAMLService.update_idp_config(config_id, **data)
+    updates = body.to_changes()
+    if "tenant_id" in body.model_fields_set:
+        updates["tenant_id"] = body.tenant_id
 
-    if "error" in result:
-        return jsonify(result), 404
+    try:
+        result = await run_in_threadpool(
+            SAMLService.update_idp_config, config_id, caller, updates
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "update", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "update", caller)
 
-    return jsonify(result), 200
+    return result, 200
 
 
 @bp.route("/idp/<int:config_id>", methods=["DELETE"])
 @portal_token_required
-def delete_idp_config(config_id):
-    """Delete an IdP configuration.
+@validate_response(IdPConfigDeleteResponse)
+@document_response(IdPErrorResponse, 403)
+@document_response(IdPErrorResponse, 404)
+async def delete_idp_config(config_id):
+    """Delete an IdP configuration the caller owns.
+
+    Other tenants' (and, for tenant admins, global) configs answer 404.
 
     Args:
         config_id: Configuration ID
 
     Returns:
-        Success status
+        200: ``{"deleted": true}``
+        403: Not an admin
+        404: No such configuration in the caller's scope
     """
-    # Check permissions
-    if (
-        request.portal_user.get("global_role") != "admin"
-        and request.portal_user.get("tenant_role") != "admin"
-    ):
-        return jsonify({"error": "Admin permission required"}), 403
+    caller, error = _resolve_idp_caller()
+    if error is not None:
+        return error
 
-    result = SAMLService.delete_idp_config(config_id)
+    try:
+        result = await run_in_threadpool_no_retry(
+            SAMLService.delete_idp_config, config_id, caller
+        )
+    except IdPAccessError as exc:
+        return _idp_error_response(exc, "delete", caller)
+    except Exception as exc:
+        return _idp_failure_response(exc, "delete", caller)
 
-    if "error" in result:
-        return jsonify(result), 404
-
-    return jsonify(result), 200
+    return result, 200
 
 
 # =============================================================================
@@ -249,29 +484,68 @@ def get_sp_metadata(tenant_id=None):
 
 
 @bp.route("/saml/login/<int:tenant_id>", methods=["GET"])
-def saml_login(tenant_id):
+@rate_limit(
+    "10/minute",
+    key_prefix="elder_saml_login",
+    config_key="SAML_LOGIN_RATELIMIT",
+)
+@document_response(IdPErrorResponse, 404)
+async def saml_login(tenant_id):
     """Initiate SAML SSO login.
+
+    Rate-limited per IP (default ``10/minute``, configurable via
+    ``SAML_LOGIN_RATELIMIT``). Returns one uniform 404 body for every
+    unavailable state (unknown tenant, no active SAML IdP, missing/non-HTTPS
+    SSO URL, or expired/invalid IdP certificate) so callers cannot enumerate
+    tenants (gh-312).
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        Redirect to IdP or error
+        200: IdP SSO URL to redirect to
+        404: SAML SSO login is not available for this organization
+        429: Rate limit exceeded
     """
-    idp_config = SAMLService.get_idp_config(tenant_id)
+    idp_config = await run_in_threadpool(SAMLService.get_idp_config, tenant_id, "saml")
 
     if not idp_config:
-        return jsonify({"error": "No IdP configured for this tenant"}), 404
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=no_config", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
 
-    if not idp_config.get("sso_url"):
-        return jsonify({"error": "IdP SSO URL not configured"}), 400
+    sso_url = idp_config.get("sso_url")
+    if not sso_url:
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=missing_sso_url", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
+
+    try:
+        validate_https_url(sso_url)
+    except IdPValidationError:
+        current_app.logger.warning(
+            "saml_login_unavailable tenant_id=%s reason=invalid_sso_url", tenant_id
+        )
+        return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
+
+    if idp_config.get("certificate"):
+        try:
+            validate_x509_certificate(idp_config["certificate"])
+        except IdPValidationError:
+            current_app.logger.warning(
+                "saml_login_unavailable tenant_id=%s reason=invalid_or_expired_cert",
+                tenant_id,
+            )
+            return ApiResponse.error(_SAML_LOGIN_UNAVAILABLE_MSG, 404)
 
     # In production, generate SAML AuthnRequest and redirect
     # For now, return the SSO URL for manual redirect
     return (
         jsonify(
             {
-                "sso_url": idp_config["sso_url"],
+                "sso_url": sso_url,
                 "message": "Redirect to SSO URL to initiate login",
             }
         ),
@@ -280,7 +554,7 @@ def saml_login(tenant_id):
 
 
 @bp.route("/saml/acs/<int:tenant_id>", methods=["POST"])
-def saml_acs(tenant_id):
+async def saml_acs(tenant_id):
     """SAML Assertion Consumer Service endpoint.
 
     Receives and processes SAML responses from IdP.
@@ -291,11 +565,15 @@ def saml_acs(tenant_id):
     Returns:
         JWT tokens on success
     """
-    saml_response = request.form.get("SAMLResponse")
-    relay_state = request.form.get("RelayState")
+    # Quart's `request.form` is a coroutine -- it must be awaited (the route
+    # was previously a sync `def` and called `.get` on the coroutine, raising
+    # AttributeError on every real POST).
+    form = await request.form
+    saml_response = form.get("SAMLResponse")
+    relay_state = form.get("RelayState")
 
     if not saml_response:
-        return jsonify({"error": "SAMLResponse is required"}), 400
+        return ApiResponse.bad_request("SAMLResponse is required")
 
     result = SAMLService.process_saml_response(tenant_id, saml_response, relay_state)
 
@@ -305,29 +583,47 @@ def saml_acs(tenant_id):
     # Generate tokens
     tokens = generate_tokens(result)
 
-    return (
-        jsonify(
-            {
-                "user": result,
-                **tokens,
-            }
-        ),
-        200,
+    # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the body
+    # keeps them only for non-browser callers, mirroring portal-auth.
+    response = jsonify(
+        {
+            "user": result,
+            **tokens,
+        }
     )
+    _attach_auth_cookies(response, tokens)
+    return response, 200
 
 
 @bp.route("/saml/slo/<int:tenant_id>", methods=["GET", "POST"])
+@document_response(IdPErrorResponse, 501)
 def saml_slo(tenant_id):
-    """SAML Single Logout endpoint.
+    """SAML Single Logout (SLO) endpoint -- intentionally unsupported (501).
+
+    Elder issues stateless JWTs and does not maintain SAML IdP
+    ``SessionIndex`` state, so neither SP-initiated nor IdP-initiated SAML
+    Single Logout can securely terminate or verify federated sessions here.
+    Users should log out locally via ``POST /api/v1/auth/logout`` (or
+    ``POST /api/v1/portal/auth/logout`` for portal sessions) and sign out of
+    their identity provider separately (gh-312).
 
     Args:
         tenant_id: Tenant ID
 
     Returns:
-        Logout confirmation
+        501: SAML Single Logout is not supported
     """
-    # In production, process SLO request/response
-    return jsonify({"message": "Logged out successfully", "tenant_id": tenant_id}), 200
+    return (
+        jsonify(
+            {
+                "error": (
+                    "SAML Single Logout (SLO) is not supported. "
+                    "Use POST /api/v1/auth/logout to terminate your local session."
+                )
+            }
+        ),
+        501,
+    )
 
 
 # =============================================================================
@@ -351,7 +647,7 @@ def oidc_authorize(idp_id):
     """
     redirect_uri = request.args.get("redirect_uri")
     if not redirect_uri:
-        return jsonify({"error": "redirect_uri is required"}), 400
+        return ApiResponse.bad_request("redirect_uri is required")
 
     state = request.args.get("state")
 
@@ -383,11 +679,11 @@ def oidc_callback():
     redirect_uri = request.args.get("redirect_uri")
 
     if not code:
-        return jsonify({"error": "code is required"}), 400
+        return ApiResponse.bad_request("code is required")
     if not idp_id:
-        return jsonify({"error": "idp_id is required"}), 400
+        return ApiResponse.bad_request("idp_id is required")
     if not redirect_uri:
-        return jsonify({"error": "redirect_uri is required"}), 400
+        return ApiResponse.bad_request("redirect_uri is required")
 
     # Exchange code for tokens
     tokens = OIDCService.exchange_code_for_tokens(idp_id, code, redirect_uri)
@@ -409,7 +705,7 @@ def oidc_callback():
     # Get IdP config for JIT provisioning
     idp_config = OIDCService.get_idp_config(idp_id)
     if not idp_config:
-        return jsonify({"error": "IdP configuration not found"}), 404
+        return ApiResponse.error("IdP configuration not found", 404)
 
     tenant_id = idp_config.get("tenant_id", 1)  # Default to tenant 1 if global
 
@@ -428,22 +724,23 @@ def oidc_callback():
         # Generate Elder JWT tokens
         elder_tokens = generate_tokens(user)
 
-        return (
-            jsonify(
-                {
-                    "user": user,
-                    **elder_tokens,
-                }
-            ),
-            200,
+        # Carry the JWTs as HttpOnly/Secure/SameSite cookies (gh #285) -- the
+        # body keeps them only for non-browser callers, mirroring portal-auth.
+        response = jsonify(
+            {
+                "user": user,
+                **elder_tokens,
+            }
         )
+        _attach_auth_cookies(response, elder_tokens)
+        return response, 200
 
-    return jsonify({"error": "JIT provisioning is disabled for this IdP"}), 403
+    return ApiResponse.forbidden("JIT provisioning is disabled for this IdP")
 
 
 @bp.route("/oidc/logout/<int:idp_id>", methods=["POST"])
 @portal_token_required
-def oidc_logout(idp_id):
+async def oidc_logout(idp_id):
     """Initiate OIDC logout (RP-Initiated Logout).
 
     Args:
@@ -456,11 +753,16 @@ def oidc_logout(idp_id):
     Returns:
         End session endpoint URL
     """
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     id_token_hint = data.get("id_token_hint")
     post_logout_redirect_uri = data.get("post_logout_redirect_uri")
 
-    result = OIDCService.logout(idp_id, id_token_hint, post_logout_redirect_uri)
+    # OIDCService.logout() makes a blocking `requests` call (OIDC discovery
+    # document fetch) -- run off the event loop so one slow/unresponsive IdP
+    # can't stall every other concurrent request (finding #7).
+    result = await run_in_threadpool(
+        OIDCService.logout, idp_id, id_token_hint, post_logout_redirect_uri
+    )
 
     if "error" in result:
         return jsonify(result), 400
@@ -485,7 +787,7 @@ def oidc_userinfo(idp_id):
     access_token = request.headers.get("X-OIDC-Access-Token")
 
     if not access_token:
-        return jsonify({"error": "X-OIDC-Access-Token header is required"}), 400
+        return ApiResponse.bad_request("X-OIDC-Access-Token header is required")
 
     result = OIDCService.get_userinfo(idp_id, access_token)
 
@@ -497,7 +799,7 @@ def oidc_userinfo(idp_id):
 
 @bp.route("/oidc/refresh/<int:idp_id>", methods=["POST"])
 @portal_token_required
-def oidc_refresh(idp_id):
+async def oidc_refresh(idp_id):
     """Refresh OIDC access token.
 
     Args:
@@ -509,15 +811,19 @@ def oidc_refresh(idp_id):
     Returns:
         New tokens
     """
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "No data provided"}), 400
+        return ApiResponse.bad_request("No data provided")
 
     refresh_token = data.get("refresh_token")
     if not refresh_token:
-        return jsonify({"error": "refresh_token is required"}), 400
+        return ApiResponse.bad_request("refresh_token is required")
 
-    result = OIDCService.refresh_tokens(idp_id, refresh_token)
+    # OIDCService.refresh_tokens() makes blocking `requests`/authlib
+    # OAuth2Session HTTP calls (discovery + token endpoint) -- run off the
+    # event loop so a slow IdP can't stall every other concurrent request
+    # (finding #7).
+    result = await run_in_threadpool(OIDCService.refresh_tokens, idp_id, refresh_token)
 
     if "error" in result:
         return jsonify(result), 400
@@ -533,7 +839,7 @@ def oidc_refresh(idp_id):
 @bp.route("/scim/config", methods=["POST"])
 @login_required
 @portal_token_required
-def create_scim_config():
+async def create_scim_config():
     """Create SCIM configuration for a tenant.
 
     Request body:
@@ -547,9 +853,9 @@ def create_scim_config():
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
 
     # Tenant admins can only configure their tenant
     tenant_id = data.get("tenant_id")
@@ -557,7 +863,7 @@ def create_scim_config():
         tenant_id = request.portal_user.get("tenant_id")
 
     if not tenant_id:
-        return jsonify({"error": "tenant_id is required"}), 400
+        return ApiResponse.bad_request("tenant_id is required")
 
     result = SCIMService.create_scim_config(tenant_id)
 
@@ -578,7 +884,7 @@ def get_scim_config(tenant_id):
     config = SCIMService.get_scim_config(tenant_id)
 
     if not config:
-        return jsonify({"error": "SCIM not configured"}), 404
+        return ApiResponse.error("SCIM not configured", 404)
 
     return jsonify(config), 200
 
@@ -599,7 +905,7 @@ def regenerate_scim_token(tenant_id):
         request.portal_user.get("global_role") != "admin"
         and request.portal_user.get("tenant_role") != "admin"
     ):
-        return jsonify({"error": "Admin permission required"}), 403
+        return ApiResponse.forbidden("Admin permission required")
 
     result = SCIMService.regenerate_token(tenant_id)
 
@@ -638,7 +944,7 @@ def scim_list_users(tenant_id):
 
 @bp.route("/scim/<int:tenant_id>/Users", methods=["POST"])
 @scim_auth_required
-def scim_create_user(tenant_id):
+async def scim_create_user(tenant_id):
     """SCIM 2.0 - Create user.
 
     Request body:
@@ -647,7 +953,7 @@ def scim_create_user(tenant_id):
     Returns:
         Created SCIM User
     """
-    scim_user = request.get_json()
+    scim_user = await request.get_json()
     if not scim_user:
         return (
             jsonify(
@@ -710,7 +1016,7 @@ def scim_get_user(tenant_id, user_id):
 
 @bp.route("/scim/<int:tenant_id>/Users/<int:user_id>", methods=["PUT"])
 @scim_auth_required
-def scim_update_user(tenant_id, user_id):
+async def scim_update_user(tenant_id, user_id):
     """SCIM 2.0 - Replace user.
 
     Args:
@@ -723,7 +1029,7 @@ def scim_update_user(tenant_id, user_id):
     Returns:
         Updated SCIM User
     """
-    scim_user = request.get_json()
+    scim_user = await request.get_json()
     if not scim_user:
         return (
             jsonify(

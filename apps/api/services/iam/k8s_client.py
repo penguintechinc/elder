@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 try:
@@ -19,7 +18,7 @@ from apps.api.services.iam.base import BaseIAMProvider
 class KubernetesRBACClient(BaseIAMProvider):
     """Kubernetes RBAC implementation of IAM provider."""
 
-    def __init__(self, config_dict: Dict[str, Any]):
+    def __init__(self, config_dict: dict[str, Any]):
         """
         Initialize Kubernetes RBAC client.
 
@@ -55,8 +54,8 @@ class KubernetesRBACClient(BaseIAMProvider):
     # User Management (Service Accounts in Kubernetes)
 
     def list_users(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all service accounts in the namespace."""
         try:
             # Kubernetes doesn't have pagination tokens in the same way
@@ -87,7 +86,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC list users error: {str(e)}")
 
-    def get_user(self, user_identifier: str) -> Dict[str, Any]:
+    def get_user(self, user_identifier: str) -> dict[str, Any]:
         """Get service account details."""
         try:
             sa = self.core_v1.read_namespaced_service_account(
@@ -104,10 +103,10 @@ class KubernetesRBACClient(BaseIAMProvider):
     def create_user(
         self,
         username: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new service account."""
         try:
             sa = client.V1ServiceAccount(
@@ -130,7 +129,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC create user error: {str(e)}")
 
-    def delete_user(self, user_identifier: str) -> Dict[str, Any]:
+    def delete_user(self, user_identifier: str) -> dict[str, Any]:
         """Delete a service account."""
         try:
             self.core_v1.delete_namespaced_service_account(
@@ -149,10 +148,10 @@ class KubernetesRBACClient(BaseIAMProvider):
     def update_user(
         self,
         user_identifier: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update service account metadata."""
         try:
             # Get current service account
@@ -183,8 +182,8 @@ class KubernetesRBACClient(BaseIAMProvider):
     # Role Management
 
     def list_roles(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all roles in the namespace."""
         try:
             response = self.rbac_v1.list_namespaced_role(
@@ -214,7 +213,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC list roles error: {str(e)}")
 
-    def get_role(self, role_identifier: str) -> Dict[str, Any]:
+    def get_role(self, role_identifier: str) -> dict[str, Any]:
         """Get role details."""
         try:
             role = self.rbac_v1.read_namespaced_role(
@@ -231,11 +230,11 @@ class KubernetesRBACClient(BaseIAMProvider):
     def create_role(
         self,
         role_name: str,
-        description: Optional[str] = None,
-        trust_policy: Optional[Dict[str, Any]] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        trust_policy: dict[str, Any] | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new role."""
         try:
             # trust_policy in K8s context means rules
@@ -274,7 +273,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC create role error: {str(e)}")
 
-    def delete_role(self, role_identifier: str) -> Dict[str, Any]:
+    def delete_role(self, role_identifier: str) -> dict[str, Any]:
         """Delete a role."""
         try:
             self.rbac_v1.delete_namespaced_role(
@@ -291,10 +290,10 @@ class KubernetesRBACClient(BaseIAMProvider):
     def update_role(
         self,
         role_identifier: str,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update role metadata."""
         try:
             # Get current role
@@ -341,10 +340,10 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     def list_policies(
         self,
-        scope: Optional[str] = None,
-        limit: Optional[int] = None,
-        next_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        scope: str | None = None,
+        limit: int | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
         """List all role bindings in the namespace."""
         try:
             response = self.rbac_v1.list_namespaced_role_binding(
@@ -374,7 +373,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC list policies error: {str(e)}")
 
-    def get_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def get_policy(self, policy_identifier: str) -> dict[str, Any]:
         """Get role binding details."""
         try:
             rb = self.rbac_v1.read_namespaced_role_binding(
@@ -391,11 +390,11 @@ class KubernetesRBACClient(BaseIAMProvider):
     def create_policy(
         self,
         policy_name: str,
-        policy_document: Dict[str, Any],
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        policy_document: dict[str, Any],
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a role binding."""
         try:
             # policy_document should contain role_ref and subjects
@@ -442,7 +441,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC create policy error: {str(e)}")
 
-    def delete_policy(self, policy_identifier: str) -> Dict[str, Any]:
+    def delete_policy(self, policy_identifier: str) -> dict[str, Any]:
         """Delete a role binding."""
         try:
             self.rbac_v1.delete_namespaced_role_binding(
@@ -460,7 +459,7 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     def attach_policy_to_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Attach role to service account (create/update role binding)."""
         try:
             # Get or create role binding
@@ -511,7 +510,7 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     def detach_policy_from_user(
         self, user_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Detach role from service account (delete role binding)."""
         try:
             self.rbac_v1.delete_namespaced_role_binding(
@@ -530,17 +529,17 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     def attach_policy_to_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Not applicable in K8s - roles don't have policies attached."""
         raise NotImplementedError("K8s doesn't support attaching policies to roles")
 
     def detach_policy_from_role(
         self, role_identifier: str, policy_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Not applicable in K8s - roles don't have policies attached."""
         raise NotImplementedError("K8s doesn't support detaching policies from roles")
 
-    def list_user_policies(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_user_policies(self, user_identifier: str) -> list[dict[str, Any]]:
         """List all roles attached to a service account."""
         try:
             response = self.rbac_v1.list_namespaced_role_binding(
@@ -571,13 +570,13 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC list user policies error: {str(e)}")
 
-    def list_role_policies(self, role_identifier: str) -> List[Dict[str, Any]]:
+    def list_role_policies(self, role_identifier: str) -> list[dict[str, Any]]:
         """Not applicable in K8s - roles don't have policies."""
         return []
 
     # Access Keys (Service Account Tokens in Kubernetes)
 
-    def create_access_key(self, user_identifier: str) -> Dict[str, Any]:
+    def create_access_key(self, user_identifier: str) -> dict[str, Any]:
         """Create service account token."""
         try:
             # Create token request
@@ -607,7 +606,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception as e:
             raise Exception(f"K8s RBAC create access key error: {str(e)}")
 
-    def list_access_keys(self, user_identifier: str) -> List[Dict[str, Any]]:
+    def list_access_keys(self, user_identifier: str) -> list[dict[str, Any]]:
         """List service account secrets/tokens."""
         try:
             sa = self.core_v1.read_namespaced_service_account(
@@ -632,7 +631,7 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     def delete_access_key(
         self, user_identifier: str, access_key_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Delete service account token secret."""
         try:
             self.core_v1.delete_namespaced_secret(
@@ -657,7 +656,7 @@ class KubernetesRBACClient(BaseIAMProvider):
         except Exception:
             return False
 
-    def sync_from_provider(self) -> Dict[str, Any]:
+    def sync_from_provider(self) -> dict[str, Any]:
         """Sync RBAC resources from Kubernetes to Elder database."""
         errors = []
         users_synced = 0
@@ -698,7 +697,7 @@ class KubernetesRBACClient(BaseIAMProvider):
 
     # Helper methods
 
-    def _sa_to_dict(self, sa) -> Dict[str, Any]:
+    def _sa_to_dict(self, sa) -> dict[str, Any]:
         """Convert service account to dict."""
         return {
             "id": sa.metadata.uid,
@@ -714,7 +713,7 @@ class KubernetesRBACClient(BaseIAMProvider):
             "annotations": sa.metadata.annotations or {},
         }
 
-    def _role_to_dict(self, role) -> Dict[str, Any]:
+    def _role_to_dict(self, role) -> dict[str, Any]:
         """Convert role to dict."""
         rules = []
         for rule in role.rules or []:
@@ -741,7 +740,7 @@ class KubernetesRBACClient(BaseIAMProvider):
             "annotations": role.metadata.annotations or {},
         }
 
-    def _rb_to_policy_dict(self, rb) -> Dict[str, Any]:
+    def _rb_to_policy_dict(self, rb) -> dict[str, Any]:
         """Convert role binding to policy dict."""
         subjects = []
         for subj in rb.subjects or []:

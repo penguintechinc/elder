@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [4.0.0] - Unreleased
+
+**Elder Platform Merge** — consolidates several separate PenguinTech products into Elder as toggleable modules, moving Elder to a modular-monolith architecture.
+
+### ✨ Merged Product Lines
+
+#### IceCharts Merge — Diagramming & Automation (#167, #168)
+- **`diagrams`**: React-Flow diagram editor with real-time collaboration, merged in from IceCharts
+- **`streams`**: Workflow automation module, merged in from IceStreams
+- **`flows`**: CI/CD pipeline module, merged in from IceFlows
+
+#### Ruffled Merge — Helpdesk & Knowledge Base (#166, #173)
+- **`helpdesk`**: Tickets, SLAs, and CRM, merged in from Ruffled — the customer-relations half (CRM, public intake, customer email) was later split out to Waddles; Elder keeps internal ticketing, see below
+- **`documents`**: Knowledge base module, merged in from Ruffled
+- **`pages`**: Documentation pages module, merged in from Ruffled
+- Rookery was intentionally excluded from this merge
+
+### ✨ Issues ↔ Tickets Unification
+
+Following the Ruffled merge, helpdesk tickets and CRM were folded into
+Elder's native, unified Issue model instead of staying a parallel
+resource — a support request is now just an Issue.
+
+- **Support is an `issue_type`, not a separate table**: `IssueType` gained
+  a `support` value (alongside `operations`, `code`, `config`, `security`,
+  `architecture`, `process`, `approval`, `feature`, `bug`, `other`).
+  Support-only fields (`channel`, `category`, `requester_contact_id`,
+  `sla_breach_at`, `first_response_at`, `resolved_at`) live directly on
+  `issues`, nullable for non-support issue types
+- **Polymorphic assignee**: `issues.assignee_type` (`identity` or
+  `org_unit`) + `assignee_id` replaces an identity-only assignee — an
+  Issue can be assigned to a person or to an organizational unit. The web
+  UI exposes this as a single combined identity+org-unit search picker
+- **Intake forms**: admin-configurable forms (`/api/v1/intake-forms`,
+  backed by the `hd_intake_forms` table) define dynamic,
+  Pydantic-validated fields; the public, unauthenticated
+  `/api/v1/intake/<slug>` (GET) and `/api/v1/intake/<slug>/submit`
+  (POST) routes serve them. Public submission is optionally protected
+  by an **Altcha** proof-of-work captcha (`captcha_required` per form,
+  off by default); a successful submit upserts a `customer_contact`
+  identity and creates a native Issue of the form's configured
+  `issue_type` (default `support`)
+- **Assignment webhooks**: a new `issue.assigned` event fires on every
+  assignee change (create, update, or an intake form's default-assign),
+  HMAC-signed (`X-Elder-Signature`) and delivered non-blocking. Each
+  webhook can filter by `issue_type` and by assignee
+  (`assignee_type`/`assignee_id`); an unset filter matches everything
+- **CRM as identity/organization types, not new tables**:
+  `customer_company` is an `organization_type` and `customer_contact` is
+  an `identity_type` — CRM records are organizations and identities, not
+  a separate schema
+- **`/helpdesk` frontend surface retired**: the web UI now offers only
+  the unified Issues experience — support issues render a support
+  section, and the intake-form builder lives under the Issues area.
+  Backend helpdesk endpoints (`/api/v1/helpdesk/tickets`,
+  `/companies`, `/contacts`, etc.) still exist during the phase-out but
+  are no longer the primary path
+- **Demo data**: `make seed-demo-unified` (`scripts/seed_demo_unified.py`)
+  seeds native support issues, `customer_company`/`customer_contact` CRM
+  entities, intake forms (public and private), and assignment webhooks
+
+### 🗑️ Customer-Relations Split-Out — Helpdesk is now Internal-Only
+
+Superseding the unification above: the customer/public/community half of the
+helpdesk was **removed from Elder and handed off to Waddles**, which owns
+public community + customer relationships. Elder's helpdesk is now strictly
+internal (employees/contractors).
+
+- **Removed** (moved to Waddles): CRM tables `hd_companies`/`hd_contacts`;
+  public intake forms (`hd_ticket_forms`, `hd_intake_forms`) with their
+  **Altcha** captcha; customer email intake (`hd_email_accounts`,
+  `hd_email_logs`) and the `helpdesk_email_poll`/`helpdesk_email_send`
+  workers; and the `requester_contact_id` FK on both `hd_tickets` and
+  `issues`. The backend routes (`/api/v1/helpdesk/{companies,contacts,email-accounts,ticket-forms}`,
+  `/api/v1/intake-forms`, `/api/v1/intake`) and the Intake-Forms web UI were deleted.
+- **Kept** (internal ticketing): `hd_tickets`, messages, attachments,
+  `hd_sla_policies`, `hd_canned_responses`, `hd_teams`/`hd_team_members`,
+  and the SLA-breach worker.
+- **Regrouped**: the `helpdesk` module moved out of the `crm` group, which is
+  retired; it now sits in the `issues` WIRED group alongside `issues` (see
+  *WIRED Module Groups* below). Migration `040` drops the removed tables and
+  columns.
+- `customer_contact` (identity type) and `customer_company` (organization
+  type) remain as harmless enum values, no longer written by any Elder path.
+- Specs: `docs/superpowers/specs/2026-08-21-helpdesk-internal-reframe-phase3.md`
+  (Elder) and the Waddles handoff spec.
+
+### 🏗️ Architecture — Modular Monolith Restructure (#164)
+- Feature-domain code moved from the flat `apps/api/models/*.py` + `apps/api/api/v1/*` layout into per-module packages `apps/api/modules/<name>/{models,routes}/` — 15 modules total: `infrastructure`, `ipam`, `sbom`, `services_oncall`, `issues`, `discovery`, `secrets`, `webhooks_alerting`, `access_reviews`, `documents`, `pages`, `diagrams`, `streams`, `flows`, `helpdesk`
+- Always-on **core** models (base, identity, rbac, tenant, audit, security, etc.) remain in `apps/api/models/`
+- Split the `apps/api/models/infrastructure.py` "god-file": `NetworkingResource`/`DataStore` moved to `apps/api/modules/infrastructure/models/infrastructure.py`; `Service`/`Software` moved to `apps/api/modules/sbom/models/assets.py`; cost models moved to `webhooks_alerting`
+- **Breaking for consumers**: import paths for these models changed — `apps.api.models.infrastructure` no longer exists
+
+### 🧭 WIRED Module Groups
+
+The four ad-hoc module buckets (`core`, `crm`, `workflow`, `kb`) are replaced by
+Elder's five WIRED pillars. Grouping stays presentation/deployment only — no
+group is tier-locked, and no module directories moved.
+
+| Group | Modules |
+|-------|---------|
+| `workstreams` | `streams`, `flows`, `webhooks_alerting` |
+| `issues` | `issues`, `helpdesk` |
+| `relationships` | `discovery`, `access_reviews` |
+| `entities` | `infrastructure`, `ipam`, `sbom`, `services_oncall`, `secrets` |
+| `documents` | `documents`, `pages`, `diagrams` |
+
+- **Breaking for deployments**: the group env toggles are renamed —
+  `ELDER_GROUP_CORE`/`ELDER_GROUP_CRM`/`ELDER_GROUP_WORKFLOW`/`ELDER_GROUP_KB`
+  are replaced by `ELDER_GROUP_WORKSTREAMS`, `ELDER_GROUP_ISSUES`,
+  `ELDER_GROUP_RELATIONSHIPS`, `ELDER_GROUP_ENTITIES`, `ELDER_GROUP_DOCUMENTS`.
+  Toggle precedence is unchanged: `ELDER_MODULE_<NAME>` > `ELDER_GROUP_<GROUP>` >
+  `ELDER_MODULES_ENABLED`. Per-module `ELDER_MODULE_*` vars are untouched.
+- **Sidebar**: nav headers render in acronym order — Workstreams, Issues,
+  Relationships, Entities, Documents.
+- `group` is still returned by `GET /api/v1/modules`; consumers reading it see
+  the new values.
+
+---
+
 ## [3.2.3] - 2026-04-29
 
 ### 🐛 Bug Fixes

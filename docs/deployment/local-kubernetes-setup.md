@@ -33,7 +33,7 @@ sudo snap install microk8s --classic
 microk8s enable dns storage helm3
 
 # 2. Deploy Elder
-cd infrastructure/helm/elder
+cd k8s/helm/elder
 microk8s helm3 dependency update
 microk8s helm3 install elder . \
   --set config.secretKey="$(openssl rand -base64 32)" \
@@ -154,7 +154,7 @@ sudo chown $USER ~/.kube/config
 Navigate to the Helm chart directory:
 
 ```bash
-cd infrastructure/helm/elder
+cd k8s/helm/elder
 ```
 
 Update dependencies (PostgreSQL and Redis from Bitnami):
@@ -269,13 +269,6 @@ kubectl port-forward svc/elder-web 3000:80
 
 ```bash
 kubectl port-forward svc/elder-grpc 50051:50051
-```
-
-**Access Grafana (if monitoring enabled):**
-
-```bash
-kubectl port-forward svc/elder-grafana 3001:80
-# Visit http://localhost:3001
 ```
 
 ### Using Ingress (Optional)
@@ -493,11 +486,11 @@ kubectl cp <pod-name>:/path/to/file ./local-file
 - [k3s Documentation](https://k3s.io/)
 - [Helm Documentation](https://helm.sh/docs/)
 - [Kubernetes Documentation](https://kubernetes.io/docs/)
-- [Elder Helm Chart README](../../infrastructure/helm/elder/README.md)
+- [Elder Helm Chart](../../k8s/helm/elder/)
 - [GitHub Actions Kubernetes Deployment](./github-actions-k8s.md)
 
 ## Next Steps
 
 - [Setup GitHub Actions for CI/CD](./github-actions-k8s.md)
-- [Configure monitoring and observability](../../infrastructure/monitoring/README.md)
-- [Production deployment considerations](./production-deployment.md)
+- [Configure monitoring and observability](../../observability/) — dashboards, alert rules, and SLOs built against the OTel metrics Elder actually emits (api/worker/scanner export via OTLP; no Elder-deployed Grafana/Prometheus service exists in the Helm chart)
+- [GitHub Actions Kubernetes deployment](./github-actions-k8s.md)

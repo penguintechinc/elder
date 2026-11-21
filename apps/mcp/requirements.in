@@ -1,5 +1,44 @@
-mcp==1.27.1
+# mcp 1.30.0: also fixes CVE-2026-115563 (HIGH) + CVE-2026-116684/5/6, CVE-2026-59951 (DoS).
+# mcp 1.28.1: fixes GHSA-hvrp/jpw9 (task-handler cross-client access, unauthenticated
+# session requests) and GHSA-vj7q (WebSocket transport missing Host/Origin validation)
+mcp==1.30.0
 httpx==0.28.1
-python-jose==3.4.0
+# python-jose removed: pulled in ecdsa (GHSA-wj6h/CVE-2024-23342 Minerva timing attack,
+# no upstream fix available) and pyasn1/rsa. Replaced with PyJWT — see apps/mcp/auth.py.
+# PyJWT 2.13.0: fixes GHSA-993g/fhv5/jq35/w7vc/xgmm (see root requirements.in)
+# PyJWT 2.15.0: fixes CVE-2026-102268 (CRITICAL) and additional HIGH advisories
+PyJWT==2.15.0
 idna>=3.15
 python-decouple==3.8
+# Transitive floors — pinned to clear advisories
+cryptography>=50.0.0    # via pyjwt[crypto]/mcp — GHSA-537c/g6cj/jwv3/m2h6
+anyio>=4.14.2             # via httpx/mcp/starlette — GHSA-5p39, GHSA-82r6
+starlette>=1.3.1          # via mcp/sse-starlette — GHSA-82w8/86qp/jp82/wqp7/x746
+python-multipart>=0.0.31  # via mcp — GHSA-5rvq/6jv3/v9pg/vffw
+pydantic-settings>=2.14.2 # via mcp — GHSA-4xgf
+click>=8.3.3              # via flask/quart/uvicorn — CVE-2026-7246 / GHSA-47fr
+requests>=2.33.0          # via opentelemetry-exporter-otlp-proto-http
+urllib3>=2.7.0            # via requests
+certifi==2026.10.18      # via requests/httpx — GHSA-6q48-6c7w-9gw2 (CRITICAL); 2026.11.20 is <14d old
+
+# Hosted HTTP API translator (hub-mcp: Quart + ASGI uvicorn, zero DB/Redis)
+quart==0.20.0
+quart-cors==0.8.0
+# mcp 1.30.0 requires uvicorn>=0.31.1
+uvicorn[standard]>=0.31.1
+Werkzeug>=3.1.9
+h2>=4.4.1
+pyyaml==6.0.2
+
+# Structured logging & PenguinTech sanitization
+structlog==25.4.0
+python-json-logger==3.2.1
+penguin-utils~=0.1.0
+
+# OpenTelemetry observability (OTLP HTTP export — ASGI + HTTPX)
+opentelemetry-api==1.45.2
+opentelemetry-sdk==1.45.2
+opentelemetry-exporter-otlp-proto-http==1.45.2
+opentelemetry-instrumentation==0.66b2
+opentelemetry-instrumentation-asgi==0.66b2
+opentelemetry-instrumentation-httpx==0.66b2

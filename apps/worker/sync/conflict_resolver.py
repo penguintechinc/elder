@@ -14,10 +14,9 @@ The primary strategy is Last-Modified-Wins as specified in the v1.1.0 requiremen
 
 # flake8: noqa: E501
 
-
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from apps.worker.sync.base import ConflictResolution, SyncMapping
 
@@ -59,10 +58,10 @@ class ConflictResolver:
 
     def detect_conflict(
         self,
-        elder_data: Dict[str, Any],
-        external_data: Dict[str, Any],
-        mapping: Optional[SyncMapping] = None,
-    ) -> Optional[ConflictResolution]:
+        elder_data: dict[str, Any],
+        external_data: dict[str, Any],
+        mapping: SyncMapping | None = None,
+    ) -> ConflictResolution | None:
         """Detect if a conflict exists between Elder and external data.
 
         Args:
@@ -97,13 +96,18 @@ class ConflictResolver:
         # Check for timestamp conflicts (both modified since last sync)
         elder_modified = elder_data.get("updated_at")
         external_modified = external_data.get("updated_at")
-        last_synced = mapping.last_synced_at
+        last_synced = self._parse_datetime(mapping.last_synced_at)
 
         if elder_modified and external_modified and last_synced:
             elder_modified_dt = self._parse_datetime(elder_modified)
             external_modified_dt = self._parse_datetime(external_modified)
 
-            if elder_modified_dt > last_synced and external_modified_dt > last_synced:
+            if (
+                elder_modified_dt
+                and external_modified_dt
+                and elder_modified_dt > last_synced
+                and external_modified_dt > last_synced
+            ):
                 # Both modified since last sync - conflict!
                 return ConflictResolution(
                     conflict_type=ConflictType.BOTH_MODIFIED.value,
@@ -127,7 +131,7 @@ class ConflictResolver:
     def resolve_conflict(
         self,
         conflict: ConflictResolution,
-        strategy: Optional[ResolutionStrategy] = None,
+        strategy: ResolutionStrategy | None = None,
     ) -> ConflictResolution:
         """Resolve a conflict using specified or default strategy.
 
@@ -173,7 +177,7 @@ class ConflictResolver:
     def _resolve_last_modified_wins(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Resolve conflict using last-modified-wins strategy.
 
         Args:
@@ -208,7 +212,7 @@ class ConflictResolver:
     def _resolve_field_merge(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Resolve conflict by merging fields intelligently.
 
         For each field:
@@ -273,9 +277,9 @@ class ConflictResolver:
 
     def _find_field_mismatches(
         self,
-        elder_data: Dict[str, Any],
-        external_data: Dict[str, Any],
-    ) -> List[str]:
+        elder_data: dict[str, Any],
+        external_data: dict[str, Any],
+    ) -> list[str]:
         """Find fields that have mismatched values.
 
         Args:
@@ -300,7 +304,7 @@ class ConflictResolver:
 
         return mismatches
 
-    def _parse_datetime(self, dt: Any) -> Optional[datetime]:
+    def _parse_datetime(self, dt: Any) -> datetime | None:
         """Parse datetime from various formats.
 
         Args:
@@ -313,19 +317,24 @@ class ConflictResolver:
             return None
 
         if isinstance(dt, datetime):
-            return dt
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
 
         if isinstance(dt, str):
             try:
                 # Try ISO format
-                return datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                parsed = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    return parsed.replace(tzinfo=UTC)
+                return parsed.astimezone(UTC)
             except (ValueError, AttributeError):
                 pass
 
         if isinstance(dt, (int, float)):
             try:
                 # Try Unix timestamp
-                return datetime.fromtimestamp(dt)
+                return datetime.fromtimestamp(dt, tz=UTC)
             except (ValueError, OSError):
                 pass
 
@@ -334,7 +343,7 @@ class ConflictResolver:
     def get_conflict_summary(
         self,
         conflict: ConflictResolution,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate a human-readable summary of a conflict.
 
         Args:

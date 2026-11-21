@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Edit, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, Box, Users, Copy, Plus } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, ChevronRight, ChevronDown, Folder, FolderOpen, Box, Users, Plus } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import type { Organization, Entity } from '@/types'
@@ -11,6 +11,8 @@ import Input from '@/components/Input'
 import { NetworkGraph } from '@/components/NetworkGraph'
 import CreateIdentityModal from '@/components/CreateIdentityModal'
 import OnCallBadge from '@/components/OnCallBadge'
+import VillageIdBadge from '@/components/VillageIdBadge'
+import { ORGANIZATION_TYPES } from '@/lib/constants/organizationTypes'
 
 interface TreeNode {
   type: 'organization' | 'entity'
@@ -243,15 +245,9 @@ export default function OrganizationDetail() {
     console.log('RelationshipGraphSection: isLoading:', isLoading);
     console.log('RelationshipGraphSection: graphData:', graphData);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- NetworkGraph expects a different GraphNode type
     const handleNodeClick = (node: any) => {
-      const nodeId = node.metadata?.id
-      if (!nodeId) return
-
-      if (node.type === 'organization') {
-        navigate(`/organizations/${nodeId}`)
-      } else {
-        navigate(`/entities/${nodeId}`)
-      }
+      navigate(`/entities/${node.id}`)
     }
 
     if (isLoading) {
@@ -532,23 +528,8 @@ export default function OrganizationDetail() {
                 {organization.village_id && (
                   <div>
                     <dt className="text-sm font-medium text-slate-400">Village ID</dt>
-                    <dd className="mt-1 flex items-center gap-2">
-                      <a
-                        href={`/id/${organization.village_id}`}
-                        className="text-sm text-primary-400 hover:text-primary-300 font-mono"
-                      >
-                        {organization.village_id}
-                      </a>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/id/${organization.village_id}`)
-                          toast.success('Village ID URL copied to clipboard')
-                        }}
-                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
-                        title="Copy shareable link"
-                      >
-                        <Copy className="w-3.5 h-3.5" />
-                      </button>
+                    <dd className="mt-1">
+                      <VillageIdBadge villageId={organization.village_id} />
                     </dd>
                   </div>
                 )}
@@ -620,7 +601,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {issues?.items && issues.items.length > 0 ? (
                 <div className="space-y-3">
-                  {issues.items.slice(0, 5).map((issue: any) => (
+                  {issues.items.slice(0, 5).map((issue: { id: number; title: string; status: string }) => (
                     <div
                       key={issue.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -680,7 +661,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {projects?.items && projects.items.length > 0 ? (
                 <div className="space-y-3">
-                  {projects.items.slice(0, 5).map((project: any) => (
+                  {projects.items.slice(0, 5).map((project: { id: number; name: string; status: string }) => (
                     <div
                       key={project.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -747,7 +728,7 @@ export default function OrganizationDetail() {
             <CardContent>
               {identities?.items && identities.items.length > 0 ? (
                 <div className="space-y-3">
-                  {identities.items.slice(0, 5).map((identity: any) => (
+                  {identities.items.slice(0, 5).map((identity: { id: number; username: string; portal_role?: string; full_name?: string; email?: string }) => (
                     <div
                       key={identity.id}
                       className="p-3 bg-slate-800/30 rounded-lg hover:bg-slate-800/50 cursor-pointer transition-colors"
@@ -1040,8 +1021,15 @@ function CreateEntityModal({ organizationId, onClose, onSuccess }: CreateEntityM
     { value: 'security_issue', label: 'Security Issue' },
   ]
 
+  interface EntityData {
+    name: string
+    description?: string
+    entity_type: string
+    organization_id: number
+  }
+
   const createMutation = useMutation({
-    mutationFn: (data: any) => api.createEntity(data),
+    mutationFn: (data: EntityData) => api.createEntity(data),
     onSuccess: () => {
       toast.success('Entity created successfully')
       onSuccess()
@@ -1141,7 +1129,7 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   const metadata = metadataResponse?.metadata || {}
 
   const createMutation = useMutation({
-    mutationFn: (data: { key: string; field_type: string; value: any }) =>
+    mutationFn: (data: { key: string; field_type: string; value: unknown }) =>
       api.createOrganizationMetadata(organizationId, data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
@@ -1156,7 +1144,7 @@ function MetadataModal({ organizationId, onClose, onSuccess: _onSuccess }: Metad
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ key, value }: { key: string; value: any }) =>
+    mutationFn: ({ key, value }: { key: string; value: unknown }) =>
       api.updateOrganizationMetadata(organizationId, key, { value }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['organization-metadata', organizationId] })
@@ -1337,14 +1325,6 @@ function EditOrganizationModal({ organization, onClose, onSuccess }: EditOrganiz
   const [name, setName] = useState(organization.name)
   const [description, setDescription] = useState(organization.description || '')
   const [organizationType, setOrganizationType] = useState(organization.organization_type || 'organization')
-
-  const ORGANIZATION_TYPES = [
-    { value: 'department', label: 'Department' },
-    { value: 'organization', label: 'Organization' },
-    { value: 'team', label: 'Team' },
-    { value: 'collection', label: 'Collection' },
-    { value: 'other', label: 'Other' },
-  ]
 
   const updateMutation = useMutation({
     mutationFn: (data: { name: string; description?: string; organization_type?: string }) =>

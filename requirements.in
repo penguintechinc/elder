@@ -4,7 +4,8 @@
 # Core ASGI Framework
 quart==0.20.0
 quart-cors==0.8.0
-Werkzeug==3.1.6
+quart-schema==0.25.0  # @validate_response / @validate_request + OpenAPI (security-audit fix: response DTOs)
+Werkzeug>=3.1.9  # CVE-2026-102598
 
 # gRPC - pinned to 5.x protobuf: google-cloud-iam and google-cloud-resource-manager
 # require protobuf<6.0.0, blocking upgrade to grpcio 1.70+ which needs protobuf>=6.31.1.
@@ -14,7 +15,8 @@ grpcio==1.69.0
 grpcio-tools==1.69.0
 grpcio-reflection==1.69.0
 protobuf==5.29.6
-setuptools==82.0.1
+# GHSA-h35f-9h28-mq5c: MANIFEST.in exclusion bypass via NFC/NFD Unicode collision
+setuptools==83.0.0
 
 # Database & ORM
 SQLAlchemy==2.0.36
@@ -41,9 +43,15 @@ Authlib==1.7.1
 # Flask-OAuthlib removed due to conflict with kubernetes (Authlib is the modern replacement)
 
 # Security & Cryptography
-PyJWT==2.12.0
+# PyJWT 2.13.0: fixes GHSA-993g/fhv5/jq35/w7vc/xgmm (PyJWKClient SSRF, algorithm
+# allow-list bypass, unbounded base64 DoS, HMAC/public-key confusion)
+# PyJWT 2.15.0: fixes CVE-2026-102268 (CRITICAL) and additional HIGH advisories
+PyJWT==2.15.0
 bcrypt==4.2.1
-cryptography==46.0.7
+# cryptography 50.0.0: fixes GHSA-537c (vulnerable vendored OpenSSL), GHSA-g6cj
+# (PKCS#7 Bleichenbacher oracle), GHSA-jwv3/m2h6 (cert path-building / wildcard
+# DNS name verifier escapes)
+cryptography==50.0.0
 # python-jose removed: not used in codebase, brought in vulnerable ecdsa (CVE-2024-23342)
 # Use PyJWT (above) for all JWT operations
 pyotp==2.9.0
@@ -51,20 +59,39 @@ pyotp==2.9.0
 # HTTP & API Clients
 requests==2.33.0
 httpx==0.28.1
-aiohttp==3.13.4
+# aiohttp 3.14.3: fixes 14 GHSA advisories (cookie/TLS/CRLF/smuggling/DoS class)
+aiohttp==3.14.3
 idna>=3.15
 urllib3>=2.7.0
+# Transitive floors — no direct .in entry otherwise, pinned here to clear advisories
+anyio>=4.14.2          # via httpx/watchfiles — GHSA-5p39, GHSA-82r6
+h2>=4.4.1               # via hypercorn — GHSA-6hr6 request smuggling
+httplib2>=0.32.0        # via google-api-python-client — GHSA-j5g9 decompression bomb
+joserfc>=1.6.8          # via authlib — GHSA-gg9x, GHSA-wphv
+msgpack>=1.2.1          # via cachecontrol — GHSA-6v7p OOB read
+pyasn1>=0.6.4           # via pyasn1-modules/python-ldap/rsa — GHSA-8ppf/hm4w/m4p7
+pygments>=2.20.0        # via rich — GHSA-5239 ReDoS
 
 # Configuration Management
 python-decouple==3.8
-click==8.1.8
+# click 8.3.3: fixes CVE-2026-7246 / GHSA-47fr
+click==8.3.3
 python-dotenv==1.2.2
-mako==1.3.12
-mistune==3.2.1
+mako>=1.4.2  # CVE-2026-102991
+# mistune 3.3.3: fixes 10 GHSA advisories (XSS, path traversal, ReDoS class) plus
+# GHSA-6m44 (RecursionError DoS via excessive emphasis markers, disclosed after 3.3.0)
+mistune==3.3.3
 
-# Monitoring & Metrics
-prometheus-client==0.21.1
-prometheus-flask-exporter==0.23.1
+# OpenTelemetry (Phase 0.5) — OTLP HTTP export to SigNoz, ungated/free
+# Pinned to 1.43.0/0.64b0 for protobuf 5.29.6 compatibility (drop grpc exporter, use http only)
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-otlp-proto-http==1.43.0
+opentelemetry-instrumentation==0.64b0
+opentelemetry-instrumentation-asgi==0.64b0
+opentelemetry-instrumentation-httpx==0.64b0
+opentelemetry-instrumentation-psycopg2==0.64b0
+opentelemetry-instrumentation-redis==0.64b0
 
 # Structured Logging
 structlog==25.4.0
@@ -77,7 +104,8 @@ validators==0.34.0
 croniter>=2.0.0
 packaging==24.2
 pydantic>=2.5.0
-pydantic-settings>=2.1.0
+# GHSA-4xgf: NestedSecretsSettingsSource symlink escape from secrets_dir
+pydantic-settings>=2.14.2
 
 # ASGI Server
 uvicorn[standard]==0.25.0
@@ -95,37 +123,36 @@ networkx==3.4.2
 Faker==33.3.1
 
 # Development Dependencies
-pytest==8.3.4
-pytest-asyncio==0.25.0
+# pytest 9.0.3: fixes GHSA-6w46 vulnerable tmpdir handling (predictable/world-writable tmp)
+pytest==9.0.3
+# pytest-asyncio 0.25.0 caps pytest<9 — bumped for pytest 9.x compat (required transitive bump)
+pytest-asyncio==1.4.0
 pytest-cov==6.0.0
 pytest-mock==3.14.0
 
-# Code Quality
-black==26.3.1
-isort==5.13.2
-flake8==7.1.1
-mypy==1.14.0
-pylint==3.3.3
+# Code Quality / type checking → requirements-dev.in
 
 # Security Scanning
 bandit==1.8.3
 pip-audit==2.10.0
 
-# Type Stubs
-types-requests==2.32.0.20241016
-types-redis==4.6.0.20241004
-types-pytz==2024.2.0.20241003
+# Type Stubs → requirements-dev.in
 
 # LDAP Integration
 python-ldap==3.4.5
 
 # PenguinTech Shared Libraries (penguin-libs)
+penguin-aaa==0.1.0
 penguin-libs~=0.1.0
 penguin-licensing~=0.1.0
 penguin-utils~=0.1.0
+penguin-limiter==0.1.0
 
 # License Server Integration
 # Using requests/httpx for HTTP client (already included above)
+
+# PostHog Feature Flags & Analytics (Phase 2)
+posthog==7.22.0
 
 # Cloud Providers - Secrets Management (Phase 2)
 boto3==1.35.90
@@ -148,6 +175,17 @@ google-api-python-client==2.161.0
 google-auth==2.37.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
+oauthlib>=4.0.0  # CVE-2026-49264 / CVE-2026-49265, transitive via google-auth-oauthlib/requests-oauthlib
 
 # Cloud Logging (optional)
 # google-cloud-logging==3.11.4
+
+# HTML Sanitization (Phase 3b — Documents/Pages WYSIWYG bodies)
+# bleach 6.4.0: fixes GHSA-8rfp/gj48 URI-scheme sanitization bypass (Unicode/formaction)
+bleach==6.4.0
+
+# Markdown rendering (Phase 3b — Documents module body → HTML)
+# markdown-it-py was previously satisfied transitively; documents imports it
+# directly, and gfm-like enables linkify which requires linkify-it-py.
+markdown-it-py==4.0.0
+linkify-it-py==2.0.3

@@ -10,7 +10,6 @@ Extracts dependency information and returns standardized component data.
 
 # flake8: noqa: E501
 
-
 import re
 from typing import Any, Dict, List, Optional
 from xml.etree.ElementTree import Element  # For type hints only
@@ -63,7 +62,7 @@ class JavaDependencyParser(BaseDependencyParser):
         """
         return filename in self.SUPPORTED_FILES
 
-    def get_supported_files(self) -> List[str]:
+    def get_supported_files(self) -> list[str]:
         """Return list of supported dependency filenames.
 
         Returns:
@@ -71,7 +70,7 @@ class JavaDependencyParser(BaseDependencyParser):
         """
         return self.SUPPORTED_FILES.copy()
 
-    def parse(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def parse(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Java dependency file and extract components.
 
         Routes to appropriate parser based on filename:
@@ -108,7 +107,7 @@ class JavaDependencyParser(BaseDependencyParser):
         else:
             raise ValueError(f"Unsupported file format: {filename}")
 
-    def _parse_maven(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_maven(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Maven pom.xml file.
 
         Extracts dependencies from <dependencies><dependency> blocks,
@@ -124,7 +123,7 @@ class JavaDependencyParser(BaseDependencyParser):
         Raises:
             ValueError: If XML is invalid or malformed.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         try:
             root = ET.fromstring(content)
@@ -180,7 +179,7 @@ class JavaDependencyParser(BaseDependencyParser):
 
         return dependencies
 
-    def _parse_gradle(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_gradle(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Gradle build.gradle file (Groovy DSL).
 
         Uses regex to extract dependencies from build.gradle format:
@@ -196,7 +195,7 @@ class JavaDependencyParser(BaseDependencyParser):
         Returns:
             List of parsed dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         # Regex patterns for Gradle dependencies
         # Matches: configuration 'group:artifact:version'
@@ -239,7 +238,7 @@ class JavaDependencyParser(BaseDependencyParser):
 
         return dependencies
 
-    def _parse_gradle_kts(self, content: str, filename: str) -> List[Dict[str, Any]]:
+    def _parse_gradle_kts(self, content: str, filename: str) -> list[dict[str, Any]]:
         """Parse Gradle build.gradle.kts file (Kotlin DSL).
 
         Uses regex to extract dependencies from Kotlin DSL format:
@@ -255,7 +254,7 @@ class JavaDependencyParser(BaseDependencyParser):
         Returns:
             List of parsed dependency dictionaries.
         """
-        dependencies: List[Dict[str, Any]] = []
+        dependencies: list[dict[str, Any]] = []
 
         # Regex patterns for Gradle Kotlin DSL dependencies
         # Matches: configuration("group:artifact:version") or configuration('group:artifact:version')
@@ -296,8 +295,8 @@ class JavaDependencyParser(BaseDependencyParser):
         self,
         element: Element,
         tag_name: str,
-        namespaces: Dict[str, str],
-    ) -> Optional[str]:
+        namespaces: dict[str, str],
+    ) -> str | None:
         """Extract text content from XML element.
 
         Handles both namespaced and non-namespaced XML elements.
@@ -324,8 +323,8 @@ class JavaDependencyParser(BaseDependencyParser):
         return None
 
     def _extract_maven_properties(
-        self, root: Element, namespaces: Dict[str, str]
-    ) -> Dict[str, str]:
+        self, root: Element, namespaces: dict[str, str]
+    ) -> dict[str, str]:
         """Extract Maven properties for variable substitution.
 
         Parses <properties> section of pom.xml to extract property definitions
@@ -338,7 +337,7 @@ class JavaDependencyParser(BaseDependencyParser):
         Returns:
             Dictionary mapping property names to their values.
         """
-        properties: Dict[str, str] = {}
+        properties: dict[str, str] = {}
 
         # Find properties element
         props_elem = root.find(f"{{{self.MAVEN_NAMESPACE}}}properties")
@@ -360,7 +359,7 @@ class JavaDependencyParser(BaseDependencyParser):
 
         return properties
 
-    def _resolve_maven_property(self, value: str, properties: Dict[str, str]) -> str:
+    def _resolve_maven_property(self, value: str, properties: dict[str, str]) -> str:
         """Resolve Maven property references in values.
 
         Replaces ${property.name} references with actual values from properties dict.

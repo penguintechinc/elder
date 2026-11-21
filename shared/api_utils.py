@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import math
 from typing import Any, Dict, List, Tuple
 
@@ -13,7 +12,7 @@ from sqlalchemy.orm import Query
 
 def paginate(
     query: Query, page: int = 1, per_page: int = 50
-) -> Tuple[List, Dict[str, Any]]:
+) -> tuple[list, dict[str, Any]]:
     """
     Paginate a SQLAlchemy query.
 
@@ -48,7 +47,7 @@ def paginate(
     return items, pagination
 
 
-def get_pagination_params() -> Dict[str, int]:
+def get_pagination_params() -> dict[str, int]:
     """
     Extract pagination parameters from request args.
 
@@ -65,7 +64,7 @@ def get_pagination_params() -> Dict[str, int]:
     return {"page": page, "per_page": per_page}
 
 
-def validate_request(schema_class: Any, data: Dict = None) -> Dict[str, Any]:
+def validate_request(schema_class: Any, data: dict = None) -> dict[str, Any]:
     """
     Validate request data with marshmallow schema.
 
@@ -88,7 +87,7 @@ def validate_request(schema_class: Any, data: Dict = None) -> Dict[str, Any]:
 
 def make_error_response(
     message: str, status_code: int = 400, **kwargs
-) -> Tuple[Dict, int]:
+) -> tuple[dict, int]:
     """
     Create a standardized error response.
 
@@ -111,7 +110,7 @@ def make_error_response(
 
 def make_success_response(
     data: Any = None, message: str = None, status_code: int = 200
-) -> Tuple[Dict, int]:
+) -> tuple[dict, int]:
     """
     Create a standardized success response.
 
@@ -137,7 +136,7 @@ def make_success_response(
     return response, status_code
 
 
-def apply_filters(query: Query, model: Any, filters: Dict[str, Any]) -> Query:
+def apply_filters(query: Query, model: Any, filters: dict[str, Any]) -> Query:
     """
     Apply filters to a SQLAlchemy query.
 
@@ -192,7 +191,7 @@ def get_or_404(model: Any, id: int, error_message: str = None):
     return instance
 
 
-def handle_validation_error(error: ValidationError) -> Tuple[Dict, int]:
+def handle_validation_error(error: ValidationError) -> tuple[dict, int]:
     """
     Convert marshmallow ValidationError to API error response.
 

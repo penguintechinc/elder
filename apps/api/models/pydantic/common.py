@@ -7,7 +7,6 @@ with proper validation, immutability for responses, and generic type support.
 
 # flake8: noqa: E501
 
-
 from typing import Generic, Literal, Optional, TypeVar
 
 from penguin_libs.pydantic.base import ImmutableModel, RequestModel
@@ -38,14 +37,14 @@ class PaginationParams(RequestModel):
     per_page: int = Field(
         default=20, ge=1, le=100, description="Items per page (1-100)"
     )
-    sort_by: Optional[str] = Field(None, max_length=255, description="Field to sort by")
+    sort_by: str | None = Field(None, max_length=255, description="Field to sort by")
     sort_order: SortOrder = Field(
         default="asc", description="Sort order: 'asc' or 'desc'"
     )
 
     @field_validator("sort_by")
     @classmethod
-    def sort_by_not_empty(cls, v: Optional[str]) -> Optional[str]:
+    def sort_by_not_empty(cls, v: str | None) -> str | None:
         """Ensure sort_by is not just whitespace if provided."""
         if v is not None and v.strip() == "":
             raise ValueError("sort_by cannot be empty or whitespace-only")
@@ -130,13 +129,13 @@ class BulkOperationResult(ImmutableModel):
 
     succeeded: int = Field(ge=0, description="Number of successfully processed items")
     failed: int = Field(ge=0, description="Number of failed items")
-    errors: Optional[list[dict]] = Field(
+    errors: list[dict] | None = Field(
         None, description="List of error details (one per failed item)"
     )
 
     @field_validator("errors")
     @classmethod
-    def errors_matches_failed_count(cls, v: Optional[list], info) -> Optional[list]:
+    def errors_matches_failed_count(cls, v: list | None, info) -> list | None:
         """Ensure errors list length matches failed count."""
         failed = info.data.get("failed", 0)
 
@@ -175,7 +174,7 @@ class ErrorResponse(ImmutableModel):
 
     error: str = Field(max_length=255, description="Error code or type")
     message: str = Field(max_length=1000, description="Human-readable error message")
-    details: Optional[dict] = Field(
+    details: dict | None = Field(
         None, description="Optional additional error context or structured details"
     )
 

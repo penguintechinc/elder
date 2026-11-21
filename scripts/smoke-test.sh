@@ -5,7 +5,7 @@
 # Usage: ./scripts/smoke-test.sh [OPTIONS]
 #
 # Modes:
-#   --alpha          Alpha testing: MicroK8s local cluster via Kustomize (default)
+#   --alpha          Alpha testing: MicroK8s local cluster via Helm (default)
 #   --beta           Beta testing: K8s deployment at elder.penguintech.cloud
 #
 # Options:
@@ -19,7 +19,7 @@
 #   ./scripts/smoke-test.sh --beta             # Run beta tests against K8s
 #   ./scripts/smoke-test.sh --alpha --skip-build  # Alpha without rebuild
 
-set -e
+set -euo pipefail
 
 # macOS compatibility: GNU timeout is 'gtimeout' via coreutils; fall back to plain exec
 _timeout() {
@@ -42,7 +42,7 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
-# Default mode: alpha (local MicroK8s/Kustomize)
+# Default mode: alpha (local MicroK8s/Helm)
 TEST_MODE="alpha"
 SKIP_BUILD=false
 VERBOSE=false
@@ -97,18 +97,16 @@ elif [ "$TEST_MODE" = "docker-desktop" ]; then
     ADMIN_USERNAME="${ADMIN_USERNAME:-admin@localhost.local}"
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
     K8S_CONTEXT="docker-desktop"
-    KUSTOMIZE_OVERLAY="docker-desktop"
-    MODE_LABEL="ALPHA (Docker Desktop Kubernetes + Kustomize)"
+    MODE_LABEL="ALPHA (Docker Desktop Kubernetes + Helm)"
 else
-    # Alpha mode: local MicroK8s/Kustomize
+    # Alpha mode: local MicroK8s/Helm
     API_URL="${API_URL:-http://localhost:4000}"
     WEB_URL="${WEB_URL:-http://localhost:3005}"
     HOST_HEADER=""
     ADMIN_USERNAME="${ADMIN_USERNAME:-admin@localhost.local}"
     ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
     K8S_CONTEXT="${K8S_CONTEXT:-local-alpha}"
-    KUSTOMIZE_OVERLAY="${KUSTOMIZE_OVERLAY:-alpha}"
-    MODE_LABEL="ALPHA (Local MicroK8s + Kustomize)"
+    MODE_LABEL="ALPHA (Local MicroK8s + Helm)"
 fi
 
 # Set platform arg: beta/prod need amd64, alpha/docker-desktop use native
@@ -187,7 +185,7 @@ log_info "Web URL: $WEB_URL"
 log_info ""
 
 # ============================================================
-# ALPHA MODE: Local MicroK8s + Kustomize Tests
+# ALPHA MODE: Local MicroK8s + Helm Tests
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
     # Set up trap to kill port-forwards on exit
@@ -209,7 +207,7 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
 
         # Helper: push or load image depending on mode
         _push_or_load() {
-            local bare_tag="$1"        # e.g. elder-api:alpha-latest
+            local bare_tag="$1"        # e.g. elder/hub-api:alpha-latest
             local registry_tag="localhost:32000/${bare_tag}"
             if [ "$TEST_MODE" = "docker-desktop" ]; then
                 # kind load docker-image marks images as CRI-managed (kubelet-visible)
@@ -222,51 +220,51 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
         }
 
         # Build and push/load each service
-        for svc in api web scanner worker; do
+        for svc in hub-api hub-webui svc-scanner svc-integrations svc-worker; do
             log_info "Building ${svc}..."
             case "$svc" in
-                api)
-                    if docker build -t elder-api:alpha-latest \
+                hub-api)
+                    if docker build -t elder/hub-api:alpha-latest \
                         --build-arg APP_VERSION="${APP_VERSION:-}" \
                         $PLATFORM_ARG \
                         -f apps/api/Dockerfile --no-cache .; then
-                        _push_or_load "elder-api:alpha-latest" || { record_fail "Failed to deploy api image"; exit 1; }
+                        _push_or_load "elder/hub-api:alpha-latest" || { record_fail "Failed to deploy hub-api image"; exit 1; }
                     else
-                        record_fail "Failed to build api image"
+                        record_fail "Failed to build hub-api image"
                         exit 1
                     fi
                     ;;
-                web)
-                    if docker build -t elder-web:alpha-latest \
+                hub-webui)
+                    if docker build -t elder/hub-webui:alpha-latest \
                         --build-arg VITE_VERSION="${APP_VERSION:-}" \
                         --build-arg VITE_BUILD_TIME="$(date +%s)" \
+                        --build-arg VITE_API_URL="http://localhost:30081" \
                         $PLATFORM_ARG \
                         -f web/Dockerfile --no-cache .; then
-                        _push_or_load "elder-web:alpha-latest" || { record_fail "Failed to deploy web image"; exit 1; }
+                        _push_or_load "elder/hub-webui:alpha-latest" || { record_fail "Failed to deploy hub-webui image"; exit 1; }
                     else
-                        record_fail "Failed to build web image"
+                        record_fail "Failed to build hub-webui image"
                         exit 1
                     fi
                     ;;
-                scanner)
-                    if docker build -t elder-scanner:alpha-latest \
-                        --build-arg APP_VERSION="${APP_VERSION:-}" \
+                svc-scanner|svc-integrations)
+                    if docker build -t "elder/${svc}:alpha-latest" \
                         $PLATFORM_ARG \
-                        -f apps/scanner/Dockerfile --no-cache apps/scanner; then
-                        _push_or_load "elder-scanner:alpha-latest" || { record_fail "Failed to deploy scanner image"; exit 1; }
+                        -f "services/${svc}/Dockerfile" --no-cache .; then
+                        _push_or_load "elder/${svc}:alpha-latest" || { record_fail "Failed to deploy ${svc} image"; exit 1; }
                     else
-                        record_fail "Failed to build scanner image"
+                        record_fail "Failed to build ${svc} image"
                         exit 1
                     fi
                     ;;
-                worker)
-                    if docker build -t elder-worker:alpha-latest \
+                svc-worker)
+                    if docker build -t elder/svc-worker:alpha-latest \
                         --build-arg APP_VERSION="${APP_VERSION:-}" \
                         $PLATFORM_ARG \
                         -f apps/worker/Dockerfile --no-cache .; then
-                        _push_or_load "elder-worker:alpha-latest" || { record_fail "Failed to deploy worker image"; exit 1; }
+                        _push_or_load "elder/svc-worker:alpha-latest" || { record_fail "Failed to deploy svc-worker image"; exit 1; }
                     else
-                        record_fail "Failed to build worker image"
+                        record_fail "Failed to build svc-worker image"
                         exit 1
                     fi
                     ;;
@@ -277,19 +275,23 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
         log_info "Step 1: Skipping build (--skip-build flag set)"
     fi
 
-    # Step 2: Delete old deployment and redeploy fresh
+    # Step 2: Uninstall old release and redeploy fresh via Helm
     log_info ""
-    log_info "Step 2: Redeploying Kustomize overlay..."
-    if kubectl delete --context $K8S_CONTEXT -k k8s/kustomize/overlays/$KUSTOMIZE_OVERLAY --ignore-not-found 2>/dev/null; then
-        log_verbose "Deleted old K8s resources"
+    log_info "Step 2: Redeploying Helm release..."
+    if helm --kube-context $K8S_CONTEXT uninstall elder -n elder --wait 2>/dev/null; then
+        log_verbose "Uninstalled old Helm release"
         # Wait for old pods to terminate
         sleep 5
     fi
 
-    if kubectl apply --context $K8S_CONTEXT -k k8s/kustomize/overlays/$KUSTOMIZE_OVERLAY; then
-        record_pass "Kustomize overlay deployed"
+    if helm --kube-context $K8S_CONTEXT upgrade --install elder k8s/helm/elder \
+        --namespace elder \
+        --create-namespace \
+        --values k8s/helm/elder/alpha.yml \
+        --wait --timeout 300s; then
+        record_pass "Helm release deployed"
     else
-        record_fail "Failed to deploy Kustomize overlay"
+        record_fail "Failed to deploy Helm release"
         exit 1
     fi
 
@@ -298,7 +300,7 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
     log_info "Step 3: Waiting for K8s deployments to be ready..."
 
     # Wait for critical deployments
-    CRITICAL_DEPS="api postgres redis worker web"
+    CRITICAL_DEPS="hub-api elder-postgres elder-redis svc-worker hub-webui"
     ALL_READY=true
     for dep in $CRITICAL_DEPS; do
         if ! kubectl --context $K8S_CONTEXT rollout status deployment/$dep -n elder --timeout=180s > /dev/null 2>&1; then
@@ -320,24 +322,24 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
     log_info ""
     log_info "Setting up port-forwards..."
 
-    kubectl --context $K8S_CONTEXT port-forward -n elder svc/api 4000:5000 > /dev/null 2>&1 &
+    kubectl --context $K8S_CONTEXT port-forward -n elder svc/hub-api 4000:5000 > /dev/null 2>&1 &
     PF_PIDS="$! "
     log_verbose "Port-forward api: pid $!"
 
     # Start web port-forward with keepalive — restarts automatically if K8s drops it
     (while true; do
-        kubectl --context $K8S_CONTEXT port-forward -n elder svc/web 3005:3000 > /dev/null 2>&1 || true
+        kubectl --context $K8S_CONTEXT port-forward -n elder svc/hub-webui 3005:8080 > /dev/null 2>&1 || true
         sleep 1
     done) &
     WEB_PF_KEEPALIVE_PID=$!
     PF_PIDS="${PF_PIDS}${WEB_PF_KEEPALIVE_PID} "
     log_verbose "Port-forward web keepalive: pid ${WEB_PF_KEEPALIVE_PID}"
 
-    kubectl --context $K8S_CONTEXT port-forward -n elder svc/worker 8000:28000 > /dev/null 2>&1 &
+    kubectl --context $K8S_CONTEXT port-forward -n elder svc/svc-worker 8000:28000 > /dev/null 2>&1 &
     PF_PIDS="${PF_PIDS}$! "
     log_verbose "Port-forward worker: pid $!"
 
-    kubectl --context $K8S_CONTEXT port-forward -n elder svc/api 50052:50051 > /dev/null 2>&1 &
+    kubectl --context $K8S_CONTEXT port-forward -n elder svc/hub-api 50052:50051 > /dev/null 2>&1 &
     PF_PIDS="${PF_PIDS}$!"
     log_verbose "Port-forward gRPC: pid $!"
 
@@ -385,12 +387,12 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
     else
         record_fail "API health check failed"
         log_error "API pod logs:"
-        kubectl --context $K8S_CONTEXT logs -n elder -l app=api --tail=50 2>/dev/null || echo "Could not fetch logs"
+        kubectl --context $K8S_CONTEXT logs -n elder -l app.kubernetes.io/component=api --tail=50 2>/dev/null || echo "Could not fetch logs"
     fi
 
     # Wait for Web UI (optional — skipped if image not loaded)
     log_info "Waiting for Web UI..."
-    WEB_POD_READY=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app=web \
+    WEB_POD_READY=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app.kubernetes.io/component=web \
         --no-headers 2>/dev/null | grep -c "1/1" 2>/dev/null || true)
     WEB_POD_READY=${WEB_POD_READY:-0}
     if [ "$WEB_POD_READY" -gt 0 ]; then
@@ -399,7 +401,7 @@ if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
         else
             record_fail "Web UI health check failed"
             log_error "Web UI pod logs:"
-            kubectl --context $K8S_CONTEXT logs -n elder -l app=web --tail=50 2>/dev/null || echo "Could not fetch logs"
+            kubectl --context $K8S_CONTEXT logs -n elder -l app.kubernetes.io/component=web --tail=50 2>/dev/null || echo "Could not fetch logs"
         fi
     else
         log_warn "Web UI pod not ready — skipping web checks (rebuild web image to enable)"
@@ -618,22 +620,23 @@ fi
 # ALPHA-ONLY TESTS (K8s pod tests)
 # ============================================================
 if [ "$TEST_MODE" = "alpha" ] || [ "$TEST_MODE" = "docker-desktop" ]; then
-    # Step 6: Scanner Pod Test
+    # Step 6: Rust CronJob Checks
     log_info ""
-    log_info "Step 6: Scanner Pod Status..."
+    log_info "Step 6: Rust CronJob Status..."
 
-    SCANNER_STATUS=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app=scanner -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
-    if [ "$SCANNER_STATUS" = "Running" ]; then
-        record_pass "Scanner pod is Running"
-    else
-        log_warn "Scanner pod status: $SCANNER_STATUS (may be expected for dev setup)"
-    fi
+    for cron_svc in svc-scanner svc-integrations; do
+        if kubectl --context "$K8S_CONTEXT" get cronjob "${cron_svc}" -n elder >/dev/null 2>&1; then
+            record_pass "${cron_svc} CronJob exists"
+        else
+            log_warn "${cron_svc} CronJob not found (may be expected for dev setup)"
+        fi
+    done
 
     # Step 7: Worker Pod Test and Health Check
     log_info ""
     log_info "Step 7: Worker Pod Status and Health Check..."
 
-    WORKER_STATUS=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app=worker -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
+    WORKER_STATUS=$(kubectl --context $K8S_CONTEXT get pods -n elder -l app.kubernetes.io/component=svc-worker -o jsonpath='{.items[0].status.phase}' 2>/dev/null)
     if [ "$WORKER_STATUS" = "Running" ]; then
         record_pass "Worker pod is Running"
 

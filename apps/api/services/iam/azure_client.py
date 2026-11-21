@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 import logging
 from typing import Any, Dict, Optional
 
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 class AzureADClient(BaseIAMProvider):
     """Azure AD (Microsoft Entra ID) IAM implementation."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         """
         Initialize Azure AD client.
 
@@ -61,8 +60,8 @@ class AzureADClient(BaseIAMProvider):
     # User Management
 
     def list_users(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all Azure AD users."""
         try:
             request = self.client.users.get()
@@ -90,7 +89,7 @@ class AzureADClient(BaseIAMProvider):
             logger.error(f"Azure AD list users error: {str(e)}")
             raise Exception(f"Azure AD list users error: {str(e)}")
 
-    def get_user(self, user_identifier: str) -> Dict[str, Any]:
+    def get_user(self, user_identifier: str) -> dict[str, Any]:
         """Get Azure AD user details."""
         try:
             user = self.client.users.by_user_id(user_identifier).get()
@@ -104,10 +103,10 @@ class AzureADClient(BaseIAMProvider):
     def create_user(
         self,
         username: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new Azure AD user."""
         try:
             from msgraph.generated.models.password_profile import PasswordProfile
@@ -136,7 +135,7 @@ class AzureADClient(BaseIAMProvider):
             logger.error(f"Azure AD create user error: {str(e)}")
             raise Exception(f"Azure AD create user error: {str(e)}")
 
-    def delete_user(self, user_identifier: str) -> Dict[str, Any]:
+    def delete_user(self, user_identifier: str) -> dict[str, Any]:
         """Delete an Azure AD user."""
         try:
             self.client.users.by_user_id(user_identifier).delete()
@@ -152,10 +151,10 @@ class AzureADClient(BaseIAMProvider):
     def update_user(
         self,
         user_identifier: str,
-        display_name: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        display_name: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update Azure AD user."""
         try:
             from msgraph.generated.models.user import User
@@ -181,8 +180,8 @@ class AzureADClient(BaseIAMProvider):
     # Role Management (Groups in Azure AD)
 
     def list_roles(
-        self, limit: Optional[int] = None, next_token: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, limit: int | None = None, next_token: str | None = None
+    ) -> dict[str, Any]:
         """List all Azure AD groups (roles)."""
         try:
             request = self.client.groups.get()
@@ -210,7 +209,7 @@ class AzureADClient(BaseIAMProvider):
             logger.error(f"Azure AD list roles error: {str(e)}")
             raise Exception(f"Azure AD list roles error: {str(e)}")
 
-    def get_role(self, role_identifier: str) -> Dict[str, Any]:
+    def get_role(self, role_identifier: str) -> dict[str, Any]:
         """Get Azure AD group (role) details."""
         try:
             group = self.client.groups.by_group_id(role_identifier).get()
@@ -224,10 +223,10 @@ class AzureADClient(BaseIAMProvider):
     def create_role(
         self,
         role_name: str,
-        description: Optional[str] = None,
-        tags: Optional[Dict[str, str]] = None,
+        description: str | None = None,
+        tags: dict[str, str] | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a new Azure AD group (role)."""
         try:
             from msgraph.generated.models.group import Group
@@ -249,7 +248,7 @@ class AzureADClient(BaseIAMProvider):
             logger.error(f"Azure AD create role error: {str(e)}")
             raise Exception(f"Azure AD create role error: {str(e)}")
 
-    def delete_role(self, role_identifier: str) -> Dict[str, Any]:
+    def delete_role(self, role_identifier: str) -> dict[str, Any]:
         """Delete an Azure AD group (role)."""
         try:
             self.client.groups.by_group_id(role_identifier).delete()
@@ -266,7 +265,7 @@ class AzureADClient(BaseIAMProvider):
 
     def assign_role_to_user(
         self, user_identifier: str, role_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Add user to Azure AD group (role assignment)."""
         try:
             from msgraph.generated.models.reference_create import ReferenceCreate
@@ -294,7 +293,7 @@ class AzureADClient(BaseIAMProvider):
 
     def remove_role_from_user(
         self, user_identifier: str, role_identifier: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Remove user from Azure AD group."""
         try:
             self.client.groups.by_group_id(
@@ -315,7 +314,7 @@ class AzureADClient(BaseIAMProvider):
             logger.error(f"Azure AD remove role error: {str(e)}")
             raise Exception(f"Azure AD remove role error: {str(e)}")
 
-    def list_user_roles(self, user_identifier: str) -> Dict[str, Any]:
+    def list_user_roles(self, user_identifier: str) -> dict[str, Any]:
         """List groups (roles) for a user."""
         try:
             groups = self.client.users.by_user_id(user_identifier).member_of.get()
@@ -330,7 +329,7 @@ class AzureADClient(BaseIAMProvider):
 
     # Helper methods
 
-    def _normalize_user(self, user: Any) -> Dict[str, Any]:
+    def _normalize_user(self, user: Any) -> dict[str, Any]:
         """Normalize Azure AD user to common format."""
         return {
             "id": user.id,
@@ -344,7 +343,7 @@ class AzureADClient(BaseIAMProvider):
             "provider": "azure_ad",
         }
 
-    def _normalize_role(self, group: Any) -> Dict[str, Any]:
+    def _normalize_role(self, group: Any) -> dict[str, Any]:
         """Normalize Azure AD group to role format."""
         return {
             "id": group.id,

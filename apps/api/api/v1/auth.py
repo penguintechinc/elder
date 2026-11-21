@@ -2,23 +2,30 @@
 
 # flake8: noqa: E501
 
-
 import os
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 
-from quart import Blueprint, current_app, g, jsonify, make_response, request
-
-from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
+import structlog
 from pydantic import ValidationError
+from quart import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import generate_password_hash
 
 from apps.api.auth import generate_token, login_required, verify_password
 from apps.api.auth.jwt_handler import verify_token
+from apps.api.auth.portal_cookies import set_portal_auth_cookies
+from apps.api.auth.web_auth import COOKIE_NAME, clear_session_cookie, set_session_cookie
 from apps.api.models.dataclasses import IdentityDTO, from_pydal_row
 from apps.api.models.schemas import LoginRequest, RegisterRequest
+from apps.api.services.webhooks.user_events import (
+    UserCreatedEvent,
+    schedule_user_created_webhooks,
+)
+from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
+from apps.api.utils.village_id import mint_village_id
 
+logger = structlog.get_logger(__name__)
 bp = Blueprint("auth", __name__)
 
 
@@ -42,9 +49,9 @@ async def register():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate request using Pydantic schema
     try:
@@ -63,6 +70,10 @@ async def register():
                 }
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
+
+    # Capture request context before entering threadpool
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
 
     # Check if username or email already exists and create user
     def create_user():
@@ -85,7 +96,7 @@ async def register():
         default_tenant_id = default_tenant.id if default_tenant else None
 
         # Create new identity
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         identity_id = db.identities.insert(
             username=validated_data.username,
             email=validated_data.email,
@@ -97,13 +108,20 @@ async def register():
             is_superuser=False,
             mfa_enabled=False,
             tenant_id=default_tenant_id,
+            village_id=mint_village_id(default_tenant_id),
+            # NOT NULL columns with no DB-level server default — penguin-dal's
+            # insert() does not apply SQLAlchemy Column(default=...) for
+            # kwargs omitted entirely, so these must be supplied explicitly
+            # (see apps/api/api/v1/identities.py's identical comment).
+            must_change_password=False,
+            portal_role="observer",
             created_at=now,
             updated_at=now,
         )
         db.commit()
 
         # Get created identity
-        identity = db.identities[identity_id]
+        identity = db.identities[identity_id]  # tenant-scope-exempt
 
         # Create audit log
         _create_audit_log_sync(
@@ -112,6 +130,8 @@ async def register():
             action="create",
             resource_type="identity",
             resource_id=identity.id,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return identity, None, None
@@ -120,6 +140,31 @@ async def register():
 
     if error:
         return jsonify({"error": error}), status
+
+    if identity and getattr(identity, "tenant_id", None):
+        try:
+            schedule_user_created_webhooks(
+                db,
+                UserCreatedEvent(
+                    user_id=identity.id,
+                    tenant_id=identity.tenant_id,
+                    user_source="identity",
+                    identity_type=identity.identity_type or "human",
+                    auth_provider="local",
+                    is_superuser=bool(identity.is_superuser),
+                    portal_role=identity.portal_role or "observer",
+                    organization_id=getattr(identity, "organization_id", None),
+                    is_active=bool(identity.is_active),
+                ),
+            )
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive; must never fail register
+            logger.warning(
+                "user_created_webhook_schedule_failed",
+                user_id=identity.id,
+                error=str(exc)[:200],
+            )
 
     return (
         jsonify(
@@ -176,9 +221,9 @@ async def login():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate request using Pydantic schema
     try:
@@ -198,6 +243,10 @@ async def login():
             )
         return jsonify({"error": "Validation failed", "details": errors}), 422
 
+    # Capture request context before entering threadpool
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
+
     # Find user and verify password
     def authenticate():
         identity = (
@@ -216,6 +265,8 @@ async def login():
                 action="login",
                 resource_type="auth",
                 success=False,
+                ip_address=ip_address,
+                user_agent=user_agent,
             )
             return None, "Invalid username or password", 401
 
@@ -224,13 +275,11 @@ async def login():
             return None, "Account is inactive", 401
 
         # Update last login
-        db(db.identities.id == identity.id).update(
-            last_login_at=datetime.now(timezone.utc)
-        )
+        db(db.identities.id == identity.id).update(last_login_at=datetime.now(UTC))
         db.commit()
 
         # Refresh identity data after update
-        identity = db.identities[identity.id]
+        identity = db.identities[identity.id]  # tenant-scope-exempt
 
         # Create successful login audit log
         _create_audit_log_sync(
@@ -239,6 +288,8 @@ async def login():
             action="login",
             resource_type="auth",
             success=True,
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return identity, None, None
@@ -272,6 +323,21 @@ async def login():
     # Also set an HttpOnly cookie so the SSR web UI can authenticate
     secure = not current_app.config.get("DEBUG", False)
     set_session_cookie(response, access_token, secure=secure)
+    # And set the SPA portal-auth HttpOnly/Secure/SameSite + CSRF cookies so
+    # the browser client never has to keep the raw JWTs (gh #285) -- the JSON
+    # body keeps them only for non-browser callers, mirroring portal-auth.
+    set_portal_auth_cookies(
+        response,
+        access_token,
+        refresh_token,
+        access_max_age=int(
+            current_app.config["JWT_ACCESS_TOKEN_EXPIRES"].total_seconds()
+        ),
+        refresh_max_age=int(
+            current_app.config["JWT_REFRESH_TOKEN_EXPIRES"].total_seconds()
+        ),
+        secure=secure,
+    )
     return response
 
 
@@ -285,14 +351,19 @@ async def logout():
         200: Logout successful
     """
     db = current_app.db
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
+    identity_id = g.current_user.id
 
     # Create logout audit log
     await run_in_threadpool(
         lambda: _create_audit_log_sync(
             db=db,
-            identity_id=g.current_user.id,
+            identity_id=identity_id,
             action="logout",
             resource_type="auth",
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
     )
 
@@ -313,10 +384,12 @@ async def get_current_user_info():
     db = current_app.db
 
     # Fetch fresh user data from database
-    identity = await run_in_threadpool(lambda: db.identities[g.current_user.id])
+    identity = await run_in_threadpool(
+        lambda: db.identities[g.current_user.id]  # tenant-scope-exempt
+    )
 
     if not identity:
-        return jsonify({"error": "User not found"}), 404
+        return ApiResponse.error("User not found", 404)
 
     identity_dto = from_pydal_row(identity, IdentityDTO)
     return jsonify(asdict(identity_dto)), 200
@@ -341,23 +414,26 @@ async def change_password():
     """
     db = current_app.db
 
-    data = request.get_json()
+    data = await request.get_json()
     if not data:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return ApiResponse.bad_request("Request body must be JSON")
 
     # Validate required fields
     if not data.get("current_password"):
-        return jsonify({"error": "current_password is required"}), 400
+        return ApiResponse.bad_request("current_password is required")
     if not data.get("new_password"):
-        return jsonify({"error": "new_password is required"}), 400
+        return ApiResponse.bad_request("new_password is required")
 
     # Validate new password length
     if len(data["new_password"]) < 8:
-        return jsonify({"error": "new_password must be at least 8 characters"}), 400
+        return ApiResponse.bad_request("new_password must be at least 8 characters")
+
+    ip_address = request.remote_addr
+    user_agent = request.headers.get("User-Agent", "")[:512]
 
     # Verify current password and update
     def update_password():
-        identity = db.identities[g.current_user.id]
+        identity = db.identities[g.current_user.id]  # tenant-scope-exempt
 
         if not identity:
             return None, "User not found", 404
@@ -380,6 +456,8 @@ async def change_password():
             resource_type="identity",
             resource_id=identity.id,
             changes={"action": "password_change"},
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
 
         return True, None, None
@@ -408,23 +486,26 @@ async def refresh_token_endpoint():
     """
     db = current_app.db
 
-    data = request.get_json() or {}
+    data = await request.get_json() or {}
     refresh_token_str = data.get("refresh_token")
 
     if not refresh_token_str:
-        return jsonify({"error": "Refresh token required"}), 400
+        return ApiResponse.bad_request("Refresh token required")
 
     # Verify refresh token
     payload = verify_token(refresh_token_str)
 
     if not payload or payload.get("type") != "refresh":
-        return jsonify({"error": "Invalid refresh token"}), 401
+        return ApiResponse.unauthorized("Invalid refresh token")
 
-    # Get identity
-    identity = await run_in_threadpool(lambda: db.identities[payload["sub"]])
+    # Get identity: self-lookup via the verified refresh token's own sub
+    # claim, never a client param
+    identity = await run_in_threadpool(
+        lambda: db.identities[payload["sub"]]  # tenant-scope-exempt
+    )
 
     if not identity or not identity.is_active:
-        return jsonify({"error": "User not found or inactive"}), 401
+        return ApiResponse.unauthorized("User not found or inactive")
 
     # Generate new access token
     access_token = generate_token(identity, "access")
@@ -445,23 +526,25 @@ def captcha_challenge():
     """Generate ALTCHA proof-of-work challenge."""
     import hashlib
     import hmac
-    import time
+    import secrets
 
-    salt = os.urandom(16).hex()
-    timestamp = str(int(time.time()))
+    maxnumber = 10000
+    salt = secrets.token_hex(12)
+    number = secrets.randbelow(maxnumber + 1)
     secret = os.environ.get("CAPTCHA_SECRET", "elder-captcha-default")
-    challenge = hashlib.sha256(f"{salt}{timestamp}{secret}".encode()).hexdigest()
+    challenge = hashlib.sha256(f"{salt}{number}".encode()).hexdigest()
 
-    # Generate signature for ALTCHA verification
-    signature_data = f"{challenge}{salt}{timestamp}".encode()
-    signature = hmac.new(secret.encode(), signature_data, hashlib.sha256).hexdigest()
+    # ALTCHA verifies HMAC-SHA256(secret, challenge)
+    signature = hmac.new(
+        secret.encode(), challenge.encode(), hashlib.sha256
+    ).hexdigest()
 
     return jsonify(
         {
             "algorithm": "SHA-256",
             "challenge": challenge,
+            "maxnumber": maxnumber,
             "salt": salt,
-            "difficulty": 10000,
             "signature": signature,
         }
     )
@@ -475,31 +558,24 @@ def _create_audit_log_sync(
     resource_id: int = None,
     success: bool = True,
     changes: dict = None,
+    ip_address: str = None,
+    user_agent: str = None,
 ):
     """
     Helper to create audit log entries (synchronous, call from threadpool).
 
-    Args:
-        db: PyDAL database instance
-        identity_id: ID of identity performing action
-        action: Audit action type (create, update, delete, login, logout, etc.)
-        resource_type: Type of resource (identity, auth, entity, etc.)
-        resource_id: ID of affected resource
-        success: Whether action succeeded
-        changes: Dict of changes made
+    ip_address and user_agent must be passed in from the async context
+    (request context is not available inside a threadpool).
     """
-    ip_address = request.remote_addr
-    user_agent = request.headers.get("User-Agent", "")[:512]
-
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db.audit_logs.insert(
         identity_id=identity_id,
         action_name=action,
         resource_type=resource_type,
         resource_id=resource_id,
         details=changes,  # PyDAL uses 'details' not 'changes'
-        ip_address=ip_address,
-        user_agent=user_agent,
+        ip_address=ip_address or "",
+        user_agent=(user_agent or "")[:512],
         success=success,
         created_at=now,
     )

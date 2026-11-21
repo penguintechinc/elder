@@ -9,12 +9,55 @@ global:
   imageRegistry: ""
   imagePullSecrets: []
 
+# Module toggles (Phase 0 — Layer 1 deployment-level gate; see docs/design/2026-07-07-elder-platform-merge-design.md)
+# Rendered into the elder-modules ConfigMap as ELDER_MODULE_<UPPER_SNAKE> env vars,
+# consumed via envFrom by the api and worker Deployments.
+modules:
+  # Elder-native modules — default enabled
+  infrastructure: true
+  ipam: true
+  sbom: true
+  servicesOncall: true
+  issues: true
+  discovery: true
+  secrets: true
+  webhooksAlerting: true
+  accessReviews: true
+  # Absorbed modules (Ruffled/IceCharts) — default disabled until ported (Phase 3+)
+  helpdesk: false
+  diagrams: false
+  streams: false     # workflow engine (was: playbooks)
+  flows: false        # CI/CD pipelines (was: cicdFlows)
+  runs: false          # serverless functions (was: functions)
+  documents: false     # knowledge base/documents
+  pages: false          # WYSIWYG pages
+  aiSearch: false
+  compliance: false
+
+# OpenTelemetry (Phase 0.5) — ungated/Free observability; all services export to SigNoz via OTLP.
+# Rendered into the elder-otel ConfigMap (OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL), consumed via
+# envFrom by the hub-api, svc-worker, svc-scanner, and svc-integrations workloads. OTEL_SERVICE_NAME is
+# set per-component (hub-api/svc-worker in Deployment, svc-scanner/svc-integrations in CronJob).
+otel:
+  enabled: true
+  endpoint: "http://signoz-otel-collector:4318"
+  protocol: "http/protobuf"
+
+# PostHog feature flags / product analytics (Phase 2 — external shared instance, NOT a subchart)
+# Uncomment and configure when Layer 4 toggles are implemented.
+# posthog:
+#   enabled: false
+#   host: "https://posthog.penguintech.cloud"
+#   apiKey: ""
+#   personalApiKey: ""
+
 # PostgreSQL Database
 postgres:
   enabled: true
   image:
-    repository: postgres
-    tag: 17-bookworm@sha256:cf50a40bb0320a49a95725335bb1683cb627f9c70350100ca57c41f863d684f4
+    # pgvector required: Elder supports ONLY Postgres+pgvector (no MySQL/MariaDB/SQLite) — see design doc "AI/Search module"
+    repository: pgvector/pgvector
+    tag: pg17-bookworm@sha256:dd467f03ca5c5581222490e5217e48a262864ccb659be559f8491bbafdc97da0
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
@@ -25,6 +68,13 @@ postgres:
     POSTGRES_USER: elder
     POSTGRES_PASSWORD: elder_dev_password
     POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+    # Required when /var/lib/postgresql/data is a PVC mount: initdb chmods
+    # PGDATA to 0700, which fails with "Operation not permitted" if the mount
+    # root is owned by a different UID (e.g. root:root from local-path or
+    # most CSI provisioners) and the container runs non-root with
+    # capabilities dropped. Pointing PGDATA at a subdirectory lets postgres
+    # create + own that subdir itself instead of chmod'ing the mount root.
+    PGDATA: /var/lib/postgresql/data/pgdata
   resources:
     requests:
       memory: "256Mi"
@@ -46,6 +96,10 @@ postgres:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
 
 # Redis Cache
 redis:
@@ -81,19 +135,28 @@ redis:
     runAsNonRoot: true
     runAsUser: 999
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
 
 # Elder Web UI
-web:
+hub-webui:
   enabled: true
   image:
-    repository: elder-web
+    repository: elder/hub-webui
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
+  # Container is nginx-unprivileged (web/Dockerfile), which listens on 8080,
+  # not 3000 — port/targetPort must match or the Service silently sends
+  # traffic nowhere. See web/nginx.conf `listen 8080` and alpha.yml, which
+  # already had this right; values.yaml/values-beta.yaml did not (release
+  # audit finding).
   service:
     type: ClusterIP
-    port: 3000
-    targetPort: 3000
+    port: 8080
+    targetPort: 8080
   buildArgs:
     VITE_API_URL: "http://localhost:4000"
   resources:
@@ -105,22 +168,49 @@ web:
       cpu: "500m"
   healthcheck:
     enabled: true
-    path: /
-    initialDelaySeconds: 5
+    # readiness path: proxied through nginx to hub-api's /healthz (see
+    # web/nginx.conf `location /healthz`), so readiness correctly reflects
+    # the API dependency's availability and pulls this pod out of the
+    # Service when the API is down.
+    path: /healthz
+    initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness path: the SPA's own static root — self-contained, no
+    # upstream proxy_pass, so a transient API outage never triggers a
+    # container restart. Lighter self-check per release audit finding #6.
+    livenessPath: /
+    liveness:
+      initialDelaySeconds: 10
+      periodSeconds: 20
+      timeoutSeconds: 5
+      failureThreshold: 5
   autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
 
 # Elder Flask API
-api:
+hub-api:
   enabled: true
+  podLabels:
+    # Opt-in label required by waddleai/ollama's CiliumNetworkPolicy (ollama-server-allow)
+    waddles.penguintech.io/ollama-client: "true"
   image:
-    repository: elder-api
+    repository: elder/hub-api
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 2
@@ -149,7 +239,7 @@ api:
 
     # Database
     DB_TYPE: postgres
-    DB_HOST: postgres
+    DB_HOST: elder-postgres
     DB_PORT: "5432"
     DB_NAME: elder
     DB_USER: elder
@@ -157,7 +247,7 @@ api:
     DB_POOL_SIZE: "20"
 
     # Redis
-    REDIS_URL: "redis://:elder_redis_password@redis:6379/0"
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
 
     # gRPC
     GRPC_ENABLED: "true"
@@ -190,8 +280,21 @@ api:
     LOG_LEVEL: INFO
     SYSLOG_ENABLED: "false"
 
+    # Rate Limiting (set RATELIMIT_ENABLED: "false" when rate limiting is handled at the edge, e.g. Envoy/Cloudflare)
+    RATELIMIT_ENABLED: "true"
+    RATELIMIT_DEFAULT: "100/minute"
+    RATELIMIT_PLATFORM_DEFAULT: "2000/minute"
+    RATELIMIT_ENDPOINT_OVERRIDES: "{}"
+
     # Metrics
     METRICS_ENABLED: "true"
+    # AI Researcher (Ollama + hub-mcp as MCP client, caller's own token forwarded).
+    # hub-mcp runs in-process by default; set MCP_SERVER_URL to use a remote hub-mcp (#388).
+    OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
+    AI_RESEARCHER_MODEL: "gemma4:e4b"
+    AI_RESEARCHER_MAX_STEPS: "6"
+    ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
+    MCP_SERVER_URL: "http://hub-mcp:8080"
   resources:
     requests:
       memory: "512Mi"
@@ -201,42 +304,31 @@ api:
       cpu: "2000m"
   healthcheck:
     enabled: true
+    # readiness: /healthz — same endpoint used for liveness today (single
+    # endpoint app exposes, apps/api/main.py); kept as the readiness check
+    # since it's what gates Service traffic.
     path: /healthz
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness: same endpoint (no separate deep/self-only endpoint exists
+    # yet — app-code change, out of scope for this chart-only pass) but
+    # timed more leniently so a slow dependency never triggers a container
+    # restart storm. Release audit finding #6.
+    liveness:
+      initialDelaySeconds: 45
+      periodSeconds: 20
+      timeoutSeconds: 10
+      failureThreshold: 5
   autoscaling:
     enabled: false
     minReplicas: 2
     maxReplicas: 10
     targetCPUUtilizationPercentage: 80
-
-# Scanner Service
-scanner:
-  enabled: true
-  image:
-    repository: elder-scanner
-    tag: latest
-    pullPolicy: IfNotPresent
-  replicaCount: 1
-  buildArgs:
-    SCANNER_POLL_INTERVAL: "300"
-  env:
-    SCANNER_POLL_INTERVAL: "300"
-    ELDER_API_URL: "http://api:5000"
-    ELDER_API_TOKEN: ""
-    SCREENSHOT_DIR: "/app/screenshots"
-    LOG_LEVEL: INFO
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "250m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  screenshotStorage:
-    sizeLimit: "1Gi"
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
   securityContext:
     runAsNonRoot: true
     runAsUser: 1000
@@ -245,14 +337,146 @@ scanner:
     capabilities:
       drop:
         - ALL
-      add:
-        - NET_RAW
 
-# Worker Service
-worker:
+# Elder Hosted MCP Service (lightweight Python/Quart API translator)
+hub-mcp:
   enabled: true
   image:
-    repository: elder-worker
+    repository: elder/hub-mcp
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    MCP_HOST: "0.0.0.0"
+    MCP_PORT: "8080"
+    MCP_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    MCP_MAX_CONCURRENT_PER_IP: "64"
+    LOG_LEVEL: "INFO"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  healthcheck:
+    enabled: true
+    path: /readyz
+    livenessPath: /healthz
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 80
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Scanning Service (Rust data-plane CronJob)
+svc-scanner:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 55
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  image:
+    repository: elder/svc-scanner
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    SCREENSHOT_DIR: "/tmp/screenshots"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    SCANNER_MASSCAN_RATE: "1000"
+    SCANNER_MAX_CONCURRENT_JOBS: "5"
+    SCANNER_JOB_TIMEOUT_SECONDS: "300"
+    NVD_SYNC_ENABLED: "true"
+    NVD_SYNC_INTERVAL: "21600"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  screenshotStorage:
+    sizeLimit: "1Gi"
+  tmpStorage:
+    sizeLimit: "512Mi"
+  # Runs unprivileged under PodSecurity Admission `restricted` (capabilities
+  # dropped to ALL). Network discovery defaults to native async `tcp_connect`;
+  # raw-socket `masscan` SYN scans require opting in on a non-restricted namespace.
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Integrations Service (Rust data-plane CronJob)
+svc-integrations:
+  enabled: true
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 55
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 600
+  image:
+    repository: elder/svc-integrations
+    tag: latest
+    pullPolicy: IfNotPresent
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    LOG_FORMAT: "json"
+    RUST_LOG: "info"
+    INTEGRATIONS_MAX_CONCURRENCY: "8"
+    INTEGRATIONS_JOB_TIMEOUT_SECONDS: "120"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+  tmpStorage:
+    sizeLimit: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Worker Service
+svc-worker:
+  enabled: true
+  image:
+    repository: elder/svc-worker
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 1
@@ -262,13 +486,16 @@ worker:
     targetPort: 28000
   env:
     # Elder API Configuration
-    ELDER_API_URL: "http://api:5000"
+    ELDER_API_URL: "http://hub-api:5000"
     ELDER_API_KEY: ""
 
     # Database (direct access for discovery jobs)
-    DATABASE_URL: ""
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
     DATABASE_READ_URL: ""
     DB_POOL_SIZE: "10"
+
+    # Redis (Phase-2 job-bus streams; XREADGROUP consumer id set via POD_NAME downward API)
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
 
     # AWS Configuration
     AWS_ENABLED: "false"
@@ -331,105 +558,80 @@ worker:
     name: ""  # K8s Secret name containing credential files (GCP JSON, etc.)
   healthcheck:
     enabled: true
+    # readiness: /healthz (apps/worker/main.py) reports self.running plus
+    # per-connector state — the closest thing this app has to a
+    # dependency-gated check today.
     path: /healthz
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+    # liveness: same endpoint, timed more leniently. Release audit finding #6.
+    liveness:
+      initialDelaySeconds: 45
+      periodSeconds: 20
+      timeoutSeconds: 10
+      failureThreshold: 5
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
 
-# Prometheus Monitoring
-prometheus:
+# Flows Invoker Service — dedicated, isolated Redis Streams consumer that
+# executes user-defined CI/CD stage commands inside a hardened process
+# sandbox (see apps/flows_invoker/sandbox.py). No HTTP port; health is
+# checked via a native Python exec probe. Deliberately network-isolated —
+# see templates/networkpolicy-flows-invoker.yaml.
+svc-flows-invoker:
   enabled: true
   image:
-    repository: prom/prometheus
+    repository: elder/svc-flows-invoker
     tag: latest
     pullPolicy: IfNotPresent
   replicaCount: 1
-  service:
-    type: ClusterIP
-    port: 9090
-  resources:
-    requests:
-      memory: "512Mi"
-      cpu: "250m"
-    limits:
-      memory: "2Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 10Gi
-    storageClass: ""
-  healthcheck:
-    enabled: true
-    path: /-/healthy
-    initialDelaySeconds: 30
-    periodSeconds: 30
-    timeoutSeconds: 10
-    failureThreshold: 3
+  env:
+    # Database (direct access for flow execution records)
+    DATABASE_URL: "postgresql://elder:elder_dev_password@elder-postgres:5432/elder"
+    DATABASE_READ_URL: ""
+    DB_POOL_SIZE: "5"
 
-# Alertmanager
-alertmanager:
-  enabled: true
-  image:
-    repository: prom/alertmanager
-    tag: latest
-    pullPolicy: IfNotPresent
-  replicaCount: 1
-  service:
-    type: ClusterIP
-    port: 9093
+    # Redis (job-bus streams; XREADGROUP consumer id set via POD_NAME downward API)
+    REDIS_URL: "redis://:elder_redis_password@elder-redis:6379/0"
+
+    # Sandboxed CI workspace — writable emptyDir mount (readOnlyRootFilesystem stays true)
+    FLOWS_WORKSPACE_ROOT: "/workspace"
+
+    # Logging
+    LOG_LEVEL: INFO
   resources:
     requests:
       memory: "128Mi"
       cpu: "100m"
     limits:
-      memory: "512Mi"
-      cpu: "500m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: ""
-  healthcheck:
-    enabled: true
-    path: /-/healthy
-    initialDelaySeconds: 30
-    periodSeconds: 30
-    timeoutSeconds: 10
-    failureThreshold: 3
-
-# Grafana Dashboard
-grafana:
-  enabled: true
-  image:
-    repository: grafana/grafana
-    tag: latest
-    pullPolicy: IfNotPresent
-  replicaCount: 1
-  service:
-    type: ClusterIP
-    port: 3000
-  env:
-    GF_SECURITY_ADMIN_USER: admin
-    GF_SECURITY_ADMIN_PASSWORD: admin
-    GF_USERS_ALLOW_SIGN_UP: "false"
-  resources:
-    requests:
       memory: "256Mi"
       cpu: "250m"
-    limits:
-      memory: "1Gi"
-      cpu: "1000m"
-  persistence:
-    enabled: true
-    size: 5Gi
-    storageClass: ""
   healthcheck:
     enabled: true
-    path: /api/health
     initialDelaySeconds: 30
     periodSeconds: 30
     timeoutSeconds: 10
     failureThreshold: 3
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+  # Default-deny egress except DNS, Postgres, Redis, and HTTPS (git clone/push
+  # + external CI calls). Set to false only with explicit approval.
+  networkPolicy:
+    enabled: true
 
 # Ingress configuration
 ingress:
@@ -443,11 +645,11 @@ ingress:
       paths:
         - path: /
           pathType: Prefix
-          service: web
-          port: 3000
+          service: hub-webui
+          port: 8080
         - path: /api
           pathType: Prefix
-          service: api
+          service: hub-api
           port: 5000
   tls:
     - secretName: elder-tls
@@ -493,3 +695,45 @@ tolerations: []
 
 # Affinity
 affinity: {}
+
+# Namespace-wide default-deny CiliumNetworkPolicy — release audit finding #2.
+# Cilium is the only supported CNI target (devops-kubernetes.md NetworkPolicy)
+# so this is CiliumNetworkPolicy, never plain networking.k8s.io/v1. Default
+# ON here/beta/gamma; alpha.yml turns it off (local MicroK8s does not run
+# Cilium as CNI today, so the CRD isn't installed).
+networkPolicy:
+  enabled: true
+  # Namespace hosting the Cilium Gateway (httproute.yaml parentRefs) that
+  # needs cross-namespace ingress to web/api on their declared ports.
+  gatewayNamespace: "gateway"
+  # OTLP collector port (values.otel.endpoint) — same-namespace already
+  # covers this; kept as an explicit, auditable allow per the release audit.
+  otelCollectorPort: 4318
+  # PenguinTech license validation + PostHog feature-flag/analytics egress
+  # (critical-rules.md Feature Flags & License Tiers).
+  licenseServerHost: "license.penguintech.io"
+  posthogHost: "posthog.penguintech.cloud"
+
+# Tetragon runtime-execution allowlist (enforced, not observe-only) —
+# release audit finding #3. Default ON here/beta/gamma; alpha.yml turns it
+# off (local MicroK8s does not run Tetragon today).
+# flows-invoker is deliberately NOT covered: sandboxed execution of
+# arbitrary user-defined CI commands is its actual product feature (see
+# apps/flows_invoker/sandbox.py), not a compromise indicator — its
+# isolation comes from the process sandbox + networkpolicy-flows-invoker.yaml.
+tetragon:
+  enabled: true
+
+# Namespace resource + Pod Security Admission labels — release audit finding
+# #4. This chart has never created its own Namespace object (it is assumed
+# pre-existing, created out-of-band by CI/ops); `create: false` here so a
+# bare local `helm template`/install against this default file never fights
+# an unmanaged namespace. values-beta.yaml turns this on per the audit —
+# see its comment for the one-time adoption step k8s-ops needs before the
+# first upgrade against an already-existing, Helm-unmanaged namespace.
+namespaceManagement:
+  create: false
+  podSecurity:
+    enforce: restricted
+    audit: restricted
+    warn: restricted

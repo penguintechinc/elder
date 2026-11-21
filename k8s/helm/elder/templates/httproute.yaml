@@ -7,8 +7,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
+  - name: {{ ((.Values.gateway).parentRef).name | default "shared" }}
+    namespace: {{ ((.Values.gateway).parentRef).namespace | default "gateway" }}
     sectionName: https
   hostnames:
   - {{ .Values.gateway.host | quote }}
@@ -20,8 +20,20 @@ spec:
     timeouts:
       request: {{ .Values.gateway.timeouts.request | default "300s" }}
     backendRefs:
-    - name: {{ include "elder.fullname" . }}-api
+    - name: hub-api
       port: 5000
+  {{- $hubMcp := index .Values "hub-mcp" -}}
+  {{- if and $hubMcp $hubMcp.enabled }}
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /mcp
+    timeouts:
+      request: {{ .Values.gateway.timeouts.request | default "300s" }}
+    backendRefs:
+    - name: hub-mcp
+      port: {{ ($hubMcp.service).port | default 8080 }}
+  {{- end }}
   - matches:
     - path:
         type: PathPrefix
@@ -29,8 +41,11 @@ spec:
     timeouts:
       request: {{ .Values.gateway.timeouts.request | default "300s" }}
     backendRefs:
-    - name: {{ include "elder.fullname" . }}-web
-      port: 3000
+    - name: hub-webui
+      # Must match hub-webui.service.port (values.yaml) — container is
+      # nginx-unprivileged listening on 8080, not the old 3000.
+      # Release audit finding #7.
+      port: {{ (index .Values "hub-webui").service.port }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -39,8 +54,8 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   parentRefs:
-  - name: shared
-    namespace: gateway
+  - name: {{ ((.Values.gateway).parentRef).name | default "shared" }}
+    namespace: {{ ((.Values.gateway).parentRef).namespace | default "gateway" }}
     sectionName: http
   hostnames:
   - {{ .Values.gateway.host | quote }}
@@ -50,4 +65,31 @@ spec:
       requestRedirect:
         scheme: https
         statusCode: 301
+{{- $hubMcpHost := .Values.gateway.mcpHost -}}
+{{- $hubMcp := index .Values "hub-mcp" -}}
+{{- if and $hubMcpHost $hubMcp $hubMcp.enabled }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "elder.fullname" . }}-mcp-route
+  namespace: {{ .Values.namespace }}
+spec:
+  parentRefs:
+  - name: {{ ((.Values.gateway).parentRef).name | default "shared" }}
+    namespace: {{ ((.Values.gateway).parentRef).namespace | default "gateway" }}
+    sectionName: https
+  hostnames:
+  - {{ $hubMcpHost | quote }}
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    timeouts:
+      request: {{ .Values.gateway.timeouts.request | default "300s" }}
+    backendRefs:
+    - name: hub-mcp
+      port: {{ ($hubMcp.service).port | default 8080 }}
+{{- end }}
 {{- end }}

@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from .service import AuditService
 
 __all__ = ["AuditService"]

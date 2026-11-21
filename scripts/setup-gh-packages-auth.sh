@@ -3,6 +3,8 @@
 #
 # This will re-authenticate gh CLI with the necessary scopes to manage packages
 
+set -euo pipefail
+
 echo "================================================"
 echo "GitHub CLI Package Management Setup"
 echo "================================================"

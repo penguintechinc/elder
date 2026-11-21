@@ -6,10 +6,9 @@ Includes component metadata, licenses, and vulnerability information.
 
 # flake8: noqa: E501
 
-
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
@@ -26,8 +25,8 @@ class CycloneDXExporter:
 
     def export_json(
         self,
-        components: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
+        components: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Export components to CycloneDX JSON format.
 
@@ -43,8 +42,8 @@ class CycloneDXExporter:
 
     def export_xml(
         self,
-        components: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
+        components: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         """Export components to CycloneDX XML format.
 
@@ -70,9 +69,9 @@ class CycloneDXExporter:
 
     def _build_cyclonedx_dict(
         self,
-        components: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        components: list[dict[str, Any]],
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Build CycloneDX dictionary structure.
 
         Args:
@@ -83,7 +82,7 @@ class CycloneDXExporter:
             Dictionary representing CycloneDX BOM.
         """
         bom_serial = str(uuid4())
-        timestamp = datetime.now(timezone.utc).isoformat() + "Z"
+        timestamp = datetime.now(UTC).isoformat() + "Z"
 
         bom = {
             "bomFormat": "CycloneDX",
@@ -125,8 +124,8 @@ class CycloneDXExporter:
         return bom
 
     def _convert_component_to_cyclonedx(
-        self, component: Dict[str, Any]
-    ) -> Optional[Dict[str, Any]]:
+        self, component: dict[str, Any]
+    ) -> dict[str, Any] | None:
         """Convert Elder component to CycloneDX format.
 
         Args:
@@ -193,7 +192,7 @@ class CycloneDXExporter:
 
         return cdx_comp
 
-    def _build_license_array(self, component: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _build_license_array(self, component: dict[str, Any]) -> list[dict[str, Any]]:
         """Build CycloneDX licenses array from component.
 
         Args:
@@ -221,7 +220,7 @@ class CycloneDXExporter:
 
         return licenses
 
-    def _dict_to_xml(self, data: Dict[str, Any]) -> ET.Element:
+    def _dict_to_xml(self, data: dict[str, Any]) -> ET.Element:
         """Convert CycloneDX dictionary to XML ElementTree.
 
         Args:
@@ -282,7 +281,7 @@ class CycloneDXExporter:
         return root
 
     def _add_component_to_xml(
-        self, parent: ET.Element, component: Dict[str, Any]
+        self, parent: ET.Element, component: dict[str, Any]
     ) -> None:
         """Add a component to XML parent element.
 

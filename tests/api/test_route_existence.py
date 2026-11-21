@@ -15,7 +15,11 @@ import os
 import pytest
 
 os.environ["FLASK_ENV"] = "testing"
-os.environ["DATABASE_URL"] = "sqlite:////tmp/elder_test_routes.db"
+# Default to sqlite only when no real DATABASE_URL is provided. Using a hard
+# assignment here clobbered the session-wide DATABASE_URL (a credential-less
+# sqlite URL), forcing every other test onto sqlite and crashing the conftest
+# DB-init log line that splits the URL on '@'. setdefault respects a real DB.
+os.environ.setdefault("DATABASE_URL", "sqlite:////tmp/elder_test_routes.db")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-route-existence")
 
 # Every path the frontend api.ts client calls, with dummy IDs for parameterized routes.
@@ -378,7 +382,9 @@ def url_adapter(route_app):
     return route_app.url_map.bind("")
 
 
-@pytest.mark.parametrize("method,path", FRONTEND_ROUTES, ids=[f"{m} {p}" for m, p in FRONTEND_ROUTES])
+@pytest.mark.parametrize(
+    "method,path", FRONTEND_ROUTES, ids=[f"{m} {p}" for m, p in FRONTEND_ROUTES]
+)
 def test_route_exists(url_adapter, method, path):
     """Frontend path must have a matching URL rule in Flask's URL map.
 

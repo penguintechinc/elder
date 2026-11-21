@@ -1,0 +1,26 @@
+[package]
+name = "elder-svc-common"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Shared authentication, telemetry, and Elder API client primitives for Elder Rust data-plane workers"
+
+[dependencies]
+async-trait = "0.1"
+bytes = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+http = "1"
+jsonwebtoken = { version = "10", features = ["rust_crypto"] }
+opentelemetry = { version = "0.33", features = ["trace", "metrics", "logs"] }
+opentelemetry-appender-tracing = "0.33"
+opentelemetry-http = { version = "0.33", default-features = false }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["trace", "metrics", "logs", "http-proto", "grpc-tonic", "tls-ring", "tls-webpki-roots"] }
+opentelemetry_sdk = { version = "0.33", features = ["trace", "metrics", "logs", "rt-tokio", "experimental_trace_batch_span_processor_with_async_runtime", "experimental_logs_batch_log_processor_with_async_runtime", "experimental_metrics_periodicreader_with_async_runtime"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.34"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }

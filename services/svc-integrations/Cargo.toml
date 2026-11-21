@@ -1,0 +1,27 @@
+[package]
+name = "svc-integrations"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+description = "Stateless Elder data-plane integrations CronJob orchestrator"
+
+[[bin]]
+name = "svc-integrations"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+clap = { version = "4", features = ["derive", "env"] }
+elder-int-cloud = { path = "../../crates/elder-int-cloud" }
+elder-int-identity = { path = "../../crates/elder-int-identity" }
+elder-int-workmgmt = { path = "../../crates/elder-int-workmgmt" }
+elder-svc-common = { path = "../../crates/elder-svc-common" }
+opentelemetry = { version = "0.33", features = ["metrics"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.33", features = ["metrics", "rt-tokio", "testing"] }

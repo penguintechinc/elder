@@ -1,44 +1,59 @@
-import { useState, useEffect, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
-import toast from 'react-hot-toast'
-import api from '@/lib/api'
-import { queryKeys } from '@/lib/queryKeys'
-import { invalidateCache } from '@/lib/invalidateCache'
-import { getTypeColor } from '@/lib/colorHelpers'
-import Button from '@/components/Button'
-import Card, { CardContent } from '@/components/Card'
-import Input from '@/components/Input'
-import VillageIdBadge from '@/components/VillageIdBadge'
-import { FormModalBuilder, FormField } from '@penguintechinc/react-libs/components'
+import { useState, useEffect, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { Plus, Search } from "lucide-react";
+import toast from "react-hot-toast";
+import type { Entity, Organization } from "@/types";
+import api from "@/lib/api";
+import { queryKeys } from "@/lib/queryKeys";
+import { invalidateCache } from "@/lib/invalidateCache";
+import { getTypeColor } from "@/lib/colorHelpers";
+import Button from "@/components/Button";
+import Card, { CardContent } from "@/components/Card";
+import Input from "@/components/Input";
+import VillageIdBadge from "@/components/VillageIdBadge";
+import ModalFormBuilder from "@/components/ModalFormBuilder";
+import { FormField } from "@/types/form";
+
+interface EntityType {
+  type: string;
+  subtypes?: string[];
+}
+
+interface CreateEntityModalProps {
+  initialOrganizationId?: number;
+  onClose: () => void;
+  onSuccess: () => void;
+}
 
 export default function Entities() {
-  const [search, setSearch] = useState('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const [searchParams] = useSearchParams()
-  const initialOrgId = searchParams.get('organization_id')
+  const [search, setSearch] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const initialOrgId = searchParams.get("organization_id");
 
   // Auto-open create modal if organization_id is in query params
   useEffect(() => {
     if (initialOrgId) {
-      setShowCreateModal(true)
+      setShowCreateModal(true);
     }
-  }, [initialOrgId])
+  }, [initialOrgId]);
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.entities.list({ search }),
     queryFn: () => api.getEntities({ search }),
-  })
+  });
 
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">Entities</h1>
-          <p className="mt-2 text-slate-400">Manage infrastructure and resources</p>
+          <p className="mt-2 text-slate-400">
+            Manage infrastructure and resources
+          </p>
         </div>
         <Button onClick={() => setShowCreateModal(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -74,33 +89,41 @@ export default function Entities() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {data?.items?.map((entity: any) => (
+          {data?.items?.map((entity: Entity) => (
             <Card
               key={entity.id}
               className="cursor-pointer hover:ring-2 hover:ring-primary-500 transition-all"
               onClick={() => navigate(`/entities/${entity.id}`)}
             >
               <CardContent>
-                <h3 className="text-lg font-semibold text-white mb-2">{entity.name}</h3>
+                <h3 className="text-lg font-semibold text-white mb-2">
+                  {entity.name}
+                </h3>
                 <div className="flex gap-2 flex-wrap mb-3">
                   {entity.type && (
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.type)}`}>
-                      {entity.type.replace('_', ' ').toUpperCase()}
+                    <span
+                      className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.type)}`}
+                    >
+                      {entity.type.replace("_", " ").toUpperCase()}
                     </span>
                   )}
                   {entity.sub_type && (
-                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.sub_type)}`}>
-                      {entity.sub_type.replace('_', ' ').toUpperCase()}
+                    <span
+                      className={`inline-block px-2 py-1 text-xs font-medium rounded ${getTypeColor(entity.sub_type)}`}
+                    >
+                      {entity.sub_type.replace("_", " ").toUpperCase()}
                     </span>
                   )}
                 </div>
                 {entity.description && (
-                  <p className="text-sm text-slate-400 mt-3">{entity.description}</p>
+                  <p className="text-sm text-slate-400 mt-3">
+                    {entity.description}
+                  </p>
                 )}
-                <div className="flex items-center justify-between text-xs text-slate-500 mt-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 mt-4">
                   <span>ID: {entity.id}</span>
                   {entity.village_id && (
-                    <VillageIdBadge villageId={entity.village_id} />
+                    <VillageIdBadge villageId={entity.village_id} compact />
                   )}
                 </div>
               </CardContent>
@@ -111,130 +134,161 @@ export default function Entities() {
 
       {showCreateModal && (
         <CreateEntityModal
-          initialOrganizationId={initialOrgId}
+          initialOrganizationId={
+            initialOrgId ? parseInt(initialOrgId, 10) : undefined
+          }
           onClose={() => {
-            setShowCreateModal(false)
+            setShowCreateModal(false);
             // Clear query params when closing modal
             if (initialOrgId) {
-              navigate('/entities', { replace: true })
+              navigate("/entities", { replace: true });
             }
           }}
           onSuccess={async () => {
-            await invalidateCache.entities(queryClient)
-            setShowCreateModal(false)
+            await invalidateCache.entities(queryClient);
+            setShowCreateModal(false);
             // Clear query params on success
             if (initialOrgId) {
-              navigate('/entities', { replace: true })
+              navigate("/entities", { replace: true });
             }
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
-function CreateEntityModal({ initialOrganizationId, onClose, onSuccess }: any) {
+function CreateEntityModal({
+  initialOrganizationId,
+  onClose,
+  onSuccess,
+}: CreateEntityModalProps) {
   // Fetch entity types from API
   const { data: entityTypesData } = useQuery({
-    queryKey: ['entityTypes'],
+    queryKey: ["entityTypes"],
     queryFn: () => api.getEntityTypes(),
-  })
+  });
 
   const { data: orgs } = useQuery({
-    queryKey: ['organizations'],
+    queryKey: ["organizations"],
     queryFn: () => api.getOrganizations(),
-  })
+  });
 
   // Get category options from entity_types array
-  const categoryOptions = entityTypesData?.entity_types?.map((et: any) => ({
-    value: et.type,
-    label: et.type.charAt(0).toUpperCase() + et.type.slice(1).replace('_', ' ')
-  })) || []
+  const categoryOptions = useMemo(
+    () =>
+      entityTypesData?.entity_types?.map((et: EntityType) => ({
+        value: et.type,
+        label:
+          et.type.charAt(0).toUpperCase() + et.type.slice(1).replace("_", " "),
+      })) || [],
+    [entityTypesData?.entity_types],
+  );
 
-  const createMutation = useMutation({
-    mutationFn: (data: any) => api.createEntity(data),
-    onSuccess: () => {
-      toast.success('Entity created successfully')
-      onSuccess()
-    },
-    onError: () => {
-      toast.error('Failed to create entity')
-    },
-  })
-
-  const fields: FormField[] = useMemo(() => [
-    {
-      name: 'name',
-      label: 'Name',
-      type: 'text',
-      required: true,
-    },
-    {
-      name: 'entity_type',
-      label: 'Category',
-      type: 'select',
-      required: true,
-      options: categoryOptions,
-    },
-    {
-      name: 'entity_sub_type',
-      label: 'Sub-Type',
-      type: 'select',
-      // Options are dynamically computed based on selected category
-      // Since FormBuilder doesn't support dynamic options, we include all possible options
-      // and use showWhen for visibility
-      options: [
-        // Flatten all subtypes from all categories
-        ...(entityTypesData?.entity_types?.flatMap((et: any) =>
-          (et.subtypes || []).map((subtype: string) => ({
-            value: subtype,
-            label: subtype.replace('_', ' ').split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-          }))
-        ) || [])
-      ],
-      showWhen: (values) => {
-        const category = values.entity_type
-        const categoryData = entityTypesData?.entity_types?.find((et: any) => et.type === category)
-        return categoryData?.subtypes?.length > 0
-      },
-    },
-    {
-      name: 'organization_id',
-      label: 'Organization',
-      type: 'select',
-      required: true,
-      defaultValue: initialOrganizationId || '',
-      options: (orgs?.items || []).map((o: any) => ({
-        value: o.id,
-        label: o.name,
-      })),
-    },
-    {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
-      rows: 3,
-    },
-  ], [categoryOptions, orgs, entityTypesData, initialOrganizationId])
-
-  const handleSubmit = (data: Record<string, any>) => {
-    createMutation.mutate({
-      name: data.name,
-      description: data.description || undefined,
-      entity_type: data.entity_type,
-      sub_type: data.entity_sub_type || undefined,
-      organization_id: parseInt(data.organization_id),
-    })
+  interface CreateEntityData {
+    name: string;
+    description?: string;
+    entity_type: string;
+    sub_type?: string;
+    organization_id: number;
   }
 
+  const createMutation = useMutation({
+    mutationFn: (data: CreateEntityData) => api.createEntity(data),
+    onSuccess: () => {
+      toast.success("Entity created successfully");
+      onSuccess();
+    },
+    onError: () => {
+      toast.error("Failed to create entity");
+    },
+  });
+
+  const fields: FormField[] = useMemo(
+    () => [
+      {
+        name: "name",
+        label: "Name",
+        type: "text",
+        required: true,
+      },
+      {
+        name: "entity_type",
+        label: "Category",
+        type: "select",
+        required: true,
+        options: categoryOptions,
+      },
+      {
+        name: "entity_sub_type",
+        label: "Sub-Type",
+        type: "select",
+        searchable: true,
+        // Options are dynamically computed based on selected category
+        // Since FormBuilder doesn't support dynamic options, we include all possible options
+        // and use showWhen for visibility
+        options: [
+          // Flatten all subtypes from all categories
+          ...(entityTypesData?.entity_types?.flatMap((et: EntityType) =>
+            (et.subtypes || []).map((subtype: string) => ({
+              value: subtype,
+              label: subtype
+                .replace("_", " ")
+                .split(" ")
+                .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+                .join(" "),
+            })),
+          ) || []),
+        ],
+        showWhen: (values) => {
+          const category = values.entity_type;
+          const categoryData = entityTypesData?.entity_types?.find(
+            (et: EntityType) => et.type === category,
+          );
+          return categoryData?.subtypes?.length > 0;
+        },
+      },
+      {
+        name: "organization_id",
+        label: "Organization",
+        type: "select",
+        searchable: true,
+        required: true,
+        defaultValue: initialOrganizationId || "",
+        options: (orgs?.items || []).map((o: Organization) => ({
+          value: o.id,
+          label: o.name,
+        })),
+      },
+      {
+        name: "description",
+        label: "Description",
+        type: "textarea",
+        rows: 3,
+      },
+    ],
+    [categoryOptions, orgs, entityTypesData, initialOrganizationId],
+  );
+
+  const handleSubmit = (data: Record<string, unknown>) => {
+    createMutation.mutate({
+      name: data.name as string,
+      description: (data.description as string) || undefined,
+      entity_type: data.entity_type as string,
+      sub_type: (data.entity_sub_type as string) || undefined,
+      organization_id: parseInt(data.organization_id as string),
+    });
+  };
+
   return (
-    <FormModalBuilder
+    <ModalFormBuilder
       isOpen={true}
       onClose={onClose}
       title="Create Entity"
       fields={fields}
       onSubmit={handleSubmit}
-      submitButtonText="Create"
+      isLoading={createMutation.isPending}
+      submitLabel="Create"
     />
-  )
+  );
 }

@@ -203,11 +203,15 @@ def _create_org(client, name="Regression Org"):
     return json.loads(resp.data)["id"]
 
 
-def _create_entity(client, org_id, name="Test Entity", entity_type="compute", auth_headers=None):
+def _create_entity(
+    client, org_id, name="Test Entity", entity_type="compute", auth_headers=None
+):
     """Helper: create an entity and return its id."""
     resp = client.post(
         "/api/v1/entities",
-        data=json.dumps({"name": name, "entity_type": entity_type, "organization_id": org_id}),
+        data=json.dumps(
+            {"name": name, "entity_type": entity_type, "organization_id": org_id}
+        ),
         content_type="application/json",
         headers=auth_headers or {},
     )
@@ -225,7 +229,13 @@ def test_entity_response_uses_type_field(client, db, auth_headers):
     org_id = _create_org(client, "Type Field Org")
     resp = client.post(
         "/api/v1/entities",
-        data=json.dumps({"name": "Type Check Entity", "entity_type": "network", "organization_id": org_id}),
+        data=json.dumps(
+            {
+                "name": "Type Check Entity",
+                "entity_type": "network",
+                "organization_id": org_id,
+            }
+        ),
         content_type="application/json",
         headers=auth_headers,
     )
@@ -244,7 +254,9 @@ def test_entity_list_filter_by_entity_type(client, db, auth_headers):
     """
     org_id = _create_org(client, "Filter By Type Org")
     _create_entity(client, org_id, "Compute Node", "compute", auth_headers=auth_headers)
-    _create_entity(client, org_id, "Network Switch", "network", auth_headers=auth_headers)
+    _create_entity(
+        client, org_id, "Network Switch", "network", auth_headers=auth_headers
+    )
 
     resp = client.get("/api/v1/entities?entity_type=compute", headers=auth_headers)
     assert resp.status_code == 200
@@ -259,23 +271,31 @@ def test_entity_list_filter_by_organization_id(client, db, auth_headers):
     """Entity list must support filtering by organization_id."""
     org1_id = _create_org(client, "Org Alpha Filter")
     org2_id = _create_org(client, "Org Beta Filter")
-    _create_entity(client, org1_id, "Alpha Entity", "compute", auth_headers=auth_headers)
+    _create_entity(
+        client, org1_id, "Alpha Entity", "compute", auth_headers=auth_headers
+    )
     _create_entity(client, org2_id, "Beta Entity", "compute", auth_headers=auth_headers)
 
-    resp = client.get(f"/api/v1/entities?organization_id={org1_id}", headers=auth_headers)
+    resp = client.get(
+        f"/api/v1/entities?organization_id={org1_id}", headers=auth_headers
+    )
     assert resp.status_code == 200
     data = json.loads(resp.data)
     for item in data["items"]:
-        assert item["organization_id"] == org1_id, (
-            f"Expected org {org1_id}, got {item['organization_id']}"
-        )
+        assert (
+            item["organization_id"] == org1_id
+        ), f"Expected org {org1_id}, got {item['organization_id']}"
 
 
 def test_entity_list_filter_by_name(client, db, auth_headers):
     """Entity list must support partial name filtering."""
     org_id = _create_org(client, "Name Filter Org")
-    _create_entity(client, org_id, "UniqueNameXYZ", "compute", auth_headers=auth_headers)
-    _create_entity(client, org_id, "SomethingElse", "compute", auth_headers=auth_headers)
+    _create_entity(
+        client, org_id, "UniqueNameXYZ", "compute", auth_headers=auth_headers
+    )
+    _create_entity(
+        client, org_id, "SomethingElse", "compute", auth_headers=auth_headers
+    )
 
     resp = client.get("/api/v1/entities?name=UniqueNameXYZ", headers=auth_headers)
     assert resp.status_code == 200
@@ -305,8 +325,12 @@ def test_graph_returns_200_no_attribute_error(client, db, auth_headers):
 def test_graph_filter_by_entity_type(client, db, auth_headers):
     """GET /graph?entity_type=X must filter nodes to that type."""
     org_id = _create_org(client, "Graph Filter Org")
-    _create_entity(client, org_id, "Filtered Compute", "compute", auth_headers=auth_headers)
-    _create_entity(client, org_id, "Filtered Network", "network", auth_headers=auth_headers)
+    _create_entity(
+        client, org_id, "Filtered Compute", "compute", auth_headers=auth_headers
+    )
+    _create_entity(
+        client, org_id, "Filtered Network", "network", auth_headers=auth_headers
+    )
 
     resp = client.get("/api/v1/graph?entity_type=compute")
     assert resp.status_code == 200
@@ -326,9 +350,9 @@ def test_graph_filter_by_organization_id(client, db, auth_headers):
     assert resp.status_code == 200
     data = json.loads(resp.data)
     for node in data["nodes"]:
-        assert node["organization_id"] == org1_id, (
-            f"Expected org {org1_id}, got {node['organization_id']}"
-        )
+        assert (
+            node["organization_id"] == org1_id
+        ), f"Expected org {org1_id}, got {node['organization_id']}"
 
 
 def test_list_issues_filter_by_status(client, db, auth_headers):
@@ -353,7 +377,9 @@ def test_list_issues_filter_by_priority(client, db, auth_headers):
     data = json.loads(resp.data)
     assert "items" in data
     for item in data["items"]:
-        assert item["priority"].lower() == "high", f"Expected high, got {item['priority']}"
+        assert (
+            item["priority"].lower() == "high"
+        ), f"Expected high, got {item['priority']}"
 
 
 def test_list_users_returns_200(client, db, auth_headers):

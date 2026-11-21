@@ -2,7 +2,6 @@
 
 # flake8: noqa: E501
 
-
 from typing import Any, Dict, List, Optional
 
 from penguin_dal import DAL
@@ -27,11 +26,11 @@ class SearchService:
     def search_all(
         self,
         query: str,
-        resource_types: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        resource_types: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search across all resource types.
 
@@ -87,15 +86,15 @@ class SearchService:
 
     def search_entities(
         self,
-        query: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        sub_type: Optional[str] = None,
-        organization_id: Optional[int] = None,
-        tags: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        entity_type: str | None = None,
+        sub_type: str | None = None,
+        organization_id: int | None = None,
+        tags: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search entities with advanced filters.
 
@@ -157,12 +156,12 @@ class SearchService:
 
     def search_organizations(
         self,
-        query: Optional[str] = None,
-        organization_type: Optional[str] = None,
-        parent_id: Optional[int] = None,
+        query: str | None = None,
+        organization_type: str | None = None,
+        parent_id: int | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search organizations.
 
@@ -214,16 +213,16 @@ class SearchService:
 
     def search_issues(
         self,
-        query: Optional[str] = None,
-        status: Optional[str] = None,
-        priority: Optional[str] = None,
-        assignee_id: Optional[int] = None,
-        organization_id: Optional[int] = None,
-        labels: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        query: str | None = None,
+        status: str | None = None,
+        priority: str | None = None,
+        assignee_id: int | None = None,
+        organization_id: int | None = None,
+        labels: list[str] | None = None,
+        filters: dict[str, Any] | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search issues with advanced filters.
 
@@ -289,9 +288,9 @@ class SearchService:
         self,
         start_entity_id: int,
         max_depth: int = 3,
-        dependency_types: Optional[List[str]] = None,
-        entity_filters: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        dependency_types: list[str] | None = None,
+        entity_filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Graph-based search for entities and dependencies.
 
@@ -410,7 +409,7 @@ class SearchService:
 
     def list_saved_searches(
         self, user_id: int, limit: int = 50
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         List user's saved searches.
 
@@ -427,7 +426,7 @@ class SearchService:
 
         return [s.as_dict() for s in searches]
 
-    def get_saved_search(self, search_id: int, user_id: int) -> Dict[str, Any]:
+    def get_saved_search(self, search_id: int, user_id: int) -> dict[str, Any]:
         """
         Get saved search details.
 
@@ -457,9 +456,9 @@ class SearchService:
         name: str,
         query: str,
         resource_type: str,
-        filters: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        filters: dict[str, Any] | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Save a search query.
 
@@ -490,11 +489,11 @@ class SearchService:
         self,
         search_id: int,
         user_id: int,
-        name: Optional[str] = None,
-        query: Optional[str] = None,
-        filters: Optional[Dict[str, Any]] = None,
-        description: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        name: str | None = None,
+        query: str | None = None,
+        filters: dict[str, Any] | None = None,
+        description: str | None = None,
+    ) -> dict[str, Any]:
         """
         Update saved search.
 
@@ -537,7 +536,7 @@ class SearchService:
         search = self.db.saved_searches[search_id]
         return search.as_dict()
 
-    def delete_saved_search(self, search_id: int, user_id: int) -> Dict[str, str]:
+    def delete_saved_search(self, search_id: int, user_id: int) -> dict[str, str]:
         """
         Delete saved search.
 
@@ -566,7 +565,7 @@ class SearchService:
 
     def execute_saved_search(
         self, search_id: int, user_id: int, limit: int = 50, offset: int = 0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute a saved search.
 
@@ -602,7 +601,7 @@ class SearchService:
     # Search Analytics Methods
     # ===========================
 
-    def get_popular_searches(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_popular_searches(self, limit: int = 10) -> list[dict[str, Any]]:
         """
         Get most popular/frequent searches.
 
@@ -629,8 +628,8 @@ class SearchService:
         ]
 
     def get_search_suggestions(
-        self, partial_query: str, resource_type: Optional[str] = None, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+        self, partial_query: str, resource_type: str | None = None, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
         Get search suggestions/autocomplete.
 
