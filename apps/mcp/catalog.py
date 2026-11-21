@@ -16,7 +16,53 @@ from urllib.parse import quote, unquote
 _HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE"})
 _PATH_PARAM_RE = re.compile(r"\{([^}]+)\}")
 _RULE_PARAM_RE = re.compile(r"<(?:\w+(?:\([^)]*\))?:)?(\w+)>")
+_TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 _WILDCARD_RULE_RE = re.compile(r"<path:(\w+)>")
+
+# Methods that always require an explicit ``confirm=true`` on invocation.
+CONFIRM_REQUIRED_METHODS = frozenset({"DELETE", "PUT", "PATCH"})
+
+# Verb tokens marking a POST as destructive/irreversible (data loss, credential or
+# access invalidation, state replacement). Matched as whole tokens against the
+# operation name AND each path segment (split on ``-``/``_``/``/``), so
+# ``bulk-delete``, ``keys/{id}/rotate`` and ``reset_password`` all match while
+# ``update`` or ``create`` do not. Ordinary creates are never flagged.
+DESTRUCTIVE_POST_HINTS = frozenset(
+    {
+        "delete",
+        "purge",
+        "revoke",
+        "reset",
+        "terminate",
+        "wipe",
+        "destroy",
+        "remove",
+        "disable",
+        "deactivate",
+        "rotate",
+        "truncate",
+        "drop",
+        "clear",
+        "cleanup",
+        "erase",
+        "restore",
+        "regenerate",
+        "execute",
+        "kill",
+        "uninstall",
+        "unlink",
+        "detach",
+        "disconnect",
+        "cancel",
+        "merge",
+        "deny",
+        "password",
+        "unmask",
+        "logout",
+        "resolve",
+        "reject",
+    }
+)
 
 DEFAULT_CATALOG_PATH = Path(__file__).with_name("api_catalog.json")
 EXCLUSIONS_FILENAME = "api_catalog_exclusions.json"
@@ -35,6 +81,7 @@ class APIOperation:
     summary: str
     has_body: bool
     wildcard_path_params: tuple[str, ...] = ()
+    destructive: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize operation metadata to JSON-compatible dict."""
@@ -47,6 +94,7 @@ class APIOperation:
             "wildcard_path_params": list(self.wildcard_path_params),
             "summary": self.summary,
             "has_body": self.has_body,
+            "destructive": self.destructive,
         }
 
 
@@ -120,13 +168,63 @@ def _parse_blueprint_prefixes(py_path: Path) -> dict[str, str]:
 _Route = tuple[str, str, str, str, str, str]
 _Mount = tuple[Path, "str | _Route", str]
 _BINARY_RESPONSE_CALLS = frozenset({"send_file", "send_from_directory"})
+_JSON_CALLS = frozenset({"jsonify", "dumps"})
+_CONTENT_TYPE_KEYS = frozenset({"content-type", "content_type", "mimetype"})
+
+
+def _const_str(node: ast.AST | None) -> str | None:
+    """Return the literal text of a string-ish AST node (f-strings keep literal parts)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(
+            v.value
+            for v in node.values
+            if isinstance(v, ast.Constant) and isinstance(v.value, str)
+        )
+    return None
+
+
+def _is_json_call(node: ast.AST) -> bool:
+    """Return True for ``jsonify(...)``/``json.dumps(...)`` style call nodes."""
+    if not isinstance(node, ast.Call):
+        return False
+    fn = node.func
+    name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", "")
+    return name in _JSON_CALLS
+
+
+def _non_json_content_type(node: ast.AST) -> str:
+    """Return a non-JSON Content-Type literal declared inside a headers dict or kwargs, else ``""``.
+
+    Looks for ``{"Content-Type": ...}`` dict entries and ``mimetype=``/``content_type=``
+    keyword arguments, so tuple returns like ``(csv_text, 200, {"Content-Type": "text/csv"})``
+    and ``Response(..., mimetype="application/zip")`` are both caught.
+    """
+    pairs: list[tuple[ast.AST | None, ast.AST]] = []
+    if isinstance(node, ast.Dict):
+        pairs = list(zip(node.keys, node.values))
+    elif isinstance(node, ast.Call):
+        pairs = [(ast.Constant(kw.arg), kw.value) for kw in node.keywords if kw.arg]
+    for key, value in pairs:
+        key_text = (_const_str(key) or "").lower()
+        if key_text in _CONTENT_TYPE_KEYS:
+            text = (_const_str(value) or "").strip().lower()
+            if text and "json" not in text:
+                return text.split(";")[0]
+            if not text:
+                return "dynamic"
+    return ""
 
 
 def _non_json_reason(func: ast.AST) -> str:
     """Return why a handler cannot be driven as plain JSON, or ``""`` when it can.
 
-    Detects multipart uploads (``request.files``) and non-JSON responses
-    (``send_file``/``send_from_directory``/raw ``Response``) in the handler body.
+    Detects multipart uploads (``request.files``) and non-JSON responses:
+    ``send_file``/``send_from_directory``/``Response``/``make_response`` around
+    non-JSON bodies, tuple returns whose headers dict declares a non-JSON
+    ``Content-Type`` (csv, zip, octet-stream, ...), and ``mimetype=``/``content_type=``
+    keyword arguments.
     """
     reasons: list[str] = []
     for node in ast.walk(func):
@@ -142,7 +240,53 @@ def _non_json_reason(func: ast.AST) -> str:
                 reasons.append("binary file download response")
             elif node.func.id == "Response":
                 reasons.append("non-JSON response body (raw Response)")
+            elif (
+                node.func.id == "make_response"
+                and node.args
+                and not _is_json_call(node.args[0])
+                and not isinstance(node.args[0], (ast.Dict, ast.Name))
+            ):
+                reasons.append("non-JSON response body (make_response)")
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Tuple):
+            first = node.value.elts[0] if node.value.elts else None
+            if first is not None and not (
+                isinstance(first, ast.Dict) or _is_json_call(first)
+            ):
+                for elt in node.value.elts[1:]:
+                    ctype = _non_json_content_type(elt)
+                    if ctype:
+                        reasons.append(
+                            f"non-JSON response body (tuple with {ctype} Content-Type)"
+                        )
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "make_response"
+        ):
+            checks = [node] + [
+                kw.value for kw in node.keywords if isinstance(kw.value, ast.Dict)
+            ]
+            for target in checks:
+                ctype = _non_json_content_type(target)
+                if ctype:
+                    reasons.append(f"non-JSON response body ({ctype} Content-Type)")
     return "; ".join(dict.fromkeys(reasons))
+
+
+def is_destructive(method: str, operation: str, path: str) -> bool:
+    """Return True when an operation needs ``confirm=true`` before it may run.
+
+    DELETE/PUT/PATCH always qualify; POST qualifies when the operation name or any
+    path segment contains a token from ``DESTRUCTIVE_POST_HINTS`` (e.g. rotate,
+    revoke, bulk-delete). GET/HEAD never qualify.
+    """
+    method = method.upper()
+    if method in CONFIRM_REQUIRED_METHODS:
+        return True
+    if method != "POST":
+        return False
+    text = f"{operation}/{_PATH_PARAM_RE.sub('', path)}".lower()
+    return any(t in DESTRUCTIVE_POST_HINTS for t in _TOKEN_SPLIT_RE.split(text))
 
 
 def _parse_routes_in_file(py_path: Path) -> list[_Route]:
@@ -685,6 +829,7 @@ def _build_catalog(
                 summary=summary,
                 has_body=has_body,
                 wildcard_path_params=wildcards.get((method, path), ()),
+                destructive=is_destructive(method, final_op, path),
             ).to_dict()
         )
 
@@ -761,6 +906,16 @@ def _load_cached_catalog(resolved_path: str) -> tuple[APIOperation, ...]:
                 has_body=bool(item.get("has_body")),
                 wildcard_path_params=tuple(
                     str(p) for p in item.get("wildcard_path_params", [])
+                ),
+                destructive=bool(
+                    item.get(
+                        "destructive",
+                        is_destructive(
+                            str(item["method"]),
+                            str(item["operation"]),
+                            str(item["path"]),
+                        ),
+                    )
                 ),
             )
         )

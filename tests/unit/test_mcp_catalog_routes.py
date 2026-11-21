@@ -20,6 +20,7 @@ from apps.mcp.catalog import (
     generate_catalog,
     generate_exclusions,
     get_operation,
+    is_destructive,
     is_route_excluded,
     load_catalog,
     resolve_operation_path,
@@ -65,7 +66,7 @@ def test_every_catalog_path_equals_a_real_registered_route(
     """Catalog paths (incl. helpdesk and strict trailing slashes) match the live url_map exactly."""
     real = {(m, _CONVERTER_RE.sub(r"{\1}", rule)) for m, rule in real_routes}
     ops = load_catalog(force_reload=True)
-    assert len(ops) >= 640
+    assert 640 <= len(ops) <= 715
     mismatched = sorted(
         (op.method, op.path) for op in ops if (op.method, op.path) not in real
     )
@@ -277,6 +278,7 @@ def test_single_segment_params_still_reject_slashes(bad: str) -> None:
 _EXPECTED_EXCLUSIONS = {
     ("POST", "/api/v1/backup/import"),
     ("GET", "/api/v1/backup/{backup_id}/download"),
+    ("GET", "/api/v1/audit-enterprise/export"),
     ("GET", "/api/v1/backup/export/{filename}/download"),
     ("POST", "/api/v1/import/{resource}"),
     ("GET", "/api/v1/import/templates/{resource}/download"),
@@ -384,3 +386,77 @@ def test_openapi_non_json_media_types_drive_exclusion(tmp_path: Path) -> None:
     assert "multipart/form-data" in excluded["/api/v1/zz/upload"]
     assert "application/zip" in excluded["/api/v1/zz/blob"]
     assert "text/csv" in excluded["/api/v1/zz/csv"]
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ('return csv_text, 200, {"Content-Type": "text/csv"}', True),
+        ('return buf.getvalue(), 200, {"content-type": "application/zip"}', True),
+        ('return data, 200, {"Content-Type": "application/octet-stream"}', True),
+        ('return Response(body, mimetype="text/csv")', True),
+        ("return await send_file(path)", True),
+        ("return await send_from_directory(d, f)", True),
+        ("return await make_response(buf.getvalue(), 200)", True),
+        ('return jsonify({"a": 1}), 200', False),
+        ('return {"a": 1}, 200, {"Content-Type": "application/json"}', False),
+        ('return text, 200, {"Content-Type": "application/json"}', False),
+        ('return await make_response(jsonify({"a": 1}), 200)', False),
+    ],
+)
+def test_non_json_detection_covers_tuple_and_response_shapes(
+    source: str, expected: bool
+) -> None:
+    """Tuple/Response/make_response/send_file non-JSON returns are detected; JSON ones are not."""
+    import ast
+
+    func = ast.parse(f"async def handler():\n    {source}\n").body[0]
+    assert bool(catalog_mod._non_json_reason(func)) is expected
+
+
+def test_all_handler_tuple_returns_with_non_json_content_type_are_excluded() -> None:
+    """No hub-api handler returning a non-JSON Content-Type tuple stays in the catalog."""
+    import ast
+
+    cataloged_funcs = {op.operation for op in load_catalog()}
+    offenders: list[str] = []
+    scanned = 0
+    for path in (REPO_ROOT / "apps" / "api").rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for fn in ast.walk(tree):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                scanned += 1
+                if catalog_mod._non_json_reason(fn) and fn.name in cataloged_funcs:
+                    offenders.append(f"{path.name}:{fn.name}")
+    assert scanned > 700
+    assert offenders == []
+
+
+def test_destructive_flag_is_stored_and_classified() -> None:
+    """Every catalog entry stores ``destructive``; flagged POSTs are the verb-hinted ones only."""
+    raw = json.loads(catalog_mod.DEFAULT_CATALOG_PATH.read_text(encoding="utf-8"))
+    assert all(isinstance(item["destructive"], bool) for item in raw)
+    for item in raw:
+        assert item["destructive"] == is_destructive(
+            item["method"], item["operation"], item["path"]
+        )
+    flagged = {
+        (i["service"], i["operation"])
+        for i in raw
+        if i["method"] == "POST" and i["destructive"]
+    }
+    assert {
+        ("keys", "rotate_key"),
+        ("keys", "disable_key"),
+        ("backup", "restore_backup"),
+        ("flows", "execute_promotion"),
+        ("privacy-admin", "bulk_erase"),
+    } <= flagged
+    ordinary = {("users", "create_user"), ("issues", "create_issue")}
+    assert ordinary.isdisjoint(flagged)
+    assert all(
+        i["destructive"] for i in raw if i["method"] in {"DELETE", "PUT", "PATCH"}
+    )
+    assert not any(i["destructive"] for i in raw if i["method"] == "GET")

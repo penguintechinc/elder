@@ -9,7 +9,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Complete and apply review decisions.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -19,7 +20,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create an ad-hoc access review (admin only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -29,7 +31,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get reviews assigned to current user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -41,7 +44,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get review details with progress statistics.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -53,7 +57,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all members to review in a review.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -63,7 +68,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List access reviews with filters.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "access-reviews",
@@ -75,7 +81,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Submit review decision for member(s).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "ai",
@@ -85,7 +92,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new AI resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "ai",
@@ -97,7 +105,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an AI resource.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "ai",
@@ -109,7 +118,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single AI resource by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ai",
@@ -119,7 +129,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List AI resources with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ai",
@@ -131,7 +142,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an existing AI resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "api-keys",
@@ -141,7 +153,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new API key for the current user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "api-keys",
@@ -153,7 +166,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete (revoke) an API key.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "api-keys",
@@ -163,7 +177,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all API keys for the current user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "audit",
@@ -173,7 +188,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Clean up old audit logs based on retention policies.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "audit",
@@ -183,7 +199,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create audit retention policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "audit",
@@ -195,7 +212,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete retention policy.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "audit",
@@ -207,7 +225,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get retention policy details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "audit",
@@ -217,7 +236,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all audit retention policies.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "audit",
@@ -229,7 +249,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update retention policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "audit-enterprise",
@@ -239,17 +260,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Clean up audit logs older than retention period.",
-    "has_body": true
-  },
-  {
-    "service": "audit-enterprise",
-    "operation": "export_logs",
-    "method": "GET",
-    "path": "/api/v1/audit-enterprise/export",
-    "path_params": [],
-    "wildcard_path_params": [],
-    "summary": "Export audit logs for compliance archival.",
-    "has_body": false
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "audit-enterprise",
@@ -261,7 +273,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Generate a compliance report.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "audit-enterprise",
@@ -271,7 +284,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get audit log retention policy for a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "audit-enterprise",
@@ -281,7 +295,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Query audit logs with filters.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "auth",
@@ -291,7 +306,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Change current user's password.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "auth",
@@ -301,7 +317,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get current authenticated user information.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -311,7 +328,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new backup job.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -323,7 +341,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete backup file.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "backup",
@@ -335,7 +354,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete backup job.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "backup",
@@ -345,7 +365,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Export data to various formats.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -357,7 +378,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get backup details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -369,7 +391,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get backup job details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -379,7 +402,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get backup and storage statistics.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -389,7 +413,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all backup jobs.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -399,7 +424,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all backups.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -411,7 +437,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Restore from backup.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "backup",
@@ -423,7 +450,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Manually trigger a backup job.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "backup",
@@ -435,7 +463,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update backup job configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "builtin-secrets",
@@ -445,7 +474,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new built-in secret.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "builtin-secrets",
@@ -459,7 +489,8 @@
       "secret_path"
     ],
     "summary": "Delete a built-in secret.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "builtin-secrets",
@@ -473,7 +504,8 @@
       "secret_path"
     ],
     "summary": "Get a built-in secret by path.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "builtin-secrets",
@@ -483,7 +515,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List built-in secrets for an organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "builtin-secrets",
@@ -497,7 +530,8 @@
       "secret_path"
     ],
     "summary": "Update a built-in secret.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "builtin-secrets",
@@ -511,7 +545,8 @@
       "secret_path"
     ],
     "summary": "Update a built-in secret.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "builtin-secrets",
@@ -521,7 +556,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Test built-in secrets database connection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "certificates",
@@ -531,7 +567,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new certificate entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "certificates",
@@ -543,7 +580,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a certificate entry.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "certificates",
@@ -555,7 +593,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single certificate entry by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "certificates",
@@ -565,7 +604,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List certificates with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "certificates",
@@ -577,7 +617,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a certificate entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "collections",
@@ -590,7 +631,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Attach a document to a collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "collections",
@@ -600,7 +642,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "collections",
@@ -612,7 +655,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a collection.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "collections",
@@ -625,7 +669,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Detach a document from a collection.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "collections",
@@ -637,7 +682,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single collection by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "collections",
@@ -647,7 +693,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List document collections as a hierarchical tree.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "collections",
@@ -659,7 +706,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "costs",
@@ -669,7 +717,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a cost sync job.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "costs",
@@ -682,7 +731,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get cost data for a specific resource.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "costs",
@@ -692,7 +742,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List cost sync jobs.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "costs",
@@ -704,7 +755,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Trigger a manual cost sync.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "costs",
@@ -717,7 +769,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create or update cost entry for a resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -729,7 +782,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a label to a data store.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -739,7 +793,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new data store entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -751,7 +806,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a data store entry.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "data-stores",
@@ -763,7 +819,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single data store entry by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -775,7 +832,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get labels for a data store.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -785,7 +843,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List data stores with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "data-stores",
@@ -798,7 +857,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a label from a data store.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "data-stores",
@@ -810,7 +870,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a data store entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "dependencies",
@@ -820,7 +881,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create multiple dependencies at once.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "dependencies",
@@ -830,7 +892,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new dependency relationship between any resource types.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "dependencies",
@@ -840,7 +903,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Delete multiple dependencies at once.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "dependencies",
@@ -852,7 +916,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a dependency relationship.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "dependencies",
@@ -864,7 +929,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single dependency by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "dependencies",
@@ -877,7 +943,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all dependencies for a specific resource.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "dependencies",
@@ -887,7 +954,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all dependencies with pagination and filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "dependencies",
@@ -899,7 +967,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "dependencies",
@@ -911,7 +980,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagram-collections",
@@ -923,7 +993,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a diagram to a collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-collections",
@@ -933,7 +1004,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-collections",
@@ -945,7 +1017,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a collection and its items.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-collections",
@@ -957,7 +1030,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a collection by ID with its items.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-collections",
@@ -967,7 +1041,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List diagram collections with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-collections",
@@ -980,7 +1055,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a diagram from a collection.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-collections",
@@ -992,7 +1068,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a collection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagram-libraries",
@@ -1004,7 +1081,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a shape to a library (owner only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-libraries",
@@ -1014,7 +1092,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new shape library.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-libraries",
@@ -1026,7 +1105,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete library (owner only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-libraries",
@@ -1038,7 +1118,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific library by ID with all its shapes.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-libraries",
@@ -1048,7 +1129,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List shape libraries (tenant-scoped, paginated).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-libraries",
@@ -1061,7 +1143,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a shape from a library (owner only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-libraries",
@@ -1073,7 +1156,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update library (owner only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagram-storage",
@@ -1083,7 +1167,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new storage provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-storage",
@@ -1095,7 +1180,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete storage provider (owner only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-storage",
@@ -1107,7 +1193,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific storage provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-storage",
@@ -1117,7 +1204,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List storage providers (tenant-scoped, paginated).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-storage",
@@ -1129,7 +1217,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test storage provider configuration (owner only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-storage",
@@ -1141,7 +1230,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update storage provider (owner only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagram-templates",
@@ -1151,7 +1241,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new diagram template.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagram-templates",
@@ -1163,7 +1254,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete template (creator only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagram-templates",
@@ -1175,7 +1267,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific template by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-templates",
@@ -1185,7 +1278,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List diagram templates (tenant-scoped, paginated).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagram-templates",
@@ -1197,7 +1291,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update template (creator only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1210,7 +1305,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a reply to a comment.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1222,7 +1318,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a comment on a diagram.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1232,7 +1329,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new diagram.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1244,7 +1342,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a share for a diagram.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1257,7 +1356,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete comment (author or diagram editor only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1269,7 +1369,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a diagram and cascade delete its versions.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1282,7 +1383,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Export diagram as raster format (PNG, PDF).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1294,7 +1396,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a diagram by ID with latest version content.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1307,7 +1410,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific version of a diagram.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1319,7 +1423,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Issue a short-lived ticket for WebSocket authentication.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1331,7 +1436,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List comments on a diagram (paginated) with nested replies.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1341,7 +1447,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List diagrams with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1353,7 +1460,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List shares for a diagram.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1365,7 +1473,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all versions of a diagram.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1378,7 +1487,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Restore a diagram from a specific version.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1391,7 +1501,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Revoke a share.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1403,7 +1514,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Save a new version of diagram content (nodes + edges).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "diagrams",
@@ -1416,7 +1528,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update comment (author or diagram editor only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "diagrams",
@@ -1428,7 +1541,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update diagram metadata (not content).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "discovery",
@@ -1440,7 +1554,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Submit job results and mark as completed.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1450,7 +1565,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new discovery job.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1462,7 +1578,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete discovery job.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "discovery",
@@ -1472,7 +1589,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get all discovery execution history.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1484,7 +1602,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get discovery job details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1496,7 +1615,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get discovery job execution history.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1506,7 +1626,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get pending scan jobs for the scanner service.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1516,7 +1637,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all discovery jobs.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1528,7 +1650,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Manually trigger a discovery job.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1540,7 +1663,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Mark a job as running.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1552,7 +1676,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test discovery job connectivity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "discovery",
@@ -1564,7 +1689,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update discovery job configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "documents",
@@ -1574,7 +1700,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new document.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1586,7 +1713,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a document.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "documents",
@@ -1598,7 +1726,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a document by slug.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1611,7 +1740,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific version of a document.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1621,7 +1751,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List documents with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1633,7 +1764,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all versions of a document.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1645,7 +1777,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Publish a document (set status=published, set published_at).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "documents",
@@ -1658,7 +1791,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Restore a document from a specific version.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "documents",
@@ -1670,7 +1804,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a document.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "entities",
@@ -1680,7 +1815,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new entity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "entities",
@@ -1692,7 +1828,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an entity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "entities",
@@ -1704,7 +1841,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single entity by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entities",
@@ -1716,7 +1854,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all dependencies for an entity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entities",
@@ -1726,7 +1865,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all entities with pagination and filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entities",
@@ -1738,7 +1878,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an entity (full edit support).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "entities",
@@ -1750,7 +1891,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an entity (full edit support).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "entities",
@@ -1762,7 +1904,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update entity attributes (JSON field for type-specific fields).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "entity-types",
@@ -1774,7 +1917,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get details for a specific entity type including all sub-types.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entity-types",
@@ -1787,7 +1931,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get default metadata template for a specific sub-type.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entity-types",
@@ -1799,7 +1944,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get default metadata templates for all sub-types of an entity type.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entity-types",
@@ -1809,7 +1955,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all entity types with their sub-types.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entity-types",
@@ -1821,7 +1968,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all sub-types for a given entity type.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "entity-types",
@@ -1831,7 +1979,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Validate an entity type and sub-type combination.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1844,7 +1993,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add an approver to a stage. Requires flows:admin (defines who approves).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1857,7 +2007,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add an external-service call to a stage.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1870,7 +2021,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a test to a stage.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1882,7 +2034,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Approve a promotion.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1892,7 +2045,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new credential.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1902,7 +2056,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new pipeline.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1914,7 +2069,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new stage for a flow.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -1928,7 +2084,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a stage call.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -1940,7 +2097,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete credential.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -1952,7 +2110,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete pipeline and all related resources (cascade).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -1965,7 +2124,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a stage from a flow.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -1979,7 +2139,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a stage test.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -1991,7 +2152,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Disable a pipeline.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2003,7 +2165,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Duplicate a pipeline including all stages.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2015,7 +2178,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Enable a pipeline.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2027,7 +2191,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Trigger CI/CD execution for a promotion (enqueues a flows-invoker job).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2041,7 +2206,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single stage call.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2053,7 +2219,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get credential details (token never returned).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2065,7 +2232,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get pipeline details with stages and metadata.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2077,7 +2245,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get promotion details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2090,7 +2259,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get the Darwin AI review config for a stage (404 if unconfigured).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2103,7 +2273,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get stage details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2117,7 +2288,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single stage test.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2130,7 +2302,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List approvers configured for a stage.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2143,7 +2316,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List external-service calls configured for a stage.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2153,7 +2327,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all credentials for current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2163,7 +2338,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all pipelines for current tenant with pagination and filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2173,7 +2349,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all promotions for current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2185,7 +2362,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all stages for a flow.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2198,7 +2376,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List tests configured for a stage.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "flows",
@@ -2210,7 +2389,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Reject a promotion.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2224,7 +2404,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove an approver from a stage. Requires flows:admin.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2238,7 +2419,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a stage call.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2250,7 +2432,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update credential configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2262,7 +2445,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update pipeline configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2275,7 +2459,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Upsert the Darwin AI review config for a stage (one per stage).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2288,7 +2473,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update stage configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "flows",
@@ -2302,7 +2488,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a stage test.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "geo",
@@ -2312,7 +2499,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a geographic location, auto-geocoding coordinates when omitted.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "geo",
@@ -2322,7 +2510,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a geographic region.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "geo",
@@ -2334,7 +2523,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a geographic location scoped to the current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "geo",
@@ -2346,7 +2536,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a geographic region scoped to the current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "geo",
@@ -2356,7 +2547,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Geocode a human-readable location query into latitude/longitude.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "geo",
@@ -2366,7 +2558,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List geographic locations for the current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "geo",
@@ -2376,7 +2569,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List geographic regions for the current tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "geo",
@@ -2388,7 +2582,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a geographic location scoped to the current tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "geo",
@@ -2400,7 +2595,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a geographic region scoped to the current tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2415,7 +2611,8 @@
       "group_key"
     ],
     "summary": "Add member to group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2427,7 +2624,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create Google Workspace group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2437,7 +2635,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create Google Workspace provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2449,7 +2648,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create Google Workspace user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2464,7 +2664,8 @@
       "group_key"
     ],
     "summary": "Delete Google Workspace group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2476,7 +2677,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2491,7 +2693,8 @@
       "user_key"
     ],
     "summary": "Delete Google Workspace user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2506,7 +2709,8 @@
       "group_key"
     ],
     "summary": "Get group details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2518,7 +2722,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get provider details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2533,7 +2738,8 @@
       "user_key"
     ],
     "summary": "Get user details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2548,7 +2754,8 @@
       "group_key"
     ],
     "summary": "List group members.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2560,7 +2767,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List Google Workspace groups.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2570,7 +2778,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List Google Workspace providers.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2582,7 +2791,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List Google Workspace users.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2599,7 +2809,8 @@
       "member_email"
     ],
     "summary": "Remove member from group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2611,7 +2822,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "google-workspace",
@@ -2623,7 +2835,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update provider configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "google-workspace",
@@ -2638,7 +2851,8 @@
       "user_key"
     ],
     "summary": "Update user details.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "graph",
@@ -2648,7 +2862,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Analyze dependency graph and return insights.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "graph",
@@ -2658,7 +2873,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Find dependency path between two entities.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "graph",
@@ -2668,7 +2884,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get full dependency graph or filtered subgraph.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "graph",
@@ -2678,7 +2895,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get global map of all resources and relationships for visualization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2690,7 +2908,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Directly add a member to a group (admin/owner only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2702,7 +2921,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Approve an access request.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2712,7 +2932,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Bulk approve multiple requests.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2724,7 +2945,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Cancel own access request.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "group-membership",
@@ -2736,7 +2958,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create an access request for a group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2748,7 +2971,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Deny an access request.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "group-membership",
@@ -2760,7 +2984,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get group details with ownership and member info.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2772,7 +2997,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List members of a group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2784,7 +3010,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List access requests for a group (owners only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2794,7 +3021,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all groups with ownership and member info.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2804,7 +3032,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all pending requests for groups owned by current user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "group-membership",
@@ -2817,7 +3046,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a member from a group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "group-membership",
@@ -2829,7 +3059,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update group ownership and settings.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -2841,7 +3072,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a message to a ticket.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2853,7 +3085,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a member to a team.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2865,7 +3098,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Assign a ticket to a user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2875,7 +3109,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new canned response.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2885,7 +3120,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new SLA policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2895,7 +3131,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new team.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2905,7 +3142,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new ticket.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2915,7 +3153,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get ticket metrics and dashboard statistics.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2927,7 +3166,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a canned response.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -2939,7 +3179,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an SLA policy.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -2951,7 +3192,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a ticket.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -2963,7 +3205,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get team detail with members.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2975,7 +3218,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single ticket by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2985,7 +3229,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List canned responses with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -2997,7 +3242,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List messages for a ticket with pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -3007,7 +3253,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List SLA policies with pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -3017,7 +3264,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List teams with pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -3027,7 +3275,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List tickets with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "helpdesk",
@@ -3039,7 +3288,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Merge two tickets (keep primary, mark secondary as merged).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -3052,7 +3302,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a member from a team.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -3064,7 +3315,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update canned response properties.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -3076,7 +3328,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update SLA policy properties.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -3088,7 +3341,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update team properties.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "helpdesk",
@@ -3100,7 +3354,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a ticket.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3114,7 +3369,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add user to group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3128,7 +3384,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Attach policy to role.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3142,7 +3399,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Attach policy to user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3155,7 +3413,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create access key for user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3167,7 +3426,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3179,7 +3439,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3189,7 +3450,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new IAM provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3201,7 +3463,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new role.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3213,7 +3476,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3227,7 +3491,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete access key.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3240,7 +3505,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3253,7 +3519,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete policy.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3265,7 +3532,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an IAM provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3278,7 +3546,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete role.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3291,7 +3560,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3305,7 +3575,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Detach policy from role.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3319,7 +3590,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Detach policy from user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3332,7 +3604,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get policy details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3344,7 +3617,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific provider details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3357,7 +3631,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get role details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3370,7 +3645,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get user details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3383,7 +3659,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List access keys for user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3395,7 +3672,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List groups from provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3407,7 +3685,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List policies from provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3417,7 +3696,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all IAM providers.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3430,7 +3710,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List policies attached to role.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3442,7 +3723,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List roles from provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3455,7 +3737,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List policies attached to user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3467,7 +3750,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List users from provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3481,7 +3765,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove user from group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3493,7 +3778,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Sync resources from provider to database.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3505,7 +3791,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "iam",
@@ -3517,7 +3804,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update provider configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3530,7 +3818,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update role.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "iam",
@@ -3543,7 +3832,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "id",
@@ -3555,7 +3845,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Resolve a village_id at ``GET /api/v1/id/<village_id>``.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3568,7 +3859,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add identity to group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3578,7 +3870,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new identity group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3588,7 +3881,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new identity/user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3600,7 +3894,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete identity group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3612,7 +3907,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete identity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3624,7 +3920,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get identity group by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3636,7 +3933,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get identity by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3646,7 +3944,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all identity groups.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3656,7 +3955,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all identities with pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "identities",
@@ -3668,7 +3968,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update identity group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3680,7 +3981,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update identity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3692,7 +3994,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update identity group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3704,7 +4007,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update identity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "identities",
@@ -3717,7 +4021,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove identity from group.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "import",
@@ -3727,7 +4032,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Return all supported CSV import templates and their exact column rules.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3737,7 +4043,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new IPAM address.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3747,7 +4054,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new IPAM prefix.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3757,7 +4065,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new IPAM VLAN.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3769,7 +4078,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an IPAM address.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "ipam",
@@ -3781,7 +4091,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an IPAM prefix.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "ipam",
@@ -3793,7 +4104,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an IPAM VLAN.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "ipam",
@@ -3805,7 +4117,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single IPAM address by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3817,7 +4130,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single IPAM prefix by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3829,7 +4143,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get an IPAM prefix with all children (hierarchical tree).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3841,7 +4156,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single IPAM VLAN by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3851,7 +4167,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List IPAM addresses with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3861,7 +4178,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List IPAM prefixes with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3871,7 +4189,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List IPAM VLANs with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "ipam",
@@ -3883,7 +4202,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an IPAM address.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "ipam",
@@ -3895,7 +4215,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an IPAM prefix.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "ipam",
@@ -3907,7 +4228,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an IPAM VLAN.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -3919,7 +4241,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a label to an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3929,7 +4252,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3941,7 +4265,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a comment to an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3953,7 +4278,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Link an entity to an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3963,7 +4289,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new issue label.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3975,7 +4302,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Link a generic resource to an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -3987,7 +4315,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4000,7 +4329,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a comment from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4013,7 +4343,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove an entity link from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4026,7 +4357,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove an entity link from an issue by entity ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4039,7 +4371,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a resource link from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4051,7 +4384,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single issue by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4063,7 +4397,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Link an issue to a milestone.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4075,7 +4410,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Link an issue to a project.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4087,7 +4423,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List comments for an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4099,7 +4436,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List entity links for an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4109,7 +4447,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all available issue labels.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4121,7 +4460,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all labels assigned to a specific issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4133,7 +4473,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List resource links for an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4143,7 +4484,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List issues with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "issues",
@@ -4156,7 +4498,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a label from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4169,7 +4512,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a milestone link from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4182,7 +4526,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a project link from an issue.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4194,7 +4539,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "issues",
@@ -4207,7 +4553,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a comment on an issue.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4217,7 +4564,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new encryption key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4227,7 +4575,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Register a new key provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4239,7 +4588,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Decrypt data using this key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4251,7 +4601,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Schedule key deletion.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4263,7 +4614,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete key provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4275,7 +4627,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Disable a key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4287,7 +4640,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Enable a disabled key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4299,7 +4653,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Encrypt data using this key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4311,7 +4666,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Generate a data encryption key.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4323,7 +4679,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific key details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4335,7 +4692,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get access log for a key.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4347,7 +4705,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get key provider details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4357,7 +4716,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all key providers.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4367,7 +4727,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all keys accessible by current user/organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4379,7 +4740,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Rotate a key (enable automatic rotation or rotate immediately).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4391,7 +4753,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Sign data using this key (asymmetric keys only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4403,7 +4766,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "keys",
@@ -4415,7 +4779,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update key provider configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "keys",
@@ -4427,7 +4792,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Verify a message signature (asymmetric keys only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "labels",
@@ -4437,7 +4803,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new label.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "labels",
@@ -4449,7 +4816,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a label.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "labels",
@@ -4461,7 +4829,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single label by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "labels",
@@ -4471,7 +4840,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all labels with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "labels",
@@ -4483,7 +4853,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a label.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "license-policies",
@@ -4493,7 +4864,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Check components against all active license policies.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "license-policies",
@@ -4503,7 +4875,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new license policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "license-policies",
@@ -4515,7 +4888,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a license policy.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "license-policies",
@@ -4527,7 +4901,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single license policy by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "license-policies",
@@ -4537,7 +4912,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List license policies with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "license-policies",
@@ -4549,7 +4925,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a license policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "licensing",
@@ -4559,7 +4936,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Return the effective license tier, domain-bypass state, limits, and features.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "logs",
@@ -4569,7 +4947,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get last 100 log lines (global admin only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "logs",
@@ -4579,7 +4958,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Search logs, return last 100 matches (global admin only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "metadata",
@@ -4591,7 +4971,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create or update a metadata field for an entity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "metadata",
@@ -4603,7 +4984,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create or update a metadata field for an organization.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "metadata",
@@ -4616,7 +4998,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a metadata field from an entity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "metadata",
@@ -4629,7 +5012,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a metadata field from an organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "metadata",
@@ -4641,7 +5025,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all metadata for an entity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "metadata",
@@ -4653,7 +5038,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all metadata for an organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "metadata",
@@ -4666,7 +5052,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a metadata field for an entity.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "metadata",
@@ -4679,7 +5066,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a metadata field for an organization.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "milestones",
@@ -4689,7 +5077,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new milestone.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "milestones",
@@ -4701,7 +5090,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a milestone.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "milestones",
@@ -4713,7 +5103,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single milestone by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "milestones",
@@ -4725,7 +5116,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all issues linked to a milestone.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "milestones",
@@ -4735,7 +5127,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List milestones with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "milestones",
@@ -4747,7 +5140,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a milestone.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "modules",
@@ -4757,7 +5151,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get list of available modules with status, licensing, and capabilities.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4767,7 +5162,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Map an entity to a network.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4777,7 +5173,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new networking resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4787,7 +5184,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a network topology connection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4799,7 +5197,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an entity-network mapping.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "networking",
@@ -4811,7 +5210,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete networking resource.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "networking",
@@ -4823,7 +5223,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a topology connection.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "networking",
@@ -4835,7 +5236,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get entity-network mapping by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4847,7 +5249,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get networking resource by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4859,7 +5262,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get topology connection by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4869,7 +5273,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get network topology as a graph for visualization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4879,7 +5284,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List entity-network mappings.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4889,7 +5295,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List networking resources with filters.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4899,7 +5306,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List topology connections.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "networking",
@@ -4911,7 +5319,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update networking resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "networking",
@@ -4923,7 +5332,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update networking resource.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -4935,7 +5345,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Add a participant to a rotation.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -4947,7 +5358,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create an escalation policy for a rotation.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -4959,7 +5371,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create an override for a rotation.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -4969,7 +5382,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new on-call rotation.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -4981,7 +5395,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an escalation policy.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -4993,7 +5408,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an override.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5005,7 +5421,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an on-call rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5017,7 +5434,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get current on-call person for all rotations in an organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5029,7 +5447,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get current on-call person for all rotations associated with a service.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5041,7 +5460,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single on-call rotation with participants and current on-call.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5053,7 +5473,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get shift history for a rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5065,7 +5486,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List escalation policies for a rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5077,7 +5499,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all overrides for a rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5089,7 +5512,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all participants in a rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5099,7 +5523,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List on-call rotations with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "on-call",
@@ -5112,7 +5537,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove a participant from a rotation.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5124,7 +5550,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an escalation policy.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5136,7 +5563,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an override.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5149,7 +5577,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a rotation participant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "on-call",
@@ -5161,7 +5590,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an on-call rotation.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "organizations",
@@ -5171,7 +5601,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new Organization Unit (OU).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5183,7 +5614,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an Organization Unit (OU).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "organizations",
@@ -5195,7 +5627,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single Organization Unit (OU) by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5207,7 +5640,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all child organizations scoped to the caller's tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5219,7 +5653,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get relationship graph for an organization and its nearby entities.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5231,7 +5666,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get recursive statistics for an organization and all its descendants.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5241,7 +5677,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all Organization Units (OUs) with pagination and filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "organizations",
@@ -5253,7 +5690,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an Organization Unit (OU).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "organizations",
@@ -5265,7 +5703,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an Organization Unit (OU).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "pages",
@@ -5278,7 +5717,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Attach a document collection to a page.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "pages",
@@ -5288,7 +5728,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new page.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "pages",
@@ -5300,7 +5741,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete page by slug (admin only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "pages",
@@ -5313,7 +5755,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Detach a document collection from a page.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "pages",
@@ -5325,7 +5768,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get all pages that reference this page via wiki-links.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "pages",
@@ -5337,7 +5781,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get page by slug with visibility ACL.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "pages",
@@ -5347,7 +5792,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List pages with optional filtering, visibility ACL, and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "pages",
@@ -5359,7 +5805,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update page by slug.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "portal-auth",
@@ -5369,7 +5816,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Assign a portal user to an organization with a role.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "portal-auth",
@@ -5379,7 +5827,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Change password for the authenticated user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "portal-auth",
@@ -5389,7 +5838,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Disable MFA for the authenticated user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "portal-auth",
@@ -5399,7 +5849,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Enable MFA for the authenticated user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "portal-auth",
@@ -5409,7 +5860,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get current authenticated portal user info.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "portal-auth",
@@ -5419,7 +5871,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Update current authenticated portal user info.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "privacy",
@@ -5429,7 +5882,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "GDPR Art. 17 right-to-erasure: anonymize the caller's own PII.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "privacy",
@@ -5439,7 +5893,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "GDPR Art. 15 / CCPA right-to-know: export the caller's own data as JSON.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "privacy",
@@ -5449,7 +5904,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "CCPA/CPRA \"Do Not Sell or Share\" opt-out + consent withdrawal (per-user flag).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "privacy-admin",
@@ -5459,7 +5915,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Bulk right-to-erasure across many identities in one call (Enterprise).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "privacy-admin",
@@ -5469,7 +5926,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List DSAR self-service + bulk activity for the admin's own tenant (Enterprise).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "profile",
@@ -5479,7 +5937,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get current user's profile information.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "profile",
@@ -5489,7 +5948,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Update current user's profile information.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "projects",
@@ -5499,7 +5959,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new project.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "projects",
@@ -5511,7 +5972,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a project.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "projects",
@@ -5523,7 +5985,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single project by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "projects",
@@ -5533,7 +5996,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List projects with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "projects",
@@ -5545,7 +6009,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a project.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "refs",
@@ -5555,7 +6020,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get all references pointing to a target resource.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "refs",
@@ -5565,7 +6031,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Resolve a reference by village_id or module:type:id.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5575,7 +6042,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Grant a resource role to an identity or group.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5587,7 +6055,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all resource roles for an entity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5599,7 +6068,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all resource roles assigned to an identity.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5611,7 +6081,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all resource roles for an organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5621,7 +6092,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List resource role assignments with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "resource-roles",
@@ -5633,7 +6105,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Revoke a resource role.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5643,7 +6116,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new SBOM component.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5653,7 +6127,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create/trigger a new SBOM scan.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5663,7 +6138,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new SBOM scan schedule.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5675,7 +6151,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an SBOM component.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5687,7 +6164,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an SBOM scan record.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5699,7 +6177,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an SBOM scan schedule.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5711,7 +6190,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single SBOM component by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5723,7 +6203,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get vulnerabilities affecting a specific SBOM component.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5733,7 +6214,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get due SBOM scan schedules (for scanner worker).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5743,7 +6225,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get pending SBOM scans (for scanner worker).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5755,7 +6238,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single SBOM scan by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5767,7 +6251,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single SBOM scan schedule by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5777,7 +6262,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List SBOM components with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5787,7 +6273,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List SBOM scans with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5797,7 +6284,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List SBOM scan schedules with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5809,7 +6297,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Mark an SBOM scan as running (for scanner worker).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5821,7 +6310,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Submit SBOM scan results (for scanner worker).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sbom",
@@ -5833,7 +6323,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an SBOM component.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5845,7 +6336,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an SBOM scan schedule.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sbom",
@@ -5855,7 +6347,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Upload and import an SBOM file (CycloneDX or SPDX).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5865,7 +6358,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Save a search query.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5877,7 +6371,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete saved search.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "search",
@@ -5889,7 +6384,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Execute a saved search.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5899,7 +6395,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Return AI Researcher model configuration, Ollama health, and enabled MCP tool count.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5909,7 +6406,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get most popular/frequent searches.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5921,7 +6419,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get saved search details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5931,7 +6430,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List user's saved searches.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5941,7 +6441,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5951,7 +6452,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Advanced search across all resources.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5961,7 +6463,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Search entities with advanced filters.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5971,7 +6474,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Graph-based search for entities and dependencies.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5981,7 +6485,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Search issues with advanced filters.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -5991,7 +6496,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Search organizations.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -6001,7 +6507,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get search suggestions/autocomplete.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "search",
@@ -6013,7 +6520,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update saved search.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "secrets",
@@ -6023,7 +6531,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Register a new secret from a provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6033,7 +6542,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Register a new secret provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6045,7 +6555,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Remove secret registration (does not delete from provider).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "secrets",
@@ -6057,7 +6568,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete secret provider.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "secrets",
@@ -6069,7 +6581,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific secret (masked by default).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6081,7 +6594,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get access log for a secret.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6093,7 +6607,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get secret provider details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6103,7 +6618,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all secret providers.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6113,7 +6629,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all secrets accessible by current user/organization.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6125,7 +6642,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Force sync secret metadata from provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6137,7 +6655,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Sync all secrets from provider.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6149,7 +6668,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test provider connection.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "secrets",
@@ -6161,7 +6681,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Unmask a secret and retrieve its actual value.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "secrets",
@@ -6173,7 +6694,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update secret metadata (not the actual value in provider).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "secrets",
@@ -6185,7 +6707,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update secret provider configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "services",
@@ -6195,7 +6718,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new service.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6207,7 +6731,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a service.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "services",
@@ -6219,7 +6744,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single service by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6231,7 +6757,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get SBOM components for a service.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6241,7 +6768,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all service endpoints across services.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6251,7 +6779,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List services with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6263,7 +6792,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Trigger an SBOM scan for a service.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "services",
@@ -6275,7 +6805,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a service.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "software",
@@ -6285,7 +6816,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new software entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "software",
@@ -6297,7 +6829,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a software entry.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "software",
@@ -6309,7 +6842,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single software entry by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "software",
@@ -6321,7 +6855,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get SBOM components for a software.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "software",
@@ -6331,7 +6866,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List software with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "software",
@@ -6343,7 +6879,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a software entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6353,7 +6890,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new IdP configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6363,7 +6901,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create SCIM configuration for a tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6375,7 +6914,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an IdP configuration the caller owns.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6387,7 +6927,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get SCIM configuration for a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6397,7 +6938,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List IdP configurations the caller is allowed to see.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6409,7 +6951,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Initiate OIDC logout (RP-Initiated Logout).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6421,7 +6964,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get current user info from OIDC userinfo endpoint.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6433,7 +6977,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Regenerate SCIM bearer token.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6445,7 +6990,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Create user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6458,7 +7004,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Delete user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6471,7 +7018,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Get user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6483,7 +7031,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "SCIM 2.0 - List users.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sso",
@@ -6496,7 +7045,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Replace user.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sso",
@@ -6508,7 +7058,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an IdP configuration the caller owns.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "status",
@@ -6518,7 +7069,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "API status endpoint for console version checks.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6530,7 +7082,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Acquire an editor lock for a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6542,7 +7095,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Approve a paused stream execution.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6554,7 +7108,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a new approval gate for a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6564,7 +7119,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6576,7 +7132,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Create a webhook for a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6588,7 +7145,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6601,7 +7159,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a webhook.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6613,7 +7172,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Duplicate a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6625,7 +7185,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Manually execute a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6637,7 +7198,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get approval status for an execution.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6650,7 +7212,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get details of a specific execution.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6662,7 +7225,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get the current editor lock status for a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6672,7 +7236,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get pending approvals for current user.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6685,7 +7250,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get metadata for a specific node.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6697,7 +7263,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a specific stream by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6707,7 +7274,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List generic and Elder playbook nodes with live tenant/route availability.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6717,7 +7285,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List execution history across all streams for the tenant (global view).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6729,7 +7298,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all approval gates for a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6741,7 +7311,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List execution history for a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6751,7 +7322,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List streams with optional filtering and pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6763,7 +7335,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List webhooks for a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "streams",
@@ -6775,7 +7348,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6787,7 +7361,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a stream.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6799,7 +7374,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Reject a paused stream execution.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6811,7 +7387,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Release an editor lock for a stream.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6824,7 +7401,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update metadata for a specific node.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "streams",
@@ -6836,7 +7414,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Validate playbook graph, node types, module availability, and config.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6846,7 +7425,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new sync configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6858,7 +7438,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete sync configuration and dependent history/mappings/conflicts.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "sync",
@@ -6870,7 +7451,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get sync configuration details.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6880,7 +7462,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all sync configurations.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6890,7 +7473,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List sync conflicts.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6900,7 +7484,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List sync history with pagination.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6910,7 +7495,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List sync mappings.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6922,7 +7508,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Resolve a sync conflict manually.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "sync",
@@ -6932,7 +7519,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get overall sync status summary.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6944,7 +7532,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test connectivity and authentication for a sync configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6956,7 +7545,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Manually trigger batch synchronization for a configuration.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "sync",
@@ -6968,7 +7558,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update sync configuration while preserving redacted/omitted secrets.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "tenants",
@@ -6978,7 +7569,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -6990,7 +7582,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "tenants",
@@ -7003,7 +7596,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a portal user from a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "tenants",
@@ -7015,7 +7609,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a tenant by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -7027,7 +7622,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get usage statistics for a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -7039,7 +7635,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all module enablement states for a specific tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -7051,7 +7648,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List all portal users in a tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -7061,7 +7659,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all tenants.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "tenants",
@@ -7073,7 +7672,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Set module enablement state for a tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "tenants",
@@ -7085,7 +7685,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "tenants",
@@ -7098,7 +7699,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a portal user in a tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "users",
@@ -7108,7 +7710,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new user (admin only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "users",
@@ -7120,7 +7723,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a user (admin only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "users",
@@ -7130,7 +7734,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all users (admin only).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "users",
@@ -7142,7 +7747,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update a user (admin only).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "vulnerabilities",
@@ -7154,7 +7760,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Assign a vulnerability to a service or software.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7164,7 +7771,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Manually create a vulnerability entry.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7174,7 +7782,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get vulnerability dashboard summary statistics.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7184,7 +7793,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Get NVD sync status - how many vulnerabilities need syncing.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7196,7 +7806,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get a single vulnerability by ID.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7206,7 +7817,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List vulnerabilities with optional filtering.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7216,7 +7828,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Trigger vulnerability sync from OSV.dev and NVD.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7226,7 +7839,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Trigger NVD sync to enrich vulnerability CVSS data.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "vulnerabilities",
@@ -7238,7 +7852,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update component-vulnerability link status.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7248,7 +7863,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Broadcast an event to all applicable webhooks and notification rules",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7258,7 +7874,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new inbound webhook with required Bearer/Basic auth and permission scopes.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7268,7 +7885,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new notification rule.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7278,7 +7896,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Create a new webhook for the caller's tenant.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7290,7 +7909,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete an inbound webhook.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7302,7 +7922,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete notification rule.",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7314,7 +7935,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Delete a webhook (must belong to the caller's tenant).",
-    "has_body": false
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7326,7 +7948,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get notification rule details, scoped to caller's tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7338,7 +7961,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get webhook details (must belong to the caller's tenant).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7350,7 +7974,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get webhook delivery history (must belong to the caller's tenant).",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7362,7 +7987,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "List recent received events for an inbound webhook.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7372,7 +7998,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "Return the catalog of available OAuth2-like scopes for inbound webhooks.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7382,7 +8009,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all inbound webhooks for the caller's tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7392,7 +8020,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all notification rules scoped to caller's tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7402,7 +8031,8 @@
     "path_params": [],
     "wildcard_path_params": [],
     "summary": "List all webhooks for the caller's tenant.",
-    "has_body": false
+    "has_body": false,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7415,7 +8045,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Retry a failed webhook delivery (must belong to the caller's tenant).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7427,7 +8058,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Regenerate credentials for an inbound webhook and return them once.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7439,7 +8071,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Test a notification rule.",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7451,7 +8084,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Send a test event to webhook (must belong to the caller's tenant).",
-    "has_body": true
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "webhooks",
@@ -7463,7 +8097,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update an inbound webhook's configuration or authentication type.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7475,7 +8110,8 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update notification rule.",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7487,6 +8123,7 @@
     ],
     "wildcard_path_params": [],
     "summary": "Update webhook configuration (must belong to the caller's tenant).",
-    "has_body": true
+    "has_body": true,
+    "destructive": true
   }
 ]

@@ -25,7 +25,7 @@ An MCP (Model Context Protocol) server exposing Elder's curated operational tool
 
 - **Probes**: `/healthz` returns `{"status":"ok"}` and `/readyz` returns `{"status":"ok","ready":<bool>}`; no version, tool or operation counts.
 - **Deny list**: unauthenticated and credential-establishing hub-api routes (auth login/register/refresh/logout/captcha, portal-auth, SSO/SAML/OIDC browser flows, public share/document routes, inbound webhook/hook triggers) are excluded from the API catalog and rejected on direct invoke (`apps/mcp/catalog.py` `DENIED_ROUTES`).
-- **Destructive operations**: `invoke_api_operation`/`call_api_operation` reject `DELETE`, `PUT` and `PATCH` unless the call passes `confirm: true`; both tools advertise `destructiveHint: true` and `readOnlyHint: false`.
+- **Destructive operations**: `invoke_api_operation`/`call_api_operation` reject any operation whose catalog entry has `destructive: true` unless the call passes `confirm: true`. That is every `DELETE`/`PUT`/`PATCH` plus POSTs classified by `DESTRUCTIVE_POST_HINTS` in `apps/mcp/catalog.py` (whole-token match on the operation name and path segments: delete, purge, revoke, reset, rotate, disable, restore, execute, erase, regenerate, cleanup, merge, password, ...; ordinary creates are not flagged). The flag is stored in `api_catalog.json` at generation time and shown by `describe_api_operation`; both tools advertise `destructiveHint: true` and `readOnlyHint: false`.
 - **Limits** (env, read per request): `MCP_REQUEST_TIMEOUT_S` (60), `MCP_MAX_TOOL_CALLS_PER_BATCH` (5), `MCP_MAX_BATCH_SIZE` (50), `MCP_MAX_CONCURRENT_PER_CALLER` (4, keyed by a credential hash, HTTP 429 beyond), `MCP_MAX_REQUEST_BYTES` (2 MiB), `MCP_MAX_RESPONSE_BYTES` (4 MiB upstream cap; larger responses return an `isError` too-large result).
 - **Errors**: callers receive the upstream status code and a short standard phrase only; upstream bodies and transport exception text stay in masked server logs.
 - **Metrics**: request metrics label the matched route rule (or `unmatched`), never the raw path.
@@ -37,13 +37,14 @@ An MCP (Model Context Protocol) server exposing Elder's curated operational tool
 - **Full `hub-api` Catalog Parity (`apps/mcp/api_catalog.json`)**:
   - `list_api_services`: List all Elder API service namespaces and operation counts.
   - `list_api_operations`: Search/filter all cataloged non-internal `/api/*` operations.
-  - `describe_api_operation`: Inspect HTTP method, path template, path parameters, and summary.
-  - `invoke_api_operation` / `call_api_operation`: Invoke any cataloged non-internal `/api/*` endpoint with strict path-parameter validation and traversal/SSRF blocking.
+  - `describe_api_operation`: Inspect HTTP method, path template, path parameters, summary, and the `destructive` flag.
+  - `invoke_api_operation` / `call_api_operation`: Invoke any cataloged non-internal `/api/*` endpoint (destructive operations need `confirm: true`) with strict path-parameter validation and traversal/SSRF blocking.
   - Paths in the catalog equal the routes registered by `hub-api` (declared trailing slashes preserved, function-local blueprint prefixes such as `/api/v1/helpdesk` resolved). `<path:...>` route parameters are listed in each operation's `wildcard_path_params` and accept slash-separated values validated per segment (no `..`, empty/dot segments, backslashes, control characters, `?`, `#`, `://`, or encoded variants).
-  - **Excluded non-JSON operations** (`apps/mcp/api_catalog_exclusions.json`, regenerated with the catalog): the tool is JSON-only and never claims to support multipart uploads or binary/CSV/XML downloads. Operations whose handler reads `request.files`, returns `send_file`/`send_from_directory`/a raw `Response`, or whose OpenAPI requestBody/2xx response is not JSON are omitted and rejected if invoked:
+  - **Excluded non-JSON operations** (`apps/mcp/api_catalog_exclusions.json`, regenerated with the catalog): the tool is JSON-only and never claims to support multipart uploads or binary/CSV/XML downloads. Operations whose handler reads `request.files`, returns `send_file`/`send_from_directory`/a raw `Response`/`make_response` around a non-JSON body, returns a tuple whose headers declare a non-JSON `Content-Type` (e.g. `(csv_text, 200, {"Content-Type": "text/csv"})`), or whose OpenAPI requestBody/2xx response is not JSON are omitted and rejected if invoked:
 
 | Method | Path | Reason |
 |--------|------|--------|
+| `GET` | `/api/v1/audit-enterprise/export` | non-JSON response body (tuple with text/csv Content-Type) |
 | `GET` | `/api/v1/backup/export/{filename}/download` | binary file download response |
 | `POST` | `/api/v1/backup/import` | multipart/form-data request body (file upload) |
 | `GET` | `/api/v1/backup/{backup_id}/download` | binary file download response |

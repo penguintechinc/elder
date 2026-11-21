@@ -1460,7 +1460,7 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="describe_api_operation",
-        description="Return exact HTTP method, path template, path parameters, and summary for a cataloged hub-api operation.",
+        description="Return exact HTTP method, path template, path parameters, and summary, and destructive flag (requires confirm) for a cataloged hub-api operation.",
         parameters_schema=_params(
             {
                 "service": _str("API service namespace."),
@@ -1488,8 +1488,10 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
                 "confirm": {
                     "type": "boolean",
                     "description": (
-                        "Must be true to run a state-changing DELETE, PUT or PATCH "
-                        "operation; rejected otherwise."
+                        "Must be true to run a destructive operation: any DELETE, "
+                        "PUT or PATCH, or a POST flagged destructive in "
+                        "describe_api_operation (rotate, revoke, bulk-delete, "
+                        "restore, ...); rejected otherwise."
                     ),
                 },
             },
@@ -1516,8 +1518,10 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
                 "confirm": {
                     "type": "boolean",
                     "description": (
-                        "Must be true to run a state-changing DELETE, PUT or PATCH "
-                        "operation; rejected otherwise."
+                        "Must be true to run a destructive operation: any DELETE, "
+                        "PUT or PATCH, or a POST flagged destructive in "
+                        "describe_api_operation (rotate, revoke, bulk-delete, "
+                        "restore, ...); rejected otherwise."
                     ),
                 },
             },

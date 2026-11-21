@@ -463,6 +463,71 @@ async def test_state_changing_invoke_requires_confirm(method: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_destructive_post_requires_confirm_and_create_post_does_not() -> None:
+    """Flagged POSTs need confirm=true (stub hit once); ordinary create POSTs do not."""
+    calls: list[tuple[str, str]] = []
+
+    def _upstream(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, json={"ok": True})
+
+    rotate = {
+        "service": "keys",
+        "operation": "rotate_key",
+        "path_params": {"key_id": "1"},
+    }
+    create = {"service": "labels", "operation": "create_label", "body": {"name": "x"}}
+    app = _make_app(_upstream)
+    async with app.test_client() as client:
+        described = await (
+            await client.post(
+                "/mcp",
+                headers=AUTH,
+                json=_call(
+                    "describe_api_operation",
+                    {"service": "keys", "operation": "rotate_key"},
+                ),
+            )
+        ).get_json()
+        assert _tool_payload(described)["destructive"] is True
+        for tool in ("invoke_api_operation", "call_api_operation"):
+            denied = await (
+                await client.post("/mcp", headers=AUTH, json=_call(tool, rotate))
+            ).get_json()
+            assert denied["result"]["isError"] is True
+            assert "confirm=true" in _tool_payload(denied)["error"]
+        assert calls == []
+
+        granted = await (
+            await client.post(
+                "/mcp",
+                headers=AUTH,
+                json=_call("invoke_api_operation", {**rotate, "confirm": True}),
+            )
+        ).get_json()
+        assert granted["result"]["isError"] is False
+        assert calls == [("POST", "/api/v1/keys/1/rotate")]
+
+        made = await (
+            await client.post(
+                "/mcp", headers=AUTH, json=_call("invoke_api_operation", create)
+            )
+        ).get_json()
+        assert made["result"]["isError"] is False
+        desc = await (
+            await client.post(
+                "/mcp",
+                headers=AUTH,
+                json=_call(
+                    "describe_api_operation",
+                    {"service": "labels", "operation": "create_label"},
+                ),
+            )
+        ).get_json()
+        assert _tool_payload(desc)["destructive"] is False
+
+
+@pytest.mark.asyncio
 async def test_safe_methods_do_not_require_confirm_and_annotations_are_destructive() -> (
     None
 ):

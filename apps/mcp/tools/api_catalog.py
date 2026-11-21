@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from apps.mcp.catalog import (
+        CONFIRM_REQUIRED_METHODS,
         get_operation,
         list_operations,
         list_services,
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 else:
     try:
         from apps.mcp.catalog import (
+            CONFIRM_REQUIRED_METHODS,
             get_operation,
             list_operations,
             list_services,
@@ -21,15 +23,13 @@ else:
         from apps.mcp.client import ElderClient
     except ImportError:
         from catalog import (
+            CONFIRM_REQUIRED_METHODS,
             get_operation,
             list_operations,
             list_services,
             resolve_operation_path,
         )
         from client import ElderClient
-
-
-CONFIRM_REQUIRED_METHODS = frozenset({"DELETE", "PUT", "PATCH"})
 
 
 async def list_api_services(client: ElderClient) -> dict[str, Any]:
@@ -85,14 +85,18 @@ async def invoke_api_operation(
 ) -> Any:
     """Thinly invoke any cataloged ``hub-api`` REST operation using the caller's credentials.
 
-    State-changing DELETE/PUT/PATCH operations require an explicit ``confirm=true``.
+    Destructive operations (DELETE/PUT/PATCH and POSTs the catalog flags
+    ``destructive``, e.g. rotate/revoke/bulk-delete/restore) require an explicit
+    ``confirm=true``.
     """
     op = get_operation(service, operation)
     resolved_path = resolve_operation_path(op, path_params)
 
-    if op.method in CONFIRM_REQUIRED_METHODS and confirm is not True:
+    if (
+        op.destructive or op.method in CONFIRM_REQUIRED_METHODS
+    ) and confirm is not True:
         raise ValueError(
-            f"{op.method} operation {op.service}.{op.operation} changes or deletes data; "
+            f"{op.method} operation {op.service}.{op.operation} is destructive or changes data; "
             "pass confirm=true to proceed"
         )
 
