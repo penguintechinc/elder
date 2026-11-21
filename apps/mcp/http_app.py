@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         mask_secrets,
         public_error_message,
     )
+    from apps.mcp.limits import ConcurrencyLimiter, client_ip
     from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 else:
     try:
@@ -72,6 +73,7 @@ else:
             mask_secrets,
             public_error_message,
         )
+        from apps.mcp.limits import ConcurrencyLimiter, client_ip
         from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
     except ImportError:
         from auth import (
@@ -91,6 +93,7 @@ else:
             mask_secrets,
             public_error_message,
         )
+        from limits import ConcurrencyLimiter, client_ip
         from registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 
 SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
@@ -603,7 +606,8 @@ def create_app(
 
         return _jsonrpc_error(req_id, -32601, f"Method not found: {method}"), proto
 
-    in_flight: dict[str, int] = {}
+    limiter = ConcurrencyLimiter()
+    app.extensions["mcp_limiter"] = limiter
 
     def _protocol_error(code: int, message: str, status: int) -> tuple[Response, int]:
         """Build a JSON-RPC error response carrying the negotiated protocol header."""
@@ -620,12 +624,26 @@ def create_app(
         hub-mcp or hub-api.
         """
         caller_key = g.caller_credentials.credential_fingerprint()
-        max_in_flight = _env_int("MCP_MAX_CONCURRENT_PER_CALLER", 4)
-        if in_flight.get(caller_key, 0) >= max_in_flight:
-            log.warning("mcp_caller_concurrency_exceeded", limit=max_in_flight)
-            return _protocol_error(-32000, "Too many concurrent requests", 429)
+        ip_key = client_ip(request.remote_addr, request.headers)
+        refusal = limiter.try_acquire(
+            caller_key,
+            ip_key,
+            max_total=_env_int("MCP_MAX_CONCURRENT_TOTAL", 64),
+            max_per_caller=_env_int("MCP_MAX_CONCURRENT_PER_CALLER", 4),
+            max_per_ip=_env_int("MCP_MAX_CONCURRENT_PER_IP", 16),
+            max_tracked_callers=_env_int("MCP_MAX_TRACKED_CALLERS", 10000),
+        )
+        if refusal is not None:
+            log.warning(
+                "mcp_concurrency_exceeded",
+                scope=refusal,
+                caller=caller_key[:8],
+                total_in_flight=limiter.total,
+            )
+            resp, status = _protocol_error(-32000, "Too many concurrent requests", 429)
+            resp.headers["Retry-After"] = "1"
+            return resp, status
 
-        in_flight[caller_key] = in_flight.get(caller_key, 0) + 1
         try:
             timeout_s = _env_float("MCP_REQUEST_TIMEOUT_S", 60.0)
             try:
@@ -635,11 +653,7 @@ def create_app(
                 log.warning("mcp_request_timeout", timeout_s=timeout_s)
                 return _protocol_error(-32000, "Request timed out", 504)
         finally:
-            remaining = in_flight.get(caller_key, 1) - 1
-            if remaining <= 0:
-                in_flight.pop(caller_key, None)
-            else:
-                in_flight[caller_key] = remaining
+            limiter.release(caller_key, ip_key)
 
     async def _process_mcp_post() -> Response | tuple[Response, int]:
         """Parse and dispatch one single or batch JSON-RPC payload."""
