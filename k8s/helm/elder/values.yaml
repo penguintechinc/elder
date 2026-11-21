@@ -206,6 +206,9 @@ hub-webui:
 # Elder Flask API
 hub-api:
   enabled: true
+  podLabels:
+    # Opt-in label required by waddleai/ollama's CiliumNetworkPolicy (ollama-server-allow)
+    waddles.penguintech.io/ollama-client: "true"
   image:
     repository: elder/hub-api
     tag: latest

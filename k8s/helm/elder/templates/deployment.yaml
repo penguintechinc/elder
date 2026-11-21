@@ -22,6 +22,9 @@ spec:
     metadata:
       labels:
         {{- include "elder.componentSelectorLabels" (list $component $) | nindent 8 }}
+        {{- with $componentConfig.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with $.Values.global.imagePullSecrets }}
       imagePullSecrets:
