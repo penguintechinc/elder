@@ -173,6 +173,7 @@ hub-api:
     AI_RESEARCHER_MODEL: "gemma4:e4b"
     AI_RESEARCHER_MAX_STEPS: "6"
     ELDER_INTERNAL_API_URL: "http://127.0.0.1:5000"
+    MCP_SERVER_URL: "http://hub-mcp:8080"
   resources:
     requests:
       memory: "256Mi"
@@ -180,6 +181,37 @@ hub-api:
     limits:
       memory: "1Gi"
       cpu: "1000m"
+  autoscaling:
+    enabled: false
+  podDisruptionBudget:
+    enabled: false
+
+# Elder Hosted MCP Service (lightweight Python/Quart API translator)
+hub-mcp:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: elder/hub-mcp
+    tag: alpha-latest
+    pullPolicy: Always
+  service:
+    type: ClusterIP
+    port: 8080
+    targetPort: 8080
+  env:
+    ELDER_API_URL: "http://hub-api:5000"
+    MCP_HOST: "0.0.0.0"
+    MCP_PORT: "8080"
+    MCP_TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    MCP_MAX_CONCURRENT_PER_IP: "64"
+    LOG_LEVEL: "DEBUG"
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "250m"
   autoscaling:
     enabled: false
   podDisruptionBudget:

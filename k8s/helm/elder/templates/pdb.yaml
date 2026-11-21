@@ -4,9 +4,9 @@ component on <component>.podDisruptionBudget.enabled so alpha (single
 replica, disruption budgets add no value there) can opt out per-component
 without a chart-wide flag.
 */}}
-{{- range $component := list "hub-webui" "hub-api" }}
+{{- range $component := list "hub-webui" "hub-api" "hub-mcp" }}
 {{- $componentConfig := index $.Values $component }}
-{{- if and $componentConfig.enabled ($componentConfig.podDisruptionBudget).enabled }}
+{{- if and $componentConfig $componentConfig.enabled ($componentConfig.podDisruptionBudget).enabled }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
