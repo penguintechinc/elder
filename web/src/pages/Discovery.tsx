@@ -11,6 +11,8 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  Radar,
+  Settings,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import type { Organization } from "@/types";
@@ -18,6 +20,8 @@ import api, { type DiscoveryJobItem } from "@/lib/api";
 import Button from "@/components/Button";
 import Card, { CardContent } from "@/components/Card";
 import ModalFormBuilder from "@/components/ModalFormBuilder";
+import VillageIdBadge from "@/components/VillageIdBadge";
+import { formatScheduleInterval } from "@/components/integrations/shared";
 import { FormField } from "@/types/form";
 import { getStatusColor } from "@/lib/colorHelpers";
 import { confirmDelete } from "@/lib/confirmActions";
@@ -25,6 +29,7 @@ import { confirmDelete } from "@/lib/confirmActions";
 interface DiscoveryJob extends DiscoveryJobItem {
   discovery_type?: string;
   schedule?: string;
+  village_id?: string | null;
 }
 
 interface DiscoveryRun {
@@ -36,29 +41,54 @@ interface DiscoveryRun {
   error_message?: string;
 }
 
-// Authenticated integration discovery (requires credentials)
-const INTEGRATION_DISCOVERY_TYPES = [
-  { value: "aws", label: "AWS Discovery" },
-  { value: "gcp", label: "GCP Discovery" },
-  { value: "azure", label: "Azure Discovery" },
-  { value: "kubernetes", label: "Kubernetes Discovery" },
-  { value: "fleetdm", label: "FleetDM Endpoint Discovery" },
-];
+type DiscoveryFilterTab = "all" | "scans" | "integrations";
 
-// Simple unauthenticated scans
+// Local/unauthenticated scan types managed directly on this page
 const SCAN_TYPES = [
   { value: "network", label: "Network Scan" },
   { value: "http_screenshot", label: "HTTP Screenshot" },
   { value: "banner", label: "Banner Grab" },
 ];
 
-// Combined for display purposes
-const DISCOVERY_TYPES = [...INTEGRATION_DISCOVERY_TYPES, ...SCAN_TYPES];
+const SCAN_TYPE_SET = new Set(SCAN_TYPES.map((t) => t.value));
+
+// Display labels for integration-backed discovery queries (configured under /admin/integrations)
+const INTEGRATION_QUERY_LABELS: Record<string, string> = {
+  aws: "AWS Discovery Query",
+  gcp: "GCP Discovery Query",
+  azure: "Azure Discovery Query",
+  kubernetes: "Kubernetes Discovery Query",
+  vultr: "Vultr Discovery Query",
+  fleetdm: "FleetDM Endpoint Query",
+};
+
+function getJobProvider(job: DiscoveryJob): string {
+  return (job.discovery_type || job.provider || "").toLowerCase();
+}
+
+function isScanJob(job: DiscoveryJob): boolean {
+  return SCAN_TYPE_SET.has(getJobProvider(job));
+}
+
+function getJobTypeLabel(job: DiscoveryJob): string {
+  const provider = getJobProvider(job);
+  const scanType = SCAN_TYPES.find((t) => t.value === provider);
+  if (scanType) return scanType.label;
+  return INTEGRATION_QUERY_LABELS[provider] || `${provider || "Integration"} Query`;
+}
+
+function getIntegrationConfigPath(job: DiscoveryJob): string {
+  const provider = getJobProvider(job);
+  if (provider === "fleetdm") {
+    return "/admin/integrations?tab=endpoints";
+  }
+  return "/admin/integrations?tab=cloud";
+}
 
 export default function Discovery() {
-  const [showIntegrationModal, setShowIntegrationModal] = useState(false);
   const [showScanModal, setShowScanModal] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<DiscoveryFilterTab>("all");
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   const { data: jobs, isLoading: jobsLoading } = useQuery({
@@ -67,15 +97,41 @@ export default function Discovery() {
   });
 
   const { data: history } = useQuery({
-    queryKey: ["discoveryHistory", selectedJob],
-    queryFn: () => api.getDiscoveryJobHistory(selectedJob!),
-    enabled: !!selectedJob,
+    queryKey: ["discoveryHistory", selectedJobId],
+    queryFn: () => api.getDiscoveryJobHistory(selectedJobId!),
+    enabled: !!selectedJobId,
   });
 
   const { data: orgs } = useQuery({
     queryKey: ["organizations"],
     queryFn: () => api.getOrganizations(),
   });
+
+  const allJobs: DiscoveryJob[] = useMemo(
+    () => (jobs?.jobs as DiscoveryJob[] | undefined) || [],
+    [jobs?.jobs],
+  );
+
+  const scanJobs = useMemo(
+    () => allJobs.filter((job) => isScanJob(job)),
+    [allJobs],
+  );
+
+  const integrationJobs = useMemo(
+    () => allJobs.filter((job) => !isScanJob(job)),
+    [allJobs],
+  );
+
+  const visibleJobs = useMemo(() => {
+    if (activeTab === "scans") return scanJobs;
+    if (activeTab === "integrations") return integrationJobs;
+    return allJobs;
+  }, [activeTab, allJobs, scanJobs, integrationJobs]);
+
+  const selectedJob = useMemo(
+    () => allJobs.find((j) => j.id === selectedJobId) || null,
+    [allJobs, selectedJobId],
+  );
 
   const runJobMutation = useMutation({
     mutationFn: (id: number) => api.runDiscoveryJob(id),
@@ -84,25 +140,25 @@ export default function Discovery() {
         queryKey: ["discoveryHistory"],
         refetchType: "all",
       });
-      toast.success("Discovery job started");
+      toast.success("Discovery run started");
     },
   });
 
   const deleteJobMutation = useMutation({
     mutationFn: (id: number) => api.deleteDiscoveryJob(id),
-    onSuccess: async () => {
+    onSuccess: async (_data, deletedId) => {
       await queryClient.invalidateQueries({
         queryKey: ["discoveryJobs"],
         refetchType: "all",
       });
-      toast.success("Discovery job deleted");
-      if (selectedJob) {
-        setSelectedJob(null);
+      toast.success("Scan deleted");
+      if (selectedJobId === deletedId) {
+        setSelectedJobId(null);
       }
     },
   });
 
-  interface CreateJobData {
+  interface CreateScanData {
     name: string;
     provider_type: string;
     organization_id: number;
@@ -119,19 +175,18 @@ export default function Discovery() {
     message?: string;
   }
 
-  const createJobMutation = useMutation({
-    mutationFn: (data: CreateJobData) => api.createDiscoveryJob(data),
+  const createScanMutation = useMutation({
+    mutationFn: (data: CreateScanData) => api.createDiscoveryJob(data),
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["discoveryJobs"],
         refetchType: "all",
       });
-      toast.success("Discovery job created");
-      setShowIntegrationModal(false);
+      toast.success("Scan created");
       setShowScanModal(false);
     },
     onError: (error: ApiError) => {
-      toast.error(error.response?.data?.message || "Failed to create job");
+      toast.error(error.response?.data?.message || "Failed to create scan");
     },
   });
 
@@ -147,57 +202,6 @@ export default function Discovery() {
         return <AlertCircle className="w-5 h-5 text-slate-400" />;
     }
   };
-
-  // Form fields
-  const integrationFields: FormField[] = useMemo(
-    () => [
-      {
-        name: "name",
-        label: "Name",
-        type: "text",
-        required: true,
-        placeholder: "AWS Production Discovery",
-      },
-      {
-        name: "provider_type",
-        label: "Integration Type",
-        type: "select",
-        required: true,
-        options: [
-          { value: "", label: "Select integration type" },
-          ...INTEGRATION_DISCOVERY_TYPES,
-        ],
-      },
-      {
-        name: "organization_id",
-        label: "Organization",
-        type: "select",
-        required: true,
-        searchable: true,
-        placeholder: "Select organization",
-        options: (orgs?.items || []).map((o: Organization) => ({
-          value: o.id,
-          label: o.name,
-        })),
-      },
-      {
-        name: "schedule",
-        label: "Schedule (Cron, optional)",
-        type: "text",
-        placeholder: "0 2 * * *",
-      },
-      {
-        name: "config",
-        label: "Configuration (JSON)",
-        type: "textarea",
-        rows: 8,
-        placeholder:
-          '{"region": "us-east-1", "services": ["ec2", "rds", "s3"]}',
-        defaultValue: "{}",
-      },
-    ],
-    [orgs?.items],
-  );
 
   const scanFields: FormField[] = useMemo(
     () => [
@@ -230,193 +234,291 @@ export default function Discovery() {
       {
         name: "schedule",
         label: "Schedule (Cron, optional)",
-        type: "text",
+        type: "cron",
         placeholder: "0 2 * * *",
       },
       {
-        name: "config",
-        label: "Configuration (JSON)",
-        type: "textarea",
-        rows: 6,
-        placeholder: '{"targets": ["192.168.1.0/24"]}',
-        defaultValue: "{}",
+        name: "targets",
+        label: "Targets (one CIDR, IP, or URL per line)",
+        type: "multiline",
+        rows: 5,
+        placeholder: "192.168.1.0/24\n10.0.0.10",
       },
     ],
     [orgs?.items],
   );
 
-  const handleIntegrationSubmit = (data: Record<string, unknown>) => {
-    try {
-      const configObj = JSON.parse((data.config as string) || "{}");
-      const submitData: CreateJobData = {
-        name: data.name as string,
-        provider_type: data.provider_type as string,
-        organization_id: parseInt(data.organization_id as string),
-        config: configObj,
-        schedule: (data.schedule as string) || undefined,
-        enabled: true,
-      };
-      createJobMutation.mutate(submitData);
-    } catch {
-      toast.error("Invalid JSON configuration");
-    }
-  };
-
   const handleScanSubmit = (data: Record<string, unknown>) => {
-    try {
-      const configObj = JSON.parse((data.config as string) || "{}");
-      const submitData: CreateJobData = {
-        name: data.name as string,
-        provider_type: data.provider_type as string,
-        organization_id: parseInt(data.organization_id as string),
-        config: configObj,
-        schedule: (data.schedule as string) || "0",
-        enabled: true,
-      };
-      createJobMutation.mutate(submitData);
-    } catch {
-      toast.error("Invalid JSON configuration");
-    }
+    const rawTargets = data.targets;
+    const targets = Array.isArray(rawTargets)
+      ? rawTargets
+          .map((t) => String(t).trim())
+          .filter((t) => t.length > 0)
+      : typeof rawTargets === "string"
+        ? rawTargets
+            .split("\n")
+            .map((t) => t.trim())
+            .filter((t) => t.length > 0)
+        : [];
+    const submitData: CreateScanData = {
+      name: data.name as string,
+      provider_type: data.provider_type as string,
+      organization_id: parseInt(data.organization_id as string, 10),
+      config: targets.length > 0 ? { targets } : {},
+      schedule: (data.schedule as string) || "0",
+      enabled: true,
+    };
+    createScanMutation.mutate(submitData);
   };
 
   return (
     <div className="p-8">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-white">Cloud Discovery</h1>
+          <h1 className="text-3xl font-bold text-white">Discovery &amp; Scans</h1>
           <p className="mt-2 text-slate-400">
-            Automatically discover and track cloud resources
+            Run local network and HTTP scans or trigger discovery queries against
+            configured integrations
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Link
-            to="/admin/integrations?tab=cloud"
+            to="/admin/integrations"
             className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
           >
             <Plug className="w-4 h-4 mr-2 text-yellow-500" />
-            Manage Integration Profiles
+            Manage Integrations
           </Link>
-          <Button variant="secondary" onClick={() => setShowScanModal(true)}>
+          <Button onClick={() => setShowScanModal(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            Local Scan
-          </Button>
-          <Button onClick={() => setShowIntegrationModal(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Integration Scan
+            New Scan
           </Button>
         </div>
       </div>
 
+      {/* Category Filter Tabs */}
+      <div className="flex flex-wrap items-center gap-2 mb-6 border-b border-slate-800 pb-3">
+        {(
+          [
+            { id: "all", label: "All", count: allJobs.length },
+            { id: "scans", label: "Scans", count: scanJobs.length },
+            {
+              id: "integrations",
+              label: "Integration Queries",
+              count: integrationJobs.length,
+            },
+          ] as const
+        ).map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                isActive
+                  ? "bg-primary-600/20 text-primary-300 border border-primary-500/40"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/60 border border-transparent"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className="px-1.5 py-0.5 text-xs rounded bg-slate-800 text-slate-300">
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Discovery Jobs */}
+        {/* Scans & Integration Discovery Queries */}
         <div>
           <h2 className="text-xl font-semibold text-white mb-4">
-            Discovery Jobs
+            {activeTab === "scans"
+              ? "Active Scans"
+              : activeTab === "integrations"
+                ? "Integration Discovery Queries"
+                : "Scans & Discovery Queries"}
           </h2>
           {jobsLoading ? (
             <div className="flex justify-center py-12">
               <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : jobs?.jobs?.length === 0 ? (
+          ) : visibleJobs.length === 0 ? (
             <Card>
               <CardContent className="text-center py-12">
-                <Compass className="w-12 h-12 text-slate-600 mx-auto mb-4" />
-                <p className="text-slate-400">No discovery jobs configured</p>
-                <div className="flex justify-center gap-3 mt-4">
-                  <Button
-                    variant="secondary"
-                    onClick={() => setShowScanModal(true)}
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Local Scan
-                  </Button>
-                  <Button onClick={() => setShowIntegrationModal(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Integration Scan
-                  </Button>
-                </div>
+                {activeTab === "integrations" ? (
+                  <>
+                    <Plug className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-300 font-medium">
+                      No integration discovery queries configured
+                    </p>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Connect cloud or endpoint providers on the Integrations
+                      page to run discovery queries here.
+                    </p>
+                    <div className="flex justify-center mt-4">
+                      <Link
+                        to="/admin/integrations?tab=cloud"
+                        className="inline-flex items-center px-4 py-2 text-sm font-medium rounded-lg bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                      >
+                        <Plug className="w-4 h-4 mr-2" />
+                        Configure Integrations
+                      </Link>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Compass className="w-12 h-12 text-slate-600 mx-auto mb-4" />
+                    <p className="text-slate-400">
+                      {activeTab === "scans"
+                        ? "No scans configured"
+                        : "No scans or integration discovery queries configured"}
+                    </p>
+                    <div className="flex flex-wrap justify-center gap-3 mt-4">
+                      <Button onClick={() => setShowScanModal(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        New Scan
+                      </Button>
+                      {activeTab === "all" && (
+                        <Link
+                          to="/admin/integrations?tab=cloud"
+                          className="inline-flex items-center px-3.5 py-2 text-sm font-medium rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800 hover:text-white transition-colors"
+                        >
+                          <Plug className="w-4 h-4 mr-2 text-yellow-500" />
+                          Configure Integrations
+                        </Link>
+                      )}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           ) : (
             <div className="space-y-4">
-              {jobs?.jobs?.map((job: DiscoveryJob) => (
-                <Card
-                  key={job.id}
-                  className={
-                    selectedJob === job.id ? "ring-2 ring-primary-500" : ""
-                  }
-                >
-                  <CardContent>
-                    <div className="flex items-start justify-between mb-3">
-                      <div
-                        className="flex-1 cursor-pointer"
-                        onClick={() => setSelectedJob(job.id)}
-                      >
-                        <h3 className="text-lg font-semibold text-white">
-                          {job.name}
-                        </h3>
-                        <p className="text-sm text-slate-400 mt-1">
-                          {
-                            DISCOVERY_TYPES.find(
-                              (t) =>
-                                t.value ===
-                                (job.discovery_type || job.provider),
-                            )?.label
-                          }
-                        </p>
-                        {job.schedule && (
-                          <p className="text-sm text-slate-400">
-                            <Clock className="w-4 h-4 inline mr-1" />
-                            {job.schedule}
+              {visibleJobs.map((job) => {
+                const scan = isScanJob(job);
+                const cadence =
+                  job.schedule ||
+                  (job.schedule_interval
+                    ? formatScheduleInterval(job.schedule_interval)
+                    : null);
+                return (
+                  <Card
+                    key={job.id}
+                    className={
+                      selectedJobId === job.id ? "ring-2 ring-primary-500" : ""
+                    }
+                  >
+                    <CardContent>
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <button
+                          type="button"
+                          className="flex-1 text-left focus:outline-none"
+                          onClick={() => setSelectedJobId(job.id)}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-lg font-semibold text-white">
+                              {job.name}
+                            </h3>
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded ${
+                                scan
+                                  ? "bg-sky-500/15 text-sky-300"
+                                  : "bg-amber-500/15 text-amber-300"
+                              }`}
+                            >
+                              {scan ? (
+                                <Radar className="w-3 h-3" />
+                              ) : (
+                                <Plug className="w-3 h-3" />
+                              )}
+                              {scan ? "Scan" : "Integration Query"}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-400 mt-1">
+                            {getJobTypeLabel(job)}
                           </p>
+                          {cadence && (
+                            <p className="text-sm text-slate-400 mt-0.5">
+                              <Clock className="w-4 h-4 inline mr-1" />
+                              {cadence}
+                            </p>
+                          )}
+                        </button>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded ${
+                              job.enabled
+                                ? "bg-green-500/20 text-green-400"
+                                : "bg-slate-500/20 text-slate-400"
+                            }`}
+                          >
+                            {job.enabled ? "Enabled" : "Disabled"}
+                          </span>
+                          {job.village_id && (
+                            <VillageIdBadge
+                              villageId={job.village_id}
+                              compact
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={() => runJobMutation.mutate(job.id)}
+                        >
+                          <Play className="w-4 h-4 mr-2" />
+                          {scan ? "Run Scan" : "Run Query"}
+                        </Button>
+                        {scan ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Delete ${job.name}`}
+                            onClick={() =>
+                              confirmDelete(job.name, () =>
+                                deleteJobMutation.mutate(job.id),
+                              )
+                            }
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        ) : (
+                          <Link
+                            to={getIntegrationConfigPath(job)}
+                            className="inline-flex items-center px-2.5 py-1.5 text-xs font-medium rounded-md border border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+                          >
+                            <Settings className="w-3.5 h-3.5 mr-1.5" />
+                            Configure in Integrations
+                          </Link>
                         )}
                       </div>
-                      <span
-                        className={`px-2 py-1 text-xs font-medium rounded ${
-                          job.enabled
-                            ? "bg-green-500/20 text-green-400"
-                            : "bg-slate-500/20 text-slate-400"
-                        }`}
-                      >
-                        {job.enabled ? "Enabled" : "Disabled"}
-                      </span>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => runJobMutation.mutate(job.id)}
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        Run Now
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() =>
-                          confirmDelete(job.name, () =>
-                            deleteJobMutation.mutate(job.id),
-                          )
-                        }
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Job History */}
+        {/* Run History */}
         <div>
-          <h2 className="text-xl font-semibold text-white mb-4">Run History</h2>
-          {!selectedJob ? (
+          <h2 className="text-xl font-semibold text-white mb-4">
+            Run History
+            {selectedJob ? (
+              <span className="ml-2 text-sm font-normal text-slate-400">
+                — {selectedJob.name}
+              </span>
+            ) : null}
+          </h2>
+          {!selectedJobId ? (
             <Card>
               <CardContent className="text-center py-12">
                 <Clock className="w-12 h-12 text-slate-600 mx-auto mb-4" />
                 <p className="text-slate-400">
-                  Select a discovery job to view run history
+                  Select a scan or discovery query to view run history
                 </p>
               </CardContent>
             </Card>
@@ -485,15 +587,6 @@ export default function Discovery() {
           )}
         </div>
       </div>
-
-      <ModalFormBuilder
-        isOpen={showIntegrationModal}
-        onClose={() => setShowIntegrationModal(false)}
-        title="Create Integration Discovery"
-        fields={integrationFields}
-        onSubmit={handleIntegrationSubmit}
-        submitLabel="Create"
-      />
 
       <ModalFormBuilder
         isOpen={showScanModal}
