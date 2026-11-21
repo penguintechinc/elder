@@ -11,7 +11,12 @@ from typing import Optional
 
 from quart import Blueprint, current_app, g, jsonify, request
 
-from apps.api.common.refs.registry import get_type, resolve_by_village_id, resolve_ref
+from apps.api.common.refs.registry import (
+    format_resolvable_url,
+    get_type,
+    resolve_by_village_id,
+    resolve_ref,
+)
 from apps.api.common.refs.service import backlinks_for
 from apps.api.utils.async_utils import run_in_threadpool
 from shared.utils.village_id import parse_village_id
@@ -75,12 +80,14 @@ def _build_resolve_response(
             "id": resource_id,
             "village_id": village_id or "",
             "title": None,
-            "url": resolvable.url_pattern.format(id=resource_id),
+            "url": format_resolvable_url(
+                db, resolvable, resource_id, tenant_id=tenant_id
+            ),
             "broken": True,
         }
 
     # Build URL
-    url = resolvable.url_pattern.format(id=resource_id)
+    url = format_resolvable_url(db, resolvable, resource_id, tenant_id=tenant_id)
 
     return {
         "type": resource_type,
@@ -247,8 +254,10 @@ async def get_backlinks():
                     "source_id": ref.source_id,
                     "title": source_data.get("title") if source_data else None,
                     "url": (
-                        get_type(ref.source_type).url_pattern.format(id=ref.source_id)
-                        if get_type(ref.source_type)
+                        format_resolvable_url(
+                            db, rt, ref.source_id, tenant_id=tenant_id
+                        )
+                        if (rt := get_type(ref.source_type))
                         else None
                     ),
                     "broken": source_data is None,

@@ -5,7 +5,7 @@ Ported from IceCharts v1.1.x IceStreams (playbook automation).
 - stream_nodes: individual steps in a workflow
 - stream_edges: connections between nodes
 - stream_versions: versioned snapshots for rollback
-- stream_webhooks: webhook triggers
+- stream_webhooks: webhook triggers (VillageIDMixin)
 - stream_executions: individual workflow run instances
 - stream_node_executions: per-node execution details
 - stream_schedules: cron-like scheduling
@@ -22,7 +22,7 @@ Ported from IceCharts v1.1.x IceStreams (playbook automation).
 All tables prefixed with stream_ per module manifest table_prefix.
 Tenant-scoped: all have tenant_id FK → tenants.id.
 Actor refs: *_identity_id (Integer FK → identities.id).
-Top-level referenceable: stream_playbooks, stream_templates have VillageIDMixin.
+Top-level referenceable: stream_playbooks, stream_templates, stream_webhooks have VillageIDMixin.
 """
 
 from sqlalchemy import (
@@ -163,7 +163,7 @@ class StreamVersion(Base, IDMixin, TenantScopedMixin, TimestampMixin):
     )
 
 
-class StreamWebhook(Base, IDMixin, TenantScopedMixin, TimestampMixin):
+class StreamWebhook(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMixin):
     """Webhook token for playbook trigger."""
 
     __tablename__ = "stream_webhooks"

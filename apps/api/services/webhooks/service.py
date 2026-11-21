@@ -43,6 +43,13 @@ _VALID_ASSIGNEE_TYPES = {"identity", "org_unit"}
 #: (see alembic/versions/037_webhook_assignment_events.py). Used to scope
 #: the mint-collision retry to village_id ONLY.
 _VILLAGE_ID_UNIQUE_CONSTRAINT = "uq_webhooks_village_id"
+_VILLAGE_ID_CONFLICT_CONSTRAINTS = frozenset(
+    {
+        "uq_webhooks_village_id",
+        "ix_webhooks_village_id",
+        "village_ids_pkey",
+    }
+)
 
 _MAX_VILLAGE_ID_MINT_ATTEMPTS = 3
 
@@ -79,12 +86,13 @@ def generate_signature(secret: str, payload: str) -> str:
 
 
 def _is_village_id_conflict(exc: IntegrityError) -> bool:
-    """Return True only if `exc` is the webhooks village_id unique-constraint violation."""
+    """Return True only if ``exc`` is a village_id unique-constraint violation."""
     orig = getattr(exc, "orig", None)
     constraint_name = getattr(getattr(orig, "diag", None), "constraint_name", None)
     if constraint_name is not None:
-        return constraint_name == _VILLAGE_ID_UNIQUE_CONSTRAINT
-    return _VILLAGE_ID_UNIQUE_CONSTRAINT in str(exc)
+        return constraint_name in _VILLAGE_ID_CONFLICT_CONSTRAINTS
+    msg = str(exc)
+    return any(c in msg for c in _VILLAGE_ID_CONFLICT_CONSTRAINTS)
 
 
 def _village_id_seq(village_id: str | None) -> int | None:
@@ -136,7 +144,7 @@ def _insert_webhook_with_unique_village_id(
 
     last_error: IntegrityError | None = None
     for _ in range(_MAX_VILLAGE_ID_MINT_ATTEMPTS):
-        village_id = mint_village_id(tenant_id, redis_client)
+        village_id = mint_village_id(tenant_id, redis_client, db=db)
 
         try:
             return db.webhooks.insert(village_id=village_id, **insert_data)
@@ -147,12 +155,30 @@ def _insert_webhook_with_unique_village_id(
             if redis_client:
                 _raise_village_id_counter_to_table_max(db, tenant_id, redis_client)
 
-    assert last_error is not None  # loop always executes >= 1 iteration
-    raise last_error
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Failed to insert webhook with unique village_id")
+
+
+_VALID_ALERT_DESTINATIONS = frozenset({"EMAIL", "WEBHOOK", "PAGERDUTY", "SLACK"})
+
+
+def _normalize_alert_destination_type(raw_value: Any) -> str:
+    """Normalize and validate an AlertDestinationType member name (uppercase)."""
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise Exception(
+            "Invalid destination_type. Must be one of: email, webhook, pagerduty, slack"
+        )
+    upper = raw_value.strip().upper()
+    if upper not in _VALID_ALERT_DESTINATIONS:
+        raise Exception(
+            "Invalid destination_type. Must be one of: email, webhook, pagerduty, slack"
+        )
+    return upper
 
 
 class WebhookService:
-    """Service for managing webhooks and notification rules."""
+    """Service for managing webhooks, notification rules, and alert configurations."""
 
     def __init__(self, db: DAL):
         """
@@ -784,7 +810,59 @@ class WebhookService:
 
         rules = self.db(query).select(orderby=self.db.notification_rules.created_at)
 
-        return [r.as_dict() for r in rules]
+        return [self._sanitize_notification_rule(r) for r in rules]
+
+    def _get_scoped_notification_rule_row(
+        self, rule_id: int, tenant_id: int | None
+    ) -> Any:
+        """Fetch a notification_rules row, enforcing tenant scoping when ``tenant_id`` is given."""
+        rule = self.db(self.db.notification_rules.id == rule_id).select().first()
+        if not rule:
+            raise Exception(f"Notification rule {rule_id} not found")
+
+        if tenant_id is not None:
+            org = (
+                self.db(
+                    (self.db.organizations.id == rule.organization_id)
+                    & (self.db.organizations.tenant_id == tenant_id)
+                )
+                .select(self.db.organizations.id)
+                .first()
+            )
+            if not org:
+                raise Exception(f"Notification rule {rule_id} not found")
+        return rule
+
+    def _sanitize_notification_rule(self, rule: Any) -> dict[str, Any]:
+        """Serialize a notification_rules row with explicit fields including village_id."""
+        raw_events = getattr(rule, "events", None)
+        if raw_events is None:
+            raw_events = getattr(rule, "events_json", None)
+        if raw_events is None:
+            raw_events = getattr(rule, "event_types", None)
+        raw_config = getattr(rule, "config_json", None)
+        if raw_config is None:
+            raw_config = getattr(rule, "channels", None)
+        return {
+            "id": rule.id,
+            "village_id": getattr(rule, "village_id", None),
+            "organization_id": rule.organization_id,
+            "name": rule.name,
+            "channel": getattr(rule, "channel", None),
+            "events": _parse_json_column(raw_events) or [],
+            "config_json": _parse_json_column(raw_config) or {},
+            "enabled": bool(getattr(rule, "enabled", getattr(rule, "is_active", True))),
+            "created_at": (
+                rule.created_at.isoformat()
+                if getattr(rule, "created_at", None)
+                else None
+            ),
+            "updated_at": (
+                rule.updated_at.isoformat()
+                if getattr(rule, "updated_at", None)
+                else None
+            ),
+        }
 
     def get_notification_rule(self, rule_id: int, tenant_id: int) -> dict[str, Any]:
         """
@@ -793,28 +871,9 @@ class WebhookService:
         Tenant isolation: returns the rule only if its organization_id
         resolves (via organizations.tenant_id) to tenant_id. Cross-tenant
         access returns "not found" (no existence leak).
-
-        Args:
-            rule_id: Notification rule ID
-            tenant_id: Tenant to scope access to (required)
-
-        Returns:
-            Notification rule dictionary
-
-        Raises:
-            Exception: If rule not found or not in tenant_id
         """
-        rule = self.db.notification_rules[rule_id]
-
-        if not rule:
-            raise Exception(f"Notification rule {rule_id} not found")
-
-        # Verify rule's organization belongs to the caller's tenant
-        org = self.db.organizations[rule.organization_id]
-        if not org or org.tenant_id != tenant_id:
-            raise Exception(f"Notification rule {rule_id} not found")
-
-        return rule.as_dict()
+        rule = self._get_scoped_notification_rule_row(rule_id, tenant_id)
+        return self._sanitize_notification_rule(rule)
 
     def create_notification_rule(
         self,
@@ -824,35 +883,35 @@ class WebhookService:
         config: dict[str, Any],
         organization_id: int,
         description: str | None = None,
+        tenant_id: int | None = None,
+        redis_client: Any | None = None,
     ) -> dict[str, Any]:
         """
-        Create a notification rule.
-
-        Args:
-            name: Rule name
-            channel: Notification channel (email, slack, teams, pagerduty)
-            events: List of event types
-            config: Channel-specific configuration
-            organization_id: Organization ID
-            description: Optional description
-
-        Returns:
-            Created notification rule dictionary
+        Create a notification rule with a minted Village ID.
         """
-        # Validate channel
         valid_channels = ["email", "slack", "teams", "pagerduty"]
         if channel not in valid_channels:
             raise Exception(
                 f"Invalid channel. Must be one of: {', '.join(valid_channels)}"
             )
 
-        # Validate events
         if not events or not isinstance(events, list):
             raise Exception("Events must be a non-empty list")
 
-        # Validate config
         if not config or not isinstance(config, dict):
             raise Exception("Config must be a non-empty dictionary")
+
+        if tenant_id is not None:
+            org = (
+                self.db(
+                    (self.db.organizations.id == organization_id)
+                    & (self.db.organizations.tenant_id == tenant_id)
+                )
+                .select(self.db.organizations.id, self.db.organizations.tenant_id)
+                .first()
+            )
+            if not org:
+                raise Exception("organization_id not found in tenant")
 
         from apps.api.utils.village_id import (
             mint_village_id,
@@ -860,24 +919,50 @@ class WebhookService:
         )
 
         now = datetime.now(UTC)
-        tenant_id = resolve_tenant_id_for_org(self.db, organization_id)
-        rule_id = self.db.notification_rules.insert(
-            name=name,
-            channel=channel,
-            events_json=json.dumps(events),
-            config_json=json.dumps(config),
-            organization_id=organization_id,
-            description=description,
-            enabled=True,
-            village_id=mint_village_id(tenant_id),
-            created_at=now,
-            updated_at=now,
+        effective_tenant_id = (
+            tenant_id
+            if tenant_id is not None
+            else resolve_tenant_id_for_org(self.db, organization_id)
+        )
+        village_id = mint_village_id(
+            effective_tenant_id, redis_client=redis_client, db=self.db
         )
 
+        tbl = self.db.notification_rules
+        insert_kwargs: dict[str, Any] = {
+            "name": name,
+            "organization_id": organization_id,
+            "village_id": village_id,
+            "created_at": now,
+            "updated_at": now,
+        }
+        if hasattr(tbl, "channel"):
+            insert_kwargs["channel"] = channel
+        if hasattr(tbl, "events"):
+            insert_kwargs["events"] = events
+        elif hasattr(tbl, "events_json"):
+            insert_kwargs["events_json"] = json.dumps(events)
+        elif hasattr(tbl, "event_types"):
+            insert_kwargs["event_types"] = events
+
+        if hasattr(tbl, "config_json"):
+            insert_kwargs["config_json"] = config
+        elif hasattr(tbl, "channels"):
+            insert_kwargs["channels"] = config
+
+        if hasattr(tbl, "enabled"):
+            insert_kwargs["enabled"] = True
+        elif hasattr(tbl, "is_active"):
+            insert_kwargs["is_active"] = True
+
+        if description is not None and hasattr(tbl, "description"):
+            insert_kwargs["description"] = description
+
+        rule_id = tbl.insert(**insert_kwargs)
         self.db.commit()
 
-        rule = self.db.notification_rules[rule_id]
-        return rule.as_dict()
+        rule = self.db(tbl.id == rule_id).select().first()
+        return self._sanitize_notification_rule(rule)
 
     def update_notification_rule(
         self,
@@ -887,30 +972,13 @@ class WebhookService:
         config: dict[str, Any] | None = None,
         description: str | None = None,
         enabled: bool | None = None,
+        tenant_id: int | None = None,
     ) -> dict[str, Any]:
-        """
-        Update notification rule.
+        """Update notification rule."""
+        self._get_scoped_notification_rule_row(rule_id, tenant_id)
+        tbl = self.db.notification_rules
 
-        Args:
-            rule_id: Rule ID
-            name: New name
-            events: New event list
-            config: New configuration
-            description: New description
-            enabled: New enabled status
-
-        Returns:
-            Updated notification rule dictionary
-
-        Raises:
-            Exception: If rule not found
-        """
-        rule = self.db.notification_rules[rule_id]
-
-        if not rule:
-            raise Exception(f"Notification rule {rule_id} not found")
-
-        update_data = {"updated_at": datetime.now(UTC)}
+        update_data: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
         if name is not None:
             update_data["name"] = name
@@ -918,67 +986,48 @@ class WebhookService:
         if events is not None:
             if not isinstance(events, list):
                 raise Exception("Events must be a list")
-            update_data["events_json"] = json.dumps(events)
+            if hasattr(tbl, "events"):
+                update_data["events"] = events
+            elif hasattr(tbl, "events_json"):
+                update_data["events_json"] = json.dumps(events)
 
         if config is not None:
             if not isinstance(config, dict):
                 raise Exception("Config must be a dictionary")
-            update_data["config_json"] = json.dumps(config)
+            if hasattr(tbl, "config_json"):
+                update_data["config_json"] = config
 
-        if description is not None:
+        if description is not None and hasattr(tbl, "description"):
             update_data["description"] = description
 
         if enabled is not None:
-            update_data["enabled"] = enabled
+            if hasattr(tbl, "enabled"):
+                update_data["enabled"] = enabled
+            elif hasattr(tbl, "is_active"):
+                update_data["is_active"] = enabled
 
-        self.db(self.db.notification_rules.id == rule_id).update(**update_data)
+        self.db(tbl.id == rule_id).update(**update_data)
         self.db.commit()
 
-        rule = self.db.notification_rules[rule_id]
-        return rule.as_dict()
+        rule = self.db(tbl.id == rule_id).select().first()
+        return self._sanitize_notification_rule(rule)
 
-    def delete_notification_rule(self, rule_id: int) -> dict[str, str]:
-        """
-        Delete a notification rule.
-
-        Args:
-            rule_id: Rule ID
-
-        Returns:
-            Success message
-
-        Raises:
-            Exception: If rule not found
-        """
-        rule = self.db.notification_rules[rule_id]
-
-        if not rule:
-            raise Exception(f"Notification rule {rule_id} not found")
-
+    def delete_notification_rule(
+        self, rule_id: int, tenant_id: int | None = None
+    ) -> dict[str, str]:
+        """Delete a notification rule."""
+        self._get_scoped_notification_rule_row(rule_id, tenant_id)
         self.db(self.db.notification_rules.id == rule_id).delete()
         self.db.commit()
 
         return {"message": "Notification rule deleted successfully"}
 
-    def test_notification_rule(self, rule_id: int) -> dict[str, Any]:
-        """
-        Send a test notification for a rule.
+    def test_notification_rule(
+        self, rule_id: int, tenant_id: int | None = None
+    ) -> dict[str, Any]:
+        """Send a test notification for a rule."""
+        rule = self._get_scoped_notification_rule_row(rule_id, tenant_id)
 
-        Args:
-            rule_id: Rule ID
-
-        Returns:
-            Test result
-
-        Raises:
-            Exception: If rule not found
-        """
-        rule = self.db.notification_rules[rule_id]
-
-        if not rule:
-            raise Exception(f"Notification rule {rule_id} not found")
-
-        # Create test notification
         test_payload = {
             "test": True,
             "rule_id": rule_id,
@@ -988,18 +1037,9 @@ class WebhookService:
         return self._send_notification(rule, test_payload)
 
     def _send_notification(self, rule: Any, payload: dict[str, Any]) -> dict[str, Any]:
-        """
-        Send notification via configured channel.
-
-        Args:
-            rule: Notification rule record
-            payload: Notification payload
-
-        Returns:
-            Send result
-        """
+        """Send notification via configured channel."""
         try:
-            config = json.loads(rule.config_json)
+            config = _parse_json_column(rule.config_json) or {}
 
             if rule.channel == "email":
                 return self._send_email_notification(config, payload)
@@ -1014,6 +1054,175 @@ class WebhookService:
 
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    # ===========================
+    # Alert Configuration Methods
+    # ===========================
+
+    def _sanitize_alert_configuration(self, row: Any) -> dict[str, Any]:
+        """Build explicit response shape for an alert_configurations row."""
+        dest_type = getattr(row, "destination_type", "")
+        if hasattr(dest_type, "value"):
+            dest_str = str(dest_type.value).lower()
+        else:
+            dest_str = str(dest_type).lower()
+        return {
+            "id": row.id,
+            "village_id": getattr(row, "village_id", None),
+            "organization_id": row.organization_id,
+            "destination_type": dest_str,
+            "name": row.name,
+            "enabled": int(getattr(row, "enabled", 1) or 0),
+            "config": _parse_json_column(getattr(row, "config", None)) or {},
+            "severity_filter": _parse_json_column(
+                getattr(row, "severity_filter", None)
+            ),
+            "created_at": (
+                row.created_at.isoformat() if getattr(row, "created_at", None) else None
+            ),
+            "updated_at": (
+                row.updated_at.isoformat() if getattr(row, "updated_at", None) else None
+            ),
+        }
+
+    def list_alert_configurations(
+        self,
+        tenant_id: int,
+        organization_id: int | None = None,
+        destination_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List alert configurations scoped to ``tenant_id``."""
+        org_ids = [
+            r.id
+            for r in self.db(self.db.organizations.tenant_id == tenant_id).select(
+                self.db.organizations.id
+            )
+        ]
+        if not org_ids:
+            return []
+
+        query = self.db.alert_configurations.organization_id.belongs(org_ids)
+        if organization_id is not None:
+            query &= self.db.alert_configurations.organization_id == organization_id
+        if destination_type is not None:
+            norm_dest = _normalize_alert_destination_type(destination_type)
+            query &= self.db.alert_configurations.destination_type == norm_dest
+
+        rows = self.db(query).select(orderby=self.db.alert_configurations.created_at)
+        return [self._sanitize_alert_configuration(r) for r in rows]
+
+    def get_alert_configuration(self, config_id: int, tenant_id: int) -> dict[str, Any]:
+        """Get a single alert configuration scoped to ``tenant_id``."""
+        row = self.db(self.db.alert_configurations.id == config_id).select().first()
+        if not row:
+            raise Exception(f"Alert configuration {config_id} not found")
+
+        org = (
+            self.db(
+                (self.db.organizations.id == row.organization_id)
+                & (self.db.organizations.tenant_id == tenant_id)
+            )
+            .select(self.db.organizations.id)
+            .first()
+        )
+        if not org:
+            raise Exception(f"Alert configuration {config_id} not found")
+
+        return self._sanitize_alert_configuration(row)
+
+    def create_alert_configuration(
+        self,
+        tenant_id: int,
+        organization_id: int,
+        destination_type: str,
+        name: str,
+        config: dict[str, Any],
+        enabled: int | bool = 1,
+        severity_filter: list[str] | None = None,
+        redis_client: Any | None = None,
+    ) -> dict[str, Any]:
+        """Create a tenant-scoped alert configuration and mint its Village ID."""
+        norm_dest = _normalize_alert_destination_type(destination_type)
+        if not isinstance(name, str) or not name.strip():
+            raise Exception("Alert configuration name is required")
+        if not isinstance(config, dict) or not config:
+            raise Exception("Config must be a non-empty dictionary")
+        if severity_filter is not None and not isinstance(severity_filter, list):
+            raise Exception("severity_filter must be a list")
+
+        org = (
+            self.db(
+                (self.db.organizations.id == organization_id)
+                & (self.db.organizations.tenant_id == tenant_id)
+            )
+            .select(self.db.organizations.id)
+            .first()
+        )
+        if not org:
+            raise Exception("organization_id not found in tenant")
+
+        from apps.api.utils.village_id import mint_village_id
+
+        now = datetime.now(UTC)
+        village_id = mint_village_id(tenant_id, redis_client=redis_client, db=self.db)
+        config_id = self.db.alert_configurations.insert(
+            organization_id=organization_id,
+            destination_type=norm_dest,
+            name=name.strip(),
+            enabled=1 if enabled else 0,
+            config=config,
+            severity_filter=severity_filter,
+            village_id=village_id,
+            created_at=now,
+            updated_at=now,
+        )
+        self.db.commit()
+
+        row = self.db(self.db.alert_configurations.id == config_id).select().first()
+        return self._sanitize_alert_configuration(row)
+
+    def update_alert_configuration(
+        self,
+        config_id: int,
+        tenant_id: int,
+        name: str | None = None,
+        enabled: int | bool | None = None,
+        config: dict[str, Any] | None = None,
+        severity_filter: Any = _UNSET,
+    ) -> dict[str, Any]:
+        """Update an alert configuration scoped to ``tenant_id``."""
+        self.get_alert_configuration(config_id, tenant_id)
+
+        update_data: dict[str, Any] = {"updated_at": datetime.now(UTC)}
+        if name is not None:
+            if not isinstance(name, str) or not name.strip():
+                raise Exception("Alert configuration name cannot be empty")
+            update_data["name"] = name.strip()
+        if enabled is not None:
+            update_data["enabled"] = 1 if enabled else 0
+        if config is not None:
+            if not isinstance(config, dict) or not config:
+                raise Exception("Config must be a non-empty dictionary")
+            update_data["config"] = config
+        if severity_filter is not _UNSET:
+            if severity_filter is not None and not isinstance(severity_filter, list):
+                raise Exception("severity_filter must be a list")
+            update_data["severity_filter"] = severity_filter
+
+        self.db(self.db.alert_configurations.id == config_id).update(**update_data)
+        self.db.commit()
+
+        row = self.db(self.db.alert_configurations.id == config_id).select().first()
+        return self._sanitize_alert_configuration(row)
+
+    def delete_alert_configuration(
+        self, config_id: int, tenant_id: int
+    ) -> dict[str, str]:
+        """Delete an alert configuration scoped to ``tenant_id``."""
+        self.get_alert_configuration(config_id, tenant_id)
+        self.db(self.db.alert_configurations.id == config_id).delete()
+        self.db.commit()
+        return {"message": "Alert configuration deleted successfully"}
 
     def _send_email_notification(
         self, config: dict[str, Any], payload: dict[str, Any]
@@ -1155,12 +1364,15 @@ class WebhookService:
         # Find notification rules for this event
         rules = self.db(
             (self.db.notification_rules.organization_id == organization_id)
-            & (self.db.notification_rules.enabled is True)
+            & (self.db.notification_rules.enabled == True)  # noqa: E712
         ).select()
 
         notification_results = []
         for rule in rules:
-            events = json.loads(rule.events_json)
+            raw_events = getattr(rule, "events", None)
+            if raw_events is None:
+                raw_events = getattr(rule, "events_json", None)
+            events = _parse_json_column(raw_events) or []
             if event_type in events:
                 try:
                     result = self._send_notification(rule, payload)
