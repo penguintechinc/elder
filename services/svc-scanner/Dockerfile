@@ -6,6 +6,7 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY crates crates
 COPY services services
+COPY cli cli
 
 RUN cargo build --release --locked -p svc-scanner
 
