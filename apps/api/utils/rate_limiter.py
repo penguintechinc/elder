@@ -402,6 +402,48 @@ def rate_limit(
     return decorator
 
 
+_SUBJECT_LIMITERS_EXT_KEY = "subject_rate_limiters"
+
+
+async def check_subject_rate_limit(
+    app: Quart, *, subject: str, limit_per_minute: int, key_prefix: str
+) -> tuple[bool, dict[str, str]]:
+    """Apply a per-minute sliding-window limit keyed by a validated subject id.
+
+    Reuses the same penguin-limiter algorithm and (Redis or memory) storage as the
+    request limiter, but keys on *subject* (e.g. ``tenant:user`` taken from the
+    validated token) instead of the client IP. Honors ``RATELIMIT_ENABLED`` and fails
+    OPEN on a storage error. Returns ``(allowed, response_headers)``.
+    """
+    if not app.config.get("RATELIMIT_ENABLED", True):
+        return True, {}
+    storage, _ = _get_or_create_storage(app)
+    cache: dict[tuple[str, int], tuple[RateLimitConfig, SlidingWindow]] = (
+        app.extensions.setdefault(_SUBJECT_LIMITERS_EXT_KEY, {})
+    )
+    cache_key = (key_prefix, limit_per_minute)
+    entry = cache.get(cache_key)
+    if entry is None:
+        cfg = RateLimitConfig.from_string(
+            f"{limit_per_minute}/minute", key_prefix=key_prefix
+        )
+        entry = (cfg, SlidingWindow(storage, cfg.limit, cfg.window))
+        cache[cache_key] = entry
+    cfg, algo = entry
+    try:
+        result = await asyncio.to_thread(algo.is_allowed, f"{cfg.key_prefix}:{subject}")
+    except Exception:
+        logger.warning("rate_limiter_backend_error", exc_info=True)
+        return True, {}
+    headers = {
+        "X-RateLimit-Limit": str(result.limit),
+        "X-RateLimit-Remaining": str(result.remaining),
+    }
+    if not result.allowed:
+        headers["Retry-After"] = str(max(1, int(result.reset_after)))
+    return result.allowed, headers
+
+
 def rate_limit_exempt(fn: Callable[..., Any]) -> Callable[..., Any]:
     """Exempt a single route from all in-app rate limiting."""
     return rate_limit("off", override_global=True)(fn)

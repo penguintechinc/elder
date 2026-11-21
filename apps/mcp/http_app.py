@@ -221,17 +221,31 @@ def _mcp_tool_success_result(result: Any) -> dict[str, Any]:
     return out
 
 
+# Embedded mode: constant IP bucket + effectively unbounded per-IP cap (see mcp_post).
+_EMBEDDED_IP_KEY = "embedded"
+_NO_IP_CAP = sys.maxsize
+
+
 def create_app(
     elder_api_url: str | None = None,
     elder_transport: httpx.AsyncBaseTransport | None = None,
+    *,
+    embedded: bool = False,
 ) -> Quart:
-    """Create and configure the ``hub-mcp`` Quart ASGI application."""
-    configure_logging_from_env("hub-mcp")
+    """Create and configure the ``hub-mcp`` Quart ASGI application.
+
+    ``embedded=True`` is for in-process use inside hub-api (AI Researcher): the host
+    process already owns logging and OTel providers, so they are not re-initialised.
+    """
     log = structlog.get_logger("hub-mcp")
 
     service_name = os.getenv("OTEL_SERVICE_NAME", "hub-mcp").strip() or "hub-mcp"
-    otel = init_telemetry(service_name)
-    setup_structlog_otel_bridge(otel.get("logger_provider"))
+    if embedded:
+        otel: dict[str, Any] = {}
+    else:
+        configure_logging_from_env("hub-mcp")
+        otel = init_telemetry(service_name)
+        setup_structlog_otel_bridge(otel.get("logger_provider"))
     otel_logger = _attach_otel_log_handler(otel.get("logger_provider"))
 
     meter = get_meter("hub-mcp")
@@ -256,6 +270,7 @@ def create_app(
     )
 
     app = Quart(__name__)
+    app.config["MCP_EMBEDDED"] = bool(embedded)
     app.config["APP_VERSION"] = _resolve_app_version()
     app.config["MAX_CONTENT_LENGTH"] = _env_int(
         "MCP_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES
@@ -616,7 +631,16 @@ def create_app(
         hub-mcp or hub-api.
         """
         caller_key = g.caller_credentials.credential_fingerprint()
-        ip_key = client_ip(request.remote_addr, request.headers)
+        # Embedded (in-process) apps see every tenant from one loopback address, so
+        # per-IP caps are skipped there. This is fixed at app creation, never driven
+        # by a request header, so a remote client cannot opt out of per-IP limiting.
+        if embedded:
+            ip_key = _EMBEDDED_IP_KEY
+            ip_cap_body = ip_cap_slots = _NO_IP_CAP
+        else:
+            ip_key = client_ip(request.remote_addr, request.headers)
+            ip_cap_body = _env_int("MCP_MAX_BODY_READS_PER_IP", 8)
+            ip_cap_slots = _env_int("MCP_MAX_CONCURRENT_PER_IP", 16)
         # Reject an oversized declared length before buffering anything.
         max_bytes = int(app.config["MAX_CONTENT_LENGTH"])
         declared = request.content_length
@@ -626,7 +650,7 @@ def create_app(
         body_refusal = body_limiter.try_acquire(
             ip_key,
             max_total=_env_int("MCP_MAX_CONCURRENT_BODY_READS", 128),
-            max_per_ip=_env_int("MCP_MAX_BODY_READS_PER_IP", 8),
+            max_per_ip=ip_cap_body,
         )
         if body_refusal is not None:
             log.warning(
@@ -657,7 +681,7 @@ def create_app(
             ip_key,
             max_total=_env_int("MCP_MAX_CONCURRENT_TOTAL", 64),
             max_per_caller=_env_int("MCP_MAX_CONCURRENT_PER_CALLER", 4),
-            max_per_ip=_env_int("MCP_MAX_CONCURRENT_PER_IP", 16),
+            max_per_ip=ip_cap_slots,
             max_tracked_callers=_env_int("MCP_MAX_TRACKED_CALLERS", 10000),
         )
         if refusal is not None:
@@ -748,5 +772,6 @@ def create_app(
         resp.headers["MCP-Protocol-Version"] = _negotiate_protocol_version()
         return resp
 
-    auto_instrument_app(app)
+    if not embedded:
+        auto_instrument_app(app)
     return app

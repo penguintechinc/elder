@@ -9,9 +9,13 @@ from typing import Any
 from quart import Blueprint, current_app, g, jsonify, request
 
 from apps.api.auth.decorators import login_required, require_scope
-from apps.api.auth.jwt_handler import get_service_researcher_read_scopes
+from apps.api.auth.jwt_handler import (
+    get_service_researcher_read_scopes,
+    get_token_from_header,
+)
 from apps.api.logging_config import log_error_and_respond
 from apps.api.services.ai_researcher import (
+    AIResearchMcpUnavailableError,
     AIResearchPermissionError,
     AIResearchValidationError,
     OllamaUnavailableError,
@@ -20,10 +24,16 @@ from apps.api.services.ai_researcher import (
 )
 from apps.api.services.search import SearchService
 from apps.api.utils.api_responses import ApiResponse
+from apps.api.utils.inflight_limiter import InflightLimiter
+from apps.api.utils.rate_limiter import check_subject_rate_limit
+from apps.mcp.envutil import env_int
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("search", __name__)
+
+# Per-replica in-flight cap for /ai-research (see _ai_research_admit).
+_ai_research_inflight = InflightLimiter()
 
 
 def get_search_service():
@@ -665,7 +675,72 @@ async def run_ai_research_endpoint():
         )
 
     caller_sub, caller_scopes, caller_username = _resolve_ai_research_caller()
+    # Forward the caller's own validated credential (header or HTTP-only cookie).
+    caller_token = get_token_from_header()
+    if not caller_token:
+        return (
+            jsonify({"error": "UNAUTHORIZED", "message": "Authentication required"}),
+            401,
+        )
 
+    # Per-user limits keyed by the validated token identity (never the client IP).
+    limit_key = f"{tenant_id}:{caller_sub}"
+    refusal = await _ai_research_admit(limit_key)
+    if refusal is not None:
+        return refusal
+    try:
+        return await _run_ai_research_admitted(
+            tenant_id,
+            caller_sub,
+            caller_scopes,
+            caller_token,
+            caller_username,
+        )
+    finally:
+        _ai_research_inflight.release(limit_key)
+
+
+async def _ai_research_admit(limit_key: str):
+    """Apply the per-user rate and in-flight caps; return a 429 tuple or None if admitted.
+
+    On admission an in-flight slot is held and the caller must release it.
+    """
+    max_inflight = env_int("AI_RESEARCH_MAX_CONCURRENT_PER_USER", 2)
+    per_minute = env_int("AI_RESEARCH_RATE_PER_MINUTE", 10)
+    allowed, headers = await check_subject_rate_limit(
+        current_app,
+        subject=limit_key,
+        limit_per_minute=per_minute,
+        key_prefix="elder:ai_research",
+    )
+    if not allowed:
+        resp = jsonify(
+            {"error": "RATE_LIMITED", "message": "Too many AI research requests"}
+        )
+        resp.status_code = 429
+        resp.headers["Retry-After"] = headers.get("Retry-After", "60")
+        return resp
+    if not _ai_research_inflight.try_acquire(limit_key, max_inflight):
+        resp = jsonify(
+            {
+                "error": "TOO_MANY_CONCURRENT",
+                "message": "Too many concurrent AI research requests",
+            }
+        )
+        resp.status_code = 429
+        resp.headers["Retry-After"] = "5"
+        return resp
+    return None
+
+
+async def _run_ai_research_admitted(
+    tenant_id: int,
+    caller_sub: str,
+    caller_scopes: Any,
+    caller_token: str,
+    caller_username: str | None,
+):
+    """Parse the request body and run the researcher (caller holds an in-flight slot)."""
     try:
         payload = await request.get_json(silent=True)
         if not isinstance(payload, dict):
@@ -690,6 +765,7 @@ async def run_ai_research_endpoint():
             query=str(query),
             caller_sub=caller_sub,
             caller_scopes=caller_scopes,
+            caller_token=caller_token,
             caller_username=caller_username,
             model=str(model) if isinstance(model, str) else None,
             history=history if isinstance(history, list) else None,
@@ -702,5 +778,17 @@ async def run_ai_research_endpoint():
         return jsonify({"error": "INVALID_REQUEST", "message": str(exc)}), 400
     except OllamaUnavailableError as exc:
         return jsonify({"error": "OLLAMA_UNAVAILABLE", "message": str(exc)}), 503
+    except AIResearchMcpUnavailableError as exc:
+        # Detail (may expose internal hosts) is logged server-side, never returned.
+        logger.warning("ai_research_mcp_unavailable", extra={"error": str(exc)[:300]})
+        return (
+            jsonify(
+                {
+                    "error": "MCP_UNAVAILABLE",
+                    "message": "The Elder MCP service is currently unavailable",
+                }
+            ),
+            503,
+        )
     except Exception as exc:
         return log_error_and_respond(logger, exc, "AI Researcher execution failed", 500)
