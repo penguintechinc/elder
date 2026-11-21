@@ -1,6 +1,7 @@
 """MCP tools for Elder universal search, graph search, refs, VillageID lookup, and audit logs."""
 
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
     from apps.mcp.client import ElderClient
@@ -104,9 +105,26 @@ async def get_ref_backlinks(client: ElderClient, target: str) -> Any:
     return await client.get("/api/v1/refs/backlinks", params={"target": target})
 
 
+def _encode_village_id(village_id: str) -> str:
+    cleaned = (village_id or "").strip()
+    if not cleaned:
+        raise ValueError("village_id must not be empty")
+    for cand in (cleaned, unquote(cleaned), unquote(unquote(cleaned))):
+        if any(bad in cand for bad in ("..", "/", "\\", "?", "#", "\x00", "\r", "\n")):
+            raise ValueError("Invalid characters in village_id")
+    return quote(cleaned, safe="")
+
+
 async def lookup_village_id(client: ElderClient, village_id: str) -> Any:
     """Look up any Elder resource directly by its compact VillageID identifier."""
-    return await client.get(f"/id/{village_id}")
+    encoded = _encode_village_id(village_id)
+    return await client.get(f"/id/{encoded}")
+
+
+async def resolve_village_id(client: ElderClient, village_id: str) -> Any:
+    """Resolve any Elder resource via the v1 API by its compact VillageID identifier."""
+    encoded = _encode_village_id(village_id)
+    return await client.get(f"/api/v1/id/{encoded}")
 
 
 async def list_audit_logs(
@@ -153,6 +171,7 @@ __all__ = [
     "list_vulnerabilities",
     "lookup_village_id",
     "resolve_ref",
+    "resolve_village_id",
     "search_graph",
     "search_services",
     "universal_search",

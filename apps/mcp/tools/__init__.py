@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from apps.mcp.tools import (
+        api_catalog,
         entities,
         knowledge,
         operations,
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 else:
     try:
         from apps.mcp.tools import (
+            api_catalog,
             entities,
             knowledge,
             operations,
@@ -25,6 +27,7 @@ else:
         )
     except ImportError:
         from tools import (
+            api_catalog,
             entities,
             knowledge,
             operations,
@@ -35,6 +38,7 @@ else:
         )
 
 __all__ = [
+    "api_catalog",
     "entities",
     "knowledge",
     "operations",

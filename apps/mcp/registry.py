@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from apps.mcp.client import ElderClient
     from apps.mcp.tools import (
+        api_catalog,
         entities,
         knowledge,
         operations,
@@ -22,6 +23,7 @@ else:
     try:
         from apps.mcp.client import ElderClient
         from apps.mcp.tools import (
+            api_catalog,
             entities,
             knowledge,
             operations,
@@ -33,6 +35,7 @@ else:
     except ImportError:
         from client import ElderClient
         from tools import (
+            api_catalog,
             entities,
             knowledge,
             operations,
@@ -54,6 +57,7 @@ class ToolDefinition:
     required_module: str | None
     endpoint_path: str
     handler: Callable[..., Awaitable[Any]]
+    destructive: bool = False
 
 
 def _int(description: str) -> dict[str, Any]:
@@ -1409,6 +1413,126 @@ TOOL_REGISTRY: tuple[ToolDefinition, ...] = (
         endpoint_path="/api/v1/flows/promotions",
         handler=knowledge.list_flow_promotions,
     ),
+    # ------------------------------------------------------------------
+    # Village ID v1 Resolution & Catalog-Backed API Parity
+    # ------------------------------------------------------------------
+    ToolDefinition(
+        name="resolve_village_id",
+        description="Resolve an Elder resource via /api/v1/id/{village_id} using its compact VillageID.",
+        parameters_schema=_params(
+            {"village_id": _str("Compact VillageID token.")},
+            required=("village_id",),
+        ),
+        read_only=True,
+        required_module="infrastructure",
+        endpoint_path="/api/v1/id/<village_id>",
+        handler=resources.resolve_village_id,
+    ),
+    ToolDefinition(
+        name="list_api_services",
+        description="List all cataloged Elder hub-api service namespaces and operation counts.",
+        parameters_schema=_params(),
+        read_only=True,
+        required_module="ai",
+        endpoint_path="/api/v1/modules",
+        handler=api_catalog.list_api_services,
+    ),
+    ToolDefinition(
+        name="list_api_operations",
+        description="Discover available Elder hub-api operations by service namespace, HTTP method, or search query.",
+        parameters_schema=_params(
+            {
+                "service": _str(
+                    "Optional API service namespace filter (e.g. licensing, discovery, webhooks)."
+                ),
+                "method": _str(
+                    "Optional HTTP method filter (GET, POST, PUT, PATCH, DELETE)."
+                ),
+                "search": _str(
+                    "Optional substring filter across service, operation, path, and summary."
+                ),
+            }
+        ),
+        read_only=True,
+        required_module="ai",
+        endpoint_path="/api/v1/modules",
+        handler=api_catalog.list_api_operations,
+    ),
+    ToolDefinition(
+        name="describe_api_operation",
+        description="Return exact HTTP method, path template, path parameters, and summary, and destructive flag (requires confirm) for a cataloged hub-api operation.",
+        parameters_schema=_params(
+            {
+                "service": _str("API service namespace."),
+                "operation": _str("Operation name within the service."),
+            },
+            required=("service", "operation"),
+        ),
+        read_only=True,
+        required_module="ai",
+        endpoint_path="/api/v1/modules",
+        handler=api_catalog.describe_api_operation,
+    ),
+    ToolDefinition(
+        name="invoke_api_operation",
+        description="Invoke any cataloged hub-api REST endpoint using caller credentials (1:1 API parity).",
+        parameters_schema=_params(
+            {
+                "service": _str("API service namespace."),
+                "operation": _str("Operation name within the service."),
+                "path_params": _obj(
+                    "Optional path parameter substitutions keyed by parameter name."
+                ),
+                "query_params": _obj("Optional query string parameters."),
+                "body": _obj("Optional JSON request body payload."),
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to run a destructive operation: any DELETE, "
+                        "PUT or PATCH, or a POST flagged destructive in "
+                        "describe_api_operation (rotate, revoke, bulk-delete, "
+                        "restore, ...); rejected otherwise."
+                    ),
+                },
+            },
+            required=("service", "operation"),
+        ),
+        read_only=False,
+        required_module=None,
+        endpoint_path="/api/v1/modules",
+        handler=api_catalog.invoke_api_operation,
+        destructive=True,
+    ),
+    ToolDefinition(
+        name="call_api_operation",
+        description="Invoke any cataloged hub-api REST endpoint using caller credentials (alias of invoke_api_operation).",
+        parameters_schema=_params(
+            {
+                "service": _str("API service namespace."),
+                "operation": _str("Operation name within the service."),
+                "path_params": _obj(
+                    "Optional path parameter substitutions keyed by parameter name."
+                ),
+                "query_params": _obj("Optional query string parameters."),
+                "body": _obj("Optional JSON request body payload."),
+                "confirm": {
+                    "type": "boolean",
+                    "description": (
+                        "Must be true to run a destructive operation: any DELETE, "
+                        "PUT or PATCH, or a POST flagged destructive in "
+                        "describe_api_operation (rotate, revoke, bulk-delete, "
+                        "restore, ...); rejected otherwise."
+                    ),
+                },
+            },
+            required=("service", "operation"),
+        ),
+        read_only=False,
+        required_module=None,
+        endpoint_path="/api/v1/modules",
+        handler=api_catalog.call_api_operation,
+        destructive=True,
+    ),
 )
 
 TOOL_BY_NAME: dict[str, ToolDefinition] = {tool.name: tool for tool in TOOL_REGISTRY}
@@ -1467,7 +1591,7 @@ def _coerce_arg_value(value: Any, schema: dict[str, Any] | None) -> Any:
     return value
 
 
-async def invoke_tool(
+async def _execute_tool_impl(
     name: str,
     client: ElderClient,
     arguments: dict[str, Any] | None = None,
@@ -1475,7 +1599,7 @@ async def invoke_tool(
     read_only_only: bool = True,
     allowed_modules: Iterable[str] | None = None,
 ) -> Any:
-    """Validate authorization/module gates and invoke an Elder MCP tool handler."""
+    """Shared authorization/module gating and argument validation for MCP tools."""
     tool = TOOL_BY_NAME.get(name)
     if tool is None:
         raise ValueError(f"Unknown MCP tool: {name!r}")
@@ -1493,6 +1617,8 @@ async def invoke_tool(
     accepted = {param_name for param_name in sig.parameters if param_name != "client"}
     schema_props = tool.parameters_schema.get("properties", {})
     raw_args = arguments or {}
+    if not isinstance(raw_args, dict):
+        raise ValueError("Tool arguments must be a JSON object")
     call_kwargs: dict[str, Any] = {}
     for key, val in raw_args.items():
         if key in accepted and val is not None:
@@ -1505,3 +1631,39 @@ async def invoke_tool(
             raise ValueError(f"Tool {name!r} requires argument {param_name!r}")
 
     return await tool.handler(client, **call_kwargs)
+
+
+async def invoke_tool(
+    name: str,
+    client: ElderClient,
+    arguments: dict[str, Any] | None = None,
+    *,
+    read_only_only: bool = True,
+    allowed_modules: Iterable[str] | None = None,
+) -> Any:
+    """Validate authorization/module gates and invoke an Elder MCP tool handler (default read-only)."""
+    return await _execute_tool_impl(
+        name,
+        client,
+        arguments,
+        read_only_only=read_only_only,
+        allowed_modules=allowed_modules,
+    )
+
+
+async def execute_tool(
+    name: str,
+    client: ElderClient,
+    arguments: dict[str, Any] | None = None,
+    *,
+    read_only_only: bool = False,
+    allowed_modules: Iterable[str] | None = None,
+) -> Any:
+    """Execute an Elder MCP tool handler across full read+write surface (shared by HTTP and stdio)."""
+    return await _execute_tool_impl(
+        name,
+        client,
+        arguments,
+        read_only_only=read_only_only,
+        allowed_modules=allowed_modules,
+    )
