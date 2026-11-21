@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import httpx
 import pytest
 
 from apps.mcp.http_app import create_app
-from apps.mcp.limits import ConcurrencyLimiter, client_ip
+from apps.mcp.limits import BodyReadLimiter, ConcurrencyLimiter, client_ip
 
 BODY = {
     "jsonrpc": "2.0",
@@ -241,3 +242,202 @@ async def test_stalled_body_returns_408_and_holds_no_slot(
     assert resp.status_code == 408
     assert seen["total"] == 0
     assert limiter.total == 0 and limiter.callers == {} and limiter.ips == {}
+
+
+def _body_app() -> Any:
+    """Build an app whose upstream always succeeds, for body-phase tests."""
+    return create_app(
+        elder_api_url="http://hub-api:5000",
+        elder_transport=httpx.MockTransport(lambda r: httpx.Response(200, json={})),
+    )
+
+
+def _slow_body(monkeypatch: pytest.MonkeyPatch, gate: asyncio.Event) -> dict[str, int]:
+    """Patch Request.get_data to block on ``gate``; return a call/peak counter."""
+    from quart import Request
+
+    stats = {"calls": 0}
+
+    async def _slow(self: Request, *args: Any, **kwargs: Any) -> bytes:
+        """Simulate a client trickling its body until the gate opens."""
+        stats["calls"] += 1
+        await gate.wait()
+        return b'{"jsonrpc":"2.0","id":1,"method":"ping"}'
+
+    monkeypatch.setattr(Request, "get_data", _slow)
+    return stats
+
+
+def _assert_clean(app: Any) -> None:
+    """Assert both limiters returned to zero with empty tables."""
+    bl = app.extensions["mcp_body_limiter"]
+    assert bl.total == 0 and bl.ips == {}
+    ml = app.extensions["mcp_limiter"]
+    assert ml.total == 0 and ml.callers == {} and ml.ips == {}
+
+
+def test_body_limiter_caps_total_per_ip_and_drops_zero_entries() -> None:
+    """BodyReadLimiter enforces total and per-IP caps, groups by key, and fails closed."""
+    lim = BodyReadLimiter()
+    assert lim.try_acquire("a", max_total=3, max_per_ip=2) is None
+    assert lim.try_acquire("a", max_total=3, max_per_ip=2) is None
+    assert lim.try_acquire("a", max_total=3, max_per_ip=2) == "ip"
+    assert lim.try_acquire("b", max_total=3, max_per_ip=2) is None
+    assert lim.try_acquire("c", max_total=3, max_per_ip=2) == "total"
+    for key in ("a", "a", "b"):
+        lim.release(key)
+    assert lim.total == 0 and lim.ips == {}
+    lim.release("ghost")
+    assert lim.total == 0
+    # IPv6 /64 rotation shares one key, so the per-IP cap holds.
+    admitted = sum(
+        lim.try_acquire(
+            client_ip(f"2001:db8:5:5::{i + 1:x}", {}), max_total=99, max_per_ip=4
+        )
+        is None
+        for i in range(100)
+    )
+    assert admitted == 4 and len(lim.ips) == 1
+
+
+@pytest.mark.asyncio
+async def test_slow_body_connections_beyond_global_cap_get_429_unbuffered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Slow-body requests beyond MCP_MAX_CONCURRENT_BODY_READS get 429 without get_data being called."""
+    monkeypatch.setenv("MCP_MAX_CONCURRENT_BODY_READS", "4")
+    monkeypatch.setenv("MCP_MAX_BODY_READS_PER_IP", "1000")
+    gate = asyncio.Event()
+    stats = _slow_body(monkeypatch, gate)
+    app = _body_app()
+    async with app.test_client() as client:
+        tasks = [
+            asyncio.create_task(
+                client.post(
+                    "/mcp", headers={"Authorization": f"Bearer t{i}"}, data=b"{}"
+                )
+            )
+            for i in range(30)
+        ]
+        await asyncio.sleep(0.5)
+        assert app.extensions["mcp_body_limiter"].total == 4
+        assert stats["calls"] == 4
+        gate.set()
+        resps = await asyncio.gather(*tasks)
+    codes = [r.status_code for r in resps]
+    assert codes.count(429) == 26 and set(codes) <= {200, 429}
+    assert all(r.headers.get("Retry-After") for r in resps if r.status_code == 429)
+    _assert_clean(app)
+
+
+@pytest.mark.asyncio
+async def test_per_ip_body_read_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    """One source address cannot hold more than MCP_MAX_BODY_READS_PER_IP body reads."""
+    monkeypatch.setenv("MCP_MAX_BODY_READS_PER_IP", "2")
+    gate = asyncio.Event()
+    stats = _slow_body(monkeypatch, gate)
+    app = _body_app()
+    async with app.test_client() as client:
+        tasks = [
+            asyncio.create_task(
+                client.post(
+                    "/mcp", headers={"Authorization": f"Bearer t{i}"}, data=b"{}"
+                )
+            )
+            for i in range(10)
+        ]
+        await asyncio.sleep(0.5)
+        assert app.extensions["mcp_body_limiter"].total == 2
+        assert stats["calls"] == 2
+        gate.set()
+        resps = await asyncio.gather(*tasks)
+    assert [r.status_code for r in resps].count(429) == 8
+    _assert_clean(app)
+
+
+@pytest.mark.asyncio
+async def test_declared_content_length_over_cap_413_before_body_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Content-Length above the cap gets 413 and the body is never read or slot taken."""
+    monkeypatch.setenv("MCP_MAX_REQUEST_BYTES", "1000")
+    stats = _slow_body(monkeypatch, asyncio.Event())
+    app = _body_app()
+    assert app.config["MAX_CONTENT_LENGTH"] == 1000
+    async with app.test_client() as client:
+        resp = await client.post(
+            "/mcp",
+            headers={"Authorization": "Bearer t", "Content-Length": "5000"},
+            data=b"x" * 10,
+        )
+    assert resp.status_code == 413
+    assert stats["calls"] == 0
+    _assert_clean(app)
+
+
+@pytest.mark.asyncio
+async def test_chunked_body_over_cap_413(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A chunked body (no Content-Length) over the cap is cut off with 413 and counters reset."""
+    monkeypatch.setenv("MCP_MAX_REQUEST_BYTES", "1000")
+    app = _body_app()
+
+    async with app.test_client() as client:
+        resp = await client.post(
+            "/mcp",
+            headers={
+                "Authorization": "Bearer t",
+                "Transfer-Encoding": "chunked",
+                "Content-Length": "",
+            },
+            data=b"x" * 5000,
+        )
+    assert resp.status_code == 413
+    _assert_clean(app)
+
+
+def test_default_request_cap_is_1_mib(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The default MAX_CONTENT_LENGTH is 1 MiB when MCP_MAX_REQUEST_BYTES is unset."""
+    monkeypatch.delenv("MCP_MAX_REQUEST_BYTES", raising=False)
+    assert _body_app().config["MAX_CONTENT_LENGTH"] == 1024 * 1024
+
+
+@pytest.mark.asyncio
+async def test_legitimate_five_call_batch_fits_default_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 5-call tools/call batch with typical arguments is well under the default cap and passes."""
+    monkeypatch.delenv("MCP_MAX_REQUEST_BYTES", raising=False)
+    batch = [{**BODY, "id": i} for i in range(5)]
+    assert len(json.dumps(batch)) < 4096
+    app = _body_app()
+    async with app.test_client() as client:
+        resp = await client.post(
+            "/mcp", headers={"Authorization": "Bearer t"}, json=batch
+        )
+    assert resp.status_code == 200
+    assert len(await resp.get_json()) == 5
+    _assert_clean(app)
+
+
+@pytest.mark.asyncio
+async def test_counters_zero_after_body_timeout_and_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """408 timeouts and 429 refusals both leave the body limiter at zero."""
+    monkeypatch.setenv("MCP_BODY_READ_TIMEOUT_S", "0.2")
+    monkeypatch.setenv("MCP_MAX_CONCURRENT_BODY_READS", "2")
+    monkeypatch.setenv("MCP_MAX_BODY_READS_PER_IP", "1000")
+    _slow_body(monkeypatch, asyncio.Event())
+    app = _body_app()
+    async with app.test_client() as client:
+        resps = await asyncio.gather(
+            *[
+                client.post(
+                    "/mcp", headers={"Authorization": f"Bearer t{i}"}, data=b"{}"
+                )
+                for i in range(6)
+            ]
+        )
+    codes = sorted(r.status_code for r in resps)
+    assert codes == [408, 408, 429, 429, 429, 429]
+    _assert_clean(app)

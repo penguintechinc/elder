@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+try:
+    from apps.mcp.envutil import env_int
+except ImportError:  # executed from apps/mcp/
+    from envutil import env_int
+
 if TYPE_CHECKING:
     from apps.mcp.auth import (
         CallerCredentials,
@@ -76,12 +81,7 @@ _SECRET_RE = re.compile(
 
 def max_response_bytes() -> int:
     """Return the per-response upstream byte cap from ``MCP_MAX_RESPONSE_BYTES`` (default 4 MiB)."""
-    raw = os.getenv("MCP_MAX_RESPONSE_BYTES", "").strip()
-    try:
-        value = int(raw) if raw else DEFAULT_MAX_RESPONSE_BYTES
-    except ValueError:
-        return DEFAULT_MAX_RESPONSE_BYTES
-    return value if value > 0 else DEFAULT_MAX_RESPONSE_BYTES
+    return env_int("MCP_MAX_RESPONSE_BYTES", DEFAULT_MAX_RESPONSE_BYTES)
 
 
 def mask_secrets(text: str) -> str:

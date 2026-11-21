@@ -106,6 +106,43 @@ class ConcurrencyLimiter:
                 table[key] = remaining
 
 
+class BodyReadLimiter:
+    """Bound concurrent request-body reads globally and per source address.
+
+    Runs before any body byte is buffered, so it is keyed by IP only (credentials
+    are not validated yet). Entries exist only while a read is in flight and the
+    table is hard-bounded, failing closed when full.
+    """
+
+    def __init__(self) -> None:
+        """Create empty counters (single event loop; check+increment is atomic)."""
+        self.total = 0
+        self.ips: dict[str, int] = {}
+
+    def try_acquire(
+        self, ip_key: str, *, max_total: int, max_per_ip: int
+    ) -> str | None:
+        """Admit a body read or return the refusal reason (``total``/``tracked``/``ip``)."""
+        if self.total >= max_total:
+            return "total"
+        if ip_key not in self.ips and len(self.ips) >= max_total:
+            return "tracked"
+        if self.ips.get(ip_key, 0) >= max_per_ip:
+            return "ip"
+        self.total += 1
+        self.ips[ip_key] = self.ips.get(ip_key, 0) + 1
+        return None
+
+    def release(self, ip_key: str) -> None:
+        """Release a body-read slot and drop the IP entry when it reaches zero."""
+        self.total = max(0, self.total - 1)
+        remaining = self.ips.get(ip_key, 1) - 1
+        if remaining <= 0:
+            self.ips.pop(ip_key, None)
+        else:
+            self.ips[ip_key] = remaining
+
+
 def parse_trusted_proxies(raw: str | None) -> list[_Network]:
     """Parse a comma list of CIDRs/addresses, silently skipping invalid items."""
     nets: list[_Network] = []

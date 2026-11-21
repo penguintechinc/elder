@@ -19,6 +19,11 @@ if _HERE not in sys.path:
 
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
+try:  # noqa: E402
+    from apps.mcp.envutil import env_int
+except ImportError:
+    from envutil import env_int
+
 if TYPE_CHECKING:
     from apps.mcp.auth import (
         CallerCredentials,
@@ -66,7 +71,7 @@ else:
 mcp = FastMCP(
     "elder",
     host=os.environ.get("MCP_HOST", "127.0.0.1"),
-    port=int(os.environ.get("MCP_PORT", "8080")),
+    port=env_int("MCP_PORT", 8080),
 )
 
 _client: ElderClient | None = None

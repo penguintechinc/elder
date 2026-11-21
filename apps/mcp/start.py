@@ -6,6 +6,11 @@ import os
 
 import structlog
 
+try:
+    from apps.mcp.envutil import env_int
+except ImportError:  # executed from apps/mcp/
+    from envutil import env_int
+
 logger = structlog.get_logger(__name__)
 
 
@@ -14,7 +19,7 @@ def main() -> None:
     import uvicorn
 
     host = os.getenv("MCP_HOST", "0.0.0.0")  # nosec B104
-    port = int(os.getenv("MCP_PORT", "8080"))
+    port = env_int("MCP_PORT", 8080)
 
     logger.info("starting_hub_mcp_server", host=host, port=port)
 

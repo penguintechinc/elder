@@ -53,7 +53,8 @@ if TYPE_CHECKING:
         mask_secrets,
         public_error_message,
     )
-    from apps.mcp.limits import ConcurrencyLimiter, client_ip
+    from apps.mcp.envutil import env_float, env_int
+    from apps.mcp.limits import BodyReadLimiter, ConcurrencyLimiter, client_ip
     from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 else:
     try:
@@ -74,7 +75,8 @@ else:
             mask_secrets,
             public_error_message,
         )
-        from apps.mcp.limits import ConcurrencyLimiter, client_ip
+        from apps.mcp.envutil import env_float, env_int
+        from apps.mcp.limits import BodyReadLimiter, ConcurrencyLimiter, client_ip
         from apps.mcp.registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
     except ImportError:
         from auth import (
@@ -94,7 +96,8 @@ else:
             mask_secrets,
             public_error_message,
         )
-        from limits import ConcurrencyLimiter, client_ip
+        from envutil import env_float, env_int
+        from limits import BodyReadLimiter, ConcurrencyLimiter, client_ip
         from registry import TOOL_BY_NAME, TOOL_REGISTRY, execute_tool
 
 SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
@@ -105,28 +108,12 @@ SUPPORTED_PROTOCOL_VERSIONS: tuple[str, ...] = (
 DEFAULT_PROTOCOL_VERSION = "2025-03-26"
 
 _AUTH_EXEMPT_PATHS = frozenset({"/healthz", "/readyz"})
-MAX_REQUEST_BYTES = int(os.getenv("MCP_MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
-MAX_BATCH_SIZE = int(os.getenv("MCP_MAX_BATCH_SIZE", "50"))
-
-
-def _env_int(name: str, default: int) -> int:
-    """Read a positive integer env var at call time, falling back to ``default``."""
-    raw = (os.getenv(name) or "").strip()
-    try:
-        value = int(raw) if raw else default
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
-def _env_float(name: str, default: float) -> float:
-    """Read a positive float env var at call time, falling back to ``default``."""
-    raw = (os.getenv(name) or "").strip()
-    try:
-        value = float(raw) if raw else default
-    except ValueError:
-        return default
-    return value if value > 0 else default
+# 1 MiB: a 5-call tools/call batch or catalog invoke body is a few KiB, so >100x headroom.
+DEFAULT_MAX_REQUEST_BYTES = 1024 * 1024
+MAX_REQUEST_BYTES = env_int("MCP_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES)
+MAX_BATCH_SIZE = env_int("MCP_MAX_BATCH_SIZE", 50)
+_env_int = env_int
+_env_float = env_float
 
 
 def _resolve_app_version() -> str:
@@ -270,7 +257,9 @@ def create_app(
 
     app = Quart(__name__)
     app.config["APP_VERSION"] = _resolve_app_version()
-    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+    app.config["MAX_CONTENT_LENGTH"] = _env_int(
+        "MCP_MAX_REQUEST_BYTES", DEFAULT_MAX_REQUEST_BYTES
+    )
     app.config["ELDER_API_URL"] = resolve_elder_base_url(elder_api_url)
 
     cors(
@@ -609,6 +598,8 @@ def create_app(
 
     limiter = ConcurrencyLimiter()
     app.extensions["mcp_limiter"] = limiter
+    body_limiter = BodyReadLimiter()
+    app.extensions["mcp_body_limiter"] = body_limiter
 
     def _protocol_error(code: int, message: str, status: int) -> tuple[Response, int]:
         """Build a JSON-RPC error response carrying the negotiated protocol header."""
@@ -626,16 +617,41 @@ def create_app(
         """
         caller_key = g.caller_credentials.credential_fingerprint()
         ip_key = client_ip(request.remote_addr, request.headers)
+        # Reject an oversized declared length before buffering anything.
+        max_bytes = int(app.config["MAX_CONTENT_LENGTH"])
+        declared = request.content_length
+        if declared is not None and declared > max_bytes:
+            return _protocol_error(-32600, "Request body too large", 413)
+        # Bound the body-read phase (IP-keyed: credentials are not validated yet).
+        body_refusal = body_limiter.try_acquire(
+            ip_key,
+            max_total=_env_int("MCP_MAX_CONCURRENT_BODY_READS", 128),
+            max_per_ip=_env_int("MCP_MAX_BODY_READS_PER_IP", 8),
+        )
+        if body_refusal is not None:
+            log.warning(
+                "mcp_body_read_limit_exceeded",
+                scope=body_refusal,
+                in_flight=body_limiter.total,
+            )
+            resp, status = _protocol_error(
+                -32000, "Too many concurrent body reads", 429
+            )
+            resp.headers["Retry-After"] = "1"
+            return resp, status
         # Read the body BEFORE taking a slot so slow-body clients hold none.
         body_timeout_s = _env_float("MCP_BODY_READ_TIMEOUT_S", 10.0)
         try:
-            async with asyncio.timeout(body_timeout_s):
-                raw_body = await request.get_data()
-        except TimeoutError:
-            log.warning("mcp_body_read_timeout", timeout_s=body_timeout_s)
-            return _protocol_error(-32000, "Request body read timed out", 408)
-        except RequestEntityTooLarge:
-            return _protocol_error(-32600, "Request body too large", 413)
+            try:
+                async with asyncio.timeout(body_timeout_s):
+                    raw_body = await request.get_data()
+            except TimeoutError:
+                log.warning("mcp_body_read_timeout", timeout_s=body_timeout_s)
+                return _protocol_error(-32000, "Request body read timed out", 408)
+            except RequestEntityTooLarge:
+                return _protocol_error(-32600, "Request body too large", 413)
+        finally:
+            body_limiter.release(ip_key)
         refusal = limiter.try_acquire(
             caller_key,
             ip_key,
