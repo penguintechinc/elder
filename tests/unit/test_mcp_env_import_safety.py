@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -10,6 +11,13 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
+
+# apps.mcp.server imports the third-party `mcp` package, which is only installed in the
+# apps/mcp image (its requirements pin a different opentelemetry than the shared CI env).
+_MCP_SKIP_REASON = (
+    "mcp package not installed in this env (see #387); runs in the apps/mcp image"
+)
+_MCP_MODULES = {"apps.mcp.server"}
 
 # (env var, module, attribute expression evaluated on the module, expected default)
 _CASES = [
@@ -26,6 +34,8 @@ def test_bad_env_does_not_break_import(
     var: str, module: str, expr: str, default: str, bad: str
 ) -> None:
     """Invalid, empty, zero and negative values import cleanly and yield the default."""
+    if module in _MCP_MODULES:
+        pytest.importorskip("mcp", reason=_MCP_SKIP_REASON)
     code = f"import {module} as m; print(m.{expr})"
     env = {**os.environ, "PYTHONPATH": str(_ROOT), var: bad}
     proc = subprocess.run(  # noqa: S603
@@ -39,6 +49,13 @@ def test_bad_env_does_not_break_import(
     )
     assert proc.returncode == 0, proc.stderr[-500:]
     assert proc.stdout.strip().splitlines()[-1] == default
+
+
+def test_mcp_skip_only_when_package_absent() -> None:
+    """If `mcp` is installed it must import cleanly, so a skip can never mask a broken install."""
+    if importlib.util.find_spec("mcp") is None:
+        pytest.skip(_MCP_SKIP_REASON)
+    import mcp  # noqa: F401, PLC0415 - fail loudly on a present-but-broken package
 
 
 def test_invalid_value_warns_once_without_leaking_value() -> None:
