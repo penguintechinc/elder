@@ -19,6 +19,7 @@ import httpx
 import structlog
 from quart import Quart, Response, g, jsonify, request
 from quart_cors import cors
+from werkzeug.exceptions import RequestEntityTooLarge
 
 # Ensure `apps.mcp` and `shared` resolve even when executed from `apps/mcp/`.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -625,6 +626,16 @@ def create_app(
         """
         caller_key = g.caller_credentials.credential_fingerprint()
         ip_key = client_ip(request.remote_addr, request.headers)
+        # Read the body BEFORE taking a slot so slow-body clients hold none.
+        body_timeout_s = _env_float("MCP_BODY_READ_TIMEOUT_S", 10.0)
+        try:
+            async with asyncio.timeout(body_timeout_s):
+                raw_body = await request.get_data()
+        except TimeoutError:
+            log.warning("mcp_body_read_timeout", timeout_s=body_timeout_s)
+            return _protocol_error(-32000, "Request body read timed out", 408)
+        except RequestEntityTooLarge:
+            return _protocol_error(-32600, "Request body too large", 413)
         refusal = limiter.try_acquire(
             caller_key,
             ip_key,
@@ -648,16 +659,15 @@ def create_app(
             timeout_s = _env_float("MCP_REQUEST_TIMEOUT_S", 60.0)
             try:
                 async with asyncio.timeout(timeout_s):
-                    return await _process_mcp_post()
+                    return await _process_mcp_post(raw_body)
             except TimeoutError:
                 log.warning("mcp_request_timeout", timeout_s=timeout_s)
                 return _protocol_error(-32000, "Request timed out", 504)
         finally:
             limiter.release(caller_key, ip_key)
 
-    async def _process_mcp_post() -> Response | tuple[Response, int]:
-        """Parse and dispatch one single or batch JSON-RPC payload."""
-        raw_body = await request.get_data()
+    async def _process_mcp_post(raw_body: bytes) -> Response | tuple[Response, int]:
+        """Parse and dispatch one single or batch JSON-RPC payload (body already read)."""
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):

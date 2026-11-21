@@ -147,3 +147,97 @@ def test_xff_ignored_unless_peer_is_trusted_proxy(
     assert client_ip("10.0.0.1", {}) == "10.0.0.1"
     monkeypatch.setenv("MCP_TRUSTED_PROXIES", "garbage,")
     assert client_ip("10.0.0.1", hdr) == "10.0.0.1"
+
+
+def test_ipv6_grouped_by_prefix_and_mapped_ipv4(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Addresses in one /64 share a key, other /64s differ, and ::ffff:a.b.c.d maps to IPv4."""
+    monkeypatch.delenv("MCP_IPV6_PREFIX_LEN", raising=False)
+    monkeypatch.delenv("MCP_TRUSTED_PROXIES", raising=False)
+    a = client_ip("2001:db8:1:2::1", {})
+    b = client_ip("2001:db8:1:2:ffff:ffff:ffff:ffff", {})
+    c = client_ip("2001:db8:1:3::1", {})
+    assert a == b and a != c
+    assert client_ip("::ffff:192.0.2.7", {}) == "192.0.2.7"
+    assert client_ip("192.0.2.7", {}) == "192.0.2.7"
+    assert client_ip("fe80::1%eth0", {}) == client_ip("fe80::2", {})
+    assert client_ip(None, {}) == "unknown"
+    assert client_ip("garbage", {}) == "unknown"
+    monkeypatch.setenv("MCP_IPV6_PREFIX_LEN", "128")
+    assert client_ip("2001:db8:1:2::1", {}) != client_ip("2001:db8:1:2::2", {})
+
+
+@pytest.mark.parametrize("raw", ["abc", "0", "31", "129", "-1", "63.5"])
+def test_invalid_ipv6_prefix_env_falls_back_to_64(
+    monkeypatch: pytest.MonkeyPatch, raw: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Out-of-range or malformed MCP_IPV6_PREFIX_LEN behaves exactly like the default 64 and warns."""
+    monkeypatch.delenv("MCP_TRUSTED_PROXIES", raising=False)
+    monkeypatch.delenv("MCP_IPV6_PREFIX_LEN", raising=False)
+    expected = client_ip("2001:db8:1:2::1", {})
+    monkeypatch.setenv("MCP_IPV6_PREFIX_LEN", raw)
+    with caplog.at_level("WARNING"):
+        assert client_ip("2001:db8:1:2::1", {}) == expected
+        assert client_ip("2001:db8:1:2::9", {}) == expected
+        assert client_ip("2001:db8:1:3::9", {}) != expected
+    assert any("MCP_IPV6_PREFIX_LEN" in r.message for r in caplog.records)
+
+
+def test_xff_hop_is_normalised_like_peer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A trusted-proxy X-Forwarded-For hop is grouped by IPv6 prefix and IPv4-mapped is unwrapped."""
+    monkeypatch.delenv("MCP_IPV6_PREFIX_LEN", raising=False)
+    monkeypatch.setenv("MCP_TRUSTED_PROXIES", "10.0.0.0/24")
+    h1 = {"X-Forwarded-For": "2001:db8:5:6::aaaa"}
+    h2 = {"X-Forwarded-For": "2001:db8:5:6::bbbb"}
+    h3 = {"X-Forwarded-For": "2001:db8:5:7::bbbb"}
+    assert client_ip("10.0.0.1", h1) == client_ip("10.0.0.1", h2)
+    assert client_ip("10.0.0.1", h1) != client_ip("10.0.0.1", h3)
+    assert client_ip("10.0.0.1", {"X-Forwarded-For": "::ffff:198.51.100.4"}) == (
+        "198.51.100.4"
+    )
+
+
+def test_rotating_addresses_in_one_prefix_cannot_exceed_per_ip_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Flooding from many addresses inside one /64 never admits more than max_per_ip."""
+    monkeypatch.delenv("MCP_IPV6_PREFIX_LEN", raising=False)
+    monkeypatch.delenv("MCP_TRUSTED_PROXIES", raising=False)
+    lim = ConcurrencyLimiter()
+    kw = {**KW, "max_per_ip": 3}
+    admitted = 0
+    for i in range(500):
+        key = client_ip(f"2001:db8:9:9::{i + 1:x}", {})
+        if lim.try_acquire(f"tok{i}", key, **kw) is None:
+            admitted += 1
+    assert admitted == 3
+    assert lim.total == 3 and len(lim.ips) == 1
+
+
+@pytest.mark.asyncio
+async def test_stalled_body_returns_408_and_holds_no_slot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A body that stalls past MCP_BODY_READ_TIMEOUT_S gets 408 and never occupies the limiter."""
+    from quart import Request
+
+    monkeypatch.setenv("MCP_BODY_READ_TIMEOUT_S", "0.2")
+    seen: dict[str, int] = {}
+    app = _gated_app(asyncio.Event(), {"max": 0})
+    limiter = app.extensions["mcp_limiter"]
+
+    async def _stall(self: Request, *args: Any, **kwargs: Any) -> bytes:
+        """Simulate a slow-loris client that never finishes sending its body."""
+        seen["total"] = limiter.total
+        await asyncio.sleep(30)
+        return b""
+
+    monkeypatch.setattr(Request, "get_data", _stall)
+    async with app.test_client() as client:
+        resp = await client.post(
+            "/mcp", headers={"Authorization": "Bearer slow"}, json=BODY
+        )
+    assert resp.status_code == 408
+    assert seen["total"] == 0
+    assert limiter.total == 0 and limiter.callers == {} and limiter.ips == {}
