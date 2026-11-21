@@ -7,6 +7,7 @@
     "path_params": [
       "review_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Complete and apply review decisions.",
     "has_body": true
   },
@@ -16,6 +17,7 @@
     "method": "POST",
     "path": "/api/v1/access-reviews",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create an ad-hoc access review (admin only).",
     "has_body": true
   },
@@ -25,6 +27,7 @@
     "method": "GET",
     "path": "/api/v1/access-reviews/my-reviews",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get reviews assigned to current user.",
     "has_body": false
   },
@@ -36,6 +39,7 @@
     "path_params": [
       "review_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get review details with progress statistics.",
     "has_body": false
   },
@@ -47,6 +51,7 @@
     "path_params": [
       "review_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all members to review in a review.",
     "has_body": false
   },
@@ -56,6 +61,7 @@
     "method": "GET",
     "path": "/api/v1/access-reviews",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List access reviews with filters.",
     "has_body": false
   },
@@ -67,6 +73,7 @@
     "path_params": [
       "review_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Submit review decision for member(s).",
     "has_body": true
   },
@@ -76,6 +83,7 @@
     "method": "POST",
     "path": "/api/v1/ai/resources",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new AI resource.",
     "has_body": true
   },
@@ -87,6 +95,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an AI resource.",
     "has_body": false
   },
@@ -98,6 +107,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single AI resource by ID.",
     "has_body": false
   },
@@ -107,6 +117,7 @@
     "method": "GET",
     "path": "/api/v1/ai/resources",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List AI resources with optional filtering and pagination.",
     "has_body": false
   },
@@ -118,6 +129,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an existing AI resource.",
     "has_body": true
   },
@@ -127,6 +139,7 @@
     "method": "POST",
     "path": "/api/v1/api-keys",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new API key for the current user.",
     "has_body": true
   },
@@ -138,6 +151,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete (revoke) an API key.",
     "has_body": false
   },
@@ -147,6 +161,7 @@
     "method": "GET",
     "path": "/api/v1/api-keys",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all API keys for the current user.",
     "has_body": false
   },
@@ -156,6 +171,7 @@
     "method": "POST",
     "path": "/api/v1/audit/cleanup",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Clean up old audit logs based on retention policies.",
     "has_body": true
   },
@@ -165,6 +181,7 @@
     "method": "POST",
     "path": "/api/v1/audit/retention-policies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create audit retention policy.",
     "has_body": true
   },
@@ -176,6 +193,7 @@
     "path_params": [
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete retention policy.",
     "has_body": false
   },
@@ -187,6 +205,7 @@
     "path_params": [
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get retention policy details.",
     "has_body": false
   },
@@ -196,6 +215,7 @@
     "method": "GET",
     "path": "/api/v1/audit/retention-policies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all audit retention policies.",
     "has_body": false
   },
@@ -207,6 +227,7 @@
     "path_params": [
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update retention policy.",
     "has_body": true
   },
@@ -216,6 +237,7 @@
     "method": "POST",
     "path": "/api/v1/audit-enterprise/cleanup",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Clean up audit logs older than retention period.",
     "has_body": true
   },
@@ -225,6 +247,7 @@
     "method": "GET",
     "path": "/api/v1/audit-enterprise/export",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Export audit logs for compliance archival.",
     "has_body": false
   },
@@ -236,6 +259,7 @@
     "path_params": [
       "report_type"
     ],
+    "wildcard_path_params": [],
     "summary": "Generate a compliance report.",
     "has_body": false
   },
@@ -245,6 +269,7 @@
     "method": "GET",
     "path": "/api/v1/audit-enterprise/retention",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get audit log retention policy for a tenant.",
     "has_body": false
   },
@@ -254,6 +279,7 @@
     "method": "GET",
     "path": "/api/v1/audit-enterprise/logs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Query audit logs with filters.",
     "has_body": false
   },
@@ -263,6 +289,7 @@
     "method": "POST",
     "path": "/api/v1/auth/change-password",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Change current user's password.",
     "has_body": true
   },
@@ -272,6 +299,7 @@
     "method": "GET",
     "path": "/api/v1/auth/me",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get current authenticated user information.",
     "has_body": false
   },
@@ -281,6 +309,7 @@
     "method": "POST",
     "path": "/api/v1/backup/jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new backup job.",
     "has_body": true
   },
@@ -292,6 +321,7 @@
     "path_params": [
       "backup_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete backup file.",
     "has_body": false
   },
@@ -303,29 +333,8 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete backup job.",
-    "has_body": false
-  },
-  {
-    "service": "backup",
-    "operation": "download_backup",
-    "method": "GET",
-    "path": "/api/v1/backup/{backup_id}/download",
-    "path_params": [
-      "backup_id"
-    ],
-    "summary": "Download backup file.",
-    "has_body": false
-  },
-  {
-    "service": "backup",
-    "operation": "download_export",
-    "method": "GET",
-    "path": "/api/v1/backup/export/{filename}/download",
-    "path_params": [
-      "filename"
-    ],
-    "summary": "Download exported data.",
     "has_body": false
   },
   {
@@ -334,6 +343,7 @@
     "method": "POST",
     "path": "/api/v1/backup/export",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Export data to various formats.",
     "has_body": true
   },
@@ -345,6 +355,7 @@
     "path_params": [
       "backup_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get backup details.",
     "has_body": false
   },
@@ -356,6 +367,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get backup job details.",
     "has_body": false
   },
@@ -365,17 +377,9 @@
     "method": "GET",
     "path": "/api/v1/backup/stats",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get backup and storage statistics.",
     "has_body": false
-  },
-  {
-    "service": "backup",
-    "operation": "import_data",
-    "method": "POST",
-    "path": "/api/v1/backup/import",
-    "path_params": [],
-    "summary": "Import data from file.",
-    "has_body": true
   },
   {
     "service": "backup",
@@ -383,6 +387,7 @@
     "method": "GET",
     "path": "/api/v1/backup/jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all backup jobs.",
     "has_body": false
   },
@@ -392,6 +397,7 @@
     "method": "GET",
     "path": "/api/v1/backup",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all backups.",
     "has_body": false
   },
@@ -403,6 +409,7 @@
     "path_params": [
       "backup_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Restore from backup.",
     "has_body": true
   },
@@ -414,6 +421,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Manually trigger a backup job.",
     "has_body": true
   },
@@ -425,6 +433,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update backup job configuration.",
     "has_body": true
   },
@@ -434,6 +443,7 @@
     "method": "POST",
     "path": "/api/v1/builtin-secrets",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new built-in secret.",
     "has_body": true
   },
@@ -443,6 +453,9 @@
     "method": "DELETE",
     "path": "/api/v1/builtin-secrets/{secret_path}",
     "path_params": [
+      "secret_path"
+    ],
+    "wildcard_path_params": [
       "secret_path"
     ],
     "summary": "Delete a built-in secret.",
@@ -456,6 +469,9 @@
     "path_params": [
       "secret_path"
     ],
+    "wildcard_path_params": [
+      "secret_path"
+    ],
     "summary": "Get a built-in secret by path.",
     "has_body": false
   },
@@ -465,6 +481,7 @@
     "method": "GET",
     "path": "/api/v1/builtin-secrets",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List built-in secrets for an organization.",
     "has_body": false
   },
@@ -474,6 +491,9 @@
     "method": "PATCH",
     "path": "/api/v1/builtin-secrets/{secret_path}",
     "path_params": [
+      "secret_path"
+    ],
+    "wildcard_path_params": [
       "secret_path"
     ],
     "summary": "Update a built-in secret.",
@@ -487,6 +507,9 @@
     "path_params": [
       "secret_path"
     ],
+    "wildcard_path_params": [
+      "secret_path"
+    ],
     "summary": "Update a built-in secret.",
     "has_body": true
   },
@@ -496,47 +519,8 @@
     "method": "POST",
     "path": "/api/v1/builtin-secrets/test-connection",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Test built-in secrets database connection.",
-    "has_body": true
-  },
-  {
-    "service": "canned-responses",
-    "operation": "create_canned_response",
-    "method": "POST",
-    "path": "/api/v1/canned-responses",
-    "path_params": [],
-    "summary": "Create a new canned response.",
-    "has_body": true
-  },
-  {
-    "service": "canned-responses",
-    "operation": "delete_canned_response",
-    "method": "DELETE",
-    "path": "/api/v1/canned-responses/{response_id}",
-    "path_params": [
-      "response_id"
-    ],
-    "summary": "Delete a canned response.",
-    "has_body": false
-  },
-  {
-    "service": "canned-responses",
-    "operation": "list_canned_responses",
-    "method": "GET",
-    "path": "/api/v1/canned-responses",
-    "path_params": [],
-    "summary": "List canned responses with optional filtering and pagination.",
-    "has_body": false
-  },
-  {
-    "service": "canned-responses",
-    "operation": "update_canned_response",
-    "method": "PUT",
-    "path": "/api/v1/canned-responses/{response_id}",
-    "path_params": [
-      "response_id"
-    ],
-    "summary": "Update canned response properties.",
     "has_body": true
   },
   {
@@ -545,6 +529,7 @@
     "method": "POST",
     "path": "/api/v1/certificates",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new certificate entry.",
     "has_body": true
   },
@@ -556,6 +541,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a certificate entry.",
     "has_body": false
   },
@@ -567,6 +553,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single certificate entry by ID.",
     "has_body": false
   },
@@ -576,6 +563,7 @@
     "method": "GET",
     "path": "/api/v1/certificates",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List certificates with optional filtering.",
     "has_body": false
   },
@@ -587,6 +575,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a certificate entry.",
     "has_body": true
   },
@@ -599,6 +588,7 @@
       "coll_id",
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Attach a document to a collection.",
     "has_body": true
   },
@@ -608,6 +598,7 @@
     "method": "POST",
     "path": "/api/v1/collections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new collection.",
     "has_body": true
   },
@@ -619,6 +610,7 @@
     "path_params": [
       "coll_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a collection.",
     "has_body": false
   },
@@ -631,6 +623,7 @@
       "coll_id",
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Detach a document from a collection.",
     "has_body": false
   },
@@ -642,6 +635,7 @@
     "path_params": [
       "coll_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single collection by ID.",
     "has_body": false
   },
@@ -651,6 +645,7 @@
     "method": "GET",
     "path": "/api/v1/collections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List document collections as a hierarchical tree.",
     "has_body": false
   },
@@ -662,6 +657,7 @@
     "path_params": [
       "coll_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a collection.",
     "has_body": true
   },
@@ -671,6 +667,7 @@
     "method": "POST",
     "path": "/api/v1/costs/sync-jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a cost sync job.",
     "has_body": true
   },
@@ -683,6 +680,7 @@
       "resource_type",
       "resource_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get cost data for a specific resource.",
     "has_body": false
   },
@@ -692,6 +690,7 @@
     "method": "GET",
     "path": "/api/v1/costs/sync-jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List cost sync jobs.",
     "has_body": false
   },
@@ -703,6 +702,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Trigger a manual cost sync.",
     "has_body": true
   },
@@ -715,17 +715,9 @@
       "resource_type",
       "resource_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create or update cost entry for a resource.",
     "has_body": true
-  },
-  {
-    "service": "dashboard",
-    "operation": "dashboard_stats",
-    "method": "GET",
-    "path": "/api/v1/dashboard/stats",
-    "path_params": [],
-    "summary": "Get ticket metrics and dashboard statistics.",
-    "has_body": false
   },
   {
     "service": "data-stores",
@@ -735,6 +727,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a label to a data store.",
     "has_body": true
   },
@@ -744,6 +737,7 @@
     "method": "POST",
     "path": "/api/v1/data-stores",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new data store entry.",
     "has_body": true
   },
@@ -755,6 +749,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a data store entry.",
     "has_body": false
   },
@@ -766,6 +761,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single data store entry by ID.",
     "has_body": false
   },
@@ -777,6 +773,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get labels for a data store.",
     "has_body": false
   },
@@ -786,6 +783,7 @@
     "method": "GET",
     "path": "/api/v1/data-stores",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List data stores with optional filtering.",
     "has_body": false
   },
@@ -798,6 +796,7 @@
       "id",
       "label_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a label from a data store.",
     "has_body": false
   },
@@ -809,6 +808,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a data store entry.",
     "has_body": true
   },
@@ -818,6 +818,7 @@
     "method": "POST",
     "path": "/api/v1/dependencies/bulk",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create multiple dependencies at once.",
     "has_body": true
   },
@@ -827,6 +828,7 @@
     "method": "POST",
     "path": "/api/v1/dependencies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new dependency relationship between any resource types.",
     "has_body": true
   },
@@ -836,6 +838,7 @@
     "method": "DELETE",
     "path": "/api/v1/dependencies/bulk",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Delete multiple dependencies at once.",
     "has_body": false
   },
@@ -847,6 +850,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a dependency relationship.",
     "has_body": false
   },
@@ -858,6 +862,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single dependency by ID.",
     "has_body": false
   },
@@ -870,6 +875,7 @@
       "resource_type",
       "resource_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all dependencies for a specific resource.",
     "has_body": false
   },
@@ -879,6 +885,7 @@
     "method": "GET",
     "path": "/api/v1/dependencies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all dependencies with pagination and filtering.",
     "has_body": false
   },
@@ -890,6 +897,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
     "has_body": true
   },
@@ -901,6 +909,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a dependency (edit relationship type, metadata, or endpoints).",
     "has_body": true
   },
@@ -912,6 +921,7 @@
     "path_params": [
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a diagram to a collection.",
     "has_body": true
   },
@@ -921,6 +931,7 @@
     "method": "POST",
     "path": "/api/v1/diagram-collections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new collection.",
     "has_body": true
   },
@@ -932,6 +943,7 @@
     "path_params": [
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a collection and its items.",
     "has_body": false
   },
@@ -943,6 +955,7 @@
     "path_params": [
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a collection by ID with its items.",
     "has_body": false
   },
@@ -952,6 +965,7 @@
     "method": "GET",
     "path": "/api/v1/diagram-collections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List diagram collections with optional filtering and pagination.",
     "has_body": false
   },
@@ -964,6 +978,7 @@
       "collection_id",
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a diagram from a collection.",
     "has_body": false
   },
@@ -975,6 +990,7 @@
     "path_params": [
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a collection.",
     "has_body": true
   },
@@ -986,6 +1002,7 @@
     "path_params": [
       "library_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a shape to a library (owner only).",
     "has_body": true
   },
@@ -995,6 +1012,7 @@
     "method": "POST",
     "path": "/api/v1/diagram-libraries",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new shape library.",
     "has_body": true
   },
@@ -1006,6 +1024,7 @@
     "path_params": [
       "library_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete library (owner only).",
     "has_body": false
   },
@@ -1017,6 +1036,7 @@
     "path_params": [
       "library_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific library by ID with all its shapes.",
     "has_body": false
   },
@@ -1026,6 +1046,7 @@
     "method": "GET",
     "path": "/api/v1/diagram-libraries",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List shape libraries (tenant-scoped, paginated).",
     "has_body": false
   },
@@ -1038,6 +1059,7 @@
       "library_id",
       "shape_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a shape from a library (owner only).",
     "has_body": false
   },
@@ -1049,6 +1071,7 @@
     "path_params": [
       "library_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update library (owner only).",
     "has_body": true
   },
@@ -1058,6 +1081,7 @@
     "method": "POST",
     "path": "/api/v1/diagram-storage",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new storage provider.",
     "has_body": true
   },
@@ -1069,6 +1093,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete storage provider (owner only).",
     "has_body": false
   },
@@ -1080,6 +1105,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific storage provider.",
     "has_body": false
   },
@@ -1089,6 +1115,7 @@
     "method": "GET",
     "path": "/api/v1/diagram-storage",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List storage providers (tenant-scoped, paginated).",
     "has_body": false
   },
@@ -1100,6 +1127,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test storage provider configuration (owner only).",
     "has_body": true
   },
@@ -1111,6 +1139,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update storage provider (owner only).",
     "has_body": true
   },
@@ -1120,6 +1149,7 @@
     "method": "POST",
     "path": "/api/v1/diagram-templates",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new diagram template.",
     "has_body": true
   },
@@ -1131,6 +1161,7 @@
     "path_params": [
       "template_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete template (creator only).",
     "has_body": false
   },
@@ -1142,6 +1173,7 @@
     "path_params": [
       "template_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific template by ID.",
     "has_body": false
   },
@@ -1151,6 +1183,7 @@
     "method": "GET",
     "path": "/api/v1/diagram-templates",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List diagram templates (tenant-scoped, paginated).",
     "has_body": false
   },
@@ -1162,6 +1195,7 @@
     "path_params": [
       "template_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update template (creator only).",
     "has_body": true
   },
@@ -1174,6 +1208,7 @@
       "diagram_id",
       "comment_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a reply to a comment.",
     "has_body": true
   },
@@ -1185,6 +1220,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a comment on a diagram.",
     "has_body": true
   },
@@ -1194,6 +1230,7 @@
     "method": "POST",
     "path": "/api/v1/diagrams",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new diagram.",
     "has_body": true
   },
@@ -1205,6 +1242,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a share for a diagram.",
     "has_body": true
   },
@@ -1217,6 +1255,7 @@
       "diagram_id",
       "comment_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete comment (author or diagram editor only).",
     "has_body": false
   },
@@ -1228,18 +1267,8 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a diagram and cascade delete its versions.",
-    "has_body": false
-  },
-  {
-    "service": "diagrams",
-    "operation": "export_json",
-    "method": "GET",
-    "path": "/api/v1/diagrams/{diagram_id}/export/json",
-    "path_params": [
-      "diagram_id"
-    ],
-    "summary": "Export diagram as JSON (latest version).",
     "has_body": false
   },
   {
@@ -1251,18 +1280,8 @@
       "diagram_id",
       "fmt"
     ],
+    "wildcard_path_params": [],
     "summary": "Export diagram as raster format (PNG, PDF).",
-    "has_body": false
-  },
-  {
-    "service": "diagrams",
-    "operation": "export_svg",
-    "method": "GET",
-    "path": "/api/v1/diagrams/{diagram_id}/export/svg",
-    "path_params": [
-      "diagram_id"
-    ],
-    "summary": "Export diagram as SVG (latest version, dependency-free rendering).",
     "has_body": false
   },
   {
@@ -1273,6 +1292,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a diagram by ID with latest version content.",
     "has_body": false
   },
@@ -1285,6 +1305,7 @@
       "diagram_id",
       "version_number"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific version of a diagram.",
     "has_body": false
   },
@@ -1296,6 +1317,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Issue a short-lived ticket for WebSocket authentication.",
     "has_body": true
   },
@@ -1307,6 +1329,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List comments on a diagram (paginated) with nested replies.",
     "has_body": false
   },
@@ -1316,6 +1339,7 @@
     "method": "GET",
     "path": "/api/v1/diagrams",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List diagrams with optional filtering and pagination.",
     "has_body": false
   },
@@ -1327,6 +1351,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List shares for a diagram.",
     "has_body": false
   },
@@ -1338,6 +1363,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all versions of a diagram.",
     "has_body": false
   },
@@ -1350,6 +1376,7 @@
       "diagram_id",
       "version_number"
     ],
+    "wildcard_path_params": [],
     "summary": "Restore a diagram from a specific version.",
     "has_body": true
   },
@@ -1362,6 +1389,7 @@
       "diagram_id",
       "share_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Revoke a share.",
     "has_body": false
   },
@@ -1373,6 +1401,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Save a new version of diagram content (nodes + edges).",
     "has_body": true
   },
@@ -1385,6 +1414,7 @@
       "diagram_id",
       "comment_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update comment (author or diagram editor only).",
     "has_body": true
   },
@@ -1396,6 +1426,7 @@
     "path_params": [
       "diagram_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update diagram metadata (not content).",
     "has_body": true
   },
@@ -1407,6 +1438,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Submit job results and mark as completed.",
     "has_body": true
   },
@@ -1416,6 +1448,7 @@
     "method": "POST",
     "path": "/api/v1/discovery/jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new discovery job.",
     "has_body": true
   },
@@ -1427,6 +1460,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete discovery job.",
     "has_body": false
   },
@@ -1436,6 +1470,7 @@
     "method": "GET",
     "path": "/api/v1/discovery/history",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get all discovery execution history.",
     "has_body": false
   },
@@ -1447,6 +1482,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get discovery job details.",
     "has_body": false
   },
@@ -1458,6 +1494,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get discovery job execution history.",
     "has_body": false
   },
@@ -1467,6 +1504,7 @@
     "method": "GET",
     "path": "/api/v1/discovery/jobs/pending",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get pending scan jobs for the scanner service.",
     "has_body": false
   },
@@ -1476,6 +1514,7 @@
     "method": "GET",
     "path": "/api/v1/discovery/jobs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all discovery jobs.",
     "has_body": false
   },
@@ -1487,6 +1526,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Manually trigger a discovery job.",
     "has_body": true
   },
@@ -1498,6 +1538,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Mark a job as running.",
     "has_body": true
   },
@@ -1509,6 +1550,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test discovery job connectivity.",
     "has_body": true
   },
@@ -1520,6 +1562,7 @@
     "path_params": [
       "job_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update discovery job configuration.",
     "has_body": true
   },
@@ -1529,6 +1572,7 @@
     "method": "POST",
     "path": "/api/v1/documents",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new document.",
     "has_body": true
   },
@@ -1540,6 +1584,7 @@
     "path_params": [
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a document.",
     "has_body": false
   },
@@ -1551,6 +1596,7 @@
     "path_params": [
       "slug"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a document by slug.",
     "has_body": false
   },
@@ -1563,6 +1609,7 @@
       "doc_id",
       "version_number"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific version of a document.",
     "has_body": false
   },
@@ -1572,6 +1619,7 @@
     "method": "GET",
     "path": "/api/v1/documents",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List documents with optional filtering and pagination.",
     "has_body": false
   },
@@ -1583,6 +1631,7 @@
     "path_params": [
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all versions of a document.",
     "has_body": false
   },
@@ -1594,6 +1643,7 @@
     "path_params": [
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Publish a document (set status=published, set published_at).",
     "has_body": true
   },
@@ -1606,6 +1656,7 @@
       "doc_id",
       "version_number"
     ],
+    "wildcard_path_params": [],
     "summary": "Restore a document from a specific version.",
     "has_body": true
   },
@@ -1617,6 +1668,7 @@
     "path_params": [
       "doc_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a document.",
     "has_body": true
   },
@@ -1626,6 +1678,7 @@
     "method": "POST",
     "path": "/api/v1/entities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new entity.",
     "has_body": true
   },
@@ -1637,6 +1690,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an entity.",
     "has_body": false
   },
@@ -1648,6 +1702,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single entity by ID.",
     "has_body": false
   },
@@ -1659,6 +1714,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all dependencies for an entity.",
     "has_body": false
   },
@@ -1668,6 +1724,7 @@
     "method": "GET",
     "path": "/api/v1/entities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all entities with pagination and filtering.",
     "has_body": false
   },
@@ -1679,6 +1736,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an entity (full edit support).",
     "has_body": true
   },
@@ -1690,6 +1748,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an entity (full edit support).",
     "has_body": true
   },
@@ -1701,6 +1760,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update entity attributes (JSON field for type-specific fields).",
     "has_body": true
   },
@@ -1712,6 +1772,7 @@
     "path_params": [
       "entity_type"
     ],
+    "wildcard_path_params": [],
     "summary": "Get details for a specific entity type including all sub-types.",
     "has_body": false
   },
@@ -1724,6 +1785,7 @@
       "entity_type",
       "sub_type"
     ],
+    "wildcard_path_params": [],
     "summary": "Get default metadata template for a specific sub-type.",
     "has_body": false
   },
@@ -1735,6 +1797,7 @@
     "path_params": [
       "entity_type"
     ],
+    "wildcard_path_params": [],
     "summary": "Get default metadata templates for all sub-types of an entity type.",
     "has_body": false
   },
@@ -1742,8 +1805,9 @@
     "service": "entity-types",
     "operation": "list_entity_types",
     "method": "GET",
-    "path": "/api/v1/entity-types",
+    "path": "/api/v1/entity-types/",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all entity types with their sub-types.",
     "has_body": false
   },
@@ -1755,6 +1819,7 @@
     "path_params": [
       "entity_type"
     ],
+    "wildcard_path_params": [],
     "summary": "List all sub-types for a given entity type.",
     "has_body": false
   },
@@ -1764,6 +1829,7 @@
     "method": "POST",
     "path": "/api/v1/entity-types/validate",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Validate an entity type and sub-type combination.",
     "has_body": true
   },
@@ -1776,6 +1842,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add an approver to a stage. Requires flows:admin (defines who approves).",
     "has_body": true
   },
@@ -1788,6 +1855,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add an external-service call to a stage.",
     "has_body": true
   },
@@ -1800,6 +1868,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a test to a stage.",
     "has_body": true
   },
@@ -1811,6 +1880,7 @@
     "path_params": [
       "promotion_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Approve a promotion.",
     "has_body": true
   },
@@ -1820,6 +1890,7 @@
     "method": "POST",
     "path": "/api/v1/flows/credentials",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new credential.",
     "has_body": true
   },
@@ -1829,6 +1900,7 @@
     "method": "POST",
     "path": "/api/v1/flows",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new pipeline.",
     "has_body": true
   },
@@ -1840,6 +1912,7 @@
     "path_params": [
       "flow_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new stage for a flow.",
     "has_body": true
   },
@@ -1853,6 +1926,7 @@
       "stage_id",
       "call_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a stage call.",
     "has_body": false
   },
@@ -1864,6 +1938,7 @@
     "path_params": [
       "credential_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete credential.",
     "has_body": false
   },
@@ -1875,6 +1950,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete pipeline and all related resources (cascade).",
     "has_body": false
   },
@@ -1887,6 +1963,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a stage from a flow.",
     "has_body": false
   },
@@ -1900,6 +1977,7 @@
       "stage_id",
       "test_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a stage test.",
     "has_body": false
   },
@@ -1911,6 +1989,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Disable a pipeline.",
     "has_body": true
   },
@@ -1922,6 +2001,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Duplicate a pipeline including all stages.",
     "has_body": true
   },
@@ -1933,6 +2013,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Enable a pipeline.",
     "has_body": true
   },
@@ -1944,6 +2025,7 @@
     "path_params": [
       "promotion_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Trigger CI/CD execution for a promotion (enqueues a flows-invoker job).",
     "has_body": true
   },
@@ -1957,6 +2039,7 @@
       "stage_id",
       "call_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single stage call.",
     "has_body": false
   },
@@ -1968,6 +2051,7 @@
     "path_params": [
       "credential_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get credential details (token never returned).",
     "has_body": false
   },
@@ -1979,6 +2063,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get pipeline details with stages and metadata.",
     "has_body": false
   },
@@ -1990,6 +2075,7 @@
     "path_params": [
       "promotion_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get promotion details.",
     "has_body": false
   },
@@ -2002,6 +2088,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get the Darwin AI review config for a stage (404 if unconfigured).",
     "has_body": false
   },
@@ -2014,6 +2101,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get stage details.",
     "has_body": false
   },
@@ -2027,6 +2115,7 @@
       "stage_id",
       "test_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single stage test.",
     "has_body": false
   },
@@ -2039,6 +2128,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List approvers configured for a stage.",
     "has_body": false
   },
@@ -2051,6 +2141,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List external-service calls configured for a stage.",
     "has_body": false
   },
@@ -2060,6 +2151,7 @@
     "method": "GET",
     "path": "/api/v1/flows/credentials",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all credentials for current tenant.",
     "has_body": false
   },
@@ -2069,6 +2161,7 @@
     "method": "GET",
     "path": "/api/v1/flows",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all pipelines for current tenant with pagination and filtering.",
     "has_body": false
   },
@@ -2078,6 +2171,7 @@
     "method": "GET",
     "path": "/api/v1/flows/promotions",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all promotions for current tenant.",
     "has_body": false
   },
@@ -2089,6 +2183,7 @@
     "path_params": [
       "flow_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all stages for a flow.",
     "has_body": false
   },
@@ -2101,6 +2196,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List tests configured for a stage.",
     "has_body": false
   },
@@ -2112,6 +2208,7 @@
     "path_params": [
       "promotion_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Reject a promotion.",
     "has_body": true
   },
@@ -2125,6 +2222,7 @@
       "stage_id",
       "approver_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove an approver from a stage. Requires flows:admin.",
     "has_body": false
   },
@@ -2138,6 +2236,7 @@
       "stage_id",
       "call_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a stage call.",
     "has_body": true
   },
@@ -2149,6 +2248,7 @@
     "path_params": [
       "credential_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update credential configuration.",
     "has_body": true
   },
@@ -2160,6 +2260,7 @@
     "path_params": [
       "pipeline_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update pipeline configuration.",
     "has_body": true
   },
@@ -2172,6 +2273,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Upsert the Darwin AI review config for a stage (one per stage).",
     "has_body": true
   },
@@ -2184,6 +2286,7 @@
       "flow_id",
       "stage_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update stage configuration.",
     "has_body": true
   },
@@ -2197,6 +2300,7 @@
       "stage_id",
       "test_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a stage test.",
     "has_body": true
   },
@@ -2206,6 +2310,7 @@
     "method": "POST",
     "path": "/api/v1/geo/locations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a geographic location, auto-geocoding coordinates when omitted.",
     "has_body": true
   },
@@ -2215,6 +2320,7 @@
     "method": "POST",
     "path": "/api/v1/geo/regions",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a geographic region.",
     "has_body": true
   },
@@ -2226,6 +2332,7 @@
     "path_params": [
       "location_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a geographic location scoped to the current tenant.",
     "has_body": false
   },
@@ -2237,6 +2344,7 @@
     "path_params": [
       "region_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a geographic region scoped to the current tenant.",
     "has_body": false
   },
@@ -2246,6 +2354,7 @@
     "method": "POST",
     "path": "/api/v1/geo/geocode",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Geocode a human-readable location query into latitude/longitude.",
     "has_body": true
   },
@@ -2255,6 +2364,7 @@
     "method": "GET",
     "path": "/api/v1/geo/locations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List geographic locations for the current tenant.",
     "has_body": false
   },
@@ -2264,6 +2374,7 @@
     "method": "GET",
     "path": "/api/v1/geo/regions",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List geographic regions for the current tenant.",
     "has_body": false
   },
@@ -2275,6 +2386,7 @@
     "path_params": [
       "location_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a geographic location scoped to the current tenant.",
     "has_body": true
   },
@@ -2286,6 +2398,7 @@
     "path_params": [
       "region_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a geographic region scoped to the current tenant.",
     "has_body": true
   },
@@ -2296,6 +2409,9 @@
     "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}/members",
     "path_params": [
       "provider_id",
+      "group_key"
+    ],
+    "wildcard_path_params": [
       "group_key"
     ],
     "summary": "Add member to group.",
@@ -2309,6 +2425,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create Google Workspace group.",
     "has_body": true
   },
@@ -2318,6 +2435,7 @@
     "method": "POST",
     "path": "/api/v1/google-workspace/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create Google Workspace provider.",
     "has_body": true
   },
@@ -2329,6 +2447,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create Google Workspace user.",
     "has_body": true
   },
@@ -2339,6 +2458,9 @@
     "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}",
     "path_params": [
       "provider_id",
+      "group_key"
+    ],
+    "wildcard_path_params": [
       "group_key"
     ],
     "summary": "Delete Google Workspace group.",
@@ -2352,6 +2474,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete provider.",
     "has_body": false
   },
@@ -2362,6 +2485,9 @@
     "path": "/api/v1/google-workspace/providers/{provider_id}/users/{user_key}",
     "path_params": [
       "provider_id",
+      "user_key"
+    ],
+    "wildcard_path_params": [
       "user_key"
     ],
     "summary": "Delete Google Workspace user.",
@@ -2376,6 +2502,9 @@
       "provider_id",
       "group_key"
     ],
+    "wildcard_path_params": [
+      "group_key"
+    ],
     "summary": "Get group details.",
     "has_body": false
   },
@@ -2387,6 +2516,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get provider details.",
     "has_body": false
   },
@@ -2397,6 +2527,9 @@
     "path": "/api/v1/google-workspace/providers/{provider_id}/users/{user_key}",
     "path_params": [
       "provider_id",
+      "user_key"
+    ],
+    "wildcard_path_params": [
       "user_key"
     ],
     "summary": "Get user details.",
@@ -2411,6 +2544,9 @@
       "provider_id",
       "group_key"
     ],
+    "wildcard_path_params": [
+      "group_key"
+    ],
     "summary": "List group members.",
     "has_body": false
   },
@@ -2422,6 +2558,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List Google Workspace groups.",
     "has_body": false
   },
@@ -2431,6 +2568,7 @@
     "method": "GET",
     "path": "/api/v1/google-workspace/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List Google Workspace providers.",
     "has_body": false
   },
@@ -2442,6 +2580,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List Google Workspace users.",
     "has_body": false
   },
@@ -2452,6 +2591,10 @@
     "path": "/api/v1/google-workspace/providers/{provider_id}/groups/{group_key}/members/{member_email}",
     "path_params": [
       "provider_id",
+      "group_key",
+      "member_email"
+    ],
+    "wildcard_path_params": [
       "group_key",
       "member_email"
     ],
@@ -2466,6 +2609,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
     "has_body": true
   },
@@ -2477,6 +2621,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update provider configuration.",
     "has_body": true
   },
@@ -2489,6 +2634,9 @@
       "provider_id",
       "user_key"
     ],
+    "wildcard_path_params": [
+      "user_key"
+    ],
     "summary": "Update user details.",
     "has_body": true
   },
@@ -2498,6 +2646,7 @@
     "method": "GET",
     "path": "/api/v1/graph/analyze",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Analyze dependency graph and return insights.",
     "has_body": false
   },
@@ -2507,6 +2656,7 @@
     "method": "GET",
     "path": "/api/v1/graph/path",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Find dependency path between two entities.",
     "has_body": false
   },
@@ -2516,6 +2666,7 @@
     "method": "GET",
     "path": "/api/v1/graph",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get full dependency graph or filtered subgraph.",
     "has_body": false
   },
@@ -2525,6 +2676,7 @@
     "method": "GET",
     "path": "/api/v1/graph/map",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get global map of all resources and relationships for visualization.",
     "has_body": false
   },
@@ -2536,6 +2688,7 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Directly add a member to a group (admin/owner only).",
     "has_body": true
   },
@@ -2547,6 +2700,7 @@
     "path_params": [
       "request_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Approve an access request.",
     "has_body": true
   },
@@ -2556,6 +2710,7 @@
     "method": "POST",
     "path": "/api/v1/group-membership/requests/bulk-approve",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Bulk approve multiple requests.",
     "has_body": true
   },
@@ -2567,6 +2722,7 @@
     "path_params": [
       "request_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Cancel own access request.",
     "has_body": false
   },
@@ -2578,6 +2734,7 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create an access request for a group.",
     "has_body": true
   },
@@ -2589,6 +2746,7 @@
     "path_params": [
       "request_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Deny an access request.",
     "has_body": true
   },
@@ -2600,6 +2758,7 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get group details with ownership and member info.",
     "has_body": false
   },
@@ -2611,6 +2770,7 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List members of a group.",
     "has_body": false
   },
@@ -2622,6 +2782,7 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List access requests for a group (owners only).",
     "has_body": false
   },
@@ -2631,6 +2792,7 @@
     "method": "GET",
     "path": "/api/v1/group-membership/groups",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all groups with ownership and member info.",
     "has_body": false
   },
@@ -2640,6 +2802,7 @@
     "method": "GET",
     "path": "/api/v1/group-membership/requests/pending",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all pending requests for groups owned by current user.",
     "has_body": false
   },
@@ -2652,6 +2815,7 @@
       "group_id",
       "identity_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a member from a group.",
     "has_body": false
   },
@@ -2663,7 +2827,279 @@
     "path_params": [
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update group ownership and settings.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "add_message",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}/messages",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Add a message to a ticket.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "add_team_member",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/teams/{team_id}/members",
+    "path_params": [
+      "team_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Add a member to a team.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "assign_ticket",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}/assign",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Assign a ticket to a user.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "create_canned_response",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/canned-responses",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new canned response.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "create_sla_policy",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/sla-policies",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new SLA policy.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "create_team",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/teams",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new team.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "create_ticket",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/tickets",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new ticket.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "dashboard_stats",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/dashboard/stats",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Get ticket metrics and dashboard statistics.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "delete_canned_response",
+    "method": "DELETE",
+    "path": "/api/v1/helpdesk/canned-responses/{response_id}",
+    "path_params": [
+      "response_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Delete a canned response.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "delete_sla_policy",
+    "method": "DELETE",
+    "path": "/api/v1/helpdesk/sla-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Delete an SLA policy.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "delete_ticket",
+    "method": "DELETE",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Delete a ticket.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "get_team",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/teams/{team_id}",
+    "path_params": [
+      "team_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get team detail with members.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "get_ticket",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get a single ticket by ID.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "list_canned_responses",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/canned-responses",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List canned responses with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "list_messages",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}/messages",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "List messages for a ticket with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "list_sla_policies",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/sla-policies",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List SLA policies with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "list_teams",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/teams",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List teams with pagination.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "list_tickets",
+    "method": "GET",
+    "path": "/api/v1/helpdesk/tickets",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List tickets with optional filtering and pagination.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "merge_tickets",
+    "method": "POST",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}/merge",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Merge two tickets (keep primary, mark secondary as merged).",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "remove_team_member",
+    "method": "DELETE",
+    "path": "/api/v1/helpdesk/teams/{team_id}/members/{identity_id}",
+    "path_params": [
+      "team_id",
+      "identity_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Remove a member from a team.",
+    "has_body": false
+  },
+  {
+    "service": "helpdesk",
+    "operation": "update_canned_response",
+    "method": "PUT",
+    "path": "/api/v1/helpdesk/canned-responses/{response_id}",
+    "path_params": [
+      "response_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update canned response properties.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "update_sla_policy",
+    "method": "PUT",
+    "path": "/api/v1/helpdesk/sla-policies/{policy_id}",
+    "path_params": [
+      "policy_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update SLA policy properties.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "update_team",
+    "method": "PUT",
+    "path": "/api/v1/helpdesk/teams/{team_id}",
+    "path_params": [
+      "team_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update team properties.",
+    "has_body": true
+  },
+  {
+    "service": "helpdesk",
+    "operation": "update_ticket",
+    "method": "PATCH",
+    "path": "/api/v1/helpdesk/tickets/{ticket_id}",
+    "path_params": [
+      "ticket_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update a ticket.",
     "has_body": true
   },
   {
@@ -2676,6 +3112,7 @@
       "group_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add user to group.",
     "has_body": true
   },
@@ -2689,6 +3126,7 @@
       "role_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Attach policy to role.",
     "has_body": true
   },
@@ -2702,6 +3140,7 @@
       "user_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Attach policy to user.",
     "has_body": true
   },
@@ -2714,6 +3153,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create access key for user.",
     "has_body": true
   },
@@ -2725,6 +3165,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new group.",
     "has_body": true
   },
@@ -2736,6 +3177,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new policy.",
     "has_body": true
   },
@@ -2745,6 +3187,7 @@
     "method": "POST",
     "path": "/api/v1/iam/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new IAM provider.",
     "has_body": true
   },
@@ -2756,6 +3199,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new role.",
     "has_body": true
   },
@@ -2767,6 +3211,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new user.",
     "has_body": true
   },
@@ -2780,6 +3225,7 @@
       "user_id",
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete access key.",
     "has_body": false
   },
@@ -2792,6 +3238,7 @@
       "provider_id",
       "group_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete group.",
     "has_body": false
   },
@@ -2804,6 +3251,7 @@
       "provider_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete policy.",
     "has_body": false
   },
@@ -2815,6 +3263,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an IAM provider.",
     "has_body": false
   },
@@ -2827,6 +3276,7 @@
       "provider_id",
       "role_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete role.",
     "has_body": false
   },
@@ -2839,6 +3289,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete user.",
     "has_body": false
   },
@@ -2852,6 +3303,7 @@
       "role_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Detach policy from role.",
     "has_body": false
   },
@@ -2865,6 +3317,7 @@
       "user_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Detach policy from user.",
     "has_body": false
   },
@@ -2877,6 +3330,7 @@
       "provider_id",
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get policy details.",
     "has_body": false
   },
@@ -2888,6 +3342,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific provider details.",
     "has_body": false
   },
@@ -2900,6 +3355,7 @@
       "provider_id",
       "role_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get role details.",
     "has_body": false
   },
@@ -2912,6 +3368,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get user details.",
     "has_body": false
   },
@@ -2924,6 +3381,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List access keys for user.",
     "has_body": false
   },
@@ -2935,6 +3393,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List groups from provider.",
     "has_body": false
   },
@@ -2946,6 +3405,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List policies from provider.",
     "has_body": false
   },
@@ -2955,6 +3415,7 @@
     "method": "GET",
     "path": "/api/v1/iam/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all IAM providers.",
     "has_body": false
   },
@@ -2967,6 +3428,7 @@
       "provider_id",
       "role_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List policies attached to role.",
     "has_body": false
   },
@@ -2978,6 +3440,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List roles from provider.",
     "has_body": false
   },
@@ -2990,6 +3453,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List policies attached to user.",
     "has_body": false
   },
@@ -3001,6 +3465,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List users from provider.",
     "has_body": false
   },
@@ -3014,6 +3479,7 @@
       "group_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove user from group.",
     "has_body": false
   },
@@ -3025,6 +3491,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Sync resources from provider to database.",
     "has_body": true
   },
@@ -3036,6 +3503,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
     "has_body": true
   },
@@ -3047,6 +3515,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update provider configuration.",
     "has_body": true
   },
@@ -3059,6 +3528,7 @@
       "provider_id",
       "role_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update role.",
     "has_body": true
   },
@@ -3071,6 +3541,7 @@
       "provider_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update user.",
     "has_body": true
   },
@@ -3082,6 +3553,7 @@
     "path_params": [
       "village_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Resolve a village_id at ``GET /api/v1/id/<village_id>``.",
     "has_body": false
   },
@@ -3094,6 +3566,7 @@
       "group_id",
       "identity_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add identity to group.",
     "has_body": true
   },
@@ -3103,6 +3576,7 @@
     "method": "POST",
     "path": "/api/v1/identities/groups",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new identity group.",
     "has_body": true
   },
@@ -3112,6 +3586,7 @@
     "method": "POST",
     "path": "/api/v1/identities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new identity/user.",
     "has_body": true
   },
@@ -3123,6 +3598,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete identity group.",
     "has_body": false
   },
@@ -3134,6 +3610,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete identity.",
     "has_body": false
   },
@@ -3145,6 +3622,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get identity group by ID.",
     "has_body": false
   },
@@ -3156,6 +3634,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get identity by ID.",
     "has_body": false
   },
@@ -3165,6 +3644,7 @@
     "method": "GET",
     "path": "/api/v1/identities/groups",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all identity groups.",
     "has_body": false
   },
@@ -3174,6 +3654,7 @@
     "method": "GET",
     "path": "/api/v1/identities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all identities with pagination.",
     "has_body": false
   },
@@ -3185,6 +3666,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update identity group.",
     "has_body": true
   },
@@ -3196,6 +3678,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update identity.",
     "has_body": true
   },
@@ -3207,6 +3690,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update identity group.",
     "has_body": true
   },
@@ -3218,6 +3702,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update identity.",
     "has_body": true
   },
@@ -3230,30 +3715,9 @@
       "group_id",
       "identity_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove identity from group.",
     "has_body": false
-  },
-  {
-    "service": "import",
-    "operation": "download_csv_template",
-    "method": "GET",
-    "path": "/api/v1/import/templates/{resource}/download",
-    "path_params": [
-      "resource"
-    ],
-    "summary": "Download an exact CSV template with header row and example row.",
-    "has_body": false
-  },
-  {
-    "service": "import",
-    "operation": "import_csv_resource",
-    "method": "POST",
-    "path": "/api/v1/import/{resource}",
-    "path_params": [
-      "resource"
-    ],
-    "summary": "Validate an exact CSV against the resource template (max 1000 rows) and import.",
-    "has_body": true
   },
   {
     "service": "import",
@@ -3261,6 +3725,7 @@
     "method": "GET",
     "path": "/api/v1/import/templates",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Return all supported CSV import templates and their exact column rules.",
     "has_body": false
   },
@@ -3270,6 +3735,7 @@
     "method": "POST",
     "path": "/api/v1/ipam/addresses",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new IPAM address.",
     "has_body": true
   },
@@ -3279,6 +3745,7 @@
     "method": "POST",
     "path": "/api/v1/ipam/prefixes",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new IPAM prefix.",
     "has_body": true
   },
@@ -3288,6 +3755,7 @@
     "method": "POST",
     "path": "/api/v1/ipam/vlans",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new IPAM VLAN.",
     "has_body": true
   },
@@ -3299,6 +3767,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an IPAM address.",
     "has_body": false
   },
@@ -3310,6 +3779,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an IPAM prefix.",
     "has_body": false
   },
@@ -3321,6 +3791,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an IPAM VLAN.",
     "has_body": false
   },
@@ -3332,6 +3803,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single IPAM address by ID.",
     "has_body": false
   },
@@ -3343,6 +3815,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single IPAM prefix by ID.",
     "has_body": false
   },
@@ -3354,6 +3827,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get an IPAM prefix with all children (hierarchical tree).",
     "has_body": false
   },
@@ -3365,6 +3839,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single IPAM VLAN by ID.",
     "has_body": false
   },
@@ -3374,6 +3849,7 @@
     "method": "GET",
     "path": "/api/v1/ipam/addresses",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List IPAM addresses with optional filtering.",
     "has_body": false
   },
@@ -3383,6 +3859,7 @@
     "method": "GET",
     "path": "/api/v1/ipam/prefixes",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List IPAM prefixes with optional filtering.",
     "has_body": false
   },
@@ -3392,6 +3869,7 @@
     "method": "GET",
     "path": "/api/v1/ipam/vlans",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List IPAM VLANs with optional filtering.",
     "has_body": false
   },
@@ -3403,6 +3881,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an IPAM address.",
     "has_body": true
   },
@@ -3414,6 +3893,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an IPAM prefix.",
     "has_body": true
   },
@@ -3425,6 +3905,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an IPAM VLAN.",
     "has_body": true
   },
@@ -3436,6 +3917,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a label to an issue.",
     "has_body": true
   },
@@ -3445,6 +3927,7 @@
     "method": "POST",
     "path": "/api/v1/issues",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new issue.",
     "has_body": true
   },
@@ -3456,6 +3939,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a comment to an issue.",
     "has_body": true
   },
@@ -3467,6 +3951,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Link an entity to an issue.",
     "has_body": true
   },
@@ -3476,6 +3961,7 @@
     "method": "POST",
     "path": "/api/v1/issues/labels",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new issue label.",
     "has_body": true
   },
@@ -3487,6 +3973,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Link a generic resource to an issue.",
     "has_body": true
   },
@@ -3498,6 +3985,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an issue.",
     "has_body": false
   },
@@ -3510,6 +3998,7 @@
       "id",
       "comment_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a comment from an issue.",
     "has_body": false
   },
@@ -3522,6 +4011,7 @@
       "id",
       "link_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove an entity link from an issue.",
     "has_body": false
   },
@@ -3534,6 +4024,7 @@
       "id",
       "entity_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove an entity link from an issue by entity ID.",
     "has_body": false
   },
@@ -3546,6 +4037,7 @@
       "id",
       "link_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a resource link from an issue.",
     "has_body": false
   },
@@ -3557,6 +4049,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single issue by ID.",
     "has_body": false
   },
@@ -3568,6 +4061,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Link an issue to a milestone.",
     "has_body": true
   },
@@ -3579,6 +4073,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Link an issue to a project.",
     "has_body": true
   },
@@ -3590,6 +4085,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List comments for an issue.",
     "has_body": false
   },
@@ -3601,6 +4097,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List entity links for an issue.",
     "has_body": false
   },
@@ -3610,6 +4107,7 @@
     "method": "GET",
     "path": "/api/v1/issues/labels",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all available issue labels.",
     "has_body": false
   },
@@ -3621,6 +4119,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all labels assigned to a specific issue.",
     "has_body": false
   },
@@ -3632,6 +4131,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List resource links for an issue.",
     "has_body": false
   },
@@ -3641,6 +4141,7 @@
     "method": "GET",
     "path": "/api/v1/issues",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List issues with optional filtering.",
     "has_body": false
   },
@@ -3653,6 +4154,7 @@
       "id",
       "label_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a label from an issue.",
     "has_body": false
   },
@@ -3665,6 +4167,7 @@
       "id",
       "milestone_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a milestone link from an issue.",
     "has_body": false
   },
@@ -3677,6 +4180,7 @@
       "id",
       "project_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a project link from an issue.",
     "has_body": false
   },
@@ -3688,6 +4192,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an issue.",
     "has_body": true
   },
@@ -3700,6 +4205,7 @@
       "id",
       "comment_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a comment on an issue.",
     "has_body": true
   },
@@ -3709,6 +4215,7 @@
     "method": "POST",
     "path": "/api/v1/keys",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new encryption key.",
     "has_body": true
   },
@@ -3718,6 +4225,7 @@
     "method": "POST",
     "path": "/api/v1/keys/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Register a new key provider.",
     "has_body": true
   },
@@ -3729,6 +4237,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Decrypt data using this key.",
     "has_body": true
   },
@@ -3740,6 +4249,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Schedule key deletion.",
     "has_body": false
   },
@@ -3751,6 +4261,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete key provider.",
     "has_body": false
   },
@@ -3762,6 +4273,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Disable a key.",
     "has_body": true
   },
@@ -3773,6 +4285,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Enable a disabled key.",
     "has_body": true
   },
@@ -3784,6 +4297,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Encrypt data using this key.",
     "has_body": true
   },
@@ -3795,6 +4309,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Generate a data encryption key.",
     "has_body": true
   },
@@ -3806,6 +4321,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific key details.",
     "has_body": false
   },
@@ -3817,6 +4333,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get access log for a key.",
     "has_body": false
   },
@@ -3828,6 +4345,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get key provider details.",
     "has_body": false
   },
@@ -3837,6 +4355,7 @@
     "method": "GET",
     "path": "/api/v1/keys/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all key providers.",
     "has_body": false
   },
@@ -3846,6 +4365,7 @@
     "method": "GET",
     "path": "/api/v1/keys",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all keys accessible by current user/organization.",
     "has_body": false
   },
@@ -3857,6 +4377,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Rotate a key (enable automatic rotation or rotate immediately).",
     "has_body": true
   },
@@ -3868,6 +4389,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Sign data using this key (asymmetric keys only).",
     "has_body": true
   },
@@ -3879,6 +4401,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test provider connectivity.",
     "has_body": true
   },
@@ -3890,6 +4413,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update key provider configuration.",
     "has_body": true
   },
@@ -3901,6 +4425,7 @@
     "path_params": [
       "key_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Verify a message signature (asymmetric keys only).",
     "has_body": true
   },
@@ -3910,6 +4435,7 @@
     "method": "POST",
     "path": "/api/v1/labels",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new label.",
     "has_body": true
   },
@@ -3921,6 +4447,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a label.",
     "has_body": false
   },
@@ -3932,6 +4459,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single label by ID.",
     "has_body": false
   },
@@ -3941,6 +4469,7 @@
     "method": "GET",
     "path": "/api/v1/labels",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all labels with optional filtering.",
     "has_body": false
   },
@@ -3952,6 +4481,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a label.",
     "has_body": true
   },
@@ -3961,6 +4491,7 @@
     "method": "POST",
     "path": "/api/v1/license-policies/check",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Check components against all active license policies.",
     "has_body": true
   },
@@ -3970,6 +4501,7 @@
     "method": "POST",
     "path": "/api/v1/license-policies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new license policy.",
     "has_body": true
   },
@@ -3981,6 +4513,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a license policy.",
     "has_body": false
   },
@@ -3992,6 +4525,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single license policy by ID.",
     "has_body": false
   },
@@ -4001,6 +4535,7 @@
     "method": "GET",
     "path": "/api/v1/license-policies",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List license policies with optional filtering.",
     "has_body": false
   },
@@ -4012,6 +4547,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a license policy.",
     "has_body": true
   },
@@ -4021,6 +4557,7 @@
     "method": "GET",
     "path": "/api/v1/licensing/status",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Return the effective license tier, domain-bypass state, limits, and features.",
     "has_body": false
   },
@@ -4030,6 +4567,7 @@
     "method": "GET",
     "path": "/api/v1/logs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get last 100 log lines (global admin only).",
     "has_body": false
   },
@@ -4039,6 +4577,7 @@
     "method": "GET",
     "path": "/api/v1/logs/search",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Search logs, return last 100 matches (global admin only).",
     "has_body": false
   },
@@ -4050,6 +4589,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create or update a metadata field for an entity.",
     "has_body": true
   },
@@ -4061,6 +4601,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create or update a metadata field for an organization.",
     "has_body": true
   },
@@ -4073,6 +4614,7 @@
       "id",
       "field_key"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a metadata field from an entity.",
     "has_body": false
   },
@@ -4085,6 +4627,7 @@
       "id",
       "field_key"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a metadata field from an organization.",
     "has_body": false
   },
@@ -4096,6 +4639,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all metadata for an entity.",
     "has_body": false
   },
@@ -4107,6 +4651,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all metadata for an organization.",
     "has_body": false
   },
@@ -4119,6 +4664,7 @@
       "id",
       "field_key"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a metadata field for an entity.",
     "has_body": true
   },
@@ -4131,6 +4677,7 @@
       "id",
       "field_key"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a metadata field for an organization.",
     "has_body": true
   },
@@ -4140,6 +4687,7 @@
     "method": "POST",
     "path": "/api/v1/milestones",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new milestone.",
     "has_body": true
   },
@@ -4151,6 +4699,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a milestone.",
     "has_body": false
   },
@@ -4162,6 +4711,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single milestone by ID.",
     "has_body": false
   },
@@ -4173,6 +4723,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all issues linked to a milestone.",
     "has_body": false
   },
@@ -4182,6 +4733,7 @@
     "method": "GET",
     "path": "/api/v1/milestones",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List milestones with optional filtering.",
     "has_body": false
   },
@@ -4193,6 +4745,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a milestone.",
     "has_body": true
   },
@@ -4202,6 +4755,7 @@
     "method": "GET",
     "path": "/api/v1/modules",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get list of available modules with status, licensing, and capabilities.",
     "has_body": false
   },
@@ -4211,6 +4765,7 @@
     "method": "POST",
     "path": "/api/v1/networking/mappings",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Map an entity to a network.",
     "has_body": true
   },
@@ -4220,6 +4775,7 @@
     "method": "POST",
     "path": "/api/v1/networking/networks",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new networking resource.",
     "has_body": true
   },
@@ -4229,6 +4785,7 @@
     "method": "POST",
     "path": "/api/v1/networking/topology/connections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a network topology connection.",
     "has_body": true
   },
@@ -4240,6 +4797,7 @@
     "path_params": [
       "mapping_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an entity-network mapping.",
     "has_body": false
   },
@@ -4251,6 +4809,7 @@
     "path_params": [
       "network_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete networking resource.",
     "has_body": false
   },
@@ -4262,6 +4821,7 @@
     "path_params": [
       "connection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a topology connection.",
     "has_body": false
   },
@@ -4273,6 +4833,7 @@
     "path_params": [
       "mapping_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get entity-network mapping by ID.",
     "has_body": false
   },
@@ -4284,6 +4845,7 @@
     "path_params": [
       "network_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get networking resource by ID.",
     "has_body": false
   },
@@ -4295,6 +4857,7 @@
     "path_params": [
       "connection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get topology connection by ID.",
     "has_body": false
   },
@@ -4304,6 +4867,7 @@
     "method": "GET",
     "path": "/api/v1/networking/topology/graph",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get network topology as a graph for visualization.",
     "has_body": false
   },
@@ -4313,6 +4877,7 @@
     "method": "GET",
     "path": "/api/v1/networking/mappings",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List entity-network mappings.",
     "has_body": false
   },
@@ -4322,6 +4887,7 @@
     "method": "GET",
     "path": "/api/v1/networking/networks",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List networking resources with filters.",
     "has_body": false
   },
@@ -4331,6 +4897,7 @@
     "method": "GET",
     "path": "/api/v1/networking/topology/connections",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List topology connections.",
     "has_body": false
   },
@@ -4342,6 +4909,7 @@
     "path_params": [
       "network_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update networking resource.",
     "has_body": true
   },
@@ -4353,6 +4921,7 @@
     "path_params": [
       "network_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update networking resource.",
     "has_body": true
   },
@@ -4364,6 +4933,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Add a participant to a rotation.",
     "has_body": true
   },
@@ -4375,6 +4945,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create an escalation policy for a rotation.",
     "has_body": true
   },
@@ -4386,6 +4957,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create an override for a rotation.",
     "has_body": true
   },
@@ -4395,6 +4967,7 @@
     "method": "POST",
     "path": "/api/v1/on-call/rotations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new on-call rotation.",
     "has_body": true
   },
@@ -4406,6 +4979,7 @@
     "path_params": [
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an escalation policy.",
     "has_body": false
   },
@@ -4417,6 +4991,7 @@
     "path_params": [
       "override_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an override.",
     "has_body": false
   },
@@ -4428,6 +5003,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an on-call rotation.",
     "has_body": false
   },
@@ -4439,6 +5015,7 @@
     "path_params": [
       "org_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get current on-call person for all rotations in an organization.",
     "has_body": false
   },
@@ -4450,6 +5027,7 @@
     "path_params": [
       "service_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get current on-call person for all rotations associated with a service.",
     "has_body": false
   },
@@ -4461,6 +5039,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single on-call rotation with participants and current on-call.",
     "has_body": false
   },
@@ -4472,6 +5051,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get shift history for a rotation.",
     "has_body": false
   },
@@ -4483,6 +5063,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List escalation policies for a rotation.",
     "has_body": false
   },
@@ -4494,6 +5075,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all overrides for a rotation.",
     "has_body": false
   },
@@ -4505,6 +5087,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all participants in a rotation.",
     "has_body": false
   },
@@ -4514,6 +5097,7 @@
     "method": "GET",
     "path": "/api/v1/on-call/rotations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List on-call rotations with optional filtering.",
     "has_body": false
   },
@@ -4526,6 +5110,7 @@
       "rotation_id",
       "participant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove a participant from a rotation.",
     "has_body": false
   },
@@ -4537,6 +5122,7 @@
     "path_params": [
       "policy_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an escalation policy.",
     "has_body": true
   },
@@ -4548,6 +5134,7 @@
     "path_params": [
       "override_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an override.",
     "has_body": true
   },
@@ -4560,6 +5147,7 @@
       "rotation_id",
       "participant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a rotation participant.",
     "has_body": true
   },
@@ -4571,6 +5159,7 @@
     "path_params": [
       "rotation_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an on-call rotation.",
     "has_body": true
   },
@@ -4580,6 +5169,7 @@
     "method": "POST",
     "path": "/api/v1/organizations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new Organization Unit (OU).",
     "has_body": true
   },
@@ -4591,6 +5181,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an Organization Unit (OU).",
     "has_body": false
   },
@@ -4602,6 +5193,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single Organization Unit (OU) by ID.",
     "has_body": false
   },
@@ -4613,6 +5205,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all child organizations scoped to the caller's tenant.",
     "has_body": false
   },
@@ -4624,6 +5217,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get relationship graph for an organization and its nearby entities.",
     "has_body": false
   },
@@ -4635,6 +5229,7 @@
     "path_params": [
       "org_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get recursive statistics for an organization and all its descendants.",
     "has_body": false
   },
@@ -4644,6 +5239,7 @@
     "method": "GET",
     "path": "/api/v1/organizations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all Organization Units (OUs) with pagination and filtering.",
     "has_body": false
   },
@@ -4655,6 +5251,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an Organization Unit (OU).",
     "has_body": true
   },
@@ -4666,6 +5263,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an Organization Unit (OU).",
     "has_body": true
   },
@@ -4678,6 +5276,7 @@
       "slug",
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Attach a document collection to a page.",
     "has_body": true
   },
@@ -4687,6 +5286,7 @@
     "method": "POST",
     "path": "/api/v1/pages",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new page.",
     "has_body": true
   },
@@ -4698,6 +5298,7 @@
     "path_params": [
       "slug"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete page by slug (admin only).",
     "has_body": false
   },
@@ -4710,6 +5311,7 @@
       "slug",
       "collection_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Detach a document collection from a page.",
     "has_body": false
   },
@@ -4721,6 +5323,7 @@
     "path_params": [
       "slug"
     ],
+    "wildcard_path_params": [],
     "summary": "Get all pages that reference this page via wiki-links.",
     "has_body": false
   },
@@ -4732,6 +5335,7 @@
     "path_params": [
       "slug"
     ],
+    "wildcard_path_params": [],
     "summary": "Get page by slug with visibility ACL.",
     "has_body": false
   },
@@ -4741,6 +5345,7 @@
     "method": "GET",
     "path": "/api/v1/pages",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List pages with optional filtering, visibility ACL, and pagination.",
     "has_body": false
   },
@@ -4752,6 +5357,7 @@
     "path_params": [
       "slug"
     ],
+    "wildcard_path_params": [],
     "summary": "Update page by slug.",
     "has_body": true
   },
@@ -4761,6 +5367,7 @@
     "method": "POST",
     "path": "/api/v1/portal-auth/org-assignments",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Assign a portal user to an organization with a role.",
     "has_body": true
   },
@@ -4770,6 +5377,7 @@
     "method": "POST",
     "path": "/api/v1/portal-auth/password/change",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Change password for the authenticated user.",
     "has_body": true
   },
@@ -4779,6 +5387,7 @@
     "method": "POST",
     "path": "/api/v1/portal-auth/mfa/disable",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Disable MFA for the authenticated user.",
     "has_body": true
   },
@@ -4788,6 +5397,7 @@
     "method": "POST",
     "path": "/api/v1/portal-auth/mfa/enable",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Enable MFA for the authenticated user.",
     "has_body": true
   },
@@ -4797,6 +5407,7 @@
     "method": "GET",
     "path": "/api/v1/portal-auth/me",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get current authenticated portal user info.",
     "has_body": false
   },
@@ -4806,6 +5417,7 @@
     "method": "PATCH",
     "path": "/api/v1/portal-auth/me",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Update current authenticated portal user info.",
     "has_body": true
   },
@@ -4815,6 +5427,7 @@
     "method": "POST",
     "path": "/api/v1/privacy/me/erase",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "GDPR Art. 17 right-to-erasure: anonymize the caller's own PII.",
     "has_body": true
   },
@@ -4824,6 +5437,7 @@
     "method": "GET",
     "path": "/api/v1/privacy/me/export",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "GDPR Art. 15 / CCPA right-to-know: export the caller's own data as JSON.",
     "has_body": false
   },
@@ -4833,6 +5447,7 @@
     "method": "POST",
     "path": "/api/v1/privacy/me/consent",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "CCPA/CPRA \"Do Not Sell or Share\" opt-out + consent withdrawal (per-user flag).",
     "has_body": true
   },
@@ -4842,6 +5457,7 @@
     "method": "POST",
     "path": "/api/v1/privacy-admin/bulk-erase",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Bulk right-to-erasure across many identities in one call (Enterprise).",
     "has_body": true
   },
@@ -4851,6 +5467,7 @@
     "method": "GET",
     "path": "/api/v1/privacy-admin/requests",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List DSAR self-service + bulk activity for the admin's own tenant (Enterprise).",
     "has_body": false
   },
@@ -4860,6 +5477,7 @@
     "method": "GET",
     "path": "/api/v1/profile/me",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get current user's profile information.",
     "has_body": false
   },
@@ -4869,6 +5487,7 @@
     "method": "PATCH",
     "path": "/api/v1/profile/me",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Update current user's profile information.",
     "has_body": true
   },
@@ -4878,6 +5497,7 @@
     "method": "POST",
     "path": "/api/v1/projects",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new project.",
     "has_body": true
   },
@@ -4889,6 +5509,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a project.",
     "has_body": false
   },
@@ -4900,6 +5521,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single project by ID.",
     "has_body": false
   },
@@ -4909,6 +5531,7 @@
     "method": "GET",
     "path": "/api/v1/projects",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List projects with optional filtering.",
     "has_body": false
   },
@@ -4920,6 +5543,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a project.",
     "has_body": true
   },
@@ -4929,6 +5553,7 @@
     "method": "GET",
     "path": "/api/v1/refs/backlinks",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get all references pointing to a target resource.",
     "has_body": false
   },
@@ -4938,6 +5563,7 @@
     "method": "GET",
     "path": "/api/v1/refs/resolve",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Resolve a reference by village_id or module:type:id.",
     "has_body": false
   },
@@ -4947,6 +5573,7 @@
     "method": "POST",
     "path": "/api/v1/resource-roles",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Grant a resource role to an identity or group.",
     "has_body": true
   },
@@ -4958,6 +5585,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all resource roles for an entity.",
     "has_body": false
   },
@@ -4969,6 +5597,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all resource roles assigned to an identity.",
     "has_body": false
   },
@@ -4980,6 +5609,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all resource roles for an organization.",
     "has_body": false
   },
@@ -4989,6 +5619,7 @@
     "method": "GET",
     "path": "/api/v1/resource-roles",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List resource role assignments with optional filtering.",
     "has_body": false
   },
@@ -5000,6 +5631,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Revoke a resource role.",
     "has_body": false
   },
@@ -5009,6 +5641,7 @@
     "method": "POST",
     "path": "/api/v1/sbom/components",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new SBOM component.",
     "has_body": true
   },
@@ -5018,6 +5651,7 @@
     "method": "POST",
     "path": "/api/v1/sbom/scans",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create/trigger a new SBOM scan.",
     "has_body": true
   },
@@ -5027,6 +5661,7 @@
     "method": "POST",
     "path": "/api/v1/sbom/schedules",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new SBOM scan schedule.",
     "has_body": true
   },
@@ -5038,6 +5673,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an SBOM component.",
     "has_body": false
   },
@@ -5049,6 +5685,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an SBOM scan record.",
     "has_body": false
   },
@@ -5060,6 +5697,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an SBOM scan schedule.",
     "has_body": false
   },
@@ -5071,6 +5709,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single SBOM component by ID.",
     "has_body": false
   },
@@ -5082,6 +5721,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get vulnerabilities affecting a specific SBOM component.",
     "has_body": false
   },
@@ -5091,6 +5731,7 @@
     "method": "GET",
     "path": "/api/v1/sbom/schedules/due",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get due SBOM scan schedules (for scanner worker).",
     "has_body": false
   },
@@ -5100,6 +5741,7 @@
     "method": "GET",
     "path": "/api/v1/sbom/scans/pending",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get pending SBOM scans (for scanner worker).",
     "has_body": false
   },
@@ -5111,6 +5753,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single SBOM scan by ID.",
     "has_body": false
   },
@@ -5122,6 +5765,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single SBOM scan schedule by ID.",
     "has_body": false
   },
@@ -5131,6 +5775,7 @@
     "method": "GET",
     "path": "/api/v1/sbom/components",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List SBOM components with optional filtering.",
     "has_body": false
   },
@@ -5140,6 +5785,7 @@
     "method": "GET",
     "path": "/api/v1/sbom/scans",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List SBOM scans with optional filtering.",
     "has_body": false
   },
@@ -5149,6 +5795,7 @@
     "method": "GET",
     "path": "/api/v1/sbom/schedules",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List SBOM scan schedules with optional filtering.",
     "has_body": false
   },
@@ -5160,6 +5807,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Mark an SBOM scan as running (for scanner worker).",
     "has_body": true
   },
@@ -5171,6 +5819,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Submit SBOM scan results (for scanner worker).",
     "has_body": true
   },
@@ -5182,6 +5831,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an SBOM component.",
     "has_body": true
   },
@@ -5193,6 +5843,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an SBOM scan schedule.",
     "has_body": true
   },
@@ -5202,6 +5853,7 @@
     "method": "POST",
     "path": "/api/v1/sbom/scans/upload",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Upload and import an SBOM file (CycloneDX or SPDX).",
     "has_body": true
   },
@@ -5211,6 +5863,7 @@
     "method": "POST",
     "path": "/api/v1/search/saved",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Save a search query.",
     "has_body": true
   },
@@ -5222,6 +5875,7 @@
     "path_params": [
       "search_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete saved search.",
     "has_body": false
   },
@@ -5233,6 +5887,7 @@
     "path_params": [
       "search_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Execute a saved search.",
     "has_body": false
   },
@@ -5242,6 +5897,7 @@
     "method": "GET",
     "path": "/api/v1/search/ai-research/config",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Return AI Researcher model configuration, Ollama health, and enabled MCP tool count.",
     "has_body": false
   },
@@ -5251,6 +5907,7 @@
     "method": "GET",
     "path": "/api/v1/search/analytics/popular",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get most popular/frequent searches.",
     "has_body": false
   },
@@ -5262,6 +5919,7 @@
     "path_params": [
       "search_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get saved search details.",
     "has_body": false
   },
@@ -5271,6 +5929,7 @@
     "method": "GET",
     "path": "/api/v1/search/saved",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List user's saved searches.",
     "has_body": false
   },
@@ -5280,6 +5939,7 @@
     "method": "POST",
     "path": "/api/v1/search/ai-research",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Execute a multi-step read-only AI Researcher query backed by Ollama + Elder MCP.",
     "has_body": true
   },
@@ -5289,6 +5949,7 @@
     "method": "GET",
     "path": "/api/v1/search",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Advanced search across all resources.",
     "has_body": false
   },
@@ -5298,6 +5959,7 @@
     "method": "GET",
     "path": "/api/v1/search/entities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Search entities with advanced filters.",
     "has_body": false
   },
@@ -5307,6 +5969,7 @@
     "method": "POST",
     "path": "/api/v1/search/graph",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Graph-based search for entities and dependencies.",
     "has_body": true
   },
@@ -5316,6 +5979,7 @@
     "method": "GET",
     "path": "/api/v1/search/issues",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Search issues with advanced filters.",
     "has_body": false
   },
@@ -5325,6 +5989,7 @@
     "method": "GET",
     "path": "/api/v1/search/organizations",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Search organizations.",
     "has_body": false
   },
@@ -5334,6 +5999,7 @@
     "method": "GET",
     "path": "/api/v1/search/suggest",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get search suggestions/autocomplete.",
     "has_body": false
   },
@@ -5345,6 +6011,7 @@
     "path_params": [
       "search_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update saved search.",
     "has_body": true
   },
@@ -5354,6 +6021,7 @@
     "method": "POST",
     "path": "/api/v1/secrets",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Register a new secret from a provider.",
     "has_body": true
   },
@@ -5363,6 +6031,7 @@
     "method": "POST",
     "path": "/api/v1/secrets/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Register a new secret provider.",
     "has_body": true
   },
@@ -5374,6 +6043,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Remove secret registration (does not delete from provider).",
     "has_body": false
   },
@@ -5385,6 +6055,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete secret provider.",
     "has_body": false
   },
@@ -5396,6 +6067,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific secret (masked by default).",
     "has_body": false
   },
@@ -5407,6 +6079,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get access log for a secret.",
     "has_body": false
   },
@@ -5418,6 +6091,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get secret provider details.",
     "has_body": false
   },
@@ -5427,6 +6101,7 @@
     "method": "GET",
     "path": "/api/v1/secrets/providers",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all secret providers.",
     "has_body": false
   },
@@ -5436,6 +6111,7 @@
     "method": "GET",
     "path": "/api/v1/secrets",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all secrets accessible by current user/organization.",
     "has_body": false
   },
@@ -5447,6 +6123,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Force sync secret metadata from provider.",
     "has_body": true
   },
@@ -5458,6 +6135,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Sync all secrets from provider.",
     "has_body": true
   },
@@ -5469,6 +6147,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test provider connection.",
     "has_body": true
   },
@@ -5480,6 +6159,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Unmask a secret and retrieve its actual value.",
     "has_body": true
   },
@@ -5491,6 +6171,7 @@
     "path_params": [
       "secret_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update secret metadata (not the actual value in provider).",
     "has_body": true
   },
@@ -5502,6 +6183,7 @@
     "path_params": [
       "provider_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update secret provider configuration.",
     "has_body": true
   },
@@ -5511,6 +6193,7 @@
     "method": "POST",
     "path": "/api/v1/services",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new service.",
     "has_body": true
   },
@@ -5522,18 +6205,8 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a service.",
-    "has_body": false
-  },
-  {
-    "service": "services",
-    "operation": "export_service_sbom",
-    "method": "GET",
-    "path": "/api/v1/services/{id}/sbom/export",
-    "path_params": [
-      "id"
-    ],
-    "summary": "Export service SBOM in standard format.",
     "has_body": false
   },
   {
@@ -5544,6 +6217,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single service by ID.",
     "has_body": false
   },
@@ -5555,6 +6229,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get SBOM components for a service.",
     "has_body": false
   },
@@ -5564,6 +6239,7 @@
     "method": "GET",
     "path": "/api/v1/services/endpoints",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all service endpoints across services.",
     "has_body": false
   },
@@ -5573,6 +6249,7 @@
     "method": "GET",
     "path": "/api/v1/services",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List services with optional filtering.",
     "has_body": false
   },
@@ -5584,6 +6261,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Trigger an SBOM scan for a service.",
     "has_body": true
   },
@@ -5595,47 +6273,8 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a service.",
-    "has_body": true
-  },
-  {
-    "service": "sla-policies",
-    "operation": "create_sla_policy",
-    "method": "POST",
-    "path": "/api/v1/sla-policies",
-    "path_params": [],
-    "summary": "Create a new SLA policy.",
-    "has_body": true
-  },
-  {
-    "service": "sla-policies",
-    "operation": "delete_sla_policy",
-    "method": "DELETE",
-    "path": "/api/v1/sla-policies/{policy_id}",
-    "path_params": [
-      "policy_id"
-    ],
-    "summary": "Delete an SLA policy.",
-    "has_body": false
-  },
-  {
-    "service": "sla-policies",
-    "operation": "list_sla_policies",
-    "method": "GET",
-    "path": "/api/v1/sla-policies",
-    "path_params": [],
-    "summary": "List SLA policies with pagination.",
-    "has_body": false
-  },
-  {
-    "service": "sla-policies",
-    "operation": "update_sla_policy",
-    "method": "PUT",
-    "path": "/api/v1/sla-policies/{policy_id}",
-    "path_params": [
-      "policy_id"
-    ],
-    "summary": "Update SLA policy properties.",
     "has_body": true
   },
   {
@@ -5644,6 +6283,7 @@
     "method": "POST",
     "path": "/api/v1/software",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new software entry.",
     "has_body": true
   },
@@ -5655,18 +6295,8 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a software entry.",
-    "has_body": false
-  },
-  {
-    "service": "software",
-    "operation": "export_software_sbom",
-    "method": "GET",
-    "path": "/api/v1/software/{id}/sbom/export",
-    "path_params": [
-      "id"
-    ],
-    "summary": "Export software SBOM in standard format.",
     "has_body": false
   },
   {
@@ -5677,6 +6307,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single software entry by ID.",
     "has_body": false
   },
@@ -5688,6 +6319,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get SBOM components for a software.",
     "has_body": false
   },
@@ -5697,6 +6329,7 @@
     "method": "GET",
     "path": "/api/v1/software",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List software with optional filtering.",
     "has_body": false
   },
@@ -5708,6 +6341,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a software entry.",
     "has_body": true
   },
@@ -5717,6 +6351,7 @@
     "method": "POST",
     "path": "/api/v1/sso/idp",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new IdP configuration.",
     "has_body": true
   },
@@ -5726,6 +6361,7 @@
     "method": "POST",
     "path": "/api/v1/sso/scim/config",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create SCIM configuration for a tenant.",
     "has_body": true
   },
@@ -5737,6 +6373,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an IdP configuration the caller owns.",
     "has_body": false
   },
@@ -5748,6 +6385,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get SCIM configuration for a tenant.",
     "has_body": false
   },
@@ -5757,6 +6395,7 @@
     "method": "GET",
     "path": "/api/v1/sso/idp",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List IdP configurations the caller is allowed to see.",
     "has_body": false
   },
@@ -5768,6 +6407,7 @@
     "path_params": [
       "idp_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Initiate OIDC logout (RP-Initiated Logout).",
     "has_body": true
   },
@@ -5779,6 +6419,7 @@
     "path_params": [
       "idp_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get current user info from OIDC userinfo endpoint.",
     "has_body": false
   },
@@ -5790,6 +6431,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Regenerate SCIM bearer token.",
     "has_body": true
   },
@@ -5801,6 +6443,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Create user.",
     "has_body": true
   },
@@ -5813,6 +6456,7 @@
       "tenant_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Delete user.",
     "has_body": false
   },
@@ -5825,6 +6469,7 @@
       "tenant_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Get user.",
     "has_body": false
   },
@@ -5836,6 +6481,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "SCIM 2.0 - List users.",
     "has_body": false
   },
@@ -5848,6 +6494,7 @@
       "tenant_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "SCIM 2.0 - Replace user.",
     "has_body": true
   },
@@ -5859,6 +6506,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an IdP configuration the caller owns.",
     "has_body": true
   },
@@ -5868,6 +6516,7 @@
     "method": "GET",
     "path": "/api/v1/status",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "API status endpoint for console version checks.",
     "has_body": false
   },
@@ -5879,6 +6528,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Acquire an editor lock for a stream.",
     "has_body": true
   },
@@ -5890,6 +6540,7 @@
     "path_params": [
       "execution_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Approve a paused stream execution.",
     "has_body": true
   },
@@ -5901,6 +6552,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a new approval gate for a stream.",
     "has_body": true
   },
@@ -5910,6 +6562,7 @@
     "method": "POST",
     "path": "/api/v1/streams",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new stream.",
     "has_body": true
   },
@@ -5921,6 +6574,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Create a webhook for a stream.",
     "has_body": true
   },
@@ -5932,6 +6586,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a stream.",
     "has_body": false
   },
@@ -5944,6 +6599,7 @@
       "stream_id",
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a webhook.",
     "has_body": false
   },
@@ -5955,6 +6611,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Duplicate a stream.",
     "has_body": true
   },
@@ -5966,6 +6623,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Manually execute a stream.",
     "has_body": true
   },
@@ -5977,6 +6635,7 @@
     "path_params": [
       "execution_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get approval status for an execution.",
     "has_body": false
   },
@@ -5989,6 +6648,7 @@
       "stream_id",
       "execution_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get details of a specific execution.",
     "has_body": false
   },
@@ -6000,6 +6660,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get the current editor lock status for a stream.",
     "has_body": false
   },
@@ -6009,6 +6670,7 @@
     "method": "GET",
     "path": "/api/v1/streams/my-approvals",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get pending approvals for current user.",
     "has_body": false
   },
@@ -6021,6 +6683,7 @@
       "stream_id",
       "node_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get metadata for a specific node.",
     "has_body": false
   },
@@ -6032,6 +6695,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a specific stream by ID.",
     "has_body": false
   },
@@ -6041,6 +6705,7 @@
     "method": "GET",
     "path": "/api/v1/streams/node-catalog",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List generic and Elder playbook nodes with live tenant/route availability.",
     "has_body": false
   },
@@ -6050,6 +6715,7 @@
     "method": "GET",
     "path": "/api/v1/streams/executions",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List execution history across all streams for the tenant (global view).",
     "has_body": false
   },
@@ -6061,6 +6727,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all approval gates for a stream.",
     "has_body": false
   },
@@ -6072,6 +6739,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List execution history for a stream.",
     "has_body": false
   },
@@ -6081,6 +6749,7 @@
     "method": "GET",
     "path": "/api/v1/streams",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List streams with optional filtering and pagination.",
     "has_body": false
   },
@@ -6092,6 +6761,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List webhooks for a stream.",
     "has_body": false
   },
@@ -6103,6 +6773,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a stream.",
     "has_body": true
   },
@@ -6114,6 +6785,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a stream.",
     "has_body": true
   },
@@ -6125,6 +6797,7 @@
     "path_params": [
       "execution_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Reject a paused stream execution.",
     "has_body": true
   },
@@ -6136,6 +6809,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Release an editor lock for a stream.",
     "has_body": false
   },
@@ -6148,6 +6822,7 @@
       "stream_id",
       "node_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update metadata for a specific node.",
     "has_body": true
   },
@@ -6159,6 +6834,7 @@
     "path_params": [
       "stream_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Validate playbook graph, node types, module availability, and config.",
     "has_body": true
   },
@@ -6168,6 +6844,7 @@
     "method": "POST",
     "path": "/api/v1/sync/configs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new sync configuration.",
     "has_body": true
   },
@@ -6179,6 +6856,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete sync configuration and dependent history/mappings/conflicts.",
     "has_body": false
   },
@@ -6190,6 +6868,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get sync configuration details.",
     "has_body": false
   },
@@ -6199,6 +6878,7 @@
     "method": "GET",
     "path": "/api/v1/sync/configs",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all sync configurations.",
     "has_body": false
   },
@@ -6208,6 +6888,7 @@
     "method": "GET",
     "path": "/api/v1/sync/conflicts",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List sync conflicts.",
     "has_body": false
   },
@@ -6217,6 +6898,7 @@
     "method": "GET",
     "path": "/api/v1/sync/history",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List sync history with pagination.",
     "has_body": false
   },
@@ -6226,6 +6908,7 @@
     "method": "GET",
     "path": "/api/v1/sync/mappings",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List sync mappings.",
     "has_body": false
   },
@@ -6237,6 +6920,7 @@
     "path_params": [
       "conflict_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Resolve a sync conflict manually.",
     "has_body": true
   },
@@ -6246,6 +6930,7 @@
     "method": "GET",
     "path": "/api/v1/sync/status",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get overall sync status summary.",
     "has_body": false
   },
@@ -6257,6 +6942,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test connectivity and authentication for a sync configuration.",
     "has_body": true
   },
@@ -6268,6 +6954,7 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Manually trigger batch synchronization for a configuration.",
     "has_body": true
   },
@@ -6279,70 +6966,8 @@
     "path_params": [
       "config_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update sync configuration while preserving redacted/omitted secrets.",
-    "has_body": true
-  },
-  {
-    "service": "teams",
-    "operation": "add_team_member",
-    "method": "POST",
-    "path": "/api/v1/teams/{team_id}/members",
-    "path_params": [
-      "team_id"
-    ],
-    "summary": "Add a member to a team.",
-    "has_body": true
-  },
-  {
-    "service": "teams",
-    "operation": "create_team",
-    "method": "POST",
-    "path": "/api/v1/teams",
-    "path_params": [],
-    "summary": "Create a new team.",
-    "has_body": true
-  },
-  {
-    "service": "teams",
-    "operation": "get_team",
-    "method": "GET",
-    "path": "/api/v1/teams/{team_id}",
-    "path_params": [
-      "team_id"
-    ],
-    "summary": "Get team detail with members.",
-    "has_body": false
-  },
-  {
-    "service": "teams",
-    "operation": "list_teams",
-    "method": "GET",
-    "path": "/api/v1/teams",
-    "path_params": [],
-    "summary": "List teams with pagination.",
-    "has_body": false
-  },
-  {
-    "service": "teams",
-    "operation": "remove_team_member",
-    "method": "DELETE",
-    "path": "/api/v1/teams/{team_id}/members/{identity_id}",
-    "path_params": [
-      "team_id",
-      "identity_id"
-    ],
-    "summary": "Remove a member from a team.",
-    "has_body": false
-  },
-  {
-    "service": "teams",
-    "operation": "update_team",
-    "method": "PUT",
-    "path": "/api/v1/teams/{team_id}",
-    "path_params": [
-      "team_id"
-    ],
-    "summary": "Update team properties.",
     "has_body": true
   },
   {
@@ -6351,6 +6976,7 @@
     "method": "POST",
     "path": "/api/v1/tenants",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new tenant.",
     "has_body": true
   },
@@ -6362,6 +6988,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a tenant.",
     "has_body": false
   },
@@ -6374,6 +7001,7 @@
       "tenant_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a portal user from a tenant.",
     "has_body": false
   },
@@ -6385,6 +7013,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a tenant by ID.",
     "has_body": false
   },
@@ -6396,6 +7025,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get usage statistics for a tenant.",
     "has_body": false
   },
@@ -6407,6 +7037,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all module enablement states for a specific tenant.",
     "has_body": false
   },
@@ -6418,6 +7049,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List all portal users in a tenant.",
     "has_body": false
   },
@@ -6427,6 +7059,7 @@
     "method": "GET",
     "path": "/api/v1/tenants",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all tenants.",
     "has_body": false
   },
@@ -6438,6 +7071,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Set module enablement state for a tenant.",
     "has_body": true
   },
@@ -6449,6 +7083,7 @@
     "path_params": [
       "tenant_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a tenant.",
     "has_body": true
   },
@@ -6461,102 +7096,8 @@
       "tenant_id",
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a portal user in a tenant.",
-    "has_body": true
-  },
-  {
-    "service": "tickets",
-    "operation": "add_message",
-    "method": "POST",
-    "path": "/api/v1/tickets/{ticket_id}/messages",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Add a message to a ticket.",
-    "has_body": true
-  },
-  {
-    "service": "tickets",
-    "operation": "assign_ticket",
-    "method": "POST",
-    "path": "/api/v1/tickets/{ticket_id}/assign",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Assign a ticket to a user.",
-    "has_body": true
-  },
-  {
-    "service": "tickets",
-    "operation": "create_ticket",
-    "method": "POST",
-    "path": "/api/v1/tickets",
-    "path_params": [],
-    "summary": "Create a new ticket.",
-    "has_body": true
-  },
-  {
-    "service": "tickets",
-    "operation": "delete_ticket",
-    "method": "DELETE",
-    "path": "/api/v1/tickets/{ticket_id}",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Delete a ticket.",
-    "has_body": false
-  },
-  {
-    "service": "tickets",
-    "operation": "get_ticket",
-    "method": "GET",
-    "path": "/api/v1/tickets/{ticket_id}",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Get a single ticket by ID.",
-    "has_body": false
-  },
-  {
-    "service": "tickets",
-    "operation": "list_messages",
-    "method": "GET",
-    "path": "/api/v1/tickets/{ticket_id}/messages",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "List messages for a ticket with pagination.",
-    "has_body": false
-  },
-  {
-    "service": "tickets",
-    "operation": "list_tickets",
-    "method": "GET",
-    "path": "/api/v1/tickets",
-    "path_params": [],
-    "summary": "List tickets with optional filtering and pagination.",
-    "has_body": false
-  },
-  {
-    "service": "tickets",
-    "operation": "merge_tickets",
-    "method": "POST",
-    "path": "/api/v1/tickets/{ticket_id}/merge",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Merge two tickets (keep primary, mark secondary as merged).",
-    "has_body": true
-  },
-  {
-    "service": "tickets",
-    "operation": "update_ticket",
-    "method": "PATCH",
-    "path": "/api/v1/tickets/{ticket_id}",
-    "path_params": [
-      "ticket_id"
-    ],
-    "summary": "Update a ticket.",
     "has_body": true
   },
   {
@@ -6565,6 +7106,7 @@
     "method": "POST",
     "path": "/api/v1/users",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new user (admin only).",
     "has_body": true
   },
@@ -6576,6 +7118,7 @@
     "path_params": [
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a user (admin only).",
     "has_body": false
   },
@@ -6585,6 +7128,7 @@
     "method": "GET",
     "path": "/api/v1/users",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all users (admin only).",
     "has_body": false
   },
@@ -6596,6 +7140,7 @@
     "path_params": [
       "user_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update a user (admin only).",
     "has_body": true
   },
@@ -6607,6 +7152,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Assign a vulnerability to a service or software.",
     "has_body": true
   },
@@ -6616,6 +7162,7 @@
     "method": "POST",
     "path": "/api/v1/vulnerabilities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Manually create a vulnerability entry.",
     "has_body": true
   },
@@ -6625,6 +7172,7 @@
     "method": "GET",
     "path": "/api/v1/vulnerabilities/dashboard",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get vulnerability dashboard summary statistics.",
     "has_body": false
   },
@@ -6634,6 +7182,7 @@
     "method": "GET",
     "path": "/api/v1/vulnerabilities/nvd-sync/status",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Get NVD sync status - how many vulnerabilities need syncing.",
     "has_body": false
   },
@@ -6645,6 +7194,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get a single vulnerability by ID.",
     "has_body": false
   },
@@ -6654,6 +7204,7 @@
     "method": "GET",
     "path": "/api/v1/vulnerabilities",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List vulnerabilities with optional filtering.",
     "has_body": false
   },
@@ -6663,6 +7214,7 @@
     "method": "POST",
     "path": "/api/v1/vulnerabilities/sync",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Trigger vulnerability sync from OSV.dev and NVD.",
     "has_body": true
   },
@@ -6672,6 +7224,7 @@
     "method": "POST",
     "path": "/api/v1/vulnerabilities/nvd-sync",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Trigger NVD sync to enrich vulnerability CVSS data.",
     "has_body": true
   },
@@ -6683,6 +7236,7 @@
     "path_params": [
       "id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update component-vulnerability link status.",
     "has_body": true
   },
@@ -6692,6 +7246,7 @@
     "method": "POST",
     "path": "/api/v1/webhooks/broadcast",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Broadcast an event to all applicable webhooks and notification rules",
     "has_body": true
   },
@@ -6701,6 +7256,7 @@
     "method": "POST",
     "path": "/api/v1/webhooks/inbound",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new inbound webhook with required Bearer/Basic auth and permission scopes.",
     "has_body": true
   },
@@ -6710,6 +7266,7 @@
     "method": "POST",
     "path": "/api/v1/webhooks/notification-rules",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new notification rule.",
     "has_body": true
   },
@@ -6719,6 +7276,7 @@
     "method": "POST",
     "path": "/api/v1/webhooks",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Create a new webhook for the caller's tenant.",
     "has_body": true
   },
@@ -6730,6 +7288,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete an inbound webhook.",
     "has_body": false
   },
@@ -6741,6 +7300,7 @@
     "path_params": [
       "rule_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete notification rule.",
     "has_body": false
   },
@@ -6752,6 +7312,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Delete a webhook (must belong to the caller's tenant).",
     "has_body": false
   },
@@ -6763,6 +7324,7 @@
     "path_params": [
       "rule_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get notification rule details, scoped to caller's tenant.",
     "has_body": false
   },
@@ -6774,6 +7336,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get webhook details (must belong to the caller's tenant).",
     "has_body": false
   },
@@ -6785,6 +7348,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Get webhook delivery history (must belong to the caller's tenant).",
     "has_body": false
   },
@@ -6796,6 +7360,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "List recent received events for an inbound webhook.",
     "has_body": false
   },
@@ -6805,6 +7370,7 @@
     "method": "GET",
     "path": "/api/v1/webhooks/inbound/scopes",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "Return the catalog of available OAuth2-like scopes for inbound webhooks.",
     "has_body": false
   },
@@ -6814,6 +7380,7 @@
     "method": "GET",
     "path": "/api/v1/webhooks/inbound",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all inbound webhooks for the caller's tenant.",
     "has_body": false
   },
@@ -6823,6 +7390,7 @@
     "method": "GET",
     "path": "/api/v1/webhooks/notification-rules",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all notification rules scoped to caller's tenant.",
     "has_body": false
   },
@@ -6832,6 +7400,7 @@
     "method": "GET",
     "path": "/api/v1/webhooks",
     "path_params": [],
+    "wildcard_path_params": [],
     "summary": "List all webhooks for the caller's tenant.",
     "has_body": false
   },
@@ -6844,6 +7413,7 @@
       "webhook_id",
       "delivery_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Retry a failed webhook delivery (must belong to the caller's tenant).",
     "has_body": true
   },
@@ -6855,6 +7425,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Regenerate credentials for an inbound webhook and return them once.",
     "has_body": true
   },
@@ -6866,6 +7437,7 @@
     "path_params": [
       "rule_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Test a notification rule.",
     "has_body": true
   },
@@ -6877,6 +7449,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Send a test event to webhook (must belong to the caller's tenant).",
     "has_body": true
   },
@@ -6888,6 +7461,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update an inbound webhook's configuration or authentication type.",
     "has_body": true
   },
@@ -6899,6 +7473,7 @@
     "path_params": [
       "rule_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update notification rule.",
     "has_body": true
   },
@@ -6910,6 +7485,7 @@
     "path_params": [
       "webhook_id"
     ],
+    "wildcard_path_params": [],
     "summary": "Update webhook configuration (must belong to the caller's tenant).",
     "has_body": true
   }

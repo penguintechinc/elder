@@ -39,6 +39,21 @@ An MCP (Model Context Protocol) server exposing Elder's curated operational tool
   - `list_api_operations`: Search/filter all cataloged non-internal `/api/*` operations.
   - `describe_api_operation`: Inspect HTTP method, path template, path parameters, and summary.
   - `invoke_api_operation` / `call_api_operation`: Invoke any cataloged non-internal `/api/*` endpoint with strict path-parameter validation and traversal/SSRF blocking.
+  - Paths in the catalog equal the routes registered by `hub-api` (declared trailing slashes preserved, function-local blueprint prefixes such as `/api/v1/helpdesk` resolved). `<path:...>` route parameters are listed in each operation's `wildcard_path_params` and accept slash-separated values validated per segment (no `..`, empty/dot segments, backslashes, control characters, `?`, `#`, `://`, or encoded variants).
+  - **Excluded non-JSON operations** (`apps/mcp/api_catalog_exclusions.json`, regenerated with the catalog): the tool is JSON-only and never claims to support multipart uploads or binary/CSV/XML downloads. Operations whose handler reads `request.files`, returns `send_file`/`send_from_directory`/a raw `Response`, or whose OpenAPI requestBody/2xx response is not JSON are omitted and rejected if invoked:
+
+| Method | Path | Reason |
+|--------|------|--------|
+| `GET` | `/api/v1/backup/export/{filename}/download` | binary file download response |
+| `POST` | `/api/v1/backup/import` | multipart/form-data request body (file upload) |
+| `GET` | `/api/v1/backup/{backup_id}/download` | binary file download response |
+| `GET` | `/api/v1/diagrams/{diagram_id}/export/json` | binary file download response |
+| `GET` | `/api/v1/diagrams/{diagram_id}/export/svg` | binary file download response |
+| `GET` | `/api/v1/import/templates/{resource}/download` | non-JSON response body (raw Response) |
+| `POST` | `/api/v1/import/{resource}` | multipart/form-data request body (file upload) |
+| `GET` | `/api/v1/services/{id}/sbom/export` | non-JSON response body (raw Response) |
+| `GET` | `/api/v1/software/{id}/sbom/export` | non-JSON response body (raw Response) |
+
 
 ## Using Elder MCP from Claude Code and other desktop clients
 

@@ -34,10 +34,11 @@ blinker==1.9.0 \
     # via
     #   flask
     #   quart
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.10.18 \
+    --hash=sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62 \
+    --hash=sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e
     # via
+    #   -r apps/mcp/requirements.in
     #   httpcore
     #   httpx
     #   requests
@@ -728,67 +729,77 @@ markupsafe==3.0.4 \
     #   jinja2
     #   quart
     #   werkzeug
-mcp==1.28.1 \
-    --hash=sha256:2726bca5e7193f61c5dde8b12500a6de2d9acf6d1a1c0be9e8c2e706437991df \
-    --hash=sha256:d51e36a5f5644faea4f85ea649bfffa6bc6c26770d42798ad6a3de3d2ba69683
+mcp==1.30.0 \
+    --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
+    --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
     # via -r apps/mcp/requirements.in
-opentelemetry-api==1.43.0 \
-    --hash=sha256:107d0d03857ea8fc7c5fcbbbd83f800c281f0d560553d61c1d675fccfd1761c1 \
-    --hash=sha256:20acf45e9b21851926835292e4045d290acade1edd2ff3de86d2f069687ba1fd
+opentelemetry-api==1.45.2 \
+    --hash=sha256:2cbd737377e710ee740d261c94e93fa0f08e6d037c18f17513cc0a2d94479a34 \
+    --hash=sha256:d7b0008e21e5fd61cbe7a7f34ca3b6905a78ab677d9bc395e299359c75cda6b4
     # via
     #   -r apps/mcp/requirements.in
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-httpx
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-opentelemetry-exporter-otlp-proto-common==1.43.0 \
-    --hash=sha256:123c3f9cc87218562490c63b36f497bf3a722faf174a515d1443f31ababa6264 \
-    --hash=sha256:c4e32ba6d6b13bdb2b8f6764c4fd28d00192826561aa04f6d14eedfce7ac076f
+opentelemetry-exporter-http-transport==0.66b2 \
+    --hash=sha256:66d6ed810a515432c8891da9a834464332fd70badeca45bdeeae81b4280c903b \
+    --hash=sha256:fd5f5b490c099acda1cd7b909d5e8981436bf18cc8c6098d302d114c271720e9
     # via opentelemetry-exporter-otlp-proto-http
-opentelemetry-exporter-otlp-proto-http==1.43.0 \
-    --hash=sha256:647f603aa8efdbdb4dbff842e0729d0406a6fff26b295a72d3d60e7d963b2610 \
-    --hash=sha256:fa8a42bb7d00ee5391f4c0b04d8e6a46c03caa437903296ab73a81dc11ba118f
+opentelemetry-exporter-otlp-common==0.66b2 \
+    --hash=sha256:06f5a9b88638e310efa1f1d206cdf6b75393e112aba4e174a963416192bd1028 \
+    --hash=sha256:ace86efb75489f925f1ef809856ae5f0c7db534e4afdc624530222228b1236a5
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-common==1.45.2 \
+    --hash=sha256:af483b24217028892f017096731b794b196b785025d2e6808874720fd0b05a80 \
+    --hash=sha256:f1f2806f3f28ce7938033823e50934fcd91595a39de38e69a28a51e19f40fc6d
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-http==1.45.2 \
+    --hash=sha256:5984a3fb46bc4628e4e2b85d4a6e72637e03962aae6cf372791137768a4ad939 \
+    --hash=sha256:6e4d025138829d0ee57946930c2ccad6491ad4d92a958e9c7eea69278fe60cfc
     # via -r apps/mcp/requirements.in
-opentelemetry-instrumentation==0.64b0 \
-    --hash=sha256:133ab7ffca796557aec059bf6be3190a34b6dea987f25be3d9409e230cbdad8b \
-    --hash=sha256:b47d528dead6271d7743114417eb67fc915bd9258111c48dbf9a4951d2efa88d
+opentelemetry-instrumentation==0.66b2 \
+    --hash=sha256:02b094150e53b76f5906d75e628dbb3833bbc6e62fa109b5c7ba0c081865e923 \
+    --hash=sha256:fa9ccfdab147a14af8107d19ef0a7b5015675273c5adced7a1fc38f28b42ec4c
     # via
     #   -r apps/mcp/requirements.in
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-httpx
-opentelemetry-instrumentation-asgi==0.64b0 \
-    --hash=sha256:4dd3eee566a4303f8e6b9b84f2a0a7abc57a6640df768926c68a3868bf5b2090 \
-    --hash=sha256:e0840b66e15303a9254b0540946010bd008aa0504f4d89b8e1b7fb63490a36f0
+opentelemetry-instrumentation-asgi==0.66b2 \
+    --hash=sha256:9c5ec36e6b898f18e6b07b5077c2a3bafa9abf69de98e729797b9efa465f8aa3 \
+    --hash=sha256:da8a2df4589976ad483feaec150a78ec7d1947754e420b838a4942361e465bfb
     # via -r apps/mcp/requirements.in
-opentelemetry-instrumentation-httpx==0.64b0 \
-    --hash=sha256:04829e5723941b5ceb0c88b44d63983e226b5c75b2b2e34a57739fdd0e060608 \
-    --hash=sha256:c2cfcd03d3665762860ebd0c28038c6e47fbb48d7942dec31dd75fc634d25c92
+opentelemetry-instrumentation-httpx==0.66b2 \
+    --hash=sha256:93e2b6ab1a505d76ec3d98abcf7e8527d4712167d6c3b5ebbb9c68d9309d9ba5 \
+    --hash=sha256:b4c81e4a6dc7b8d7cb2d3088eb8848f6db6bd4abdc443ac9586ec176f1460187
     # via -r apps/mcp/requirements.in
-opentelemetry-proto==1.43.0 \
-    --hash=sha256:224778df17e1f3fafeaaa21d874236ca5f6ffc2f86e0899298ec7351aac27924 \
-    --hash=sha256:c58f1f7ef84bc7dc2834016c0c37fe0081dde7ca9f6339be1970fbf9cdaaa90d
+opentelemetry-proto==1.45.2 \
+    --hash=sha256:03a7ca1b43f89fd5b965d5975902bb2515c0c86e2428b456836e9a6149c6235a \
+    --hash=sha256:bd8d23cf770605b0af9b7be2071d26a464fea289d35429abfd2a66226114ad64
     # via
     #   opentelemetry-exporter-otlp-proto-common
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-sdk==1.43.0 \
-    --hash=sha256:d1323a547c1ce69d6a069a17a44b7da82bb8b332051ecb074041f87642c86823 \
-    --hash=sha256:d8187c81c162df9913e4003dd6485f7390d9a24fc17026ec7387b8b8218b08e9
+opentelemetry-sdk==1.45.2 \
+    --hash=sha256:7eec4de13dd21ff3a1670dcb0e02079e692736f94d733dfdce5af461d884248d \
+    --hash=sha256:ff974ea70ee4f1d51e2ec152db37c2b626c7bf82bb3f7d86114fd8704e7199c6
     # via
     #   -r apps/mcp/requirements.in
+    #   opentelemetry-exporter-otlp-common
     #   opentelemetry-exporter-otlp-proto-http
-opentelemetry-semantic-conventions==0.64b0 \
-    --hash=sha256:72f76fb2d1582d9d033dd1fcd84532e961e6ff3d90d24ba6fabc72975a83864c \
-    --hash=sha256:ea77e85e354b8f604ddbe5f3d9135216f982fa4d77e5859ac30f6d8a50505aa6
+opentelemetry-semantic-conventions==0.66b2 \
+    --hash=sha256:4cbe61e5f9275d57ab31708446e7938ef4291ebbe6a7fca6f7a629c5acae87d8 \
+    --hash=sha256:7da5f1a5dc4383eb66711d4d3d3e71824d9403ac1559fea021cc103c1a4c4976
     # via
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-httpx
     #   opentelemetry-sdk
-opentelemetry-util-http==0.64b0 \
-    --hash=sha256:8a86a220dbfc56d736f47f1e5c4e7932a21fcf69052312e1bcf166444dc79322 \
-    --hash=sha256:c1e5350d25507c1afcd6076cf9ac062485a0a4f79cd9971366996fd3056bacdb
+opentelemetry-util-http==0.66b2 \
+    --hash=sha256:7ba066ea609202e474679ddf1d0f753a1e6619bd206b36afaecba4bbb86e25d0 \
+    --hash=sha256:c4bb5d6744e60353bcaa3e325bc529a1515346b51cb4d9c8e5b730579337e06d
     # via
     #   opentelemetry-instrumentation-asgi
     #   opentelemetry-instrumentation-httpx
@@ -1062,6 +1073,7 @@ requests==2.34.2 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
     # via
     #   -r apps/mcp/requirements.in
+    #   opentelemetry-exporter-http-transport
     #   opentelemetry-exporter-otlp-proto-http
 rpds-py==2026.6.3 \
     --hash=sha256:0be972be84cfcaf46c8c6edf690ca0f154ac17babf1f6a955a51579b34ad2dc5 \
