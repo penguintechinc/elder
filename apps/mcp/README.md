@@ -56,6 +56,16 @@ An MCP (Model Context Protocol) server exposing Elder's curated operational tool
 | `GET` | `/api/v1/software/{id}/sbom/export` | non-JSON response body (raw Response) |
 
 
+## AI Researcher (in-cluster MCP client)
+
+The AI Researcher (`POST /api/v1/search/ai-research`) is an MCP client of `hub-mcp`: it
+calls `initialize`, `tools/list` and `tools/call` over the same JSON-RPC protocol,
+auth and limits as desktop clients, so there is no second tool implementation.
+
+- **Transport**: in-process by default (`httpx.ASGITransport` against `apps.mcp.http_app`, upstream = `ELDER_INTERNAL_API_URL`); set `MCP_SERVER_URL` to point at a remote hub-mcp instead. If hub-mcp is unreachable the request fails with `503 MCP_UNAVAILABLE`; there is no direct-registry fallback.
+- **Auth**: the caller's own bearer token (header or HTTP-only cookie, validated by hub-api) is forwarded to hub-mcp, so hub-api enforces the caller's scopes and tenant on every tool call. No service token is minted and there is no static token override. The route requires `ai:read`; the token's tenant must match the resolved tenant.
+- **Read-only**: only tools annotated `readOnlyHint: true` (never `destructiveHint`, never `invoke_api_operation`) and permitted by the caller's scopes/enabled modules are offered. Tool output is passed to the model as JSON under `untrusted_data`.
+
 ## Using Elder MCP from Claude Code and other desktop clients
 
 One implementation (`hub-mcp`) serves both in-cluster AI Researcher/Associate (as an MCP client) and end users on their desktop, so tool behaviour never diverges. Every call runs with **your own Elder credentials**; `hub-api` enforces your RBAC scopes and tenant, so you only see and change what your Elder account allows. Tenant is derived from your token by `hub-api` and can never be overridden through MCP.

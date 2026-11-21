@@ -196,6 +196,8 @@ class Config:
     ELDER_INTERNAL_API_URL = config(
         "ELDER_INTERNAL_API_URL", default="http://127.0.0.1:5000"
     )
+    # Optional remote hub-mcp base URL for the AI Researcher; empty = in-process hub-mcp.
+    MCP_SERVER_URL = config("MCP_SERVER_URL", default="")
 
     # WebSocket
     WEBSOCKET_ENABLED = config("WEBSOCKET_ENABLED", default=True, cast=bool)

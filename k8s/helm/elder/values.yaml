@@ -285,7 +285,8 @@ hub-api:
 
     # Metrics
     METRICS_ENABLED: "true"
-    # AI Researcher (Ollama + in-process / loopback Elder MCP calls)
+    # AI Researcher (Ollama + hub-mcp as MCP client, caller's own token forwarded).
+    # hub-mcp runs in-process by default; set MCP_SERVER_URL to use a remote hub-mcp (#388).
     OLLAMA_URL: "http://ollama.waddleai.svc.cluster.local:11434"
     AI_RESEARCHER_MODEL: "gemma4:e4b"
     AI_RESEARCHER_MAX_STEPS: "6"

@@ -196,6 +196,10 @@ def generate_service_researcher_token(
 ) -> str:
     """Mint a short-lived, strictly read-only ``service_researcher`` JWT.
 
+    DEPRECATED: the AI Researcher no longer uses this; it forwards the caller's own
+    token to hub-mcp. Retained only so previously issued tokens still validate; no
+    production code path mints one.
+
     Args:
         tenant_id: Positive tenant ID to bind this token to.
         scopes: Required non-empty sequence of ``<resource>:read`` scopes
