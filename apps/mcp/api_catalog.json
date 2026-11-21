@@ -7868,6 +7868,17 @@
   },
   {
     "service": "webhooks",
+    "operation": "create_alert_configuration",
+    "method": "POST",
+    "path": "/api/v1/webhooks/alert-configurations",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new alert configuration with a universal village_id.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "webhooks",
     "operation": "create_inbound_webhook",
     "method": "POST",
     "path": "/api/v1/webhooks/inbound",
@@ -7898,6 +7909,19 @@
     "summary": "Create a new webhook for the caller's tenant.",
     "has_body": true,
     "destructive": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "delete_alert_configuration",
+    "method": "DELETE",
+    "path": "/api/v1/webhooks/alert-configurations/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Delete an alert configuration scoped to the caller's tenant.",
+    "has_body": false,
+    "destructive": true
   },
   {
     "service": "webhooks",
@@ -7940,6 +7964,19 @@
   },
   {
     "service": "webhooks",
+    "operation": "get_alert_configuration",
+    "method": "GET",
+    "path": "/api/v1/webhooks/alert-configurations/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get a single alert configuration scoped to the caller's tenant.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "webhooks",
     "operation": "get_notification_rule",
     "method": "GET",
     "path": "/api/v1/webhooks/notification-rules/{rule_id}",
@@ -7974,6 +8011,17 @@
     ],
     "wildcard_path_params": [],
     "summary": "Get webhook delivery history (must belong to the caller's tenant).",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "list_alert_configurations",
+    "method": "GET",
+    "path": "/api/v1/webhooks/alert-configurations",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List alert configurations scoped to the caller's tenant.",
     "has_body": false,
     "destructive": false
   },
@@ -8086,6 +8134,19 @@
     "summary": "Send a test event to webhook (must belong to the caller's tenant).",
     "has_body": true,
     "destructive": false
+  },
+  {
+    "service": "webhooks",
+    "operation": "update_alert_configuration",
+    "method": "PUT",
+    "path": "/api/v1/webhooks/alert-configurations/{config_id}",
+    "path_params": [
+      "config_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update an alert configuration scoped to the caller's tenant.",
+    "has_body": true,
+    "destructive": true
   },
   {
     "service": "webhooks",
