@@ -370,6 +370,10 @@ else
         npx playwright test --project=chromium --workers=1 --reporter=list 2>&1 || PLAYWRIGHT_EXIT=$?
     cd "$PROJECT_ROOT"
 
+    # Clean up repo-scoped Playwright artifacts after every run (pass or fail)
+    rm -rf "/tmp/playwright-elder"
+    log_info "Playwright artifacts cleaned up (/tmp/playwright-elder)"
+
     if [ $PLAYWRIGHT_EXIT -eq 0 ]; then
         log_success "Playwright tests passed"
         PHASE_RESULTS+=("Playwright: PASS")
