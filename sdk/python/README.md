@@ -2,7 +2,7 @@
 
 Official Python 3.11+ SDK for the [Elder](https://github.com/penguintechinc/elder) platform API.
 
-`elder-sdk` provides both synchronous (`ElderClient`) and asynchronous (`AsyncElderClient`) HTTP clients backed by `httpx` and the canonical Elder API catalog (`api_catalog.json`), giving full coverage of all 69 Elder API services and 702 operations without duplicating server business logic.
+`elder-sdk` provides both synchronous (`ElderClient`) and asynchronous (`AsyncElderClient`) HTTP clients backed by `httpx` and the canonical Elder API catalog (`api_catalog.json`), giving full coverage of all 70 Elder API services and 712 operations without duplicating server business logic.
 
 ## Installation
 
@@ -73,7 +73,7 @@ with ElderClient(base_url="https://elder.example.com", token="jwt-token") as cli
     # AI Researcher
     answer = client.ai_research("Which production databases lack backups?")
 
-    # Dynamic catalog invocation for any of the 69 services / 702 operations
+    # Dynamic catalog invocation for any of the 70 services / 712 operations
     configs = client.service("sync").invoke("list_sync_configs")
     diagram_cols = client.diagram_collections.list()
 ```
