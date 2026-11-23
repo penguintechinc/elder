@@ -232,7 +232,11 @@ export default function SearchableSelect({
             <div className="px-3 py-2 text-sm text-slate-400">Loading...</div>
           ) : filteredOptions.length === 0 && !showCustomOption ? (
             <div className="px-3 py-2 text-sm text-slate-400">
-              {query ? "No results found" : "Type to search..."}
+              {query
+                ? "No results found"
+                : onSearch
+                  ? "Type to search..."
+                  : "No options available"}
             </div>
           ) : (
             filteredOptions.map((option, index) => (

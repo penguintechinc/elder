@@ -1,18 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Code2,
+  Link2,
   Lock,
+  Palette,
   Plus,
   Sparkles,
   Trash2,
   X,
 } from "lucide-react";
+import SearchableSelect from "@/components/SearchableSelect";
+import {
+  PRIMARY_12_COLORS,
+  RESOURCE_CATEGORY_OPTIONS,
+  RESOURCE_STATE_FIELD_HINTS,
+  fetchCategoryResources,
+  type ResourceCategory,
+} from "@/components/diagram/FlowPropertyModals";
 import type {
   ConfigFieldOption,
   ConfigFieldSchema,
   NodeCatalogItem,
   PlaybookNode,
+  PlaybookNodeData,
   UpstreamFieldPill,
 } from "./types";
 
@@ -23,6 +35,7 @@ interface NodeInspectorProps {
   operatorOptions: ConfigFieldOption[];
   onChangeLabel: (nodeId: string, label: string) => void;
   onChangeConfig: (nodeId: string, config: Record<string, unknown>) => void;
+  onUpdateNodeData?: (nodeId: string, patch: Partial<PlaybookNodeData>) => void;
   onDeleteNode: (nodeId: string) => void;
   onClose: () => void;
 }
@@ -87,6 +100,104 @@ function formatJsonFieldValue(val: unknown): string {
   }
 }
 
+interface ConditionResourcePickerProps {
+  idPrefix: string;
+  resourceType: string;
+  resourceId: string;
+  nodeResourceType?: string;
+  nodeResourceId?: number | string;
+  nodeResourceName?: string;
+  onChange: (patch: { resource_type?: string; resource_id?: string }) => void;
+}
+
+function ConditionResourcePicker({
+  idPrefix,
+  resourceType,
+  resourceId,
+  nodeResourceType,
+  nodeResourceId,
+  nodeResourceName,
+  onChange,
+}: ConditionResourcePickerProps) {
+  const effectiveCategory = (resourceType || "") as ResourceCategory;
+  const {
+    data: options = [],
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ["flow-modal-resources", effectiveCategory],
+    enabled: effectiveCategory !== "",
+    queryFn: () => fetchCategoryResources(effectiveCategory),
+  });
+
+  const usingNodeLinked =
+    !resourceType && !resourceId && Boolean(nodeResourceType && nodeResourceId);
+
+  return (
+    <div className="space-y-1.5 rounded border border-slate-700/80 bg-slate-950/60 p-2">
+      {usingNodeLinked && (
+        <div className="text-[10px] text-emerald-300 flex items-center gap-1">
+          <Link2 className="w-3 h-3 shrink-0" />
+          <span>
+            Using node&apos;s linked {nodeResourceType}:{" "}
+            <strong className="font-semibold">
+              {nodeResourceName || `#${nodeResourceId}`}
+            </strong>
+          </span>
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-1.5">
+        <div>
+          <label htmlFor={`${idPrefix}-rtype`} className="sr-only">
+            Condition target resource category
+          </label>
+          <select
+            id={`${idPrefix}-rtype`}
+            value={resourceType}
+            onChange={(e) =>
+              onChange({ resource_type: e.target.value, resource_id: "" })
+            }
+            className="w-full bg-slate-800 text-slate-100 border border-slate-600 rounded px-2 py-1 text-[11px] focus:outline-none focus:border-amber-500"
+          >
+            <option value="">
+              {nodeResourceType && nodeResourceId
+                ? `Use node's linked resource (${nodeResourceName || nodeResourceType})`
+                : "-- Select resource category --"}
+            </option>
+            {RESOURCE_CATEGORY_OPTIONS.filter((o) => o.value !== "").map(
+              (opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+
+        {effectiveCategory !== "" && (
+          <div>
+            <SearchableSelect
+              options={options}
+              value={resourceId}
+              onChange={(val) => onChange({ resource_id: String(val) })}
+              isLoading={isLoading}
+              placeholder="Pick resource or type {{$json.id}}..."
+              allowCustom
+              allowClear
+              ariaLabel="Condition target resource"
+            />
+            {isError && (
+              <p className="text-[10px] text-rose-400 mt-1">
+                Failed to load resources for this category.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function NodeInspector({
   node,
   catalogItem,
@@ -94,6 +205,7 @@ export default function NodeInspector({
   operatorOptions,
   onChangeLabel,
   onChangeConfig,
+  onUpdateNodeData,
   onDeleteNode,
   onClose,
 }: NodeInspectorProps) {
@@ -105,6 +217,40 @@ export default function NodeInspector({
   const [pillFilter, setPillFilter] = useState<
     "all" | "json" | "node" | "trigger" | "execution"
   >("all");
+  const [showAppearance, setShowAppearance] = useState(false);
+
+  const nodeResourceCategory = (node.data?.resourceType ||
+    "") as ResourceCategory;
+  const nodeResourceId =
+    node.data?.resourceId !== undefined && node.data?.resourceId !== null
+      ? String(node.data.resourceId)
+      : "";
+  const nodeColor =
+    typeof node.data?.color === "string" && node.data.color
+      ? node.data.color
+      : catalogItem?.color || "#1f2937";
+
+  const {
+    data: nodeCategoryResources = [],
+    isLoading: loadingNodeResources,
+    isError: nodeResourcesError,
+  } = useQuery({
+    queryKey: ["flow-modal-resources", nodeResourceCategory],
+    enabled: nodeResourceCategory !== "",
+    queryFn: () => fetchCategoryResources(nodeResourceCategory),
+  });
+
+  const upstreamFieldPaths = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          upstreamFields.map((p) =>
+            p.label.startsWith("$json.") ? p.label.slice(6) : p.token,
+          ),
+        ),
+      ),
+    [upstreamFields],
+  );
 
   const config = useMemo(
     () => (node.data?.config || {}) as Record<string, unknown>,
@@ -279,6 +425,8 @@ export default function NodeInspector({
     const setConditions = (next: Array<Record<string, unknown>>) =>
       updateField(fs.field, next);
 
+    const upstreamDatalistId = `cond-upstream-fields-${node.id}-${fs.field}`;
+
     return (
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -290,7 +438,7 @@ export default function NodeInspector({
             onClick={() =>
               setConditions([
                 ...conditions,
-                { field: "", operator: "eq", value: "" },
+                { source: "input", field: "", operator: "eq", value: "" },
               ])
             }
             className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-amber-300"
@@ -300,46 +448,80 @@ export default function NodeInspector({
           </button>
         </div>
 
+        {fs.description && (
+          <p className="text-[11px] text-slate-400">{fs.description}</p>
+        )}
+
+        {upstreamFieldPaths.length > 0 && (
+          <datalist id={upstreamDatalistId}>
+            {upstreamFieldPaths.map((path) => (
+              <option key={path} value={path} />
+            ))}
+          </datalist>
+        )}
+
         {conditions.length === 0 ? (
-          <div className="text-[11px] text-slate-400 bg-slate-900/60 border border-dashed border-slate-700 rounded p-2.5">
-            No conditions configured yet. Click &ldquo;Add Condition&rdquo;.
+          <div className="text-[11px] text-slate-400 bg-slate-900/60 border border-dashed border-slate-700 rounded p-2.5 space-y-1.5">
+            <p>
+              No conditions configured yet. Click &ldquo;Add Condition&rdquo; to
+              match upstream fields, freeform values, or associated resource
+              states &amp; relationships.
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
             {conditions.map((cond, idx) => {
+              const rawSource = String(cond.source || "input");
+              const sourceVal =
+                rawSource === "resource"
+                  ? "resource"
+                  : rawSource === "any_field"
+                    ? "any_field"
+                    : "input";
               const opVal = String(cond.operator || "eq");
               const hidesValue = opVal === "is_null" || opVal === "is_not_null";
+              const sourceInputId = `cond-src-${node.id}-${fs.field}-${idx}`;
               const fieldInputId = `cond-field-${node.id}-${fs.field}-${idx}`;
               const opInputId = `cond-op-${node.id}-${fs.field}-${idx}`;
               const valInputId = `cond-val-${node.id}-${fs.field}-${idx}`;
+              const resTypeForHints =
+                String(cond.resource_type || "") || nodeResourceCategory || "";
+              const resourceHints =
+                RESOURCE_STATE_FIELD_HINTS[resTypeForHints] || [
+                  "status",
+                  "is_active",
+                  "relationships.count",
+                  "relationships.related_ids",
+                ];
+              const resDatalistId = `cond-res-fields-${node.id}-${fs.field}-${idx}`;
+
               return (
                 <div
                   key={`${fs.field}-${idx}`}
                   className="bg-slate-900/80 border border-slate-700 rounded-lg p-2 space-y-1.5"
                 >
                   <div className="flex items-center gap-1.5">
-                    <label htmlFor={fieldInputId} className="sr-only">
-                      Condition {idx + 1} field path
+                    <label htmlFor={sourceInputId} className="sr-only">
+                      Condition {idx + 1} source
                     </label>
-                    <input
-                      id={fieldInputId}
-                      type="text"
-                      value={String(cond.field || "")}
-                      placeholder="field (e.g. severity)"
-                      onFocus={() =>
-                        setActiveTarget({
-                          kind: "condition_field",
-                          field: fs.field,
-                          index: idx,
-                        })
-                      }
+                    <select
+                      id={sourceInputId}
+                      value={sourceVal}
                       onChange={(e) => {
                         const next = [...conditions];
-                        next[idx] = { ...cond, field: e.target.value };
+                        next[idx] = { ...cond, source: e.target.value };
                         setConditions(next);
                       }}
-                      className="flex-1 min-w-0 bg-slate-800 text-slate-100 border border-slate-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-500"
-                    />
+                      className="flex-1 min-w-0 bg-slate-800 text-amber-200 border border-slate-600 rounded px-2 py-1 text-[11px] font-medium focus:outline-none focus:border-amber-500"
+                    >
+                      <option value="input">Upstream / Prior Field</option>
+                      <option value="any_field">
+                        Any Field (Bare String Search)
+                      </option>
+                      <option value="resource">
+                        Resource State / Relationship
+                      </option>
+                    </select>
                     <button
                       type="button"
                       aria-label={`Remove condition ${idx + 1}`}
@@ -351,6 +533,74 @@ export default function NodeInspector({
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
+
+                  {sourceVal === "any_field" && (
+                    <p className="text-[10px] text-slate-400 px-1">
+                      Searches across all incoming &amp; prior node field values
+                      (e.g. &ldquo;contains&rdquo; + bare string).
+                    </p>
+                  )}
+
+                  {sourceVal === "resource" && (
+                    <>
+                      <ConditionResourcePicker
+                        idPrefix={`cond-res-${node.id}-${fs.field}-${idx}`}
+                        resourceType={String(cond.resource_type || "")}
+                        resourceId={String(cond.resource_id || "")}
+                        nodeResourceType={node.data?.resourceType}
+                        nodeResourceId={node.data?.resourceId}
+                        nodeResourceName={node.data?.resourceName}
+                        onChange={(patch) => {
+                          const next = [...conditions];
+                          next[idx] = { ...cond, ...patch };
+                          setConditions(next);
+                        }}
+                      />
+                      <datalist id={resDatalistId}>
+                        {resourceHints.map((hint) => (
+                          <option key={hint} value={hint} />
+                        ))}
+                      </datalist>
+                    </>
+                  )}
+
+                  {sourceVal !== "any_field" && (
+                    <div>
+                      <label htmlFor={fieldInputId} className="sr-only">
+                        Condition {idx + 1} field path
+                      </label>
+                      <input
+                        id={fieldInputId}
+                        type="text"
+                        list={
+                          sourceVal === "resource"
+                            ? resDatalistId
+                            : upstreamFieldPaths.length > 0
+                              ? upstreamDatalistId
+                              : undefined
+                        }
+                        value={String(cond.field || "")}
+                        placeholder={
+                          sourceVal === "resource"
+                            ? "state or relationship (e.g. is_locked, status, relationships.count)"
+                            : "upstream/prior field (e.g. severity or {{$node.step1.status}})"
+                        }
+                        onFocus={() =>
+                          setActiveTarget({
+                            kind: "condition_field",
+                            field: fs.field,
+                            index: idx,
+                          })
+                        }
+                        onChange={(e) => {
+                          const next = [...conditions];
+                          next[idx] = { ...cond, field: e.target.value };
+                          setConditions(next);
+                        }}
+                        className="w-full bg-slate-800 text-slate-100 border border-slate-600 rounded px-2 py-1 text-xs focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-1.5">
                     <div>
@@ -388,7 +638,11 @@ export default function NodeInspector({
                               ? ""
                               : String(cond.value)
                           }
-                          placeholder="value or {{$json.*}}"
+                          placeholder={
+                            sourceVal === "resource"
+                              ? "true, locked, or {{$json.*}}"
+                              : "freeform value or {{$json.*}}"
+                          }
                           onFocus={() =>
                             setActiveTarget({
                               kind: "condition_value",
@@ -1018,6 +1272,157 @@ export default function NodeInspector({
             className="w-full bg-slate-900 text-slate-100 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-amber-500"
           />
         </div>
+
+        {/* Merged Resource Association & Box Color (formerly double-click modal) */}
+        {onUpdateNodeData && (
+          <div className="rounded-lg bg-slate-900/60 border border-slate-700 p-2.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-200">
+                <Link2 className="w-3.5 h-3.5 text-amber-400" />
+                Associated Resource &amp; Appearance
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowAppearance((prev) => !prev)}
+                className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-600"
+              >
+                <Palette className="w-3 h-3" />
+                {showAppearance ? "Hide Color" : "Box Color"}
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <label
+                htmlFor={`inspector-resource-category-${node.id}`}
+                className="block text-[11px] font-medium text-slate-300"
+              >
+                Resource Category
+              </label>
+              <select
+                id={`inspector-resource-category-${node.id}`}
+                value={nodeResourceCategory}
+                onChange={(e) => {
+                  const nextCat = e.target.value as ResourceCategory;
+                  onUpdateNodeData(node.id, {
+                    resourceType: nextCat || undefined,
+                    resourceId: undefined,
+                    resourceName: undefined,
+                  });
+                }}
+                className="w-full bg-slate-900 text-slate-100 border border-slate-600 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-amber-500"
+              >
+                {RESOURCE_CATEGORY_OPTIONS.map((opt) => (
+                  <option key={opt.value || "none"} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {nodeResourceCategory && (
+              <div className="space-y-1">
+                <span className="block text-[11px] font-medium text-slate-300">
+                  Resource
+                </span>
+                <SearchableSelect
+                  options={nodeCategoryResources}
+                  value={nodeResourceId}
+                  onChange={(val) => {
+                    const strVal = String(val);
+                    const picked = nodeCategoryResources.find(
+                      (r) => r.value === strVal,
+                    );
+                    onUpdateNodeData(node.id, {
+                      resourceId: strVal
+                        ? Number(strVal) || strVal
+                        : undefined,
+                      resourceName: strVal
+                        ? picked?.rawName || picked?.label
+                        : undefined,
+                    });
+                  }}
+                  isLoading={loadingNodeResources}
+                  placeholder="Search and select resource..."
+                  allowClear
+                  ariaLabel="Associate resource"
+                />
+                {nodeResourcesError && (
+                  <p className="text-[11px] text-rose-400">
+                    Failed to load resources for this category.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {showAppearance && (
+              <div className="pt-2 border-t border-slate-700/80 space-y-2">
+                <label
+                  htmlFor={`inspector-color-hex-${node.id}`}
+                  className="block text-[11px] font-medium text-slate-300"
+                >
+                  Box Color
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {PRIMARY_12_COLORS.map((c) => (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      onClick={() =>
+                        onUpdateNodeData(node.id, { color: c.hex })
+                      }
+                      title={c.name}
+                      aria-label={`Set box color ${c.name}`}
+                      className={`w-5 h-5 rounded border-2 transition-transform ${
+                        nodeColor.toLowerCase() === c.hex.toLowerCase()
+                          ? "border-amber-400 scale-110"
+                          : "border-slate-600"
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdateNodeData(node.id, { color: "transparent" })
+                    }
+                    className={`px-1.5 py-0.5 text-[10px] rounded border ${
+                      nodeColor === "transparent"
+                        ? "border-amber-400 text-amber-300 bg-slate-900"
+                        : "border-slate-600 text-slate-300 bg-slate-900/50"
+                    }`}
+                  >
+                    Transparent
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={
+                      nodeColor.startsWith("#") && nodeColor.length === 7
+                        ? nodeColor
+                        : "#1f2937"
+                    }
+                    onChange={(e) =>
+                      onUpdateNodeData(node.id, { color: e.target.value })
+                    }
+                    aria-label="Custom box color picker"
+                    className="w-8 h-7 rounded border border-slate-700 bg-slate-900 cursor-pointer"
+                  />
+                  <input
+                    id={`inspector-color-hex-${node.id}`}
+                    type="text"
+                    value={nodeColor}
+                    onChange={(e) =>
+                      onUpdateNodeData(node.id, { color: e.target.value })
+                    }
+                    placeholder="#1f2937 or transparent"
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Upstream Data / Variable Propagation Pills */}
         {upstreamFields.length > 0 && (

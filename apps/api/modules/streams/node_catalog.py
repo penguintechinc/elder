@@ -508,7 +508,7 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
                 "conditions",
                 default=[],
                 supports_expressions=True,
-                description="Routes full payload to 'true' or 'false' branch.",
+                description="Evaluate 1 or more conditions against upstream fields/freeform values OR associated resource states and relationships (e.g. user is_locked = true). Routes full payload to 'true' or 'false' branch.",
             ),
         ],
         "output_schema": [],
@@ -658,7 +658,16 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
         "subcategory": "Logic Gates",
         "icon": "Workflow",
         "color": "#8b5cf6",
-        "config_schema": [],
+        "config_schema": [
+            _cf(
+                "conditions",
+                "Conditions (ALL must match)",
+                "conditions",
+                default=[],
+                supports_expressions=True,
+                description="Add 1 or more conditions comparing an upstream field (or {{expression}}) against a freeform value or upstream field. Leave empty to evaluate wired boolean ports in1-in4.",
+            ),
+        ],
         "output_schema": [],
     },
     "conditional_or": {
@@ -666,7 +675,16 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
         "subcategory": "Logic Gates",
         "icon": "Workflow",
         "color": "#8b5cf6",
-        "config_schema": [],
+        "config_schema": [
+            _cf(
+                "conditions",
+                "Conditions (ANY must match)",
+                "conditions",
+                default=[],
+                supports_expressions=True,
+                description="Add 1 or more conditions comparing an upstream field (or {{expression}}) against a freeform value or upstream field. Leave empty to evaluate wired boolean ports in1-in4.",
+            ),
+        ],
         "output_schema": [],
     },
     "conditional_not": {
@@ -674,7 +692,33 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
         "subcategory": "Logic Gates",
         "icon": "Ban",
         "color": "#8b5cf6",
-        "config_schema": [],
+        "config_schema": [
+            _cf(
+                "logic",
+                "Negation Mode",
+                "select",
+                default="and",
+                options=[
+                    {
+                        "value": "and",
+                        "label": "Invert when ALL conditions match (NOT AND)",
+                    },
+                    {
+                        "value": "or",
+                        "label": "Invert when ANY condition matches (NOT OR)",
+                    },
+                ],
+                description="Applies when 1 or more conditions are configured below.",
+            ),
+            _cf(
+                "conditions",
+                "Conditions to Negate",
+                "conditions",
+                default=[],
+                supports_expressions=True,
+                description="Routes payload to 'true' when the condition(s) do NOT match. Compare an upstream field (or {{expression}}) against a freeform value or upstream field. Leave empty to invert wired boolean input.",
+            ),
+        ],
         "output_schema": [],
     },
     "conditional_for_each": {
@@ -704,11 +748,28 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
         "color": "#8b5cf6",
         "config_schema": [
             _cf(
-                "condition",
-                "Loop Condition JSON",
-                "json",
-                required=True,
-                default={"field": "remaining", "operator": "gt", "value": 0},
+                "logic",
+                "Match Logic",
+                "select",
+                default="and",
+                options=[
+                    {
+                        "value": "and",
+                        "label": "Continue while ALL conditions match (AND)",
+                    },
+                    {
+                        "value": "or",
+                        "label": "Continue while ANY condition matches (OR)",
+                    },
+                ],
+            ),
+            _cf(
+                "conditions",
+                "Loop Conditions",
+                "conditions",
+                default=[],
+                supports_expressions=True,
+                description="Continue looping while these conditions match (supports upstream/prior fields, bare string search, or associated resource states & relationships).",
             ),
             _cf("maxIterations", "Max Iterations", "number", default=100),
         ],
