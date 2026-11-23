@@ -19,6 +19,10 @@ from apps.api.modules.runs.models.runs import (
     TERMINAL_EXECUTION_STATUSES,
     TRIGGER_TYPES,
 )
+from apps.api.modules.runs.storage import (
+    compute_code_sha256,
+    get_run_artifact_storage,
+)
 from apps.api.utils.api_responses import ApiResponse
 from apps.api.utils.async_utils import run_in_threadpool
 from apps.api.utils.pydal_helpers import PaginationParams
@@ -138,6 +142,7 @@ def _serialize_function(
     *,
     latest_version: int | None = None,
     recent_executions: list[dict[str, Any]] | None = None,
+    code_override: str | None = None,
 ) -> dict[str, Any]:
     """Explicitly serialize a ``run_functions`` row to an API response dict."""
     payload: dict[str, Any] = {
@@ -147,7 +152,10 @@ def _serialize_function(
         "name": row.name,
         "description": getattr(row, "description", None),
         "runtime": row.runtime,
-        "code": row.code,
+        "code": code_override if code_override is not None else row.code,
+        "storage_backend": getattr(row, "storage_backend", None) or "database",
+        "storage_key": getattr(row, "storage_key", None),
+        "code_sha256": getattr(row, "code_sha256", None),
         "entrypoint": getattr(row, "entrypoint", None),
         "timeout_seconds": int(
             getattr(row, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
@@ -349,13 +357,25 @@ async def create_run_function():
     def create():
         now = _utc_now()
         vid = mint_village_id(tenant_id, redis_client)
+        storage = get_run_artifact_storage()
+        artifact = storage.put_code(
+            tenant_id=tenant_id,
+            function_ref=vid or f"fn-{int(now.timestamp())}",
+            version_number=1,
+            runtime=runtime,
+            code=code,
+        )
+        stored_code = "" if artifact.storage_backend == "s3" else code
         func_id = db.run_functions.insert(
             tenant_id=tenant_id,
             village_id=vid,
             name=name,
             description=description,
             runtime=runtime,
-            code=code,
+            code=stored_code,
+            storage_backend=artifact.storage_backend,
+            storage_key=artifact.storage_key,
+            code_sha256=artifact.code_sha256,
             entrypoint=entrypoint,
             timeout_seconds=timeout_seconds,
             memory_mb=memory_mb,
@@ -372,7 +392,10 @@ async def create_run_function():
             tenant_id=tenant_id,
             function_id=func_id,
             version_number=1,
-            code=code,
+            code=stored_code,
+            storage_backend=artifact.storage_backend,
+            storage_key=artifact.storage_key,
+            code_sha256=artifact.code_sha256,
             runtime=runtime,
             entrypoint=entrypoint,
             created_by_identity_id=identity_id,
@@ -388,8 +411,12 @@ async def create_run_function():
         tenant_id=tenant_id,
         runtime=runtime,
         village_id=getattr(row, "village_id", None),
+        storage_backend=getattr(row, "storage_backend", "database"),
     )
-    return jsonify(_serialize_function(row, latest_version=1)), 201
+    return (
+        jsonify(_serialize_function(row, latest_version=1, code_override=code)),
+        201,
+    )
 
 
 @bp.route("/<int:func_id>", methods=["GET"])
@@ -428,9 +455,20 @@ async def get_run_function(func_id: int):
             orderby=~db.run_executions.created_at,
             limitby=(0, 20),
         )
-        return func, latest_version, list(exec_rows)
+        hydrated_code: str | None = None
+        if (
+            getattr(func, "storage_backend", "database") == "s3"
+            and not func.code
+            and getattr(func, "storage_key", None)
+        ):
+            storage = get_run_artifact_storage()
+            hydrated_code = storage.get_code(
+                func.storage_key,
+                expected_sha256=getattr(func, "code_sha256", None),
+            )
+        return func, latest_version, list(exec_rows), hydrated_code
 
-    func, latest_version, exec_rows = await run_in_threadpool(fetch)
+    func, latest_version, exec_rows, hydrated_code = await run_in_threadpool(fetch)
     if not func:
         return ApiResponse.not_found("Run function", func_id)
 
@@ -440,6 +478,7 @@ async def get_run_function(func_id: int):
                 func,
                 latest_version=latest_version,
                 recent_executions=[_serialize_execution(r) for r in exec_rows],
+                code_override=hydrated_code,
             )
         ),
         200,
@@ -527,19 +566,18 @@ async def update_run_function(func_id: int):
     def update():
         existing = get_tenant_scoped(db, db.run_functions, func_id, tenant_id)
         if not existing:
-            return None, None
+            return None, None, None
 
-        code_changed = (
-            "code" in update_fields and update_fields["code"] != existing.code
-        )
+        new_code: str | None = update_fields.get("code")
+        existing_sha = getattr(existing, "code_sha256", None)
+        if new_code is not None:
+            new_sha = compute_code_sha256(new_code)
+            code_changed = (
+                new_sha != existing_sha if existing_sha else new_code != existing.code
+            )
+        else:
+            code_changed = False
         now = _utc_now()
-
-        if update_fields:
-            update_fields["updated_at"] = now
-            db(
-                (db.run_functions.id == func_id)
-                & (db.run_functions.tenant_id == tenant_id)
-            ).update(**update_fields)
 
         latest_ver_row = (
             db(
@@ -555,25 +593,54 @@ async def update_run_function(func_id: int):
         )
         current_version = int(latest_ver_row.version_number) if latest_ver_row else 0
 
-        if code_changed:
+        if code_changed and new_code is not None:
             next_version = current_version + 1
+            eff_runtime = update_fields.get("runtime", existing.runtime)
+            storage = get_run_artifact_storage()
+            artifact = storage.put_code(
+                tenant_id=tenant_id,
+                function_ref=getattr(existing, "village_id", None) or f"fn-{func_id}",
+                version_number=next_version,
+                runtime=eff_runtime,
+                code=new_code,
+            )
+            stored_code = "" if artifact.storage_backend == "s3" else new_code
+            update_fields["code"] = stored_code
+            update_fields["storage_backend"] = artifact.storage_backend
+            update_fields["storage_key"] = artifact.storage_key
+            update_fields["code_sha256"] = artifact.code_sha256
             db.run_function_versions.insert(
                 tenant_id=tenant_id,
                 function_id=func_id,
                 version_number=next_version,
-                code=update_fields["code"],
-                runtime=update_fields.get("runtime", existing.runtime),
+                code=stored_code,
+                storage_backend=artifact.storage_backend,
+                storage_key=artifact.storage_key,
+                code_sha256=artifact.code_sha256,
+                runtime=eff_runtime,
                 entrypoint=update_fields.get("entrypoint", existing.entrypoint),
                 created_by_identity_id=identity_id,
                 created_at=now,
             )
             current_version = next_version
+        elif "code" in update_fields and (
+            getattr(existing, "storage_backend", "database") == "s3"
+        ):
+            # Code unchanged on an S3-backed function: keep stored DB column empty.
+            update_fields.pop("code", None)
+
+        if update_fields:
+            update_fields["updated_at"] = now
+            db(
+                (db.run_functions.id == func_id)
+                & (db.run_functions.tenant_id == tenant_id)
+            ).update(**update_fields)
 
         db.commit()
         updated = get_tenant_scoped(db, db.run_functions, func_id, tenant_id)
-        return updated, max(current_version, 1)
+        return updated, max(current_version, 1), new_code
 
-    row, latest_version = await run_in_threadpool(update)
+    row, latest_version, updated_code = await run_in_threadpool(update)
     if not row:
         return ApiResponse.not_found("Run function", func_id)
 
@@ -583,7 +650,14 @@ async def update_run_function(func_id: int):
         tenant_id=tenant_id,
         latest_version=latest_version,
     )
-    return jsonify(_serialize_function(row, latest_version=latest_version)), 200
+    return (
+        jsonify(
+            _serialize_function(
+                row, latest_version=latest_version, code_override=updated_code
+            )
+        ),
+        200,
+    )
 
 
 @bp.route("/<int:func_id>", methods=["DELETE"])
@@ -599,7 +673,17 @@ async def delete_run_function(func_id: int):
     def delete():
         existing = get_tenant_scoped(db, db.run_functions, func_id, tenant_id)
         if not existing:
-            return False
+            return False, []
+        ver_rows = db(
+            (db.run_function_versions.function_id == func_id)
+            & (db.run_function_versions.tenant_id == tenant_id)
+        ).select(db.run_function_versions.storage_key)
+        keys_to_delete: list[str] = [
+            str(r.storage_key) for r in ver_rows if getattr(r, "storage_key", None)
+        ]
+        existing_key = getattr(existing, "storage_key", None)
+        if existing_key and str(existing_key) not in keys_to_delete:
+            keys_to_delete.append(str(existing_key))
         db(
             (db.run_executions.function_id == func_id)
             & (db.run_executions.tenant_id == tenant_id)
@@ -612,11 +696,17 @@ async def delete_run_function(func_id: int):
             (db.run_functions.id == func_id) & (db.run_functions.tenant_id == tenant_id)
         ).delete()
         db.commit()
-        return True
+        return True, keys_to_delete
 
-    deleted = await run_in_threadpool(delete)
+    deleted, keys_to_delete = await run_in_threadpool(delete)
     if not deleted:
         return ApiResponse.not_found("Run function", func_id)
+
+    if keys_to_delete:
+        storage = get_run_artifact_storage()
+        if storage.is_configured:
+            for key in keys_to_delete:
+                await run_in_threadpool(storage.delete_object, key)
 
     logger.info("run_function_deleted", function_id=func_id, tenant_id=tenant_id)
     return ApiResponse.no_content()
@@ -847,6 +937,9 @@ async def claim_pending_executions():
                     f.name AS function_name,
                     f.village_id,
                     f.code,
+                    f.storage_backend,
+                    f.storage_key,
+                    f.code_sha256,
                     f.runtime,
                     f.entrypoint,
                     f.timeout_seconds,
@@ -866,7 +959,13 @@ async def claim_pending_executions():
 
             with engine.begin() as conn:
                 rows = conn.execute(claim_sql, params).mappings().all()
+            storage = get_run_artifact_storage()
             for r in rows:
+                s_backend = r["storage_backend"] or "database"
+                s_key = r["storage_key"]
+                code_url: str | None = None
+                if s_backend == "s3" and s_key and storage.is_configured:
+                    code_url = storage.generate_presigned_get_url(s_key)
                 claimed_items.append(
                     {
                         "id": r["id"],
@@ -880,6 +979,10 @@ async def claim_pending_executions():
                         "worker_id": r["worker_id"],
                         "started_at": _iso_or_none(r["started_at"]),
                         "code": r["code"],
+                        "storage_backend": s_backend,
+                        "storage_key": s_key,
+                        "code_sha256": r["code_sha256"],
+                        "code_url": code_url,
                         "runtime": r["runtime"],
                         "entrypoint": r["entrypoint"],
                         "timeout_seconds": int(
@@ -927,6 +1030,14 @@ async def claim_pending_executions():
             if not updated_count:
                 continue
 
+            s_backend = getattr(func, "storage_backend", None) or "database"
+            s_key = getattr(func, "storage_key", None)
+            code_url = None
+            if s_backend == "s3" and s_key:
+                storage = get_run_artifact_storage()
+                if storage.is_configured:
+                    code_url = storage.generate_presigned_get_url(s_key)
+
             claimed_items.append(
                 {
                     "id": ex.id,
@@ -940,6 +1051,10 @@ async def claim_pending_executions():
                     "worker_id": worker_id,
                     "started_at": _iso_or_none(now),
                     "code": func.code,
+                    "storage_backend": s_backend,
+                    "storage_key": s_key,
+                    "code_sha256": getattr(func, "code_sha256", None),
+                    "code_url": code_url,
                     "runtime": func.runtime,
                     "entrypoint": getattr(func, "entrypoint", None),
                     "timeout_seconds": int(

@@ -51,12 +51,42 @@ spec:
             name: elder-otel
         {{- end }}
         {{- end }}
+        {{- $runsStorage := (index $.Values "runs" | default dict).storage | default dict }}
+        {{- $hasRunsS3 := and (eq $component "hub-api") ($runsStorage.bucket) }}
         {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
-        {{- if or $componentConfig.env $hasOtel $needsPodName }}
+        {{- if or $componentConfig.env $hasOtel $needsPodName $hasRunsS3 }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
           value: {{ $value | quote }}
+        {{- end }}
+        {{- if $hasRunsS3 }}
+        - name: RUNS_S3_BUCKET
+          value: {{ $runsStorage.bucket | quote }}
+        {{- if $runsStorage.endpoint }}
+        - name: RUNS_S3_ENDPOINT
+          value: {{ $runsStorage.endpoint | quote }}
+        {{- end }}
+        - name: RUNS_S3_REGION
+          value: {{ $runsStorage.region | default "us-east-1" | quote }}
+        - name: RUNS_S3_PREFIX
+          value: {{ $runsStorage.prefix | default "runs" | quote }}
+        - name: RUNS_S3_PRESIGN_TTL_SECONDS
+          value: {{ $runsStorage.presignTtlSeconds | default 300 | quote }}
+        - name: RUNS_S3_PATH_STYLE
+          value: {{ if hasKey $runsStorage "pathStyle" }}{{ $runsStorage.pathStyle | quote }}{{ else }}"true"{{ end }}
+        {{- if $runsStorage.credentialsSecretName }}
+        - name: RUNS_S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ $runsStorage.credentialsSecretName }}
+              key: {{ $runsStorage.accessKeySecretKey | default "access-key-id" }}
+        - name: RUNS_S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ $runsStorage.credentialsSecretName }}
+              key: {{ $runsStorage.secretKeySecretKey | default "secret-access-key" }}
+        {{- end }}
         {{- end }}
         {{- if $hasOtel }}
         - name: OTEL_SERVICE_NAME

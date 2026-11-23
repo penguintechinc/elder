@@ -55,6 +55,15 @@ class RunFunction(Base, IDMixin, TenantScopedMixin, VillageIDMixin, TimestampMix
         comment="nodejs | rust | python | golang | ruby",
     )
     code = Column(Text, nullable=False)
+    storage_backend = Column(
+        String(32),
+        nullable=False,
+        default="database",
+        server_default="database",
+        comment="database | s3",
+    )
+    storage_key = Column(String(512), nullable=True)
+    code_sha256 = Column(String(64), nullable=True)
     entrypoint = Column(String(255), nullable=True)
     timeout_seconds = Column(Integer, nullable=False, default=60, server_default="60")
     memory_mb = Column(Integer, nullable=False, default=256, server_default="256")
@@ -88,6 +97,15 @@ class RunFunctionVersion(Base, IDMixin, TenantScopedMixin):
     )
     version_number = Column(Integer, nullable=False)
     code = Column(Text, nullable=False)
+    storage_backend = Column(
+        String(32),
+        nullable=False,
+        default="database",
+        server_default="database",
+        comment="database | s3",
+    )
+    storage_key = Column(String(512), nullable=True)
+    code_sha256 = Column(String(64), nullable=True)
     runtime = Column(String(32), nullable=False)
     entrypoint = Column(String(255), nullable=True)
     created_by_identity_id = Column(

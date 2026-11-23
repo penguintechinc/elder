@@ -37,6 +37,9 @@ _PROTECTED_ENV_KEYS = frozenset(
     {
         "ELDER_RUN_INPUT",
         "ELDER_EXECUTION_ID",
+        "ELDER_ARTIFACT_URL",
+        "ELDER_ARTIFACT_SHA256",
+        "ELDER_ARTIFACT_FILENAME",
         "HOME",
         "TMPDIR",
         "PATH",
@@ -46,6 +49,25 @@ _PROTECTED_ENV_KEYS = frozenset(
 )
 _K8S_NAME_RE = re.compile(r"[^a-z0-9-]+")
 _ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+DEFAULT_WORKSPACE_SIZE_LIMIT = "64Mi"
+
+_INIT_FETCH_SCRIPT = (
+    "import hashlib, os, urllib.request\n"
+    "url = os.environ['ELDER_ARTIFACT_URL']\n"
+    "expected = os.environ.get('ELDER_ARTIFACT_SHA256', '').strip()\n"
+    "filename = os.environ['ELDER_ARTIFACT_FILENAME']\n"
+    "input_json = os.environ.get('ELDER_RUN_INPUT', '{}')\n"
+    "with urllib.request.urlopen(url, timeout=30) as resp:\n"
+    "    data = resp.read()\n"
+    "if expected:\n"
+    "    actual = hashlib.sha256(data).hexdigest()\n"
+    "    if actual != expected:\n"
+    "        raise SystemExit(f'SHA-256 mismatch: expected {expected}, got {actual}')\n"
+    "with open(f'/workspace/{filename}', 'wb') as f:\n"
+    "    f.write(data)\n"
+    "with open('/workspace/input.json', 'w', encoding='utf-8') as f:\n"
+    "    f.write(input_json)\n"
+)
 
 
 @dataclass(frozen=True)
@@ -61,6 +83,10 @@ class RunJobRequest:
     env: dict[str, str] = field(default_factory=dict)
     function_id: str | None = None
     tenant_id: str | None = None
+    code_url: str | None = field(default=None, repr=False)
+    code_sha256: str | None = None
+    storage_backend: str = "database"
+    use_init_container: bool = False
 
 
 @dataclass(frozen=True)
@@ -212,6 +238,24 @@ def build_job_manifest(
 
     labels = _base_labels(request, spec)
 
+    use_init_fetch = bool(request.use_init_container and request.code_url)
+    workspace_volume: dict[str, Any] = (
+        {
+            "name": "workspace",
+            "emptyDir": {
+                "sizeLimit": DEFAULT_WORKSPACE_SIZE_LIMIT,
+            },
+        }
+        if use_init_fetch
+        else {
+            "name": "workspace",
+            "configMap": {
+                "name": cm_name,
+                "defaultMode": 0o444,
+            },
+        }
+    )
+
     pod_spec: dict[str, Any] = {
         "restartPolicy": "Never",
         "automountServiceAccountToken": False,
@@ -262,13 +306,7 @@ def build_job_manifest(
             }
         ],
         "volumes": [
-            {
-                "name": "workspace",
-                "configMap": {
-                    "name": cm_name,
-                    "defaultMode": 0o444,
-                },
-            },
+            workspace_volume,
             {
                 "name": "tmp",
                 "emptyDir": {
@@ -277,6 +315,45 @@ def build_job_manifest(
             },
         ],
     }
+
+    if use_init_fetch:
+        fetch_image = get_runtime("python").image
+        pod_spec["initContainers"] = [
+            {
+                "name": "fetch-artifact",
+                "image": fetch_image,
+                "command": ["python3", "-c", _INIT_FETCH_SCRIPT],
+                "env": [
+                    {"name": "ELDER_ARTIFACT_URL", "value": request.code_url},
+                    {
+                        "name": "ELDER_ARTIFACT_SHA256",
+                        "value": request.code_sha256 or "",
+                    },
+                    {"name": "ELDER_ARTIFACT_FILENAME", "value": spec.filename},
+                    {"name": "ELDER_RUN_INPUT", "value": input_json},
+                ],
+                "securityContext": {
+                    "runAsNonRoot": True,
+                    "runAsUser": NONROOT_UID,
+                    "runAsGroup": NONROOT_GID,
+                    "allowPrivilegeEscalation": False,
+                    "readOnlyRootFilesystem": True,
+                    "capabilities": {"drop": ["ALL"]},
+                    "seccompProfile": {"type": "RuntimeDefault"},
+                },
+                "resources": {
+                    "requests": {"memory": "64Mi", "cpu": "50m"},
+                    "limits": {"memory": "128Mi", "cpu": "250m"},
+                },
+                "volumeMounts": [
+                    {
+                        "name": "workspace",
+                        "mountPath": "/workspace",
+                        "readOnly": False,
+                    },
+                ],
+            }
+        ]
 
     if runtime_class_name:
         pod_spec["runtimeClassName"] = runtime_class_name
@@ -347,11 +424,7 @@ class K8sRunner:
         job_name = sanitize_k8s_name(request.execution_id, prefix="elder-run-")
         cm_name = sanitize_k8s_name(request.execution_id, prefix="elder-run-cm-")
 
-        cm_manifest = build_configmap_manifest(
-            request,
-            namespace=self.namespace,
-            configmap_name=cm_name,
-        )
+        use_init_fetch = bool(request.use_init_container and request.code_url)
         job_manifest = build_job_manifest(
             request,
             namespace=self.namespace,
@@ -360,10 +433,18 @@ class K8sRunner:
             configmap_name=cm_name,
         )
 
-        core_api.create_namespaced_config_map(
-            namespace=self.namespace,
-            body=cm_manifest,
-        )
+        created_cm = False
+        if not use_init_fetch:
+            cm_manifest = build_configmap_manifest(
+                request,
+                namespace=self.namespace,
+                configmap_name=cm_name,
+            )
+            core_api.create_namespaced_config_map(
+                namespace=self.namespace,
+                body=cm_manifest,
+            )
+            created_cm = True
 
         try:
             batch_api.create_namespaced_job(
@@ -424,7 +505,8 @@ class K8sRunner:
                 error=error_msg,
             )
         finally:
-            self._cleanup_configmap(core_api, cm_name)
+            if created_cm:
+                self._cleanup_configmap(core_api, cm_name)
 
     def _collect_pod_logs_and_exit_code(
         self,
