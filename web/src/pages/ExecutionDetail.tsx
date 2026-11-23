@@ -1,54 +1,129 @@
-import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft } from 'lucide-react'
-import api from '@/lib/api'
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, AlertTriangle, ExternalLink } from "lucide-react";
+import api from "@/lib/api";
 
-interface ExecutionDetail {
-  id: string
-  stream_id: number
-  stream_name: string
-  status: string
-  triggered_by?: string
-  created_at: string
-  completed_at?: string
-  node_results?: Record<string, unknown>
+interface ExecutionRecord {
+  id?: number | string;
+  execution_id?: string;
+  playbook_id?: number;
+  stream_id?: number;
+  stream_name?: string;
+  status?: string;
+  triggered_by?: string;
+  triggered_by_identity_id?: number | null;
+  trigger_type?: string;
+  created_at?: string;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number | null;
+  error_message?: string | null;
+  input_data?: unknown;
+  output_data?: unknown;
+  node_results?: Record<string, unknown>;
+}
+
+interface NodeLogItem {
+  node_id: string;
+  node_type?: string;
+  status?: string;
+  input_data?: unknown;
+  output_data?: unknown;
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  duration_ms?: number | null;
+}
+
+interface ExecutionDetailEnvelope {
+  data?: {
+    execution?: ExecutionRecord;
+    stream_id?: number;
+    stream_name?: string;
+    node_logs?: NodeLogItem[];
+  };
+  execution?: ExecutionRecord;
+  stream_id?: number;
+  stream_name?: string;
+  node_logs?: NodeLogItem[];
 }
 
 export default function ExecutionDetail() {
-  const { executionId } = useParams<{ executionId: string }>()
-  const navigate = useNavigate()
+  const { executionId } = useParams<{ executionId: string }>();
+  const navigate = useNavigate();
 
-  const { data: execution, isLoading, error } = useQuery({
-    queryKey: ['execution', executionId],
-    queryFn: () => executionId ? api.getStreamExecution(0, executionId) : null,
+  const {
+    data: rawResponse,
+    isLoading,
+    error,
+  } = useQuery<ExecutionDetailEnvelope | ExecutionRecord | null>({
+    queryKey: ["execution", executionId],
+    queryFn: () => (executionId ? api.getExecutionById(executionId) : null),
     enabled: !!executionId,
-  })
+  });
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'success':
-        return 'bg-green-900 text-green-200'
-      case 'failed':
-        return 'bg-red-900 text-red-200'
-      case 'running':
-        return 'bg-blue-900 text-blue-200'
-      case 'pending':
-        return 'bg-yellow-900 text-yellow-200'
+  const envelope = (rawResponse as ExecutionDetailEnvelope | null)?.data ||
+    (rawResponse as ExecutionDetailEnvelope | null);
+  const execution: ExecutionRecord | null = envelope?.execution
+    ? envelope.execution
+    : rawResponse && "status" in rawResponse
+      ? (rawResponse as ExecutionRecord)
+      : null;
+  const nodeLogs: NodeLogItem[] = Array.isArray(envelope?.node_logs)
+    ? envelope.node_logs
+    : [];
+  const streamId =
+    envelope?.stream_id ?? execution?.playbook_id ?? execution?.stream_id;
+  const streamName =
+    envelope?.stream_name ||
+    execution?.stream_name ||
+    (streamId ? `Playbook #${streamId}` : "Playbook Execution");
+  const displayId = execution?.execution_id || execution?.id || executionId;
+  const status = String(execution?.status || "unknown");
+  const startedAt = execution?.started_at || execution?.created_at;
+
+  const getStatusColor = (s: string) => {
+    switch (s.toLowerCase()) {
+      case "success":
+      case "completed":
+        return "bg-green-900 text-green-200";
+      case "failed":
+      case "error":
+        return "bg-red-900 text-red-200";
+      case "running":
+        return "bg-blue-900 text-blue-200";
+      case "pending":
+      case "queued":
+        return "bg-yellow-900 text-yellow-200";
       default:
-        return 'bg-slate-700 text-slate-300'
+        return "bg-slate-700 text-slate-300";
     }
-  }
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 p-6">
-      <div className="max-w-4xl mx-auto">
-        <button
-          onClick={() => navigate('/streams/executions')}
-          className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors mb-6"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Executions
-        </button>
+      <div className="max-w-5xl mx-auto">
+        <div className="flex items-center justify-between gap-4 mb-6">
+          <button
+            type="button"
+            onClick={() => navigate("/streams/executions")}
+            className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Executions
+          </button>
+
+          {streamId ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/streams/${streamId}`)}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Open Playbook
+            </button>
+          ) : null}
+        </div>
 
         {error && (
           <div className="bg-red-900 border border-red-700 text-red-100 px-4 py-3 rounded-lg mb-6">
@@ -65,60 +140,140 @@ export default function ExecutionDetail() {
         {execution && (
           <>
             <div className="mb-8">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between gap-4 mb-4">
                 <div>
-                  <h1 className="text-3xl font-bold text-amber-400">{execution.stream_name}</h1>
-                  <p className="text-slate-400 mt-1">Execution ID: <span className="font-mono text-sm">{execution.id}</span></p>
+                  <h1 className="text-3xl font-bold text-amber-400">
+                    {streamName}
+                  </h1>
+                  <p className="text-slate-400 mt-1">
+                    Execution ID:{" "}
+                    <span className="font-mono text-sm">{String(displayId)}</span>
+                  </p>
                 </div>
-                <span className={`inline-flex px-4 py-2 rounded-lg text-sm font-semibold ${getStatusColor(execution.status)}`}>
-                  {execution.status.charAt(0).toUpperCase() + execution.status.slice(1)}
+                <span
+                  className={`inline-flex px-4 py-2 rounded-lg text-sm font-semibold ${getStatusColor(status)}`}
+                >
+                  {status.charAt(0).toUpperCase() + status.slice(1)}
                 </span>
               </div>
+
+              {execution.error_message && (
+                <div className="flex items-start gap-2 bg-rose-950/70 border border-rose-700/70 text-rose-200 px-4 py-3 rounded-lg">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="text-sm font-mono break-all">
+                    {execution.error_message}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-4 mb-8">
-              <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-                <p className="text-slate-400 text-sm mb-1">Started</p>
-                <p className="text-amber-400 font-semibold">
-                  {new Date(execution.created_at).toLocaleString()}
-                </p>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              {startedAt && (
+                <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+                  <p className="text-slate-400 text-sm mb-1">Started</p>
+                  <p className="text-amber-400 font-semibold text-sm">
+                    {new Date(startedAt).toLocaleString()}
+                  </p>
+                </div>
+              )}
 
               {execution.completed_at && (
                 <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
                   <p className="text-slate-400 text-sm mb-1">Completed</p>
-                  <p className="text-amber-400 font-semibold">
+                  <p className="text-amber-400 font-semibold text-sm">
                     {new Date(execution.completed_at).toLocaleString()}
                   </p>
                 </div>
               )}
 
-              {execution.triggered_by && (
+              {execution.duration_ms !== undefined &&
+                execution.duration_ms !== null && (
+                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+                    <p className="text-slate-400 text-sm mb-1">Duration</p>
+                    <p className="text-amber-400 font-semibold text-sm">
+                      {execution.duration_ms} ms
+                    </p>
+                  </div>
+                )}
+
+              {(execution.trigger_type || execution.triggered_by) && (
                 <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
-                  <p className="text-slate-400 text-sm mb-1">Triggered By</p>
-                  <p className="text-amber-400 font-semibold">{execution.triggered_by}</p>
+                  <p className="text-slate-400 text-sm mb-1">Trigger</p>
+                  <p className="text-amber-400 font-semibold text-sm">
+                    {execution.trigger_type || execution.triggered_by}
+                  </p>
                 </div>
               )}
             </div>
 
-            {execution.node_results && Object.keys(execution.node_results).length > 0 && (
-              <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
-                <h2 className="text-xl font-semibold text-amber-400 mb-4">Node Results</h2>
-                <div className="space-y-4">
-                  {Object.entries(execution.node_results).map(([nodeId, result]) => (
-                    <div key={nodeId} className="bg-slate-900 rounded p-4 border border-slate-700">
-                      <h3 className="text-amber-400 font-semibold mb-2">{nodeId}</h3>
-                      <pre className="text-slate-300 text-sm bg-slate-800 rounded p-3 overflow-x-auto">
-                        {JSON.stringify(result, null, 2)}
-                      </pre>
+            {nodeLogs.length > 0 && (
+              <div className="bg-slate-800 border border-slate-700 rounded-lg p-5 mb-6 space-y-3">
+                <h2 className="text-lg font-semibold text-amber-400">
+                  Node Execution Steps ({nodeLogs.length})
+                </h2>
+                <div className="space-y-3">
+                  {nodeLogs.map((log, idx) => (
+                    <div
+                      key={`${log.node_id}-${idx}`}
+                      className="bg-slate-900 border border-slate-700 rounded-lg p-3.5 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-mono text-xs text-slate-200 font-semibold">
+                            {log.node_id}
+                          </span>
+                          {log.node_type && (
+                            <span className="ml-2 text-xs text-slate-400">
+                              ({log.node_type})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {log.duration_ms !== undefined &&
+                            log.duration_ms !== null && (
+                              <span className="text-xs text-slate-400">
+                                {log.duration_ms} ms
+                              </span>
+                            )}
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(String(log.status || "unknown"))}`}
+                          >
+                            {log.status || "unknown"}
+                          </span>
+                        </div>
+                      </div>
+                      {log.error_message && (
+                        <div className="text-xs font-mono text-rose-300 bg-rose-950/60 border border-rose-800/60 rounded p-2">
+                          {log.error_message}
+                        </div>
+                      )}
+                      {log.output_data !== undefined &&
+                        log.output_data !== null && (
+                          <pre className="text-xs font-mono text-slate-300 bg-slate-950 rounded p-2 overflow-x-auto max-h-48">
+                            {typeof log.output_data === "string"
+                              ? log.output_data
+                              : JSON.stringify(log.output_data, null, 2)}
+                          </pre>
+                        )}
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {execution.node_results && (
+              <div className="bg-slate-800 border border-slate-700 rounded-lg p-5">
+                <h2 className="text-lg font-semibold text-amber-400 mb-3">
+                  Node Results
+                </h2>
+                <pre className="text-xs font-mono text-slate-300 bg-slate-900 rounded p-3 overflow-x-auto">
+                  {JSON.stringify(execution.node_results, null, 2)}
+                </pre>
               </div>
             )}
           </>
         )}
       </div>
     </div>
-  )
+  );
 }

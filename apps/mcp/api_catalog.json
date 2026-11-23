@@ -7228,6 +7228,19 @@
   },
   {
     "service": "streams",
+    "operation": "get_execution_by_id",
+    "method": "GET",
+    "path": "/api/v1/streams/executions/{execution_id}",
+    "path_params": [
+      "execution_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get details of a specific execution by execution_id (tenant-scoped).",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "streams",
     "operation": "get_lock_status",
     "method": "GET",
     "path": "/api/v1/streams/{stream_id}/lock",
