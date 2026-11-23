@@ -99,6 +99,8 @@ _ADMIN_SCOPES = _EDITOR_SCOPES + [
     "secrets:admin",
     "secrets:delete",
     "services_oncall:admin",
+    "settings:read",
+    "settings:write",
     "streams:admin",
     "users:write",
     "users:delete",

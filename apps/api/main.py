@@ -252,7 +252,7 @@ def _register_before_request(app: Quart) -> None:
         if token_type == "service_worker":
             allowed = SERVICE_WORKER_ALLOWED_SCOPES.get(sub, frozenset())
             raw_scopes = payload.get("scope", [])
-            g.claims = {
+            claims_dict = {
                 "sub": sub,
                 "tenant": payload.get("tenant", ""),
                 "roles": ["service_worker"],
@@ -261,6 +261,11 @@ def _register_before_request(app: Quart) -> None:
                 "user_identity_id": None,
                 "type": "service_worker",
             }
+            if payload.get("remote_worker_id") is not None:
+                claims_dict["remote_worker_id"] = payload.get("remote_worker_id")
+            if payload.get("remote_worker_db_id") is not None:
+                claims_dict["remote_worker_db_id"] = payload.get("remote_worker_db_id")
+            g.claims = claims_dict
             return
         if token_type == "coderun":
             from apps.api.modules.runs.permissions import ALL_GRANTABLE_SCOPES
@@ -694,6 +699,7 @@ def _register_blueprints(app: Quart) -> None:
     """
     # Lookup endpoints with special prefixes
     from apps.api.api.v1 import (
+        admin_workers,
         api_keys,
         audit,
         audit_enterprise,
@@ -734,6 +740,7 @@ def _register_blueprints(app: Quart) -> None:
     app.register_blueprint(portal_auth.bp, url_prefix=f"{api_prefix}/portal-auth")
     app.register_blueprint(sso.bp, url_prefix=f"{api_prefix}/sso")
     app.register_blueprint(licensing.bp, url_prefix=f"{api_prefix}/licensing")
+    app.register_blueprint(admin_workers.bp, url_prefix=f"{api_prefix}/admin/workers")
 
     # Self-service DSAR (Free+) and its Enterprise-gated admin convenience
     # layer -- see docs/compliance and apps/api/services/privacy.

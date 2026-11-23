@@ -22,6 +22,7 @@ CORE_MODELS = (
     "apps.api.models.privacy",
     "apps.api.models.rbac",
     "apps.api.models.references",
+    "apps.api.models.remote_workers",
     "apps.api.models.security",
     "apps.api.models.service_node",
     "apps.api.models.tenant",

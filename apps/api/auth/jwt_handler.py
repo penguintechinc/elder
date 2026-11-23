@@ -2,6 +2,7 @@
 
 # flake8: noqa: E501
 
+import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -55,11 +56,82 @@ SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
     ),
 }
 
+WORKER_TOKEN_PREFIX = "ewk_"
+
+WORKER_TYPE_TO_SERVICE_SUB: dict[str, str] = {
+    "runworker": "svc-runworker",
+    "scanner": "svc-scanner",
+}
+
+
+def hash_worker_token(token: str) -> str:
+    """Return the lowercase SHA-256 hex digest of a provisioned worker token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def resolve_remote_worker_token(token: str) -> dict[str, Any] | None:
+    """Resolve a provisioned ``ewk_`` Bearer token into ``service_worker`` claims.
+
+    Looks up the SHA-256 hash in ``remote_workers`` and rejects unknown,
+    disabled, or revoked workers without ever logging token material.
+    """
+    if not isinstance(token, str) or not token.startswith(WORKER_TOKEN_PREFIX):
+        return None
+    db = getattr(current_app, "db", None)
+    table = getattr(db, "remote_workers", None) if db is not None else None
+    if table is None:
+        return None
+    try:
+        row = db(table.token_hash == hash_worker_token(token)).select().first()
+    except Exception:
+        logger.warning("Failed to look up remote worker token")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return None
+    if row is None:
+        logger.warning("Rejected remote worker token: unknown token")
+        return None
+    if getattr(row, "revoked_at", None) is not None or not getattr(
+        row, "is_enabled", False
+    ):
+        logger.warning("Rejected remote worker token: worker revoked or disabled")
+        return None
+    worker_type = getattr(row, "worker_type", None)
+    sub = WORKER_TYPE_TO_SERVICE_SUB.get(worker_type)
+    if not sub:
+        logger.warning("Rejected remote worker token: unsupported worker_type")
+        return None
+    allowed = SERVICE_WORKER_ALLOWED_SCOPES.get(sub)
+    if not allowed:
+        return None
+    raw_tenant = getattr(row, "tenant_id", None)
+    tenant_str = "system" if raw_tenant is None else str(int(raw_tenant))
+    return {
+        "sub": sub,
+        "type": "service_worker",
+        "tenant": tenant_str,
+        "roles": ["service_worker"],
+        "scope": sorted(allowed),
+        "remote_worker_id": getattr(row, "worker_id", None),
+        "remote_worker_db_id": getattr(row, "id", None),
+        "remote_worker_type": worker_type,
+        "remote_worker_cluster": getattr(row, "cluster", None),
+    }
+
 
 class ServiceWorkerIdentity:
     """Synthetic identity representing an authenticated machine service worker."""
 
-    def __init__(self, worker_name: str, tid: int | None, scopes: list[str]) -> None:
+    def __init__(
+        self,
+        worker_name: str,
+        tid: int | None,
+        scopes: list[str],
+        *,
+        remote_worker_id: str | None = None,
+    ) -> None:
         self.id = 0
         self.username = worker_name
         self.email = None
@@ -70,6 +142,7 @@ class ServiceWorkerIdentity:
         self.portal_role = "service_worker"
         self.token_type = "service_worker"
         self.scopes = scopes
+        self.remote_worker_id = remote_worker_id
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
@@ -531,6 +604,9 @@ def verify_token(token: str) -> dict[str, Any] | None:
     Returns:
         Decoded payload dict or None if invalid
     """
+    if isinstance(token, str) and token.startswith(WORKER_TOKEN_PREFIX):
+        return resolve_remote_worker_token(token)
+
     try:
         secret = (
             current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
@@ -797,7 +873,12 @@ def get_current_user() -> Any:
             if not scopes:
                 logger.warning("Rejected service_worker token with empty scopes")
                 return None
-            worker_identity = ServiceWorkerIdentity(sub, tid, scopes)
+            worker_identity = ServiceWorkerIdentity(
+                sub,
+                tid,
+                scopes,
+                remote_worker_id=payload.get("remote_worker_id"),
+            )
             g.current_user = worker_identity
             return worker_identity
 
