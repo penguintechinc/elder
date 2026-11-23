@@ -7190,6 +7190,17 @@
   },
   {
     "service": "streams",
+    "operation": "get_approval_history",
+    "method": "GET",
+    "path": "/api/v1/streams/approvals/history",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Return recent approval decisions across the tenant for auditability.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "streams",
     "operation": "get_approval_status",
     "method": "GET",
     "path": "/api/v1/streams/executions/{execution_id}/approval-status",
@@ -7402,6 +7413,20 @@
     "summary": "Release an editor lock for a stream.",
     "has_body": false,
     "destructive": true
+  },
+  {
+    "service": "streams",
+    "operation": "request_execution_approval",
+    "method": "POST",
+    "path": "/api/v1/streams/{stream_id}/executions/{execution_id}/request-approval",
+    "path_params": [
+      "stream_id",
+      "execution_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Pause a running execution and ensure an approval gate exists for it.",
+    "has_body": true,
+    "destructive": false
   },
   {
     "service": "streams",
