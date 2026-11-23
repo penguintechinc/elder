@@ -3885,7 +3885,13 @@ class ApiClient {
     name: string;
     description?: string;
     trigger_type?: string;
+    trigger_config?: Record<string, unknown>;
     is_enabled?: boolean;
+    canvas_data?: {
+      nodes: unknown[];
+      edges: unknown[];
+      viewport?: { x: number; y: number; zoom: number };
+    };
   }) {
     const response = await this.client.post("/streams", data);
     return response.data;
@@ -3897,6 +3903,7 @@ class ApiClient {
       name: string;
       description: string;
       trigger_type: string;
+      trigger_config: Record<string, unknown>;
       is_enabled: boolean;
       is_public: boolean;
       tags: string[];

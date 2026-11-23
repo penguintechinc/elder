@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { EdgePropertySidebar } from "@/components/diagram/FlowPropertyModals";
+import ExportImportMenu from "@/components/diagram/ExportImportMenu";
 import NodeInspector from "@/components/playbooks/NodeInspector";
 import NodePalette from "@/components/playbooks/NodePalette";
 import PlaybookNodeCard from "@/components/playbooks/PlaybookNodeCard";
@@ -49,6 +50,16 @@ import type {
 import { computeUpstreamFields } from "@/components/playbooks/upstreamFields";
 import VillageIdBadge from "@/components/VillageIdBadge";
 import api from "@/lib/api";
+import {
+  downloadJsonFile,
+  exportFlowAsJpg,
+  exportFlowAsPng,
+  exportFlowAsSvg,
+  parsePlaybookBackup,
+  serializePlaybookBackup,
+  type FlowExportEdge,
+  type FlowExportNode,
+} from "@/lib/flowExport";
 
 const nodeTypes = { stream: PlaybookNodeCard };
 
@@ -112,6 +123,13 @@ export default function PlaybookEditor() {
   > | null>(null);
 
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
+  const [importedMeta, setImportedMeta] = useState<{
+    name?: string;
+    description?: string;
+    trigger_type?: string;
+    trigger_config?: Record<string, unknown>;
+    is_active?: boolean;
+  } | null>(null);
 
   // Execute modal state
   const [showExecuteModal, setShowExecuteModal] = useState(false);
@@ -225,6 +243,19 @@ export default function PlaybookEditor() {
         };
       });
       return api.updateStream(Number(id), {
+        ...(importedMeta?.name ? { name: importedMeta.name } : {}),
+        ...(importedMeta?.description !== undefined
+          ? { description: importedMeta.description }
+          : {}),
+        ...(importedMeta?.trigger_type !== undefined
+          ? { trigger_type: importedMeta.trigger_type }
+          : {}),
+        ...(importedMeta?.trigger_config !== undefined
+          ? { trigger_config: importedMeta.trigger_config }
+          : {}),
+        ...(importedMeta?.is_active !== undefined
+          ? { is_enabled: importedMeta.is_active }
+          : {}),
         canvas_data: {
           nodes: cleanNodes,
           edges,
@@ -234,6 +265,7 @@ export default function PlaybookEditor() {
     },
     onSuccess: (updated) => {
       setIsDirty(false);
+      setImportedMeta(null);
       if (updated?.validation) {
         applyValidationToNodes(updated.validation);
       }
@@ -493,6 +525,115 @@ export default function PlaybookEditor() {
     executeMutation.mutate();
   };
 
+  const effectiveName =
+    importedMeta?.name || streamData?.name || "Playbook Editor";
+  const effectiveDescription =
+    importedMeta?.description ?? streamData?.description;
+
+  const handleExportPng = useCallback(async () => {
+    try {
+      await exportFlowAsPng({
+        title: effectiveName,
+        nodes: nodes as unknown as FlowExportNode[],
+        edges: edges as unknown as FlowExportEdge[],
+        filename: effectiveName,
+      });
+      toast.success("Exported playbook as PNG");
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to export playbook as PNG",
+      );
+    }
+  }, [effectiveName, nodes, edges]);
+
+  const handleExportJpg = useCallback(async () => {
+    try {
+      await exportFlowAsJpg({
+        title: effectiveName,
+        nodes: nodes as unknown as FlowExportNode[],
+        edges: edges as unknown as FlowExportEdge[],
+        filename: effectiveName,
+      });
+      toast.success("Exported playbook as JPG");
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to export playbook as JPG",
+      );
+    }
+  }, [effectiveName, nodes, edges]);
+
+  const handleExportSvg = useCallback(() => {
+    exportFlowAsSvg({
+      title: effectiveName,
+      nodes: nodes as unknown as FlowExportNode[],
+      edges: edges as unknown as FlowExportEdge[],
+      filename: effectiveName,
+    });
+    toast.success("Exported playbook as SVG");
+  }, [effectiveName, nodes, edges]);
+
+  const handleExportJson = useCallback(() => {
+    const backup = serializePlaybookBackup({
+      name: effectiveName,
+      description: effectiveDescription,
+      trigger_type: importedMeta?.trigger_type ?? streamData?.trigger_type,
+      trigger_config:
+        importedMeta?.trigger_config ?? streamData?.trigger_config,
+      is_active: importedMeta?.is_active ?? streamData?.is_enabled,
+      nodes: nodes as unknown as FlowExportNode[],
+      edges: edges as unknown as FlowExportEdge[],
+    });
+    downloadJsonFile(backup, effectiveName);
+    toast.success("Exported playbook JSON backup");
+  }, [
+    effectiveName,
+    effectiveDescription,
+    importedMeta,
+    streamData?.trigger_type,
+    streamData?.trigger_config,
+    streamData?.is_enabled,
+    nodes,
+    edges,
+  ]);
+
+  const handleImportJsonFile = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = parsePlaybookBackup(text);
+      const hydratedNodes = hydrateNodesWithCatalog(
+        parsed.nodes as unknown as PlaybookNode[],
+        catalogByTypeRef.current,
+      );
+      const importedEdges = parsed.edges as unknown as Edge[];
+      setNodes(hydratedNodes);
+      setEdges(importedEdges);
+      setImportedMeta({
+        name: parsed.name,
+        description: parsed.description,
+        trigger_type: parsed.trigger_type,
+        trigger_config: parsed.trigger_config,
+        is_active: parsed.is_active,
+      });
+      setSelectedNodeId(null);
+      setSelectedEdgeId(null);
+      setValidationResult(null);
+      setIsDirty(true);
+      toast.success(
+        `Imported "${parsed.name}" (${hydratedNodes.length} nodes, ${importedEdges.length} edges) — click Save to persist`,
+      );
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to import playbook JSON backup",
+      );
+    }
+  }, []);
+
   if (error) {
     return (
       <div className="min-h-screen bg-slate-900 p-6 flex items-center justify-center">
@@ -518,7 +659,7 @@ export default function PlaybookEditor() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-bold text-amber-400 truncate">
-                  {streamData?.name || "Playbook Editor"}
+                  {effectiveName}
                 </h1>
                 {streamData?.village_id && (
                   <VillageIdBadge villageId={streamData.village_id} compact />
@@ -529,9 +670,9 @@ export default function PlaybookEditor() {
                   </span>
                 )}
               </div>
-              {streamData?.description && (
+              {effectiveDescription && (
                 <p className="text-xs text-slate-400 truncate max-w-lg">
-                  {streamData.description}
+                  {effectiveDescription}
                 </p>
               )}
             </div>
@@ -572,6 +713,16 @@ export default function PlaybookEditor() {
               <Play className="w-4 h-4" />
               Execute
             </button>
+
+            <ExportImportMenu
+              kind="playbook"
+              onExportPng={handleExportPng}
+              onExportJpg={handleExportJpg}
+              onExportSvg={handleExportSvg}
+              onExportJson={handleExportJson}
+              onImportJsonFile={handleImportJsonFile}
+              disabled={isLoading}
+            />
 
             <button
               type="button"

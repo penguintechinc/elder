@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, type ChangeEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Copy, Trash2 } from 'lucide-react'
+import { Plus, Copy, Trash2, Upload } from 'lucide-react'
+import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import VillageIdBadge from '@/components/VillageIdBadge'
+import { parsePlaybookBackup, type PlaybookBackup } from '@/lib/flowExport'
 
 interface Stream {
   id: number
@@ -22,6 +24,7 @@ export default function StreamsList() {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('highlight')
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['streams'],
@@ -53,6 +56,41 @@ export default function StreamsList() {
     },
   })
 
+  const importMutation = useMutation({
+    mutationFn: (backup: PlaybookBackup) =>
+      api.createStream({
+        name: backup.name,
+        description: backup.description || '',
+        trigger_type: backup.trigger_type,
+        trigger_config: backup.trigger_config,
+        is_enabled: backup.is_active ?? false,
+        canvas_data: { nodes: backup.nodes, edges: backup.edges },
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['streams'] })
+      toast.success(`Imported playbook "${data.name || 'Playbook'}"`)
+      navigate(`/streams/${data.id}`)
+    },
+    onError: () => {
+      toast.error('Failed to import playbook')
+    },
+  })
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parsePlaybookBackup(text)
+      importMutation.mutate(parsed)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to parse playbook JSON backup',
+      )
+    }
+  }
+
   const duplicateMutation = useMutation({
     mutationFn: (id: number) => api.duplicateStream(id),
     onSuccess: () => {
@@ -77,14 +115,37 @@ export default function StreamsList() {
             <h1 className="text-3xl font-bold text-amber-400">Playbooks</h1>
             <p className="text-slate-400 mt-2">Create and manage automation workflows</p>
           </div>
-          <button
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            New Playbook
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importMutation.isPending}
+              aria-label="Import playbook JSON"
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-slate-100 border border-slate-600 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Upload className="w-4 h-4 text-sky-400" />
+              {importMutation.isPending ? 'Importing...' : 'Import JSON'}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Select playbook JSON backup file"
+              onChange={(event) => {
+                void handleImportFile(event)
+              }}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              New Playbook
+            </button>
+          </div>
         </div>
 
         {error && (
