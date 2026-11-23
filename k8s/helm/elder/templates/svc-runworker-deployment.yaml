@@ -1,4 +1,5 @@
 {{- $cfg := index .Values "svc-runworker" }}
+{{- $hubApi := index .Values "hub-api" | default dict }}
 {{- if and $cfg $cfg.enabled }}
 apiVersion: apps/v1
 kind: Deployment
@@ -50,6 +51,8 @@ spec:
                   name: {{ ($cfg.internalTokenSecret).name | default "svc-runworker-token" }}
                   key: {{ ($cfg.internalTokenSecret).key | default "token" }}
                   optional: {{ if hasKey ($cfg.internalTokenSecret | default dict) "optional" }}{{ $cfg.internalTokenSecret.optional }}{{ else }}true{{ end }}
+            - name: JWT_SECRET_KEY
+              value: {{ ($hubApi.env).JWT_SECRET_KEY | default (($hubApi.env).SECRET_KEY | default "CHANGE-IN-PRODUCTION") | quote }}
             - name: RUNS_EXECUTION_NAMESPACE
               value: {{ $cfg.executionNamespace | default "elder-runs" | quote }}
             {{- if $cfg.runtimeClassName }}

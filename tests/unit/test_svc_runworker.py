@@ -412,3 +412,31 @@ class TestRunWorkerPollAndReport:
         monkeypatch.setenv("ELDER_API_URL", "http://hub-api:5000")
         monkeypatch.setenv("RUNS_HEALTH_FILE", str(hb))
         assert healthcheck.main() == 0
+
+    def test_auth_headers_mints_service_worker_jwt_when_secret_configured(self) -> None:
+        import jwt as pyjwt
+
+        secret = "unit-test-runworker-jwt-secret-key-32b"
+        cfg = RunWorkerConfig(
+            elder_api_url="http://hub-api:5000",
+            jwt_secret_key=secret,
+        )
+        assert secret not in repr(cfg)
+
+        service = RunWorkerService(cfg, runner=MagicMock(spec=K8sRunner))
+        headers = service._auth_headers()
+        assert headers["Authorization"].startswith("Bearer ")
+        token = headers["Authorization"].split(" ", 1)[1]
+
+        decoded = pyjwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience="elder-api",
+            issuer="elder-api",
+        )
+        assert decoded["sub"] == "svc-runworker"
+        assert decoded["type"] == "service_worker"
+        assert decoded["tenant"] == "system"
+        assert "runs:invoke" in decoded["scope"].split()
+        assert 0 < decoded["exp"] - decoded["iat"] <= 600
