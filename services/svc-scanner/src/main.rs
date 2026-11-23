@@ -5,6 +5,7 @@ mod nvd;
 mod parsers;
 mod scanners;
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,13 +13,14 @@ use chrono::{DateTime, Utc};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::Semaphore;
+use tokio::sync::{oneshot, Semaphore};
 use tokio::task::JoinSet;
+use tokio::time::MissedTickBehavior;
 use tracing::Instrument;
 
 use elder_svc_common::{telemetry, CommonError, ElderApiClient, Result, ServiceMetrics};
 
-use crate::config::ScanningConfig;
+use crate::config::{clamp_poll_interval, ScanningConfig};
 use crate::nvd::maybe_trigger_nvd_sync;
 use crate::scanners::banner::run_banner_scan;
 use crate::scanners::http_screenshot::run_http_screenshot_scan;
@@ -50,13 +52,17 @@ enum Command {
         #[arg(long = "loop")]
         loop_mode: bool,
 
-        /// Poll interval in seconds for `--loop` mode (defaults to SCANNER_INTERVAL_SECONDS or 60).
+        /// Poll interval in seconds for `--loop` mode (defaults to SCANNER_POLL_INTERVAL_SECONDS, SCANNER_INTERVAL_SECONDS, or 300).
         #[arg(long)]
         interval: Option<u64>,
     },
 
     /// Validate configuration and JWT credential generation without touching network.
-    Healthcheck,
+    Healthcheck {
+        /// Also verify the poll-loop heartbeat file exists and is fresh.
+        #[arg(long)]
+        check_heartbeat: bool,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +84,104 @@ struct CompleteDiscoveryJobRequest {
     success: bool,
     results: Value,
     error_message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct JobProgressHeartbeat {
+    status: &'static str,
+    elapsed_seconds: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cluster: Option<String>,
+    timestamp: String,
+}
+
+/// Periodic best-effort progress heartbeat task that cancels cleanly on job completion.
+struct ProgressReporter {
+    stop_tx: Option<oneshot::Sender<()>>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl ProgressReporter {
+    fn spawn(
+        client: Arc<ElderApiClient>,
+        path: String,
+        interval: Duration,
+        cluster: Option<String>,
+        started_at: Instant,
+    ) -> Self {
+        let (stop_tx, mut stop_rx) = oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+            // Consume the immediate first tick so progress pushes start after one full interval.
+            tokio::select! {
+                biased;
+                _ = &mut stop_rx => return,
+                _ = ticker.tick() => {}
+            }
+
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = &mut stop_rx => break,
+                    _ = ticker.tick() => {
+                        let payload = JobProgressHeartbeat {
+                            status: "running",
+                            elapsed_seconds: started_at.elapsed().as_secs(),
+                            cluster: cluster.clone(),
+                            timestamp: Utc::now().to_rfc3339(),
+                        };
+                        tokio::select! {
+                            biased;
+                            _ = &mut stop_rx => break,
+                            res = client.post_json::<_, Value>(&path, &payload) => {
+                                if let Err(err) = res {
+                                    match err {
+                                        CommonError::Http { status: 404 | 405, .. } => {
+                                            tracing::debug!(
+                                                path = %path,
+                                                error = %err,
+                                                "Progress heartbeat endpoint not available; ignoring"
+                                            );
+                                        }
+                                        other => {
+                                            tracing::warn!(
+                                                path = %path,
+                                                error = %other,
+                                                "Best-effort job progress heartbeat failed"
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Self {
+            stop_tx: Some(stop_tx),
+            handle,
+        }
+    }
+
+    async fn stop(mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        let _ = (&mut self.handle).await;
+    }
+}
+
+impl Drop for ProgressReporter {
+    fn drop(&mut self) {
+        if let Some(tx) = self.stop_tx.take() {
+            let _ = tx.send(());
+        }
+        self.handle.abort();
+    }
 }
 
 #[tokio::main]
@@ -115,7 +219,7 @@ async fn main() -> std::process::ExitCode {
 
 async fn run_cli(cli: Cli) -> Result<()> {
     match cli.command {
-        Some(Command::Healthcheck) => run_healthcheck(),
+        Some(Command::Healthcheck { check_heartbeat }) => run_healthcheck(check_heartbeat),
         Some(Command::Run {
             loop_mode,
             interval,
@@ -125,16 +229,80 @@ async fn run_cli(cli: Cli) -> Result<()> {
     }
 }
 
-fn run_healthcheck() -> Result<()> {
+fn run_healthcheck(check_heartbeat: bool) -> Result<()> {
     let cfg = ScanningConfig::from_env()?;
     let auth = cfg.build_auth_provider()?;
     auth.validate()?;
     let _client = ElderApiClient::new(&cfg.elder_api_url, auth)?;
+    if check_heartbeat {
+        let max_age = max_heartbeat_age_secs(cfg.default_loop_interval_secs, cfg.job_timeout_secs);
+        verify_heartbeat(&cfg.health_file, max_age, Utc::now().timestamp())?;
+    }
     tracing::info!(
         elder_api_url = %cfg.elder_api_url,
+        cluster = cfg.scanner_cluster.as_deref().unwrap_or("default"),
+        check_heartbeat,
         "svc-scanner healthcheck passed"
     );
     Ok(())
+}
+
+fn write_heartbeat(path: &Path) {
+    let ts = format!("{}\n", Utc::now().timestamp());
+    if let Err(err) = std::fs::write(path, ts) {
+        tracing::warn!(
+            health_file = %path.display(),
+            error = %err,
+            "Failed writing scanner heartbeat file"
+        );
+    }
+}
+
+fn max_heartbeat_age_secs(poll_interval_secs: u64, job_timeout_secs: u64) -> u64 {
+    60_u64.max(
+        poll_interval_secs
+            .saturating_mul(2)
+            .saturating_add(job_timeout_secs),
+    )
+}
+
+fn verify_heartbeat(path: &Path, max_age_secs: u64, now_unix: i64) -> Result<()> {
+    let raw = std::fs::read_to_string(path).map_err(|err| {
+        CommonError::Execution(format!(
+            "heartbeat file unreadable at {}: {err}",
+            path.display()
+        ))
+    })?;
+    let trimmed = raw.trim();
+    let ts = trimmed.parse::<f64>().map_err(|err| {
+        CommonError::Execution(format!(
+            "heartbeat file {} contains invalid timestamp {trimmed:?}: {err}",
+            path.display()
+        ))
+    })?;
+    if !ts.is_finite() {
+        return Err(CommonError::Execution(format!(
+            "heartbeat file {} contains non-finite timestamp {trimmed:?}",
+            path.display()
+        )));
+    }
+    let age = (now_unix as f64) - ts;
+    if age > max_age_secs as f64 {
+        return Err(CommonError::Execution(format!(
+            "heartbeat stale ({age:.1}s > {max_age_secs}s)"
+        )));
+    }
+    Ok(())
+}
+
+fn pending_endpoint_path(base_path: &str, cluster: Option<&str>) -> String {
+    match cluster.map(str::trim).filter(|c| !c.is_empty()) {
+        Some(c) => {
+            let encoded: String = url::form_urlencoded::byte_serialize(c.as_bytes()).collect();
+            format!("{base_path}?cluster={encoded}")
+        }
+        None => base_path.to_string(),
+    }
 }
 
 async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Result<()> {
@@ -144,21 +312,31 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
 
     let client = Arc::new(ElderApiClient::new(&cfg.elder_api_url, auth)?);
     let metrics = Arc::new(ServiceMetrics::new("svc-scanner", "svc_scanner"));
-    let poll_interval =
-        Duration::from_secs(interval_override.unwrap_or(cfg.default_loop_interval_secs));
+    let poll_interval = Duration::from_secs(
+        interval_override
+            .map(clamp_poll_interval)
+            .unwrap_or(cfg.default_loop_interval_secs),
+    );
     let mut last_nvd_sync: Option<DateTime<Utc>> = None;
 
+    write_heartbeat(&cfg.health_file);
+
     if !loop_mode {
-        run_cycle(cfg, client, metrics, &mut last_nvd_sync).await?;
+        run_cycle(Arc::clone(&cfg), client, metrics, &mut last_nvd_sync).await?;
+        write_heartbeat(&cfg.health_file);
         return Ok(());
     }
 
     tracing::info!(
         interval_secs = poll_interval.as_secs(),
+        progress_interval_secs = cfg.progress_interval_secs,
+        cluster = cfg.scanner_cluster.as_deref().unwrap_or("default"),
+        health_file = %cfg.health_file.display(),
         "Starting svc-scanner polling loop"
     );
 
     loop {
+        write_heartbeat(&cfg.health_file);
         if let Err(err) = run_cycle(
             Arc::clone(&cfg),
             Arc::clone(&client),
@@ -169,6 +347,7 @@ async fn execute_runner(loop_mode: bool, interval_override: Option<u64>) -> Resu
         {
             tracing::error!(error = %err, "Scanning cycle encountered an error");
         }
+        write_heartbeat(&cfg.health_file);
 
         tokio::select! {
             _ = shutdown_signal() => {
@@ -189,7 +368,10 @@ async fn run_cycle(
     last_nvd_sync: &mut Option<DateTime<Utc>>,
 ) -> Result<()> {
     let cycle_start = Instant::now();
-    let cycle_span = tracing::info_span!("svc_scanner.cycle");
+    let cycle_span = tracing::info_span!(
+        "svc_scanner.cycle",
+        cluster = cfg.scanner_cluster.as_deref().unwrap_or("default")
+    );
 
     let res = async {
         // 1. Evaluate due SBOM schedules first so newly created pending scans are picked up in the same pass.
@@ -197,10 +379,12 @@ async fn run_cycle(
             tracing::error!(error = %err, "Failed processing due SBOM schedules");
         }
 
-        // 2. Fetch pending discovery + SBOM jobs.
-        let pending_discovery = match client
-            .get_json::<PendingJobsResponse>("/api/v1/discovery/jobs/pending")
-            .await
+        // 2. Fetch pending discovery + SBOM jobs (filtered by optional SCANNER_CLUSTER).
+        let discovery_path = pending_endpoint_path(
+            "/api/v1/discovery/jobs/pending",
+            cfg.scanner_cluster.as_deref(),
+        );
+        let pending_discovery = match client.get_json::<PendingJobsResponse>(&discovery_path).await
         {
             Ok(resp) => resp.jobs,
             Err(err) => {
@@ -209,10 +393,11 @@ async fn run_cycle(
             }
         };
 
-        let pending_sbom = match client
-            .get_json::<Vec<PendingSbomScan>>("/api/v1/sbom/scans/pending")
-            .await
-        {
+        let sbom_path = pending_endpoint_path(
+            "/api/v1/sbom/scans/pending",
+            cfg.scanner_cluster.as_deref(),
+        );
+        let pending_sbom = match client.get_json::<Vec<PendingSbomScan>>(&sbom_path).await {
             Ok(scans) => scans,
             Err(err) => {
                 tracing::error!(error = %err, "Failed fetching pending SBOM scans");
@@ -233,7 +418,7 @@ async fn run_cycle(
             let metrics_c = Arc::clone(&metrics);
             tasks.spawn(async move {
                 let _permit = sem_c.acquire_owned().await.ok();
-                run_discovery_job(&job, &cfg_c, &client_c, &metrics_c, job_timeout).await;
+                run_discovery_job(&job, &cfg_c, client_c, &metrics_c, job_timeout).await;
             });
         }
 
@@ -244,7 +429,7 @@ async fn run_cycle(
             let metrics_c = Arc::clone(&metrics);
             tasks.spawn(async move {
                 let _permit = sem_c.acquire_owned().await.ok();
-                run_sbom_job(&scan, &cfg_c, &client_c, &metrics_c, job_timeout).await;
+                run_sbom_job(&scan, &cfg_c, client_c, &metrics_c, job_timeout).await;
             });
         }
 
@@ -291,7 +476,7 @@ async fn run_cycle(
 async fn run_discovery_job(
     job: &DiscoveryJob,
     cfg: &ScanningConfig,
-    client: &ElderApiClient,
+    client: Arc<ElderApiClient>,
     metrics: &ServiceMetrics,
     job_timeout: Duration,
 ) {
@@ -310,6 +495,14 @@ async fn run_discovery_job(
             metrics.record_job(&job.provider, false, start.elapsed().as_secs_f64());
             return;
         }
+
+        let progress = ProgressReporter::spawn(
+            Arc::clone(&client),
+            format!("/api/v1/discovery/jobs/{}/progress", job.id),
+            Duration::from_secs(cfg.progress_interval_secs),
+            cfg.scanner_cluster.clone(),
+            start,
+        );
 
         let exec_res = tokio::time::timeout(job_timeout, async {
             match job.provider.as_str() {
@@ -331,6 +524,8 @@ async fn run_discovery_job(
             }
         })
         .await;
+
+        progress.stop().await;
 
         let completion = match exec_res {
             Ok(Ok(results)) => CompleteDiscoveryJobRequest {
@@ -372,7 +567,7 @@ async fn run_discovery_job(
 async fn run_sbom_job(
     scan: &PendingSbomScan,
     cfg: &ScanningConfig,
-    client: &ElderApiClient,
+    client: Arc<ElderApiClient>,
     metrics: &ServiceMetrics,
     job_timeout: Duration,
 ) {
@@ -392,8 +587,19 @@ async fn run_sbom_job(
             return;
         }
 
+        let progress = ProgressReporter::spawn(
+            Arc::clone(&client),
+            format!("/api/v1/sbom/scans/{}/progress", scan.id),
+            Duration::from_secs(cfg.progress_interval_secs),
+            cfg.scanner_cluster.clone(),
+            start,
+        );
+
         let exec_res =
             tokio::time::timeout(job_timeout, execute_sbom_scan(scan, &cfg.git_bin)).await;
+
+        progress.stop().await;
+
         let duration_ms = i64::try_from(start.elapsed().as_millis()).unwrap_or(i64::MAX);
 
         let (success, components, files_scanned, commit_hash, endpoints, err_msg) = match exec_res {
@@ -428,7 +634,7 @@ async fn run_sbom_job(
             scan_duration_ms: duration_ms,
             endpoints: &endpoints,
         };
-        if let Err(err) = report_sbom_result(client, scan.id, &outcome).await {
+        if let Err(err) = report_sbom_result(&client, scan.id, &outcome).await {
             tracing::error!(scan_id = scan.id, error = %err, "Failed submitting SBOM scan results");
         }
         metrics.record_job("sbom", success, start.elapsed().as_secs_f64());
@@ -458,5 +664,138 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     {
         let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    use tempfile::TempDir;
+
+    #[test]
+    fn heartbeat_file_verification_accepts_fresh_and_rejects_missing_or_stale() {
+        let dir = TempDir::new().expect("tempdir");
+        let health_path = dir.path().join("scanner.healthy");
+
+        // Missing file must fail.
+        assert!(verify_heartbeat(&health_path, 900, 1_700_000_000).is_err());
+
+        // Invalid content must fail.
+        std::fs::write(&health_path, "not-a-timestamp\n").expect("write invalid");
+        assert!(verify_heartbeat(&health_path, 900, 1_700_000_000).is_err());
+
+        // Fresh heartbeat must pass.
+        write_heartbeat(&health_path);
+        let now = Utc::now().timestamp();
+        assert!(verify_heartbeat(&health_path, 900, now).is_ok());
+
+        // Stale heartbeat must fail.
+        std::fs::write(&health_path, format!("{}\n", now - 1000)).expect("write stale");
+        assert!(verify_heartbeat(&health_path, 900, now).is_err());
+    }
+
+    #[test]
+    fn pending_endpoint_path_appends_cluster_when_configured() {
+        assert_eq!(
+            pending_endpoint_path("/api/v1/discovery/jobs/pending", None),
+            "/api/v1/discovery/jobs/pending"
+        );
+        assert_eq!(
+            pending_endpoint_path("/api/v1/discovery/jobs/pending", Some("   ")),
+            "/api/v1/discovery/jobs/pending"
+        );
+        assert_eq!(
+            pending_endpoint_path("/api/v1/discovery/jobs/pending", Some("dal2-edge")),
+            "/api/v1/discovery/jobs/pending?cluster=dal2-edge"
+        );
+    }
+
+    #[tokio::test]
+    async fn progress_reporter_pushes_periodically_and_cancels_cleanly_on_stop() {
+        use elder_svc_common::ServiceTokenProvider;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_clone = Arc::clone(&hits);
+        let request_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let lines_clone = Arc::clone(&request_lines);
+
+        let server = tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let mut buf = [0u8; 4096];
+                let n = sock.read(&mut buf).await.unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                if let Some(line) = req.lines().next() {
+                    lines_clone.lock().expect("lock").push(line.to_string());
+                }
+                hits_clone.fetch_add(1, Ordering::SeqCst);
+                let body = r#"{"ok":true}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes()).await;
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        let auth = ServiceTokenProvider::from_env_lookup(
+            "svc-scanner",
+            vec!["discovery:write".into()],
+            |k| match k {
+                "ELDER_API_TOKEN" => Some("remote-token".into()),
+                _ => None,
+            },
+        )
+        .expect("auth");
+        let client = Arc::new(
+            ElderApiClient::new(format!("http://{addr}"), auth)
+                .expect("client")
+                .with_retry_config(0, Duration::from_millis(5)),
+        );
+
+        let reporter = ProgressReporter::spawn(
+            client,
+            "/api/v1/discovery/jobs/42/progress".to_string(),
+            Duration::from_millis(40),
+            Some("dal2-edge".to_string()),
+            Instant::now(),
+        );
+
+        // Wait until at least 2 periodic progress heartbeats have been sent.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while hits.load(Ordering::SeqCst) < 2 && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        }
+        assert!(
+            hits.load(Ordering::SeqCst) >= 2,
+            "expected at least 2 progress heartbeats before stop"
+        );
+
+        reporter.stop().await;
+        let count_after_stop = hits.load(Ordering::SeqCst);
+
+        // Ensure no further progress requests are emitted after cancellation.
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            count_after_stop,
+            "progress reporter must not emit requests after stop()"
+        );
+
+        let lines = request_lines.lock().expect("lock").clone();
+        assert!(
+            lines
+                .iter()
+                .all(|l| l.starts_with("POST /api/v1/discovery/jobs/42/progress ")),
+            "unexpected request lines: {lines:?}"
+        );
+
+        server.abort();
     }
 }
