@@ -1768,6 +1768,86 @@ async def get_execution(stream_id, execution_id):
     return ApiResponse.success(
         data={
             "execution": execution_data,
+            "stream_id": stream.id,
+            "stream_name": stream.name,
+            "node_logs": node_logs or [],
+        }
+    )
+
+
+@bp.route("/executions/<execution_id>", methods=["GET"])
+@login_required
+@require_scope("streams:read")
+async def get_execution_by_id(execution_id):
+    """Get details of a specific execution by execution_id (tenant-scoped).
+
+    Returns:
+        200: Execution details with parent playbook metadata and node logs
+        404: Execution or parent playbook not found / inaccessible
+    """
+    db = current_app.db
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    def get():
+        execution = (
+            db(
+                (db.stream_executions.execution_id == execution_id)
+                & (db.stream_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not execution:
+            return None, None, None
+
+        stream = (
+            db(
+                (db.stream_playbooks.id == execution.playbook_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not stream or not _can_read_stream(db, stream, tenant_id, identity_id):
+            return None, None, None
+
+        node_logs = db(db.stream_node_executions.execution_id == execution_id).select(
+            orderby=db.stream_node_executions.started_at
+        )
+
+        node_log_data = [
+            {
+                "node_id": log.node_id,
+                "node_type": log.node_type,
+                "status": log.status,
+                "input_data": log.input_json,
+                "output_data": log.output_json,
+                "error_message": log.error_message,
+                "started_at": log.started_at.isoformat() if log.started_at else None,
+                "completed_at": (
+                    log.completed_at.isoformat() if log.completed_at else None
+                ),
+                "duration_ms": log.duration_ms,
+            }
+            for log in node_logs
+        ]
+
+        return stream, _serialize_execution(execution), node_log_data
+
+    stream, execution_data, node_logs = await run_in_threadpool(get)
+
+    if not stream or not execution_data:
+        return ApiResponse.not_found("Execution")
+
+    return ApiResponse.success(
+        data={
+            "execution": execution_data,
+            "stream_id": stream.id,
+            "stream_name": stream.name,
             "node_logs": node_logs or [],
         }
     )

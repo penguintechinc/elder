@@ -3984,8 +3984,16 @@ class ApiClient {
   }
 
   async getStreamExecution(id: number, executionId: string) {
+    const url = id
+      ? `/streams/${id}/executions/${executionId}`
+      : `/streams/executions/${executionId}`;
+    const response = await this.client.get(url);
+    return response.data;
+  }
+
+  async getExecutionById(executionId: string) {
     const response = await this.client.get(
-      `/streams/${id}/executions/${executionId}`,
+      `/streams/executions/${executionId}`,
     );
     return response.data;
   }
