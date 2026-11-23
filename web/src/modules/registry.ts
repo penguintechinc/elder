@@ -80,6 +80,7 @@ const HREF_SECTION_OVERRIDE: Record<string, string> = {
   "/dependencies": "relationships",
   "/on-call-rotations": "issues",
   "/vulnerabilities": "resources-security",
+  "/csv-templates": "workstreams",
 };
 
 /** Maps each `entities`-group module to its Resources sub-section. */

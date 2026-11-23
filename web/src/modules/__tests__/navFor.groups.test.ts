@@ -42,6 +42,7 @@ describe("navFor — one section per WIRED pillar", () => {
     // sbom and services_oncall share Resources — Software; On-Call routes to Work Management
     // and Vulnerabilities routes to Resources — Security.
     const nav = navFor(new Set(["sbom", "services_oncall"]));
+    const workstreams = nav.find((c) => c.header === "Workstreams");
     const software = nav.find((c) => c.header === "Software");
     const workMgmt = nav.find((c) => c.header === "Work Management");
     const security = nav.find((c) => c.header === "Security");
@@ -49,6 +50,8 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(software?.items.map((i) => i.name)).toEqual(
       expect.arrayContaining(["SBOM Dashboard", "Services"]),
     );
+    expect(workstreams?.items.map((i) => i.href)).toContain("/csv-templates");
+    expect(software?.items.map((i) => i.href)).not.toContain("/csv-templates");
     expect(workMgmt?.items.map((i) => i.href)).toContain("/on-call-rotations");
     expect(security?.items.map((i) => i.href)).toContain("/vulnerabilities");
   });
