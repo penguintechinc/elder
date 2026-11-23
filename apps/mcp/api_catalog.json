@@ -6158,6 +6158,17 @@
   },
   {
     "service": "runs",
+    "operation": "get_permissions_catalog",
+    "method": "GET",
+    "path": "/api/v1/runs/permissions/catalog",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Return the grouped grantable CodeRun scope catalog and caller eligibility.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "runs",
     "operation": "get_run_execution",
     "method": "GET",
     "path": "/api/v1/runs/executions/{execution_id}",

@@ -262,6 +262,26 @@ def _register_before_request(app: Quart) -> None:
                 "type": "service_worker",
             }
             return
+        if token_type == "coderun":
+            from apps.api.modules.runs.permissions import ALL_GRANTABLE_SCOPES
+
+            raw_scopes = payload.get("scope", [])
+            if isinstance(raw_scopes, str):
+                raw_scopes = raw_scopes.split()
+            elif not isinstance(raw_scopes, list):
+                raw_scopes = []
+            g.claims = {
+                "sub": sub,
+                "tenant": payload.get("tenant", ""),
+                "roles": ["coderun"],
+                "scope": [s for s in raw_scopes if s in ALL_GRANTABLE_SCOPES],
+                "identity_id": None,
+                "user_identity_id": None,
+                "type": "coderun",
+                "function_id": payload.get("function_id"),
+                "execution_id": payload.get("execution_id"),
+            }
+            return
         try:
             identity_id = int(sub)
         except (TypeError, ValueError):

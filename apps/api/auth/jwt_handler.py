@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 MAX_SERVICE_RESEARCHER_TTL_SECONDS = 600
 MAX_SERVICE_WORKER_TTL_SECONDS = 600
+MAX_CODERUN_TTL_SECONDS = 360
 
 SERVICE_WORKER_ALLOWED_SCOPES: dict[str, frozenset[str]] = {
     "svc-scanner": frozenset(
@@ -69,6 +70,33 @@ class ServiceWorkerIdentity:
         self.portal_role = "service_worker"
         self.token_type = "service_worker"
         self.scopes = scopes
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
+
+
+class CodeRunIdentity:
+    """Synthetic identity representing an ephemeral CodeRun function execution."""
+
+    def __init__(
+        self,
+        tid: int,
+        function_id: int,
+        execution_id: str,
+        scopes: list[str],
+    ) -> None:
+        self.id = 0
+        self.username = f"coderun:{tid}:{function_id}"
+        self.email = None
+        self.display_name = f"CodeRun Function #{function_id}"
+        self.is_active = True
+        self.is_superuser = False
+        self.tenant_id = tid
+        self.function_id = function_id
+        self.execution_id = execution_id
+        self.portal_role = "coderun"
+        self.token_type = "coderun"
+        self.scopes = list(scopes)
 
     def get(self, key: str, default: Any = None) -> Any:
         return getattr(self, key, default)
@@ -163,6 +191,163 @@ def _validate_service_worker_claims(
     payload["roles"] = ["service_worker"]
     payload["scope"] = validated_scopes
     return payload
+
+
+def _validate_coderun_claims(
+    payload: dict[str, Any], expected_issuer: str, expected_audience: str
+) -> dict[str, Any] | None:
+    """Validate and normalize claims for an ephemeral ``coderun`` execution JWT."""
+    from apps.api.modules.runs.permissions import ALL_GRANTABLE_SCOPES
+
+    if payload.get("iss") != expected_issuer or payload.get("aud") != expected_audience:
+        logger.warning("Rejected coderun token: missing or invalid iss/aud")
+        return None
+
+    exp_raw = payload.get("exp")
+    iat_raw = payload.get("iat")
+    if (
+        isinstance(exp_raw, bool)
+        or not isinstance(exp_raw, int | float)
+        or isinstance(iat_raw, bool)
+        or not isinstance(iat_raw, int | float)
+    ):
+        logger.warning("Rejected coderun token: missing or invalid exp/iat")
+        return None
+
+    now_ts = datetime.now(UTC).timestamp()
+    lifetime = float(exp_raw) - float(iat_raw)
+    if lifetime <= 0 or lifetime > MAX_CODERUN_TTL_SECONDS:
+        logger.warning("Rejected coderun token: invalid issued lifetime")
+        return None
+    if float(exp_raw) - now_ts > MAX_CODERUN_TTL_SECONDS:
+        logger.warning("Rejected coderun token: TTL exceeds max coderun TTL")
+        return None
+
+    tenant_raw = payload.get("tenant")
+    if isinstance(tenant_raw, bool) or tenant_raw is None:
+        logger.warning("Rejected coderun token: missing tenant")
+        return None
+    tenant_str = str(tenant_raw).strip()
+    if not (tenant_str.isascii() and tenant_str.isdigit() and int(tenant_str) > 0):
+        logger.warning("Rejected coderun token: non-positive or invalid tenant")
+        return None
+    tenant_id = int(tenant_str)
+
+    function_id_raw = payload.get("function_id")
+    if (
+        isinstance(function_id_raw, bool)
+        or not isinstance(function_id_raw, int)
+        or function_id_raw <= 0
+    ):
+        logger.warning("Rejected coderun token: invalid function_id")
+        return None
+
+    execution_id_raw = payload.get("execution_id")
+    if not isinstance(execution_id_raw, str) or not execution_id_raw.strip():
+        logger.warning("Rejected coderun token: missing or invalid execution_id")
+        return None
+
+    raw_scopes = payload.get("scope")
+    if isinstance(raw_scopes, str):
+        candidate_scopes: list[Any] = raw_scopes.split()
+    elif isinstance(raw_scopes, list):
+        candidate_scopes = raw_scopes
+    else:
+        logger.warning("Rejected coderun token: invalid scope claim")
+        return None
+
+    validated_scopes: list[str] = []
+    for scope in candidate_scopes:
+        if not isinstance(scope, str):
+            logger.warning("Rejected coderun token: non-string scope")
+            return None
+        cleaned = scope.strip()
+        if not cleaned or cleaned not in ALL_GRANTABLE_SCOPES:
+            logger.warning("Rejected coderun token: disallowed scope")
+            return None
+        if cleaned not in validated_scopes:
+            validated_scopes.append(cleaned)
+    if not validated_scopes:
+        logger.warning("Rejected coderun token: empty scope claim")
+        return None
+
+    payload["tenant"] = str(tenant_id)
+    payload["function_id"] = function_id_raw
+    payload["execution_id"] = execution_id_raw.strip()
+    payload["roles"] = ["coderun"]
+    payload["scope"] = validated_scopes
+    return payload
+
+
+def generate_coderun_token(
+    tenant_id: int,
+    function_id: int,
+    execution_id: str,
+    scopes: list[str] | tuple[str, ...],
+    ttl_seconds: int = MAX_CODERUN_TTL_SECONDS,
+) -> str:
+    """Mint an ephemeral, tenant-locked, scope-restricted ``coderun`` JWT."""
+    from apps.api.modules.runs.permissions import ALL_GRANTABLE_SCOPES
+
+    if isinstance(tenant_id, bool) or not isinstance(tenant_id, int) or tenant_id <= 0:
+        raise ValueError("tenant_id must be a positive integer")
+    if (
+        isinstance(function_id, bool)
+        or not isinstance(function_id, int)
+        or function_id <= 0
+    ):
+        raise ValueError("function_id must be a positive integer")
+    if (
+        isinstance(execution_id, bool)
+        or not isinstance(execution_id, str)
+        or not execution_id.strip()
+    ):
+        raise ValueError("execution_id must be a non-empty string")
+    if (
+        isinstance(ttl_seconds, bool)
+        or not isinstance(ttl_seconds, int)
+        or ttl_seconds <= 0
+        or ttl_seconds > MAX_CODERUN_TTL_SECONDS
+    ):
+        raise ValueError(
+            f"coderun token TTL must be between 1 and {MAX_CODERUN_TTL_SECONDS} seconds"
+        )
+    if scopes is None or isinstance(scopes, (str, bytes)):
+        raise ValueError("scopes must be a non-empty sequence of grantable scopes")
+
+    validated_scopes: list[str] = []
+    seen: set[str] = set()
+    for s in scopes:
+        if not isinstance(s, str) or not s.strip():
+            raise ValueError(f"Invalid coderun scope: {s!r}")
+        cleaned = s.strip()
+        if cleaned not in ALL_GRANTABLE_SCOPES:
+            raise ValueError(f"Scope is not grantable to CodeRun: {cleaned!r}")
+        if cleaned not in seen:
+            seen.add(cleaned)
+            validated_scopes.append(cleaned)
+    if not validated_scopes:
+        raise ValueError("At least one grantable scope is required")
+
+    exec_id_clean = execution_id.strip()
+    now = datetime.now(UTC)
+    payload = {
+        "sub": f"coderun:{tenant_id}:{function_id}:{exec_id_clean}",
+        "type": "coderun",
+        "iat": now,
+        "exp": now + timedelta(seconds=ttl_seconds),
+        "tenant": str(tenant_id),
+        "function_id": function_id,
+        "execution_id": exec_id_clean,
+        "roles": ["coderun"],
+        "scope": validated_scopes,
+        "iss": current_app.config.get("JWT_ISSUER", "elder-api"),
+        "aud": current_app.config.get("JWT_AUDIENCE", "elder-api"),
+    }
+
+    secret = current_app.config["JWT_SECRET_KEY"] or current_app.config["SECRET_KEY"]
+    algorithm = current_app.config["JWT_ALGORITHM"]
+    return jwt.encode(payload, secret, algorithm=algorithm)
 
 
 def _is_valid_read_scope(scope: Any) -> bool:
@@ -454,6 +639,12 @@ def verify_token(token: str) -> dict[str, Any] | None:
                 is None
             ):
                 return None
+        elif payload.get("type") == "coderun":
+            if (
+                _validate_coderun_claims(payload, expected_issuer, expected_audience)
+                is None
+            ):
+                return None
 
         return payload
     except jwt.ExpiredSignatureError:
@@ -609,6 +800,47 @@ def get_current_user() -> Any:
             worker_identity = ServiceWorkerIdentity(sub, tid, scopes)
             g.current_user = worker_identity
             return worker_identity
+
+        if token_type == "coderun":
+            from apps.api.modules.runs.permissions import ALL_GRANTABLE_SCOPES
+
+            tenant_raw = payload.get("tenant")
+            if not (
+                isinstance(tenant_raw, str)
+                and tenant_raw.isascii()
+                and tenant_raw.isdigit()
+                and int(tenant_raw) > 0
+            ):
+                logger.warning("Rejected coderun token with invalid tenant")
+                return None
+            tid = int(tenant_raw)
+
+            function_id_raw = payload.get("function_id")
+            if (
+                isinstance(function_id_raw, bool)
+                or not isinstance(function_id_raw, int)
+                or function_id_raw <= 0
+            ):
+                logger.warning("Rejected coderun token with invalid function_id")
+                return None
+
+            execution_id_raw = payload.get("execution_id")
+            if not isinstance(execution_id_raw, str) or not execution_id_raw.strip():
+                logger.warning("Rejected coderun token with invalid execution_id")
+                return None
+
+            scopes = [
+                s for s in (payload.get("scope") or []) if s in ALL_GRANTABLE_SCOPES
+            ]
+            if not scopes:
+                logger.warning("Rejected coderun token with empty scopes")
+                return None
+
+            coderun_identity = CodeRunIdentity(
+                tid, function_id_raw, execution_id_raw.strip(), scopes
+            )
+            g.current_user = coderun_identity
+            return coderun_identity
 
         user_id = int(payload["sub"])  # Convert string back to integer
         token_type = payload.get("type", "access")

@@ -1547,6 +1547,13 @@ components:
       additionalProperties: false
       description: Elder Runs serverless function definition with artifact storage metadata.
       properties:
+        allowed_egress_domains:
+          default: []
+          description: Public DNS hostnames this function is allowed to contact at runtime.
+          items:
+            type: string
+          title: Allowed Egress Domains
+          type: array
         code:
           title: Code
           type: string
@@ -1591,6 +1598,13 @@ components:
           default: elder-runs
           title: Execution Namespace
           type: string
+        granted_scopes:
+          default: []
+          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
+          items:
+            type: string
+          title: Granted Scopes
+          type: array
         id:
           title: Id
           type: integer
@@ -1699,6 +1713,15 @@ components:
       additionalProperties: false
       description: Request payload for creating a serverless function.
       properties:
+        allowed_egress_domains:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: Public DNS hostnames this function is allowed to contact at runtime.
+          title: Allowed Egress Domains
         code:
           title: Code
           type: string
@@ -1727,6 +1750,15 @@ components:
           - type: 'null'
           default: elder-runs
           title: Execution Namespace
+        granted_scopes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
+          title: Granted Scopes
         is_enabled:
           default: true
           title: Is Enabled
@@ -1806,6 +1838,15 @@ components:
       additionalProperties: false
       description: Request payload for updating a serverless function.
       properties:
+        allowed_egress_domains:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: Public DNS hostnames this function is allowed to contact at runtime.
+          title: Allowed Egress Domains
         code:
           anyOf:
           - type: string
@@ -1837,6 +1878,15 @@ components:
           - type: 'null'
           default: null
           title: Execution Namespace
+        granted_scopes:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          default: null
+          description: Scoped Elder API permissions granted to ephemeral per-execution tokens.
+          title: Granted Scopes
         is_enabled:
           anyOf:
           - type: boolean
@@ -13715,6 +13765,48 @@ paths:
                 type: object
           description: Claimed pending executions.
       summary: Atomically claim pending executions for svc-runworker.
+  /api/v1/runs/permissions/catalog:
+    get:
+      description: Return the grouped canonical grantable CodeRun scope catalog and which scopes the authenticated caller is eligible to grant.
+      operationId: get_permissions_catalog
+      parameters: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                properties:
+                  catalog:
+                    additionalProperties:
+                      items:
+                        type: string
+                      type: array
+                    type: object
+                  eligible_scopes:
+                    items:
+                      type: string
+                    type: array
+                  groups:
+                    additionalProperties:
+                      items:
+                        properties:
+                          eligible:
+                            type: boolean
+                          scope:
+                            type: string
+                        required:
+                        - scope
+                        - eligible
+                        type: object
+                      type: array
+                    type: object
+                required:
+                - catalog
+                - groups
+                - eligible_scopes
+                type: object
+          description: Grouped grantable CodeRun scope catalog and caller eligibility.
+      summary: Return the grouped grantable CodeRun scope catalog and caller eligibility.
   /api/v1/runs/{func_id}:
     delete:
       description: Delete a serverless function and its versions/executions for the current tenant.
