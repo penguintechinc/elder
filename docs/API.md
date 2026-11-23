@@ -121,6 +121,50 @@ DELETE /api/v1/webhooks/{id}              # Delete webhook
 GET    /api/v1/webhooks/{id}/deliveries   # Get delivery history
 ```
 
+#### CodeRuns (Serverless Functions)
+```
+GET    /api/v1/runs                                       # List CodeRun functions
+POST   /api/v1/runs                                       # Create CodeRun function (max timeout_seconds: 300)
+GET    /api/v1/runs/{id}                                  # Get CodeRun function
+PUT    /api/v1/runs/{id}                                  # Update CodeRun function (creates new version)
+DELETE /api/v1/runs/{id}                                  # Delete CodeRun function
+POST   /api/v1/runs/{id}/invoke                           # Queue a CodeRun execution
+GET    /api/v1/runs/permissions/catalog                   # List valid granted_scopes for CodeRuns
+GET    /api/v1/runs/executions                            # List CodeRun executions
+GET    /api/v1/runs/executions/{execution_id}             # Get enriched execution detail & live stdout/stderr logs
+GET    /api/v1/runs/internal/pending                      # Worker poll/claim (svc-runworker, mints ephemeral JWT)
+POST   /api/v1/runs/internal/executions/{id}/logs         # Live in-progress stdout log flush (default every 30s)
+POST   /api/v1/runs/internal/executions/{id}/result       # Worker completion report
+```
+
+CodeRuns support per-function scoped permissions (`granted_scopes`, `allowed_egress_domains`) enforced via short-lived ephemeral execution JWTs and the `svc-runworker` loopback Tool/Network Restriction Gateway, plus `worker_cluster` routing into the operator-managed `execution_namespace` (`elder-runs`).
+
+#### Centralized Executions Audit Log
+```
+GET    /api/v1/streams/executions         # Unified audit log across Playbooks, CodeRuns, and Webhooks
+                                          # Query params: ?source=all|playbook|coderun|webhook, ?status=, ?search=, ?stream_id=
+```
+
+#### CSV Bulk Imports
+```
+GET    /api/v1/import/templates                   # List downloadable CSV templates
+GET    /api/v1/import/templates/{resource}/download  # Download CSV template for resource type
+POST   /api/v1/import/{resource}                  # Upload CSV to S3 & enqueue job ID on Valkey (elder:csv_import:queue)
+GET    /api/v1/import/jobs                        # List async CSV import jobs
+GET    /api/v1/import/jobs/{job_id}               # Poll CSV import job status & row results
+```
+
+#### Remote Workers Fleet (Admin)
+```
+GET    /api/v1/admin/workers                      # List registered svc-runworker & svc-scanner fleet
+POST   /api/v1/admin/workers                      # Onboard remote worker (returns one-time ewk_ bearer token)
+GET    /api/v1/admin/workers/{id}                 # Get worker status, liveness & live config
+PUT    /api/v1/admin/workers/{id}                 # Update live worker configuration
+POST   /api/v1/admin/workers/{id}/rotate-token    # Rotate worker ewk_ token (returns new one-time token)
+DELETE /api/v1/admin/workers/{id}                 # Offboard / revoke remote worker
+POST   /api/v1/admin/workers/heartbeat            # Worker fleet heartbeat (reports online/stale/offline/revoked liveness)
+```
+
 #### Graph Visualization
 ```
 GET    /api/v1/graph                      # Get full graph
@@ -323,13 +367,15 @@ Webhook payloads include:
 }
 ```
 
-## SDK & Client Libraries
+## SDKs, CLI & MCP Server
 
-- **Python**: `pip install elder-client` (coming soon)
-- **Go**: `go get github.com/penguintechinc/elder-go` (coming soon)
-- **JavaScript**: `npm install @penguintech/elder` (coming soon)
+Official clients and agent interfaces live in this repository and expose the full v4.0.x API surface, including CodeRuns and the Remote Workers Fleet (`/api/v1/admin/workers`):
 
-For now, use the REST or gRPC APIs directly.
+- **Python SDK** (`sdk/python`, `elder_sdk`): Sync (`ElderClient`) and async (`AsyncElderClient`) clients, including `client.workers` (`list`, `get`, `onboard`, `update`, `rotate_token`, `offboard`, `heartbeat`) and `client.runs`.
+- **Rust SDK** (`crates/elder-sdk`, pure-rustls): Typed async client, including `elder_sdk::workers` (`WorkersClient`) and `elder_sdk::runs`.
+- **Rust CLI** (`cli/elder-cli`, pure-rustls): Ergonomic command-line client, including `elder workers` (`list`, `get`, `onboard`, `update`, `rotate-token`, `offboard`) and `elder runs`.
+- **MCP Server (`hub-mcp`)** (`apps/mcp/`): Hosted caller-scoped Model Context Protocol server backed by `openapi/v4.yaml` / `apps/mcp/api_catalog.json`, forwarding the caller's own token to `hub-api`.
+- **Built-in CodeRun Helper SDKs**: Zero-dependency `elder.py`, `elder.mjs`, and `elder.rb` helpers mounted automatically into every `svc-runworker` CodeRun workspace, communicating through the loopback Tool/Network Restriction Gateway.
 
 ## Additional Resources
 
