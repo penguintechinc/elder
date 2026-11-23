@@ -35,7 +35,7 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { EdgePropertyModal } from "@/components/diagram/FlowPropertyModals";
+import { EdgePropertySidebar } from "@/components/diagram/FlowPropertyModals";
 import NodeInspector from "@/components/playbooks/NodeInspector";
 import NodePalette from "@/components/playbooks/NodePalette";
 import PlaybookNodeCard from "@/components/playbooks/PlaybookNodeCard";
@@ -111,7 +111,7 @@ export default function PlaybookEditor() {
     Edge
   > | null>(null);
 
-  const [doubleClickEdge, setDoubleClickEdge] = useState<Edge | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
 
   // Execute modal state
   const [showExecuteModal, setShowExecuteModal] = useState(false);
@@ -461,6 +461,11 @@ export default function PlaybookEditor() {
     [nodes, selectedNodeId],
   );
 
+  const selectedEdge = useMemo(
+    () => edges.find((ed) => ed.id === selectedEdgeId) || null,
+    [edges, selectedEdgeId],
+  );
+
   const upstreamFields = useMemo(() => {
     if (!selectedNode) return [];
     return computeUpstreamFields(selectedNode.id, nodes, edges, catalogByType);
@@ -657,10 +662,26 @@ export default function PlaybookEditor() {
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               nodeTypes={nodeTypes}
-              onNodeClick={(_, node) => setSelectedNodeId(node.id)}
-              onPaneClick={() => setSelectedNodeId(null)}
-              onNodeDoubleClick={(_, node) => setSelectedNodeId(node.id)}
-              onEdgeDoubleClick={(_, edge) => setDoubleClickEdge(edge)}
+              onNodeClick={(_, node) => {
+                setSelectedNodeId(node.id);
+                setSelectedEdgeId(null);
+              }}
+              onEdgeClick={(_, edge) => {
+                setSelectedEdgeId(edge.id);
+                setSelectedNodeId(null);
+              }}
+              onPaneClick={() => {
+                setSelectedNodeId(null);
+                setSelectedEdgeId(null);
+              }}
+              onNodeDoubleClick={(_, node) => {
+                setSelectedNodeId(node.id);
+                setSelectedEdgeId(null);
+              }}
+              onEdgeDoubleClick={(_, edge) => {
+                setSelectedEdgeId(edge.id);
+                setSelectedNodeId(null);
+              }}
               fitView
             >
               <Background variant={BackgroundVariant.Dots} gap={14} size={1} />
@@ -687,6 +708,25 @@ export default function PlaybookEditor() {
             onUpdateNodeData={handleUpdateNodeData}
             onDeleteNode={handleDeleteNode}
             onClose={() => setSelectedNodeId(null)}
+          />
+        )}
+
+        {/* Line Properties Sidebar (replaces popup modal) */}
+        {!selectedNode && selectedEdge && (
+          <EdgePropertySidebar
+            edge={selectedEdge}
+            onClose={() => setSelectedEdgeId(null)}
+            onDelete={(edgeId) => {
+              setEdges((eds) => eds.filter((ed) => ed.id !== edgeId));
+              setSelectedEdgeId(null);
+              setIsDirty(true);
+            }}
+            onSave={(updatedEdge) => {
+              setEdges((eds) =>
+                eds.map((ed) => (ed.id === updatedEdge.id ? updatedEdge : ed)),
+              );
+              setIsDirty(true);
+            }}
           />
         )}
       </div>
@@ -789,18 +829,6 @@ export default function PlaybookEditor() {
         </div>
       )}
 
-      {/* Edge Double-Click Modal */}
-      <EdgePropertyModal
-        edge={doubleClickEdge}
-        onClose={() => setDoubleClickEdge(null)}
-        onSave={(updatedEdge) => {
-          setEdges((eds) =>
-            eds.map((ed) => (ed.id === updatedEdge.id ? updatedEdge : ed)),
-          );
-          setDoubleClickEdge(null);
-          setIsDirty(true);
-        }}
-      />
     </div>
   );
 }
