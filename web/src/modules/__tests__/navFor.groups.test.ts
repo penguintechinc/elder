@@ -153,10 +153,54 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(workMgmtHrefs).not.toContain("/data-inventory");
     expect(workMgmtHrefs).not.toContain("/data-stores");
     expect(workMgmtNames).toEqual([
-      "Issues",
-      "Labels",
-      "Milestones",
       "Projects",
+      "Issues",
+      "Milestones",
+      "Labels",
+    ]);
+  });
+
+  it("orders Workstreams items in the exact canonical order with CodeRuns label and Executions last", () => {
+    const nav = navFor(
+      new Set(["webhooks_alerting", "nav_streams", "runs", "sbom"]),
+    );
+    const workstreams = nav.find((c) => c.header === "Workstreams");
+
+    expect(workstreams).toBeDefined();
+    expect(workstreams!.items.map((i) => i.href)).toEqual([
+      "/webhooks",
+      "/streams",
+      "/streams/approvals",
+      "/runs",
+      "/backups",
+      "/csv-templates",
+      "/streams/executions",
+    ]);
+    expect(workstreams!.items.map((i) => i.name)).toEqual([
+      "Webhooks",
+      "Playbooks",
+      "Approvals",
+      "CodeRuns",
+      "Backups",
+      "CSV Templates",
+      "Executions",
+    ]);
+    expect(workstreams!.items[workstreams!.items.length - 1].href).toBe(
+      "/streams/executions",
+    );
+  });
+
+  it("orders Work Management items in the exact canonical order", () => {
+    const nav = navFor(new Set(["services_oncall", "issues"]));
+    const workMgmt = nav.find((c) => c.header === "Work Management");
+
+    expect(workMgmt).toBeDefined();
+    expect(workMgmt!.items.map((i) => i.href)).toEqual([
+      "/on-call-rotations",
+      "/projects",
+      "/issues",
+      "/milestones",
+      "/labels",
     ]);
   });
 });

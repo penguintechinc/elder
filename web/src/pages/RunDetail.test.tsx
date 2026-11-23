@@ -107,11 +107,18 @@ describe("RunDetail", () => {
       expect(screen.getByText("exec-abc-123")).toBeTruthy();
     });
 
+    expect(screen.getByText("Back to CodeRuns")).toBeTruthy();
+    const timeoutInput = screen.getByLabelText(
+      "Timeout (seconds)",
+    ) as HTMLInputElement;
+    expect(timeoutInput.getAttribute("max")).toBe("300");
+    expect(screen.getByText("Max 300s (5 min)")).toBeTruthy();
+
     // Edit and save
     fireEvent.change(screen.getByLabelText("Name"), {
       target: { value: "enrich-alerts-v2" },
     });
-    fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
+    fireEvent.change(timeoutInput, {
       target: { value: "60" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -130,7 +137,7 @@ describe("RunDetail", () => {
     fireEvent.change(screen.getByLabelText("JSON Input Payload"), {
       target: { value: '{"env":"prod"}' },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Run Function" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run CodeRun" }));
 
     await waitFor(() => {
       expect(api.invokeRunFunction).toHaveBeenCalledWith(7, { env: "prod" });

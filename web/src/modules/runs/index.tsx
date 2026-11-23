@@ -16,7 +16,7 @@ const navigation: MenuCategory[] = [
   {
     header: 'Automation',
     collapsible: false,
-    items: [{ name: 'Runs', href: '/runs', icon: Terminal }],
+    items: [{ name: 'CodeRuns', href: '/runs', icon: Terminal }],
   },
 ]
 
@@ -27,7 +27,7 @@ const routes: RouteObject[] = [
 
 const runsModule: FrontendModule = {
   id: 'runs',
-  name: 'Runs',
+  name: 'CodeRuns',
   group: 'workstreams',
   nav: navigation,
   routes,

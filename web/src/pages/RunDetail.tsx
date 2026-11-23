@@ -103,19 +103,19 @@ export default function RunDetail() {
       queryClient.invalidateQueries({ queryKey: ["run-functions"] });
     },
     onError: () => {
-      toast.error("Failed to save function changes");
+      toast.error("Failed to save CodeRun changes");
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteRunFunction(functionId),
     onSuccess: () => {
-      toast.success("Function deleted");
+      toast.success("CodeRun deleted");
       queryClient.invalidateQueries({ queryKey: ["run-functions"] });
       navigate("/runs");
     },
     onError: () => {
-      toast.error("Failed to delete function");
+      toast.error("Failed to delete CodeRun");
     },
   });
 
@@ -124,7 +124,7 @@ export default function RunDetail() {
       api.invokeRunFunction(functionId, payload),
     onSuccess: (exec) => {
       toast.success(
-        `Run triggered (${exec.execution_id?.slice(0, 8) || exec.status})`,
+        `CodeRun triggered (${exec.execution_id?.slice(0, 8) || exec.status})`,
       );
       if (exec.execution_id) {
         setExpandedExecutions((prev) => ({
@@ -138,7 +138,7 @@ export default function RunDetail() {
       queryClient.invalidateQueries({ queryKey: ["run-function", functionId] });
     },
     onError: () => {
-      toast.error("Failed to run function");
+      toast.error("Failed to invoke CodeRun");
     },
   });
 
@@ -147,11 +147,15 @@ export default function RunDetail() {
     if (!form) return;
     const trimmedName = form.name.trim();
     if (!trimmedName) {
-      toast.error("Function name is required");
+      toast.error("CodeRun name is required");
       return;
     }
 
     const parsedTimeout = Number.parseInt(form.timeout_seconds, 10);
+    if (Number.isFinite(parsedTimeout) && parsedTimeout > 300) {
+      toast.error("Timeout cannot exceed 300 seconds (5 min)");
+      return;
+    }
     const parsedMemory = Number.parseInt(form.memory_mb, 10);
 
     updateMutation.mutate({
@@ -161,7 +165,7 @@ export default function RunDetail() {
       code: form.code,
       timeout_seconds:
         Number.isFinite(parsedTimeout) && parsedTimeout > 0
-          ? parsedTimeout
+          ? Math.min(parsedTimeout, 300)
           : 30,
       memory_mb:
         Number.isFinite(parsedMemory) && parsedMemory > 0 ? parsedMemory : 256,
@@ -214,14 +218,14 @@ export default function RunDetail() {
       <div className="min-h-screen bg-slate-900 p-6">
         <div className="max-w-5xl mx-auto">
           <div className="bg-red-900/80 border border-red-700 text-red-100 px-4 py-3 rounded-lg">
-            Invalid function ID.
+            Invalid CodeRun ID.
           </div>
           <Link
             to="/runs"
             className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 mt-4 text-sm"
           >
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            Back to Runs
+            Back to CodeRuns
           </Link>
         </div>
       </div>
@@ -231,7 +235,7 @@ export default function RunDetail() {
   if (isLoading || (fn && !form)) {
     return (
       <div className="min-h-screen bg-slate-900 p-6 flex items-center justify-center">
-        <div className="text-amber-400">Loading function...</div>
+        <div className="text-amber-400">Loading CodeRun...</div>
       </div>
     );
   }
@@ -241,14 +245,14 @@ export default function RunDetail() {
       <div className="min-h-screen bg-slate-900 p-6">
         <div className="max-w-5xl mx-auto">
           <div className="bg-red-900/80 border border-red-700 text-red-100 px-4 py-3 rounded-lg mb-4">
-            Failed to load function details.
+            Failed to load CodeRun details.
           </div>
           <Link
             to="/runs"
             className="inline-flex items-center gap-2 text-amber-400 hover:text-amber-300 text-sm"
           >
             <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-            Back to Runs
+            Back to CodeRuns
           </Link>
         </div>
       </div>
@@ -268,7 +272,7 @@ export default function RunDetail() {
               className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-amber-400 transition-colors"
             >
               <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-              Back to Runs
+              Back to CodeRuns
             </Link>
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-3xl font-bold text-amber-400 flex items-center gap-2">
@@ -305,7 +309,7 @@ export default function RunDetail() {
           >
             <div className="flex items-center justify-between border-b border-slate-700 pb-3">
               <h2 className="text-lg font-semibold text-amber-400">
-                Function Configuration & Code
+                CodeRun Configuration & Code
               </h2>
               <button
                 type="submit"
@@ -418,7 +422,7 @@ export default function RunDetail() {
                   id="detail-fn-timeout"
                   type="number"
                   min={1}
-                  max={3600}
+                  max={300}
                   value={form.timeout_seconds}
                   onChange={(e) =>
                     setForm((prev) =>
@@ -429,6 +433,9 @@ export default function RunDetail() {
                   }
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-amber-400"
                 />
+                <p className="text-xs text-slate-400 mt-1">
+                  Max 300s (5 min)
+                </p>
               </div>
 
               <div>
@@ -524,7 +531,7 @@ export default function RunDetail() {
           <div className="space-y-6 h-fit">
             <section className="bg-slate-800 border border-slate-700 rounded-xl p-6 space-y-4">
               <h2 className="text-lg font-semibold text-amber-400 border-b border-slate-700 pb-3">
-                Test Run
+                Test CodeRun
               </h2>
               <div>
                 <label
@@ -557,7 +564,7 @@ export default function RunDetail() {
                 className="w-full inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
               >
                 <Play className="w-4 h-4" aria-hidden="true" />
-                {invokeMutation.isPending ? "Running..." : "Run Function"}
+                {invokeMutation.isPending ? "Running..." : "Run CodeRun"}
               </button>
             </section>
 
@@ -682,8 +689,8 @@ export default function RunDetail() {
 
           {!executionsLoading && executions.length === 0 && (
             <div className="text-sm text-slate-400 py-6 text-center">
-              No executions yet. Use the Test Run panel above to invoke this
-              function.
+              No executions yet. Use the Test CodeRun panel above to invoke this
+              CodeRun.
             </div>
           )}
 

@@ -4015,7 +4015,14 @@ class ApiClient {
     return response.data;
   }
 
-  async listAllStreamExecutions(params?: { page?: number; per_page?: number }) {
+  async listAllStreamExecutions(params?: {
+    page?: number;
+    per_page?: number;
+    source?: "all" | "playbook" | "coderun" | "webhook";
+    status?: string;
+    search?: string;
+    stream_id?: number;
+  }) {
     const response = await this.client.get("/streams/executions", { params });
     return response.data;
   }
