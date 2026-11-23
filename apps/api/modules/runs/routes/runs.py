@@ -39,6 +39,7 @@ MAX_TIMEOUT_SECONDS = 300
 DEFAULT_MEMORY_MB = 256
 MIN_MEMORY_MB = 32
 MAX_MEMORY_MB = 16384
+MAX_LIVE_LOG_BYTES = 1024 * 1024  # 1 MiB cap for in-progress log flushes
 
 
 def _utc_now() -> datetime:
@@ -182,9 +183,21 @@ def _serialize_function(
     return payload
 
 
-def _serialize_execution(row: Any) -> dict[str, Any]:
+def _truncate_log_bytes(raw: str, max_bytes: int = MAX_LIVE_LOG_BYTES) -> str:
+    """Cap a log string to at most ``max_bytes`` UTF-8 bytes, keeping the tail."""
+    encoded = raw.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return raw
+    return encoded[-max_bytes:].decode("utf-8", errors="ignore")
+
+
+def _serialize_execution(
+    row: Any,
+    *,
+    func_row: Any | None = None,
+) -> dict[str, Any]:
     """Explicitly serialize a ``run_executions`` row to an API response dict."""
-    return {
+    payload: dict[str, Any] = {
         "id": row.id,
         "tenant_id": row.tenant_id,
         "execution_id": row.execution_id,
@@ -204,6 +217,27 @@ def _serialize_execution(row: Any) -> dict[str, Any]:
         "duration_ms": getattr(row, "duration_ms", None),
         "created_at": _iso_or_none(getattr(row, "created_at", None)),
     }
+    if func_row is not None:
+        payload.update(
+            {
+                "function_name": getattr(func_row, "name", None),
+                "runtime": getattr(func_row, "runtime", None),
+                "storage_backend": (
+                    getattr(func_row, "storage_backend", None) or "database"
+                ),
+                "storage_key": getattr(func_row, "storage_key", None),
+                "code_sha256": getattr(func_row, "code_sha256", None),
+                "execution_namespace": (
+                    getattr(func_row, "execution_namespace", None)
+                    or DEFAULT_EXECUTION_NAMESPACE
+                ),
+                "timeout_seconds": int(
+                    getattr(func_row, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+                    or DEFAULT_TIMEOUT_SECONDS
+                ),
+            }
+        )
+    return payload
 
 
 def _validate_timeout(value: Any) -> tuple[int | None, tuple[Any, int] | None]:
@@ -853,14 +887,14 @@ async def list_run_executions():
 @login_required
 @require_scope("runs:read")
 async def get_run_execution(execution_id: str):
-    """Get a single execution record including stdout/stderr logs and output."""
+    """Get a single execution record enriched with parent function metadata."""
     db = current_app.db
     tenant_id = get_current_tenant_id()
     if not tenant_id:
         return ApiResponse.forbidden("Tenant context required")
 
     def fetch():
-        return (
+        exec_row = (
             db(
                 (db.run_executions.execution_id == execution_id)
                 & (db.run_executions.tenant_id == tenant_id)
@@ -868,12 +902,18 @@ async def get_run_execution(execution_id: str):
             .select()
             .first()
         )
+        if not exec_row:
+            return None, None
+        func_row = get_tenant_scoped(
+            db, db.run_functions, exec_row.function_id, tenant_id
+        )
+        return exec_row, func_row
 
-    row = await run_in_threadpool(fetch)
+    row, func_row = await run_in_threadpool(fetch)
     if not row:
         return ApiResponse.not_found("Run execution", execution_id)
 
-    return jsonify(_serialize_execution(row)), 200
+    return jsonify(_serialize_execution(row, func_row=func_row)), 200
 
 
 @bp.route("/internal/pending", methods=["GET"])
@@ -1170,3 +1210,71 @@ async def report_execution_result(execution_id: str):
         duration_ms=getattr(updated, "duration_ms", None),
     )
     return jsonify(_serialize_execution(updated)), 200
+
+
+@bp.route("/internal/executions/<execution_id>/logs", methods=["POST"])
+@login_required
+@require_scope("runs:invoke")
+async def flush_execution_logs(execution_id: str):
+    """Update in-progress ``stdout_log`` for a running execution from ``svc-runworker``."""
+    auth_error = _require_runworker()
+    if auth_error is not None:
+        return auth_error
+
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return ApiResponse.error("Request body must be a JSON object", 400)
+
+    raw_logs = data.get("logs")
+    if raw_logs is None:
+        raw_logs = data.get("stdout_log")
+    if not isinstance(raw_logs, str):
+        return ApiResponse.validation_error("logs", "must be a string")
+
+    worker_id = data.get("worker_id")
+    capped_logs = _truncate_log_bytes(raw_logs, MAX_LIVE_LOG_BYTES)
+    db = current_app.db
+
+    def save_logs():
+        existing = (
+            db(db.run_executions.execution_id == execution_id).select().first()
+        )  # tenant-scope-exempt: internal svc-runworker updates by unique execution_id
+        if not existing:
+            return None, False
+
+        if existing.status != "running":
+            return existing, False
+
+        updated_count = db(
+            (db.run_executions.execution_id == execution_id)
+            & (db.run_executions.status == "running")
+        ).update(
+            stdout_log=capped_logs,
+        )  # tenant-scope-exempt: internal svc-runworker updates by unique execution_id
+        db.commit()
+        return existing, bool(updated_count)
+
+    existing, updated = await run_in_threadpool(save_logs)
+    if not existing:
+        return ApiResponse.not_found("Run execution", execution_id)
+
+    log_bytes = len(capped_logs.encode("utf-8"))
+    logger.debug(
+        "run_execution_logs_flushed",
+        execution_id=execution_id,
+        worker_id=worker_id,
+        status=existing.status,
+        updated=updated,
+        bytes=log_bytes,
+    )
+    return (
+        jsonify(
+            {
+                "execution_id": execution_id,
+                "status": existing.status,
+                "updated": updated,
+                "bytes": log_bytes,
+            }
+        ),
+        200,
+    )

@@ -500,3 +500,255 @@ class TestMigration047RunsServerlessFunctions:
             assert "run_functions" not in remaining
             assert "run_function_versions" not in remaining
             assert "run_executions" not in remaining
+
+
+class TestRunsLiveLogsAndEnrichedDetail:
+    """Verify enriched execution detail and live-log push endpoint."""
+
+    @staticmethod
+    def _build_app_and_db(tmp_path: Path):
+        from datetime import UTC, datetime
+        from types import SimpleNamespace
+
+        from penguin_dal import DB
+        from quart import Quart, g
+
+        # Ensure tables are registered on Base.metadata
+        import apps.api.models.identity  # noqa: F401
+        import apps.api.models.tenant  # noqa: F401
+        import apps.api.modules.runs.models.runs  # noqa: F401
+        from apps.api.models.base import Base
+        from apps.api.modules.runs.routes.runs import bp as runs_bp
+
+        db_path = tmp_path / "runs_live_logs.db"
+        engine = sa.create_engine(f"sqlite:///{db_path}")
+        Base.metadata.create_all(engine)
+
+        db = DB(f"sqlite:///{db_path}")
+
+        now = datetime.now(UTC)
+        t1 = db.tenants.insert(
+            name="Tenant One",
+            slug="tenant-one",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        t2 = db.tenants.insert(
+            name="Tenant Two",
+            slug="tenant-two",
+            is_active=True,
+            created_at=now,
+            updated_at=now,
+        )
+        fn_id = db.run_functions.insert(
+            tenant_id=t1,
+            village_id="eld-fn-live-1",
+            name="nightly-report",
+            description="Generates nightly report",
+            runtime="python",
+            code="print('hello')",
+            storage_backend="s3",
+            storage_key="runs/tenant-1/eld-fn-live-1/v1/main.py",
+            code_sha256="a" * 64,
+            entrypoint="main.py",
+            timeout_seconds=180,
+            memory_mb=512,
+            env_vars_json={},
+            execution_namespace="elder-runs-prod",
+            is_enabled=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.run_executions.insert(
+            tenant_id=t1,
+            execution_id="exec-live-001",
+            function_id=fn_id,
+            status="running",
+            trigger_type="manual",
+            worker_id="runworker-pod-1",
+            stdout_log="booting...\n",
+            started_at=now,
+            created_at=now,
+        )
+        db.run_executions.insert(
+            tenant_id=t1,
+            execution_id="exec-done-002",
+            function_id=fn_id,
+            status="completed",
+            trigger_type="manual",
+            worker_id="runworker-pod-1",
+            stdout_log="final output\n",
+            exit_code=0,
+            started_at=now,
+            completed_at=now,
+            duration_ms=420,
+            created_at=now,
+        )
+        db.commit()
+
+        app = Quart(__name__)
+        app.db = db
+        app.register_blueprint(runs_bp, url_prefix="/api/v1/runs")
+
+        auth_state: dict[str, Any] = {
+            "user": SimpleNamespace(
+                id=1,
+                username="alice",
+                tenant_id=t1,
+                is_superuser=False,
+            ),
+            "claims": {
+                "sub": "alice",
+                "type": "access",
+                "tenant": t1,
+                "scope": ["runs:read", "runs:write", "runs:invoke"],
+            },
+            "tenant_id": t1,
+        }
+
+        @app.before_request
+        async def _inject_auth():
+            g.current_user = auth_state["user"]
+            g.claims = auth_state["claims"]
+            g.tenant_id = auth_state["tenant_id"]
+
+        return app, db, auth_state, t1, t2
+
+    @pytest.mark.asyncio
+    async def test_get_execution_enriches_parent_function_fields_and_scopes_tenant(
+        self, tmp_path: Path
+    ) -> None:
+        app, db, auth_state, t1, t2 = self._build_app_and_db(tmp_path)
+        try:
+            with patch(
+                "apps.api.auth.decorators.get_current_user",
+                side_effect=lambda: auth_state["user"],
+            ):
+                client = app.test_client()
+                resp = await client.get("/api/v1/runs/executions/exec-live-001")
+                assert resp.status_code == 200
+                body = await resp.get_json()
+                assert body["execution_id"] == "exec-live-001"
+                assert body["status"] == "running"
+                assert body["stdout_log"] == "booting...\n"
+                assert body["function_name"] == "nightly-report"
+                assert body["runtime"] == "python"
+                assert body["storage_backend"] == "s3"
+                assert body["storage_key"] == "runs/tenant-1/eld-fn-live-1/v1/main.py"
+                assert body["code_sha256"] == "a" * 64
+                assert body["execution_namespace"] == "elder-runs-prod"
+                assert body["timeout_seconds"] == 180
+
+                # Cross-tenant read must return 404
+                auth_state["tenant_id"] = t2
+                auth_state["user"].tenant_id = t2
+                auth_state["claims"]["tenant"] = t2
+                resp_other = await client.get("/api/v1/runs/executions/exec-live-001")
+                assert resp_other.status_code == 404
+        finally:
+            db.close()
+
+    @pytest.mark.asyncio
+    async def test_internal_logs_endpoint_auth_running_guard_and_1mib_cap(
+        self, tmp_path: Path
+    ) -> None:
+        from types import SimpleNamespace
+
+        from apps.api.modules.runs.routes.runs import MAX_LIVE_LOG_BYTES
+
+        app, db, auth_state, _t1, _t2 = self._build_app_and_db(tmp_path)
+        try:
+            with patch(
+                "apps.api.auth.decorators.get_current_user",
+                side_effect=lambda: auth_state["user"],
+            ):
+                client = app.test_client()
+
+                # Regular user cannot push internal live logs -> 403
+                resp_forbidden = await client.post(
+                    "/api/v1/runs/internal/executions/exec-live-001/logs",
+                    json={"logs": "nope", "worker_id": "rogue"},
+                )
+                assert resp_forbidden.status_code == 403
+
+                # Switch caller to svc-runworker system service worker
+                auth_state["user"] = SimpleNamespace(
+                    id=0,
+                    username="svc-runworker",
+                    token_type="service_worker",
+                    tenant_id=None,
+                    is_superuser=False,
+                )
+                auth_state["claims"] = {
+                    "sub": "svc-runworker",
+                    "type": "service_worker",
+                    "tenant": "system",
+                    "scope": ["runs:read", "runs:write", "runs:invoke"],
+                }
+                auth_state["tenant_id"] = "system"
+
+                # Running execution gets updated
+                resp_ok = await client.post(
+                    "/api/v1/runs/internal/executions/exec-live-001/logs",
+                    json={"logs": "booting...\nstep 1\n", "worker_id": "rw-1"},
+                )
+                assert resp_ok.status_code == 200
+                ok_body = await resp_ok.get_json()
+                assert ok_body["updated"] is True
+                assert ok_body["status"] == "running"
+                row = (
+                    db(db.run_executions.execution_id == "exec-live-001")
+                    .select()
+                    .first()
+                )
+                assert row.stdout_log == "booting...\nstep 1\n"
+
+                # Completed execution is NOT overwritten
+                resp_done = await client.post(
+                    "/api/v1/runs/internal/executions/exec-done-002/logs",
+                    json={"logs": "late chunk", "worker_id": "rw-1"},
+                )
+                assert resp_done.status_code == 200
+                done_body = await resp_done.get_json()
+                assert done_body["updated"] is False
+                assert done_body["status"] == "completed"
+                done_row = (
+                    db(db.run_executions.execution_id == "exec-done-002")
+                    .select()
+                    .first()
+                )
+                assert done_row.stdout_log == "final output\n"
+
+                # Logs exceeding 1 MiB are safely capped at MAX_LIVE_LOG_BYTES (tail kept)
+                oversized = ("A" * (MAX_LIVE_LOG_BYTES + 2048)) + "TAIL_MARKER"
+                resp_big = await client.post(
+                    "/api/v1/runs/internal/executions/exec-live-001/logs",
+                    json={"logs": oversized, "worker_id": "rw-1"},
+                )
+                assert resp_big.status_code == 200
+                big_body = await resp_big.get_json()
+                assert big_body["updated"] is True
+                assert big_body["bytes"] <= MAX_LIVE_LOG_BYTES
+                capped_row = (
+                    db(db.run_executions.execution_id == "exec-live-001")
+                    .select()
+                    .first()
+                )
+                assert len(capped_row.stdout_log.encode("utf-8")) <= MAX_LIVE_LOG_BYTES
+                assert capped_row.stdout_log.endswith("TAIL_MARKER")
+
+                # Invalid payload -> 400; unknown execution -> 404
+                resp_bad = await client.post(
+                    "/api/v1/runs/internal/executions/exec-live-001/logs",
+                    json={"logs": 12345},
+                )
+                assert resp_bad.status_code == 400
+
+                resp_missing = await client.post(
+                    "/api/v1/runs/internal/executions/exec-does-not-exist/logs",
+                    json={"logs": "hi"},
+                )
+                assert resp_missing.status_code == 404
+        finally:
+            db.close()

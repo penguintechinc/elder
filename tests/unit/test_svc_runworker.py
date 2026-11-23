@@ -13,8 +13,11 @@ import pytest
 
 from apps.runworker import healthcheck
 from apps.runworker.k8s_runner import (
+    DEFAULT_LOG_FLUSH_INTERVAL_SECONDS,
+    MAX_LOG_FLUSH_INTERVAL_SECONDS,
     MAX_MEMORY_MB,
     MAX_TIMEOUT_SECONDS,
+    MIN_LOG_FLUSH_INTERVAL_SECONDS,
     MIN_MEMORY_MB,
     MIN_TIMEOUT_SECONDS,
     K8sRunner,
@@ -22,6 +25,7 @@ from apps.runworker.k8s_runner import (
     RunJobRequest,
     build_configmap_manifest,
     build_job_manifest,
+    clamp_log_flush_interval,
     clamp_memory_mb,
     clamp_timeout_seconds,
     extract_structured_output,
@@ -297,6 +301,186 @@ class TestK8sRunner:
         assert "activeDeadlineSeconds" in result.error
         core_api.delete_namespaced_config_map.assert_called_once()
 
+    def test_execute_flushes_live_logs_periodically_and_skips_container_creating(
+        self,
+    ) -> None:
+        batch_api = MagicMock()
+        core_api = MagicMock()
+
+        running_status = SimpleNamespace(
+            status=SimpleNamespace(succeeded=0, failed=0, conditions=[])
+        )
+        succeeded_status = SimpleNamespace(
+            status=SimpleNamespace(succeeded=1, failed=0, conditions=[])
+        )
+        batch_api.read_namespaced_job_status.side_effect = [
+            running_status,
+            running_status,
+            running_status,
+            running_status,
+            running_status,
+            succeeded_status,
+        ]
+
+        creating_pod = SimpleNamespace(
+            metadata=SimpleNamespace(name="elder-run-exec-live-pod"),
+            status=SimpleNamespace(
+                container_statuses=[
+                    SimpleNamespace(
+                        state=SimpleNamespace(
+                            waiting=SimpleNamespace(reason="ContainerCreating")
+                        )
+                    )
+                ]
+            ),
+        )
+        running_pod = SimpleNamespace(
+            metadata=SimpleNamespace(name="elder-run-exec-live-pod"),
+            status=SimpleNamespace(container_statuses=[]),
+        )
+        finished_pod = SimpleNamespace(
+            metadata=SimpleNamespace(name="elder-run-exec-live-pod"),
+            status=SimpleNamespace(
+                container_statuses=[
+                    SimpleNamespace(
+                        state=SimpleNamespace(terminated=SimpleNamespace(exit_code=0))
+                    )
+                ]
+            ),
+        )
+        core_api.list_namespaced_pod.side_effect = [
+            SimpleNamespace(items=[creating_pod]),
+            SimpleNamespace(items=[running_pod]),
+            SimpleNamespace(items=[running_pod]),
+            SimpleNamespace(items=[running_pod]),
+            SimpleNamespace(items=[finished_pod]),
+        ]
+        # 1st running read -> line 1; 2nd -> unchanged (no flush); 3rd -> line 1+2; final -> full
+        core_api.read_namespaced_pod_log.side_effect = [
+            "step 1\n",
+            "step 1\n",
+            "step 1\nstep 2\n",
+            'step 1\nstep 2\n{"done": true}\n',
+        ]
+
+        flushed: list[str] = []
+        runner = K8sRunner(
+            namespace="elder-runs",
+            batch_api=batch_api,
+            core_api=core_api,
+            poll_interval=0.05,
+        )
+        result = runner.execute(
+            RunJobRequest(
+                execution_id="exec-live",
+                runtime="python",
+                code="print('step 1')",
+            ),
+            on_logs=flushed.append,
+            log_flush_interval=0.01,
+        )
+
+        assert result.status == "succeeded"
+        assert result.exit_code == 0
+        assert result.output == {"done": True}
+        assert flushed == ["step 1\n", "step 1\nstep 2\n"]
+        core_api.delete_namespaced_config_map.assert_called_once()
+
+    def test_execute_ignores_on_logs_callback_exception(self) -> None:
+        batch_api = MagicMock()
+        core_api = MagicMock()
+
+        running_status = SimpleNamespace(
+            status=SimpleNamespace(succeeded=0, failed=0, conditions=[])
+        )
+        succeeded_status = SimpleNamespace(
+            status=SimpleNamespace(succeeded=1, failed=0, conditions=[])
+        )
+        batch_api.read_namespaced_job_status.side_effect = [
+            running_status,
+            succeeded_status,
+        ]
+        pod = SimpleNamespace(
+            metadata=SimpleNamespace(name="elder-run-exec-cb-err"),
+            status=SimpleNamespace(
+                container_statuses=[
+                    SimpleNamespace(
+                        state=SimpleNamespace(terminated=SimpleNamespace(exit_code=0))
+                    )
+                ]
+            ),
+        )
+        core_api.list_namespaced_pod.return_value = SimpleNamespace(items=[pod])
+        core_api.read_namespaced_pod_log.return_value = "live line\n"
+
+        def _failing_cb(_logs: str) -> None:
+            raise RuntimeError("transient flush error")
+
+        runner = K8sRunner(
+            namespace="elder-runs",
+            batch_api=batch_api,
+            core_api=core_api,
+            poll_interval=0.05,
+        )
+        result = runner.execute(
+            RunJobRequest(
+                execution_id="exec-cb-err",
+                runtime="python",
+                code="print('live line')",
+            ),
+            on_logs=_failing_cb,
+            log_flush_interval=0.01,
+        )
+
+        assert result.status == "succeeded"
+        assert result.logs == "live line\n"
+
+    @pytest.mark.parametrize(
+        ("requested", "expected"),
+        [
+            (None, DEFAULT_LOG_FLUSH_INTERVAL_SECONDS),
+            (-5, MIN_LOG_FLUSH_INTERVAL_SECONDS),
+            (0, MIN_LOG_FLUSH_INTERVAL_SECONDS),
+            (0.2, MIN_LOG_FLUSH_INTERVAL_SECONDS),
+            (1, 1.0),
+            (30, 30.0),
+            (300, 300.0),
+            (301, MAX_LOG_FLUSH_INTERVAL_SECONDS),
+            (999, MAX_LOG_FLUSH_INTERVAL_SECONDS),
+        ],
+    )
+    def test_log_flush_interval_clamping(
+        self, requested: float | None, expected: float
+    ) -> None:
+        assert DEFAULT_LOG_FLUSH_INTERVAL_SECONDS == 30.0
+        assert MIN_LOG_FLUSH_INTERVAL_SECONDS == 1.0
+        assert MAX_LOG_FLUSH_INTERVAL_SECONDS == 300.0
+        assert clamp_log_flush_interval(requested) == expected
+
+    @pytest.mark.parametrize(
+        ("env_value", "expected"),
+        [
+            (None, 30.0),
+            ("", 30.0),
+            ("0", 1.0),
+            ("-10", 1.0),
+            ("0.5", 1.0),
+            ("15", 15.0),
+            ("300", 300.0),
+            ("301", 300.0),
+            ("600", 300.0),
+        ],
+    )
+    def test_config_from_env_clamps_log_flush_interval(
+        self, monkeypatch, env_value: str | None, expected: float
+    ) -> None:
+        if env_value is None:
+            monkeypatch.delenv("RUNS_LOG_FLUSH_INTERVAL_SECONDS", raising=False)
+        else:
+            monkeypatch.setenv("RUNS_LOG_FLUSH_INTERVAL_SECONDS", env_value)
+        cfg = RunWorkerConfig.from_env()
+        assert cfg.log_flush_interval_seconds == expected
+
 
 class TestRunWorkerPollAndReport:
     """Verify async poll & report cycle with mocked httpx and K8sRunner."""
@@ -340,7 +524,7 @@ class TestRunWorkerPollAndReport:
             return httpx.Response(404)
 
         mock_runner = MagicMock(spec=K8sRunner)
-        mock_runner.execute.side_effect = lambda req: RunExecutionResult(
+        mock_runner.execute.side_effect = lambda req, **_kw: RunExecutionResult(
             status="succeeded",
             exit_code=0,
             logs='{"ok": true}\n',
@@ -509,7 +693,7 @@ class TestRunWorkerPollAndReport:
 
         mock_runner = MagicMock(spec=K8sRunner)
 
-        def _capture_execute(req: RunJobRequest) -> RunExecutionResult:
+        def _capture_execute(req: RunJobRequest, **_kw) -> RunExecutionResult:
             executed_requests.append(req)
             return RunExecutionResult(
                 status="succeeded",
@@ -615,3 +799,70 @@ class TestRunWorkerPollAndReport:
         workspace_vol = pod_spec["volumes"][0]
         assert "emptyDir" in workspace_vol
         assert "configMap" not in workspace_vol
+
+    def test_process_execution_pushes_live_logs_before_final_result(
+        self, tmp_path
+    ) -> None:
+        posted: list[tuple[str, dict]] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.method == "POST":
+                posted.append((request.url.path, json.loads(request.content)))
+                return httpx.Response(200, json={"updated": True})
+            return httpx.Response(404)
+
+        mock_runner = MagicMock(spec=K8sRunner)
+
+        def _fake_execute(
+            req: RunJobRequest,
+            *,
+            on_logs=None,
+            log_flush_interval=30.0,
+        ) -> RunExecutionResult:
+            assert log_flush_interval == 30.0
+            assert on_logs is not None
+            on_logs("chunk 1\n")
+            on_logs("chunk 1\nchunk 2\n")
+            return RunExecutionResult(
+                status="succeeded",
+                exit_code=0,
+                logs="chunk 1\nchunk 2\nfinal\n",
+                output=None,
+                duration_ms=120,
+            )
+
+        mock_runner.execute.side_effect = _fake_execute
+
+        cfg = RunWorkerConfig(
+            elder_api_url="https://elder.example.test",
+            elder_internal_token="tok-live",
+            worker_id="runworker-live-1",
+            health_file=str(tmp_path / "healthy"),
+        )
+
+        async def _run() -> RunExecutionResult:
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(handler)
+            ) as client:
+                service = RunWorkerService(cfg, runner=mock_runner, http_client=client)
+                return await service.process_execution(
+                    {
+                        "execution_id": "exec-stream-1",
+                        "runtime": "python",
+                        "code": "print('hi')",
+                    }
+                )
+
+        res = asyncio.run(_run())
+        assert res.status == "succeeded"
+        assert [p for p, _ in posted] == [
+            "/api/v1/runs/internal/executions/exec-stream-1/logs",
+            "/api/v1/runs/internal/executions/exec-stream-1/logs",
+            "/api/v1/runs/internal/executions/exec-stream-1/result",
+        ]
+        assert posted[0][1] == {"logs": "chunk 1\n", "worker_id": "runworker-live-1"}
+        assert posted[1][1] == {
+            "logs": "chunk 1\nchunk 2\n",
+            "worker_id": "runworker-live-1",
+        }
+        assert posted[2][1]["status"] == "succeeded"

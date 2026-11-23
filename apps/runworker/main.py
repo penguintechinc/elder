@@ -26,11 +26,13 @@ from typing import Any
 import httpx
 
 from apps.runworker.k8s_runner import (
+    DEFAULT_LOG_FLUSH_INTERVAL_SECONDS,
     DEFAULT_MEMORY_MB,
     DEFAULT_TIMEOUT_SECONDS,
     K8sRunner,
     RunExecutionResult,
     RunJobRequest,
+    clamp_log_flush_interval,
 )
 
 logger = logging.getLogger("apps.runworker")
@@ -100,6 +102,7 @@ class RunWorkerConfig:
     health_file: str = field(default_factory=_default_health_file)
     http_timeout_seconds: float = 30.0
     s3_fetch_mode: str = "worker"  # "worker" (zero-egress pods) | "init_container"
+    log_flush_interval_seconds: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
 
     @classmethod
     def from_env(cls) -> RunWorkerConfig:
@@ -125,6 +128,12 @@ class RunWorkerConfig:
             if raw_fetch_mode in ("worker", "init_container")
             else "worker"
         )
+        raw_flush_interval = (
+            os.getenv("RUNS_LOG_FLUSH_INTERVAL_SECONDS") or ""
+        ).strip()
+        log_flush_interval = clamp_log_flush_interval(
+            float(raw_flush_interval) if raw_flush_interval else None
+        )
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
@@ -140,6 +149,7 @@ class RunWorkerConfig:
             health_file=health_file,
             http_timeout_seconds=http_timeout,
             s3_fetch_mode=s3_fetch_mode,
+            log_flush_interval_seconds=log_flush_interval,
         )
 
 
@@ -251,6 +261,28 @@ class RunWorkerService:
                     return [item for item in val if isinstance(item, dict)]
         return []
 
+    async def flush_logs(
+        self,
+        execution_id: str,
+        logs: str,
+    ) -> bool:
+        """Push in-progress pod logs for a running execution to the Elder API."""
+        url = (
+            f"{self.config.elder_api_url}"
+            f"/api/v1/runs/internal/executions/{execution_id}/logs"
+        )
+        body: dict[str, Any] = {
+            "logs": logs,
+            "worker_id": self.config.worker_id,
+        }
+        response = await self._client.post(
+            url,
+            json=body,
+            headers=self._auth_headers(),
+        )
+        response.raise_for_status()
+        return True
+
     async def report_result(
         self,
         execution_id: str,
@@ -307,9 +339,32 @@ class RunWorkerService:
         req = _request_from_payload(item)
         async with self._semaphore:
             started = time.monotonic()
+            loop = asyncio.get_running_loop()
+
+            def _on_logs(logs_text: str) -> None:
+                fut = asyncio.run_coroutine_threadsafe(
+                    self.flush_logs(req.execution_id, logs_text),
+                    loop,
+                )
+                try:
+                    fut.result(timeout=min(10.0, self.config.http_timeout_seconds))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "runworker_live_log_flush_failed",
+                        extra={
+                            "execution_id": req.execution_id,
+                            "error": str(exc),
+                        },
+                    )
+
             try:
                 resolved_req = await self._resolve_artifact(req)
-                result = await asyncio.to_thread(self.runner.execute, resolved_req)
+                result = await asyncio.to_thread(
+                    self.runner.execute,
+                    resolved_req,
+                    on_logs=_on_logs,
+                    log_flush_interval=self.config.log_flush_interval_seconds,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "runworker_execution_error",
