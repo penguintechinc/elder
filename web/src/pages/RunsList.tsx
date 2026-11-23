@@ -77,7 +77,7 @@ export default function RunsList() {
     queryFn: () => api.listRunFunctions(queryParams),
   });
 
-  const functions: RunFunction[] = response?.data || [];
+  const functions: RunFunction[] = response?.items ?? response?.data ?? [];
 
   const createMutation = useMutation({
     mutationFn: (payload: RunFunctionInput) => api.createRunFunction(payload),

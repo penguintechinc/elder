@@ -4291,7 +4291,23 @@ class ApiClient {
     per_page?: number;
   }): Promise<RunFunctionListResponse> {
     const response = await this.client.get("/runs", { params });
-    return response.data;
+    const raw = response.data || {};
+    const rows: RunFunction[] = Array.isArray(raw.items)
+      ? raw.items
+      : Array.isArray(raw.data)
+        ? raw.data
+        : [];
+    return {
+      ...raw,
+      items: rows,
+      data: rows,
+      total: typeof raw.total === "number" ? raw.total : rows.length,
+      page: typeof raw.page === "number" ? raw.page : (params?.page ?? 1),
+      per_page:
+        typeof raw.per_page === "number"
+          ? raw.per_page
+          : (params?.per_page ?? 50),
+    };
   }
 
   async getRunFunction(id: number): Promise<RunFunction> {
@@ -4334,12 +4350,41 @@ class ApiClient {
     per_page?: number;
   }): Promise<RunExecutionListResponse> {
     const response = await this.client.get("/runs/executions", { params });
-    return response.data;
+    const raw = response.data || {};
+    const rawRows: (RunExecution & {
+      stdout_log?: string | null;
+      stderr_log?: string | null;
+    })[] = Array.isArray(raw.items)
+      ? raw.items
+      : Array.isArray(raw.data)
+        ? raw.data
+        : [];
+    const rows: RunExecution[] = rawRows.map((row) => ({
+      ...row,
+      stdout: row.stdout ?? row.stdout_log ?? null,
+      stderr: row.stderr ?? row.stderr_log ?? null,
+    }));
+    return {
+      ...raw,
+      items: rows,
+      data: rows,
+      total: typeof raw.total === "number" ? raw.total : rows.length,
+      page: typeof raw.page === "number" ? raw.page : (params?.page ?? 1),
+      per_page:
+        typeof raw.per_page === "number"
+          ? raw.per_page
+          : (params?.per_page ?? 25),
+    };
   }
 
   async getRunExecution(executionId: string): Promise<RunExecution> {
     const response = await this.client.get(`/runs/executions/${executionId}`);
-    return response.data;
+    const row = response.data || {};
+    return {
+      ...row,
+      stdout: row.stdout ?? row.stdout_log ?? null,
+      stderr: row.stderr ?? row.stderr_log ?? null,
+    };
   }
 }
 
@@ -4385,9 +4430,11 @@ export interface RunFunctionInput {
 
 export interface RunFunctionListResponse {
   data: RunFunction[];
+  items?: RunFunction[];
   total: number;
   page: number;
   per_page: number;
+  pages?: number;
 }
 
 export interface RunExecution {
@@ -4412,9 +4459,11 @@ export interface RunExecution {
 
 export interface RunExecutionListResponse {
   data: RunExecution[];
+  items?: RunExecution[];
   total: number;
   page: number;
   per_page: number;
+  pages?: number;
 }
 
 export interface LicenseLimits {
