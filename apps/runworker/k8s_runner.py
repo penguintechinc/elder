@@ -13,6 +13,7 @@ import logging
 import re
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,6 +28,10 @@ DEFAULT_MEMORY_MB = 256
 MIN_TIMEOUT_SECONDS = 1
 MAX_TIMEOUT_SECONDS = 300
 DEFAULT_TIMEOUT_SECONDS = 30
+
+MIN_LOG_FLUSH_INTERVAL_SECONDS = 1.0
+MAX_LOG_FLUSH_INTERVAL_SECONDS = 300.0
+DEFAULT_LOG_FLUSH_INTERVAL_SECONDS = 30.0
 
 DEFAULT_TTL_SECONDS = 120
 DEFAULT_TMP_SIZE_LIMIT = "128Mi"
@@ -113,6 +118,16 @@ def clamp_timeout_seconds(timeout_seconds: int | None) -> int:
     if timeout_seconds is None:
         return DEFAULT_TIMEOUT_SECONDS
     return max(MIN_TIMEOUT_SECONDS, min(MAX_TIMEOUT_SECONDS, int(timeout_seconds)))
+
+
+def clamp_log_flush_interval(seconds: float | None) -> float:
+    """Clamp periodic live-log push interval (seconds) into [1.0, 300.0]."""
+    if seconds is None:
+        return DEFAULT_LOG_FLUSH_INTERVAL_SECONDS
+    return max(
+        MIN_LOG_FLUSH_INTERVAL_SECONDS,
+        min(MAX_LOG_FLUSH_INTERVAL_SECONDS, float(seconds)),
+    )
 
 
 def sanitize_k8s_name(execution_id: str, prefix: str = "elder-run-") -> str:
@@ -416,7 +431,13 @@ class K8sRunner:
             self._core_api = client.CoreV1Api()
         return self._batch_api, self._core_api
 
-    def execute(self, request: RunJobRequest) -> RunExecutionResult:
+    def execute(
+        self,
+        request: RunJobRequest,
+        *,
+        on_logs: Callable[[str], None] | None = None,
+        log_flush_interval: float = DEFAULT_LOG_FLUSH_INTERVAL_SECONDS,
+    ) -> RunExecutionResult:
         """Create ConfigMap + Job, wait for completion, collect logs, and clean up."""
         started = time.monotonic()
         batch_api, core_api = self._ensure_clients()
@@ -454,6 +475,9 @@ class K8sRunner:
 
             timeout = clamp_timeout_seconds(request.timeout_seconds)
             deadline = started + timeout + 15.0
+            flush_interval = max(0.01, float(log_flush_interval))
+            last_log_flush = started
+            last_flushed_logs = ""
             status = "failed"
             error_msg: str | None = None
 
@@ -485,10 +509,24 @@ class K8sRunner:
                     status = "failed"
                     break
 
-                if time.monotonic() >= deadline:
+                now = time.monotonic()
+                if now >= deadline:
                     status = "timeout"
                     error_msg = f"Worker poll deadline exceeded ({timeout}s)"
                     break
+
+                if on_logs is not None and (now - last_log_flush) >= flush_interval:
+                    last_log_flush = now
+                    current_logs = self._read_pod_logs_best_effort(core_api, job_name)
+                    if current_logs and current_logs != last_flushed_logs:
+                        last_flushed_logs = current_logs
+                        try:
+                            on_logs(current_logs)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "runworker_live_log_flush_callback_failed",
+                                extra={"job_name": job_name, "error": str(exc)},
+                            )
 
                 time.sleep(self.poll_interval)
 
@@ -507,6 +545,47 @@ class K8sRunner:
         finally:
             if created_cm:
                 self._cleanup_configmap(core_api, cm_name)
+
+    def _read_pod_logs_best_effort(self, core_api: Any, job_name: str) -> str:
+        """Read current pod logs for an in-progress Job, ignoring transient states."""
+        try:
+            pods_resp = core_api.list_namespaced_pod(
+                namespace=self.namespace,
+                label_selector=f"job-name={job_name}",
+            )
+        except Exception:  # noqa: BLE001
+            return ""
+
+        items = getattr(pods_resp, "items", None) or []
+        if not items:
+            return ""
+
+        pod = items[0]
+        pod_name = getattr(getattr(pod, "metadata", None), "name", None)
+        if not pod_name:
+            return ""
+
+        container_statuses = (
+            getattr(getattr(pod, "status", None), "container_statuses", None) or []
+        )
+        for cs in container_statuses:
+            waiting = getattr(getattr(cs, "state", None), "waiting", None)
+            if waiting is not None and getattr(waiting, "reason", None) in (
+                "ContainerCreating",
+                "PodInitializing",
+            ):
+                return ""
+
+        try:
+            return (
+                core_api.read_namespaced_pod_log(
+                    name=pod_name,
+                    namespace=self.namespace,
+                )
+                or ""
+            )
+        except Exception:  # noqa: BLE001
+            return ""
 
     def _collect_pod_logs_and_exit_code(
         self,

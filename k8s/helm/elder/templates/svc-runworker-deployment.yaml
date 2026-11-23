@@ -65,6 +65,8 @@ spec:
             {{- end }}
             - name: RUNS_POLL_INTERVAL_SECONDS
               value: {{ ($cfg.env).RUNS_POLL_INTERVAL_SECONDS | default "3" | quote }}
+            - name: RUNS_LOG_FLUSH_INTERVAL_SECONDS
+              value: {{ ($cfg.env).RUNS_LOG_FLUSH_INTERVAL_SECONDS | default "30" | quote }}
             - name: RUNS_MAX_CONCURRENT
               value: {{ ($cfg.env).RUNS_MAX_CONCURRENT | default "5" | quote }}
             - name: RUNS_S3_FETCH_MODE
