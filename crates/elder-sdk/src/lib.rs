@@ -23,9 +23,15 @@ pub mod client;
 pub mod config;
 pub mod error;
 pub mod resources;
+pub mod runs;
 
 pub use catalog::{normalize_name, ApiOperation, Catalog, HttpMethod};
 pub use client::{AuthTokens, ElderClient};
 pub use config::{Auth, ClientConfig, RetryConfig};
 pub use error::{ElderError, Result};
 pub use resources::ResourceClient;
+pub use runs::{
+    CreateRunFunctionRequest, InvokeRunRequest, InvokeRunResponse, ListExecutionsParams,
+    ListRunFunctionsParams, RunExecution, RunFunction, RunPage, RunsClient,
+    UpdateRunFunctionRequest,
+};

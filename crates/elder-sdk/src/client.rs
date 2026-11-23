@@ -500,6 +500,11 @@ impl ElderClient {
         .await
     }
 
+    /// Access the typed Elder Runs serverless functions API (`/api/v1/runs`).
+    pub fn runs(&self) -> crate::runs::RunsClient<'_> {
+        crate::runs::RunsClient::new(self)
+    }
+
     /// Fetch AI Researcher configuration from `GET /api/v1/search/ai-research/config`.
     pub async fn ai_research_config(&self) -> Result<Value> {
         self.request(

@@ -11,14 +11,18 @@ pub mod credentials;
 pub mod error;
 pub mod output;
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::ArgMatches;
 use clap_complete::{generate, Shell};
-use elder_sdk::{Catalog, ClientConfig, ElderClient, HttpMethod};
+use elder_sdk::{
+    Catalog, ClientConfig, CreateRunFunctionRequest, ElderClient, HttpMethod, InvokeRunRequest,
+    ListExecutionsParams, ListRunFunctionsParams, UpdateRunFunctionRequest,
+};
 use serde_json::{json, Map, Value};
 use tracing::{debug, info};
 
@@ -154,6 +158,7 @@ where
         "id" => handle_id(sub_matches, &settings, ctx).await,
         "search" => handle_search(sub_matches, &settings, ctx).await,
         "ai-research" => handle_ai_research(sub_matches, &settings, ctx).await,
+        "runs" => handle_runs(sub_matches, &settings, ctx).await,
         "api" => handle_api(sub_matches, &settings, ctx).await,
         "version" => handle_version(sub_matches, &settings, ctx).await,
         "completions" => handle_completions(sub_matches, ctx),
@@ -592,6 +597,240 @@ where
     let (client, _) = build_client(settings, ctx.store, ctx.env_lookup)?;
     let result = client.ai_research(query, model, None, max_steps).await?;
     write_output(ctx.stdout, &result, settings.output)
+}
+
+async fn handle_runs<R, W, E>(
+    matches: &ArgMatches,
+    settings: &ResolvedSettings,
+    ctx: &mut RunContext<'_, R, W, E>,
+) -> Result<()>
+where
+    R: Read,
+    W: Write,
+    E: Write,
+{
+    let (sub, sub_matches) = matches
+        .subcommand()
+        .ok_or_else(|| CliError::Usage("runs requires a subcommand".into()))?;
+
+    let (client, _) = build_client(settings, ctx.store, ctx.env_lookup)?;
+
+    match sub {
+        "list" => {
+            let params = ListRunFunctionsParams {
+                page: sub_matches.get_one::<u32>("page").copied(),
+                per_page: sub_matches.get_one::<u32>("per-page").copied(),
+                runtime: sub_matches.get_one::<String>("runtime").cloned(),
+                search: sub_matches.get_one::<String>("search").cloned(),
+                worker_cluster: sub_matches.get_one::<String>("worker-cluster").cloned(),
+                is_enabled: sub_matches.get_one::<bool>("is-enabled").copied(),
+            };
+            let page = client.runs().list(&params).await?;
+            let val = serde_json::to_value(&page).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "get" => {
+            let func_id = *sub_matches
+                .get_one::<i64>("func_id")
+                .ok_or_else(|| CliError::Usage("missing required <FUNC_ID>".into()))?;
+            let func = client.runs().get(func_id).await?;
+            let val = serde_json::to_value(&func).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "create" => {
+            let name = sub_matches
+                .get_one::<String>("name")
+                .ok_or_else(|| CliError::Usage("missing required --name".into()))?
+                .clone();
+            let runtime = sub_matches
+                .get_one::<String>("runtime")
+                .ok_or_else(|| CliError::Usage("missing required --runtime".into()))?
+                .clone();
+            let code = read_code_source(
+                sub_matches.get_one::<String>("code").map(String::as_str),
+                sub_matches
+                    .get_one::<String>("code-file")
+                    .map(String::as_str),
+                ctx.stdin,
+            )?
+            .ok_or_else(|| CliError::Usage("provide either --code or --code-file".into()))?;
+
+            let env_vars = sub_matches
+                .get_many::<String>("env")
+                .map(|vals| parse_env_pairs(vals.map(String::as_str)))
+                .transpose()?;
+
+            let mut req = CreateRunFunctionRequest::new(name, runtime, code);
+            req.description = sub_matches.get_one::<String>("description").cloned();
+            req.entrypoint = sub_matches.get_one::<String>("entrypoint").cloned();
+            req.timeout_seconds = sub_matches.get_one::<u32>("timeout-seconds").copied();
+            req.memory_mb = sub_matches.get_one::<u32>("memory-mb").copied();
+            req.env_vars = env_vars;
+            req.schedule_cron = sub_matches.get_one::<String>("schedule-cron").cloned();
+            req.execution_namespace = sub_matches
+                .get_one::<String>("execution-namespace")
+                .cloned();
+            req.worker_cluster = sub_matches.get_one::<String>("worker-cluster").cloned();
+            req.is_enabled = sub_matches.get_one::<bool>("is-enabled").copied();
+
+            let created = client.runs().create(&req).await?;
+            let val =
+                serde_json::to_value(&created).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "update" => {
+            let func_id = *sub_matches
+                .get_one::<i64>("func_id")
+                .ok_or_else(|| CliError::Usage("missing required <FUNC_ID>".into()))?;
+            let code = read_code_source(
+                sub_matches.get_one::<String>("code").map(String::as_str),
+                sub_matches
+                    .get_one::<String>("code-file")
+                    .map(String::as_str),
+                ctx.stdin,
+            )?;
+            let env_vars = sub_matches
+                .get_many::<String>("env")
+                .map(|vals| parse_env_pairs(vals.map(String::as_str)))
+                .transpose()?;
+
+            let req = UpdateRunFunctionRequest {
+                name: sub_matches.get_one::<String>("name").cloned(),
+                description: sub_matches.get_one::<String>("description").cloned(),
+                runtime: sub_matches.get_one::<String>("runtime").cloned(),
+                code,
+                entrypoint: sub_matches.get_one::<String>("entrypoint").cloned(),
+                timeout_seconds: sub_matches.get_one::<u32>("timeout-seconds").copied(),
+                memory_mb: sub_matches.get_one::<u32>("memory-mb").copied(),
+                env_vars,
+                schedule_cron: sub_matches.get_one::<String>("schedule-cron").cloned(),
+                execution_namespace: sub_matches
+                    .get_one::<String>("execution-namespace")
+                    .cloned(),
+                worker_cluster: sub_matches.get_one::<String>("worker-cluster").cloned(),
+                is_enabled: sub_matches.get_one::<bool>("is-enabled").copied(),
+            };
+
+            let updated = client.runs().update(func_id, &req).await?;
+            let val =
+                serde_json::to_value(&updated).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "delete" => {
+            let func_id = *sub_matches
+                .get_one::<i64>("func_id")
+                .ok_or_else(|| CliError::Usage("missing required <FUNC_ID>".into()))?;
+            client.runs().delete(func_id).await?;
+            let out = json!({
+                "deleted": true,
+                "id": func_id,
+            });
+            write_output(ctx.stdout, &out, settings.output)
+        }
+        "invoke" => {
+            let func_id = *sub_matches
+                .get_one::<i64>("func_id")
+                .ok_or_else(|| CliError::Usage("missing required <FUNC_ID>".into()))?;
+            let input_data = sub_matches
+                .get_one::<String>("input")
+                .map(|raw| parse_json_input(raw, ctx.stdin))
+                .transpose()?;
+            let req = InvokeRunRequest {
+                input_data,
+                trigger_type: sub_matches.get_one::<String>("trigger-type").cloned(),
+            };
+            let resp = client.runs().invoke(func_id, &req).await?;
+            let val = serde_json::to_value(&resp).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "executions" => {
+            let function_id = sub_matches
+                .get_one::<i64>("func_id")
+                .or_else(|| sub_matches.get_one::<i64>("function-id"))
+                .copied();
+            let params = ListExecutionsParams {
+                page: sub_matches.get_one::<u32>("page").copied(),
+                per_page: sub_matches.get_one::<u32>("per-page").copied(),
+                function_id,
+                status: sub_matches.get_one::<String>("status").cloned(),
+                trigger_type: sub_matches.get_one::<String>("trigger-type").cloned(),
+            };
+            let page = client.runs().list_executions(&params).await?;
+            let val = serde_json::to_value(&page).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "execution" => {
+            let execution_id = sub_matches
+                .get_one::<String>("execution_id")
+                .ok_or_else(|| CliError::Usage("missing required <EXECUTION_ID>".into()))?;
+            let exec = client.runs().get_execution(execution_id).await?;
+            let val = serde_json::to_value(&exec).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        other => Err(CliError::Usage(format!(
+            "unknown runs subcommand {other:?}"
+        ))),
+    }
+}
+
+fn read_code_source<R: Read>(
+    inline_code: Option<&str>,
+    code_file: Option<&str>,
+    stdin: &mut R,
+) -> Result<Option<String>> {
+    if let Some(code) = inline_code {
+        return Ok(Some(code.to_string()));
+    }
+    if let Some(path) = code_file {
+        let trimmed = path.trim();
+        if trimmed == "-" {
+            let mut buf = String::new();
+            stdin.read_to_string(&mut buf)?;
+            return Ok(Some(buf));
+        }
+        let content = fs::read_to_string(trimmed)
+            .map_err(|e| CliError::Usage(format!("failed to read --code-file '{trimmed}': {e}")))?;
+        return Ok(Some(content));
+    }
+    Ok(None)
+}
+
+fn parse_env_pairs<'a>(
+    pairs: impl IntoIterator<Item = &'a str>,
+) -> Result<BTreeMap<String, Value>> {
+    let mut map = BTreeMap::new();
+    for raw in pairs {
+        let Some((key, val)) = raw.split_once('=') else {
+            return Err(CliError::Usage(format!(
+                "invalid --env entry {raw:?}; expected KEY=VAL"
+            )));
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            return Err(CliError::Usage(format!(
+                "invalid --env entry {raw:?}; key cannot be empty"
+            )));
+        }
+        map.insert(key.to_string(), Value::String(val.to_string()));
+    }
+    Ok(map)
+}
+
+fn parse_json_input<R: Read>(raw: &str, stdin: &mut R) -> Result<Value> {
+    let trimmed = raw.trim();
+    let json_text = if trimmed == "-" {
+        let mut buf = String::new();
+        stdin.read_to_string(&mut buf)?;
+        buf
+    } else if let Some(path) = trimmed.strip_prefix('@') {
+        fs::read_to_string(path)
+            .map_err(|e| CliError::Usage(format!("failed to read --input file '{path}': {e}")))?
+    } else {
+        trimmed.to_string()
+    };
+
+    serde_json::from_str::<Value>(&json_text)
+        .map_err(|e| CliError::Usage(format!("invalid JSON for --input: {e}")))
 }
 
 async fn handle_api<R, W, E>(

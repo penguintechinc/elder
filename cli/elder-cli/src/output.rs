@@ -23,15 +23,25 @@ const MAX_CELL_CHARS: usize = 64;
 /// Preferred columns surfaced first when rendering arrays of JSON objects as tables.
 const PREFERRED_COLUMNS: &[&str] = &[
     "id",
+    "execution_id",
+    "function_id",
     "village_id",
     "service",
     "operation",
     "method",
     "path",
     "name",
+    "runtime",
     "title",
     "slug",
     "status",
+    "trigger_type",
+    "is_enabled",
+    "storage_backend",
+    "storage_key",
+    "code_sha256",
+    "exit_code",
+    "duration_ms",
     "type",
     "kind",
     "email",
@@ -316,5 +326,52 @@ mod tests {
     fn rejects_invalid_output_format() {
         let err = OutputFormat::from_str("xml").unwrap_err();
         assert_eq!(err.exit_code_u8(), 2);
+    }
+
+    #[test]
+    fn formats_runs_storage_metadata_in_table_and_json() {
+        let payload = json!({
+            "items": [{
+                "id": 42,
+                "tenant_id": 7,
+                "village_id": "RUN-42",
+                "name": "resize-avatar",
+                "description": "Resizes avatars",
+                "runtime": "python",
+                "code": "print('hi')",
+                "is_enabled": true,
+                "storage_backend": "s3",
+                "storage_key": "runs/7/42/v1/code.py",
+                "code_sha256": "deadbeef1234",
+                "created_at": "2026-11-20T12:00:00Z"
+            }],
+            "total": 1,
+            "page": 1,
+            "per_page": 20,
+            "pages": 1
+        });
+
+        let items = extract_table_rows(&payload).unwrap();
+        let cols = select_columns(items);
+        assert!(cols.contains(&"storage_backend".to_string()));
+        assert!(cols.contains(&"storage_key".to_string()));
+        assert!(cols.contains(&"code_sha256".to_string()));
+
+        let table_out = format_value(&payload, OutputFormat::Table).unwrap();
+        assert!(table_out.contains("s3"));
+        assert!(table_out.contains("runs/"));
+        assert!(table_out.contains("dead"));
+
+        let single_table = format_value(&items[0], OutputFormat::Table).unwrap();
+        assert!(single_table.contains("storage_backend"));
+        assert!(single_table.contains("storage_key"));
+        assert!(single_table.contains("code_sha256"));
+        assert!(single_table.contains("runs/7/42/v1/code.py"));
+        assert!(single_table.contains("deadbeef1234"));
+
+        let json_out = format_value(&payload, OutputFormat::Json).unwrap();
+        assert!(json_out.contains("\"storage_backend\": \"s3\""));
+        assert!(json_out.contains("\"storage_key\": \"runs/7/42/v1/code.py\""));
+        assert!(json_out.contains("\"code_sha256\": \"deadbeef1234\""));
     }
 }
