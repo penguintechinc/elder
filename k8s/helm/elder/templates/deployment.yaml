@@ -55,7 +55,7 @@ spec:
         {{- $csvStorage := (index $.Values "csvImport" | default dict).storage | default dict }}
         {{- $csvBucket := $csvStorage.bucket | default $runsStorage.bucket }}
         {{- $hasRunsS3 := and (eq $component "hub-api") ($runsStorage.bucket) }}
-        {{- $hasCsvImportS3 := and (eq $component "hub-api") ($csvBucket) }}
+        {{- $hasCsvImportS3 := and (or (eq $component "hub-api") (eq $component "svc-worker")) ($csvBucket) }}
         {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
         {{- if or $componentConfig.env $hasOtel $needsPodName $hasRunsS3 $hasCsvImportS3 }}
         env:

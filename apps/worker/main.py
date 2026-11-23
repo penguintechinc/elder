@@ -14,7 +14,12 @@ import aiocron
 import redis.asyncio
 from quart import Quart, jsonify
 
+from apps.api.services.csv_import.storage import (
+    CSV_IMPORT_QUEUE_KEY,
+    get_csv_import_storage,
+)
 from apps.worker.config.settings import settings
+from apps.worker.csv_import_batch import process_job_by_id, run_batch_once
 from apps.worker.jobs.groups import resolve_worker_groups
 from apps.worker.jobs.registry import get_handler
 from apps.worker.utils.logger import configure_logging, get_logger
@@ -97,6 +102,9 @@ class WorkerService:
         self.jobbus = None
         self.worker_groups: set[str] = set()
         self.consumer_task: asyncio.Task | None = None
+        self.csv_import_queue_task: asyncio.Task | None = None
+        self.csv_import_task: asyncio.Task | None = None
+        self.sync_tasks: list[asyncio.Task] = []
         self.consumer_name: str = os.environ.get("POD_NAME") or socket.gethostname()
         self.health_app = Quart(__name__)
         self._setup_health_endpoints()
@@ -481,6 +489,112 @@ class WorkerService:
         except Exception as e:
             logger.warning(f"service_node_heartbeat_failed: {e}")
 
+    @staticmethod
+    def _get_csv_import_poll_interval() -> int:
+        """Resolve CSV batch importer poll interval from env or settings."""
+        raw = os.environ.get("CSV_IMPORT_POLL_INTERVAL_SECONDS")
+        if raw is not None and raw.strip() != "":
+            try:
+                return max(1, int(raw))
+            except ValueError:
+                logger.warning(
+                    "invalid_csv_import_poll_interval",
+                    value=raw,
+                    default=settings.csv_import_poll_interval_seconds,
+                )
+        return max(1, int(settings.csv_import_poll_interval_seconds))
+
+    async def _run_csv_import_batch_once(self) -> int:
+        """Execute a single async S3 CSV import batch pass off the event loop."""
+        db = self.db_manager.write if self.db_manager is not None else None
+        try:
+            return await asyncio.to_thread(
+                run_batch_once,
+                db=db,
+                worker_id=self.consumer_name,
+            )
+        except Exception as e:
+            logger.error(
+                "csv_import_batch_poll_failed",
+                error=str(e),
+                exc_info=True,
+            )
+            return 1
+
+    async def _process_csv_import_job_id(self, job_id: str) -> str | None:
+        """Claim and process one queued CSV import job_id off the event loop."""
+        db = self.db_manager.write if self.db_manager is not None else None
+        try:
+            return await asyncio.to_thread(
+                process_job_by_id,
+                job_id,
+                db=db,
+                worker_id=self.consumer_name,
+            )
+        except Exception as e:
+            logger.error(
+                "csv_import_queue_job_failed",
+                job_id=job_id,
+                error=str(e),
+                exc_info=True,
+            )
+            return None
+
+    async def _csv_import_queue_loop(self) -> None:
+        """Valkey/Redis BRPOP consumer for immediate CSV import job dispatch."""
+        if not self.redis:
+            return
+        if not get_csv_import_storage().is_configured:
+            return
+
+        logger.info(
+            "csv_import_queue_consumer_started",
+            queue=CSV_IMPORT_QUEUE_KEY,
+        )
+        try:
+            while self.running:
+                try:
+                    item = await self.redis.brpop(CSV_IMPORT_QUEUE_KEY, timeout=5)
+                    if not item:
+                        continue
+                    _, raw_job_id = item
+                    job_id = (
+                        raw_job_id.decode("utf-8")
+                        if isinstance(raw_job_id, bytes)
+                        else str(raw_job_id)
+                    ).strip()
+                    if job_id:
+                        await self._process_csv_import_job_id(job_id)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        "csv_import_queue_consumer_error",
+                        queue=CSV_IMPORT_QUEUE_KEY,
+                        error=str(e),
+                        exc_info=True,
+                    )
+                    await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            logger.info("csv_import_queue_consumer_stopped")
+
+    async def _csv_import_loop(self) -> None:
+        """Periodic fallback DB sweep for S3-backed CSV import jobs."""
+        interval = self._get_csv_import_poll_interval()
+        logger.info("csv_import_batch_loop_started", interval_seconds=interval)
+        try:
+            while self.running:
+                await self._run_csv_import_batch_once()
+                if not self.running:
+                    break
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            logger.info("csv_import_batch_loop_stopped")
+
     def _setup_scheduled_syncs(self):
         """Setup scheduled sync tasks using aiocron."""
         logger.info("Setting up scheduled syncs")
@@ -599,6 +713,23 @@ class WorkerService:
                 groups=sorted(self.worker_groups),
             )
 
+        # Launch Valkey/Redis CSV import queue consumer (when Redis + S3 configured)
+        if self.redis and get_csv_import_storage().is_configured:
+            self.csv_import_queue_task = asyncio.create_task(
+                self._csv_import_queue_loop()
+            )
+            logger.info(
+                "csv_import_queue_consumer_launched",
+                queue=CSV_IMPORT_QUEUE_KEY,
+            )
+
+        # Launch periodic S3 CSV batch importer fallback sweep (skips cleanly if S3 unconfigured)
+        self.csv_import_task = asyncio.create_task(self._csv_import_loop())
+        logger.info(
+            "csv_import_batch_task_launched",
+            interval_seconds=self._get_csv_import_poll_interval(),
+        )
+
         logger.info(
             "Elder Worker Service started",
             health_port=settings.health_check_port,
@@ -614,6 +745,22 @@ class WorkerService:
             self.consumer_task.cancel()
             try:
                 await self.consumer_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel CSV import Valkey/Redis queue consumer task if running
+        if self.csv_import_queue_task and not self.csv_import_queue_task.done():
+            self.csv_import_queue_task.cancel()
+            try:
+                await self.csv_import_queue_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel CSV batch importer fallback sweep task if running
+        if self.csv_import_task and not self.csv_import_task.done():
+            self.csv_import_task.cancel()
+            try:
+                await self.csv_import_task
             except asyncio.CancelledError:
                 pass
 
