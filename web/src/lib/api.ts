@@ -4018,6 +4018,13 @@ class ApiClient {
     return response.data;
   }
 
+  async getApprovalHistory(params?: { limit?: number }) {
+    const response = await this.client.get("/streams/approvals/history", {
+      params,
+    });
+    return response.data;
+  }
+
   // Geo Regions & Locations
   async getGeoRegions(params?: { provider?: string }) {
     const response = await this.client.get("/geo/regions", { params });

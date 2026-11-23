@@ -1100,6 +1100,89 @@ BUILTIN_UI_META: dict[str, dict[str, Any]] = {
             },
         ],
     },
+    "action_human_approval": {
+        "stage": "process",
+        "subcategory": "Approvals",
+        "icon": "UserCheck",
+        "color": "#f59e0b",
+        "config_schema": [
+            _cf(
+                "title",
+                "Approval Title",
+                "string",
+                required=True,
+                placeholder="Approve production change for {{$json.service}}",
+                supports_expressions=True,
+                description="Title displayed to approvers in the Approval Center.",
+            ),
+            _cf(
+                "instructions",
+                "Instructions",
+                "textarea",
+                placeholder="Review the change details and approve or reject.",
+                supports_expressions=True,
+                description=(
+                    "Detailed instructions or review context shown to approvers."
+                ),
+            ),
+            _cf(
+                "approver_ids",
+                "Approver Identity IDs",
+                "string",
+                placeholder="1,2 or {{$json.approver_ids}}",
+                supports_expressions=True,
+                description=(
+                    "Comma-separated identity IDs authorized to approve. Leave blank "
+                    "to use the playbook gate or triggering user."
+                ),
+            ),
+            _cf(
+                "required_approvals",
+                "Required Approvals",
+                "number",
+                default=1,
+                description=(
+                    "Minimum number of distinct approvals required before resuming."
+                ),
+            ),
+            _cf(
+                "timeout_minutes",
+                "Timeout (minutes)",
+                "number",
+                default=1440,
+                description=(
+                    "Approval request timeout in minutes (default: 1440 = 24 hours)."
+                ),
+            ),
+        ],
+        "output_schema": [
+            {
+                "name": "paused_for_approval",
+                "type": "boolean",
+                "description": "True when the execution is paused awaiting approval",
+            },
+            {
+                "name": "approval_title",
+                "type": "string",
+                "description": "Resolved approval request title",
+            },
+            {
+                "name": "approver_ids",
+                "type": "array",
+                "description": "Resolved list of authorized approver identity IDs",
+            },
+            {
+                "name": "required_approvals",
+                "type": "number",
+                "description": "Minimum approvals required to resume execution",
+            },
+            {
+                "name": "timeout_minutes",
+                "type": "number",
+                "description": "Configured approval timeout in minutes",
+            },
+        ],
+    },
 }
 
 BUILTIN_OPERATOR_OPTIONS = _FILTER_OPERATOR_OPTIONS
