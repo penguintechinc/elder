@@ -67,15 +67,55 @@ def select_readonly_tools(
     return [t for t in mcp_tools if is_readonly_mcp_tool(t) and t["name"] in allowed]
 
 
+def _compact_description(raw: Any, max_len: int = 96) -> str:
+    """Keep a concise single-sentence description to minimize LLM prompt tokens."""
+    text = " ".join(str(raw or "").split())
+    if not text:
+        return ""
+    first_sentence = text.split(". ", 1)[0].rstrip(".")
+    if len(first_sentence) <= max_len:
+        return first_sentence
+    return first_sentence[: max_len - 1].rstrip() + "…"
+
+
+def _compact_input_schema(schema: Any) -> dict[str, Any]:
+    """Strip verbose JSON Schema prose while keeping types, enums, and required keys."""
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+    raw_props = schema.get("properties")
+    compact_props: dict[str, Any] = {}
+    if isinstance(raw_props, dict):
+        for prop_name, prop_def in raw_props.items():
+            if not isinstance(prop_def, dict):
+                compact_props[prop_name] = {"type": "string"}
+                continue
+            entry: dict[str, Any] = {}
+            if "type" in prop_def:
+                entry["type"] = prop_def["type"]
+            if "enum" in prop_def and isinstance(prop_def["enum"], list):
+                entry["enum"] = prop_def["enum"]
+            if "items" in prop_def and isinstance(prop_def["items"], dict):
+                entry["items"] = {"type": prop_def["items"].get("type", "string")}
+            compact_props[prop_name] = entry or {"type": "string"}
+    out: dict[str, Any] = {
+        "type": schema.get("type", "object"),
+        "properties": compact_props,
+    }
+    required = schema.get("required")
+    if isinstance(required, list) and required:
+        out["required"] = required
+    return out
+
+
 def to_ollama_tools_from_mcp(tools: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert MCP ``tools/list`` entries into Ollama ``/api/chat`` tool schemas."""
+    """Convert MCP ``tools/list`` entries into compact Ollama ``/api/chat`` tool schemas."""
     return [
         {
             "type": "function",
             "function": {
                 "name": t["name"],
-                "description": str(t.get("description") or ""),
-                "parameters": t.get("inputSchema") or {"type": "object"},
+                "description": _compact_description(t.get("description")),
+                "parameters": _compact_input_schema(t.get("inputSchema")),
             },
         }
         for t in tools

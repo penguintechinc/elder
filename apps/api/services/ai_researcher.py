@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterable
 from typing import Any
 
@@ -578,7 +579,16 @@ async def run_ai_research(
         app.config.get("AI_RESEARCHER_MAX_STEPS") or DEFAULT_MAX_STEPS
     )
     step_limit = max(1, min(int(max_steps or configured_steps), 12))
-    timeout_seconds = float(app.config.get("AI_RESEARCHER_TIMEOUT_SECONDS") or 60.0)
+    timeout_seconds = float(
+        app.config.get("AI_RESEARCHER_TIMEOUT_SECONDS")
+        or os.getenv("AI_RESEARCHER_TIMEOUT_SECONDS")
+        or 95.0
+    )
+    keep_alive = str(
+        app.config.get("AI_RESEARCHER_KEEP_ALIVE")
+        or os.getenv("AI_RESEARCHER_KEEP_ALIVE")
+        or "15m"
+    )
     internal_api_url = str(
         app.config.get("ELDER_INTERNAL_API_URL") or "http://127.0.0.1:5000"
     ).rstrip("/")
@@ -640,6 +650,7 @@ async def run_ai_research(
                 "messages": messages,
                 "tools": ollama_tools,
                 "stream": False,
+                "keep_alive": keep_alive,
             }
             try:
                 resp = await ollama_client.post(f"{ollama_url}/api/chat", json=payload)
@@ -756,6 +767,7 @@ async def run_ai_research(
                 "model": selected_model,
                 "messages": messages,
                 "stream": False,
+                "keep_alive": keep_alive,
             }
             try:
                 synth_resp = await ollama_client.post(
