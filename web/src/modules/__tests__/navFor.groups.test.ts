@@ -24,7 +24,7 @@ describe("navFor — one section per WIRED pillar", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Entities",
+      "Resources",
       "Documents",
     ]);
   });
@@ -41,7 +41,7 @@ describe("navFor — one section per WIRED pillar", () => {
     // "Software & Services" category — the duplicate header is what this fixes.
     const nav = navFor(new Set(["sbom", "services_oncall"]));
     expect(nav).toHaveLength(1);
-    expect(nav[0].header).toBe("Entities");
+    expect(nav[0].header).toBe("Resources");
 
     const names = nav[0].items.map((i) => i.name);
     expect(names).toEqual(
@@ -113,9 +113,9 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(navFor(new Set<string>())).toEqual([]);
   });
 
-  it("places Data Inventory under Entities and not under Work Management", () => {
+  it("places Data Inventory under Resources and not under Work Management", () => {
     const nav = navFor(new Set(["infrastructure", "issues"]));
-    const entitiesSection = nav.find((c) => c.header === "Entities");
+    const entitiesSection = nav.find((c) => c.header === "Resources");
     const workMgmtSection = nav.find((c) => c.header === "Work Management");
 
     expect(entitiesSection).toBeDefined();

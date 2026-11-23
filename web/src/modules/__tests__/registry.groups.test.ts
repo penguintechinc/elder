@@ -62,16 +62,16 @@ describe("Module Grouping (WIRED)", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Entities",
+      "Resources",
       "Documents",
     ]);
   });
 
-  it("exposes Data Inventory under Entities and keeps Work Management key as group-issues", () => {
+  it("exposes Data Inventory under Resources and keeps Work Management key as group-issues", () => {
     const all = new Set(MODULES.map((m) => m.id));
     const nav = navFor(all);
 
-    const entities = nav.find((c) => c.header === "Entities");
+    const entities = nav.find((c) => c.header === "Resources");
     const workMgmt = nav.find((c) => c.header === "Work Management");
 
     expect(entities).toBeDefined();

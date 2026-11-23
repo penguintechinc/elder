@@ -66,7 +66,7 @@ const GROUP_ORDER: [string, string][] = [
   ["workstreams", "Workstreams"],
   ["issues", "Work Management"],
   ["relationships", "Relationships"],
-  ["entities", "Entities"],
+  ["entities", "Resources"],
   ["documents", "Documents"],
 ];
 
