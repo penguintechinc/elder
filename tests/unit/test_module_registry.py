@@ -277,4 +277,5 @@ class TestPhaseZeroModules:
         # Phase 4a (+1): flows (CI/CD)
         # Phase 4b (+1): streams
         # Phase 4c (+1): ai
-        assert len(MODULES) == 16
+        # Phase 4d (+1): runs (serverless FaaS)
+        assert len(MODULES) == 17

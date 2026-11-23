@@ -156,7 +156,7 @@ class TestTenantScopingGateCatchesRegressions:
         assert "unscoped lookups" in result.stdout
         assert "bracket lookups" in result.stdout
         assert "resolver calls missing tenant_id" in result.stdout
-        assert "0 files examined" not in result.stdout, "scan found no files"
+        assert "(0 files examined)" not in result.stdout, "scan found no files"
 
     def test_scanner_fails_on_new_unscoped_lookup(self, tmp_path):
         baseline = tmp_path / ".tenant-scoping-baseline"

@@ -6109,6 +6109,104 @@
     "destructive": true
   },
   {
+    "service": "runs",
+    "operation": "create_run_function",
+    "method": "POST",
+    "path": "/api/v1/runs",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "Create a new serverless function and record initial version 1.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "delete_run_function",
+    "method": "DELETE",
+    "path": "/api/v1/runs/{func_id}",
+    "path_params": [
+      "func_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Delete a serverless function for the current tenant.",
+    "has_body": false,
+    "destructive": true
+  },
+  {
+    "service": "runs",
+    "operation": "get_run_execution",
+    "method": "GET",
+    "path": "/api/v1/runs/executions/{execution_id}",
+    "path_params": [
+      "execution_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get a single execution record including stdout/stderr logs and output.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "get_run_function",
+    "method": "GET",
+    "path": "/api/v1/runs/{func_id}",
+    "path_params": [
+      "func_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Get a single serverless function along with recent executions.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "invoke_run_function",
+    "method": "POST",
+    "path": "/api/v1/runs/{func_id}/invoke",
+    "path_params": [
+      "func_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Queue a pending execution for a serverless function and return 202.",
+    "has_body": true,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "list_run_executions",
+    "method": "GET",
+    "path": "/api/v1/runs/executions",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List function executions for the current tenant with optional filters.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "list_run_functions",
+    "method": "GET",
+    "path": "/api/v1/runs",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List serverless functions for the current tenant with optional filters.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "runs",
+    "operation": "update_run_function",
+    "method": "PUT",
+    "path": "/api/v1/runs/{func_id}",
+    "path_params": [
+      "func_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Update a serverless function, creating a new version when code changes.",
+    "has_body": true,
+    "destructive": true
+  },
+  {
     "service": "sbom",
     "operation": "create_component",
     "method": "POST",

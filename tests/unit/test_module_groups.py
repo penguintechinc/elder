@@ -12,6 +12,7 @@ EXPECTED = {
     # W — Workstreams: things that run on a trigger
     "streams": "workstreams",
     "flows": "workstreams",
+    "runs": "workstreams",
     "webhooks_alerting": "workstreams",
     # I — Issues: things that need doing
     "issues": "issues",
