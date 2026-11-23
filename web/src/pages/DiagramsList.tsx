@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useRef, type ChangeEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Plus, Trash2 } from 'lucide-react'
+import { Plus, Trash2, Upload } from 'lucide-react'
+import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import VillageIdBadge from '@/components/VillageIdBadge'
+import { parseDiagramBackup, type DiagramBackup } from '@/lib/flowExport'
 
 interface Diagram {
   id: number
@@ -25,6 +27,7 @@ export default function DiagramsList() {
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const highlightId = searchParams.get('highlight')
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['diagrams'],
@@ -55,6 +58,40 @@ export default function DiagramsList() {
     },
   })
 
+  const importMutation = useMutation({
+    mutationFn: (backup: DiagramBackup) =>
+      api.createDiagram({
+        title: backup.name,
+        description: backup.description || '',
+        tags: backup.tags,
+        status: 'draft',
+        content: { nodes: backup.nodes, edges: backup.edges },
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['diagrams'] })
+      toast.success(`Imported diagram "${data.title || 'Diagram'}"`)
+      navigate(`/diagrams/${data.id}`)
+    },
+    onError: () => {
+      toast.error('Failed to import diagram')
+    },
+  })
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseDiagramBackup(text)
+      importMutation.mutate(parsed)
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'Failed to parse diagram JSON backup',
+      )
+    }
+  }
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteDiagram(id),
     onSuccess: () => {
@@ -71,14 +108,37 @@ export default function DiagramsList() {
             <h1 className="text-3xl font-bold text-amber-400">Diagrams</h1>
             <p className="text-slate-400 mt-2">Create and manage infrastructure diagrams</p>
           </div>
-          <button
-            onClick={() => createMutation.mutate()}
-            disabled={createMutation.isPending}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            New Diagram
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              disabled={importMutation.isPending}
+              aria-label="Import diagram JSON"
+              className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-slate-100 border border-slate-600 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Upload className="w-4 h-4 text-sky-400" />
+              {importMutation.isPending ? 'Importing...' : 'Import JSON'}
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".json,application/json"
+              aria-label="Select diagram JSON backup file"
+              onChange={(event) => {
+                void handleImportFile(event)
+              }}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => createMutation.mutate()}
+              disabled={createMutation.isPending}
+              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-400 text-slate-900 px-4 py-2 rounded-lg font-semibold transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              New Diagram
+            </button>
+          </div>
         </div>
 
         {/* Error state */}

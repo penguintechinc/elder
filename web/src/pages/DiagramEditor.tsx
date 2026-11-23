@@ -16,6 +16,7 @@ import {
   type OnEdgesChange,
   type OnConnect,
   type NodeTypes,
+  type ReactFlowInstance,
   BackgroundVariant,
   Panel,
   Handle,
@@ -24,8 +25,20 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Save, Trash2, ArrowLeft, Users, Search, X } from "lucide-react";
+import toast from "react-hot-toast";
 import api from "@/lib/api";
 import VillageIdBadge from "@/components/VillageIdBadge";
+import ExportImportMenu from "@/components/diagram/ExportImportMenu";
+import {
+  downloadJsonFile,
+  exportFlowAsJpg,
+  exportFlowAsPng,
+  exportFlowAsSvg,
+  parseDiagramBackup,
+  serializeDiagramBackup,
+  type FlowExportEdge,
+  type FlowExportNode,
+} from "@/lib/flowExport";
 import {
   NodePropertySidebar,
   EdgePropertySidebar,
@@ -425,6 +438,12 @@ function DiagramEditorContent() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedColor, setSelectedColor] = useState("#3B82F6");
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance | null>(null);
+  const [importedMeta, setImportedMeta] = useState<{
+    name?: string;
+    description?: string;
+  } | null>(null);
   const nodeIdCounter = useRef(1);
   const drawingChangeTimeoutRef = useRef<number | null>(null);
 
@@ -455,13 +474,31 @@ function DiagramEditorContent() {
     });
 
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.saveDiagramVersion(Number(id), {
+    mutationFn: async () => {
+      const numericId = Number(id);
+      const res = await api.saveDiagramVersion(numericId, {
         content: { nodes, edges },
         change_summary: "Canvas update",
-      }),
+      });
+      if (
+        importedMeta &&
+        (importedMeta.name || importedMeta.description !== undefined)
+      ) {
+        await api.updateDiagram(numericId, {
+          ...(importedMeta.name ? { title: importedMeta.name } : {}),
+          ...(importedMeta.description !== undefined
+            ? { description: importedMeta.description }
+            : {}),
+        });
+      }
+      return res;
+    },
     onSuccess: () => {
-      console.log("[DiagramEditor] Version saved successfully");
+      setImportedMeta(null);
+      toast.success("Diagram saved");
+    },
+    onError: () => {
+      toast.error("Failed to save diagram");
     },
   });
 
@@ -615,6 +652,103 @@ function DiagramEditorContent() {
     setNodes((nds) => nds.filter((n) => !n.selected));
   }, []);
 
+  const effectiveTitle = importedMeta?.name || diagram?.title || "New Diagram";
+  const effectiveDescription =
+    importedMeta?.description ?? diagram?.description;
+
+  const handleExportPng = useCallback(async () => {
+    try {
+      await exportFlowAsPng({
+        title: effectiveTitle,
+        nodes: nodes as unknown as FlowExportNode[],
+        edges: edges as unknown as FlowExportEdge[],
+        filename: effectiveTitle,
+      });
+      toast.success("Exported diagram as PNG");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to export diagram as PNG",
+      );
+    }
+  }, [effectiveTitle, nodes, edges]);
+
+  const handleExportJpg = useCallback(async () => {
+    try {
+      await exportFlowAsJpg({
+        title: effectiveTitle,
+        nodes: nodes as unknown as FlowExportNode[],
+        edges: edges as unknown as FlowExportEdge[],
+        filename: effectiveTitle,
+      });
+      toast.success("Exported diagram as JPG");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to export diagram as JPG",
+      );
+    }
+  }, [effectiveTitle, nodes, edges]);
+
+  const handleExportSvg = useCallback(() => {
+    exportFlowAsSvg({
+      title: effectiveTitle,
+      nodes: nodes as unknown as FlowExportNode[],
+      edges: edges as unknown as FlowExportEdge[],
+      filename: effectiveTitle,
+    });
+    toast.success("Exported diagram as SVG");
+  }, [effectiveTitle, nodes, edges]);
+
+  const handleExportJson = useCallback(() => {
+    const backup = serializeDiagramBackup({
+      name: effectiveTitle,
+      description: effectiveDescription,
+      tags: Array.isArray(diagram?.tags) ? diagram.tags : undefined,
+      viewport: reactFlowInstance?.getViewport(),
+      nodes: nodes as unknown as FlowExportNode[],
+      edges: edges as unknown as FlowExportEdge[],
+    });
+    downloadJsonFile(backup, effectiveTitle);
+    toast.success("Exported diagram JSON backup");
+  }, [
+    effectiveTitle,
+    effectiveDescription,
+    diagram?.tags,
+    reactFlowInstance,
+    nodes,
+    edges,
+  ]);
+
+  const handleImportJsonFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const parsed = parseDiagramBackup(text);
+        const importedNodes = parsed.nodes as unknown as Node[];
+        const importedEdges = parsed.edges as unknown as Edge[];
+        setNodes(importedNodes);
+        setEdges(importedEdges);
+        nodeIdCounter.current = importedNodes.length + 1;
+        setImportedMeta({
+          name: parsed.name,
+          description: parsed.description,
+        });
+        setEditingNode(null);
+        setEditingEdge(null);
+        sendDrawingChange(importedNodes, importedEdges);
+        toast.success(
+          `Imported "${parsed.name}" (${importedNodes.length} nodes, ${importedEdges.length} edges) — click Save to persist`,
+        );
+      } catch (err) {
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Failed to import diagram JSON backup",
+        );
+      }
+    },
+    [sendDrawingChange],
+  );
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -648,7 +782,7 @@ function DiagramEditorContent() {
           </button>
           <div className="border-l border-slate-600" />
           <h1 className="text-xl font-bold text-amber-400">
-            {diagram?.title || "New Diagram"}
+            {effectiveTitle}
           </h1>
           {diagram?.village_id && (
             <VillageIdBadge villageId={diagram.village_id} compact />
@@ -711,6 +845,16 @@ function DiagramEditorContent() {
             ))}
           </div>
 
+          {/* Export / Import */}
+          <ExportImportMenu
+            kind="diagram"
+            onExportPng={handleExportPng}
+            onExportJpg={handleExportJpg}
+            onExportSvg={handleExportSvg}
+            onExportJson={handleExportJson}
+            onImportJsonFile={handleImportJsonFile}
+          />
+
           {/* Save button */}
           <button
             onClick={() => saveMutation.mutate()}
@@ -735,6 +879,7 @@ function DiagramEditorContent() {
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            onInit={setReactFlowInstance}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
