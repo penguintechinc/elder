@@ -4026,6 +4026,30 @@
   },
   {
     "service": "import",
+    "operation": "get_csv_import_job",
+    "method": "GET",
+    "path": "/api/v1/import/jobs/{job_id}",
+    "path_params": [
+      "job_id"
+    ],
+    "wildcard_path_params": [],
+    "summary": "Fetch a single tenant-scoped CSV import job by its public ``job_id``.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "import",
+    "operation": "list_csv_import_jobs",
+    "method": "GET",
+    "path": "/api/v1/import/jobs",
+    "path_params": [],
+    "wildcard_path_params": [],
+    "summary": "List tenant-scoped CSV import jobs with pagination and optional filters.",
+    "has_body": false,
+    "destructive": false
+  },
+  {
+    "service": "import",
     "operation": "list_csv_templates",
     "method": "GET",
     "path": "/api/v1/import/templates",

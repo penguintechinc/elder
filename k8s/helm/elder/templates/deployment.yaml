@@ -52,9 +52,12 @@ spec:
         {{- end }}
         {{- end }}
         {{- $runsStorage := (index $.Values "runs" | default dict).storage | default dict }}
+        {{- $csvStorage := (index $.Values "csvImport" | default dict).storage | default dict }}
+        {{- $csvBucket := $csvStorage.bucket | default $runsStorage.bucket }}
         {{- $hasRunsS3 := and (eq $component "hub-api") ($runsStorage.bucket) }}
+        {{- $hasCsvImportS3 := and (eq $component "hub-api") ($csvBucket) }}
         {{- $needsPodName := or (eq $component "svc-worker") (eq $component "svc-flows-invoker") }}
-        {{- if or $componentConfig.env $hasOtel $needsPodName $hasRunsS3 }}
+        {{- if or $componentConfig.env $hasOtel $needsPodName $hasRunsS3 $hasCsvImportS3 }}
         env:
         {{- range $key, $value := $componentConfig.env }}
         - name: {{ $key }}
@@ -86,6 +89,37 @@ spec:
             secretKeyRef:
               name: {{ $runsStorage.credentialsSecretName }}
               key: {{ $runsStorage.secretKeySecretKey | default "secret-access-key" }}
+        {{- end }}
+        {{- end }}
+        {{- if $hasCsvImportS3 }}
+        {{- $csvEndpoint := $csvStorage.endpoint | default $runsStorage.endpoint }}
+        {{- $csvRegion := $csvStorage.region | default ($runsStorage.region | default "us-east-1") }}
+        {{- $csvSecretName := $csvStorage.credentialsSecretName | default $runsStorage.credentialsSecretName }}
+        {{- $csvAccessKey := $csvStorage.accessKeySecretKey | default ($runsStorage.accessKeySecretKey | default "access-key-id") }}
+        {{- $csvSecretKey := $csvStorage.secretKeySecretKey | default ($runsStorage.secretKeySecretKey | default "secret-access-key") }}
+        - name: CSV_IMPORT_S3_BUCKET
+          value: {{ $csvBucket | quote }}
+        {{- if $csvEndpoint }}
+        - name: CSV_IMPORT_S3_ENDPOINT
+          value: {{ $csvEndpoint | quote }}
+        {{- end }}
+        - name: CSV_IMPORT_S3_REGION
+          value: {{ $csvRegion | quote }}
+        - name: CSV_IMPORT_S3_PREFIX
+          value: {{ $csvStorage.prefix | default "csv-imports" | quote }}
+        - name: CSV_IMPORT_S3_PATH_STYLE
+          value: {{ if hasKey $csvStorage "pathStyle" }}{{ $csvStorage.pathStyle | quote }}{{ else }}"true"{{ end }}
+        {{- if $csvSecretName }}
+        - name: CSV_IMPORT_S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ $csvSecretName }}
+              key: {{ $csvAccessKey }}
+        - name: CSV_IMPORT_S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ $csvSecretName }}
+              key: {{ $csvSecretKey }}
         {{- end }}
         {{- end }}
         {{- if $hasOtel }}

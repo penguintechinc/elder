@@ -17,6 +17,7 @@ from apps.api.modules.registry import ModuleManifest
 CORE_MODELS = (
     "apps.api.models.audit",
     "apps.api.models.auth_providers",
+    "apps.api.models.csv_import",
     "apps.api.models.identity",
     "apps.api.models.privacy",
     "apps.api.models.rbac",
