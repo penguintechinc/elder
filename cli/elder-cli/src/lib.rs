@@ -21,7 +21,8 @@ use clap::ArgMatches;
 use clap_complete::{generate, Shell};
 use elder_sdk::{
     Catalog, ClientConfig, CreateRunFunctionRequest, ElderClient, HttpMethod, InvokeRunRequest,
-    ListExecutionsParams, ListRunFunctionsParams, UpdateRunFunctionRequest,
+    ListExecutionsParams, ListRemoteWorkersParams, ListRunFunctionsParams,
+    OnboardRemoteWorkerRequest, UpdateRemoteWorkerRequest, UpdateRunFunctionRequest,
 };
 use serde_json::{json, Map, Value};
 use tracing::{debug, info};
@@ -159,6 +160,7 @@ where
         "search" => handle_search(sub_matches, &settings, ctx).await,
         "ai-research" => handle_ai_research(sub_matches, &settings, ctx).await,
         "runs" => handle_runs(sub_matches, &settings, ctx).await,
+        "workers" => handle_workers(sub_matches, &settings, ctx).await,
         "api" => handle_api(sub_matches, &settings, ctx).await,
         "version" => handle_version(sub_matches, &settings, ctx).await,
         "completions" => handle_completions(sub_matches, ctx),
@@ -769,6 +771,108 @@ where
         }
         other => Err(CliError::Usage(format!(
             "unknown runs subcommand {other:?}"
+        ))),
+    }
+}
+
+async fn handle_workers<R, W, E>(
+    matches: &ArgMatches,
+    settings: &ResolvedSettings,
+    ctx: &mut RunContext<'_, R, W, E>,
+) -> Result<()>
+where
+    R: Read,
+    W: Write,
+    E: Write,
+{
+    let (sub, sub_matches) = matches
+        .subcommand()
+        .ok_or_else(|| CliError::Usage("workers requires a subcommand".into()))?;
+
+    let (client, _) = build_client(settings, ctx.store, ctx.env_lookup)?;
+
+    match sub {
+        "list" => {
+            let params = ListRemoteWorkersParams {
+                worker_type: sub_matches.get_one::<String>("type").cloned(),
+                cluster: sub_matches.get_one::<String>("cluster").cloned(),
+                status: sub_matches.get_one::<String>("status").cloned(),
+                page: sub_matches.get_one::<u32>("page").copied(),
+                per_page: sub_matches.get_one::<u32>("per-page").copied(),
+            };
+            let resp = client.workers().list(&params).await?;
+            let val = serde_json::to_value(&resp).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "get" => {
+            let id = sub_matches
+                .get_one::<String>("id")
+                .ok_or_else(|| CliError::Usage("missing required <ID>".into()))?;
+            let worker = client.workers().get(id).await?;
+            let val = serde_json::to_value(&worker).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "onboard" => {
+            let name = sub_matches
+                .get_one::<String>("name")
+                .ok_or_else(|| CliError::Usage("missing required --name".into()))?
+                .clone();
+            let worker_type = sub_matches
+                .get_one::<String>("type")
+                .ok_or_else(|| CliError::Usage("missing required --type".into()))?
+                .clone();
+            let mut req = OnboardRemoteWorkerRequest::new(name, worker_type);
+            req.cluster = sub_matches.get_one::<String>("cluster").cloned();
+            req.poll_interval_seconds = sub_matches.get_one::<u32>("poll-interval").copied();
+            req.progress_interval_seconds =
+                sub_matches.get_one::<u32>("progress-interval").copied();
+            req.max_concurrent = sub_matches.get_one::<u32>("max-concurrent").copied();
+
+            let resp = client.workers().onboard(&req).await?;
+            let val = serde_json::to_value(&resp).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "update" => {
+            let id = sub_matches
+                .get_one::<String>("id")
+                .ok_or_else(|| CliError::Usage("missing required <ID>".into()))?;
+            let req = UpdateRemoteWorkerRequest {
+                name: sub_matches.get_one::<String>("name").cloned(),
+                cluster: sub_matches.get_one::<String>("cluster").cloned(),
+                is_enabled: sub_matches.get_one::<bool>("enabled").copied(),
+                poll_interval_seconds: sub_matches.get_one::<u32>("poll-interval").copied(),
+                progress_interval_seconds: sub_matches.get_one::<u32>("progress-interval").copied(),
+                max_concurrent: sub_matches.get_one::<u32>("max-concurrent").copied(),
+                config: None,
+                capabilities: None,
+            };
+            let updated = client.workers().update(id, &req).await?;
+            let val =
+                serde_json::to_value(&updated).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "rotate-token" => {
+            let id = sub_matches
+                .get_one::<String>("id")
+                .ok_or_else(|| CliError::Usage("missing required <ID>".into()))?;
+            let rotated = client.workers().rotate_token(id).await?;
+            let val =
+                serde_json::to_value(&rotated).map_err(|e| CliError::Format(e.to_string()))?;
+            write_output(ctx.stdout, &val, settings.output)
+        }
+        "offboard" => {
+            let id = sub_matches
+                .get_one::<String>("id")
+                .ok_or_else(|| CliError::Usage("missing required <ID>".into()))?;
+            client.workers().offboard(id).await?;
+            let out = json!({
+                "offboarded": true,
+                "id": id,
+            });
+            write_output(ctx.stdout, &out, settings.output)
+        }
+        other => Err(CliError::Usage(format!(
+            "unknown workers subcommand {other:?}"
         ))),
     }
 }

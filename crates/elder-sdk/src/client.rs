@@ -505,6 +505,11 @@ impl ElderClient {
         crate::runs::RunsClient::new(self)
     }
 
+    /// Access the typed Remote Workers Fleet API (`/api/v1/admin/workers`).
+    pub fn workers(&self) -> crate::workers::WorkersClient<'_> {
+        crate::workers::WorkersClient::new(self)
+    }
+
     /// Fetch AI Researcher configuration from `GET /api/v1/search/ai-research/config`.
     pub async fn ai_research_config(&self) -> Result<Value> {
         self.request(

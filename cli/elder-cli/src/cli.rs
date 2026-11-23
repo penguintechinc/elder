@@ -89,6 +89,7 @@ pub fn build_cli_from_catalog(catalog: &Catalog) -> Command {
         .subcommand(build_search_cmd(catalog))
         .subcommand(build_ai_research_cmd())
         .subcommand(build_runs_cmd())
+        .subcommand(build_workers_cmd())
         .subcommand(build_api_cmd())
         .subcommand(build_version_cmd())
         .subcommand(build_completions_cmd())
@@ -97,7 +98,7 @@ pub fn build_cli_from_catalog(catalog: &Catalog) -> Command {
 
     // Dynamically attach every remaining catalog service as `elder <service> <operation>`.
     for service in catalog.services() {
-        if matches!(service, "auth" | "search" | "services" | "runs") {
+        if matches!(service, "auth" | "search" | "services" | "runs" | "workers") {
             continue;
         }
         let mut svc_cmd = Command::new(service.to_string())
@@ -626,6 +627,180 @@ fn build_runs_cmd() -> Command {
                         .required(true)
                         .value_name("EXECUTION_ID")
                         .help("Execution UUID"),
+                ),
+        )
+}
+
+fn build_workers_cmd() -> Command {
+    let worker_types = ["runworker", "scanner"];
+    let worker_statuses = ["online", "stale", "offline", "revoked"];
+
+    Command::new("workers")
+        .about("Manage the Remote Workers Fleet (/api/v1/admin/workers)")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new("list")
+                .about("List registered remote workers (GET /api/v1/admin/workers)")
+                .arg(
+                    Arg::new("type")
+                        .long("type")
+                        .value_name("TYPE")
+                        .value_parser(worker_types)
+                        .help("Filter by worker type (runworker or scanner)"),
+                )
+                .arg(
+                    Arg::new("cluster")
+                        .long("cluster")
+                        .value_name("CLUSTER")
+                        .help("Filter by target cluster"),
+                )
+                .arg(
+                    Arg::new("status")
+                        .long("status")
+                        .value_name("STATUS")
+                        .value_parser(worker_statuses)
+                        .help("Filter by worker status (online, stale, offline, revoked)"),
+                )
+                .arg(
+                    Arg::new("page")
+                        .long("page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=10_000))
+                        .help("1-based page number"),
+                )
+                .arg(
+                    Arg::new("per-page")
+                        .long("per-page")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=1000))
+                        .help("Items per page"),
+                ),
+        )
+        .subcommand(
+            Command::new("get")
+                .about("Get a single remote worker (GET /api/v1/admin/workers/{id})")
+                .arg(
+                    Arg::new("id")
+                        .required(true)
+                        .value_name("ID")
+                        .help("Remote worker ID"),
+                ),
+        )
+        .subcommand(
+            Command::new("onboard")
+                .about("Onboard a new remote worker and issue a one-time token (POST /api/v1/admin/workers)")
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .required(true)
+                        .value_name("NAME")
+                        .help("Human-readable worker name"),
+                )
+                .arg(
+                    Arg::new("type")
+                        .long("type")
+                        .required(true)
+                        .value_name("TYPE")
+                        .value_parser(worker_types)
+                        .help("Worker type (runworker or scanner)"),
+                )
+                .arg(
+                    Arg::new("cluster")
+                        .long("cluster")
+                        .value_name("CLUSTER")
+                        .help("Optional target cluster"),
+                )
+                .arg(
+                    Arg::new("poll-interval")
+                        .long("poll-interval")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=86_400))
+                        .help("Poll interval in seconds"),
+                )
+                .arg(
+                    Arg::new("progress-interval")
+                        .long("progress-interval")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=86_400))
+                        .help("Progress reporting interval in seconds"),
+                )
+                .arg(
+                    Arg::new("max-concurrent")
+                        .long("max-concurrent")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=1024))
+                        .help("Maximum concurrent jobs or scans"),
+                ),
+        )
+        .subcommand(
+            Command::new("update")
+                .about("Update a remote worker's configuration (PUT /api/v1/admin/workers/{id})")
+                .arg(
+                    Arg::new("id")
+                        .required(true)
+                        .value_name("ID")
+                        .help("Remote worker ID"),
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .value_name("NAME")
+                        .help("Updated worker name"),
+                )
+                .arg(
+                    Arg::new("cluster")
+                        .long("cluster")
+                        .value_name("CLUSTER")
+                        .help("Updated target cluster"),
+                )
+                .arg(
+                    Arg::new("enabled")
+                        .long("enabled")
+                        .value_name("BOOL")
+                        .value_parser(clap::value_parser!(bool))
+                        .help("Enable or disable the worker (true/false)"),
+                )
+                .arg(
+                    Arg::new("poll-interval")
+                        .long("poll-interval")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=86_400))
+                        .help("Updated poll interval in seconds"),
+                )
+                .arg(
+                    Arg::new("progress-interval")
+                        .long("progress-interval")
+                        .value_name("SECS")
+                        .value_parser(clap::value_parser!(u32).range(1..=86_400))
+                        .help("Updated progress reporting interval in seconds"),
+                )
+                .arg(
+                    Arg::new("max-concurrent")
+                        .long("max-concurrent")
+                        .value_name("N")
+                        .value_parser(clap::value_parser!(u32).range(1..=1024))
+                        .help("Updated maximum concurrent jobs or scans"),
+                ),
+        )
+        .subcommand(
+            Command::new("rotate-token")
+                .about("Rotate a remote worker's authentication token (POST /api/v1/admin/workers/{id}/rotate-token)")
+                .arg(
+                    Arg::new("id")
+                        .required(true)
+                        .value_name("ID")
+                        .help("Remote worker ID"),
+                ),
+        )
+        .subcommand(
+            Command::new("offboard")
+                .about("Offboard and revoke a remote worker (DELETE /api/v1/admin/workers/{id})")
+                .arg(
+                    Arg::new("id")
+                        .required(true)
+                        .value_name("ID")
+                        .help("Remote worker ID"),
                 ),
         )
 }
