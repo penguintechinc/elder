@@ -1,6 +1,6 @@
 {{- $hubApi := index .Values "hub-api" -}}
 {{- $svc := index .Values "svc-scanner" -}}
-{{- if $svc.enabled }}
+{{- if and $svc.enabled (eq ($svc.mode | default "deployment") "cronjob") }}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
