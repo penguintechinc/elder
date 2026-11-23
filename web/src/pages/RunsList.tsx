@@ -12,6 +12,8 @@ import {
   Terminal,
   X,
   ChevronRight,
+  Database,
+  HardDrive,
 } from "lucide-react";
 import api, {
   type RunFunction,
@@ -23,6 +25,7 @@ import {
   RUN_RUNTIMES,
   getRuntimeMeta,
   getStarterCode,
+  getStorageBackendMeta,
 } from "@/modules/runs/runtimes";
 
 interface CreateFormState {
@@ -340,6 +343,32 @@ export default function RunsList() {
                         {fn.execution_namespace || "elder-runs"}
                         {fn.worker_cluster ? ` @ ${fn.worker_cluster}` : ""}
                       </span>
+                      {fn.storage_backend &&
+                        (() => {
+                          const storageMeta = getStorageBackendMeta(
+                            fn.storage_backend,
+                          );
+                          return (
+                            <span
+                              data-testid={`storage-badge-${fn.id}`}
+                              title={`Artifact storage: ${storageMeta.label}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-mono ${storageMeta.badgeClass}`}
+                            >
+                              {fn.storage_backend === "s3" ? (
+                                <HardDrive
+                                  className="w-3 h-3"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Database
+                                  className="w-3 h-3"
+                                  aria-hidden="true"
+                                />
+                              )}
+                              {storageMeta.shortLabel}
+                            </span>
+                          );
+                        })()}
                     </div>
                   </div>
 

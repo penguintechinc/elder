@@ -4308,6 +4308,9 @@ export interface RunFunction {
   description?: string | null;
   runtime: RunRuntime | string;
   code: string;
+  storage_backend?: "database" | "s3";
+  storage_key?: string | null;
+  code_sha256?: string | null;
   timeout_seconds?: number;
   memory_mb?: number;
   schedule_cron?: string | null;

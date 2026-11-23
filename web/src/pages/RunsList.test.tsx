@@ -50,6 +50,10 @@ const SAMPLE_FUNCTIONS = [
     description: "Enriches alert payloads with CMDB metadata",
     runtime: "nodejs",
     code: "export async function handler() { return {}; }",
+    storage_backend: "s3" as const,
+    storage_key: "tenants/default/runs/fn-1/v1.tar.gz",
+    code_sha256:
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     timeout_seconds: 30,
     memory_mb: 256,
     schedule_cron: "*/5 * * * *",
@@ -63,6 +67,10 @@ const SAMPLE_FUNCTIONS = [
     description: "Validates asset inventory daily",
     runtime: "python",
     code: "def handler(d): return d",
+    storage_backend: "database" as const,
+    storage_key: null,
+    code_sha256:
+      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
     timeout_seconds: 60,
     memory_mb: 512,
     execution_namespace: "elder-runs",
@@ -104,6 +112,9 @@ describe("RunsList", () => {
     expect(screen.getByTestId("runtime-badge-1").textContent).toBe("Node.js");
     expect(screen.getByTestId("runtime-badge-2").textContent).toBe("Python");
     expect(screen.getByTestId("runtime-badge-3").textContent).toBe("Rust");
+    expect(screen.getByTestId("storage-badge-1").textContent).toBe("S3");
+    expect(screen.getByTestId("storage-badge-2").textContent).toBe("DB");
+    expect(screen.queryByTestId("storage-badge-3")).toBeNull();
     expect(screen.getByText("*/5 * * * *")).toBeTruthy();
     expect(screen.getByText("elder-runs @ dal2-alpha")).toBeTruthy();
   });

@@ -143,4 +143,84 @@ describe("RunDetail", () => {
       expect(screen.getByText(/"ok": true/)).toBeTruthy();
     });
   });
+
+  it("renders S3 artifact storage metadata with storage key, truncated SHA-256 tooltip, and copy button", async () => {
+    const fullSha =
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+
+    vi.mocked(api.getRunFunction).mockResolvedValue({
+      id: 7,
+      name: "enrich-alerts",
+      description: "Enriches alert payloads",
+      runtime: "nodejs",
+      code: "export async function handler(i) { return i; }",
+      storage_backend: "s3",
+      storage_key: "tenants/acme/runs/fn-7/artifact.tar.gz",
+      code_sha256: fullSha,
+      timeout_seconds: 30,
+      memory_mb: 256,
+      execution_namespace: "elder-runs",
+    });
+
+    renderRunDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("artifact-storage-section")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("artifact-storage-backend").textContent).toBe(
+      "S3 Bucket",
+    );
+    expect(screen.getByTestId("artifact-storage-key").textContent).toBe(
+      "tenants/acme/runs/fn-7/artifact.tar.gz",
+    );
+
+    const shaEl = screen.getByTestId("artifact-code-sha256");
+    expect(shaEl.textContent).toBe("e3b0c44298fc1c14…");
+    expect(shaEl.getAttribute("title")).toBe(fullSha);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy SHA-256" }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(fullSha);
+    });
+  });
+
+  it("renders Database artifact storage metadata without storage key when absent", async () => {
+    vi.mocked(api.getRunFunction).mockResolvedValue({
+      id: 7,
+      name: "audit-inventory",
+      description: "Validates asset inventory",
+      runtime: "python",
+      code: "def handler(d): return d",
+      storage_backend: "database",
+      storage_key: null,
+      code_sha256:
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      timeout_seconds: 60,
+      memory_mb: 512,
+      execution_namespace: "elder-runs",
+    });
+
+    renderRunDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("artifact-storage-section")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("artifact-storage-backend").textContent).toBe(
+      "Database",
+    );
+    expect(screen.queryByTestId("artifact-storage-key")).toBeNull();
+
+    const shaEl = screen.getByTestId("artifact-code-sha256");
+    expect(shaEl.textContent).toBe("9f86d081884c7d65…");
+    expect(shaEl.getAttribute("title")).toBe(
+      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+    );
+  });
 });
