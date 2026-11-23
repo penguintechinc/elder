@@ -652,6 +652,56 @@ runs:
     accessKeySecretKey: "access-key-id"
     secretKeySecretKey: "secret-access-key"
 
+# Async batch CSV import S3-compatible storage (MinIO, Garage, Ceph RGW, R2, AWS S3).
+# When `bucket` is set (or `runs.storage.bucket` is set), hub-api streams CSV
+# uploads directly to S3 and queues a csv_import_jobs row (202 Accepted) for
+# the svc-csv-importer batch CronJob.
+csvImport:
+  storage:
+    # S3-compatible bucket name (falls back to runs.storage.bucket when empty).
+    bucket: ""
+    # Custom S3 endpoint URL (e.g. https://s3.internal.penguintech.cloud or http://minio.storage:9000).
+    endpoint: ""
+    region: "us-east-1"
+    prefix: "csv-imports"
+    # Path-style addressing (recommended for MinIO/Garage/Ceph RGW; auto-enabled when endpoint is set).
+    pathStyle: true
+    # Optional Kubernetes Secret name holding S3 access credentials.
+    credentialsSecretName: ""
+    accessKeySecretKey: "access-key-id"
+    secretKeySecretKey: "secret-access-key"
+
+# Async CSV Import Batch CronJob — reuses svc-worker image with
+# `python3 -m apps.worker.csv_import_batch --once`.
+svc-csv-importer:
+  enabled: false
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 55
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  env: {}
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  tmpStorage:
+    sizeLimit: "256Mi"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
 # Runs Worker Service — isolated Kubernetes serverless function runner for
 # Elder Runs (v4.0.x). Completely decoupled from Elder's DB/Redis so it can
 # run inside Elder's cluster OR in a remote Kubernetes cluster.

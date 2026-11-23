@@ -2,7 +2,9 @@
 
 # flake8: noqa: E501
 
-# PyDAL table definitions
+# PyDAL / SQLAlchemy table definitions
+from apps.api.models.csv_import import CsvImportJob
+
 # Python 3.12 dataclass DTOs
 from apps.api.models.dataclasses import (
     AuditLogDTO,
@@ -41,6 +43,8 @@ from apps.api.models.dataclasses import (
 )
 
 __all__ = [
+    # SQLAlchemy models
+    "CsvImportJob",
     # DTOs - Organizations
     "OrganizationDTO",
     "CreateOrganizationRequest",
