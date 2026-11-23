@@ -18,9 +18,9 @@ from pathlib import Path
 
 
 def check_imports() -> bool:
-    """Verify core runworker modules can be imported."""
+    """Verify lightweight runworker modules can be imported without heavy SDKs."""
     try:
-        from apps.runworker import k8s_runner, main, runtimes  # noqa: F401
+        from apps.runworker import runtimes  # noqa: F401
 
         return True
     except ImportError as exc:

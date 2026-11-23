@@ -9,6 +9,10 @@ per-execution Kubernetes Jobs via ``K8sRunner``, and posts results back.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
 import signal
@@ -36,12 +40,57 @@ def _default_health_file() -> str:
     return os.path.join(tempfile.gettempdir(), "runworker.healthy")
 
 
+def _b64url(data: bytes) -> str:
+    """Return unpadded base64url-encoded ASCII text."""
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+
+def _mint_service_worker_jwt(
+    secret: str,
+    *,
+    issuer: str = "elder-api",
+    audience: str = "elder-api",
+    ttl_seconds: int = 300,
+) -> str:
+    """Mint a short-lived HS256 ``service_worker`` JWT for ``svc-runworker``.
+
+    Uses only the Python standard library so ``svc-runworker`` needs no extra
+    JWT runtime dependency while producing tokens verified by
+    ``apps.api.auth.jwt_handler.verify_token``.
+    """
+    now = int(time.time())
+    header = {"alg": "HS256", "typ": "JWT"}
+    payload = {
+        "sub": "svc-runworker",
+        "type": "service_worker",
+        "tenant": "system",
+        "scope": "runs:read runs:write runs:invoke",
+        "iss": issuer,
+        "aud": audience,
+        "iat": now,
+        "exp": now + ttl_seconds,
+    }
+    signing_input = (
+        f"{_b64url(json.dumps(header, separators=(',', ':')).encode('utf-8'))}."
+        f"{_b64url(json.dumps(payload, separators=(',', ':')).encode('utf-8'))}"
+    )
+    signature = hmac.new(
+        secret.encode("utf-8"),
+        signing_input.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    return f"{signing_input}.{_b64url(signature)}"
+
+
 @dataclass(frozen=True)
 class RunWorkerConfig:
     """Environment-driven configuration for ``svc-runworker``."""
 
     elder_api_url: str = "http://hub-api:5000"
     elder_internal_token: str = field(default="", repr=False)
+    jwt_secret_key: str = field(default="", repr=False)
+    jwt_issuer: str = "elder-api"
+    jwt_audience: str = "elder-api"
     execution_namespace: str = "elder-runs"
     worker_cluster: str = ""
     runtime_class_name: str = ""
@@ -56,6 +105,9 @@ class RunWorkerConfig:
         """Load worker configuration from process environment variables."""
         api_url = (os.getenv("ELDER_API_URL") or "http://hub-api:5000").rstrip("/")
         token = os.getenv("ELDER_INTERNAL_TOKEN") or ""
+        jwt_secret = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY") or ""
+        jwt_issuer = os.getenv("JWT_ISSUER") or "elder-api"
+        jwt_audience = os.getenv("JWT_AUDIENCE") or "elder-api"
         namespace = os.getenv("RUNS_EXECUTION_NAMESPACE") or "elder-runs"
         cluster = (os.getenv("RUNS_WORKER_CLUSTER") or "").strip()
         runtime_class = (os.getenv("RUNS_RUNTIME_CLASS_NAME") or "").strip()
@@ -69,6 +121,9 @@ class RunWorkerConfig:
         return cls(
             elder_api_url=api_url,
             elder_internal_token=token,
+            jwt_secret_key=jwt_secret,
+            jwt_issuer=jwt_issuer,
+            jwt_audience=jwt_audience,
             execution_namespace=namespace,
             worker_cluster=cluster,
             runtime_class_name=runtime_class,
@@ -132,6 +187,13 @@ class RunWorkerService:
         if self.config.elder_internal_token:
             headers["Authorization"] = f"Bearer {self.config.elder_internal_token}"
             headers["X-Elder-Internal-Token"] = self.config.elder_internal_token
+        elif self.config.jwt_secret_key:
+            token = _mint_service_worker_jwt(
+                self.config.jwt_secret_key,
+                issuer=self.config.jwt_issuer,
+                audience=self.config.jwt_audience,
+            )
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     def touch_heartbeat(self) -> None:
@@ -152,6 +214,7 @@ class RunWorkerService:
         params: dict[str, str] = {"worker_id": self.config.worker_id}
         if self.config.worker_cluster:
             params["cluster"] = self.config.worker_cluster
+            params["worker_cluster"] = self.config.worker_cluster
 
         response = await self._client.get(
             url,
@@ -266,7 +329,9 @@ class RunWorkerService:
                 "cluster": self.config.worker_cluster or "default",
                 "runtime_class": self.config.runtime_class_name or "default",
                 "max_concurrent": self.config.max_concurrent,
-                "token_configured": bool(self.config.elder_internal_token),
+                "token_configured": bool(
+                    self.config.elder_internal_token or self.config.jwt_secret_key
+                ),
             },
         )
         self.touch_heartbeat()
