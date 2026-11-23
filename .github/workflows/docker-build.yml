@@ -47,6 +47,9 @@ jobs:
           - name: svc-worker
             dockerfile: apps/worker/Dockerfile
             context: .
+          - name: svc-runworker
+            dockerfile: apps/runworker/Dockerfile
+            context: .
           - name: svc-flows-invoker
             dockerfile: apps/flows_invoker/Dockerfile
             context: .
@@ -131,7 +134,7 @@ jobs:
     strategy:
       max-parallel: 3
       matrix:
-        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
+        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-runworker, svc-flows-invoker]
 
     steps:
     - name: Checkout code
@@ -254,6 +257,6 @@ jobs:
     strategy:
       max-parallel: 3
       matrix:
-        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-flows-invoker]
+        service: [hub-api, hub-webui, hub-mcp, svc-scanner, svc-integrations, svc-worker, svc-runworker, svc-flows-invoker]
     steps:
     - run: echo "Container security scan disabled — see ci.yml for filesystem scan"
