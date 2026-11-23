@@ -16,6 +16,7 @@ import {
   Plug,
   Lock,
   Zap,
+  Cpu,
 } from "lucide-react";
 import {
   SidebarMenu,
@@ -77,6 +78,7 @@ const adminNavigation: MenuItem[] = [
     icon: Lock,
     roles: ["admin"],
   },
+  { name: "Workers", href: "/admin/workers", icon: Cpu, roles: ["admin"] },
   { name: "Tenants", href: "/admin/tenants", icon: Users, roles: ["admin"] },
 ];
 

@@ -4449,6 +4449,80 @@ class ApiClient {
       throw err;
     }
   }
+
+  // Admin: Remote Workers (svc-runworker & svc-scanner)
+  async listRemoteWorkers(params?: {
+    worker_type?: RemoteWorkerType;
+    status?: RemoteWorkerStatus;
+    cluster?: string;
+  }): Promise<RemoteWorkerListResponse> {
+    const response = await this.client.get("/admin/workers", { params });
+    const raw = response.data || {};
+    const rows: RemoteWorker[] = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw.workers)
+        ? raw.workers
+        : Array.isArray(raw.items)
+          ? raw.items
+          : Array.isArray(raw.data)
+            ? raw.data
+            : [];
+    return {
+      ...(Array.isArray(raw) ? {} : raw),
+      workers: rows,
+      items: rows,
+      data: rows,
+      total:
+        !Array.isArray(raw) && typeof raw.total === "number"
+          ? raw.total
+          : rows.length,
+    };
+  }
+
+  async getRemoteWorker(id: number | string): Promise<RemoteWorker> {
+    const response = await this.client.get<RemoteWorker>(`/admin/workers/${id}`);
+    return response.data;
+  }
+
+  async onboardRemoteWorker(
+    data: OnboardRemoteWorkerInput,
+  ): Promise<OnboardRemoteWorkerResponse> {
+    const response = await this.client.post<OnboardRemoteWorkerResponse>(
+      "/admin/workers",
+      data,
+    );
+    return response.data;
+  }
+
+  async updateRemoteWorker(
+    id: number | string,
+    data: UpdateRemoteWorkerInput,
+  ): Promise<RemoteWorker> {
+    const response = await this.client.put<RemoteWorker>(
+      `/admin/workers/${id}`,
+      data,
+    );
+    return response.data;
+  }
+
+  async rotateRemoteWorkerToken(
+    id: number | string,
+  ): Promise<OnboardRemoteWorkerResponse> {
+    const response = await this.client.post<OnboardRemoteWorkerResponse>(
+      `/admin/workers/${id}/rotate-token`,
+    );
+    return response.data;
+  }
+
+  async offboardRemoteWorker(
+    id: number | string,
+  ): Promise<{ message?: string; status?: string }> {
+    const response = await this.client.delete<{
+      message?: string;
+      status?: string;
+    }>(`/admin/workers/${id}`);
+    return response.data;
+  }
 }
 
 export type RunRuntime = "nodejs" | "rust" | "python" | "golang" | "ruby";
@@ -4821,6 +4895,73 @@ export interface CsvImportResponse {
   filename?: string | null;
   message?: string;
   errors?: CsvImportJobError[];
+}
+
+export type RemoteWorkerType = "runworker" | "scanner";
+
+export type RemoteWorkerStatus = "online" | "stale" | "offline" | "revoked";
+
+export interface RemoteWorkerConfig {
+  poll_interval_seconds?: number;
+  progress_interval_seconds?: number;
+  log_flush_interval_seconds?: number;
+  max_concurrent?: number;
+  runner_backend?: string;
+  [key: string]: unknown;
+}
+
+export interface RemoteWorker {
+  id: number | string;
+  public_id?: string;
+  name: string;
+  worker_type: RemoteWorkerType;
+  cluster: string;
+  status: RemoteWorkerStatus;
+  hostname?: string | null;
+  version?: string | null;
+  token_prefix?: string | null;
+  is_enabled: boolean;
+  config?: RemoteWorkerConfig | null;
+  last_heartbeat_at?: string | null;
+  capabilities?: string[] | null;
+  metadata?: Record<string, unknown> | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RemoteWorkerListResponse {
+  workers?: RemoteWorker[];
+  data?: RemoteWorker[];
+  items?: RemoteWorker[];
+  total: number;
+  counts?: {
+    online?: number;
+    stale?: number;
+    offline?: number;
+    revoked?: number;
+  };
+}
+
+export interface OnboardRemoteWorkerInput {
+  name: string;
+  worker_type: RemoteWorkerType;
+  cluster?: string;
+  config?: RemoteWorkerConfig;
+  is_enabled?: boolean;
+}
+
+export interface UpdateRemoteWorkerInput {
+  name?: string;
+  cluster?: string;
+  config?: RemoteWorkerConfig;
+  is_enabled?: boolean;
+}
+
+export interface OnboardRemoteWorkerResponse {
+  worker: RemoteWorker;
+  token: string;
+  token_prefix?: string;
+  env_var?: string;
 }
 
 export const api = new ApiClient();

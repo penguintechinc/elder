@@ -27,6 +27,7 @@ import { useModules } from "./hooks/useModules";
 // Geographic resource map — lazy-loaded: pulls in maplibre-gl, kept out of
 // the main bundle since it's a large dependency.
 const Map = lazy(() => import("./pages/Map"));
+const AdminWorkers = lazy(() => import("./pages/AdminWorkers"));
 
 // Protected route wrapper component. The actual JWTs are HttpOnly cookies
 // (gh security audit) -- this checks only the non-sensitive "logged in"
@@ -166,6 +167,14 @@ export default function App() {
           />
           <Route path="admin/license-policies" element={<LicensePolicies />} />
           <Route path="admin/modules" element={<ModuleToggles />} />
+          <Route
+            path="admin/workers"
+            element={
+              <Suspense fallback={<div />}>
+                <AdminWorkers />
+              </Suspense>
+            }
+          />
         </Route>
         <Route path="*" element={<RouteNotFound />} />
       </Routes>
