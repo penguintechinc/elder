@@ -260,7 +260,8 @@ export default function RunDetail() {
   }
 
   const runtimeMeta = getRuntimeMeta(form.runtime);
-  const executions: RunExecution[] = executionsResponse?.data || [];
+  const executions: RunExecution[] =
+    executionsResponse?.items ?? executionsResponse?.data ?? [];
 
   return (
     <div className="min-h-screen bg-slate-900 p-6">
