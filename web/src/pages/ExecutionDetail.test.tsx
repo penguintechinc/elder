@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ExecutionDetail from "./ExecutionDetail";
@@ -70,5 +70,55 @@ describe("ExecutionDetail page", () => {
     expect(screen.getAllByText("Completed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("node-1")).toBeTruthy();
     expect(screen.getByText("412 ms")).toBeTruthy();
+    expect(screen.queryByTestId("live-poll-badge")).toBeNull();
+  });
+
+  it("shows live auto-poll indicator and Pause/Resume toggle for running playbook executions", async () => {
+    vi.mocked(api.getExecutionById).mockResolvedValue({
+      data: {
+        stream_id: 5,
+        stream_name: "Incident Containment",
+        execution: {
+          execution_id: "exec-running-playbook",
+          playbook_id: 5,
+          status: "running",
+          trigger_type: "manual",
+          started_at: "2026-11-23T15:10:00Z",
+        },
+        node_logs: [],
+      },
+    });
+
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter
+          initialEntries={["/streams/executions/exec-running-playbook"]}
+        >
+          <Routes>
+            <Route
+              path="/streams/executions/:executionId"
+              element={<ExecutionDetail />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("Incident Containment")).toBeTruthy();
+    expect(screen.getByTestId("live-poll-badge").textContent).toContain(
+      "Auto-refreshing every 10s",
+    );
+
+    fireEvent.click(screen.getByTestId("toggle-poll-btn"));
+    expect(screen.getByTestId("live-poll-badge").textContent).toContain(
+      "Auto-refresh paused",
+    );
+    expect(screen.getByTestId("toggle-poll-btn").textContent).toContain(
+      "Resume",
+    );
   });
 });
