@@ -1,10 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  NodePropertyModal,
-  fetchCategoryResources,
-} from "./FlowPropertyModals";
+import { NodePropertyModal } from "./FlowPropertyModals";
+import { fetchCategoryResources } from "./resourceLookup";
 import NodeInspector from "@/components/playbooks/NodeInspector";
 import type {
   NodeCatalogItem,

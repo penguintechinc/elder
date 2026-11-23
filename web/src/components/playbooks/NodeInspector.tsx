@@ -18,7 +18,7 @@ import {
   RESOURCE_STATE_FIELD_HINTS,
   fetchCategoryResources,
   type ResourceCategory,
-} from "@/components/diagram/FlowPropertyModals";
+} from "@/components/diagram/resourceLookup";
 import type {
   ConfigFieldOption,
   ConfigFieldSchema,
