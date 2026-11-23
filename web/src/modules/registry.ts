@@ -19,6 +19,7 @@ import diagramsModule from "./diagrams";
 import documentsModule from "./documents";
 import pagesModule from "./pages";
 import streamsModule from "./streams";
+import runsModule from "./runs";
 import aiModule from "./ai";
 
 /**
@@ -39,6 +40,7 @@ export const MODULES: FrontendModule[] = [
   documentsModule,
   pagesModule,
   streamsModule,
+  runsModule,
   aiModule,
 ];
 

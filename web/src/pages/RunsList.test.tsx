@@ -1,0 +1,272 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import RunsList from "./RunsList";
+import api from "@/lib/api";
+
+vi.mock("@/lib/api", () => ({
+  default: {
+    listRunFunctions: vi.fn(),
+    createRunFunction: vi.fn(),
+    deleteRunFunction: vi.fn(),
+    invokeRunFunction: vi.fn(),
+  },
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+const createQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+function renderRunsList() {
+  const queryClient = createQueryClient();
+  return render(
+    <MemoryRouter initialEntries={["/runs"]}>
+      <QueryClientProvider client={queryClient}>
+        <Routes>
+          <Route path="/runs" element={<RunsList />} />
+          <Route path="/runs/:id" element={<div>Run Detail Page</div>} />
+        </Routes>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+const SAMPLE_FUNCTIONS = [
+  {
+    id: 1,
+    name: "enrich-alerts",
+    description: "Enriches alert payloads with CMDB metadata",
+    runtime: "nodejs",
+    code: "export async function handler() { return {}; }",
+    timeout_seconds: 30,
+    memory_mb: 256,
+    schedule_cron: "*/5 * * * *",
+    execution_namespace: "elder-runs",
+    worker_cluster: "dal2-alpha",
+    village_id: "vid-run-1",
+  },
+  {
+    id: 2,
+    name: "audit-inventory",
+    description: "Validates asset inventory daily",
+    runtime: "python",
+    code: "def handler(d): return d",
+    timeout_seconds: 60,
+    memory_mb: 512,
+    execution_namespace: "elder-runs",
+  },
+  {
+    id: 3,
+    name: "fast-packet-parser",
+    description: "Parses binary telemetry headers",
+    runtime: "rust",
+    code: "pub fn handler(v: Value) -> Value { v }",
+    timeout_seconds: 15,
+    memory_mb: 128,
+    execution_namespace: "elder-runs",
+  },
+];
+
+describe("RunsList", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders function list with runtime badges, cron schedule, and namespace", async () => {
+    vi.mocked(api.listRunFunctions).mockResolvedValue({
+      data: SAMPLE_FUNCTIONS,
+      total: 3,
+      page: 1,
+      per_page: 50,
+    });
+
+    renderRunsList();
+
+    await waitFor(() => {
+      expect(screen.getByText("Runs (Serverless Functions)")).toBeTruthy();
+      expect(screen.getByText("enrich-alerts")).toBeTruthy();
+      expect(screen.getByText("audit-inventory")).toBeTruthy();
+      expect(screen.getByText("fast-packet-parser")).toBeTruthy();
+    });
+
+    expect(screen.getByTestId("runtime-badge-1").textContent).toBe("Node.js");
+    expect(screen.getByTestId("runtime-badge-2").textContent).toBe("Python");
+    expect(screen.getByTestId("runtime-badge-3").textContent).toBe("Rust");
+    expect(screen.getByText("*/5 * * * *")).toBeTruthy();
+    expect(screen.getByText("elder-runs @ dal2-alpha")).toBeTruthy();
+  });
+
+  it("creates a new function via the Create Function modal", async () => {
+    vi.mocked(api.listRunFunctions).mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      per_page: 50,
+    });
+    vi.mocked(api.createRunFunction).mockResolvedValue({
+      id: 42,
+      name: "sync-dns-records",
+      description: "Syncs DNS records",
+      runtime: "python",
+      code: "def handler(input_data: dict) -> dict:\n    return {}\n",
+      timeout_seconds: 45,
+      memory_mb: 512,
+      schedule_cron: "0 * * * *",
+      execution_namespace: "elder-runs",
+      worker_cluster: "prod-west",
+    });
+
+    renderRunsList();
+
+    await waitFor(() => {
+      expect(screen.getByText("New Function")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByText("New Function"));
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "sync-dns-records" },
+    });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Syncs DNS records" },
+    });
+    fireEvent.change(screen.getByLabelText("Runtime"), {
+      target: { value: "python" },
+    });
+    fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
+      target: { value: "45" },
+    });
+    fireEvent.change(screen.getByLabelText("Memory (MB)"), {
+      target: { value: "512" },
+    });
+    fireEvent.change(screen.getByLabelText("Schedule (cron)"), {
+      target: { value: "0 * * * *" },
+    });
+    fireEvent.change(screen.getByLabelText("Worker Cluster"), {
+      target: { value: "prod-west" },
+    });
+
+    const codeInput = screen.getByLabelText("Code") as HTMLTextAreaElement;
+    expect(codeInput.value).toContain("def handler");
+
+    const submitButtons = screen.getAllByRole("button", {
+      name: "Create Function",
+    });
+    fireEvent.click(submitButtons[submitButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(api.createRunFunction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "sync-dns-records",
+          description: "Syncs DNS records",
+          runtime: "python",
+          timeout_seconds: 45,
+          memory_mb: 512,
+          schedule_cron: "0 * * * *",
+          execution_namespace: "elder-runs",
+          worker_cluster: "prod-west",
+        }),
+      );
+    });
+  });
+
+  it("invokes Run Now for a function card without navigating", async () => {
+    vi.mocked(api.listRunFunctions).mockResolvedValue({
+      data: [SAMPLE_FUNCTIONS[0]],
+      total: 1,
+      page: 1,
+      per_page: 50,
+    });
+    vi.mocked(api.invokeRunFunction).mockResolvedValue({
+      id: 99,
+      execution_id: "exec-12345678",
+      function_id: 1,
+      status: "queued",
+      trigger_type: "manual",
+      created_at: "2026-11-23T10:00:00Z",
+    });
+
+    renderRunsList();
+
+    await waitFor(() => {
+      expect(screen.getByText("enrich-alerts")).toBeTruthy();
+    });
+
+    const runButton = screen.getByRole("button", {
+      name: "Run Now enrich-alerts",
+    });
+    fireEvent.click(runButton);
+
+    await waitFor(() => {
+      expect(api.invokeRunFunction).toHaveBeenCalledWith(1, {});
+    });
+
+    expect(screen.queryByText("Run Detail Page")).toBeNull();
+  });
+
+  it("navigates to /runs/:id when clicking the stretched-link card", async () => {
+    vi.mocked(api.listRunFunctions).mockResolvedValue({
+      data: [SAMPLE_FUNCTIONS[0]],
+      total: 1,
+      page: 1,
+      per_page: 50,
+    });
+
+    renderRunsList();
+
+    await waitFor(() => {
+      expect(screen.getByText("enrich-alerts")).toBeTruthy();
+    });
+
+    const cardLink = screen.getByRole("link", { name: /enrich-alerts/i });
+    expect(cardLink.getAttribute("href")).toBe("/runs/1");
+    expect(cardLink.className).toContain("after:absolute");
+    expect(cardLink.className).toContain("after:inset-0");
+
+    fireEvent.click(cardLink);
+
+    await waitFor(() => {
+      expect(screen.getByText("Run Detail Page")).toBeTruthy();
+    });
+  });
+
+  it("filters by runtime pill when clicked", async () => {
+    vi.mocked(api.listRunFunctions).mockResolvedValue({
+      data: SAMPLE_FUNCTIONS,
+      total: 3,
+      page: 1,
+      per_page: 50,
+    });
+
+    renderRunsList();
+
+    await waitFor(() => {
+      expect(screen.getByText("enrich-alerts")).toBeTruthy();
+    });
+
+    const rustFilterBtn = screen.getByRole("button", { name: "Rust" });
+    fireEvent.click(rustFilterBtn);
+
+    await waitFor(() => {
+      expect(api.listRunFunctions).toHaveBeenCalledWith({
+        runtime: "rust",
+        page: 1,
+        per_page: 50,
+      });
+    });
+  });
+});
