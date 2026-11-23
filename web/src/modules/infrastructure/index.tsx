@@ -10,7 +10,6 @@ import {
   HardDrive,
   Server,
   Network,
-  Share2,
 } from "lucide-react";
 
 // Lazy-load page components
@@ -54,7 +53,6 @@ const navigation: MenuCategory[] = [
     items: [
       { name: "Networking", href: "/networking", icon: Network },
       { name: "Dependencies", href: "/dependencies", icon: GitBranch },
-      { name: "Diagram", href: "/diagram", icon: Share2 },
     ],
   },
 ];

@@ -62,24 +62,30 @@ describe("Module Grouping (WIRED)", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Entities",
+      "Infrastructure",
+      "Software",
+      "Security",
       "Documents",
     ]);
   });
 
-  it("exposes Data Inventory under Entities and keeps Work Management key as group-issues", () => {
+  it("exposes Data Inventory under Infrastructure, Dependencies under Relationships, and On-Call under Work Management", () => {
     const all = new Set(MODULES.map((m) => m.id));
     const nav = navFor(all);
 
-    const entities = nav.find((c) => c.header === "Entities");
+    const entities = nav.find((c) => c.header === "Infrastructure");
+    const relationships = nav.find((c) => c.header === "Relationships");
     const workMgmt = nav.find((c) => c.header === "Work Management");
 
     expect(entities).toBeDefined();
+    expect(relationships).toBeDefined();
     expect(workMgmt).toBeDefined();
     expect(workMgmt?.key).toBe("group-issues");
 
     expect(entities?.items.map((i) => i.href)).toContain("/data-inventory");
     expect(entities?.items.map((i) => i.name)).toContain("Data Inventory");
+    expect(relationships?.items.map((i) => i.href)).toContain("/dependencies");
+    expect(workMgmt?.items.map((i) => i.href)).toContain("/on-call-rotations");
     expect(workMgmt?.items.map((i) => i.href)).not.toContain("/data-inventory");
     expect(workMgmt?.items.map((i) => i.name)).not.toContain("Data Inventory");
   });
