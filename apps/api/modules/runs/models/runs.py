@@ -33,10 +33,10 @@ SUPPORTED_RUNTIMES: frozenset[str] = frozenset(
     {"nodejs", "rust", "python", "golang", "ruby"}
 )
 EXECUTION_STATUSES: frozenset[str] = frozenset(
-    {"pending", "running", "completed", "failed", "timed_out"}
+    {"pending", "running", "completed", "failed", "timed_out", "cancelled"}
 )
 TERMINAL_EXECUTION_STATUSES: frozenset[str] = frozenset(
-    {"completed", "failed", "timed_out"}
+    {"completed", "failed", "timed_out", "cancelled"}
 )
 TRIGGER_TYPES: frozenset[str] = frozenset({"manual", "schedule", "stream"})
 
@@ -142,7 +142,7 @@ class RunExecution(Base, IDMixin, TenantScopedMixin):
         default="pending",
         server_default="pending",
         index=True,
-        comment="pending | running | completed | failed | timed_out",
+        comment="pending | running | completed | failed | timed_out | cancelled",
     )
     trigger_type = Column(
         String(32),

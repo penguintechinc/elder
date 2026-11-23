@@ -1043,6 +1043,79 @@ async def get_run_execution(execution_id: str):
     return jsonify(_serialize_execution(row, func_row=func_row)), 200
 
 
+@bp.route("/executions/<execution_id>/cancel", methods=["POST"])
+@login_required
+@require_scope("runs:invoke")
+async def cancel_run_execution(execution_id: str):
+    """Cancel a pending or running execution for the current tenant."""
+    db = current_app.db
+    tenant_id = get_current_tenant_id()
+    if not tenant_id:
+        return ApiResponse.forbidden("Tenant context required")
+
+    def cancel():
+        exec_row = (
+            db(
+                (db.run_executions.execution_id == execution_id)
+                & (db.run_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not exec_row:
+            return None, None, "not_found"
+
+        if (exec_row.status or "").lower() in TERMINAL_EXECUTION_STATUSES:
+            return exec_row, None, "already_finished"
+
+        now = _utc_now()
+        duration_ms: int | None = None
+        if getattr(exec_row, "started_at", None) is not None:
+            started_dt = _parse_datetime(exec_row.started_at)
+            if started_dt is not None:
+                duration_ms = max(0, int((now - started_dt).total_seconds() * 1000))
+
+        db(
+            (db.run_executions.execution_id == execution_id)
+            & (db.run_executions.tenant_id == tenant_id)
+        ).update(
+            status="cancelled",
+            completed_at=now,
+            error_message="Cancelled by user",
+            duration_ms=duration_ms,
+        )
+        db.commit()
+
+        updated = (
+            db(
+                (db.run_executions.execution_id == execution_id)
+                & (db.run_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        func_row = (
+            get_tenant_scoped(db, db.run_functions, updated.function_id, tenant_id)
+            if updated
+            else None
+        )
+        return updated, func_row, None
+
+    updated, func_row, reason = await run_in_threadpool(cancel)
+    if reason == "not_found":
+        return ApiResponse.not_found("Run execution", execution_id)
+    if reason == "already_finished":
+        return ApiResponse.error("Execution is already finished", 409)
+
+    logger.info(
+        "run_execution_cancelled",
+        execution_id=execution_id,
+        tenant_id=tenant_id,
+        duration_ms=getattr(updated, "duration_ms", None),
+    )
+    return jsonify(_serialize_execution(updated, func_row=func_row)), 200
+
+
 @bp.route("/internal/pending", methods=["GET"])
 @login_required
 @require_scope("runs:invoke")

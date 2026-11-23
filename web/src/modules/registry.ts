@@ -106,12 +106,12 @@ function resolveNavSection(moduleId: string, moduleGroup: string, href: string):
 const WORKSTREAMS_HREF_ORDER: readonly string[] = [
   "/webhooks",
   "/streams",
-  "/streams/approvals",
+  "/approvals",
   "/runs",
   "/backups",
   "/csv-templates",
 ];
-const WORKSTREAMS_LAST_HREF = "/streams/executions";
+const WORKSTREAMS_LAST_HREF = "/executions";
 
 /** Explicit item order for the Work Management (issues) sidebar section. */
 const WORK_MANAGEMENT_HREF_ORDER: readonly string[] = [

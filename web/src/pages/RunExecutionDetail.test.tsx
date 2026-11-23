@@ -8,6 +8,7 @@ import api, { type RunExecution } from "@/lib/api";
 vi.mock("@/lib/api", () => ({
   default: {
     getRunExecution: vi.fn(),
+    cancelRunExecution: vi.fn(),
   },
 }));
 
@@ -175,8 +176,9 @@ describe("RunExecutionDetail", () => {
       ).toBeTruthy();
     });
 
-    // No live auto-poll indicator on completed execution
+    // No live auto-poll indicator or Cancel button on completed execution
     expect(screen.queryByTestId("live-poll-badge")).toBeNull();
+    expect(screen.queryByTestId("cancel-execution-btn")).toBeNull();
 
     // All 4 steps completed
     expect(
@@ -273,5 +275,53 @@ describe("RunExecutionDetail", () => {
     const finalStep = screen.getByTestId("timeline-step-final");
     expect(finalStep.getAttribute("data-step-state")).toBe("failed");
     expect(finalStep.textContent).toContain("Failed");
+  });
+
+  it("shows Cancel button while running, calls api.cancelRunExecution, and renders cancelled state", async () => {
+    const runningExec: ExtendedRunExecution = {
+      id: 104,
+      execution_id: "exec-cancel-004",
+      function_id: 42,
+      function_name: "long-job",
+      runtime: "python",
+      status: "running",
+      trigger_type: "manual",
+      worker_id: "svc-runworker-0",
+      started_at: "2026-11-23T21:10:01Z",
+      created_at: "2026-11-23T21:10:00Z",
+    };
+    const cancelledExec: ExtendedRunExecution = {
+      ...runningExec,
+      status: "cancelled",
+      error_message: "Cancelled by user",
+      completed_at: "2026-11-23T21:10:05Z",
+      duration_ms: 4000,
+    };
+
+    vi.mocked(api.getRunExecution)
+      .mockResolvedValueOnce(runningExec)
+      .mockResolvedValue(cancelledExec);
+    vi.mocked(api.cancelRunExecution).mockResolvedValue(cancelledExec);
+
+    renderRunExecutionDetail("exec-cancel-004");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("cancel-execution-btn")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("cancel-execution-btn"));
+
+    await waitFor(() => {
+      expect(api.cancelRunExecution).toHaveBeenCalledWith("exec-cancel-004");
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("cancel-execution-btn")).toBeNull();
+      expect(screen.getByTestId("execution-status-badge").textContent).toBe(
+        "Cancelled",
+      );
+      const finalStep = screen.getByTestId("timeline-step-final");
+      expect(finalStep.textContent).toContain("Cancelled");
+    });
   });
 });

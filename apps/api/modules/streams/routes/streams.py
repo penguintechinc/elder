@@ -1569,6 +1569,7 @@ def _serialize_coderun_execution(row: Any, fn: Any | None) -> dict[str, Any]:
         "playbook_id": None,
         "stream_id": None,
         "stream_name": display_name,
+        "source": "coderun",
         "source_type": "coderun",
         "source_name": display_name,
         "function_id": row.function_id,
@@ -1599,6 +1600,7 @@ def _serialize_webhook_delivery(row: Any, webhook: Any | None) -> dict[str, Any]
         "playbook_id": None,
         "stream_id": None,
         "stream_name": display_name,
+        "source": "webhook",
         "source_type": "webhook",
         "source_name": display_name,
         "webhook_id": row.webhook_id,
@@ -1717,6 +1719,7 @@ async def list_all_executions():
                         stream_id=stream_row.id,
                         stream_name=stream_row.name,
                     )
+                    serialized["source"] = "playbook"
                     serialized["source_type"] = "playbook"
                     serialized["source_name"] = stream_row.name
                     if _matches_execution_filters(

@@ -24,8 +24,8 @@ const navigation: MenuCategory[] = [
     collapsible: false,
     items: [
       { name: 'Playbooks', href: '/streams', icon: Workflow },
-      { name: 'Executions', href: '/streams/executions', icon: Clock },
-      { name: 'Approvals', href: '/streams/approvals', icon: CheckSquare },
+      { name: 'Executions', href: '/executions', icon: Clock },
+      { name: 'Approvals', href: '/approvals', icon: CheckSquare },
     ],
   },
 ]
@@ -33,6 +33,8 @@ const navigation: MenuCategory[] = [
 const routes: RouteObject[] = [
   { path: 'streams', element: <StreamsList /> },
   { path: 'streams/:id', element: <PlaybookEditor /> },
+  { path: 'executions', element: <ExecutionsList /> },
+  { path: 'approvals', element: <ApprovalCenter /> },
   { path: 'streams/executions', element: <ExecutionsList /> },
   { path: 'streams/executions/:executionId', element: <ExecutionDetail /> },
   { path: 'streams/approvals', element: <ApprovalCenter /> },
