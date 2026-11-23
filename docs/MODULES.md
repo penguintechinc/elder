@@ -1,25 +1,26 @@
 # Modules & the WIRED Model
 
-Elder is a **modular monolith**: one deployable platform made of 15 modules that are all installed in every build and switched on or off at deploy time.
+Elder is a **modular monolith**: one deployable platform made of 17 modules that are all installed in every build and switched on or off at deploy time.
 
-Modules are grouped into the five **WIRED** pillars. The pillars are the same five nouns everywhere — the sidebar sections, the module groups, and the `ELDER_GROUP_*` env toggles.
+Modules are grouped into the five **WIRED** pillars. The pillars name the module groups and the `ELDER_GROUP_*` env toggles, and drive the web UI sidebar layout (with the Entities/Resources pillar split into **Infrastructure**, **Software**, and **Security** sub-sections for readability).
 
 ```
-  W  Workstreams    things that run on a trigger      streams · flows · webhooks & alerting
-  I  Issues         things that need doing            issues · projects · internal tickets
-  R  Relationships  edges, discovered and attested    discovery · access reviews
-  E  Entities       things you inventory              CMDB · IPAM · SBOM · services · secrets
+  W  Workstreams    things that run on a trigger      streams · flows · runs (CodeRuns) · webhooks & alerting
+  I  Issues         things that need doing            issues · projects · on-call · internal tickets
+  R  Relationships  edges, discovered and attested    discovery · dependencies · access reviews
+  E  Entities       things you inventory              CMDB · IPAM · SBOM · services · AI · secrets
   D  Documents      things you write down             documents · pages · diagrams
 ```
 
-## The 15 modules
+## The 17 modules
 
 | Module | Title | Group | Depends on | License feature | Table prefix |
 |--------|-------|-------|------------|-----------------|--------------|
-| `streams` | Streams (Workflows) | `workstreams` | — | — | `stream_` |
+| `streams` | Streams (Playbooks / Workflows) | `workstreams` | — | — | `stream_` |
 | `flows` | Flows (CI/CD) | `workstreams` | — | — | `iceflows_` |
+| `runs` | CodeRuns (Serverless Functions) | `workstreams` | — | — | `run_` |
 | `webhooks_alerting` | Webhooks & Alerting | `workstreams` | — | — | — |
-| `issues` | Issues & Project Tracking | `issues` | — | — | — |
+| `issues` | Work Management (Issues & Projects) | `issues` | — | — | — |
 | `helpdesk` | Helpdesk (Internal Ticketing) | `issues` | — | — | `hd_` |
 | `discovery` | Discovery & Sync | `relationships` | `infrastructure` | — | — |
 | `access_reviews` | Access Reviews | `relationships` | — | `access-reviews` | — |
@@ -27,12 +28,13 @@ Modules are grouped into the five **WIRED** pillars. The pillars are the same fi
 | `ipam` | IP Address Management | `entities` | — | — | — |
 | `sbom` | Software Bill of Materials | `entities` | — | — | — |
 | `services_oncall` | Service Catalog & On-Call | `entities` | — | — | — |
+| `ai` | AI Resources | `entities` | — | — | — |
 | `secrets` | Secrets Management | `entities` | — | — | — |
 | `documents` | Documents & Knowledge Base | `documents` | — | — | `doc_` |
 | `pages` | Pages & Documentation | `documents` | `documents` | — | `pg_` |
 | `diagrams` | Diagrams & Drawing | `documents` | — | — | `dg_` |
 
-> ⚠️ **`flows` and `helpdesk` are API-only today.** Both register blueprints and worker task groups, but neither has an entry in `web/src/modules/` — the React app ships 13 module manifests against the backend's 15, so enabling either adds REST endpoints and background work but no sidebar entry or page.
+> ⚠️ **`flows` and `helpdesk` are API-only today.** Both register blueprints and worker task groups, but neither has an entry in `web/src/modules/` — the React app ships 15 module manifests against the backend's 17, so enabling either adds REST endpoints and background work but no sidebar entry or page.
 
 Manifests live in [`apps/api/modules/__init__.py`](../apps/api/modules/__init__.py); the `ModuleManifest` dataclass and resolution logic are in [`apps/api/modules/registry.py`](../apps/api/modules/registry.py). The frontend mirror is [`web/src/modules/registry.ts`](../web/src/modules/registry.ts).
 
@@ -94,16 +96,19 @@ camelCase keys become `ELDER_MODULE_<UPPER_SNAKE>` env vars.
 | `tenant_enabled` | Enabled for the calling tenant |
 | `effective` | The resolved answer — the UI renders only these |
 
-The web UI buckets `effective: true` modules by `group` and renders **one collapsible
-sidebar section per pillar**, in acronym order: Workstreams, Issues, Relationships,
-Entities, Documents. A pillar with no enabled modules is omitted entirely.
+The web UI buckets `effective: true` modules in WIRED order, splitting the `entities`
+pillar into **Infrastructure**, **Software**, and **Security** so each section stays
+concise, and omitting any empty section:
 
-Module-authored sub-headers are intentionally not shown. Modules each declare their own
-nav categories and those headers collide — `sbom` and `services_oncall` both ship a
-"Software & Services", and a single-item module renders its name twice (header, then the
-identical item). One section per pillar removes both classes of duplicate by
-construction. The items are still contributed by module manifests and gated per tenant,
-so toggling a module still adds or removes exactly its own entries.
+1. **Workstreams** — Webhooks (`/webhooks`), Playbooks (`/streams`), Approvals (`/streams/approvals`), CodeRuns (`/runs`), Backups (`/backups`), CSV Templates (`/csv-templates`), and the centralized Executions audit log (`/streams/executions`, always last).
+2. **Work Management** (`issues` group) — On-Call Rotations (`/on-call-rotations`), Projects (`/projects`), Issues (`/issues`), Milestones (`/milestones`), Labels (`/labels`).
+3. **Relationships** — Dependencies (`/dependencies`), Discovery (`/discovery`), Access Reviews (`/access-reviews`).
+4. **Infrastructure** (`infrastructure`, `ipam`) — Entities, Compute, Networking, Data Stores, IPAM, Topology Map.
+5. **Software** (`sbom`, `services_oncall`, `ai`) — Services, Software / SBOM, AI Resources.
+6. **Security** (`secrets` + `/vulnerabilities`) — Secrets, Keys, Certificates, Vulnerabilities.
+7. **Documents** (`documents`, `pages`, `diagrams`) — Documents, Pages, Diagrams (with global href deduplication so `/diagrams` appears once).
+
+Platform administration entries — including **Administration → Workers** (`/admin/workers`) for managing remote `svc-runworker` and `svc-scanner` fleets — live under the dedicated Administration section.
 
 ## Licensing
 

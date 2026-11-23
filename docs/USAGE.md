@@ -6,8 +6,9 @@ Quick reference guide for using Elder infrastructure tracking platform.
 
 - [Getting Started](#getting-started)
 - [Core Features](#core-features)
+- [v4.0.x Features & Workflows](#v40x-features--workflows)
 - [v2.0 Features](#v20-features)
-- [Docker Compose](#docker-compose)
+- [Docker Compose (Deprecated)](#docker-compose-deprecated)
 - [Kubernetes](#kubernetes)
 - [Environment Variables](#environment-variables)
 - [Common Tasks](#common-tasks)
@@ -125,6 +126,40 @@ curl -X POST http://localhost:4000/api/v1/dependencies \
 curl http://localhost:4000/api/v1/graph?organization_id=1 \
   -H "Authorization: Bearer <token>"
 ```
+
+## v4.0.x Features & Workflows
+
+### CodeRuns (`svc-runworker`)
+
+CodeRuns (under **Workstreams → CodeRuns**, `/runs`) execute short-lived serverless functions (max timeout **5 minutes / `300s`**) on `svc-runworker` Deployments that poll `hub-api` over HTTP with zero DB/Valkey/S3 credentials:
+
+- **Scoped Permissions & Egress**: Grant least-privilege API scopes (`granted_scopes`, catalog at `GET /api/v1/runs/permissions/catalog`) and explicit outbound hostnames (`allowed_egress_domains`) per CodeRun. `hub-api` mints a short-lived ephemeral execution JWT enforced by `svc-runworker`'s loopback Tool/Network Restriction Gateway.
+- **Built-in `elder` Helper SDK**: Every CodeRun workspace automatically mounts a zero-dependency helper (`elder.py`, `elder.mjs`, or `elder.rb`) pre-wired to the loopback gateway.
+- **Live Logs & Cluster Routing**: `svc-runworker` flushes live `stdout` logs every 30s by default (`RUNS_LOG_FLUSH_INTERVAL_SECONDS`), and routes execution jobs by `worker_cluster` into the operator-managed `execution_namespace` (`elder-runs`).
+
+### Remote Workers Fleet (`/admin/workers`)
+
+Manage remote-capable `svc-runworker` and `svc-scanner` Deployments from **Administration → Workers** (`/admin/workers`), `hub-mcp`, Python SDK (`client.workers`), Rust SDK (`elder_sdk::workers`), or Rust CLI (`elder workers`):
+
+- **Onboard**: `POST /api/v1/admin/workers` (or `elder workers onboard`) issues a one-time `ewk_` bearer token (`ELDER_INTERNAL_TOKEN`) with ready-to-use Docker/Helm snippets.
+- **Monitor & Configure**: Workers report periodic heartbeats to `POST /api/v1/admin/workers/heartbeat` and display liveness states (`online`, `stale`, `offline`, `revoked`). Update live config (`PUT /api/v1/admin/workers/{id}`), rotate tokens (`POST /api/v1/admin/workers/{id}/rotate-token`), or offboard/revoke (`DELETE /api/v1/admin/workers/{id}`).
+- **Remote Scanner (`svc-scanner`)**: Runs as a long-running Deployment (`run --loop`) with a 5-minute (`300s`) default poll interval, 30s default progress push, and periodic fleet heartbeats.
+
+### CSV Bulk Imports
+
+Upload bulk CSVs under **Workstreams → CSV Templates** (`/csv-templates`) or via `POST /api/v1/import/<resource>`:
+
+1. `hub-api` uploads the CSV to the configured S3-compatible bucket and enqueues the job ID on Valkey (`elder:csv_import:queue`).
+2. `svc-worker` claims queued jobs immediately via `BRPOP` (with a 60s periodic DB fallback sweep) and imports rows directly into PostgreSQL.
+3. Poll progress via `GET /api/v1/import/jobs/{job_id}`.
+
+### Diagrams & Playbooks Export / JSON Backup
+
+Both the **Diagram Editor** (`/diagrams`) and **Playbook Editor** (`/streams`) include an **Export / Import** menu for pure-browser **PNG / JPG / SVG** image export and versioned, tenant-free **JSON backup / import**.
+
+### Centralized Executions Audit Log
+
+Navigate to **Workstreams → Executions** (`/streams/executions`) to inspect a unified, filterable execution log across **All**, **Playbooks**, **CodeRuns**, and **Webhooks** (backed by `GET /api/v1/streams/executions`).
 
 ## v2.0 Features
 
@@ -267,7 +302,9 @@ curl -X POST http://localhost:4000/api/v1/sync/configs \
   }'
 ```
 
-## Docker Compose
+## Docker Compose (Deprecated)
+
+> **Deprecated**: Docker Compose is deprecated for alpha, beta, and production environments. Use the Kubernetes Helm chart (`k8s/helm/elder`) below.
 
 ### Starting Services
 
@@ -328,14 +365,14 @@ kubectl get pods -n elder
 ### Kubectl Management
 
 ```bash
-# View pods
+# View pods (6-image architecture: hub-webui, hub-mcp, hub-api, svc-worker, svc-scanner, svc-runworker)
 kubectl get pods -n elder
 
 # View logs
-kubectl logs -f deployment/elder-api -n elder
+kubectl logs -f deployment/hub-api -n elder
 
 # Scale API
-kubectl scale deployment elder-api --replicas=3 -n elder
+kubectl scale deployment hub-api --replicas=3 -n elder
 ```
 
 ## Environment Variables
