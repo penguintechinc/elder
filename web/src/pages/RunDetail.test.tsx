@@ -1,0 +1,146 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import RunDetail from "./RunDetail";
+import api from "@/lib/api";
+
+vi.mock("@/lib/api", () => ({
+  default: {
+    getRunFunction: vi.fn(),
+    updateRunFunction: vi.fn(),
+    deleteRunFunction: vi.fn(),
+    invokeRunFunction: vi.fn(),
+    listRunExecutions: vi.fn(),
+  },
+}));
+
+vi.mock("react-hot-toast", () => ({
+  default: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+function renderRunDetail(initialEntry = "/runs/7") {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={queryClient}>
+        <Routes>
+          <Route path="/runs/:id" element={<RunDetail />} />
+          <Route path="/runs" element={<div>Runs List Page</div>} />
+        </Routes>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("RunDetail", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getRunFunction).mockResolvedValue({
+      id: 7,
+      name: "enrich-alerts",
+      description: "Enriches alert payloads",
+      runtime: "nodejs",
+      code: "export async function handler(i) { return i; }",
+      timeout_seconds: 30,
+      memory_mb: 256,
+      schedule_cron: "*/10 * * * *",
+      execution_namespace: "elder-runs",
+      worker_cluster: "dal2-alpha",
+    });
+    vi.mocked(api.listRunExecutions).mockResolvedValue({
+      data: [
+        {
+          id: 101,
+          execution_id: "exec-abc-123",
+          function_id: 7,
+          status: "completed",
+          trigger_type: "manual",
+          exit_code: 0,
+          duration_ms: 142,
+          stdout: "hello from container",
+          stderr: "",
+          output_data: { ok: true },
+          created_at: "2026-11-23T12:00:00Z",
+        },
+      ],
+      total: 1,
+      page: 1,
+      per_page: 25,
+    });
+  });
+
+  it("loads function details, saves edits, triggers test run, and expands execution logs", async () => {
+    vi.mocked(api.updateRunFunction).mockResolvedValue({
+      id: 7,
+      name: "enrich-alerts-v2",
+      description: "Enriches alert payloads",
+      runtime: "nodejs",
+      code: "export async function handler(i) { return i; }",
+      timeout_seconds: 60,
+      memory_mb: 256,
+      schedule_cron: "*/10 * * * *",
+      execution_namespace: "elder-runs",
+      worker_cluster: "dal2-alpha",
+    });
+    vi.mocked(api.invokeRunFunction).mockResolvedValue({
+      id: 102,
+      execution_id: "exec-new-456",
+      function_id: 7,
+      status: "completed",
+      trigger_type: "manual",
+      created_at: "2026-11-23T12:01:00Z",
+    });
+
+    renderRunDetail();
+
+    await waitFor(() => {
+      expect(screen.getByText("enrich-alerts")).toBeTruthy();
+      expect(screen.getByText("exec-abc-123")).toBeTruthy();
+    });
+
+    // Edit and save
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "enrich-alerts-v2" },
+    });
+    fireEvent.change(screen.getByLabelText("Timeout (seconds)"), {
+      target: { value: "60" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(api.updateRunFunction).toHaveBeenCalledWith(
+        7,
+        expect.objectContaining({
+          name: "enrich-alerts-v2",
+          timeout_seconds: 60,
+        }),
+      );
+    });
+
+    // Test run with custom JSON payload
+    fireEvent.change(screen.getByLabelText("JSON Input Payload"), {
+      target: { value: '{"env":"prod"}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run Function" }));
+
+    await waitFor(() => {
+      expect(api.invokeRunFunction).toHaveBeenCalledWith(7, { env: "prod" });
+    });
+
+    // Expand execution logs
+    fireEvent.click(screen.getByRole("button", { name: /exec-abc-123/i }));
+    await waitFor(() => {
+      expect(screen.getByText("hello from container")).toBeTruthy();
+      expect(screen.getByText(/"ok": true/)).toBeTruthy();
+    });
+  });
+});

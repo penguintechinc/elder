@@ -4238,6 +4238,136 @@ class ApiClient {
     const response = await this.client.get("/licensing/status");
     return response.data;
   }
+
+  // Runs (Serverless Functions)
+  async listRunFunctions(params?: {
+    runtime?: string;
+    search?: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<RunFunctionListResponse> {
+    const response = await this.client.get("/runs", { params });
+    return response.data;
+  }
+
+  async getRunFunction(id: number): Promise<RunFunction> {
+    const response = await this.client.get(`/runs/${id}`);
+    return response.data;
+  }
+
+  async createRunFunction(data: RunFunctionInput): Promise<RunFunction> {
+    const response = await this.client.post("/runs", data);
+    return response.data;
+  }
+
+  async updateRunFunction(
+    id: number,
+    data: Partial<RunFunctionInput>,
+  ): Promise<RunFunction> {
+    const response = await this.client.put(`/runs/${id}`, data);
+    return response.data;
+  }
+
+  async deleteRunFunction(
+    id: number,
+  ): Promise<{ message?: string; deleted?: boolean }> {
+    const response = await this.client.delete(`/runs/${id}`);
+    return response.data;
+  }
+
+  async invokeRunFunction(
+    id: number,
+    payload?: Record<string, unknown>,
+  ): Promise<RunExecution> {
+    const response = await this.client.post(`/runs/${id}/invoke`, payload ?? {});
+    return response.data;
+  }
+
+  async listRunExecutions(params?: {
+    function_id?: number;
+    status?: string;
+    page?: number;
+    per_page?: number;
+  }): Promise<RunExecutionListResponse> {
+    const response = await this.client.get("/runs/executions", { params });
+    return response.data;
+  }
+
+  async getRunExecution(executionId: string): Promise<RunExecution> {
+    const response = await this.client.get(`/runs/executions/${executionId}`);
+    return response.data;
+  }
+}
+
+export type RunRuntime = "nodejs" | "rust" | "python" | "golang" | "ruby";
+
+export interface RunFunction {
+  id: number;
+  public_id?: string;
+  name: string;
+  description?: string | null;
+  runtime: RunRuntime | string;
+  code: string;
+  timeout_seconds?: number;
+  memory_mb?: number;
+  schedule_cron?: string | null;
+  execution_namespace?: string | null;
+  worker_cluster?: string | null;
+  env_vars?: Record<string, string> | null;
+  is_enabled?: boolean;
+  village_id?: string | null;
+  last_run_at?: string | null;
+  execution_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface RunFunctionInput {
+  name: string;
+  description?: string;
+  runtime: RunRuntime | string;
+  code: string;
+  timeout_seconds?: number;
+  memory_mb?: number;
+  schedule_cron?: string | null;
+  execution_namespace?: string | null;
+  worker_cluster?: string | null;
+  env_vars?: Record<string, string>;
+  is_enabled?: boolean;
+}
+
+export interface RunFunctionListResponse {
+  data: RunFunction[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface RunExecution {
+  id: number;
+  execution_id: string;
+  function_id: number;
+  function_name?: string;
+  runtime?: RunRuntime | string;
+  status: string;
+  trigger_type?: "manual" | "schedule" | "stream" | string;
+  input_data?: Record<string, unknown> | null;
+  output_data?: Record<string, unknown> | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  exit_code?: number | null;
+  error_message?: string | null;
+  duration_ms?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export interface RunExecutionListResponse {
+  data: RunExecution[];
+  total: number;
+  page: number;
+  per_page: number;
 }
 
 export interface LicenseLimits {

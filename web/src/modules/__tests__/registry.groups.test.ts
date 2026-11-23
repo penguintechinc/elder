@@ -11,6 +11,7 @@ const VALID_GROUPS = [
 const EXPECTED: Record<string, string> = {
   // W — Workstreams
   nav_streams: "workstreams",
+  runs: "workstreams",
   webhooks_alerting: "workstreams",
   // I — Issues
   issues: "issues",
