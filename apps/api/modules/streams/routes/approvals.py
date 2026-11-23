@@ -746,3 +746,318 @@ async def create_approval_gate(stream_id):
         return ApiResponse.error(result.get("error"), 400)
 
     return ApiResponse.success(data=result, status_code=status_code)
+
+
+def _parse_approver_ids(raw) -> list[int]:
+    """Parse approver identity IDs from a list, int, or comma-separated string."""
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, bool):
+        raise ValueError("approver_ids must contain integer identity IDs")
+    if isinstance(raw, int):
+        if raw <= 0:
+            raise ValueError("approver_ids must contain positive integer IDs")
+        return [raw]
+    if isinstance(raw, (list, tuple, set)):
+        tokens = list(raw)
+    elif isinstance(raw, str):
+        tokens = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        raise ValueError("approver_ids must be a list or comma-separated string")
+
+    parsed: list[int] = []
+    for token in tokens:
+        if isinstance(token, bool):
+            raise ValueError("approver_ids must contain integer identity IDs")
+        try:
+            val = int(str(token).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid approver identity ID {token!r}: must be an integer"
+            ) from exc
+        if val <= 0:
+            raise ValueError(
+                f"Invalid approver identity ID {val}: must be a positive integer"
+            )
+        if val not in parsed:
+            parsed.append(val)
+    return parsed
+
+
+@bp.route(
+    "/<int:stream_id>/executions/<execution_id>/request-approval", methods=["POST"]
+)
+@login_required
+@require_scope("streams:write")
+async def request_execution_approval(stream_id: int, execution_id: str):
+    """Pause a running execution and ensure an approval gate exists for it.
+
+    Invoked by the worker's ``action_human_approval`` node when a playbook
+    reaches a Human Approval step.
+
+    Args:
+        stream_id: Playbook/stream numeric ID.
+        execution_id: Execution UUID string.
+
+    Returns:
+        200: JSON with paused approval gate details.
+    """
+    db = current_app.db
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    data = await request.get_json() or {}
+
+    try:
+        parsed_approvers = _parse_approver_ids(data.get("approver_ids"))
+    except ValueError as exc:
+        return ApiResponse.error(str(exc), 400)
+
+    raw_required = data.get("required_approvals", 1)
+    try:
+        required_approvals = int(1 if raw_required in (None, "") else raw_required)
+    except (TypeError, ValueError):
+        return ApiResponse.error("required_approvals must be a positive integer", 400)
+    if required_approvals < 1:
+        return ApiResponse.error("required_approvals must be at least 1", 400)
+
+    raw_timeout = data.get("timeout_minutes", 1440)
+    try:
+        timeout_minutes = int(1440 if raw_timeout in (None, "") else raw_timeout)
+    except (TypeError, ValueError):
+        return ApiResponse.error("timeout_minutes must be a positive integer", 400)
+    if timeout_minutes < 1:
+        return ApiResponse.error("timeout_minutes must be at least 1", 400)
+
+    node_id = str(data.get("node_id") or "human_approval").strip() or "human_approval"
+    title = (
+        str(data.get("title") or "Human Approval Required").strip()
+        or "Human Approval Required"
+    )
+    instructions = str(data.get("instructions") or "").strip()
+
+    def pause_for_approval():
+        stream = (
+            db(
+                (db.stream_playbooks.id == stream_id)
+                & (db.stream_playbooks.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not stream:
+            return None, 404, "Stream"
+
+        if identity_id is not None and not (
+            _can_edit_stream(db, stream, tenant_id, identity_id)
+            or _can_read_stream(db, stream, tenant_id, identity_id)
+        ):
+            return None, 403, "Access denied"
+
+        execution = (
+            db(
+                (db.stream_executions.execution_id == execution_id)
+                & (db.stream_executions.playbook_id == stream_id)
+                & (db.stream_executions.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+        if not execution:
+            return None, 404, "Execution"
+
+        now = datetime.now(UTC)
+
+        existing_gate = (
+            db(
+                (db.stream_approval_gates.playbook_id == stream_id)
+                & (db.stream_approval_gates.node_id == node_id)
+                & (db.stream_approval_gates.tenant_id == tenant_id)
+            )
+            .select()
+            .first()
+        )
+
+        fallback_gate = existing_gate
+        if fallback_gate is None:
+            fallback_gate = (
+                db(
+                    (db.stream_approval_gates.playbook_id == stream_id)
+                    & (db.stream_approval_gates.tenant_id == tenant_id)
+                )
+                .select(orderby=~db.stream_approval_gates.updated_at)
+                .first()
+            )
+
+        if parsed_approvers:
+            resolved_approvers = parsed_approvers
+        elif fallback_gate and fallback_gate.approvers:
+            resolved_approvers = list(fallback_gate.approvers)
+        elif execution.triggered_by_identity_id:
+            resolved_approvers = [execution.triggered_by_identity_id]
+        elif identity_id is not None:
+            resolved_approvers = [identity_id]
+        else:
+            resolved_approvers = []
+
+        if existing_gate:
+            db(db.stream_approval_gates.id == existing_gate.id).update(
+                name=title,
+                description=instructions,
+                require_approval=True,
+                min_approvers=required_approvals,
+                approvers=resolved_approvers,
+                timeout_minutes=timeout_minutes,
+                is_enabled=True,
+                updated_at=now,
+            )
+            gate_uuid = existing_gate.gate_id
+        else:
+            gate_uuid = str(uuid.uuid4())
+            db.stream_approval_gates.insert(
+                tenant_id=tenant_id,
+                gate_id=gate_uuid,
+                playbook_id=stream_id,
+                node_id=node_id,
+                name=title,
+                description=instructions,
+                require_approval=True,
+                min_approvers=required_approvals,
+                approvers=resolved_approvers,
+                approver_groups=[],
+                timeout_minutes=timeout_minutes,
+                is_enabled=True,
+                created_at=now,
+                updated_at=now,
+            )
+
+        db(
+            (db.stream_executions.execution_id == execution_id)
+            & (db.stream_executions.tenant_id == tenant_id)
+        ).update(
+            status="paused_for_approval",
+            updated_at=now,
+        )
+        db.commit()
+
+        return (
+            {
+                "execution_id": execution_id,
+                "playbook_id": stream_id,
+                "gate_id": gate_uuid,
+                "node_id": node_id,
+                "title": title,
+                "instructions": instructions,
+                "approver_ids": resolved_approvers,
+                "required_approvals": required_approvals,
+                "timeout_minutes": timeout_minutes,
+                "status": "paused_for_approval",
+            },
+            200,
+            None,
+        )
+
+    result, status_code, err_target = await run_in_threadpool(pause_for_approval)
+
+    if status_code == 404:
+        return ApiResponse.not_found(err_target or "Resource")
+    elif status_code == 403:
+        return ApiResponse.error("Access denied", 403)
+
+    return ApiResponse.success(data=result)
+
+
+# ============================================================================
+# Approval Audit History
+# ============================================================================
+
+
+@bp.route("/approvals/history", methods=["GET"])
+@login_required
+@require_scope("streams:read")
+async def get_approval_history():
+    """Return recent approval decisions across the tenant for auditability.
+
+    Includes both human decisions and automated AI decisions (identified by
+    ``approver_identity_id is None`` or a comment prefixed with ``[AI]``).
+
+    Returns:
+        200: JSON with ``history`` list and ``count``.
+    """
+    db = current_app.db
+    tenant_id = _get_tenant_id()
+    identity_id = _get_identity_id()
+
+    if not tenant_id:
+        return ApiResponse.error("Tenant not found", 403)
+
+    raw_limit = request.args.get("limit", "50")
+    try:
+        limit = max(1, min(int(raw_limit), 200))
+    except (TypeError, ValueError):
+        limit = 50
+
+    def list_history():
+        approvals = db(db.stream_execution_approvals.tenant_id == tenant_id).select(
+            orderby=~db.stream_execution_approvals.created_at,
+            limitby=(0, limit),
+        )
+
+        history = []
+        for approval in approvals:
+            execution = (
+                db(
+                    (db.stream_executions.execution_id == approval.execution_id)
+                    & (db.stream_executions.tenant_id == tenant_id)
+                )
+                .select()
+                .first()
+            )
+            playbook = None
+            if execution and execution.playbook_id:
+                playbook = (
+                    db(
+                        (db.stream_playbooks.id == execution.playbook_id)
+                        & (db.stream_playbooks.tenant_id == tenant_id)
+                    )
+                    .select()
+                    .first()
+                )
+                if playbook and not _can_read_stream(
+                    db, playbook, tenant_id, identity_id
+                ):
+                    continue
+
+            comment = approval.comment or ""
+            is_ai = approval.approver_identity_id is None or comment.startswith("[AI]")
+            approver_type = "ai" if is_ai else "human"
+
+            history.append(
+                {
+                    "approval_id": approval.approval_id,
+                    "execution_id": approval.execution_id,
+                    "playbook_id": (
+                        playbook.id
+                        if playbook
+                        else (execution.playbook_id if execution else None)
+                    ),
+                    "playbook_name": (
+                        playbook.name if playbook else "Unknown Playbook"
+                    ),
+                    "approver_identity_id": approval.approver_identity_id,
+                    "approver_type": approver_type,
+                    "decision": approval.decision,
+                    "comment": comment,
+                    "decided_at": (
+                        approval.created_at.isoformat() if approval.created_at else None
+                    ),
+                }
+            )
+
+        return {"history": history, "count": len(history)}
+
+    result = await run_in_threadpool(list_history)
+    return ApiResponse.success(data=result)
