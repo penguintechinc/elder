@@ -281,7 +281,7 @@ def seed_support_bot(db: Any, tenant_id: int, redis_client: Any | None) -> int:
     now = datetime.now(UTC)
     bot_id = db.identities.insert(
         username=bot_username,
-        email="support-bot@elderrms.app",
+        email="support-bot@example.com",
         identity_type="service_account",
         auth_provider="local",
         is_active=True,
