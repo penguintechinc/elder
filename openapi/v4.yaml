@@ -1656,7 +1656,7 @@ components:
           type: integer
         timeout_seconds:
           default: 60
-          maximum: 3600
+          maximum: 300
           minimum: 1
           title: Timeout Seconds
           type: integer
@@ -1757,7 +1757,7 @@ components:
           title: Schedule Cron
         timeout_seconds:
           default: 60
-          maximum: 3600
+          maximum: 300
           minimum: 1
           title: Timeout Seconds
           type: integer
@@ -1877,7 +1877,7 @@ components:
           title: Schedule Cron
         timeout_seconds:
           anyOf:
-          - maximum: 3600
+          - maximum: 300
             minimum: 1
             type: integer
           - type: 'null'
