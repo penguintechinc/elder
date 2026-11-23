@@ -69,9 +69,9 @@ const NAV_SECTIONS: [string, string][] = [
   ["workstreams", "Workstreams"],
   ["issues", "Work Management"],
   ["relationships", "Relationships"],
-  ["resources-infrastructure", "Resources — Infrastructure"],
-  ["resources-software", "Resources — Software"],
-  ["resources-security", "Resources — Security"],
+  ["resources-infrastructure", "Infrastructure"],
+  ["resources-software", "Software"],
+  ["resources-security", "Security"],
   ["documents", "Documents"],
 ];
 

@@ -62,18 +62,18 @@ describe("Module Grouping (WIRED)", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Resources — Infrastructure",
-      "Resources — Software",
-      "Resources — Security",
+      "Infrastructure",
+      "Software",
+      "Security",
       "Documents",
     ]);
   });
 
-  it("exposes Data Inventory under Resources — Infrastructure, Dependencies under Relationships, and On-Call under Work Management", () => {
+  it("exposes Data Inventory under Infrastructure, Dependencies under Relationships, and On-Call under Work Management", () => {
     const all = new Set(MODULES.map((m) => m.id));
     const nav = navFor(all);
 
-    const entities = nav.find((c) => c.header === "Resources — Infrastructure");
+    const entities = nav.find((c) => c.header === "Infrastructure");
     const relationships = nav.find((c) => c.header === "Relationships");
     const workMgmt = nav.find((c) => c.header === "Work Management");
 

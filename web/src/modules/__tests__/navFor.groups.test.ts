@@ -24,9 +24,9 @@ describe("navFor — one section per WIRED pillar", () => {
       "Workstreams",
       "Work Management",
       "Relationships",
-      "Resources — Infrastructure",
-      "Resources — Software",
-      "Resources — Security",
+      "Infrastructure",
+      "Software",
+      "Security",
       "Documents",
     ]);
   });
@@ -42,9 +42,9 @@ describe("navFor — one section per WIRED pillar", () => {
     // sbom and services_oncall share Resources — Software; On-Call routes to Work Management
     // and Vulnerabilities routes to Resources — Security.
     const nav = navFor(new Set(["sbom", "services_oncall"]));
-    const software = nav.find((c) => c.header === "Resources — Software");
+    const software = nav.find((c) => c.header === "Software");
     const workMgmt = nav.find((c) => c.header === "Work Management");
-    const security = nav.find((c) => c.header === "Resources — Security");
+    const security = nav.find((c) => c.header === "Security");
 
     expect(software?.items.map((i) => i.name)).toEqual(
       expect.arrayContaining(["SBOM Dashboard", "Services"]),
@@ -117,11 +117,9 @@ describe("navFor — one section per WIRED pillar", () => {
     expect(navFor(new Set<string>())).toEqual([]);
   });
 
-  it("places Data Inventory under Resources — Infrastructure, Dependencies under Relationships, and deduplicates Diagrams", () => {
+  it("places Data Inventory under Infrastructure, Dependencies under Relationships, and deduplicates Diagrams", () => {
     const nav = navFor(new Set(["infrastructure", "issues", "nav_diagrams"]));
-    const infraSection = nav.find(
-      (c) => c.header === "Resources — Infrastructure",
-    );
+    const infraSection = nav.find((c) => c.header === "Infrastructure");
     const relSection = nav.find((c) => c.header === "Relationships");
     const workMgmtSection = nav.find((c) => c.header === "Work Management");
     const docsSection = nav.find((c) => c.header === "Documents");
