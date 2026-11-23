@@ -1,4 +1,4 @@
-"""Unit tests for all 49 typed resource facades (sync & async)."""
+"""Unit tests for all 50 typed resource facades (sync & async)."""
 
 from __future__ import annotations
 
@@ -67,10 +67,13 @@ EXPECTED_FACADE_NAMES = {
     "api_keys",
     "modules",
     "runs",
+    "workers",
 }
 
+DIRECT_ONLY_FACADES = {"workers"}
 
-def test_all_49_facades_registered_and_bound_to_valid_catalog_ops() -> None:
+
+def test_all_50_facades_registered_and_bound_to_valid_catalog_ops() -> None:
     assert set(SYNC_RESOURCE_CLASSES.keys()) == EXPECTED_FACADE_NAMES
     assert set(ASYNC_RESOURCE_CLASSES.keys()) == EXPECTED_FACADE_NAMES
 
@@ -79,7 +82,8 @@ def test_all_49_facades_registered_and_bound_to_valid_catalog_ops() -> None:
         async_cls = ASYNC_RESOURCE_CLASSES[name]
         assert cls.SERVICE_NAME == name
         assert async_cls.SERVICE_NAME == name
-        assert catalog.has_service(name)
+        if name not in DIRECT_ONLY_FACADES:
+            assert catalog.has_service(name)
 
         # Every _CatalogMethod descriptor on both sync and async classes must
         # correspond to a real operation in api_catalog.json
@@ -200,11 +204,13 @@ def test_sync_resource_facades_execution() -> None:
         client.api_keys.list()
         client.modules.list()
         client.runs.list(runtime="python")
+        client.workers.list(worker_type="runworker")
 
         # Also test non-CRUD iter_operation
         list(client.discovery.iter_operation("list_discovery_jobs", provider="aws"))
 
     paths = [p for _, p, _ in recorded]
+    assert "/api/v1/admin/workers" in paths
     assert "/api/v1/auth/login" in paths
     assert "/api/v1/organizations/1/tree-stats" in paths
     assert "/api/v1/discovery/jobs" in paths
@@ -260,8 +266,10 @@ async def test_async_resource_facades_execution() -> None:
         await client.sbom.list_scans()
         await client.modules.list()
         await client.runs.list(runtime="python")
+        await client.workers.list(worker_type="runworker")
 
     assert ("POST", "/api/v1/auth/login") in recorded
+    assert ("GET", "/api/v1/admin/workers") in recorded
     assert ("POST", "/api/v1/auth/refresh") in recorded
     assert ("GET", "/api/v1/issues") in recorded
     assert ("GET", "/api/v1/discovery/jobs") in recorded
